@@ -1,6 +1,12 @@
 #include "platform.hpp"
+#include "logger.hpp"
 #include <stdio.h>
 #include <stdarg.h>
+
+static Logger* g_logger = NULL;
+
+void plat_set_logger(Logger* logger) { g_logger = logger; }
+Logger* plat_get_logger() { return g_logger; }
 
 static void plat_reverse(char* str, int length) {
     int start = 0;
@@ -101,25 +107,22 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
     return true;
 }
 
-void plat_print_info(const char* message) {
+void plat_write_stdout(const char* message) {
     if (!message) return;
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) {
-        /* Fallback to stderr if stdout is invalid (rare) */
         hOut = GetStdHandle(STD_ERROR_HANDLE);
         if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) return;
     }
 
     DWORD written = 0;
     DWORD len = (DWORD)plat_strlen(message);
-    /* Try WriteConsoleA first - it works better with Win9x console */
     if (!WriteConsoleA(hOut, (LPCSTR)message, len, &written, NULL)) {
-        /* Fallback to WriteFile for redirected output */
         WriteFile(hOut, message, len, &written, NULL);
     }
 }
 
-void plat_print_error(const char* message) {
+void plat_write_stderr(const char* message) {
     if (!message) return;
     HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
     if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
@@ -131,48 +134,59 @@ void plat_print_error(const char* message) {
     }
 }
 
+void plat_print_info(const char* message) {
+    if (g_logger) {
+        g_logger->log(LOG_INFO, message);
+    } else {
+        plat_write_stdout(message);
+    }
+}
+
+void plat_print_error(const char* message) {
+    if (g_logger) {
+        g_logger->log(LOG_ERROR, message);
+    } else {
+        plat_write_stderr(message);
+    }
+}
+
 void plat_print_debug(const char* message) {
     OutputDebugStringA(message);
-    plat_print_error(message);
+    if (g_logger) {
+        g_logger->log(LOG_DEBUG, message);
+    } else {
+        plat_write_stderr(message);
+    }
 }
 
 void plat_printf_debug(const char* format, ...) {
     char buffer[4096];
     va_list args;
     va_start(args, format);
-#ifdef _MSC_VER
-    _vsnprintf(buffer, sizeof(buffer), format, args);
-#else
-    vsnprintf(buffer, sizeof(buffer), format, args);
-#endif
+    plat_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     buffer[sizeof(buffer)-1] = '\0';
-    OutputDebugStringA(buffer);
-    plat_print_error(buffer);
+    plat_print_debug(buffer);
 }
 
 int plat_snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
-#ifdef _MSC_VER
-    int result = _vsnprintf(str, size, format, args);
-#else
-    int result = vsnprintf(str, size, format, args);
-#endif
+    int result = plat_vsnprintf(str, size, format, args);
     va_end(args);
     return result;
 }
 
-void plat_write_str(const char* s) {
-    if (!s) return;
-    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
-    if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
+int plat_vsnprintf(char* str, size_t size, const char* format, va_list args) {
+#ifdef _MSC_VER
+    return _vsnprintf(str, size, format, args);
+#else
+    return vsnprintf(str, size, format, args);
+#endif
+}
 
-    DWORD written = 0;
-    DWORD len = (DWORD)plat_strlen(s);
-    if (!WriteConsoleA(hErr, (LPCSTR)s, len, &written, NULL)) {
-        WriteFile(hErr, s, len, &written, NULL);
-    }
+void plat_write_str(const char* s) {
+    plat_write_stderr(s);
 }
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
@@ -461,43 +475,65 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
     return true;
 }
 
-void plat_print_info(const char* message) {
+void plat_write_stdout(const char* message) {
+    if (!message) return;
     write(STDOUT_FILENO, message, plat_strlen(message));
 }
 
-void plat_print_error(const char* message) {
+void plat_write_stderr(const char* message) {
+    if (!message) return;
     write(STDERR_FILENO, message, plat_strlen(message));
 }
 
+void plat_print_info(const char* message) {
+    if (g_logger) {
+        g_logger->log(LOG_INFO, message);
+    } else {
+        plat_write_stdout(message);
+    }
+}
+
+void plat_print_error(const char* message) {
+    if (g_logger) {
+        g_logger->log(LOG_ERROR, message);
+    } else {
+        plat_write_stderr(message);
+    }
+}
+
 void plat_print_debug(const char* message) {
-    plat_print_error("[DEBUG] ");
-    plat_print_error(message);
+    if (g_logger) {
+        g_logger->log(LOG_DEBUG, message);
+    } else {
+        plat_write_stderr("[DEBUG] ");
+        plat_write_stderr(message);
+    }
 }
 
 void plat_printf_debug(const char* format, ...) {
-    plat_print_error("[DEBUG] ");
+    char buffer[4096];
     va_list args;
     va_start(args, format);
-    vfprintf(stderr, format, args);
+    plat_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
+    buffer[sizeof(buffer)-1] = '\0';
+    plat_print_debug(buffer);
 }
 
 int plat_snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    int result = vsnprintf(str, size, format, args);
+    int result = plat_vsnprintf(str, size, format, args);
     va_end(args);
     return result;
 }
 
+int plat_vsnprintf(char* str, size_t size, const char* format, va_list args) {
+    return vsnprintf(str, size, format, args);
+}
+
 void plat_write_str(const char* s) {
-    size_t len = plat_strlen(s);
-    size_t total_written = 0;
-    while (total_written < len) {
-        ssize_t written = write(STDERR_FILENO, s + total_written, len - total_written);
-        if (written <= 0) break;
-        total_written += written;
-    }
+    plat_write_stderr(s);
 }
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {

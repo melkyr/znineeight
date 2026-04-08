@@ -149,6 +149,11 @@ extern Arena* zig_default_arena;
 ### 3.2 Utility Functions (`utils.hpp`) & Platform Utilities (`platform.hpp`)
 **Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies and satisfy strict environment constraints (no `msvcrt.dll`/`sprintf` in core bootstrap).
 
+* **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer. This allows all existing `plat_print_*` calls to be routed through a single channel that supports:
+  - **Log Levels**: `LOG_ERROR`, `LOG_WARNING`, `LOG_INFO`, and `LOG_DEBUG`.
+  - **Buffering**: A 16KB arena-allocated buffer to reduce I/O overhead.
+  - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase.
+  - **Runtime Control**: `--no-logs` for quiet mode, `--verbose` for console debug output.
 * **`arena_safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
