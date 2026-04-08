@@ -26,12 +26,25 @@ Detects potential dangling pointers by tracking the provenance of local variable
 
 ## 3. NullPointerAnalyzer
 
-Detects potential null pointer dereferences.
+The `NullPointerAnalyzer` identifies definite and potential null pointer dereferences by tracking the state of pointer variables across branches and loops.
 
-### Features
-- **Optional Handling**: Understands that `?*T` is nullable.
-- **Unwrapping**: Recognizes that `if (opt) |val|` ensures `val` is non-null.
-- **Orelse**: Understands that `opt orelse default` provides a non-null fallback.
+### State Tracking
+Variables are tracked using one of four states:
+- `PS_UNINIT`: Variable has no initializer.
+- `PS_IS_NULL`: Variable is definitely null (assigned `null` or `0`).
+- `PS_SAFE`: Variable is definitely non-null (e.g., after `&x` or a null check).
+- `PS_MAYBE`: State is unknown or potentially null (e.g., from a function call result).
+
+### Features and Supported Constructs
+- **Optional Types**: Understands that `?*T` and `?[*]T` are nullable. Unwrapped values from these types are tracked.
+- **Error Unions**: Supports success-path payload tracking. If a function returns `!*T`, the success payload is treated as non-null.
+- **Captures**: Recognizes payload captures in `if (opt) |val|` and `while (opt) |val|`. The captured variable `val` is guaranteed `PS_SAFE` within the respective block.
+- **Conditional Refinement**: Refines variable states within `if` and `while` blocks based on null comparisons (e.g., `if (ptr != null)`).
+- **Operators**:
+  - `orelse`: Correctly merges the state of the optional and the fallback expression.
+  - `try`: Propagates the non-null state of the success payload.
+  - `catch`: Merges the success payload state with the fallback expression state.
+- **Member Access**: Conservatively treats member access (e.g., `s.ptr`) as `PS_MAYBE` to avoid false negatives in the absence of tag-aware analysis.
 
 ## 4. DoubleFreeAnalyzer
 
