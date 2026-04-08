@@ -57,7 +57,9 @@ void TryExpressionCatalogue::printSummary() const {
         safe_append(current, remaining, info.stack_safe ? " safe=yes\n" : " safe=no\n");
 
         plat_print_info(buffer);
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug(buffer);
+#endif
     }
     char total[16];
     plat_u64_to_string(count(), total, sizeof(total));
@@ -68,5 +70,7 @@ void TryExpressionCatalogue::printSummary() const {
     safe_append(cur, rem, total);
     safe_append(cur, rem, "\n");
     plat_print_info(final_msg);
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug(final_msg);
+#endif
 }

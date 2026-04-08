@@ -115,7 +115,9 @@ public:
 #include <new>       // For placement new
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug(message);
+#endif
     plat_abort();
 }
 
@@ -235,7 +237,9 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     if (mod_mem == NULL) fatalError("Out of memory allocating Module");
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("Module created: %s (%p) for file %s\n", mod->name, (void*)mod, interned_filename);
+#endif
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
@@ -1062,13 +1066,17 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
 #ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
+#endif
 #endif
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.check(m->ast_root);
 #ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
+#endif
 #endif
     }
     if (error_handler_.hasErrors()) all_success = false;
@@ -1110,7 +1118,9 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (logger) logger->flush();
 
 #ifdef DEBUG
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
+#endif
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
@@ -1364,7 +1374,9 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
     stack.append(module->filename);
 
 #ifdef DEBUG_VISIBILITY
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("DEBUG_VISIBILITY: Resolving imports for module '%s' (%s)\n", module->name, module->filename);
+#endif
 #endif
 
     const char* saved_module = current_module_;

@@ -137,4 +137,8 @@ ZIG_INLINE ZIG_UNUSED i32 __bootstrap_i32_from_i64(i64 x) {
     return (i32)x;
 }
 
+ZIG_INLINE ZIG_UNUSED c_char __bootstrap_c_char_from_u8(u8 x) {
+    return (c_char)x;
+}
+
 #endif /* ZIG_RUNTIME_H */

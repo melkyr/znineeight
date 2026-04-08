@@ -1,5 +1,9 @@
 #include "logger.hpp"
-#include "platform.hpp"
+
+// Low-level bypasses and helpers to be implemented/exposed in platform.cpp/hpp
+extern void plat_write_stderr(const char* s);
+extern void plat_write_stdout(const char* s);
+extern int plat_vsnprintf(char* str, size_t size, const char* format, va_list args);
 
 Logger::Logger(ArenaAllocator& arena, bool console_enabled, const char* log_file_path)
     : arena_(arena), buffer_pos_(0), buffer_capacity_(16384),
@@ -33,19 +37,25 @@ Logger::~Logger() {
 void Logger::log(LogLevel level, const char* msg) {
     if (!msg) return;
 
-    // Determine console output visibility
+    // Filter by level
+    // DEBUG logs only recorded if verbose is on OR file logging is enabled
+    if (level == LOG_DEBUG && !verbose_ && !file_enabled_) return;
+
+    // If all logs suppressed, only LOG_ERROR gets through (and bypasses buffering)
+    if (suppress_all_ && level != LOG_ERROR) return;
+
+    size_t len = plat_strlen(msg);
+
+    // If it's an error and logs are suppressed, print directly to stderr and don't buffer/file-log
+    if (suppress_all_ && level == LOG_ERROR) {
+        plat_write_stderr(msg);
+        return;
+    }
+
+    // Console output logic
     bool show_on_console = console_enabled_;
-
-    // --no-logs (suppress_all_) only suppresses INFO and DEBUG on console.
-    // WARNING and ERROR should always be shown if console_enabled_ is true.
-    if (suppress_all_ && (level == LOG_INFO || level == LOG_DEBUG)) {
-        show_on_console = false;
-    }
-
-    // DEBUG logs only shown on console if verbose is specifically requested
-    if (level == LOG_DEBUG && !verbose_) {
-        show_on_console = false;
-    }
+    if (level == LOG_DEBUG && !verbose_) show_on_console = false;
+    if (level == LOG_INFO && suppress_all_) show_on_console = false;
 
     if (show_on_console) {
         if (level == LOG_ERROR || level == LOG_WARNING) {
@@ -55,15 +65,17 @@ void Logger::log(LogLevel level, const char* msg) {
         }
     }
 
-    // File output logic (buffered). Always log everything to file if enabled,
-    // regardless of console suppression flags.
+    // File output logic (buffered)
     if (file_enabled_) {
-        size_t len = plat_strlen(msg);
         writeToBuffer(msg, len);
     }
 }
 
 void Logger::logf(LogLevel level, const char* format, ...) {
+    // Early exit if this level won't be logged anywhere
+    if (level == LOG_DEBUG && !verbose_ && !file_enabled_) return;
+    if (suppress_all_ && level != LOG_ERROR) return;
+
     char buf[4096];
     va_list args;
     va_start(args, format);
