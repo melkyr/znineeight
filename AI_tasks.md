@@ -1494,9 +1494,15 @@ Key changes:
     - **Verification**: Verified with tests for error set declarations and functions returning error unions.
 
 227. [COMPLETE] **Task 227: try and catch Expressions (DONE)**
-    - **Parser**: Implemented `try` as a prefix unary operator and `catch` as a binary operator (with optional `|err|` capture).
-    - **Type Checker**: Validated that `try` operands are error unions and that enclosing functions return compatible error unions. Handled result type merging for `catch`.
-    - **Codegen**: Implemented "lifting" of `try` and `catch` expressions into statement blocks with temporary variables. Ensured LIFO `defer` execution on early returns from `try`.
+     - **Parser**: Implemented `try` as a prefix unary operator and `catch` as a binary operator (with optional `|err|` capture).
+     - **Type Checker**: Validated that `try` operands are error unions and that enclosing functions return compatible error unions. Handled result type merging for `catch`.
+     - **Codegen**: Implemented "lifting" of `try` and `catch` expressions into statement blocks with temporary variables. Ensured LIFO `defer` execution on early returns from `try`.
+
+227.1 [COMPLETE] **Task 227.1: Centralized Logging System (DONE)**
+    - **Platform Abstraction**: Removed direct output bypasses (`plat_write_stdout`, `plat_write_stderr`) from the public PAL API.
+    - **Logger Integration**: Unified all `plat_print_*` functions to route through the global `Logger` instance.
+    - **Robustness**: Implemented recursion protection and internal low-level fallbacks for initialization and logger failures.
+    - **Documentation**: Updated `DESIGN.md`, `C89_Codegen.md`, and `COMPATIBILITY.md` with details on the unified logging architecture.
     - **Note**: Deeply nested `try`/`catch` in complex expressions are handled via a second-pass lifter; basic nesting is fully supported.
     - **Verification**: Created comprehensive integration tests (Batch 46) covering nested scenarios and defer interactions.
 

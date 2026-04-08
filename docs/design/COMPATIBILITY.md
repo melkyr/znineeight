@@ -61,6 +61,10 @@ C89 requires all variable declarations to appear at the beginning of a block, be
 - **Workaround**: The `ControlFlowLifter` pass ensures most complex control flow is transformed into statement form, which helps in grouping declarations.
 - **Future Work**: A full hoisting pass is planned to ensure *all* compiler-generated temporaries are also moved to the top of the block, achieving 100% strict C89 compliance.
 
+### Centralized Logging
+
+The compiler strictly uses a centralized logging system that respects `--no-logs` (suppressing all but fatal errors) and `--verbose` (enabling debug output) flags. All platform-specific output is routed through this system to ensure consistency across different hardware targets.
+
 ### Runtime IO Signature Fix
 
 Standard Zig string literals and slices often use `u8` (`unsigned char`). However, many standard C functions (and the Win32 `WriteConsoleA` API) expect `const char*`.

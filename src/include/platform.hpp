@@ -41,9 +41,6 @@ void plat_print_debug(const char* message); // debugger only
 void plat_printf_debug(const char* format, ...); // variadic debug print
 int plat_snprintf(char* str, size_t size, const char* format, ...);
 int plat_vsnprintf(char* str, size_t size, const char* format, va_list args);
-void plat_write_str(const char* s);         // low-level stderr write
-void plat_write_stderr(const char* s);      // explicit stderr bypass
-void plat_write_stdout(const char* s);      // explicit stdout bypass
 
 // String operations (CRT-free on Windows)
 void plat_i64_to_string(i64 value, char* buffer, size_t buffer_size);

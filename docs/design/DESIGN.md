@@ -149,12 +149,12 @@ extern Arena* zig_default_arena;
 ### 3.2 Utility Functions (`utils.hpp`) & Platform Utilities (`platform.hpp`)
 **Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies and satisfy strict environment constraints (no `msvcrt.dll`/`sprintf` in core bootstrap).
 
-* **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer. This allows all existing `plat_print_*` and `plat_printf_debug` calls to be routed through a single channel that supports:
+* **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer. To ensure all output is captured, all compiler output MUST go through the `plat_print_*` or `plat_printf_debug` functions.
   - **Log Levels**: `LOG_ERROR`, `LOG_WARNING`, `LOG_INFO`, and `LOG_DEBUG`.
   - **Buffering**: A 16KB arena-allocated buffer to reduce I/O overhead.
-  - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase and at program exit.
-  - **Robustness**: The Platform Abstraction Layer (PAL) `plat_write_file` function returns the number of bytes written (as a `long`), allowing the Logger to detect and report write failures.
-  - **Runtime Control**: `--no-logs` for quiet mode, `--verbose` for console debug output.
+  - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase and at program exit via the `--log-file=<path>` flag.
+  - **Robustness**: The Platform Abstraction Layer (PAL) ensures that any output during logger initialization or in case of logger failure falls back to direct low-level console writes. Recursion protection is implemented to prevent infinite loops if the logger itself triggers an error.
+  - **Runtime Control**: `--no-logs` for quiet mode (suppresses all but fatal errors), `--verbose` for console debug output.
 * **`arena_safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
 * **Instrumentation Guarding**: Internal compiler instrumentation (e.g., `TypeRegistry` lookups, `LIFTER` traces) is guarded by the `Z98_ENABLE_DEBUG_LOGS` compile-time macro. When enabled, these logs are routed to `LOG_DEBUG` and can be viewed on the console using the `--verbose` flag.
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
