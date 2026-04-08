@@ -183,7 +183,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 
 
     
-### Milestone 4: Bootstrap Type System & Semantic Analysis (IN PROGRESS)
+### Milestone 4: Bootstrap Type System & Semantic Analysis (COMPLETE)
 81. **Task 81:** Define core Type struct and TypeKind for C89-compatible types
     - Risk Level: LOW
     - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T
@@ -1361,7 +1361,7 @@ Phase 6C: Bootstrap Compiler Integration
     - Keep it C89-compatible
     - Use in zig1 compiler source
 
-### Milestone 7: Extended Feature Set for Writing `zig1`
+### Milestone 7: Extended Feature Set for Writing `zig1` (COMPLETE)
 
 With the bootstrap compiler (`zig0`) now stable and capable of generating multi‑module C89 code, we can extend its supported language subset to include features essential for writing a self‑hosted compiler in Zig (`zig1`).
 
@@ -2340,6 +2340,13 @@ Implementation steps (minimal):
     - **CBackend**: Specialized `__make_slice_u8` to accept `const char*` and perform an explicit cast to `unsigned char*` internally.
     - **Documentation**: Updated `docs/design/C89_Codegen.md` to reflect the specialized helper.
     - **Verification**: Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
+
+250. [COMPLETE] **Task 250: SignatureAnalyzer Upgrade (Milestone 11)**
+    - **Shared Helper**: Implemented `isTypeC89Compatible` to consolidate type validity logic for both parameters and return types.
+    - **Modern Type Support**: Added support for slices, optionals, error unions, error sets, and tagged unions.
+    - **Completeness Checks**: Enforced that structs, unions, and tagged unions must have a complete definition in signatures.
+    - **Parameter Restrictions**: Strictly rejected `void` as a parameter type and removed the legacy `anytype` exception for `print`.
+    - **Documentation**: Updated `Bootstrap_type_system_and_semantics.md` and created `static_analyzers.md`.
 
 ---
 

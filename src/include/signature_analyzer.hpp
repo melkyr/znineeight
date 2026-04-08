@@ -37,6 +37,9 @@ private:
 
     // Check if a type is valid for C89 function return
     bool isReturnTypeValid(Type* type, SourceLocation loc);
+
+    // Shared helper to check if a type is C89 compatible
+    bool isTypeC89Compatible(Type* type, SourceLocation loc, bool isParameter);
 };
 
 #endif // SIGNATURE_ANALYZER_HPP
