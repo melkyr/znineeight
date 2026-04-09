@@ -80,6 +80,55 @@ This change allows `C89Emitter::emitExpression` to be simplified. It can eventua
 
 ---
 
+## Investigation: Tagged Union Coercion in Expressions
+
+### Problem Description
+The Z98 bootstrap compiler does not currently support implicit coercion from an enum tag literal (e.g., `.Alive`) or a qualified enum member (e.g., `Cell.Alive`) to its corresponding tagged union type when used within branches of control-flow expressions like `if` or `switch`.
+
+### Minimal Reproduction
+```zig
+const Cell = union(enum) {
+    Alive: void,
+    Dead: void,
+};
+
+pub fn main() void {
+    var cond: bool = true;
+    // This currently fails or causes an internal compiler error
+    var next_state: Cell = if (cond) .Alive else .Dead;
+    _ = next_state;
+}
+```
+
+### Observed Behavior
+The `TypeChecker` currently resolves naked tags (`.Alive`) to `TYPE_UNDEFINED` during the initial visitation of `if` expression branches. When both branches are `TYPE_UNDEFINED`, the unification logic in `visitIfExpr` fails to determine a common result type, even if the parent assignment provides a clear `expected_type`.
+
+### Root Cause Analysis
+1.  **Naked Tag Resolution**: In `visitMemberAccess`, tags with no base (naked tags) are explicitly returned as `get_g_type_undefined()`.
+2.  **Unification Failure**: `visitIfExpr` and `validateSwitch` rely on `areTypesCompatible` or `areTypesEqual` to find a common type between branches. If branches are `TYPE_UNDEFINED`, they cannot be unified to a specific tagged union unless that union is already the `expected_type` and distributive coercion is applied.
+3.  **Distributive Coercion Interaction**: While `coerceNode` has logic to transform tags into unions, it is often called after the initial visitation has already failed or returned an ambiguous type.
+
+### Proposed Fix Strategy
+
+The goal is to allow the `TypeChecker` to recognize that a tag literal is a "potential" tagged union value during the unification phase.
+
+#### 1. Improve Tag Literal Typing
+Modify `visitMemberAccess` to return a specialized sentinel type (e.g., `TYPE_TAG_LITERAL`) for naked tags, or ensure they carry the field name for later resolution.
+
+#### 2. Enhance Unification Logic
+Update `areTypesCompatible` to recognize that:
+-   A tag literal is compatible with a tagged union if the union has a matching `void` variant.
+-   Two tag literals are compatible with each other if they belong to the same expected tagged union type.
+
+#### 3. Proactive Coercion in Control-Flow
+Update `visitIfExpr` and `validateSwitch` to check if branches are tag literals. If an `expected_type` (which is a tagged union) is available, proactively call `coerceNode` on the branches *before* final unification. This will transform `.Alive` into a synthetic `Cell{ .Alive = {} }` AST node, which already has proven support in the emitter.
+
+### Estimated Effort
+-   **Effort**: Medium (3-5 hours)
+-   **Risk**: Medium (Requires careful changes to type unification and compatibility rules)
+-   **Verification**: Add tests for `if` and `switch` expressions returning both qualified and unqualified tags.
+
+---
 [Previous content of Z98_upcoming_bugfixes.md continues here...]
 ## Issue 4: Loop State & Capture Sensitivity
 
