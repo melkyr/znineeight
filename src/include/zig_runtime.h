@@ -52,6 +52,11 @@ void __bootstrap_print(const char* s);
 void __bootstrap_print_int(i32 n);
 
 /**
+ * @brief Print character helper
+ */
+void __bootstrap_print_char(i32 c);
+
+/**
  * @brief Print bytes helper
  */
 void __bootstrap_write(const char* s, usize len);

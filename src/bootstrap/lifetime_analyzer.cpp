@@ -103,6 +103,10 @@ void LifetimeAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
 void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
     if (!node->expression) return;
 
+    if (node->expression->resolved_type && node->expression->resolved_type->kind != TYPE_POINTER && node->expression->resolved_type->kind != TYPE_SLICE) {
+        return;
+    }
+
     if (isDangerousLocalPointer(node->expression)) {
         const char* var_name = extractVariableName(node->expression);
 

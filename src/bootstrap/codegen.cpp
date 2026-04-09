@@ -1031,6 +1031,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         writeString(");");
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_print_char") == 0 ||
                plat_strcmp(node->name, "__bootstrap_write") == 0 ||
                plat_strcmp(node->name, "__bootstrap_panic") == 0) {
         /* Skip internal runtime prototypes in module headers to avoid conflicts with zig_runtime.h */
@@ -1222,6 +1223,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
         is_main_function_ = true;
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_print_char") == 0 ||
                plat_strcmp(node->name, "__bootstrap_write") == 0 ||
                plat_strcmp(node->name, "__bootstrap_panic") == 0) {
         /* Skip internal runtime prototypes as they are already in zig_runtime.h with correct signatures */
@@ -1754,36 +1756,67 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
     const char* p = fmt;
 
     while (*p) {
-        if (*p == '{' && *(p+1) == '}') {
-            /* Print what we have so far */
-            if (p > start) {
-                writeIndent();
-                writeString("__bootstrap_print((const char*)(\"");
-                const char* s = start;
-                while (s < p) {
-                    emitEscapedByte((unsigned char)*s, false);
-                    s++;
+        if (*p == '{') {
+            bool found_marker = false;
+            int marker_len = 0;
+            const char* call_fn = NULL;
+
+            if (*(p+1) == '}') {
+                found_marker = true;
+                marker_len = 2;
+                call_fn = "__bootstrap_print_int";
+            } else if (*(p+1) == 's' && *(p+2) == '}') {
+                found_marker = true;
+                marker_len = 3;
+                call_fn = "__bootstrap_print";
+            } else if (*(p+1) == 'c' && *(p+2) == '}') {
+                found_marker = true;
+                marker_len = 3;
+                call_fn = "__bootstrap_print_char";
+            }
+
+            if (found_marker) {
+                /* Print what we have so far */
+                if (p > start) {
+                    writeIndent();
+                    writeString("__bootstrap_print((const char*)(\"");
+                    const char* s = start;
+                    while (s < p) {
+                        emitEscapedByte((unsigned char)*s, false);
+                        s++;
+                    }
+                    writeString("\"));\n");
                 }
-                writeString("\"));\n");
-            }
 
-            /* Print the element */
-            if (elements && element_idx < elements->length()) {
-                writeIndent();
-                writeString("__bootstrap_print_int(");
-                emitExpression((*elements)[element_idx]);
-                writeString(");\n");
-                element_idx++;
-            } else {
-                writeIndent();
-                writeString("__bootstrap_print((const char*)(\"{}\"));\n");
-            }
+                /* Print the element */
+                if (elements && element_idx < elements->length()) {
+                    writeIndent();
+                    writeString(call_fn);
+                    writeString("(");
+                    if (plat_strcmp(call_fn, "__bootstrap_print") == 0) {
+                        writeString("(const char*)(");
+                        emitExpression((*elements)[element_idx]);
+                        writeString(")");
+                    } else {
+                        emitExpression((*elements)[element_idx]);
+                    }
+                    writeString(");\n");
+                    element_idx++;
+                } else {
+                    writeIndent();
+                    writeString("__bootstrap_print((const char*)(\"");
+                    for (int i = 0; i < marker_len; ++i) {
+                        emitEscapedByte((unsigned char)p[i], false);
+                    }
+                    writeString("\"));\n");
+                }
 
-            p += 2;
-            start = p;
-        } else {
-            p++;
+                p += marker_len;
+                start = p;
+                continue;
+            }
         }
+        p++;
     }
 
     /* Print remaining part */
@@ -2642,6 +2675,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             }
 
             if (target_name && (plat_strcmp(target_name, "__bootstrap_print") == 0 ||
+                                plat_strcmp(target_name, "__bootstrap_print_char") == 0 ||
                                 plat_strcmp(target_name, "__bootstrap_write") == 0 ||
                                 plat_strcmp(target_name, "__bootstrap_panic") == 0)) {
                 writeString(target_name);
@@ -3819,6 +3853,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     /* Check if it's a known runtime intrinsic that should never be mangled */
     if (plat_strcmp(zig_name, "__bootstrap_print") == 0 ||
         plat_strcmp(zig_name, "__bootstrap_print_int") == 0 ||
+        plat_strcmp(zig_name, "__bootstrap_print_char") == 0 ||
         plat_strcmp(zig_name, "__bootstrap_write") == 0 ||
         plat_strcmp(zig_name, "__bootstrap_panic") == 0) {
         is_extern = true;

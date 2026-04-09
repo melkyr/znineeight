@@ -78,6 +78,7 @@ const char* NameMangler::mangleFunction(const char* name,
     if (plat_strcmp(name, "main") == 0) return interner_.intern("main");
     if (plat_strcmp(name, "__bootstrap_print") == 0) return interner_.intern("__bootstrap_print");
     if (plat_strcmp(name, "__bootstrap_print_int") == 0) return interner_.intern("__bootstrap_print_int");
+    if (plat_strcmp(name, "__bootstrap_print_char") == 0) return interner_.intern("__bootstrap_print_char");
     if (plat_strcmp(name, "__bootstrap_panic") == 0) return interner_.intern("__bootstrap_panic");
 
     char local_name[512];
