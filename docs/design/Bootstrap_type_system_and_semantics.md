@@ -1879,3 +1879,19 @@ The following issues were identified during the attempt to compile a comprehensi
 - **Switch Prong Commas**: Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong before the closing brace.
 - **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
 - **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.
+
+## 26. Phase A & B: Refined Anonymous Types and Tag Coercion
+
+### 26.1 Refined Anonymous Type Resolution
+The resolution of anonymous aggregate literals (`.{}`) is refined to support deferred resolution until a target type is known, while preventing regressions in type-defining contexts:
+- **`anytype` Contexts**: In contexts like `std.debug.print` arguments where the expected type is `anytype`, anonymous literals remain `TYPE_UNDEFINED`.
+- **`TYPE_TYPE` Contexts**: When an anonymous literal is used where a `type` is expected (e.g., `const T = .{};`), empty literals resolve to a concrete empty tuple. Non-empty literals remain undefined to avoid incorrect named type resolution.
+- **Lazy Resolution**: Literal elements are visited only once an expected type is available or when the literal is lifted into a temporary.
+
+### 26.2 Tagged Union Coercion Rules
+The compiler supports implicit coercion of tags into tagged unions if the target variant has no payload:
+- **Constraint**: Coercion only occurs if the target is a tagged union and the variant payload type is `void`.
+- **Transformation**: The tag (naked or qualified) is transformed into an anonymous union initializer `.{ .Tag }` with a `TYPE_ANONYMOUS_UNION` type.
+- **Error Handling**:
+    - If the tag is not found in the union: `ERR_UNDEFINED_ENUM_MEMBER`.
+    - If the tag requires a non-void payload: `ERR_TYPE_MISMATCH`.

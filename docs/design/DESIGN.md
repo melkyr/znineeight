@@ -1209,8 +1209,23 @@ In Zig, the `.{}` syntax is used for anonymous struct initializers, tuple litera
    - **Arrays**: Elements are coerced to the array's element type; length is verified.
    - **Tuples**: Elements are matched to the tuple's component types.
    - **Structs/Unions**: Named fields are matched and validated against the aggregate's definition.
-4. **Anytype Context**: When an anonymous literal is passed to an `anytype` parameter (e.g., in `std.debug.print`), the compiler "defaults" it to a concrete tuple or struct to ensure a valid C89 representation can be emitted.
+4. **Anytype/Type Context**: When an anonymous literal is passed to an `anytype` context, the compiler returns `TYPE_UNDEFINED` to let existing logic handle it. In a `TYPE_TYPE` context (type constants), empty literals resolve to concrete empty tuples, while non-empty literals remain undefined to prevent incorrect resolution.
 
-### 15.3 Usage Guidelines
+## 16. Tagged Union Coercion (Phase B)
+**Concept:** Implicitly transforming naked or qualified tags into tagged union initializers.
+
+### 16.1 Naked Tag Coercion
+Naked tags (e.g., `.Alive`) are expressions that lack an explicit type. If used in a context where a tagged union is expected (assignment, function argument, or return statement), the compiler attempts to coerce them:
+1. The tag name is looked up in the target union's payload fields.
+2. If the tag is found and has a `void` payload, the node is transformed into an anonymous union initializer: `.{ .Tag }`.
+3. If the tag requires a non-void payload, a type mismatch error is reported.
+
+### 16.2 Qualified Tag Coercion
+Qualified tags (e.g., `Status.Alive`) are resolved as enum members (folded into integer literals with an `original_name`). When the target context is a tagged union, these follow the same coercion rules as naked tags, ensuring that `Status.Alive` can be assigned directly to a variable of type `Status` if the payload is void.
+
+### 16.3 Integration with Anonymous Types
+The result of a tag coercion is an anonymous union initializer with a `TYPE_ANONYMOUS_UNION` type. This type is then further resolved to the concrete target union type via the deferred resolution mechanism described in Section 15.
+
+## 17. Usage Guidelines
 - **Structural Match Required**: Every anonymous literal must eventually resolve to a concrete type with a known memory layout before the code generation phase.
 - **Context Awareness**: Anonymous literals rely on downward type information. They are most effective in assignments, function calls, and return statements where the target type is explicitly defined.

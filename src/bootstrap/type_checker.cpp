@@ -4705,8 +4705,7 @@ Type* TypeChecker::visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node)
     if (expected && expected->kind == TYPE_PLACEHOLDER) expected = resolvePlaceholder(expected);
 
     if (expected && expected->kind == TYPE_ANYTYPE) {
-        /* Default to concrete tuple if passed to anytype without specific structural context */
-        expected = NULL;
+        return get_g_type_undefined();
     }
 
     if (expected && (expected->kind == TYPE_TUPLE || expected->kind == TYPE_ARRAY)) {
@@ -4741,8 +4740,8 @@ Type* TypeChecker::visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node)
         }
     }
 
-    /* If context is anytype/type, resolve to a concrete tuple. */
-    if (!expected || expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
+    /* If context is type, resolve to a concrete tuple. */
+    if (expected && expected->kind == TYPE_TYPE) {
         void* mem;
         DynamicArray<Type*>* element_types;
         size_t i;
@@ -4768,6 +4767,18 @@ Type* TypeChecker::visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node)
         Type* tuple_type = createTupleType(unit_.getArena(), element_types);
         parent->resolved_type = tuple_type;
         return tuple_type;
+    }
+
+    /* Still anonymous: create TYPE_ANONYMOUS_TUPLE placeholder */
+    if (!expected) {
+        if (node->elements) {
+            for (size_t i = 0; i < node->elements->length(); ++i) {
+                visit((*node->elements)[i]);
+            }
+        }
+        Type* anon = createAnonymousTupleType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
+        parent->resolved_type = anon;
+        return anon;
     }
 
     return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "anonymous positional literal used where array or tuple was expected");
@@ -4828,27 +4839,19 @@ Type* TypeChecker::visitStructInitializer(ASTNode* parent, ASTStructInitializerN
             if (checkStructInitializerFields(node, expected, parent->loc)) {
                 return expected;
             }
-        } else if (expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
-             /* anytype context for anonymous struct/union literal? */
+        } else if (expected->kind == TYPE_ANYTYPE) {
+             return get_g_type_undefined();
+        } else if (expected->kind == TYPE_TYPE) {
+             /* TYPE_TYPE context: resolve to a concrete aggregate (for type constants). */
+             /* Existing named type resolution usually handles this, so we return undefined for non-empty literals. */
              if (!node->fields || node->fields->length() == 0) {
-                  /* Empty .{} resolves to empty tuple. */
                   void* mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
                   DynamicArray<Type*>* empty = new (mem) DynamicArray<Type*>(unit_.getArena());
                   Type* tuple_type = createTupleType(unit_.getArena(), empty);
                   parent->resolved_type = tuple_type;
                   return tuple_type;
-             } else {
-                  /* Non-empty literal without structural context: resolve elements and stay anonymous for now. */
-                  for (size_t i = 0; i < node->fields->length(); ++i) {
-                      ASTNamedInitializer* init = (*node->fields)[i];
-                      if (init->value) {
-                          visit(init->value);
-                      }
-                  }
-                  Type* anon = createAnonymousInitType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
-                  parent->resolved_type = anon;
-                  return anon;
              }
+             return get_g_type_undefined();
         }
     }
 
@@ -7391,6 +7394,26 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
     return node;
 }
 
+static ASTNode* createAnonymousUnionInitializer(CompilationUnit& unit, const char* tag_name, SourceLocation loc) {
+    ASTNode* init = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+    plat_memset(init, 0, sizeof(ASTNode));
+    init->type = NODE_STRUCT_INITIALIZER;
+    init->loc = loc;
+    init->as.struct_initializer = (ASTStructInitializerNode*)unit.getArena().alloc(sizeof(ASTStructInitializerNode));
+    plat_memset(init->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+    void* fields_mem = unit.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+    init->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit.getArena());
+
+    ASTNamedInitializer* field = (ASTNamedInitializer*)unit.getArena().alloc(sizeof(ASTNamedInitializer));
+    plat_memset(field, 0, sizeof(ASTNamedInitializer));
+    field->field_name = tag_name;
+    field->value = NULL; // naked tag
+    field->loc = loc;
+    init->as.struct_initializer->fields->append(field);
+    return init;
+}
+
 void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     static int recursion_depth = 0;
     const int MAX_RECURSION_DEPTH = 64;
@@ -7473,64 +7496,39 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         }
     }
 
-    // New: Handle folded enum members that are now integer literals
-    if (node->type == NODE_INTEGER_LITERAL && node->as.integer_literal.original_name) {
-        if (isTaggedUnion(target_type)) {
-            Type* payload_type = findTaggedUnionPayload(target_type, node->as.integer_literal.original_name);
-            if (payload_type && payload_type->kind == TYPE_VOID) {
-                /* Transform tag literal into struct initializer: { .Tag } */
-                ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
-                plat_memset(init_node, 0, sizeof(ASTNode));
-                init_node->type = NODE_STRUCT_INITIALIZER;
-                init_node->loc = node->loc;
-                init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
-                plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+    // Phase B: Tagged Union Coercion (Naked/Qualified Tags -> Anonymous Union)
+    if (isTaggedUnion(target_type)) {
+        bool is_naked_tag = (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL);
+        bool is_qualified_tag = (node->type == NODE_INTEGER_LITERAL && node->as.integer_literal.original_name != NULL);
 
-                void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
-                init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+        if (is_naked_tag || is_qualified_tag) {
+            const char* tag_name = is_naked_tag ? node->as.member_access->field_name : node->as.integer_literal.original_name;
+            Type* payload_type = findTaggedUnionPayload(target_type, tag_name);
 
-                ASTNamedInitializer* field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
-                plat_memset(field, 0, sizeof(ASTNamedInitializer));
-                field->field_name = node->as.integer_literal.original_name;
-                field->value = NULL; // Naked tag
-                field->loc = node->loc;
-
-                init_node->as.struct_initializer->fields->append(field);
-                init_node->resolved_type = target_type;
-                *node_slot = init_node;
+            if (!payload_type) {
+                char msg[256];
+                plat_snprintf(msg, sizeof(msg), "Tag '%s' not found in tagged union", tag_name);
+                reportAndReturnUndefined(node->loc, ERR_UNDEFINED_ENUM_MEMBER, msg);
+                --recursion_depth;
+                return;
             }
 
+            if (payload_type->kind != TYPE_VOID) {
+                char msg[256];
+                plat_snprintf(msg, sizeof(msg), "Tag '%s' requires a value (non-void payload)", tag_name);
+                reportAndReturnUndefined(node->loc, ERR_TYPE_MISMATCH, msg);
+                --recursion_depth;
+                return;
+            }
+
+            /* Transform tag literal into anonymous union initializer: .{ .Tag } */
+            ASTNode* init_node = createAnonymousUnionInitializer(unit_, tag_name, node->loc);
+            init_node->resolved_type = createAnonymousUnionType(unit_.getArena(), init_node, unit_.getModule(unit_.getCurrentModule()));
+            *node_slot = init_node;
+
+            /* Recurse once to resolve the anonymous type to target_type (Phase A integration) */
+            coerceNode(node_slot, target_type);
             --recursion_depth;
-            return;
-        }
-    }
-
-    // New: Naked tag (.A) to tagged union
-    if (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL) {
-        if (isTaggedUnion(target_type)) {
-            // Transform .Tag into .{ .Tag } (struct initializer with no value)
-            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
-            plat_memset(init_node, 0, sizeof(ASTNode));
-            init_node->type = NODE_STRUCT_INITIALIZER;
-            init_node->loc = node->loc;
-            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
-            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
-            
-            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
-            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
-            
-            ASTNamedInitializer* field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
-            plat_memset(field, 0, sizeof(ASTNamedInitializer));
-            field->field_name = node->as.member_access->field_name;
-            field->value = NULL; // Naked tag
-            field->loc = node->loc;
-            
-            init_node->as.struct_initializer->fields->append(field);
-            
-            if (checkStructInitializerFields(init_node->as.struct_initializer, target_type, node->loc)) {
-                init_node->resolved_type = target_type;
-                *node_slot = init_node;
-            }
             return;
         }
     }
