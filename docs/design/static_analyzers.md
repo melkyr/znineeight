@@ -63,10 +63,19 @@ Variables are tracked using one of four states:
 Detects double `arena_free` calls and memory leaks when using the `ArenaAllocator`.
 
 ### Features
-- **Allocation Tracking**: Tracks variables initialized with `arena_alloc`.
-- **Free Validation**: Ensures `arena_free` is called exactly once on each allocated pointer.
-- **Leak Detection**: Warns if an allocated pointer is not freed or is reassigned before being freed.
+- **Allocation Tracking**: Tracks variables and fields initialized with `arena_alloc` or function calls returning `!*T`.
+- **Aggregate Tracking**: Supports tracking pointers within structures and slices using composite names (e.g., `container.ptr`, `slice.ptr`). Recursive name generation supports single-level nesting.
+- **Array Support**: Collapses all array index accesses into a generic name (e.g., `arr[]`) to conservatively track potential allocations within arrays of pointers.
+- **Free Validation**: Ensures `arena_free` is called exactly once on each allocated pointer, including composite names.
+- **Leak Detection**: Warns if an allocated pointer is not freed or is reassigned before being freed. It understands base variable scope depths for composite names to avoid premature leak reporting.
+- **Improved Control Flow**:
+  - **Loops**: Only marks variables modified within a loop as `AS_UNKNOWN`, preserving the state of untouched pointers.
+  - **Error Unions**: Recognizes `try` expressions and `!*T` return types as potential allocation sources.
 - **Defer/Errdefer**: Correctly handles cleanup actions queued via `defer` and `errdefer`.
+
+### Known Limitations
+- **Errdefer Semantics**: Does not distinguish between success and error exit paths for `errdefer`; executes all defers on scope exit (conservative).
+- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership to avoid false negatives.
 
 ## Pipeline Order
 The analyzers run in the following sequence after `TypeChecker`:
