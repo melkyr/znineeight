@@ -256,6 +256,13 @@ void __bootstrap_print_int(i32 n) {
     }
 }
 
+void __bootstrap_print_char(i32 c) {
+    char s[2];
+    s[0] = (char)c;
+    s[1] = '\0';
+    __bootstrap_print(s);
+}
+
 
 u8 __bootstrap_u8_from_usize(usize x) {
     if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);

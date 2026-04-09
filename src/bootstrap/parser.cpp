@@ -1354,6 +1354,10 @@ ASTNode* Parser::parseTopLevelItem() {
     bool is_extern = match(TOKEN_EXTERN);
     bool is_export = match(TOKEN_EXPORT);
 
+    if (is_extern && peek().type == TOKEN_STRING_LITERAL) {
+        advance(); // consume string literal (e.g. "c")
+    }
+
     switch (peek().type) {
         case TOKEN_FN:
             return parseFnDecl(is_pub, is_extern, is_export);

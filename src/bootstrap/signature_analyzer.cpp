@@ -187,6 +187,7 @@ bool SignatureAnalyzer::isTypeC89Compatible(Type* type, SourceLocation loc, bool
         case TYPE_ERROR_SET:
         case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_NORETURN:
+        case TYPE_ANYTYPE:
             return true;
 
         case TYPE_STRUCT:
