@@ -1216,10 +1216,17 @@ As of Milestone 11, the bootstrap compiler supports deferred resolution for anon
 #### 7.2 Resolution via Coercion
 Resolution happens when a target type is provided via the `coerceNode` mechanism or structural expectation:
 1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
-2. **Structural Expectation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if an "Expected Type" (from `peekExpectedType()`) provides a structural target (array, tuple, struct, or union).
-3. **Deferred Coercion**: If visited without context, the literal remains in its anonymous state. It is resolved in `coerceNode` when a target type is finally known.
+2. **Structural Expectation (Phase A)**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if an "Expected Type" (from `peekExpectedType()`) provides a structural target (array, tuple, struct, or union).
+    - **Type Definitions**: If the context is `TYPE_TYPE`, literals resolve to concrete types immediately to avoid regressions in `const` type declarations.
+3. **Deferred Coercion**: If visited without context (or context is `anytype`), the literal remains in its anonymous state. It is resolved in `coerceNode` when a target type is finally known.
 4. **Re-visitation**: When `coerceNode` encounters an anonymous type, it triggers a re-visit of the underlying `ASTNode` using the target type as the explicit expected type context.
 5. **Updating**: The `ASTNode`'s `resolved_type` is updated in-place with the concrete resolved type (e.g., `TYPE_STRUCT`).
+
+#### 7.3 Tagged Union Coercion (Phase B)
+As of Phase B, `coerceNode` supports implicit coercion of naked tags (`.Variant`) and qualified tags (`Enum.Variant`) into tagged unions.
+- **Mechanism**: The tag is transformed into an anonymous union initializer `.{ .Variant }`.
+- **Constraint**: This coercion only succeeds if the target variant in the tagged union has a `void` payload.
+- **Errors**: If the variant requires a value or does not exist, a specific error is reported during the coercion phase.
 
 ### Benefits
 - **Predictable Behavior**: Real errors remain distinguishable from unresolved anonymous literals.

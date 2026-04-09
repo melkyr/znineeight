@@ -650,8 +650,13 @@ typedef unsigned char Color;
 ```
 
 #### Member Access
-Enum members use dot notation: `Color.Red`
-Type checking ensures member exists in enum.
+Enum members use dot notation: `Color.Red`. Type checking ensures the member exists in the enum.
+
+#### Tagged Union Coercion (Phase B)
+As of Phase B, enum members (qualified tags like `Color.Red` or naked tags like `.Red`) can be implicitly coerced to a tagged union if the target variant has a `void` payload.
+- **Naked Tags**: `.Red` is valid in a context where a tagged union (e.g., `ColorOrStatus`) is expected, provided `Red` is a variant of that union with no payload.
+- **Qualified Tags**: `Color.Red` is also valid for coercion if `Red` is a void variant in the target union.
+- **Error Handling**: If the tag exists but requires a payload, or if the tag does not exist in the union, a semantic error is reported.
 
 ### 4.8 Layer 7: PE Backend (`pe_builder.hpp`)
 **Goal:** Direct `.exe` generation (No `LINK.EXE` needed for Stage 2)
@@ -1199,11 +1204,12 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 In Zig, the `.{}` syntax is used for anonymous struct initializers, tuple literals, and array literals. Without type context (e.g., `const x: [3]i32 = .{ 1, 2, 3 };`), the compiler cannot determine which concrete type to represent. To handle this in a single-pass-friendly manner, the bootstrap compiler employs a deferred resolution pattern.
 
 ### 15.2 Implementation Strategy
-1. **Parsing**: When the parser encounters `.{ ... }`, it creates a `NODE_TUPLE_LITERAL` (for positional elements) or `NODE_STRUCT_INITIALIZER` (for named elements) and assigns it a specific anonymous type: `TYPE_ANONYMOUS_TUPLE`, `TYPE_ANONYMOUS_ARRAY`, or `TYPE_ANONYMOUS_INIT`.
-2. **Type Checking**:
+1. **Parsing**: When the parser encounters `.{ ... }`, it creates a `NODE_TUPLE_LITERAL` (for positional elements) or `NODE_STRUCT_INITIALIZER` (for named elements).
+2. **Type Checking (Phase A)**:
    - `visitTupleLiteral` and `visitStructInitializer` check for an "Expected Type" from the parent context (via `peekExpectedType()`).
    - If a structural context is available (e.g., an array, tuple, or struct type), the literal is resolved immediately to that type.
-   - If no context is available, the node remains in its anonymous state, storing its AST node and defining module.
+   - **Type Definition Context**: If the expected type is `TYPE_TYPE` (e.g., `const T = struct { ... }`), the literal resolves to a concrete aggregate type immediately.
+   - **Anonymous state**: If no context is available (or context is `anytype`), the node remains in its anonymous state (`TYPE_ANONYMOUS_TUPLE`, `TYPE_ANONYMOUS_INIT`), storing its AST node and defining module.
 3. **Deferred Resolution (Coercion)**:
    - During `coerceNode`, if the source node has an anonymous type, the compiler re-visits the node using the target type as the "Expected Type".
    - **Arrays**: Elements are coerced to the array's element type; length is verified.
