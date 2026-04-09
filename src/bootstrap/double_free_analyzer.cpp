@@ -498,11 +498,14 @@ void DoubleFreeAnalyzer::visitWhileStmt(ASTNode* node) {
     AllocationStateMap* loop_state = current_state_;
     popScope();
 
-    // Conservative: all variables modified in loop become AS_UNKNOWN
+    // Refined loop merging: only variables modified in the loop become AS_UNKNOWN.
+    // We already have loop_state->modified containing exactly those variables.
     if (current_state_) {
         for (size_t i = 0; i < loop_state->modified.length(); ++i) {
             const char* name = loop_state->modified[i];
-            TrackedPointer* tp = findTrackedPointer(name);
+            // Only affect variables that existed BEFORE the loop.
+            // If it was declared inside the loop, it will be checked for leaks at loop scope exit.
+            TrackedPointer* tp = current_state_->getState(name);
             if (tp) {
                 TrackedPointer next_tp = *tp;
                 next_tp.state = AS_UNKNOWN;
@@ -528,11 +531,11 @@ void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
     AllocationStateMap* loop_state = current_state_;
     popScope();
 
-    // Conservative: all variables modified in loop become AS_UNKNOWN
+    // Refined loop merging: only variables modified in the loop become AS_UNKNOWN.
     if (current_state_) {
         for (size_t i = 0; i < loop_state->modified.length(); ++i) {
             const char* name = loop_state->modified[i];
-            TrackedPointer* tp = findTrackedPointer(name);
+            TrackedPointer* tp = current_state_->getState(name);
             if (tp) {
                 TrackedPointer next_tp = *tp;
                 next_tp.state = AS_UNKNOWN;
@@ -948,7 +951,17 @@ bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
         ASTFunctionCallNode* call = node->as.function_call;
         if (call->callee->type == NODE_IDENTIFIER) {
             const char* name = call->callee->as.identifier.name;
-            return strings_equal(name, "arena_alloc") || strings_equal(name, "arena_alloc_default");
+            if (strings_equal(name, "arena_alloc") || strings_equal(name, "arena_alloc_default")) {
+                return true;
+            }
+        }
+
+        // Handle functions returning !*T as allocation calls
+        if (node->resolved_type && node->resolved_type->kind == TYPE_ERROR_UNION) {
+            Type* payload = node->resolved_type->as.error_union.payload;
+            if (payload && payload->kind == TYPE_POINTER) {
+                return true;
+            }
         }
     } else if (node->type == NODE_TRY_EXPR) {
         return isAllocationCall(node->as.try_expr.expression);
@@ -970,12 +983,19 @@ bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
 }
 
 bool DoubleFreeAnalyzer::isOwnershipTransferCall(ASTFunctionCallNode* call) {
-    RETR_UNUSED(call);
-    // For bootstrap: assume any function call that isn't arena_free
-    // and takes a pointer argument could be a transfer.
-    // In a more advanced analyzer, we would check the function signature
-    // or look for specific ownership-transferring patterns.
-    return true;
+    if (!call || call->callee->type != NODE_IDENTIFIER) return false;
+    const char* name = call->callee->as.identifier.name;
+
+    // List of known ownership-transferring functions
+    if (strings_equal(name, "arena_create") ||
+        strings_equal(name, "deep_copy") ||
+        strings_equal(name, "transfer_ownership")) {
+        return true;
+    }
+
+    // By default, assume unknown functions do NOT transfer ownership.
+    // This reduces false negatives (leaks not reported).
+    return false;
 }
 
 bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
@@ -988,7 +1008,7 @@ bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
     if (rvalue->type == NODE_PTR_CAST) return isChangingPointerValue(rvalue->as.ptr_cast->expr);
     if (isAllocationCall(rvalue)) return true; // Reassigning to a new allocation also loses track of old one
 
-    return false;
+    return true;
 }
 
 void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
@@ -998,6 +1018,24 @@ void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
     tp.scope_depth = current_scope_depth_;
     tp.flags = TP_FLAG_NONE;
     tp.alloc_loc = loc;
+
+    // For composite names like "s.ptr", try to find the scope depth of the base variable "s".
+    // This prevents false leaks if "s.ptr" is assigned in a nested scope but "s" is outer.
+    const char* dot = plat_strchr(name, '.');
+    if (dot) {
+        size_t base_len = dot - name;
+        char* base_name = (char*)unit_.getArena().alloc(base_len + 1);
+        if (base_name) {
+            plat_strncpy(base_name, name, base_len);
+            base_name[base_len] = '\0';
+            const char* interned_base = unit_.getStringInterner().intern(base_name);
+            TrackedPointer* base_tp = findTrackedPointer(interned_base);
+            if (base_tp) {
+                tp.scope_depth = base_tp->scope_depth;
+            }
+        }
+    }
+
     if (current_state_) {
         current_state_->addVariable(name, tp);
     }
@@ -1012,6 +1050,38 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
     if (!node) return NULL;
     if (node->type == NODE_IDENTIFIER) {
         return node->as.identifier.name;
+    }
+    if (node->type == NODE_MEMBER_ACCESS) {
+        const char* base_name = extractVariableName(node->as.member_access->base);
+        if (base_name) {
+            const char* field_name = node->as.member_access->field_name;
+            size_t len1 = plat_strlen(base_name);
+            size_t len2 = plat_strlen(field_name);
+            char* combined = (char*)unit_.getArena().alloc(len1 + len2 + 2);
+            if (combined) {
+                char* p = combined;
+                size_t rem = len1 + len2 + 2;
+                safe_append(p, rem, base_name);
+                safe_append(p, rem, ".");
+                safe_append(p, rem, field_name);
+                // Important: intern the composite name so identifiers_equal (pointer comparison) works!
+                return unit_.getStringInterner().intern(combined);
+            }
+        }
+    }
+    if (node->type == NODE_ARRAY_ACCESS) {
+        const char* base_name = extractVariableName(node->as.array_access->array);
+        if (base_name) {
+            size_t len = plat_strlen(base_name);
+            char* combined = (char*)unit_.getArena().alloc(len + 3);
+            if (combined) {
+                char* p = combined;
+                size_t rem = len + 3;
+                safe_append(p, rem, base_name);
+                safe_append(p, rem, "[]");
+                return unit_.getStringInterner().intern(combined);
+            }
+        }
     }
     return NULL;
 }

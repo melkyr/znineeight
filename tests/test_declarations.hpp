@@ -1183,3 +1183,10 @@ TEST_FUNC(IssueSegfaultReturn);
 TEST_FUNC(Phase3_ErrorUnionRecursion);
 
 #endif // TEST_DECLARATIONS_HPP
+
+// Batch 75: Double Free Aggregate Tracking
+bool test_DoubleFree_StructFieldTracking();
+bool test_DoubleFree_StructFieldLeak();
+bool test_DoubleFree_ArrayCollapseTracking();
+bool test_DoubleFree_ErrorUnionAllocation();
+bool test_DoubleFree_LoopMergingPreservesUnmodified();
