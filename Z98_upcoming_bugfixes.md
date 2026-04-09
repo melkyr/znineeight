@@ -1,3 +1,86 @@
+# Z98 Upcoming Bugfixes & Investigations
+
+## Investigation: Aggregate Initializer Lifting in Expression Contexts
+
+### Problem Description
+Currently, the Z98 compiler emits C99-style compound literals (e.g., `(struct S){.x = 1}`) or braced initializers (e.g., `{.tag = ...}`) directly at the call site when an aggregate (struct, union, tagged union, or array) is passed as a function argument. Standard C89 does not support compound literals or braced initializers in expression contexts; they are only permitted in variable declarations.
+
+### Minimal Reproduction
+The following Zig code demonstrates the issue:
+
+```zig
+const MyType = union(enum) {
+    A: i32,
+    B: f32,
+};
+
+const MyStruct = struct {
+    x: i32,
+    y: i32,
+};
+
+fn takeTaggedUnion(u: MyType) void { _ = u; }
+fn takeStruct(s: MyStruct) void { _ = s; }
+
+pub fn main() void {
+    // Both of these currently emit invalid C89
+    takeTaggedUnion(.{ .A = 42 });
+    takeStruct(.{ .x = 1, .y = 2 });
+}
+```
+
+### Observed Output (Invalid C89)
+The `C89Emitter` generates the following call sites:
+
+```c
+int main(void) {
+    zF_b3368a_takeTaggedUnion({.tag = zE_8aa302_MyType_Tag_A, .data = {.A = 42}});
+    zF_b3368a_takeStruct({1, 2});
+    return 0;
+}
+```
+
+Legacy compilers like MSVC 6.0 will reject this syntax with "error C2059: syntax error : '{'".
+
+### Proposed Fix Strategy
+
+The fix involves extending the `ControlFlowLifter` pass to treat aggregate initializers as "lifting candidates" when they appear in expression contexts that are not direct assignments or variable initializers.
+
+#### 1. Identification of Lifting Candidates
+Update `isControlFlowExpr` in `src/include/ast_utils.hpp` or create a new `isLiftingCandidate` helper to include aggregate literals:
+
+```cpp
+inline bool isLiftingCandidate(NodeType type) {
+    return isControlFlowExpr(type) ||
+           type == NODE_STRUCT_INITIALIZER ||
+           type == NODE_TUPLE_LITERAL;
+}
+```
+
+#### 2. Update `ControlFlowLifter`
+Modify `ControlFlowLifter::needsLifting` and `ControlFlowLifter::transformNode` to recognize these nodes. When an aggregate initializer is found in an "unsafe" context (like a function call argument), the lifter should:
+1.  Generate a unique temporary name (e.g., `__tmp_agg_1`).
+2.  Create a `NODE_VAR_DECL` for the temporary, using the aggregate initializer as the init expression.
+3.  Insert the declaration before the current statement.
+4.  Replace the initializer in the expression with an identifier referencing the temporary.
+
+#### 3. Leverage Existing Emitter Logic
+The `C89Emitter` already contains robust logic for "lifting" initializers in `emitLocalVarDecl` and `emitAssignmentWithLifting`. By lifting the aggregate to a temporary variable at the AST level, we ensure that:
+-   The emitter sees a simple `NODE_VAR_DECL`.
+-   `emitLocalVarDecl` will trigger `emitAssignmentWithLifting`.
+-   `emitAssignmentWithLifting` will correctly decompose the initializer into field-by-field assignments (e.g., `tmp.x = 1; tmp.y = 2;`), which is perfectly valid C89.
+
+### Impact on Emitter
+This change allows `C89Emitter::emitExpression` to be simplified. It can eventually report an internal error if it encounters a `NODE_STRUCT_INITIALIZER` or `NODE_TUPLE_LITERAL`, as the lifter should have already removed them from expression contexts.
+
+### Estimated Effort
+-   **Effort**: Low (1-2 hours)
+-   **Risk**: Low (Relies on proven lifting infrastructure)
+-   **Verification**: Batch 76 (to be created) should verify that all aggregate initializers in function arguments are lifted and decomposed.
+
+---
+
+[Previous content of Z98_upcoming_bugfixes.md continues here...]
 ## Issue 4: Loop State & Capture Sensitivity
 
 **Effort:** Low to Medium (2-4 hours) – this is a compiler bug that may affect some complex loops.
