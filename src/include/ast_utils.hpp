@@ -78,12 +78,14 @@ inline bool isControlFlowExpr(NodeType type) {
  */
 inline const char* getPrefixForType(NodeType type) {
     switch (type) {
-        case NODE_IF_EXPR:     return "if";
-        case NODE_SWITCH_EXPR: return "switch";
-        case NODE_TRY_EXPR:    return "try";
-        case NODE_CATCH_EXPR:  return "catch";
-        case NODE_ORELSE_EXPR: return "orelse";
-        default:               return "tmp";
+        case NODE_IF_EXPR:           return "if";
+        case NODE_SWITCH_EXPR:       return "switch";
+        case NODE_TRY_EXPR:          return "try";
+        case NODE_CATCH_EXPR:        return "catch";
+        case NODE_ORELSE_EXPR:       return "orelse";
+        case NODE_STRUCT_INITIALIZER: return "agg";
+        case NODE_TUPLE_LITERAL:      return "tup";
+        default:                     return "tmp";
     }
 }
 

@@ -52,7 +52,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
-      loop_has_continue_(unit.getTransientArena()) {
+      loop_has_continue_(unit.getTransientArena()),
+      allow_aggregate_literal_(false) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
@@ -70,7 +71,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
-      loop_has_continue_(unit.getTransientArena()) {
+      loop_has_continue_(unit.getTransientArena()),
+      allow_aggregate_literal_(false) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -90,7 +92,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
-      loop_has_continue_(unit.getTransientArena()) {
+      loop_has_continue_(unit.getTransientArena()),
+      allow_aggregate_literal_(false) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
@@ -474,7 +477,9 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
         if (type && type->kind == TYPE_OPTIONAL && decl->initializer->type == NODE_NULL_LITERAL) {
             writeString("{0}");
         } else {
+            allow_aggregate_literal_ = true;
             emitExpression(decl->initializer);
+            allow_aggregate_literal_ = false;
         }
         endStmt();
     } else {
@@ -962,7 +967,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                 } else {
                     /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
                     writeString(" = ");
+            allow_aggregate_literal_ = true;
                     emitExpression(decl->initializer);
+            allow_aggregate_literal_ = false;
                 }
             }
             endStmt();
@@ -2577,18 +2584,6 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             emitControlFlow(node);
             break;
 
-        case NODE_TUPLE_LITERAL: {
-            writeString("{");
-            DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
-            for (size_t i = 0; i < elements->length(); ++i) {
-                emitExpression((*elements)[i]);
-                if (i < elements->length() - 1) {
-                    writeString(", ");
-                }
-            }
-            writeString("}");
-            break;
-        }
         case NODE_UNREACHABLE:
             writeString("__bootstrap_panic((const char*)(\"reached unreachable\"), (const char*)(__FILE__), __LINE__)");
             break;
@@ -2763,7 +2758,27 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             emitExpression(node->as.compound_assignment->rvalue);
             writeString(")");
             break;
+        case NODE_TUPLE_LITERAL: {
+            if (!allow_aggregate_literal_) {
+                error_handler_.report(ERR_INTERNAL_ERROR, node->loc, "Internal error: tuple literal not lifted");
+                plat_abort();
+            }
+            writeString("{");
+            DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
+            for (size_t i = 0; i < elements->length(); ++i) {
+                emitExpression((*elements)[i]);
+                if (i < elements->length() - 1) {
+                    writeString(", ");
+                }
+            }
+            writeString("}");
+            break;
+        }
         case NODE_STRUCT_INITIALIZER: {
+            if (!allow_aggregate_literal_) {
+                error_handler_.report(ERR_INTERNAL_ERROR, node->loc, "Internal error: struct initializer not lifted");
+                plat_abort();
+            }
             if (!node->as.struct_initializer->fields || node->as.struct_initializer->fields->length() == 0) {
                 writeString("{0}");
                 break;
