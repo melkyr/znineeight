@@ -5,9 +5,9 @@
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
 | Total Test Batches | 77 | 77 |
-| Passed Batches | 73 | - |
-| Failed Batches | 4 | - |
-| Total Pass Rate | 94.8% | - |
+| Passed Batches | 66 | - |
+| Failed Batches | 11 | - |
+| Total Pass Rate | 85.7% | - |
 
 *Note: 32-bit values reflect the status using -m32 after Phase 3 Compatibility changes.*
 
@@ -24,21 +24,18 @@
 
 ## Detailed Breakdown of Failures (32-bit)
 
-### 1. Batch 27 (Local Variables)
-- **Status**: **PASS**
-- **Fix**: Updated test expectations in `codegen_local_tests.cpp` to reflect optimized (suppressed) `__loop_X_continue` labels.
-
-### 2. Batch 32 (Integration)
+### 1. Batch 32 (Integration)
 - **Status**: FAIL
 - **Reason**: Mismatch in end-to-end prime number verification output. Likely related to how `__bootstrap_print_int` or character literals are handled in the standard namespace. (Known issue, deferred).
 
-### 3. Batch 41 (For Loops)
-- **Status**: **PASS**
-- **Fix**: Updated `for_loop_tests.cpp` to match standardized temporary variable names and optimized labels. Fixed missing indentation in `emitFor`.
-
-### 4. Batch 52 (While Loops)
-- **Status**: **PASS**
-- **Fix**: Updated `task_9_8_verification_tests.cpp` to include `(void)` casts for compound assignments and reflect label optimization. Improved test runner with lenient whitespace matching.
+### 2. Phase C/D Aggregate Lifting Regressions (New)
+- **Failed Batches**: 44, 45, 46, 55, 58, 61, 74
+- **Reason**: Implementation of `ControlFlowLifter` aggregate lifting (Phase C) and `C89Emitter` hardening (Phase D).
+- **Details**:
+    - Tests expecting direct aggregate literals in expression contexts (e.g., function calls) now fail because these are lifted into `__tmp_agg_...` temporaries.
+    - Tests expecting C99 compound literals or braced initializers in assignments fail because the emitter now asserts against them or they are decomposed.
+    - Specific failures in `anon_init_tests.cpp` (Batch 74) and `error_handling_tests.cpp` (Batch 45) reflect the intended change toward strict C89 compliance.
+- **Status**: **DEFERRED** (Allocated for future fix in a separate task).
 
 ---
 

@@ -615,29 +615,48 @@ bool ControlFlowLifter::isAggregateType(Type* t) {
 }
 
 bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
-    if (!node) return false;
-    if (!parent) return false;
+    if (!node || !parent) return false;
 
-    // Only control-flow expressions can be lifted
-    if (!isControlFlowExpr(node->type)) return false;
+    // 1. Control-flow expressions always need lifting (unless they yield void)
+    if (isControlFlowExpr(node->type)) {
+        if (node->type == NODE_SWITCH_STMT) return false; // Statement form
 
-    // Skip parentheses to get the real semantic parent
-    const ASTNode* effective_parent = skipParens(parent);
-    if (!effective_parent) return false; // Root is always safe
-
-    // unreachable is already a valid statement if handled by the emitter.
-    // We don't need to lift it if it's already in a statement context.
-    if (node->type == NODE_UNREACHABLE) {
-        if (effective_parent->type == NODE_BLOCK_STMT ||
-            effective_parent->type == NODE_EXPRESSION_STMT ||
-            effective_parent->type == NODE_DEFER_STMT ||
-            effective_parent->type == NODE_ERRDEFER_STMT) {
-            return false;
+        if (node->resolved_type) {
+            TypeKind k = node->resolved_type->kind;
+            if (k == TYPE_VOID) return false;
         }
+
+        // Skip parentheses to get the real semantic parent
+        const ASTNode* effective_parent = skipParens(parent);
+        if (!effective_parent) return false; // Root is always safe
+
+        // unreachable is already a valid statement if handled by the emitter.
+        if (node->type == NODE_UNREACHABLE) {
+            if (effective_parent->type == NODE_BLOCK_STMT ||
+                effective_parent->type == NODE_EXPRESSION_STMT ||
+                effective_parent->type == NODE_DEFER_STMT ||
+                effective_parent->type == NODE_ERRDEFER_STMT) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
-    // Any control‑flow expression must be lifted for C89 compatibility.
-    return true;
+    // 2. Aggregate literals in expression contexts need lifting to avoid C99 compound literals.
+    if (node->type == NODE_STRUCT_INITIALIZER || node->type == NODE_TUPLE_LITERAL) {
+        // If the parent is a VarDecl and this node is its direct initializer, it's allowed in C89.
+        const ASTNode* effective_parent = skipParens(parent);
+        if (effective_parent && effective_parent->type == NODE_VAR_DECL) {
+            ASTVarDeclNode* vd = effective_parent->as.var_decl;
+            if (vd->initializer == node) {
+                return false; // keep as initializer
+            }
+        }
+        return true; // lift in all other contexts (function arguments, returns, assignments, etc.)
+    }
+
+    return false;
 }
 
 const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
@@ -1315,6 +1334,11 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     ASTNode* node = *node_slot;
     if (!node) return;
 
+    // Only lift inside functions
+    if (fn_stack_.length() == 0) {
+        return;
+    }
+
     const char* temp_name = generateTempName(prefix);
 
     ASTNode* var_decl_node = NULL;
@@ -1325,18 +1349,20 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
 
     Symbol* temp_sym = NULL;
     if (temp_type && temp_type->kind != TYPE_VOID) {
-        ASTNode* zero_init = NULL;
-        if (node->type == NODE_CATCH_EXPR) {
+        ASTNode* initializer = NULL;
+        if (node->type == NODE_STRUCT_INITIALIZER || node->type == NODE_TUPLE_LITERAL) {
+            initializer = node;
+        } else if (node->type == NODE_CATCH_EXPR) {
             if (isAggregateType(temp_type)) {
-                zero_init = createNodeAt(NODE_STRUCT_INITIALIZER, node->loc);
-                zero_init->as.struct_initializer = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
-                plat_memset(zero_init->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
-                zero_init->as.struct_initializer->fields = new (arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>))) DynamicArray<ASTNamedInitializer*>(*arena_);
+                initializer = createNodeAt(NODE_STRUCT_INITIALIZER, node->loc);
+                initializer->as.struct_initializer = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(initializer->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+                initializer->as.struct_initializer->fields = new (arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>))) DynamicArray<ASTNamedInitializer*>(*arena_);
             } else {
-                zero_init = createIntegerLiteral(0, temp_type, node->loc);
+                initializer = createIntegerLiteral(0, temp_type, node->loc);
             }
         }
-        var_decl_node = createVarDecl(temp_name, temp_type, zero_init, false);
+        var_decl_node = createVarDecl(temp_name, temp_type, initializer, false);
         temp_sym = var_decl_node->as.var_decl->symbol;
     } else {
         temp_sym = createSymbol(temp_name, get_g_type_void(), false);
@@ -1344,41 +1370,49 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
 
     DynamicArray<ASTNode*> lowering_stmts(*arena_);
 
-    switch (node->type) {
-        case NODE_IF_EXPR:
-            lowering_stmts.append(lowerIfExpr(node, temp_sym));
-            break;
-        case NODE_SWITCH_EXPR:
-            lowering_stmts.append(lowerSwitchExpr(node, temp_sym));
-            break;
-        case NODE_TRY_EXPR:
-            lowerTryExpr(node, temp_sym, lowering_stmts, needs_wrapping);
-            break;
-        case NODE_CATCH_EXPR:
-            lowerCatchExpr(node, temp_sym, lowering_stmts);
-            break;
-        case NODE_ORELSE_EXPR:
-            lowerOrelseExpr(node, temp_sym, lowering_stmts);
-            break;
-        default:
-            error_handler_->report(ERR_INTERNAL_ERROR, node->loc, "Unknown control-flow expression for lifting", NULL);
-            plat_abort();
+    bool is_aggregate = (node->type == NODE_STRUCT_INITIALIZER || node->type == NODE_TUPLE_LITERAL);
+
+    if (!is_aggregate) {
+        switch (node->type) {
+            case NODE_IF_EXPR:
+                lowering_stmts.append(lowerIfExpr(node, temp_sym));
+                break;
+            case NODE_SWITCH_EXPR:
+                lowering_stmts.append(lowerSwitchExpr(node, temp_sym));
+                break;
+            case NODE_TRY_EXPR:
+                lowerTryExpr(node, temp_sym, lowering_stmts, needs_wrapping);
+                break;
+            case NODE_CATCH_EXPR:
+                lowerCatchExpr(node, temp_sym, lowering_stmts);
+                break;
+            case NODE_ORELSE_EXPR:
+                lowerOrelseExpr(node, temp_sym, lowering_stmts);
+                break;
+            default:
+                error_handler_->report(ERR_INTERNAL_ERROR, node->loc, "Unknown expression for lifting", NULL);
+                plat_abort();
+        }
     }
 
-    if (block_stack_.length() > 0 && stmt_stack_.length() > 0) {
+    if (block_stack_.length() > 0) {
         ASTBlockStmtNode* current_block = block_stack_.back();
-        ASTNode* current_stmt = stmt_stack_.back();
-        int insert_idx = findStatementIndex(current_block, current_stmt);
+        int insert_idx = -1;
+        if (stmt_stack_.length() > 0) {
+            insert_idx = findStatementIndex(current_block, stmt_stack_.back());
+        }
 
-        if (insert_idx != -1) {
-            size_t offset = 0;
-            if (var_decl_node) {
-                current_block->statements->insert((size_t)insert_idx, var_decl_node);
-                offset = 1;
-            }
-            for (size_t i = 0; i < lowering_stmts.length(); ++i) {
-                current_block->statements->insert((size_t)insert_idx + offset + i, lowering_stmts[i]);
-            }
+        if (insert_idx == -1) {
+            insert_idx = (int)current_block->statements->length();
+        }
+
+        size_t offset = 0;
+        if (var_decl_node) {
+            current_block->statements->insert((size_t)insert_idx, var_decl_node);
+            offset = 1;
+        }
+        for (size_t i = 0; i < lowering_stmts.length(); ++i) {
+            current_block->statements->insert((size_t)insert_idx + offset + i, lowering_stmts[i]);
         }
     }
 
@@ -1413,12 +1447,14 @@ void ControlFlowLifter::formatSourceLocation(SourceLocation loc, char* buf, size
 
 const char* ControlFlowLifter::getPrefixForType(NodeType type) {
     switch (type) {
-        case NODE_IF_EXPR:     return "if";
-        case NODE_SWITCH_EXPR: return "switch";
-        case NODE_TRY_EXPR:    return "try";
-        case NODE_CATCH_EXPR:  return "catch";
-        case NODE_ORELSE_EXPR: return "orelse";
-        default:               return "tmp";
+        case NODE_IF_EXPR:           return "if";
+        case NODE_SWITCH_EXPR:       return "switch";
+        case NODE_TRY_EXPR:          return "try";
+        case NODE_CATCH_EXPR:        return "catch";
+        case NODE_ORELSE_EXPR:       return "orelse";
+        case NODE_STRUCT_INITIALIZER: return "agg";
+        case NODE_TUPLE_LITERAL:      return "tup";
+        default:                     return "tmp";
     }
 }
 

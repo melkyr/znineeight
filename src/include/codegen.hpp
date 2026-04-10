@@ -704,6 +704,8 @@ private:
     bool loop_uses_labels_[1024];
     DynamicArray<bool> loop_has_continue_;
 
+    bool allow_aggregate_literal_;
+
     // Prevent copying
     C89Emitter(const C89Emitter&);
     C89Emitter& operator=(const C89Emitter&);
