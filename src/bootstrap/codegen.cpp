@@ -514,7 +514,12 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
                 } else {
                     if (plat_strcmp(field_init->field_name, "is_error") == 0) f_type = get_g_type_bool();
                     else if (plat_strcmp(field_init->field_name, "err") == 0) f_type = get_g_type_i32();
-                    else if (plat_strcmp(field_init->field_name, "data") == 0) f_type = get_g_type_anytype();
+                    else if (plat_strcmp(field_init->field_name, "data") == 0) {
+                        if (type->kind == TYPE_ERROR_UNION) {
+                            f_type = type->as.error_union.data_type;
+                        }
+                        if (!f_type) f_type = get_g_type_anytype();
+                    }
                 }
 
                 emitAssignmentWithLifting(nested_name, NULL, field_init->value, f_type);
@@ -3287,18 +3292,30 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
         writeString("{\n");
         IndentScope struct_indent(*this);
         if (payload->kind != TYPE_VOID) {
-            writeIndent();
-            writeString("union {\n");
-            {
-                IndentScope union_indent(*this);
+            Type* data_type = type->as.error_union.data_type;
+            if (data_type && data_type->c_name) {
                 writeIndent();
-                emitType(payload, "payload");
-                endStmt();
+                writeKeyword(KW_UNION);
+                writeString(data_type->c_name);
+                writeString(" ");
+                emitUnionBody(data_type);
+                writeString(";\n");
+
+                writeFieldDecl(data_type, "data");
+            } else {
                 writeIndent();
-                writeString("int err;\n");
+                writeString("union {\n");
+                {
+                    IndentScope union_indent(*this);
+                    writeIndent();
+                    emitType(payload, "payload");
+                    endStmt();
+                    writeIndent();
+                    writeString("int err;\n");
+                }
+                writeIndent();
+                writeString("} data;\n");
             }
-            writeIndent();
-            writeString("} data;\n");
         } else {
             writeIndent();
             writeString("int err;\n");

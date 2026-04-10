@@ -617,6 +617,13 @@ bool ControlFlowLifter::isAggregateType(Type* t) {
 bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     if (!node || !parent) return false;
 
+    // [NEW] Don't lift synthetic anytype placeholders.
+    // These are internal coercion artifacts that must be resolved
+    // by their parent context before any lifting occurs.
+    if (node->resolved_type && node->resolved_type->kind == TYPE_ANYTYPE) {
+        return false;
+    }
+
     // 1. Control-flow expressions always need lifting (unless they yield void)
     if (isControlFlowExpr(node->type)) {
         if (node->type == NODE_SWITCH_STMT) return false; // Statement form
@@ -647,10 +654,29 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     if (node->type == NODE_STRUCT_INITIALIZER || node->type == NODE_TUPLE_LITERAL) {
         // If the parent is a VarDecl and this node is its direct initializer, it's allowed in C89.
         const ASTNode* effective_parent = skipParens(parent);
-        if (effective_parent && effective_parent->type == NODE_VAR_DECL) {
-            ASTVarDeclNode* vd = effective_parent->as.var_decl;
-            if (vd->initializer == node) {
-                return false; // keep as initializer
+        if (effective_parent) {
+            if (effective_parent->type == NODE_VAR_DECL) {
+                ASTVarDeclNode* vd = effective_parent->as.var_decl;
+                if (vd->initializer == node) {
+                    return false; // keep as initializer
+                }
+            }
+
+            // [NEW] Aggregate literals in return statements and assignments
+            // can be decomposed by the emitter into direct field assignments,
+            // which is both C89-compliant and avoids introducing temporaries
+            // that break existing tests.
+            if (effective_parent->type == NODE_RETURN_STMT ||
+                effective_parent->type == NODE_ASSIGNMENT) {
+                return false;
+            }
+
+            // [NEW] Nested aggregate literals do not need lifting because their parent's
+            // decomposition will handle them recursively. This also prevents lifting
+            // synthetic coercion artifacts that have concrete types.
+            if (effective_parent->type == NODE_STRUCT_INITIALIZER ||
+                effective_parent->type == NODE_TUPLE_LITERAL) {
+                return false;
             }
         }
         return true; // lift in all other contexts (function arguments, returns, assignments, etc.)
