@@ -7637,6 +7637,13 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         Type* payload = target_type->as.optional.payload;
         if (payload->kind == TYPE_PLACEHOLDER) payload = resolvePlaceholder(payload);
 
+        if (payload->kind != TYPE_VOID) {
+            // Ensure synthetic node has a concrete type instead of ANYTYPE
+            if (!node->resolved_type || node->resolved_type->kind == TYPE_ANYTYPE) {
+                node->resolved_type = payload;
+            }
+        }
+
         if (source_type->kind == TYPE_NULL) {
             /* null -> ?T: { .has_value = 0 } */
             ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
@@ -7732,7 +7739,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
                 plat_memset(data_init_node, 0, sizeof(ASTNode));
                 data_init_node->type = NODE_STRUCT_INITIALIZER;
                 data_init_node->loc = node->loc;
-                data_init_node->resolved_type = get_g_type_anytype();
+                data_init_node->resolved_type = getOrCreateErrorUnionDataType(target_type, node->loc);
                 data_init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
                 plat_memset(data_init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
 
@@ -7838,7 +7845,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
                 plat_memset(data_init_node, 0, sizeof(ASTNode));
                 data_init_node->type = NODE_STRUCT_INITIALIZER;
                 data_init_node->loc = node->loc;
-                data_init_node->resolved_type = get_g_type_anytype();
+                data_init_node->resolved_type = getOrCreateErrorUnionDataType(target_type, node->loc);
                 data_init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
                 plat_memset(data_init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
 
@@ -8210,3 +8217,55 @@ i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
     return (i64)unit_.getGlobalErrorRegistry().getOrAddTag(name);
 }
 
+Type* TypeChecker::createErrorUnionDataType(ArenaAllocator& arena, Type* error_union, SourceLocation loc) {
+    Type* data_union = (Type*)arena.alloc(sizeof(Type));
+    plat_memset(data_union, 0, sizeof(Type));
+    data_union->kind = TYPE_UNION;
+
+    void* fields_mem = arena.alloc(sizeof(DynamicArray<StructField>));
+    data_union->as.struct_details.fields = new (fields_mem) DynamicArray<StructField>(arena);
+
+    // .err field
+    Type* err_set = error_union->as.error_union.error_set;
+    if (!err_set) err_set = get_g_type_i32();
+
+    StructField err_field;
+    plat_memset(&err_field, 0, sizeof(StructField));
+    err_field.name = "err";
+    err_field.type = err_set;
+    err_field.size = err_set->size;
+    err_field.alignment = err_set->alignment;
+    data_union->as.struct_details.fields->append(err_field);
+
+    // .payload field
+    Type* payload = error_union->as.error_union.payload;
+    if (payload->kind != TYPE_VOID) {
+        StructField payload_field;
+        plat_memset(&payload_field, 0, sizeof(StructField));
+        payload_field.name = "payload";
+        payload_field.type = payload;
+        payload_field.size = payload->size;
+        payload_field.alignment = payload->alignment;
+        data_union->as.struct_details.fields->append(payload_field);
+    }
+
+    calculateStructLayout(data_union);
+
+    // Generate mangled name: __ErrorData_<payload>_<err_set>
+    const char* payload_mangled = unit_.getNameMangler().mangleType(payload);
+    const char* err_mangled = unit_.getNameMangler().mangleType(err_set);
+    char buf[256];
+    plat_snprintf(buf, sizeof(buf), "__ErrorData_%s_%s", payload_mangled, err_mangled);
+    data_union->c_name = unit_.getStringInterner().intern(buf);
+
+    return data_union;
+}
+
+Type* TypeChecker::getOrCreateErrorUnionDataType(Type* error_union, SourceLocation loc) {
+    if (error_union->as.error_union.data_type) {
+        return error_union->as.error_union.data_type;
+    }
+    Type* data_type = createErrorUnionDataType(unit_.getArena(), error_union, loc);
+    error_union->as.error_union.data_type = data_type;
+    return data_type;
+}
