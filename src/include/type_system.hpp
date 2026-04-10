@@ -147,6 +147,7 @@ struct Type {
             Type* payload;
             Type* error_set; // NULL for inferred
             bool is_inferred;
+            Type* data_type; // Cached concrete union type for .data field
         } error_union;
         struct {
             const char* name; // NULL for anonymous

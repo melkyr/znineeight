@@ -130,6 +130,8 @@ private:
     Type* unwrapType(ASTNode* node);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
+    Type* createErrorUnionDataType(ArenaAllocator& arena, Type* error_union, SourceLocation loc);
+    Type* getOrCreateErrorUnionDataType(Type* error_union, SourceLocation loc);
 public:
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
