@@ -225,6 +225,9 @@ struct Token {
     /** @brief The type of the token, as defined by the Zig0TokenType enum. */
     Zig0TokenType type;
 
+    /** @brief The error message if type is TOKEN_ERROR. */
+    const char* error_msg;
+
     /** @brief The location (file, line, column) where the token was found. */
     SourceLocation location;
 
@@ -253,7 +256,14 @@ struct Token {
         u32 character;
     } value;
 
-    Token() : type(TOKEN_ERROR), location() {
+    Token() : type(TOKEN_ERROR), error_msg(NULL), location() {
+        value.integer_literal.value = 0;
+        value.integer_literal.is_unsigned = false;
+        value.integer_literal.is_long = false;
+    }
+
+    Token(Zig0TokenType type, const char* msg, SourceLocation loc)
+        : type(type), error_msg(msg), location(loc) {
         value.integer_literal.value = 0;
         value.integer_literal.is_unsigned = false;
         value.integer_literal.is_long = false;
