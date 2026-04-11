@@ -127,6 +127,12 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
     }
     emitter.emitBufferedOptionals();
 
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        visited_types.clear();
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_TUPLES, visited_types);
+    }
+    emitter.emitBufferedTuples();
+
     // Pass 1.5: Private Type Definitions (Public types are in the .h file)
     for (size_t i = 0; i < stmts->length(); ++i) {
         if ((*stmts)[i]->type == NODE_VAR_DECL) {
@@ -642,7 +648,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
 
         /* Only emit the actual definition if this module owns the type.
            Types from other modules are already forward-declared or included via headers. */
-        if (t->owner_module == module || t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL) {
+        if (t->owner_module == module || t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL || t->kind == TYPE_TUPLE) {
             emitter.emitTypeDefinition(t);
             emitter.emitBufferedTypeDefinitions();
         }
@@ -723,6 +729,8 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
         emitter.ensureErrorUnionType(type);
     } else if ((kinds & SCAN_OPTIONALS) && type->kind == TYPE_OPTIONAL) {
         emitter.ensureOptionalType(type);
+    } else if ((kinds & SCAN_TUPLES) && type->kind == TYPE_TUPLE) {
+        emitter.ensureTupleType(type);
     }
 
     // Recurse based on kind

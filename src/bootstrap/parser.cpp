@@ -259,6 +259,15 @@ ASTNode* Parser::parsePrimaryExpr() {
             node->as.identifier.name = token.value.identifier;
             return node;
         }
+        case TOKEN_MEMBER_NUMBER: {
+            ASTNode* node = createNode(NODE_INTEGER_LITERAL);
+            advance();
+            node->as.integer_literal.value = token.value.integer_literal.value;
+            node->as.integer_literal.is_unsigned = true;
+            node->as.integer_literal.is_long = false;
+            node->as.integer_literal.resolved_type = NULL;
+            return node;
+        }
         case TOKEN_LPAREN: {
             advance(); // consume '('
             ASTNode* inner_expr = parseExpression();
@@ -273,14 +282,22 @@ ASTNode* Parser::parsePrimaryExpr() {
             if (peekNext().type == TOKEN_LBRACE) {
                 advance(); // consume '.'
                 return parseAnonymousLiteral();
-            } else if (peekNext().type == TOKEN_IDENTIFIER) {
+            } else if (peekNext().type == TOKEN_IDENTIFIER || peekNext().type == TOKEN_MEMBER_NUMBER) {
                 advance(); // consume '.'
-                Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier after '.'");
+                Token id_token = advance();
+                const char* field_name = NULL;
+                if (id_token.type == TOKEN_IDENTIFIER) {
+                    field_name = id_token.value.identifier;
+                } else {
+                    char buf[32];
+                    plat_i64_to_string(id_token.value.integer_literal.value, buf, sizeof(buf));
+                    field_name = interner_->intern(buf);
+                }
                 ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
                 if (!member_node) error("Out of memory");
                 plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
                 member_node->base = NULL;
-                member_node->field_name = id_token.value.identifier;
+                member_node->field_name = field_name;
                 member_node->symbol = NULL;
 
                 ASTNode* node = createNodeAt(NODE_MEMBER_ACCESS, id_token.location);
@@ -449,6 +466,23 @@ ASTNode* Parser::parsePostfixExpression() {
 
             ASTNode* new_expr_node = createNode(NODE_MEMBER_ACCESS);
             new_expr_node->loc = name_token.location;
+            new_expr_node->as.member_access = member_node;
+            expr = new_expr_node;
+        } else if (peek().type == TOKEN_MEMBER_NUMBER) {
+            // Tuple field access: tuple.0
+            Token token = advance();
+            char buf[32];
+            plat_i64_to_string(token.value.integer_literal.value, buf, sizeof(buf));
+            const char* field_name = interner_->intern(buf);
+
+            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+            if (!member_node) error("Out of memory");
+            plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
+            member_node->base = expr;
+            member_node->field_name = field_name;
+
+            ASTNode* new_expr_node = createNode(NODE_MEMBER_ACCESS);
+            new_expr_node->loc = token.location;
             new_expr_node->as.member_access = member_node;
             expr = new_expr_node;
         } else if (peek().type == TOKEN_LBRACE && (expr->type == NODE_IDENTIFIER || expr->type == NODE_TYPE_NAME || expr->type == NODE_MEMBER_ACCESS || expr->type == NODE_ARRAY_TYPE || expr->type == NODE_POINTER_TYPE)) {
@@ -1022,7 +1056,7 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
 ASTNode* Parser::parseAnonymousLiteral() {
     Token lbrace = expect(TOKEN_LBRACE, "Expected '{' to start anonymous literal");
 
-    if (peek().type == TOKEN_DOT && peekNext().type == TOKEN_IDENTIFIER) {
+    if (peek().type == TOKEN_DOT && (peekNext().type == TOKEN_IDENTIFIER || peekNext().type == TOKEN_MEMBER_NUMBER)) {
         // Named fields -> anonymous struct initializer
         ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
         if (!init_data) error("Out of memory");
@@ -1416,14 +1450,22 @@ ASTNode* Parser::parseStructDeclaration() {
             error("Methods are not supported in struct declarations in bootstrap compiler");
         }
 
-        Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct declaration");
-        if (!match(TOKEN_COLON)) {
-            error_handler_->report(ERR_EXPECTED_TYPE_FOR_FIELD, name_token.location,
-                                   "Structs require explicit type for every field",
-                                   "Sugar for ': void' is only allowed in tagged unions.");
-            error("Expected ':' after field name");
+        const char* field_name = NULL;
+        SourceLocation field_loc = peek().location;
+        ASTNode* type_node = NULL;
+
+        // Check if it's a named field or a tuple element
+        if (peek().type == TOKEN_IDENTIFIER && peekNext().type == TOKEN_COLON) {
+            Token name_token = advance();
+            field_name = name_token.value.identifier;
+            field_loc = name_token.location;
+            match(TOKEN_COLON);
+            type_node = parseType();
+        } else {
+            // Tuple element
+            type_node = parseType();
+            field_name = NULL; // NULL name indicates tuple element
         }
-        ASTNode* type_node = parseType();
 
         if (peek().type == TOKEN_EQUAL) {
             error("Default field values are not supported in bootstrap compiler");
@@ -1433,12 +1475,12 @@ ASTNode* Parser::parseStructDeclaration() {
         if (!field_data) {
             error("Out of memory");
         }
-        field_data->name = name_token.value.identifier;
-        field_data->name_loc = name_token.location;
+        field_data->name = field_name;
+        field_data->name_loc = field_loc;
         field_data->type = type_node;
 
         ASTNode* field_node = createNode(NODE_STRUCT_FIELD);
-        field_node->loc = name_token.location;
+        field_node->loc = field_loc;
         field_node->as.struct_field = field_data;
 
         struct_decl->fields->append(field_node);

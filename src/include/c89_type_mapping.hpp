@@ -129,6 +129,7 @@ static inline bool is_c89_compatible(Type* type) {
         case TYPE_UNION:
         case TYPE_TAGGED_UNION:
         case TYPE_ENUM:
+        case TYPE_TUPLE:
         case TYPE_PLACEHOLDER:
             return true;
 

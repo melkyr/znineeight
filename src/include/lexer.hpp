@@ -189,6 +189,7 @@ enum Zig0TokenType {
     TOKEN_DOT,              ///< '.' operator.
     TOKEN_DOT_ASTERISK,     ///< '.*' operator.
     TOKEN_DOT_QUESTION,     ///< '.?' operator.
+    TOKEN_MEMBER_NUMBER,    ///< '.0' operator (tuple field access).
     TOKEN_QUESTION,         ///< '?' operator.
     TOKEN_STAR2,            ///< '**' operator.
     TOKEN_PLUSPERCENT,      ///< '+%' operator.
