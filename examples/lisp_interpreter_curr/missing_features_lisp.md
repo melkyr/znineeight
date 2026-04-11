@@ -75,3 +75,9 @@ This document records the issues, bugs, and limitations discovered while attempt
 ### Mutable Slot for Recursion
 **Workaround**: `define` uses a two-step process: it first creates an environment node with a `Nil` placeholder, then evaluates the body, and finally updates the placeholder in-place.
 **Rationale**: This enables recursive closures (like `fact` calling `fact`) where the closure needs to capture an environment that already contains itself.
+
+## 6. Current Run Observations (Milestone 11 Verification)
+- **TCO Stability**: Verified. Handled `(even? 1000)` mutually recursive tail calls successfully.
+- **Memory Limits**: The 1MB temporary arena allows for approximately 2000-3000 recursive iterations in `countdown` before returning `OutOfMemory`. This is a known constraint of the bootstrap environment.
+- **Integer Safety**: Confirmed that `(fact 13)` triggers a runtime panic due to integer overflow, as expected for checked Z98 operations.
+- **Compiler Warnings**: Pedantic warnings remain for function pointer conversions in `eval.c` and `main.c` when interfacing with builtins. These are acceptable for the C89 bootstrap phase.
