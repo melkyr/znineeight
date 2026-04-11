@@ -1004,9 +1004,37 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         if (!node->args || node->args->length() != 2) {
             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "std.debug.print expects 2 arguments");
         } else {
-            visit((*node->args)[0]); /* format string */
-            /* The second argument (tuple) will be handled by the normal loop below,
-               relying on anytype parameter resolution in coerceNode. */
+            ASTNode* fmt_node = (*node->args)[0];
+            visit(fmt_node); /* format string */
+            
+            ASTNode* tuple_arg = (*node->args)[1];
+            /* visit tuple_arg to resolve its type if it's a literal */
+            Type* tuple_type = visit(tuple_arg);
+
+            if (fmt_node->type == NODE_STRING_LITERAL) {
+                const char* fmt = fmt_node->as.string_literal.value;
+                size_t placeholder_count = 0;
+                for (const char* p = fmt; *p; ++p) {
+                    if (*p == '{') {
+                        if (*(p+1) == '}' || (*(p+1) == 's' && *(p+2) == '}') || (*(p+1) == 'c' && *(p+2) == '}')) {
+                            placeholder_count++;
+                        }
+                    }
+                }
+
+                size_t tuple_len = 0;
+                if (tuple_type && tuple_type->kind == TYPE_TUPLE) {
+                    if (tuple_type->as.tuple.elements) {
+                        tuple_len = tuple_type->as.tuple.elements->length();
+                    }
+                }
+
+                if (placeholder_count != tuple_len) {
+                    char msg[256];
+                    plat_snprintf(msg, sizeof(msg), "Number of format placeholders (%d) does not match tuple length (%d)", (int)placeholder_count, (int)tuple_len);
+                    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
+                }
+            }
         }
     }
 
@@ -4769,16 +4797,33 @@ Type* TypeChecker::visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node)
         return tuple_type;
     }
 
-    /* Still anonymous: create TYPE_ANONYMOUS_TUPLE placeholder */
+    /* If no expected type, create a concrete TYPE_TUPLE. */
     if (!expected) {
+        void* mem;
+        DynamicArray<Type*>* element_types;
+        size_t i;
+        Type* t;
+
+        mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+        if (!mem) fatalError("Out of memory");
+        element_types = new (mem) DynamicArray<Type*>(unit_.getArena());
+
         if (node->elements) {
-            for (size_t i = 0; i < node->elements->length(); ++i) {
-                visit((*node->elements)[i]);
+            for (i = 0; i < node->elements->length(); ++i) {
+                ASTNode* elem = (*node->elements)[i];
+                if (!elem) {
+                    element_types->append(get_g_type_void());
+                    continue;
+                }
+                t = visit(elem);
+                if (!t || is_type_undefined(t)) return get_g_type_undefined();
+                element_types->append(t);
             }
         }
-        Type* anon = createAnonymousTupleType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
-        parent->resolved_type = anon;
-        return anon;
+
+        Type* tuple_type = createTupleType(unit_.getArena(), element_types);
+        parent->resolved_type = tuple_type;
+        return tuple_type;
     }
 
     return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "anonymous positional literal used where array or tuple was expected");
