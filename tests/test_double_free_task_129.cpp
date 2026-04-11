@@ -35,10 +35,10 @@ TEST_FUNC(DoubleFree_TransferTracking) {
 
     const char* source =
         "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
-        "fn unknown_func(p: *u8) -> void {}\n"
+        "fn arena_create(initial_size: usize) -> *void { return null; }\n"
         "fn my_func() -> void {\n"
         "    var p: *u8 = arena_alloc_default(100u);\n"
-        "    unknown_func(p);\n" // Ownership transferred
+        "    arena_create(@ptrToInt(p));\n" // Use whitelisted function for transfer
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);
