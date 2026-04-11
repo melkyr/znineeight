@@ -10,14 +10,20 @@ This example implements a console-based version of Conway's Game of Life using t
 - **Win32/C Interop**: Calls `system("cls")` and `Sleep(ms)` via `extern "c"`.
 
 ## Status
-**Experimental / Blocked**. While the code passes the Z98 type-checker, the generated C code currently requires C99 support for aggregate initializers in function calls (e.g., `set(..., Cell{ .Alive = {} })`).
+**Working**. The example now compiles and runs in 32-bit mode. The compiler successfully lifts aggregate initializers into temporary variables for C89 compatibility.
 
-See `missing_features_gol.md` for details on current limitations and workarounds.
+A known bug in the `C89Emitter` regarding pointers to fixed-size arrays requires using slices (`[]T`) instead of pointers to arrays (`*[N]T`) for function arguments.
 
-## Compilation (Future)
-Once the C89 emitter issues are resolved, it can be compiled using:
+## Linux Support
+A Linux-compatible version is provided in `main_lin.zig`. It uses `system("clear")` and `usleep`.
+
+## Compilation
+To compile and run on Linux:
 ```bash
-../../zig0 main.zig -o out/
-cd out && bash build_target.sh
+../../zig0 main_lin.zig -o out_lin/
+cd out_lin/
+gcc -m32 -std=c89 -I. -I../../../src/include main_lin.c builtin.c std.c std_debug.c zig_runtime.c -o app
 ./app
 ```
+
+On Windows, use `main.zig` and the provided `build_target.bat`.

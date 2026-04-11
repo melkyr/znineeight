@@ -8,20 +8,21 @@ The compiler currently requires an `else` prong for all `switch` expressions and
 - **Goal:** Allow omitting `else` when the compiler can prove exhaustiveness.
 
 ## 2. Tagged Union Coercion in Expressions
-The compiler does not currently support implicit coercion from an enum tag (e.g., `Cell.Alive`) to its corresponding tagged union type (`Cell`) when used inside control-flow expressions like `if`.
-- **Workaround used:** Used explicit struct initializers: `Cell{ .Alive = {} }`.
-- **Goal:** Support `next_state = if (cond) .Alive else .Dead`.
+Implicit coercion from an enum tag (e.g., `.Alive`) to its corresponding tagged union type (`Cell`) is partially implemented but unstable in complex expressions or assignments.
+- **Status:** Experimental. Using naked tags like `.Alive` currently often results in the compiler emitting only the enum tag instead of the full union structure, leading to C type mismatches.
+- **Workaround used:** Continued use of explicit struct initializers: `Cell{ .Alive = {} }`.
+- **Goal:** Robustly support `next_state = if (cond) .Alive else .Dead` and direct assignments.
 
-## 3. C89 Compatibility: Aggregate Initializers as Arguments (CRITICAL BLOCKER)
-When an aggregate (struct/union) initializer is passed directly as a function argument, the `C89Emitter` currently generates C99-style compound literals:
-```c
-zF_set(..., {.tag = zE_Alive}); // Error: C99 syntax in C89 mode
-```
-C89 does not support anonymous aggregate literals in expressions.
-- **Status:** This is the primary blocker preventing the example from compiling with MSVC 6.0 or `gcc -std=c89`.
-- **Required Fix:** The compiler must lift these initializers into temporary variables and pass the variables to the function.
+## 3. C89 Compatibility: Aggregate Initializers as Arguments
+When an aggregate (struct/union) initializer is passed directly as a function argument, the `C89Emitter` used to generate C99-style compound literals.
+- **Status:** RESOLVED. The compiler now lifts these initializers into temporary variables and passes the variables to the function, ensuring C89 compatibility.
 
 ## 4. Multi-dimensional Slice/Array Handling
 Passing 2D arrays or slices of slices is currently unstable or unsupported in the bootstrap compiler's 32-bit/m32 target mode.
 - **Workaround used:** A flat 1D array (`[800]Cell`) with manual indexing (`y * WIDTH + x`) was used for the grid to ensure stability.
 - **Goal:** Improve support for multi-dimensional aggregates and slices.
+
+## 5. C89 Codegen: Pointer to Array Type Mismatch
+When passing a pointer to a fixed-size array (e.g., `*[800]Cell`) to a function, the `C89Emitter` incorrectly generates code that passes the address of the first element as a `Cell*` instead of `Cell(*)[800]`, leading to a type mismatch in the generated C.
+- **Workaround:** Use slices (`[]Cell`) instead of pointers to fixed-size arrays.
+- **Goal:** Fix pointer-to-array decomposition in `C89Emitter`.
