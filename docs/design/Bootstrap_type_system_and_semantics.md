@@ -304,6 +304,7 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `null`                  | `?T`                   | ✓           | `null` compatible with all optional types.                         |
 | `[]T`                   | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `.ptr`).               |
 | `[N]T`                  | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `&arr[0]`).            |
+| `tuple`                 | `tuple`                | ✓           | Structural equality matching.                                      |
 
 
 ## 4. Semantic Analysis
@@ -492,6 +493,10 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
 - **Braces Optional**: Braces are optional for `if`, `while`, `for`, `defer`, and `errdefer` statement bodies. Single statements are normalized into blocks during the lifting pass.
+- **Tuple Support**: Full support for tuple types (`struct { T1, T2 }`) and literals (`.{ a, b }`).
+    - **Numeric Access**: Fields are accessed via `t.0`, `t.1`, etc.
+    - **C89 Representation**: Lowered to C structs with `field0`, `field1` members.
+    - **Empty Tuples**: Represented as a struct with a dummy byte to ensure non-zero size.
 
 ### Enum Type Declarations
 
