@@ -96,9 +96,15 @@ Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
     }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_TUPLE;
-    new_type->size = 0; // Not used for runtime storage in bootstrap
-    new_type->alignment = 0;
     new_type->as.tuple.elements = elements;
+
+    calculateTupleLayout(new_type);
+
+    if (elements) {
+        for (size_t i = 0; i < elements->length(); ++i) {
+            registerDependent(arena, (*elements)[i], new_type);
+        }
+    }
     return new_type;
 }
 
@@ -805,6 +811,14 @@ void refreshLayout(Type* t) {
                 t->alignment = t->as.enum_details.backing_type->alignment;
             }
             break;
+        case TYPE_TUPLE:
+            if (t->as.tuple.elements) {
+                for (size_t i = 0; i < t->as.tuple.elements->length(); ++i) {
+                    refreshLayout((*t->as.tuple.elements)[i]);
+                }
+            }
+            calculateTupleLayout(t);
+            break;
         default:
             break;
     }
@@ -858,6 +872,39 @@ void calculateTaggedUnionLayout(Type* type) {
     if (type->alignment > 0 && type->size % type->alignment != 0) {
         type->size += (type->alignment - (type->size % type->alignment));
     }
+}
+
+void calculateTupleLayout(Type* tuple_type) {
+    if (tuple_type->kind != TYPE_TUPLE) return;
+    DynamicArray<Type*>* elements = tuple_type->as.tuple.elements;
+    if (!elements || elements->length() == 0) {
+        tuple_type->size = 1; // dummy member
+        tuple_type->alignment = 1;
+        return;
+    }
+
+    size_t current_offset = 0;
+    size_t max_alignment = 1;
+
+    for (size_t i = 0; i < elements->length(); ++i) {
+        Type* elem = (*elements)[i];
+        size_t align = elem->alignment;
+        if (align == 0) align = 1;
+
+        if (current_offset % align != 0) {
+            current_offset += (align - (current_offset % align));
+        }
+
+        current_offset += elem->size;
+        if (align > max_alignment) max_alignment = align;
+    }
+
+    if (current_offset % max_alignment != 0) {
+        current_offset += (max_alignment - (current_offset % max_alignment));
+    }
+
+    tuple_type->size = current_offset;
+    tuple_type->alignment = max_alignment;
 }
 
 void calculateStructLayout(Type* struct_type) {
