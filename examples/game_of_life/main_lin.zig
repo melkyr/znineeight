@@ -1,7 +1,7 @@
 const std = @import("std.zig");
 
 extern "c" fn system(s: *const c_char) i32;
-extern "c" fn Sleep(ms: u32) void;
+extern "c" fn usleep(usec: u32) i32;
 
 const Cell = union(enum) {
     Dead,
@@ -21,7 +21,7 @@ pub fn main() !void {
     // Initialize grid
     var i: usize = 0;
     while (i < 800) {
-        grid[i] = Cell{ .Dead = {} };
+        grid[i] = Cell.Dead;
         i += 1;
     }
 
@@ -36,7 +36,7 @@ pub fn main() !void {
     var gen: u32 = 0;
     while (gen < 100) {
         // Clear screen
-        _ = system("cls"); // For Windows. On Unix use "clear"
+        _ = system("clear");
 
         // Print grid
         var y: usize = 0;
@@ -65,7 +65,7 @@ pub fn main() !void {
                 const neighbors = countNeighbors(s_grid, x, y);
                 const current = get(s_grid, x, y);
 
-                const next_state = switch (current) {
+                const next_state: Cell = switch (current) {
                     .Alive => if (neighbors < 2 or neighbors > 3) Cell{ .Dead = {} } else Cell{ .Alive = {} },
                     .Dead => if (neighbors == 3) Cell{ .Alive = {} } else Cell{ .Dead = {} },
                     else => unreachable,
@@ -84,7 +84,7 @@ pub fn main() !void {
         }
 
         gen += 1;
-        Sleep(100);
+        _ = usleep(100000);
     }
 }
 
