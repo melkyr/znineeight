@@ -412,6 +412,12 @@ void calculateStructLayout(Type* struct_type);
  */
 void calculateTaggedUnionLayout(Type* tagged_union_type);
 
+/**
+ * @brief Calculates the layout of a tuple type.
+ * @param tuple_type The tuple type to calculate the layout for.
+ */
+void calculateTupleLayout(Type* tuple_type);
+
 void updateArrayLayout(Type* t);
 void updateOptionalLayout(Type* t);
 void updateErrorUnionLayout(Type* t);
