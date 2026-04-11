@@ -97,7 +97,8 @@ private:
         SCAN_SLICES = 1,
         SCAN_ERROR_UNIONS = 2,
         SCAN_OPTIONALS = 4,
-        SCAN_ALL = 7
+        SCAN_TUPLES = 8,
+        SCAN_ALL = 15
     };
 
     CompilationUnit& unit_;

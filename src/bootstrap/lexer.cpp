@@ -565,7 +565,7 @@ Token Lexer::nextToken() {
         return token;
     }
 
-    if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
+    if (isdigit(c)) {
         return lexNumericLiteral();
     }
 
@@ -725,7 +725,7 @@ Token Lexer::nextToken() {
             break;
         }
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
-        case '.': // Handles '.', '..', '...', '.*', '.?'
+        case '.': // Handles '.', '..', '...', '.*', '.?', '.0'
             if (match('.')) {
                 if (match('.')) {
                     token.type = TOKEN_ELLIPSIS;
@@ -736,6 +736,15 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_DOT_ASTERISK;
             } else if (match('?')) {
                 token.type = TOKEN_DOT_QUESTION;
+            } else if (isdigit(*this->current)) {
+                u64 value = 0;
+                while (isdigit(*this->current)) {
+                    value = value * 10 + (*this->current - '0');
+                    this->current++;
+                    this->column++;
+                }
+                token.type = TOKEN_MEMBER_NUMBER;
+                token.value.integer_literal.value = value;
             } else {
                 token.type = TOKEN_DOT;
             }

@@ -1011,6 +1011,14 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             /* visit tuple_arg to resolve its type if it's a literal */
             Type* tuple_type = visit(tuple_arg);
 
+            if (tuple_type && tuple_type->kind != TYPE_TUPLE && tuple_type->kind != TYPE_ANYTYPE) {
+                char t_str[64];
+                typeToString(tuple_type, t_str, sizeof(t_str));
+                char msg[256];
+                plat_snprintf(msg, sizeof(msg), "std.debug.print second argument must be a tuple, found '%s'", t_str);
+                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, tuple_arg->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
+            }
+
             if (fmt_node->type == NODE_STRING_LITERAL) {
                 const char* fmt = fmt_node->as.string_literal.value;
                 size_t placeholder_count = 0;
@@ -1654,6 +1662,18 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 
     if (base->kind == TYPE_FUNCTION_POINTER) {
         return reportAndReturnUndefined(node->array->loc, ERR_INDEX_FUNCTION_POINTER, NULL);
+    }
+
+    if (base->kind == TYPE_TUPLE) {
+        i64 index_value;
+        if (evaluateConstantExpression(node->index, &index_value)) {
+            if (index_value < 0 || (size_t)index_value >= base->as.tuple.elements->length()) {
+                return reportAndReturnUndefined(node->index->loc, ERR_TYPE_MISMATCH, "Tuple index out of bounds");
+            }
+            return (*base->as.tuple.elements)[index_value];
+        } else {
+            return reportAndReturnUndefined(node->index->loc, ERR_TYPE_MISMATCH, "Tuple index must be a compile-time constant");
+        }
     }
 
     if (base->kind != TYPE_ARRAY && base->kind != TYPE_SLICE) {
@@ -3700,6 +3720,7 @@ Type* TypeChecker::transformExternType(Type* t) {
             return payload;
         }
     }
+
     return t;
 }
 
@@ -3892,9 +3913,39 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
     if (!node->fields) return get_g_type_undefined();
 
+    bool all_anonymous = true;
+    for (i = 0; i < node->fields->length(); ++i) {
+        if ((*node->fields)[i]->as.struct_field->name != NULL) {
+            all_anonymous = false;
+            break;
+        }
+    }
+
+    if (all_anonymous && node->fields->length() > 0) {
+        // Resolve to TYPE_TUPLE
+        void* tup_mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+        DynamicArray<Type*>* element_types = new (tup_mem) DynamicArray<Type*>(unit_.getArena());
+
+        for (i = 0; i < node->fields->length(); ++i) {
+            ASTNode* field_node = (*node->fields)[i];
+            ASTStructFieldNode* field_data = field_node->as.struct_field;
+            Type* field_type = unwrapType(field_data->type);
+            if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+                field_type = resolvePlaceholder(field_type);
+            }
+            if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
+            element_types->append(field_type);
+        }
+
+        Type* tuple_type = createTupleType(unit_.getArena(), element_types);
+        parent->resolved_type = tuple_type;
+        return tuple_type;
+    }
+
     /* 1. Check for duplicate field names. */
     for (i = 0; i < node->fields->length(); ++i) {
         const char* name = (*node->fields)[i]->as.struct_field->name;
+        if (!name) continue;
         for (j = i + 1; j < node->fields->length(); ++j) {
             if (identifiers_equal(name, (*node->fields)[j]->as.struct_field->name)) {
                 return reportAndReturnUndefined((*node->fields)[j]->loc, ERR_REDEFINITION, "duplicate field name in struct");
@@ -4369,6 +4420,28 @@ after_module_handling:
             parent->as.integer_literal.resolved_type = get_g_type_usize();
             parent->resolved_type = get_g_type_usize();
             return get_g_type_usize();
+        }
+    }
+
+    /* Tuple field access (t.0, t.1, etc.) */
+    if (base_type->kind == TYPE_TUPLE && !is_type_access) {
+        const char* field_name = node->field_name;
+        int index = -1;
+
+        if (isdigit(field_name[0])) {
+            index = 0;
+            for (const char* p = field_name; *p; ++p) {
+                if (*p < '0' || *p > '9') { index = -1; break; }
+                index = index * 10 + (*p - '0');
+            }
+        }
+
+        if (index >= 0 && base_type->as.tuple.elements) {
+            if ((size_t)index < base_type->as.tuple.elements->length()) {
+                return (*base_type->as.tuple.elements)[index];
+            } else {
+                return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, "tuple index out of bounds");
+            }
         }
     }
 
