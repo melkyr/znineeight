@@ -66,7 +66,6 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -87,7 +86,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
-      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -500,6 +499,8 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
     if (!type) return;
 
+    const ASTStructInitializerNode* init = (init_node->type == NODE_STRUCT_INITIALIZER) ? init_node->as.struct_initializer : NULL;
+
     if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE || type->kind == TYPE_TUPLE) {
         if (type->kind == TYPE_TUPLE) {
             if (init_node->type != NODE_TUPLE_LITERAL) return;
@@ -516,7 +517,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
         if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
             /* Handle ErrorUnion and Optional special structures */
-            const ASTStructInitializerNode* init = init_node->as.struct_initializer;
+            if (!init) return;
             for (size_t j = 0; j < init->fields->length(); ++j) {
                 ASTNamedInitializer* field_init = (*init->fields)[j];
                 char nested_name[256];
@@ -557,7 +558,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 #endif
             /* Emit tag assignment */
             const char* field_name = NULL;
-            if (init->fields->length() > 0) {
+            if (init && init->fields->length() > 0) {
                 field_name = (*init->fields)[0]->field_name;
             } else {
                 return;
@@ -703,6 +704,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             }
         }
     } else if (type->kind == TYPE_ARRAY) {
+        if (!init) return;
         for (size_t i = 0; i < init->fields->length(); ++i) {
             ASTNode* val = (*init->fields)[i]->value;
             char idx_str[32];
@@ -3056,6 +3058,21 @@ void C89Emitter::emitAccess(const ASTNode* node) {
         case NODE_ARRAY_ACCESS: {
             const ASTNode* array_node = node->as.array_access->array;
             Type* array_type = array_node->resolved_type;
+
+            if (array_type && array_type->kind == TYPE_TUPLE) {
+                emitBaseWithParens(array_node);
+                writeString(".field");
+                i64 index;
+                if (evaluateSimpleConstant(node->as.array_access->index, &index)) {
+                    char buf[16];
+                    plat_i64_to_string(index, buf, sizeof(buf));
+                    writeString(buf);
+                } else {
+                    writeString("0 /* non-constant tuple index */");
+                }
+                break;
+            }
+
             bool is_ptr_to_array = (array_type && array_type->kind == TYPE_POINTER &&
                                     array_type->as.pointer.base->kind == TYPE_ARRAY);
             bool is_slice = (array_type && array_type->kind == TYPE_SLICE);
@@ -3114,6 +3131,27 @@ void C89Emitter::emitAccess(const ASTNode* node) {
             const ASTNode* base = node->as.member_access->base;
             if (base->resolved_type) {
                 Type* actual_type = base->resolved_type;
+
+                if (actual_type->kind == TYPE_TUPLE && actual_type->kind != TYPE_TYPE) {
+                    const char* field_name = member->field_name;
+                    int index = -1;
+                    if (isdigit(field_name[0])) {
+                        index = 0;
+                        for (const char* p = field_name; *p; ++p) {
+                            if (*p < '0' || *p > '9') { index = -1; break; }
+                            index = index * 10 + (*p - '0');
+                        }
+                    }
+
+                    if (index >= 0) {
+                        emitBaseWithParens(member->base);
+                        writeString(actual_type->kind == TYPE_POINTER ? "->field" : ".field");
+                        char buf[16];
+                        plat_i64_to_string(index, buf, sizeof(buf));
+                        writeString(buf);
+                        return;
+                    }
+                }
 
                 if (actual_type->kind == TYPE_ERROR_SET) {
                     writeString("ERROR_");

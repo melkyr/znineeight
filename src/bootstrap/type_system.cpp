@@ -88,6 +88,8 @@ Type* createModuleType(ArenaAllocator& arena, const char* name) {
     return new_type;
 }
 
+static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent);
+
 Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
     if (!elements) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -1274,13 +1276,15 @@ bool isTypeComplete(Type* type) {
         case TYPE_TAGGED_UNION:
             return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
 
+        case TYPE_TUPLE:
+            return type->alignment >= 1 && type->as.tuple.elements != NULL;
+
         case TYPE_PLACEHOLDER:
         case TYPE_INTEGER_LITERAL:
         case TYPE_ANYTYPE:
         case TYPE_TYPE:
         case TYPE_UNDEFINED:
         case TYPE_MODULE:
-        case TYPE_TUPLE:
         case TYPE_ANONYMOUS_INIT:
         case TYPE_ANONYMOUS_ARRAY:
         case TYPE_ANONYMOUS_TUPLE:
@@ -1427,6 +1431,19 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             } else {
                 safe_append(current, remaining, "error{...}");
             }
+            break;
+        }
+        case TYPE_TUPLE: {
+            safe_append(current, remaining, ".{");
+            if (type->as.tuple.elements) {
+                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
+                    typeToStringInternal((*type->as.tuple.elements)[i], current, remaining);
+                    if (i < type->as.tuple.elements->length() - 1) {
+                        safe_append(current, remaining, ", ");
+                    }
+                }
+            }
+            safe_append(current, remaining, "}");
             break;
         }
         case TYPE_OPTIONAL: {
@@ -1594,6 +1611,17 @@ bool areTypesEqual(Type* a, Type* b) {
                 if ((*members_a)[i].value != (*members_b)[i].value) return false;
             }
             return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
+        }
+
+        case TYPE_TUPLE: {
+            DynamicArray<Type*>* elements_a = a->as.tuple.elements;
+            DynamicArray<Type*>* elements_b = b->as.tuple.elements;
+            if (!elements_a || !elements_b) return elements_a == elements_b;
+            if (elements_a->length() != elements_b->length()) return false;
+            for (size_t i = 0; i < elements_a->length(); ++i) {
+                if (!areTypesEqual((*elements_a)[i], (*elements_b)[i])) return false;
+            }
+            return true;
         }
 
         case TYPE_ANONYMOUS_INIT:

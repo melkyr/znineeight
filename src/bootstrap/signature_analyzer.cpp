@@ -193,6 +193,7 @@ bool SignatureAnalyzer::isTypeC89Compatible(Type* type, SourceLocation loc, bool
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_TAGGED_UNION:
+        case TYPE_TUPLE:
             if (!isTypeComplete(type)) {
                 error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE),
                                       unit_.getArena(), "Incomplete struct/union type in function signature");
