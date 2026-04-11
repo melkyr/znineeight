@@ -412,8 +412,7 @@ Token Lexer::lexNumericLiteral() {
     if (*start == '.') {
         this->current++;
         this->column++;
-        token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
-        return token;
+        return Token(TOKEN_ERROR, "float literal must have leading digit", token.location);
     }
 
     bool is_hex = false;
@@ -565,7 +564,10 @@ Token Lexer::nextToken() {
         return token;
     }
 
-    if (isdigit(c)) {
+    if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
+        if (c == '.') {
+            return Token(TOKEN_ERROR, "float literal must have leading digit", token.location);
+        }
         return lexNumericLiteral();
     }
 
@@ -725,7 +727,7 @@ Token Lexer::nextToken() {
             break;
         }
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
-        case '.': // Handles '.', '..', '...', '.*', '.?', '.0'
+        case '.': // Handles '.', '..', '...', '.*', '.?'
             if (match('.')) {
                 if (match('.')) {
                     token.type = TOKEN_ELLIPSIS;
