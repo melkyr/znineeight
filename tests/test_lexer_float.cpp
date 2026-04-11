@@ -3,6 +3,7 @@
 #include "source_manager.hpp"
 #include "memory.hpp"
 #include "string_interner.hpp"
+#include "test_utils.hpp"
 
 #include <cmath> // For fabs
 
