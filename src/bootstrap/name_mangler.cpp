@@ -228,6 +228,28 @@ const char* NameMangler::mangleType(Type* type) {
             }
             return interner_.intern(buf);
         }
+        case TYPE_TUPLE: {
+            if (type->c_name) return type->c_name;
+            DynamicArray<Type*>* elements = type->as.tuple.elements;
+            if (!elements || elements->length() == 0) {
+                type->c_name = interner_.intern("Tuple_empty");
+                return type->c_name;
+            }
+
+            u32 hash = 2166136261u;
+            for (size_t i = 0; i < elements->length(); ++i) {
+                const char* elem_name = mangleType((*elements)[i]);
+                for (const char* p = elem_name; *p; ++p) {
+                    hash ^= (u8)*p;
+                    hash *= 16777619u;
+                }
+            }
+
+            char buf[64];
+            plat_snprintf(buf, sizeof(buf), "Tuple_%08x", hash);
+            type->c_name = interner_.intern(buf);
+            return type->c_name;
+        }
         default: return "type";
     }
 }
