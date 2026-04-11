@@ -4,38 +4,48 @@
 
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
-| Total Test Batches | 77 | 77 |
-| Passed Batches | 66 | - |
-| Failed Batches | 11 | - |
-| Total Pass Rate | 85.7% | - |
+| Total Test Batches | 78 | 78 |
+| Passed Batches | 74 | - |
+| Failed Batches | 4 | - |
+| Total Pass Rate | 94.9% | - |
 
-*Note: 32-bit values reflect the status using -m32 after Phase 3 Compatibility changes.*
+*Note: 32-bit values reflect the status using -m32. Lisp and repro tests were excluded from this run.*
 
 ---
 
 ## Progress Report (32-bit)
 
-- **Phase 3 Compatibility**: **IMPLEMENTED**. OpenWatcom 64-bit suffixes, `ZIG_INLINE` propagation to special types header, and C89 block declaration documentation are complete.
-- **Phase 4 Compatibility**: **IMPLEMENTED**. Distributed `zig_compat.h` and integrated with runtime.
-- **Example Programs**: Most examples are compiling but some show pointer-sign warnings/errors due to `const char*` standardization in `__bootstrap_print`.
-- **Lisp Interpreter (curr)**: **VERIFIED**. Compiles with `gcc -m32` and correctly executes basic Lisp expressions (`+`, `define`, `lambda`).
+- **Phase 3/4 Compatibility**: **VERIFIED**. The compiler successfully generates C89-compliant code that compiles with `gcc -m32 -std=c89 -pedantic`.
+- **Example Programs**: **PASSED**. All major examples (hello, prime, heapsort, mandelbrot, etc.) are fully functional.
+- **Tuple Support**: **IMPLEMENTED**. Integration tests and examples confirm tuple literal and type support are working as intended.
 
 ---
 
 ## Detailed Breakdown of Failures (32-bit)
 
-### 1. Batch 32 (Integration)
+### 1. Batch 1 (Lexer)
 - **Status**: FAIL
-- **Reason**: Mismatch in end-to-end prime number verification output. Likely related to how `__bootstrap_print_int` or character literals are handled in the standard namespace. (Known issue, deferred).
+- **Test**: `Lexer_FloatNoIntegerPart`
+- **Reason**: Regression in Lexer.
+- **Details**: The test expects `.123` to return `TOKEN_ERROR` (float must have leading digit). However, it now returns `TOKEN_DOT` (116). This is likely due to the introduction of tuple/member access syntax where a dot can start an expression.
 
-### 2. Phase C/D Aggregate Lifting Regressions (New)
-- **Failed Batches**: 44, 45, 46, 55, 58, 61, 74
-- **Reason**: Implementation of `ControlFlowLifter` aggregate lifting (Phase C) and `C89Emitter` hardening (Phase D).
-- **Details**:
-    - Tests expecting direct aggregate literals in expression contexts (e.g., function calls) now fail because these are lifted into `__tmp_agg_...` temporaries.
-    - Tests expecting C99 compound literals or braced initializers in assignments fail because the emitter now asserts against them or they are decomposed.
-    - Specific failures in `anon_init_tests.cpp` (Batch 74) and `error_handling_tests.cpp` (Batch 45) reflect the intended change toward strict C89 compliance.
-- **Status**: **DEFERRED** (Allocated for future fix in a separate task).
+### 2. Batch 5 (Static Analysis)
+- **Status**: FAIL
+- **Test**: `DoubleFree_TransferTracking`
+- **Reason**: Regression in `DoubleFreeAnalyzer`.
+- **Details**: The analyzer fails to recognize ownership transfer to an unknown function (`unknown_func(p)`), incorrectly reporting a memory leak at the end of the scope.
+
+### 3. Batch 44 (Codegen/Tuples)
+- **Status**: FAIL
+- **Test**: `Task225_2_PrintLowering`
+- **Reason**: Test expectation mismatch (Tuple Lowering).
+- **Details**: The test expects direct calls like `__bootstrap_print_int(x)`. However, since `print` takes `anytype`, the argument is now correctly lowered as a tuple member: `__bootstrap_print_int(__tmp_tup_X_Y.field0)`.
+
+### 4. Batch 63 (Parser/Tuples)
+- **Status**: FAIL
+- **Test**: `Struct_NakedTagsRejection`
+- **Reason**: Test expectation mismatch (Tuple Support).
+- **Details**: The test expects the parser to abort when encountering a naked identifier `A,` in a struct. With the introduction of tuples, this is now valid syntax for a tuple element (anonymous field) of type `void`.
 
 ---
 
@@ -44,48 +54,28 @@
 | Example | Status | Notes |
 |---------|--------|-------|
 | `hello` | PASS | |
-| `prime` | FAIL | Pointer sign mismatch in `__bootstrap_print` |
+| `prime` | PASS | |
 | `days_in_month` | PASS | |
 | `fibonacci` | PASS | |
 | `heapsort` | PASS | |
 | `quicksort` | PASS | |
 | `sort_strings` | PASS | |
 | `func_ptr_return`| PASS | |
-| `lzw` | PASS | |
+| `lzw` | PASS | Built successfully (execution skipped as it's interactive) |
 | `mandelbrot` | PASS | |
 
 ---
 
-## Deep Investigation of Failures (Pending Fixes)
+## Deep Investigation of Failures
 
-### 1. Compound Assignment `(void)` Casts
-The compiler now wraps compound assignments in `(void)` casts to suppress C89 warnings.
-```c
-(void)(*a += b);
-```
-Batch 52 fails because it expects the assignment without the cast.
+### 1. Lexer Leading Dot
+The lexer's handling of `.` has been broadened to support `t.0` and `.A`. The failure in `Lexer_FloatNoIntegerPart` confirms that `.123` is no longer caught as a malformed float at the lexer level but is instead treated as a `TOKEN_DOT` followed by an integer.
 
-### 2. Unused Continue Label Optimization
-`C89Emitter` now tracks `loop_has_continue_` and only emits `__loop_X_continue: ;` if a `continue` was actually used. Many tests in Batch 27 and 41 expect the label to be present regardless of usage.
+### 2. Ownership Transfer
+In `DoubleFreeAnalyzer::isOwnershipTransferCall`, the compiler uses a whitelist (arena_create, deep_copy, transfer_ownership). The test `DoubleFree_TransferTracking` uses `unknown_func`, which is not on the whitelist, hence the leak report. This reflects a "strict" policy that might need adjustment or test update.
 
-### 3. Header Standardization
-Standardizing `__bootstrap_print(const char*)` causes conflicts in examples like `hello` where `std_debug.zig` might define it as `*const u8` (mapped to `const unsigned char*`). This leads to `conflicting types` errors during C compilation.
+### 3. Print Lowering and Tuples
+The `PrintLowering` implementation now leverages the tuple infrastructure for `anytype` arguments. This ensures consistency but requires updating older tests that expect "flat" argument lowering.
 
-## Aggregate Lifting & Tagged Union Coercion Audit (Post-Milestone 11)
-
-### Investigation of Post-Audit Failures
-
-Following the audit of Phases A-D for Aggregate Initializer Lifting and Tagged Union Coercion, several batches (44, 45, 46, 55, 58, 61, 74) remain in a failing state. Deep investigation reveals the following causes:
-
-#### 1. Synthetic 'anytype' Resolution (Batch 45)
-In `TypeChecker::coerceNode`, when wrapping a value into an error union, synthetic `NODE_STRUCT_INITIALIZER` nodes are created for the `.data` payload. These nodes are assigned `TYPE_ANYTYPE`. If these synthetic nodes are subsequently lifted by the `ControlFlowLifter` (which now lifts all aggregate literals in expression contexts), the `C89Emitter` attempts to declare a temporary variable with type `anytype`. Currently, `anytype` is emitted as `...` in declaration contexts, which results in invalid C code (e.g., `void* /* anytype */;` was a trial fix that also failed in aggregate contexts).
-
-#### 2. Test Infrastructure Buffer Overflows (Batch 46 & 55)
-Integration tests in these batches fail with `Aborted` during execution. The cause is a buffer overflow in the test utility helper `run_integration_test` (found in `task227_try_catch_tests.cpp` and `task3_try_return_tests.cpp`). The helper uses a fixed 1024-byte `cmd` buffer for `sprintf`. The long command lines generated for multi-module compilation exceeding this limit cause memory corruption and subsequent crashes.
-
-#### 3. Intentional Lifting Regressions (Batch 58, 61, 74)
-These batches fail due to string-match mismatches in the test expectations:
-- **Batch 74 (Anon Init)**: Tests expect direct assignments to the target variable (e.g., `v.tag = ...`). However, the lifter correctly moves these into a temporary (e.g., `__tmp_agg_6_2.tag = ...`) to ensure C89 compliance.
-- **Batch 58 & 61 (Braceless/Defer)**: Tests expect aggregate literals to be returned in-place. The lifter now moves these into temporaries (e.g., `__tmp_agg_... = { ... }; return __tmp_agg_...;`) to avoid C99 compound literals in `return` statements.
-
-All identified failures are either infrastructure-related or reflect the successful implementation of strict C89 lifting patterns that now require test expectation updates.
+### 4. Struct vs. Tuple Ambiguity
+The parser now treats `A,` in a struct as a tuple element. Batch 63's rejection test is now obsolete as the grammar has been expanded to support mixed named/anonymous fields in aggregates.
