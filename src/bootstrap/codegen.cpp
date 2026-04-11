@@ -46,7 +46,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
-      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -65,7 +65,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
-      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -359,6 +360,11 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_ERROR_SET:
             writeString(KW_INT);
             break;
+        case TYPE_TUPLE:
+            ensureTupleType(type);
+            writeKeyword(KW_STRUCT);
+            writeString(unit_.getNameMangler().mangleType(type));
+            break;
         case TYPE_STRUCT:
             if (!type->c_name && type->as.struct_details.name) {
                 type->c_name = unit_.getNameMangler().mangleType(type);
@@ -488,13 +494,26 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
 }
 
 void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode* init_node) {
-    if (!init_node || init_node->type != NODE_STRUCT_INITIALIZER) return;
-    const ASTStructInitializerNode* init = init_node->as.struct_initializer;
+    if (!init_node) return;
+    if (init_node->type != NODE_STRUCT_INITIALIZER && init_node->type != NODE_TUPLE_LITERAL) return;
     Type* type = init_node->resolved_type;
 
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE || type->kind == TYPE_TUPLE) {
+        if (type->kind == TYPE_TUPLE) {
+            if (init_node->type != NODE_TUPLE_LITERAL) return;
+            DynamicArray<ASTNode*>* elements = init_node->as.tuple_literal->elements;
+            if (!elements) return;
+            for (size_t i = 0; i < elements->length(); ++i) {
+                char nested_name[256];
+                plat_snprintf(nested_name, sizeof(nested_name), "%s.field%d", base_name, (int)i);
+                Type* f_type = (*type->as.tuple.elements)[i];
+                emitAssignmentWithLifting(nested_name, NULL, (*elements)[i], f_type);
+            }
+            return;
+        }
+
         if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
             /* Handle ErrorUnion and Optional special structures */
             const ASTStructInitializerNode* init = init_node->as.struct_initializer;
@@ -744,6 +763,14 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
                     }
                 }
                 break;
+            case NODE_TUPLE_LITERAL:
+                if (rvalue->as.tuple_literal->elements) {
+                    DynamicArray<ASTNode*>* elements = rvalue->as.tuple_literal->elements;
+                    for (size_t i = 0; i < elements->length(); ++i) {
+                        emitAssignmentWithLifting(NULL, NULL, (*elements)[i], NULL);
+                    }
+                }
+                break;
             default:
                 writeIndent();
                 writeString("(void)(");
@@ -785,7 +812,7 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     }
 
     /* Initializer Lifting */
-    if (rvalue->type == NODE_STRUCT_INITIALIZER) {
+    if (rvalue->type == NODE_STRUCT_INITIALIZER || rvalue->type == NODE_TUPLE_LITERAL) {
         if (!rvalue->resolved_type && target_type) {
             ((ASTNode*)rvalue)->resolved_type = target_type;
         }
@@ -1763,6 +1790,12 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
     DynamicArray<ASTNode*>* elements = (tuple_node->type == NODE_TUPLE_LITERAL) ?
                                       tuple_node->as.tuple_literal->elements : NULL;
 
+    size_t tuple_len = 0;
+    Type* tuple_type = tuple_node->resolved_type;
+    if (tuple_type && tuple_type->kind == TYPE_TUPLE && tuple_type->as.tuple.elements) {
+        tuple_len = tuple_type->as.tuple.elements->length();
+    }
+
     size_t element_idx = 0;
     const char* start = fmt;
     const char* p = fmt;
@@ -1801,16 +1834,26 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
                 }
 
                 /* Print the element */
-                if (elements && element_idx < elements->length()) {
+                if (element_idx < tuple_len) {
                     writeIndent();
                     writeString(call_fn);
                     writeString("(");
                     if (plat_strcmp(call_fn, "__bootstrap_print") == 0) {
                         writeString("(const char*)(");
+                    }
+                    
+                    if (elements) {
                         emitExpression((*elements)[element_idx]);
-                        writeString(")");
                     } else {
-                        emitExpression((*elements)[element_idx]);
+                        /* Access field of tuple variable: tuple_name.field0 */
+                        emitExpression(tuple_node);
+                        char field_name[32];
+                        plat_snprintf(field_name, sizeof(field_name), ".field%d", (int)element_idx);
+                        writeString(field_name);
+                    }
+
+                    if (plat_strcmp(call_fn, "__bootstrap_print") == 0) {
+                        writeString(")");
                     }
                     writeString(");\n");
                     element_idx++;
@@ -2768,15 +2811,19 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 error_handler_.report(ERR_INTERNAL_ERROR, node->loc, "Internal error: tuple literal not lifted");
                 plat_abort();
             }
-            writeString("{");
-            DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
-            for (size_t i = 0; i < elements->length(); ++i) {
-                emitExpression((*elements)[i]);
-                if (i < elements->length() - 1) {
-                    writeString(", ");
+            if (!node->as.tuple_literal->elements || node->as.tuple_literal->elements->length() == 0) {
+                writeString("{0}");
+            } else {
+                writeString("{");
+                DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
+                for (size_t i = 0; i < elements->length(); ++i) {
+                    emitExpression((*elements)[i]);
+                    if (i < elements->length() - 1) {
+                        writeString(", ");
+                    }
                 }
+                writeString("}");
             }
-            writeString("}");
             break;
         }
         case NODE_STRUCT_INITIALIZER: {
@@ -3372,6 +3419,79 @@ void C89Emitter::emitBufferedTypeDefinitions() {
         write(type_def_buffer_, type_def_pos_);
         type_def_pos_ = 0;
     }
+}
+
+void C89Emitter::ensureTupleType(Type* type) {
+    if (!type || type->kind != TYPE_TUPLE) return;
+
+    const char* mangled_name = unit_.getNameMangler().mangleType(type);
+
+    /* Check per-module cache first */
+    for (size_t i = 0; i < emitted_tuples_.length(); ++i) {
+        if (plat_strcmp(emitted_tuples_[i], mangled_name) == 0) return;
+    }
+
+    /* Check external cache (global) only if not in header mode. */
+    if (!is_header_ && external_cache_) {
+        for (size_t j = 0; j < external_cache_->length(); ++j) {
+            if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
+        }
+    }
+
+    emitted_tuples_.append(mangled_name);
+    if (external_cache_) {
+        bool already_in_external = false;
+        for (size_t k = 0; k < external_cache_->length(); ++k) {
+            if (plat_strcmp((*external_cache_)[k], mangled_name) == 0) {
+                already_in_external = true;
+                break;
+            }
+        }
+        if (!already_in_external) {
+            external_cache_->append(mangled_name);
+        }
+    }
+
+    bool was_in_type_def = in_type_def_mode_;
+    in_type_def_mode_ = true;
+
+    writeString("#ifndef ZIG_TUPLE_");
+    writeString(mangled_name);
+    writeString("\n#define ZIG_TUPLE_");
+    writeString(mangled_name);
+    writeLine();
+
+    writeIndent();
+    writeKeyword(KW_STRUCT);
+    writeString(mangled_name);
+    writeString(" ");
+    {
+        writeString("{\n");
+        IndentScope struct_indent(*this);
+        DynamicArray<Type*>* elements = type->as.tuple.elements;
+        if (!elements || elements->length() == 0) {
+            writeIndent();
+            writeString("char __dummy;\n");
+        } else {
+            for (size_t i = 0; i < elements->length(); ++i) {
+                char field_name[32];
+                plat_snprintf(field_name, sizeof(field_name), "field%d", (int)i);
+                writeIndent();
+                emitType((*elements)[i], field_name);
+                endStmt();
+            }
+        }
+        dedent();
+        writeIndent();
+        writeString("};\n");
+    }
+
+    writeString("#endif\n");
+    in_type_def_mode_ = was_in_type_def;
+}
+
+void C89Emitter::emitBufferedTuples() {
+    emitBufferedTypeDefinitions();
 }
 
 void C89Emitter::emitBufferedSlices() {
