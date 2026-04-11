@@ -494,6 +494,12 @@ public:
     void ensureOptionalType(Type* type);
 
     /**
+     * @brief Ensures a tuple type is defined.
+     * @param type The tuple type.
+     */
+    void ensureTupleType(Type* type);
+
+    /**
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
@@ -511,6 +517,7 @@ public:
     void emitBufferedSlices();
     void emitBufferedErrorUnions();
     void emitBufferedOptionals();
+    void emitBufferedTuples();
 
     /**
      * @brief Emits deferred statements for a scope exit.
@@ -681,6 +688,7 @@ private:
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
+    DynamicArray<const char*> emitted_tuples_;
     DynamicArray<const char*> emitted_enums_;
     DynamicArray<const char*> emitted_forward_decls_;
     DynamicArray<const char*>* external_cache_;
