@@ -1,3 +1,4 @@
+static int plat_atoi(const char* str);
 #include "codegen.hpp"
 #include "compilation_unit.hpp"
 #include "ast_utils.hpp"
@@ -2458,7 +2459,14 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
             return true;
         }
         case NODE_STRUCT_INITIALIZER: {
-            if (node->resolved_type && node->resolved_type->kind == TYPE_ARRAY) return false;
+            if (node->resolved_type && node->resolved_type->kind == TYPE_ARRAY) {
+                DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
+                if (!fields) return true;
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    if (!isConstantInitializer((*fields)[i]->value)) return false;
+                }
+                return true;
+            }
             DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
             for (size_t i = 0; i < fields->length(); ++i) {
                 if (!isConstantInitializer((*fields)[i]->value)) return false;
@@ -2878,12 +2886,18 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 error_handler_.report(ERR_INTERNAL_ERROR, node->loc, "Internal error: struct initializer not lifted");
                 plat_abort();
             }
+
+            Type* struct_type = node->resolved_type;
+            if (struct_type && struct_type->kind == TYPE_ARRAY) {
+                emitArrayInitializer(node->as.struct_initializer, struct_type);
+                break;
+            }
+
             if (!node->as.struct_initializer->fields || node->as.struct_initializer->fields->length() == 0) {
                 writeString("{0}");
                 break;
             }
             writeString("{");
-            Type* struct_type = node->resolved_type;
             if (struct_type && isTaggedUnion(struct_type)) {
                 const ASTStructInitializerNode* init = node->as.struct_initializer;
 #ifdef DEBUG_TAGGED_UNION
@@ -5075,4 +5089,55 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
             }
         }
     }
+}
+
+void C89Emitter::emitArrayInitializer(const ASTStructInitializerNode* init, Type* array_type) {
+    u64 size = array_type->as.array.size;
+    // Build an array of ASTNode* values, default to NULL
+    ASTNode** values = (ASTNode**)transient_arena_.alloc(size * sizeof(ASTNode*));
+    for (u64 i = 0; i < size; ++i) {
+        values[i] = NULL;
+    }
+
+    // Populate from initializer fields
+    if (init->fields) {
+        for (size_t i = 0; i < init->fields->length(); ++i) {
+            ASTNamedInitializer* field = (*init->fields)[i];
+            // Field name is like "_0", "_1", etc.
+            if (field->field_name && field->field_name[0] == '_') {
+                int index = plat_atoi(field->field_name + 1);
+                if (index >= 0 && (u64)index < size) {
+                    values[index] = field->value;
+                }
+            }
+        }
+    }
+
+    writeString("{");
+    for (u64 i = 0; i < size; ++i) {
+        if (values[i]) {
+            emitExpression(values[i]);
+        } else {
+            writeString("0");  // Default for missing fields
+        }
+        if (i < size - 1) {
+            writeString(", ");
+        }
+    }
+    writeString("}");
+}
+
+static int plat_atoi(const char* str) {
+    if (!str) return 0;
+    int res = 0;
+    int sign = 1;
+    if (*str == '-') {
+        sign = -1;
+        str++;
+    }
+    while (*str >= '0' && *str <= '9') {
+        res = res * 10 + (*str - '0');
+        str++;
+    }
+    return res * sign;
 }
