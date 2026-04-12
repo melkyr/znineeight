@@ -1053,13 +1053,17 @@ ASTNode* Parser::parseAnonymousLiteral() {
     bool is_struct = false;
     if (peek().type == TOKEN_DOT) {
         if (peekNext().type == TOKEN_IDENTIFIER) {
-            // Check if there's an '=' after the identifier
-            if (peekAhead(2).type == TOKEN_EQUAL) {
+            Token after = peekAhead(2);
+            // Cases: .field = value   OR   .field ,   OR   .field }
+            if (after.type == TOKEN_EQUAL) {
+                is_struct = true;
+            } else if (after.type == TOKEN_COMMA || after.type == TOKEN_RBRACE) {
+                // Naked tag with no value -> still a struct initializer field
                 is_struct = true;
             }
         } else if (peekNext().type == TOKEN_INTEGER_LITERAL) {
-            // Tuple numeric member access .0 is NOT a struct field
-            // But .0 = value is (though rare/invalid in Zig, we check for '=' consistency)
+            // Tuple numeric field .0 = value is not standard Zig; treat as tuple
+            // except if it's explicitly .0 = ...
             if (peekAhead(2).type == TOKEN_EQUAL) {
                 is_struct = true;
             }
