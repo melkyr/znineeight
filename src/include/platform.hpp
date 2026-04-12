@@ -9,6 +9,8 @@
 #include <windows.h>
 #endif
 
+// Utility functions
+int plat_atoi(const char* str);
 // Memory allocation
 void* plat_alloc(size_t size);
 void plat_free(void* ptr);
