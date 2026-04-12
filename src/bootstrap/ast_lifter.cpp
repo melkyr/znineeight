@@ -598,21 +598,6 @@ bool ControlFlowLifter::isOptionalPointer(Type* t) {
     return payload->kind == TYPE_POINTER || payload->kind == TYPE_FUNCTION_POINTER;
 }
 
-bool ControlFlowLifter::isAggregateType(Type* t) {
-    if (!t) return false;
-    switch (t->kind) {
-        case TYPE_STRUCT:
-        case TYPE_UNION:
-        case TYPE_TAGGED_UNION:
-        case TYPE_SLICE:
-        case TYPE_OPTIONAL:
-        case TYPE_ERROR_UNION:
-        case TYPE_ARRAY:
-            return true;
-        default:
-            return false;
-    }
-}
 
 bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     if (!node || !parent) return false;
