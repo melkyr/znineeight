@@ -172,6 +172,14 @@ bool TypeChecker::is_type_undefined(Type* t) {
     return !t || (t->kind == TYPE_UNDEFINED);
 }
 
+bool TypeChecker::isAmbiguousTag(ASTNode* node) {
+    if (!node) return false;
+    /* Naked tags (.Tag) are ambiguous without a target type.
+       Qualified tags (Type.Tag) are NOT ambiguous as they have a concrete enum type. */
+    if (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL) return true;
+    return false;
+}
+
 void TypeChecker::registerPlaceholders(ASTNode* root) {
     if (!root || root->type != NODE_BLOCK_STMT) return;
 
@@ -2176,7 +2184,6 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
             then_type = visit(node->then_expr);
         }
     }
-    if (!then_type || is_type_undefined(then_type)) return get_g_type_undefined();
 
     if (!node->else_expr) return get_g_type_undefined();
     Type* else_type = NULL;
@@ -2184,6 +2191,16 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
         ExpectedTypeGuard guard(*this, expected);
         else_type = visit(node->else_expr);
     }
+
+    /* Distribute Tagged Union Coercion BEFORE unification */
+    if (expected && isTaggedUnion(expected)) {
+        coerceNode(&node->then_expr, expected);
+        coerceNode(&node->else_expr, expected);
+        then_type = node->then_expr->resolved_type;
+        else_type = node->else_expr->resolved_type;
+    }
+
+    if (!then_type || is_type_undefined(then_type)) return get_g_type_undefined();
     if (!else_type || is_type_undefined(else_type)) return get_g_type_undefined();
 
     if (then_type->kind == TYPE_NORETURN) return else_type;
@@ -3055,9 +3072,11 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 
             /* If we have an expected type, try to coerce now to resolve anonymous initializers early.
                This must happen while the capture scope (if any) is still active. */
-            if (is_expr && expected_type && is_type_undefined(prong_type)) {
-                coerceNode(&prong->body, expected_type);
-                prong_type = prong->body->resolved_type;
+            if (is_expr && expected_type) {
+                if (is_type_undefined(prong_type) || isTaggedUnion(expected_type)) {
+                    coerceNode(&prong->body, expected_type);
+                    prong_type = prong->body->resolved_type;
+                }
             }
         }
 
@@ -3420,10 +3439,24 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             if (is_type_undefined(initializer_type)) {
                 /* If it's the literal 'undefined', it's not an error.
                    Also allow anonymous initializers and naked tags to proceed to coercion. */
-                if (node->initializer->type != NODE_UNDEFINED_LITERAL &&
-                    node->initializer->type != NODE_STRUCT_INITIALIZER &&
-                    node->initializer->type != NODE_TUPLE_LITERAL &&
-                    !(node->initializer->type == NODE_MEMBER_ACCESS && node->initializer->as.member_access->base == NULL)) {
+                bool can_defer = (node->initializer->type == NODE_UNDEFINED_LITERAL ||
+                                  node->initializer->type == NODE_STRUCT_INITIALIZER ||
+                                  node->initializer->type == NODE_TUPLE_LITERAL ||
+                                  (node->initializer->type == NODE_MEMBER_ACCESS && node->initializer->as.member_access->base == NULL));
+
+                /* [Task Fix] Allow if/switch expressions to return TYPE_UNDEFINED initially
+                   when a declared aggregate type is present. This enables coercion to guide them. */
+                if (!can_defer && declared_type &&
+                    (node->initializer->type == NODE_IF_EXPR || node->initializer->type == NODE_SWITCH_EXPR)) {
+                    if (isTaggedUnion(declared_type) ||
+                        declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION ||
+                        declared_type->kind == TYPE_ARRAY || declared_type->kind == TYPE_TUPLE ||
+                        declared_type->kind == TYPE_ERROR_UNION || declared_type->kind == TYPE_OPTIONAL) {
+                        can_defer = true;
+                    }
+                }
+
+                if (!can_defer) {
                     return get_g_type_undefined();
                 }
             }
@@ -4428,7 +4461,7 @@ after_module_handling:
         const char* field_name = node->field_name;
         int index = -1;
 
-        if (isdigit(field_name[0])) {
+        if (field_name[0] >= '0' && field_name[0] <= '9') {
             index = 0;
             for (const char* p = field_name; *p; ++p) {
                 if (*p < '0' || *p > '9') { index = -1; break; }
@@ -7547,7 +7580,24 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     if (target_type->kind == TYPE_PLACEHOLDER) {
         target_type = resolvePlaceholder(target_type);
     }
+
     ASTNode* node = *node_slot;
+
+    /* Guard against ambiguous tags when no target union is available */
+    if (isAmbiguousTag(node) && (!target_type || !isTaggedUnion(target_type))) {
+        char msg[256];
+        if (node->type == NODE_MEMBER_ACCESS) {
+            plat_snprintf(msg, sizeof(msg), "Ambiguous naked tag '.%s': missing target tagged union type",
+                         node->as.member_access->field_name);
+        } else {
+            plat_snprintf(msg, sizeof(msg), "Ambiguous tag '%s': missing target tagged union type",
+                         node->as.integer_literal.original_name);
+        }
+        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->loc, msg);
+        --recursion_depth;
+        return;
+    }
+
     Type* source_type = node->resolved_type;
     if (!source_type) {
         ExpectedTypeGuard guard(*this, target_type);

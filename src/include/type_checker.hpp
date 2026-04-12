@@ -86,6 +86,7 @@ public:
 
     Type* reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg);
     bool is_type_undefined(Type* t);
+    bool isAmbiguousTag(ASTNode* node);
 
     // Public for TDD
     bool IsTypeAssignableTo(Type* source, Type* target, SourceLocation loc, ASTNode* source_node = NULL);
