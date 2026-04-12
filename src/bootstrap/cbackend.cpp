@@ -4,6 +4,7 @@
 #include "platform.hpp"
 #include "utils.hpp"
 #include "text_writer.hpp"
+#include "ast_utils.hpp"
 
 CBackend::CBackend(CompilationUnit& unit) : unit_(unit), executable_name_(NULL), generated_sources_(unit.getArena()) {}
 
@@ -670,15 +671,15 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
             if ((*stmts)[i]->type == NODE_VAR_DECL) {
                 ASTVarDeclNode* decl = (*stmts)[i]->as.var_decl;
                 if (decl->is_pub && !decl->is_extern) {
-                    // Skip type and module declarations
-                    if (decl->initializer && decl->initializer->resolved_type) {
-                        Type* init_type = decl->initializer->resolved_type;
-                        if (init_type->kind == TYPE_MODULE ||
-                            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM))) {
+                    // Skip if it is a type definition
+                    if (decl->is_const && decl->initializer) {
+                        if (isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+                            continue;
+                        }
+                        if (decl->initializer->type == NODE_IMPORT_STMT) {
                             continue;
                         }
                     }
-
                     emitter.writeIndent();
                     emitter.writeString("extern ");
 

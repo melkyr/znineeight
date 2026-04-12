@@ -552,6 +552,11 @@ private:
     void emitLiteral(const ASTNode* node);
 
     /**
+     * @brief Emits a positional array initializer for C89.
+     */
+    void emitArrayInitializer(const ASTStructInitializerNode* init, Type* array_type);
+
+    /**
      * @brief Emits a unary operator expression.
      */
     void emitUnaryOp(const ASTUnaryOpNode& node);
