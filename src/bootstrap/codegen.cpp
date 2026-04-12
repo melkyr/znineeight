@@ -1,4 +1,3 @@
-static int plat_atoi(const char* str);
 #include "codegen.hpp"
 #include "compilation_unit.hpp"
 #include "ast_utils.hpp"
@@ -5125,19 +5124,4 @@ void C89Emitter::emitArrayInitializer(const ASTStructInitializerNode* init, Type
         }
     }
     writeString("}");
-}
-
-static int plat_atoi(const char* str) {
-    if (!str) return 0;
-    int res = 0;
-    int sign = 1;
-    if (*str == '-') {
-        sign = -1;
-        str++;
-    }
-    while (*str >= '0' && *str <= '9') {
-        res = res * 10 + (*str - '0');
-        str++;
-    }
-    return res * sign;
 }
