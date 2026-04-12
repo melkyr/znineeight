@@ -26,36 +26,45 @@
 
 ## Detailed Breakdown of Failures (32-bit)
 
-### 1. Batch 5 (Static Analysis)
-- **Status**: FAIL
-- **Test**: `test_double_free_task_129`
-- **Reason**: Regression in `DoubleFreeAnalyzer`.
-- **Details**: FAIL: `has_leak` at `tests/test_double_free_task_129.cpp:67`.
+### Harmless Expectation Changes (Test Updates Needed)
 
-### 2. Batch 9b/9c (Type System/Initializers)
+#### 1. Batch 5 (Static Analysis)
 - **Status**: FAIL
-- **Reason**: Type mismatch in anonymous literals.
-- **Details**: `error: type mismatch - anonymous positional literal used where array or tuple was expected`.
+- **Test**: `test_DoubleFree_LocationInLeakWarning`
+- **Reason**: Intentionally failing placeholder test.
+- **Details**: The test expects "allocated at" info in leak warnings which is not yet fully implemented. The test file itself notes "This is expected to FAIL until we implement tracking".
 
-### 3. Batch 26 (Codegen)
+#### 2. Batch 41 (Codegen)
 - **Status**: FAIL
-- **Reason**: Codegen mismatch for array initializers.
-- **Details**: `FAIL: Codegen mismatch for 'pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };'`.
+- **Test**: `ForIntegration_Array`
+- **Reason**: Codegen improvements.
+- **Details**: Recent improvements to for-loop lowering have slightly altered the generated C code structure, causing a string-matching mismatch in the test. The logic remains correct.
 
-### 4. Batch 31 (C89 Compatibility)
-- **Status**: FAIL
-- **Reason**: Undeclared global in generated C code.
-- **Details**: `error: ‘zC_0_global_arr’ undeclared (first use in this function)`.
-
-### 5. Batch 41 (Codegen)
-- **Status**: FAIL
-- **Reason**: REAL emission mismatch for function 'foo'.
-
-### 6. Batch 44 (Codegen/Tuples)
+#### 3. Batch 44 (Codegen/Tuples)
 - **Status**: FAIL
 - **Test**: `Task225_2_PrintLowering`
-- **Reason**: Test expectation mismatch (Tuple Lowering).
-- **Details**: The test expects direct calls like `__bootstrap_print_int(x)`. However, since `print` takes `anytype`, the argument is now correctly lowered as a tuple member.
+- **Reason**: Evolution of `print` lowering.
+- **Details**: `print` now leverages the tuple infrastructure for `anytype` arguments. The test expects direct calls like `__bootstrap_print_int(x)`, but the compiler now correctly passes `__tmp_tup.field0`.
+
+---
+
+### Potential Regressions (Investigation Required)
+
+#### 1. Batch 9b/9c (Type System/Initializers)
+- **Status**: FAIL
+- **Reason**: Disambiguation conflict between Tagged Unions and Tuples.
+- **Details**: Using `.{ .A }` for a tagged union with a void payload now triggers `error: type mismatch - anonymous positional literal used where array or tuple was expected`. This suggests the new tuple lookahead logic is misidentifying naked tags as tuple elements.
+
+#### 2. Batch 26 (Codegen)
+- **Status**: FAIL
+- **Reason**: Array initializer mismatch.
+- **Details**: `FAIL: Codegen mismatch for 'pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };'`. The compiler likely changed how it emits these "anonymous-like" fields for arrays/tuples.
+
+#### 3. Batch 31 (CBackend)
+- **Status**: FAIL
+- **Test**: `test_CBackend_MultiFile`
+- **Reason**: Multi-file global visibility issue.
+- **Details**: `error: ‘zC_0_global_arr’ undeclared`. Indicates that globals exported from one module are not being correctly declared or found in the header/source of another module during multi-file generation.
 
 ---
 

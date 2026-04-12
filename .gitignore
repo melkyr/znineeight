@@ -74,3 +74,7 @@ temp_string_split_test.c
 temp_for_ptr_array_test.c
 tagged_union.c
 test_forward_decl.h
+test_*.c
+test_*.h
+examples/lisp_interpreter_curr/*.c
+examples/lisp_interpreter_curr/*.h
