@@ -201,6 +201,28 @@ static inline bool isTaggedUnion(const Type* type) {
 }
 
 /**
+ * @brief Checks if a type is an aggregate type (struct, union, array, etc.) that may require decomposition.
+ * @param t The type to check.
+ * @return True if it is an aggregate type, false otherwise.
+ */
+static inline bool isAggregateType(const Type* t) {
+    if (!t) return false;
+    switch (t->kind) {
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
+        case TYPE_SLICE:
+        case TYPE_OPTIONAL:
+        case TYPE_ERROR_UNION:
+        case TYPE_ARRAY:
+        case TYPE_TUPLE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
  * @brief Unifies access to payload fields for both TYPE_TAGGED_UNION and TYPE_UNION with the is_tagged flag.
  * @param type The type to get payload fields from.
  * @return A pointer to the dynamic array of struct fields, or NULL if not a tagged union.
