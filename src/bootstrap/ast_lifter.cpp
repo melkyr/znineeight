@@ -759,6 +759,9 @@ ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation lo
     ident_node->loc = loc;
     ident_node->as.identifier.name = name;
     ident_node->as.identifier.symbol = sym;
+    if (sym && sym->symbol_type) {
+        ident_node->resolved_type = sym->symbol_type;
+    }
     return ident_node;
 }
 
@@ -880,6 +883,18 @@ ASTNode* ControlFlowLifter::createNodeAt(NodeType type, SourceLocation loc) {
     return node;
 }
 
+ASTNode* ControlFlowLifter::cloneASTNodeWithMetadata(const ASTNode* src) {
+    if (!src) return NULL;
+    ASTNode* dst = cloneASTNode((ASTNode*)src, arena_);
+    if (!dst) return NULL;
+    dst->resolved_type = src->resolved_type;
+    dst->module = src->module;
+    if (src->type == NODE_INTEGER_LITERAL) {
+        dst->as.integer_literal.original_name = src->as.integer_literal.original_name;
+    }
+    return dst;
+}
+
 void ControlFlowLifter::updateCaptureSymbols(ASTNode* node, Symbol* old_sym, Symbol* new_sym) {
     if (!node || !old_sym || !new_sym) return;
 
@@ -915,7 +930,7 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, Symbol* temp_sym) {
     {
         ASTNode* branch_expr = if_expr->then_expr;
         if (branch_expr->type == NODE_BLOCK_STMT) {
-            then_block = cloneASTNode(branch_expr, arena_);
+            then_block = cloneASTNodeWithMetadata(branch_expr);
             BlockGuard bguard(*this, &then_block->as.block_stmt);
             DynamicArray<ASTNode*>* stmts = then_block->as.block_stmt.statements;
             if (stmts->length() > 0) {
@@ -935,7 +950,7 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, Symbol* temp_sym) {
     {
         ASTNode* branch_expr = if_expr->else_expr;
         if (branch_expr->type == NODE_BLOCK_STMT) {
-            else_block = cloneASTNode(branch_expr, arena_);
+            else_block = cloneASTNodeWithMetadata(branch_expr);
             BlockGuard bguard(*this, &else_block->as.block_stmt);
             DynamicArray<ASTNode*>* stmts = else_block->as.block_stmt.statements;
             if (stmts->length() > 0) {
@@ -994,7 +1009,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
 
         ASTNode* body_node = orig_prong->body;
         if (body_node->type == NODE_BLOCK_STMT) {
-            body_node = cloneASTNode(body_node, arena_);
+            body_node = cloneASTNodeWithMetadata(body_node);
             BlockGuard bguard(*this, &body_node->as.block_stmt);
             DynamicArray<ASTNode*>* stmts = body_node->as.block_stmt.statements;
             if (stmts->length() > 0) {
@@ -1210,7 +1225,7 @@ void ControlFlowLifter::lowerCatchExpr(ASTNode* node, Symbol* temp_sym, DynamicA
 
     ASTNode* catch_body = catch_expr->else_expr;
     if (catch_body->type == NODE_BLOCK_STMT) {
-        catch_body = cloneASTNode(catch_body, arena_);
+        catch_body = cloneASTNodeWithMetadata(catch_body);
         DynamicArray<ASTNode*>* inner_stmts = catch_body->as.block_stmt.statements;
         if (inner_stmts->length() > 0) {
             (*inner_stmts)[inner_stmts->length() - 1] = createYieldingStmt((*inner_stmts)[inner_stmts->length() - 1], temp_ident, loc);
@@ -1303,7 +1318,7 @@ void ControlFlowLifter::lowerOrelseExpr(ASTNode* node, Symbol* temp_sym, Dynamic
     {
         ASTNode* branch_expr = orelse->else_expr;
         if (branch_expr->type == NODE_BLOCK_STMT) {
-            else_block = cloneASTNode(branch_expr, arena_);
+            else_block = cloneASTNodeWithMetadata(branch_expr);
             BlockGuard bguard_else(*this, &else_block->as.block_stmt);
             DynamicArray<ASTNode*>* stmts = else_block->as.block_stmt.statements;
             if (stmts->length() > 0) {
