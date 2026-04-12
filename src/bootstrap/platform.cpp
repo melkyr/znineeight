@@ -761,4 +761,22 @@ void plat_abort() {
     abort();
 }
 
+
+int plat_atoi(const char* str) {
+    if (!str) return 0;
+    int res = 0;
+    int sign = 1;
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') str++;
+    if (*str == '-') {
+        sign = -1;
+        str++;
+    } else if (*str == '+') {
+        str++;
+    }
+    while (*str >= '0' && *str <= '9') {
+        res = res * 10 + (*str - '0');
+        str++;
+    }
+    return res * sign;
+}
 #endif
