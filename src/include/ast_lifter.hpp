@@ -166,6 +166,11 @@ private:
      */
     ASTNode* createNodeAt(NodeType type, SourceLocation loc);
 
+    /**
+     * @brief Clones an AST node while preserving semantic metadata (resolved_type, module, etc).
+     */
+    ASTNode* cloneASTNodeWithMetadata(const ASTNode* src);
+
     // Lowering Helpers
     ASTNode* lowerIfExpr(ASTNode* node, Symbol* temp_sym);
     ASTNode* lowerSwitchExpr(ASTNode* node, Symbol* temp_sym);

@@ -704,21 +704,26 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             }
         }
     } else if (type->kind == TYPE_ARRAY) {
-        if (!init) return;
-        for (size_t i = 0; i < init->fields->length(); ++i) {
-            ASTNode* val = (*init->fields)[i]->value;
-            char idx_str[32];
-            plat_i64_to_string(i, idx_str, sizeof(idx_str));
-
-            char nested_name[256];
-            char* cur = nested_name;
-            size_t rem = sizeof(nested_name);
-            safe_append(cur, rem, base_name);
-            safe_append(cur, rem, "[");
-            safe_append(cur, rem, idx_str);
-            safe_append(cur, rem, "]");
-
-            emitAssignmentWithLifting(nested_name, NULL, val, type->as.array.element_type);
+        if (init_node->type == NODE_TUPLE_LITERAL) {
+            DynamicArray<ASTNode*>* elements = init_node->as.tuple_literal->elements;
+            if (!elements) return;
+            for (size_t i = 0; i < elements->length(); ++i) {
+                char nested_name[256];
+                plat_snprintf(nested_name, sizeof(nested_name), "%s[%zu]", base_name, i);
+                emitAssignmentWithLifting(nested_name, NULL, (*elements)[i], type->as.array.element_type);
+            }
+        } else if (init_node->type == NODE_STRUCT_INITIALIZER) {
+            /* Support for array initialization via anonymous struct is limited.
+               Typical Zig tuple arrays use NODE_TUPLE_LITERAL. */
+            if (!init) return;
+            for (size_t i = 0; i < init->fields->length(); ++i) {
+                ASTNode* val = (*init->fields)[i]->value;
+                char nested_name[256];
+                plat_snprintf(nested_name, sizeof(nested_name), "%s[%zu]", base_name, i);
+                emitAssignmentWithLifting(nested_name, NULL, val, type->as.array.element_type);
+            }
+        } else {
+            error_handler_.report(ERR_INTERNAL_ERROR, init_node->loc, "Unsupported array initializer type");
         }
     }
 }
@@ -1036,6 +1041,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                     /* For tagged unions, we always want the decomposition for better C89 compliance and clarity,
                        even if initialized with a constant. */
                     if (isTaggedUnion(target_type)) was_wrapped = true;
+
+                    /* [Task Fix] Array initialization must ALWAYS be decomposed in C89 */
+                    if (target_type && target_type->kind == TYPE_ARRAY) was_wrapped = true;
                 }
                 if (!was_wrapped) return;
             }
@@ -2420,6 +2428,7 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
             return true;
         }
         case NODE_STRUCT_INITIALIZER: {
+            if (node->resolved_type && node->resolved_type->kind == TYPE_ARRAY) return false;
             DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
             for (size_t i = 0; i < fields->length(); ++i) {
                 if (!isConstantInitializer((*fields)[i]->value)) return false;
@@ -2562,6 +2571,12 @@ void C89Emitter::ensureForwardDeclaration(Type* type) {
 void C89Emitter::emitExpression(const ASTNode* node) {
     if (!node) return;
     current_loc_ = node->loc;
+
+    /* Safety assertions for internal compiler errors */
+    if (node->resolved_type && node->resolved_type->kind == TYPE_ANYTYPE) {
+        error_handler_.report(ERR_INTERNAL_ERROR, node->loc, "Internal error: TYPE_ANYTYPE reached emitter");
+        plat_abort();
+    }
 
     if (debug_trace_ && node->type == NODE_IDENTIFIER) {
         const char* name = node->as.identifier.name;
@@ -3101,6 +3116,10 @@ void C89Emitter::emitAccess(const ASTNode* node) {
         }
         case NODE_MEMBER_ACCESS: {
             const ASTMemberAccessNode* member = node->as.member_access;
+            if (member->base == NULL) {
+                error_handler_.report(ERR_INTERNAL_ERROR, node->loc, "Internal error: naked tag reached emitter");
+                plat_abort();
+            }
             Type* base_type = member->base->resolved_type;
             Type* effective_base = base_type;
             if (effective_base && effective_base->kind == TYPE_POINTER) {
@@ -3135,7 +3154,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                 if (actual_type->kind == TYPE_TUPLE && actual_type->kind != TYPE_TYPE) {
                     const char* field_name = member->field_name;
                     int index = -1;
-                    if (isdigit(field_name[0])) {
+                    if (field_name[0] >= '0' && field_name[0] <= '9') {
                         index = 0;
                         for (const char* p = field_name; *p; ++p) {
                             if (*p < '0' || *p > '9') { index = -1; break; }
@@ -3907,6 +3926,11 @@ void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
 }
 
 void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
+    if (node->original_name && node->resolved_type && isTaggedUnion(node->resolved_type)) {
+        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: qualified tag reached emitter without coercion");
+        plat_abort();
+    }
+
     if (node->original_name && node->resolved_type && node->resolved_type->kind == TYPE_ENUM) {
         if (node->resolved_type->c_name) {
             writeString(node->resolved_type->c_name);
