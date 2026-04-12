@@ -957,6 +957,22 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     }
 
     if (!emit_assignment) {
+        Type* type = node->resolved_type;
+        bool need_decomposition = false;
+        if (type && type->kind == TYPE_ARRAY) {
+            Type* elem_type = type->as.array.element_type;
+            if (isAggregateType(elem_type)) {
+                need_decomposition = true;
+            }
+        }
+
+        if (need_decomposition) {
+            writeIndent();
+            emitDeclarator(type, c_name);
+            writeString(";\n");
+            return;
+        }
+
         bool has_c_init = false;
         if (decl->initializer && decl->initializer->type == NODE_STRUCT_INITIALIZER &&
             (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
@@ -1022,6 +1038,21 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
         }
     } else {
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
+            /* Special case: always decompose aggregate array initializers */
+            Type* target_type = node->resolved_type;
+            bool force_decomposition = false;
+            if (target_type && target_type->kind == TYPE_ARRAY) {
+                Type* elem_type = target_type->as.array.element_type;
+                if (isAggregateType(elem_type)) {
+                    force_decomposition = true;
+                }
+            }
+
+            if (force_decomposition) {
+                emitInitializerAssignments(c_name, decl->initializer);
+                return;
+            }
+
             /* Skip if already handled by = {0} in declaration */
             if (decl->initializer->type == NODE_STRUCT_INITIALIZER &&
                 (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
@@ -1031,7 +1062,6 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             /* For constants, we already emitted an '=' in the declaration if it wasn't a complex type.
                If it WAS a complex type, we used = {0} and now we MUST emit the full assignment. */
             if (isConstantInitializer(decl->initializer)) {
-                Type* target_type = node->resolved_type;
                 Type* source_type = decl->initializer->resolved_type;
                 bool was_wrapped = false;
                 if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION || isTaggedUnion(target_type))) {

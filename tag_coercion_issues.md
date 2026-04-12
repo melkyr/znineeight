@@ -26,7 +26,7 @@ The compiler crashed with a **Segmentation Fault** during the code generation ph
 
 ---
 
-## 2. Invalid C Code for Arrays of Tagged Unions [STATUS: PARTIALLY FIXED]
+## 2. Invalid C Code for Arrays of Tagged Unions [STATUS: FIXED]
 
 ### Zig Source
 ```zig
@@ -43,7 +43,9 @@ struct zS_284d57_Cell arr[2] = {, };
 ```
 
 ### Fix Status
-**PARTIALLY FIXED.** `C89Emitter::emitInitializerAssignments` now handles `TYPE_ARRAY` and correctly decomposes `NODE_TUPLE_LITERAL` and `NODE_STRUCT_INITIALIZER`. While decomposition into individual assignments is implemented, some cases of local array initialization still require manual assignments if the automatic lifting doesn't trigger for the declaration.
+**FIXED.**
+1.  **Parser Lookahead**: `Parser::parseAnonymousLiteral` was updated with lookahead logic to correctly distinguish between named initializers (`.{ .x = 1 }`) and tuple literals containing naked tags (`.{ .Alive, .Dead }`).
+2.  **Emitter Decomposition**: `C89Emitter::emitLocalVarDecl` now forces decomposition for arrays with aggregate element types (e.g., tagged unions), ensuring positional initializers are correctly lowered to element-wise assignments (e.g., `arr[0].tag = ...`) in C89.
 
 ---
 

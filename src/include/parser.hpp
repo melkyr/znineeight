@@ -262,6 +262,11 @@ public:
      */
     const Token& peekNext() const;
 
+    /**
+     * @brief Returns the token N steps ahead without consuming it.
+     */
+    const Token& peekAhead(int n) const;
+
 private:
     /**
      * @brief Resolves a type AST node into a `Type*` and reports an error if it fails.

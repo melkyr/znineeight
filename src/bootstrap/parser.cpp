@@ -178,6 +178,13 @@ const Token& Parser::peekNext() const {
     return tokens_[current_index_ + 1];
 }
 
+const Token& Parser::peekAhead(int n) const {
+    if (current_index_ + n >= token_count_) {
+        return eof_token_;
+    }
+    return tokens_[current_index_ + n];
+}
+
 /**
  * @brief Parses a primary expression from the token stream.
  *
@@ -1043,7 +1050,23 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
 ASTNode* Parser::parseAnonymousLiteral() {
     Token lbrace = expect(TOKEN_LBRACE, "Expected '{' to start anonymous literal");
 
-    if (peek().type == TOKEN_DOT && (peekNext().type == TOKEN_IDENTIFIER || peekNext().type == TOKEN_INTEGER_LITERAL)) {
+    bool is_struct = false;
+    if (peek().type == TOKEN_DOT) {
+        if (peekNext().type == TOKEN_IDENTIFIER) {
+            // Check if there's an '=' after the identifier
+            if (peekAhead(2).type == TOKEN_EQUAL) {
+                is_struct = true;
+            }
+        } else if (peekNext().type == TOKEN_INTEGER_LITERAL) {
+            // Tuple numeric member access .0 is NOT a struct field
+            // But .0 = value is (though rare/invalid in Zig, we check for '=' consistency)
+            if (peekAhead(2).type == TOKEN_EQUAL) {
+                is_struct = true;
+            }
+        }
+    }
+
+    if (is_struct) {
         // Named fields -> anonymous struct initializer
         ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
         if (!init_data) error("Out of memory");
