@@ -52,7 +52,7 @@ The PAL uses a simplified `select` model with an opaque `fd_set` type.
 
 ```c
 typedef struct {
-    u8 data[256];
+    u8 data[512];
 } plat_fd_set;
 ```
 

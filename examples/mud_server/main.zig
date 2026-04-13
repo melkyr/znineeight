@@ -13,7 +13,7 @@ extern "c" fn plat_close_socket(sock: i32) void;
 
 // fd_set support
 const plat_fd_set = struct {
-    data: [256]u8, // opaque platform-specific size
+    data: [512]u8, // opaque platform-specific size
 };
 
 extern "c" fn plat_socket_select(nfds: i32, readfds: ?*plat_fd_set, writefds: ?*plat_fd_set, exceptfds: ?*plat_fd_set, timeout_ms: i32) i32;
@@ -23,8 +23,8 @@ extern "c" fn plat_socket_fd_zero(s: *plat_fd_set) void;
 extern "c" fn plat_socket_fd_set(fd: i32, s: *plat_fd_set) void;
 extern "c" fn plat_socket_fd_isset(fd: i32, s: *plat_fd_set) bool;
 
-const MAX_CLIENTS: usize = 10;
-const BUFFER_SIZE: usize = 256;
+const MAX_CLIENTS = 10;
+const BUFFER_SIZE = 256;
 const PORT: u16 = 4000;
 
 const Direction = enum(u8) {
@@ -37,7 +37,7 @@ const Direction = enum(u8) {
 const Player = struct {
     socket: i32,
     room_id: u8,
-    buffer: [256]u8,
+    buffer: [BUFFER_SIZE]u8,
     pos: usize,
     active: bool,
 };
@@ -100,7 +100,7 @@ pub fn main() !void {
 
     std.debug.print("MUD server listening on port 4000\n", .{});
 
-    var players: [10]Player = undefined;
+    var players: [MAX_CLIENTS]Player = undefined;
     var i: usize = @intCast(usize, 0);
     while (i < MAX_CLIENTS) : (i += 1) {
         players[i].active = false;
@@ -165,33 +165,42 @@ pub fn main() !void {
             var p = &players[slot_idx];
             if (p.active) {
                 if (plat_socket_fd_isset(p.socket, &read_fds)) {
-                    const n = plat_recv(p.socket, &p.buffer[p.pos], @intCast(i32, 256 - p.pos));
+                    const n = plat_recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
                     if (n <= 0) {
                         std.debug.print("Client disconnected\n", .{});
                         plat_close_socket(p.socket);
                         p.active = false;
                     } else {
                         p.pos += @intCast(usize, n);
-                        var j: usize = @intCast(usize, 0);
-                        while (j < p.pos) : (j += 1) {
-                            if (p.buffer[j] == '\n') {
-                                var end = j;
-                                if (end > 0 and p.buffer[end-1] == '\r') end -= 1;
+                        // Process all complete lines in the buffer
+                        var processing: bool = true;
+                        while (processing) {
+                            var found_newline: bool = false;
+                            var j: usize = @intCast(usize, 0);
+                            while (j < p.pos) : (j += 1) {
+                                if (p.buffer[j] == '\n') {
+                                    var end = j;
+                                    if (end > 0 and p.buffer[end-1] == '\r') end -= 1;
 
-                                const cmd_line = p.buffer[0..end];
-                                const cmd = parseCommand(cmd_line);
-                                const response = processCommand(p, cmd);
-                                _ = plat_send(p.socket, response.ptr, @intCast(i32, response.len));
+                                    const cmd_line = p.buffer[0..end];
+                                    const cmd = parseCommand(cmd_line);
+                                    const response = processCommand(p, cmd);
+                                    _ = plat_send(p.socket, response.ptr, @intCast(i32, response.len));
 
-                                const remaining = p.pos - (j + 1);
-                                if (remaining > 0) {
-                                    var k: usize = @intCast(usize, 0);
-                                    while (k < remaining) : (k += 1) {
-                                        p.buffer[k] = p.buffer[j + 1 + k];
+                                    const remaining = p.pos - (j + 1);
+                                    if (remaining > 0) {
+                                        var k: usize = @intCast(usize, 0);
+                                        while (k < remaining) : (k += 1) {
+                                            p.buffer[k] = p.buffer[j + 1 + k];
+                                        }
                                     }
+                                    p.pos = remaining;
+                                    found_newline = true;
+                                    break;
                                 }
-                                p.pos = remaining;
-                                break;
+                            }
+                            if (!found_newline) {
+                                processing = false;
                             }
                         }
                     }

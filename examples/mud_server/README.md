@@ -44,4 +44,4 @@ cl /D_WIN32 main.c zig_runtime.c wsock32.lib /Fe:mud_server.exe
 
 - **Global Aggregate Arrays**: Uses an `initRooms()` function because global aggregate array initializers are not fully stabilized in the current bootstrap version.
 - **Networking PAL**: Leverages the `plat_socket_*` abstraction layer for cross-platform compatibility.
-- **Opaque `fd_set`**: Uses a 256-byte opaque buffer to represent `fd_set` safely across platforms.
+- **Opaque `fd_set`**: Uses a 512-byte opaque buffer to represent `fd_set` safely across platforms.
