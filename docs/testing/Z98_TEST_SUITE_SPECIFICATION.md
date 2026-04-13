@@ -141,7 +141,7 @@ This document provides an extensive specification of the Z98 compiler test suite
   ```
 - **Switch Payload Capture**:
   ```pseudocode
-  type_checker.init("switch (u) { .A => |val| { ... } }")
+  type_checker.init("switch (u) { .A => | val | { ... } }")
   type_checker.check()
   assert symbol("val").type == U.A_type
   ```
@@ -235,45 +235,45 @@ This document provides an extensive specification of the Z98 compiler test suite
 
 | Batch | Component | Focus Areas |
 |-------|-----------|-------------|
-| 1 | Infrastructure | Arena Allocator, Dynamic Array, Symbol Table |
-| 2-3 | Lexer/Type | AST nodes, Basic type inference, C89 integer compatibility |
-| 4 | Safety | Token stability, C89 rejection of try/catch/slice |
-| 5 | Analyzer | Double free, memory leaks, uninitialized free |
-| 6 | Type System | Struct declarations, member access, initializer validation |
-| 7 | Error Handling | Detection of error functions, try/catch/orelse cataloguing |
-| 8 | Comptime | Rejection of generics, anytype, type params |
-| 9 | Platform | Platform-specific IO, File, Alloc, Module derivation |
-| 10 | Mangler | Simple/Generic mangling, keyword collision, determinism |
-| 11 | Imports | Modular parsing, symbol lookup across files |
-| 12-16 | Parser | Expression precedence, Statements, Declarations |
-| 17 | Validation | C89/MSVC 6.0 strictness checks |
-| 18 | Switch | Switch expressions and statement lowering |
-| 20 | Casts | @ptrCast, @intCast, @floatCast validation |
-| 21 | Builtins | @sizeOf, @alignOf, @offsetOf constant folding |
-| 25-27 | Codegen | Local/Global variables, String literals |
-| 28 | Call Sites | Resolution, Mutual recursion, Indirect call rejection |
-| 29-31 | Codegen | Binary/Unary ops, Member access, Array indexing |
-| 32 | End-to-End | Hello World, Prime Sieve (full pipeline) |
-| 33-35 | Multi-Module | Circular imports, Private visibility, Include paths |
-| 36-37 | Pointers | Multi-level pointers (**T), Many-item pointers ([*]T) |
-| 38 | Func Pointers | Signature matching, coercion, indirect calls |
-| 39 | Defer | LIFO execution, Return/Break/Continue interaction |
-| 40 | Slices | Indexing, .len, Array-to-slice coercion, slicing syntax |
-| 41-42 | For Loops | Array/Slice/Range iteration, Captures, Mutability |
-| 43 | Switch | Noreturn prongs, divergent control flow |
-| 44 | If/Print | Braceless if-expr, std.debug.print lowering |
-| 45-46 | Error Union | !T representation, Try/Catch lifting (revised) |
-| 47 | Optionals | ?T, null, orelse, if-capture unwrapping |
-| 48-50 | Recursion | Recursive structs/slices, multi-module recursion |
-| 51 | Unions | Tagged union captures, nested anonymous structs |
-| 53 | Metadata | Transitively reachable types, post-order dependency traversal |
-| 54-55 | AST/Lifter | Deep cloning, Control-flow expression hoisting |
-| 56-57 | Advanced | Union/Slice lifting, Anonymous aggregate emission |
-| 58, 61 | Braceless | Braceless if/while/for normalization |
-| 63-65 | Tagged Unions | Naked tags, Implicit enums, Field-wise assignment |
-| 66-68 | Slices/Strings | Private nested slices, String literal to ManyPtr coercion |
-| 70-71 | Unreachable | Dead code elimination, Error union recursion |
-| 73 | Recursion | Value dependency cycles, Pointer dependency forward-decls |
-| 74-75 | Initialization | Tagged union nested struct init, Field-level leak tracking |
-| 80 | Complex Expr | Tagged union array decomposition, Nested switch/if expr |
-| _bugs | Regressions | String split, For-ptr-to-array, Nested switch lifter |
+| [1](../../tdocs/tests/batch_details_1.md) |Infrastructure|Arena Allocator, Dynamic Array, Symbol Table|
+| [2-3](../../tdocs/tests/batch_details_2.md) |Lexer/Type|AST nodes, Basic type inference, C89 integer compatibility|
+| [4](../../tdocs/tests/batch_details_4.md) |Safety|Token stability, C89 rejection of try/catch/slice|
+| [5](../../tdocs/tests/batch_details_5.md) |Analyzer|Double free, memory leaks, uninitialized free|
+| [6](../../tdocs/tests/batch_details_6.md) |Type System|Struct declarations, member access, initializer validation|
+| [7](../../tdocs/tests/batch_details_7.md) |Error Handling|Detection of error functions, try/catch/orelse cataloguing|
+| [8](../../tdocs/tests/batch_details_8.md) |Comptime|Rejection of generics, anytype, type params|
+| [9](../../tdocs/tests/batch_details_9.md) |Platform|Platform-specific IO, File, Alloc, Module derivation|
+| [10](../../tdocs/tests/batch_details_10.md) |Mangler|Simple/Generic mangling, keyword collision, determinism|
+| [11](../../tdocs/tests/batch_details_11.md) |Imports|Modular parsing, symbol lookup across files|
+| [12-16](../../tdocs/tests/batch_details_12.md) |Parser|Expression precedence, Statements, Declarations|
+| [17](../../tdocs/tests/batch_details_17.md) |Validation|C89/MSVC 6.0 strictness checks|
+| [18](../../tdocs/tests/batch_details_18.md) |Switch|Switch expressions and statement lowering|
+| [20](../../tdocs/tests/batch_details_20.md) |Casts|@ptrCast, @intCast, @floatCast validation|
+| [21](../../tdocs/tests/batch_details_21.md) |Builtins|@sizeOf, @alignOf, @offsetOf constant folding|
+| [25-27](../../tdocs/tests/batch_details_25.md) |Codegen|Local/Global variables, String literals|
+| [28](../../tdocs/tests/batch_details_28.md) |Call Sites|Resolution, Mutual recursion, Indirect call rejection|
+| [29-31](../../tdocs/tests/batch_details_29.md) |Codegen|Binary/Unary ops, Member access, Array indexing|
+| [32](../../tdocs/tests/batch_details_32.md) |End-to-End|Hello World, Prime Sieve (full pipeline)|
+| [33-35](../../tdocs/tests/batch_details_33.md) |Multi-Module|Circular imports, Private visibility, Include paths|
+| [36-37](../../tdocs/tests/batch_details_36.md) |Pointers|Multi-level pointers (**T), Many-item pointers ([*]T)|
+| [38](../../tdocs/tests/batch_details_38.md) |Func Pointers|Signature matching, coercion, indirect calls|
+| [39](../../tdocs/tests/batch_details_39.md) |Defer|LIFO execution, Return/Break/Continue interaction|
+| [40](../../tdocs/tests/batch_details_40.md) |Slices|Indexing, .len, Array-to-slice coercion, slicing syntax|
+| [41-42](../../tdocs/tests/batch_details_41.md) |For Loops|Array/Slice/Range iteration, Captures, Mutability|
+| [43](../../tdocs/tests/batch_details_43.md) |Switch|Noreturn prongs, divergent control flow|
+| [44](../../tdocs/tests/batch_details_44.md) |If/Print|Braceless if-expr, std.debug.print lowering|
+| [45-46](../../tdocs/tests/batch_details_45.md) |Error Union|!T representation, Try/Catch lifting (revised)|
+| [47](../../tdocs/tests/batch_details_47.md) |Optionals|?T, null, orelse, if-capture unwrapping|
+| [48-50](../../tdocs/tests/batch_details_48.md) |Recursion|Recursive structs/slices, multi-module recursion|
+| [51](../../tdocs/tests/batch_details_51.md) |Unions|Tagged union captures, nested anonymous structs|
+| [53](../../tdocs/tests/batch_details_53.md) |Metadata|Transitively reachable types, post-order dependency traversal|
+| [54-55](../../tdocs/tests/batch_details_54.md) |AST/Lifter|Deep cloning, Control-flow expression hoisting|
+| [56-57](../../tdocs/tests/batch_details_56.md) |Advanced|Union/Slice lifting, Anonymous aggregate emission|
+| [58, 61](../../tdocs/tests/batch_details_58.md) |Braceless|Braceless if/while/for normalization|
+| [63-65](../../tdocs/tests/batch_details_63.md) |Tagged Unions|Naked tags, Implicit enums, Field-wise assignment|
+| [66-68](../../tdocs/tests/batch_details_66.md) |Slices/Strings|Private nested slices, String literal to ManyPtr coercion|
+| [70-71](../../tdocs/tests/batch_details_70.md) |Unreachable|Dead code elimination, Error union recursion|
+| [73](../../tdocs/tests/batch_details_73.md) |Recursion|Value dependency cycles, Pointer dependency forward-decls|
+| [74-75](../../tdocs/tests/batch_details_74.md) |Initialization|Tagged union nested struct init, Field-level leak tracking|
+| [80](../../tdocs/tests/batch_details_80.md) |Complex Expr|Tagged union array decomposition, Nested switch/if expr|
+| [_bugs](../../tdocs/tests/batch_details__bugs.md) |Regressions|String split, For-ptr-to-array, Nested switch lifter|
