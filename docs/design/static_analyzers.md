@@ -75,7 +75,7 @@ Detects double `arena_free` calls and memory leaks when using the `ArenaAllocato
 
 ### Known Limitations
 - **Errdefer Semantics**: Does not distinguish between success and error exit paths for `errdefer`; executes all defers on scope exit (conservative).
-- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership to avoid false negatives.
+- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership to avoid false negatives. Whitelist functions (`arena_create`, `deep_copy`, `transfer_ownership`) are used to explicitly mark transfers.
 
 ## Pipeline Order
 The analyzers run in the following sequence after `TypeChecker`:

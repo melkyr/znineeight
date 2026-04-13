@@ -698,7 +698,7 @@ To clarify the current capabilities of the type checker and guide future develop
 
 -   **Literals:**
     -   **`true`, `false`:** Inferred as type `bool`.
-    -   **Integer Literals:** The type is determined by the literal's value and suffix. Small values default to `i32` or `u32` for C compatibility, while larger values or those with `l`/`LL` suffixes are inferred as `i64`/`u64`.
+    -   **Integer Literals:** The type is determined by the literal's value and suffix. Small values default to `i32` or `u32` for C compatibility, while larger values or those with `l`/`LL` suffixes are inferred as `i64`/`u64`. Decimal constants larger than 2,147,483,647 (2^31-1) must have a `U` suffix to ensure they are treated as unsigned in C90/C89 mode.
         -   **Unsigned Literals (e.g., `123u`):**
             -   `0` to `4294967295`: `u32`
             -   Larger values or with `ul` suffix: `u64`
@@ -866,7 +866,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 To ensure that compiler-generated symbols (like temporaries and runtime intrinsics) never collide with user-defined identifiers, a specialized bypass mechanism is used:
 
-1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`. It also whitelists exact matches for runtime types and globals: `Arena` and `zig_default_arena`.
+1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, `__ErrorUnion_`, `__Optional_`, and `__implicit_ret`. It also whitelists exact matches for runtime types and globals: `Arena` and `zig_default_arena`.
 2. **Mangling Bypass**: These identifiers bypass the standard mangling process (module prefixing, keyword avoidance, and character sanitization).
 3. **Truncation Only**: They are emitted verbatim, except for truncation to 31 characters to ensure compatibility with MSVC 6.0.
 4. **User Symbol Protection**: User-defined identifiers starting with `__` are **not** treated as internal and are mangled with a `z_` prefix (e.g., `__reserved` becomes `z__reserved`).
@@ -1863,6 +1863,7 @@ As part of Task 9.3 and Task 9.5.7, the type system implementation was hardened 
 To ensure that types containing slices of themselves (e.g., `Node = struct { children: []Node }`) resolve correctly during layout calculation and usage, the bootstrap compiler employs several strategies:
 
 1.  **Fixed Slice Layout**: `TYPE_SLICE` always returns `true` for `isTypeComplete` because its size (8 bytes) and alignment (4 bytes) are constant for the 32-bit target, regardless of the element type. This prevents "incomplete type" errors when a slice is used as a field in the type it refers to.
+2.  **Distributed Coercion (Slices in Branches)**: When an `if` or `switch` expression yields a slice in its branches, the `TypeChecker` ensures that all branches are coerced to the concrete `Slice_T` struct type before the expression is lifted. This prevents branches from incorrectly yielding `T*` pointers when an array literal or string literal is used.
 2.  **Completeness Deferral**: `visitArrayType` and `createSliceType` do not require the element type to be complete when creating a slice type. They correctly handle elements that are `TYPE_PLACEHOLDER`.
 3.  **On-Demand Element Resolution**: The `TypeChecker` aggressively resolves placeholders when performing operations on slice elements.
     -   **Member Access**: Accessing `.ptr` of a slice via `visitMemberAccess` resolves the element type to ensure the resulting pointer type is accurate.
