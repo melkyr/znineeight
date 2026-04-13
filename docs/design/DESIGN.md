@@ -34,7 +34,7 @@ This matches the target Win32/x86 environment of the late 90s.
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
 * **Memory Limit:** < 16MB peak usage **strictly enforced**. The `ArenaAllocator` will abort the compiler if peak usage exceeds this limit to ensure reliability on legacy hardware. No smart pointers or heavy templates.
 * **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
-* **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output, process termination) MUST go through the PAL (`platform.hpp`).
+* **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output, process termination, and networking) MUST go through the PAL (`platform.hpp`).
 * **C++ Standard Library Usage Policy:**
   * **Allowed:** Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for `size_t`), `<cassert>` (for `assert`), and `<climits>`.
   * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<iostream>`, `<string>` (`std::string`), and `<vector>` (`std::vector`).
@@ -162,6 +162,7 @@ extern Arena* zig_default_arena;
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
 * **`plat_printf_debug(const char* format, ...)`**: Variadic debug print utility. On Windows, outputs to both the debugger and stderr. On POSIX, outputs to stderr.
 * **`plat_abort()`**: Terminates the process immediately without calling destructors or performing CRT cleanup. Uses `ExitProcess(1)` on Windows.
+* **Networking PAL**: A minimal, cross-platform socket API supporting TCP servers, clients, and `select()`-based multiplexing. See `docs/design/NETWORKING.md` for details.
 * **`join_paths(const char* dir, const char* rel_path, ArenaAllocator& arena)`**: Combines a directory and a relative path into a normalized path, handling both Windows and POSIX separators.
 * **`get_directory(const char* filepath, ArenaAllocator& arena)`**: Extracts the directory component from a file path.
 

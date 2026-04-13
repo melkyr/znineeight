@@ -83,4 +83,41 @@ void plat_get_executable_dir(char* buffer, size_t size);
 // Aborts the process immediately. This function does not return.
 void plat_abort();
 
+// Networking support
+#ifdef _WIN32
+#include <winsock.h>
+typedef int socklen_t;
+typedef int PlatSocket;
+#define PLAT_INVALID_SOCKET ((PlatSocket)INVALID_SOCKET)
+#else
+typedef int PlatSocket;
+#define PLAT_INVALID_SOCKET (-1)
+#endif
+
+typedef struct {
+    u8 data[256];
+} plat_fd_set;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int plat_socket_init(void);
+void plat_socket_cleanup(void);
+PlatSocket plat_create_tcp_server(u16 port);
+int plat_bind_listen(PlatSocket sock, int backlog);
+PlatSocket plat_accept(PlatSocket server_sock);
+int plat_recv(PlatSocket sock, char* buf, int len);
+int plat_send(PlatSocket sock, const char* buf, int len);
+void plat_close_socket(PlatSocket sock);
+
+int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, plat_fd_set* exceptfds, int timeout_ms);
+void plat_socket_fd_zero(plat_fd_set* s);
+void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s);
+bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // PLATFORM_HPP

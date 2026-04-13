@@ -425,6 +425,11 @@ void plat_abort() {
 #include <sys/wait.h>
 #include <cstdlib>
 #include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 void* plat_alloc(size_t size) {
     return malloc(size);
@@ -761,6 +766,102 @@ void plat_abort() {
     abort();
 }
 
+
+int plat_socket_init(void) {
+#ifdef _WIN32
+    WSADATA wsa;
+    return (WSAStartup(MAKEWORD(1,1), &wsa) == 0) ? 0 : -1;
+#else
+    return 0;
+#endif
+}
+
+void plat_socket_cleanup(void) {
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+PlatSocket plat_create_tcp_server(u16 port) {
+    PlatSocket s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == PLAT_INVALID_SOCKET) return PLAT_INVALID_SOCKET;
+
+#ifdef _WIN32
+    {
+        struct sockaddr_in addr;
+        plat_memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            closesocket(s);
+            return PLAT_INVALID_SOCKET;
+        }
+    }
+#else
+    {
+        int opt = 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        struct sockaddr_in addr;
+        plat_memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            close(s);
+            return PLAT_INVALID_SOCKET;
+        }
+    }
+#endif
+    return s;
+}
+
+int plat_bind_listen(PlatSocket sock, int backlog) {
+    return listen(sock, backlog);
+}
+
+PlatSocket plat_accept(PlatSocket server_sock) {
+    return (PlatSocket)accept(server_sock, NULL, NULL);
+}
+
+int plat_recv(PlatSocket sock, char* buf, int len) {
+    return recv(sock, buf, len, 0);
+}
+
+int plat_send(PlatSocket sock, const char* buf, int len) {
+    return send(sock, buf, len, 0);
+}
+
+void plat_close_socket(PlatSocket sock) {
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    close(sock);
+#endif
+}
+
+int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, plat_fd_set* exceptfds, int timeout_ms) {
+    struct timeval tv;
+    struct timeval* p_tv = NULL;
+    if (timeout_ms >= 0) {
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        p_tv = &tv;
+    }
+    return select(nfds, (fd_set*)readfds, (fd_set*)writefds, (fd_set*)exceptfds, p_tv);
+}
+
+void plat_socket_fd_zero(plat_fd_set* s) {
+    FD_ZERO((fd_set*)s);
+}
+
+void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s) {
+    FD_SET(fd, (fd_set*)s);
+}
+
+bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s) {
+    return FD_ISSET(fd, (fd_set*)s) != 0;
+}
 
 int plat_atoi(const char* str) {
     if (!str) return 0;
