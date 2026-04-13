@@ -1,212 +1,212 @@
-# Batch 21 Details: General Compiler Integration
+# Z98 Test Batch 21 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 15 test cases focusing on general compiler integration.
+This test batch comprises 15 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_SizeOf_Primitive`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize { return @sizeOf(i32); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SizeOf_Primitive and validate component behavior
   ```
 
 ### `test_SizeOf_Struct`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() usize { return @sizeOf(S); }
-  ```
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { a: i32, b: i32 };
+fn foo() usize { return @sizeOf(S); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SizeOf_Struct and validate component behavior
   ```
 
 ### `test_SizeOf_Array`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize { return @sizeOf([10]i32); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SizeOf_Array and validate component behavior
   ```
 
 ### `test_SizeOf_Pointer`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize { return @sizeOf(*i32); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SizeOf_Pointer and validate component behavior
   ```
 
 ### `test_SizeOf_Incomplete_Error`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_SizeOf_Incomplete_Error specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SizeOf_Incomplete_Error and validate component behavior
   ```
 
 ### `test_AlignOf_Primitive`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize { return @alignOf(i64); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_AlignOf_Primitive and validate component behavior
   ```
 
 ### `test_AlignOf_Struct`
-- **Primary File**: `tests/integration/builtin_size_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() usize { return @alignOf(S); }
-  ```
+- **Implementation Source**: `tests/integration/builtin_size_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { a: u8, b: i64 };
+fn foo() usize { return @alignOf(S); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_AlignOf_Struct and validate component behavior
   ```
 
 ### `test_PointerArithmetic_SizeOfUSize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize {
+    return @sizeOf(usize);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_SizeOfUSize and validate component behavior
   ```
 
 ### `test_PointerArithmetic_AlignOfISize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize {
+    return @alignOf(isize);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_AlignOfISize and validate component behavior
   ```
 
 ### `test_BuiltinOffsetOf_StructBasic`
-- **Primary File**: `tests/integration/builtin_offsetof_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_offsetof_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const Point = struct { x: i32, y: i32 };
+  ```
   ```zig
 fn foo() usize {
   ```
   ```zig
-const Point = struct { x: i32, y: i32 };
+return @offsetOf(Point, \
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+    // x is at 0, y is at 4 (size of i32)
+    return run_offsetof_test(source,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BuiltinOffsetOf_StructBasic and validate component behavior
   ```
 
 ### `test_BuiltinOffsetOf_StructPadding`
-- **Primary File**: `tests/integration/builtin_offsetof_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() usize {
-  ```
+- **Implementation Source**: `tests/integration/builtin_offsetof_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { a: u8, b: i32 };
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+fn foo() usize {
+  ```
+  ```zig
+return @offsetOf(S, \
+  ```
+  ```zig
+;
+    // a is at 0 (size 1), b needs 4-byte alignment, so b is at 4.
+    return run_offsetof_test(source,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BuiltinOffsetOf_StructPadding and validate component behavior
   ```
 
 ### `test_BuiltinOffsetOf_Union`
-- **Primary File**: `tests/integration/builtin_offsetof_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() usize {
-  ```
+- **Implementation Source**: `tests/integration/builtin_offsetof_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union { a: u8, b: i32 };
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+fn foo() usize {
+  ```
+  ```zig
+return @offsetOf(U, \
+  ```
+  ```zig
+;
+    // In a union, all fields start at offset 0.
+    return run_offsetof_test(source,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BuiltinOffsetOf_Union and validate component behavior
   ```
 
 ### `test_BuiltinOffsetOf_NonAggregate_Error`
-- **Primary File**: `tests/integration/builtin_offsetof_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_offsetof_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return @offsetOf(i32, \
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BuiltinOffsetOf_NonAggregate_Error and validate component behavior
   ```
 
 ### `test_BuiltinOffsetOf_FieldNotFound_Error`
-- **Primary File**: `tests/integration/builtin_offsetof_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/builtin_offsetof_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const Point = struct { x: i32, y: i32 };
+  ```
   ```zig
 fn foo() usize {
   ```
   ```zig
-const Point = struct { x: i32, y: i32 };
+return @offsetOf(Point, \
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BuiltinOffsetOf_FieldNotFound_Error and validate component behavior
   ```
 
 ### `test_BuiltinOffsetOf_IncompleteType_Error`
-- **Primary File**: `tests/integration/builtin_offsetof_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/builtin_offsetof_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_BuiltinOffsetOf_IncompleteType_Error specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BuiltinOffsetOf_IncompleteType_Error and validate component behavior
   ```

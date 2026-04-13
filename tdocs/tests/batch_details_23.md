@@ -1,67 +1,116 @@
-# Batch 23 Details: Memory Management
+# Z98 Test Batch 23 Technical Specification
 
-## Focus
-Memory Management
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 6 test cases focusing on memory management.
+This test batch comprises 6 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_CVariableAllocator_Basic`
-- **Primary File**: `tests/test_c_variable_allocator.cpp`
-- **Verification Points**: 2 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c_variable_allocator.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+;
+
+    const char* name = alloc.allocate(&s1);
+    ASSERT_EQ(0, plat_strcmp(name,
+  ```
+  ```zig
+;
+    const char* name2 = alloc.allocate(&s2);
+    ASSERT_EQ(0, plat_strcmp(name2,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Memory Management environment in a clean arena
-  2. Initialize test_CVariableAllocator_Basic specific test data structures
-  4. Verify that the 2 semantic properties match expected values
+  1. Assert that `plat_strcmp(name, "my_var"` matches `0`
+  2. Assert that `plat_strcmp(name2, "my_var_1"` matches `0`
   ```
 
 ### `test_CVariableAllocator_Keywords`
-- **Primary File**: `tests/test_c_variable_allocator.cpp`
-- **Verification Points**: 2 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c_variable_allocator.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+;
+
+    const char* name = alloc.allocate(&s1);
+    ASSERT_EQ(0, plat_strcmp(name,
+  ```
+  ```zig
+;
+    const char* name2 = alloc.allocate(&s2);
+    ASSERT_EQ(0, plat_strcmp(name2,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Memory Management environment in a clean arena
-  2. Initialize test_CVariableAllocator_Keywords specific test data structures
-  4. Verify that the 2 semantic properties match expected values
+  1. Assert that `plat_strcmp(name, "z_int"` matches `0`
+  2. Assert that `plat_strcmp(name2, "z_123var"` matches `0`
   ```
 
 ### `test_CVariableAllocator_Truncation`
-- **Primary File**: `tests/test_c_variable_allocator.cpp`
-- **Verification Points**: 4 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c_variable_allocator.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+;
+
+    const char* name = alloc.allocate(&s1);
+    ASSERT_EQ(31, (int)plat_strlen(name));
+    ASSERT_TRUE(plat_strncmp(name, s1.name, 31) == 0);
+
+    // Collision after truncation
+    Symbol s2;
+    s2.name =
+  ```
+  ```zig
+;
+    const char* name2 = alloc.allocate(&s2);
+    ASSERT_EQ(31, (int)plat_strlen(name2));
+    // name is
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Memory Management environment in a clean arena
-  2. Initialize test_CVariableAllocator_Truncation specific test data structures
-  4. Verify that the 4 semantic properties match expected values
+  1. Assert that `int` matches `31`
+  2. Validate that `plat_strncmp(name, s1.name, 31` is satisfied
+  3. Assert that `plat_strcmp(name2, "this_is_a_very_long_variable__1"` matches `0`
   ```
 
 ### `test_CVariableAllocator_MangledReuse`
-- **Primary File**: `tests/test_c_variable_allocator.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c_variable_allocator.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+;
+
+    const char* name = alloc.allocate(&s);
+    ASSERT_EQ(0, plat_strcmp(name,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Memory Management environment in a clean arena
-  2. Initialize test_CVariableAllocator_MangledReuse specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Assert that `plat_strcmp(name, "already_mangled"` matches `0`
   ```
 
 ### `test_CVariableAllocator_Generate`
-- **Primary File**: `tests/test_c_variable_allocator.cpp`
-- **Verification Points**: 2 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c_variable_allocator.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+));
+
+    const char* name2 = alloc.generate(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Memory Management environment in a clean arena
-  2. Initialize test_CVariableAllocator_Generate specific test data structures
-  4. Verify that the 2 semantic properties match expected values
+  1. Assert that `plat_strcmp(name, "_tmp"` matches `0`
+  2. Assert that `plat_strcmp(name2, "_tmp_1"` matches `0`
   ```
 
 ### `test_CVariableAllocator_Reset`
-- **Primary File**: `tests/test_c_variable_allocator.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c_variable_allocator.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+);
+    alloc.reset();
+
+    const char* name = alloc.generate(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Memory Management environment in a clean arena
-  2. Initialize test_CVariableAllocator_Reset specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Assert that `plat_strcmp(name, "my_var"` matches `0`
   ```

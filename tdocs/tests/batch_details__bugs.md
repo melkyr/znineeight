@@ -1,104 +1,88 @@
-# Batch _bugs Details: Code Generation (C89)
+# Z98 Test Batch _bugs Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on code generation (c89).
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_SwitchLifter_NestedControlFlow`
-- **Primary File**: `tests/integration/switch_lifter_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_lifter_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32, cond: bool) i32 {
+    return switch (x) {
+        1 => if (cond) 10 else 20,
+        else => 0,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Codegen_StringSplit`
-- **Primary File**: `tests/integration/string_split_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/string_split_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
-pub const long_string = \
+temp_string_split_test.c
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Codegen_ForPtrToArray`
-- **Primary File**: `tests/integration/for_ptr_array_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/for_ptr_array_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: *[5]i32) void {
+    for (ptr) |item| {
+        _ = item;
+    }
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+temp_for_ptr_array_test.c
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ArrayProperty_Len`
-- **Primary File**: `tests/integration/array_property_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/array_property_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var arr: [5]i32 = undefined;
+    var x: usize = arr.len;
+    var ptr: *[10]u8 = undefined;
+    var y: usize = ptr.len;
+}
+
   ```
-  ```zig
-var arr: [5]i32 = undefined;
-  ```
-  ```zig
-var x: usize = arr.len;
-  ```
-  ```zig
-var ptr: *[10]u8 = undefined;
-  ```
-  ```zig
-var y: usize = ptr.len;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ArrayProperty_ComptimeLen`
-- **Primary File**: `tests/integration/array_property_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/array_property_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    const arr = [3]i32{1, 2, 3};
+    var buffer: [arr.len]i32 = undefined;
+}
+
   ```
-  ```zig
-var buffer: [arr.len]i32 = undefined;
-  ```
-  ```zig
-const arr = [3]i32{1, 2, 3};
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

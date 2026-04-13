@@ -1,262 +1,291 @@
-# Batch 27 Details: Code Generation (C89)
+# Z98 Test Batch 27 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 21 test cases focusing on code generation (c89).
+This test batch comprises 21 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Codegen_Local_Simple`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { var x: i32 = 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_Simple and validate component behavior
   ```
 
 ### `test_Codegen_Local_AfterStatement`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {} fn my_test() void { foo(); var x: i32 = 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_AfterStatement and validate component behavior
   ```
 
 ### `test_Codegen_Local_Const`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { const x: i32 = 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_Const and validate component behavior
   ```
 
 ### `test_Codegen_Local_Undefined`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { var x: i32 = undefined; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_Undefined and validate component behavior
   ```
 
 ### `test_Codegen_Local_Shadowing`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { var x: i32 = 1; { var x: i32 = 2; } }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_Shadowing and validate component behavior
   ```
 
 ### `test_Codegen_Local_IfStatement`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(c: bool) void { if (c) { var x: i32 = 1; } else { var x: i32 = 2; } }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+if (c) {
+        int x = 1;
+    } else {
+        int x_1 = 2;
+    }
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_IfStatement and validate component behavior
   ```
 
 ### `test_Codegen_Local_WhileLoop`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { var i: i32 = 0; while (i < 10) { var x: i32 = i; i = i + 1; } }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+if (!(i < 10)) goto __loop_0_end;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_WhileLoop and validate component behavior
   ```
 
 ### `test_Codegen_Local_Return`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: i32) i32 { return a + 1; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+static int zF_0_my_test(int a) {
+    return a + 1;
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_Return and validate component behavior
   ```
 
 ### `test_Codegen_Local_MultipleBlocks`
-- **Primary File**: `tests/integration/codegen_local_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_local_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { { var x: i32 = 1; } { var x: i32 = 2; } }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Local_MultipleBlocks and validate component behavior
   ```
 
 ### `test_Codegen_Fn_Simple`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_Codegen_Fn_Simple specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_Public`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_Codegen_Fn_Public specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_Params`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn add(a: i32, b: i32) i32 { return a + b; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_Pointers`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn process(p: *i32) *i32 { return p; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_Call`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn bar() void {} fn foo() void { bar(); }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_KeywordParam`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_Codegen_Fn_KeywordParam specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_MangledCall`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn register() void {} fn my_test() void { register(); }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_StructReturn`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-const Point = struct { x: i32, y: i32 }; fn getOrigin() Point { var p: Point = undefined; p.x = 0; p.y = 0; return p; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_Extern`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-extern fn foo(a: i32) void;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_Export`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_Codegen_Fn_Export specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_LongName`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_Codegen_Fn_LongName specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Fn_RejectArrayReturn`
-- **Primary File**: `tests/integration/codegen_function_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_Codegen_Fn_Public`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_Codegen_Fn_Params`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn add(a: i32, b: i32) i32 { return a + b; }
+  ```
+  ```zig
+static int zF_0_add(int a, int b) {
+    return a + b;
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute core verification logic for test_Codegen_Fn_Params and validate component behavior
+  ```
+
+### `test_Codegen_Fn_Pointers`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn process(p: *i32) *i32 { return p; }
+  ```
+  ```zig
+static int* zF_0_process(int* p) {
+    return p;
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute core verification logic for test_Codegen_Fn_Pointers and validate component behavior
+  ```
+
+### `test_Codegen_Fn_Call`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn bar() void {} fn foo() void { bar(); }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute core verification logic for test_Codegen_Fn_Call and validate component behavior
+  ```
+
+### `test_Codegen_Fn_KeywordParam`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_Codegen_Fn_MangledCall`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn register() void {} fn my_test() void { register(); }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute core verification logic for test_Codegen_Fn_MangledCall and validate component behavior
+  ```
+
+### `test_Codegen_Fn_StructReturn`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const Point = struct { x: i32, y: i32 }; fn getOrigin() Point { var p: Point = undefined; p.x = 0; p.y = 0; return p; }
+  ```
+  ```zig
+static struct zS_0_Point zF_2_getOrigin(void) {
+    struct zS_0_Point p;
+    p.x = 0;
+    p.y = 0;
+    return p;
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute core verification logic for test_Codegen_Fn_StructReturn and validate component behavior
+  ```
+
+### `test_Codegen_Fn_Extern`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+extern fn foo(a: i32) void;
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute core verification logic for test_Codegen_Fn_Extern and validate component behavior
+  ```
+
+### `test_Codegen_Fn_Export`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_Codegen_Fn_LongName`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_Codegen_Fn_RejectArrayReturn`
+- **Implementation Source**: `tests/integration/codegen_function_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

@@ -1,225 +1,92 @@
-# Batch 36 Details: Code Generation (C89)
+# Z98 Test Batch 36 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 12 test cases focusing on code generation (c89).
+This test batch comprises 6 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Pointer_Pointer_Decl`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_level_pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: i32 = 42;
+    var p: *i32 = &x;
+    var pp: **i32 = &p;
+    _ = pp;
+}
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-  ```zig
-var pp: **i32 = &p;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Pointer_Pointer_Decl and validate component behavior
   ```
 
 ### `test_Pointer_Pointer_Dereference`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_level_pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 {
+    var x: i32 = 42;
+    var p: *i32 = &x;
+    var pp: **i32 = &p;
+    return pp.*.*;
+}
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-  ```zig
-var pp: **i32 = &p;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Pointer_Pointer_Dereference and validate component behavior
   ```
 
 ### `test_Pointer_Pointer_Triple`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_level_pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ppp: ***i32) i32 {
+    return ppp.*.*.*;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Pointer_Pointer_Triple and validate component behavior
   ```
 
 ### `test_Pointer_Pointer_Param_Return`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_level_pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(pp: **i32) **i32 {
+    return pp;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Pointer_Pointer_Param_Return and validate component behavior
   ```
 
 ### `test_Pointer_Pointer_Const_Ignored`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_level_pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(p: *const *i32) void {
+    var x: **i32 = @ptrCast(**i32, p);
+    _ = x;
+}
   ```
-  ```zig
-var x: **i32 = @ptrCast(**i32, p);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Pointer_Pointer_Const_Ignored and validate component behavior
   ```
 
 ### `test_Pointer_Pointer_Global_Emission`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_level_pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: i32 = 42;
-  ```
-  ```zig
 var p: *i32 = &x;
-  ```
-  ```zig
 pub var pp: *const *i32 = &p;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_Pointer_Pointer_Decl`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-  ```zig
-var pp: **i32 = &p;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Pointer_Pointer_Dereference`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() i32 {
-  ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-  ```zig
-var pp: **i32 = &p;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Pointer_Pointer_Triple`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(ppp: ***i32) i32 {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Pointer_Pointer_Param_Return`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(pp: **i32) **i32 {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Pointer_Pointer_Const_Ignored`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(p: *const *i32) void {
-  ```
-  ```zig
-var x: **i32 = @ptrCast(**i32, p);
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Pointer_Pointer_Global_Emission`
-- **Primary File**: `tests/integration/multi_level_pointer_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-  ```zig
-pub var pp: *const *i32 = &p;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

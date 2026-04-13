@@ -1,103 +1,70 @@
-# Batch 69 Details: Code Generation (C89)
+# Z98 Test Batch 69 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 4 test cases focusing on code generation (c89).
+This test batch comprises 2 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Phase1_TaggedUnion_Codegen`
-- **Primary File**: `tests/integration/phase1_tagged_union_verification.cpp`
-- **Verification Points**: 11 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn test_fn() void {
-  ```
-  ```zig
-var u = U{ .A = 42 };
-  ```
+- **Implementation Source**: `tests/integration/phase1_tagged_union_verification.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) {
+    A: i32,
+    B: f64,
+    C: void,
+};
+pub fn test_fn() void {
+    var u = U{ .A = 42 };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+test_tagged_union_codegen.c
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 11 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `sym not equals null` is satisfied
+  3. Validate that `sym.symbol_type not equals null` is satisfied
+  4. Validate that `isTaggedUnion(sym.symbol_type` is satisfied
+  5. Validate that `f not equals null` is satisfied
+  6. Validate that `unit.containsPattern("struct zS_#_U", buffer` is satisfied
+  7. Validate that `unit.containsPattern("zE_#_U_Tag tag;", buffer` is satisfied
+  8. Validate that `strstr(buffer, "union {"` is satisfied
+  9. Validate that `strstr(buffer, "int A;"` is satisfied
+  10. Validate that `strstr(buffer, "double B;"` is satisfied
+  11. Validate that `strstr(buffer, "void C;"` is satisfied
+  12. Validate that `strstr(buffer, "} data;"` is satisfied
   ```
 
 ### `test_Phase1_TaggedUnion_ForwardDecl`
-- **Primary File**: `tests/integration/phase1_tagged_union_verification.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/phase1_tagged_union_verification.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const Node = union(enum) {
-  ```
-  ```zig
+    Leaf: i32,
+    Branch: *Tree,
+};
 pub const Tree = union(enum) {
-  ```
-  ```zig
-Pair: struct { left: *Node, right: *Node },
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
+    Single: *Node,
+    Pair: struct { left: *Node, right: *Node },
+};
 
-### `test_Phase1_TaggedUnion_Codegen`
-- **Primary File**: `tests/integration/phase1_tagged_union_verification.cpp`
-- **Verification Points**: 11 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn test_fn() void {
   ```
   ```zig
-var u = U{ .A = 42 };
+test_forward_decl.h
   ```
-  ```zig
-const U = union(enum) {
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 11 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_Phase1_TaggedUnion_ForwardDecl`
-- **Primary File**: `tests/integration/phase1_tagged_union_verification.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub const Node = union(enum) {
-  ```
-  ```zig
-pub const Tree = union(enum) {
-  ```
-  ```zig
-Pair: struct { left: *Node, right: *Node },
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `mod not equals null` is satisfied
+  3. Validate that `f not equals null` is satisfied
+  4. Validate that `unit.containsPattern("struct zS_#_Node;", buffer` is satisfied
+  5. Validate that `unit.containsPattern("struct zS_#_Tree;", buffer` is satisfied
+  6. Validate that `unit.containsPattern("union zS_#_Node;", buffer` is satisfied
+  7. Validate that `unit.containsPattern("union zS_#_Tree;", buffer` is satisfied
   ```

@@ -1,279 +1,99 @@
 # Z98 Test Suite Specification
 
-This document provides an extensive specification of the Z98 compiler test suite. It documents what is being tested and how, using pseudocode to describe the test logic. This serves as a reference for implementing `zig1`.
+This document provides an extensive specification of the Z98 compiler test suite. It documents what is being tested and how, using pseudocode to describe the test logic.
 
 ---
 
-## 1. Core Infrastructure & Memory Management
+## 1. Core Architectural Goals
 
-### 1.1 Arena Allocation (Batch 1, 9)
-**Goal**: Verify deterministic, leak-free memory management with strict alignment and overflow protection.
+The Z98 test suite is designed to verify the compiler's adherence to the <16MB memory constraint and C89 compatibility through multiple specialized sub-systems.
 
-- **Alignment**:
-  ```pseudocode
-  create arena(1KB)
-  for i in 1..10:
-    p = arena.alloc(rand(1, 100))
-    assert (p % 8) == 0
-  ```
-- **Hard Limit Protection**:
-  ```pseudocode
-  create arena with 16MB limit
-  arena.alloc(17MB)
-  assert process_aborts_with("FATAL: Memory limit exceeded")
-  ```
-- **Reset and Reuse**:
-  ```pseudocode
-  create arena
-  p1 = arena.alloc(100)
-  arena.reset()
-  p2 = arena.alloc(100)
-  assert p1 == p2
-  ```
+## 2. Technical Inventory
 
-### 1.2 Dynamic Arrays (Batch 1)
-**Goal**: Verify safe growth and copy semantics for POD and non-POD types.
-
-- **Growth Heuristics**:
-  ```pseudocode
-  arr = DynamicArray<i32>(arena, 0)
-  for i in 1..100:
-    arr.append(i)
-  assert arr.length == 100
-  assert arr.capacity >= 100
-  ```
-
----
-
-## 2. Lexical Analysis (Batch 1, 2)
-
-### 2.1 Numeric Literals
-**Goal**: Verify precise parsing of integers and floats with Z98-specific syntax.
-
-- **Range Ambiguity**:
-  ```pseudocode
-  lexer.init("0..10")
-  assert lexer.next().type == TOKEN_INTEGER(0)
-  assert lexer.next().type == TOKEN_RANGE("..")
-  assert lexer.next().type == TOKEN_INTEGER(10)
-  ```
-- **Underscores and Bases**:
-  ```pseudocode
-  lexer.init("1_000_000 0x123_abc 0b101_010")
-  assert lexer.next().int_value == 1000000
-  assert lexer.next().int_value == 0x123abc
-  assert lexer.next().int_value == 42
-  ```
-
-### 2.2 Comments and Character Handling
-- **Nested Block Comments**:
-  ```pseudocode
-  lexer.init("/* outer /* inner */ outer */ +")
-  assert lexer.next().type == TOKEN_PLUS
-  ```
-- **Unicode in Literals**:
-  ```pseudocode
-  lexer.init("\"UTF-8: \u2713\"")
-  assert lexer.next().string_content == "UTF-8: \u2713"
-  ```
-
----
-
-## 3. Parsing & AST Construction (Batch 2, 46, 58, 61, 63)
-
-### 3.1 Operator Precedence & Associativity
-**Goal**: Ensure the parser builds the correctly weighted AST tree.
-
-- **Arithmetic and Logical**:
-  ```pseudocode
-  parser.init("a + b * c == d or e")
-  ast = parser.parse()
-  assert ast.type == OR
-  assert ast.left.type == EQUAL_EQUAL
-  assert ast.left.left.type == PLUS
-  ```
-
-### 3.2 Control Flow Bracelessness
-- **Normalized Blocks**:
-  ```pseudocode
-  parser.init("if (c) return;")
-  ast = parser.parse()
-  assert ast.type == NODE_IF
-  assert ast.then_branch.type == NODE_BLOCK
-  assert ast.then_branch.statements[0].type == NODE_RETURN
-  ```
+| Batch | Category | Focus Areas |
+|-------|----------|-------------|
+| [1](../../tdocs/tests/batch_details_1.md) | Infrastructure | test_DynamicArray_ShouldUseCopyConstructionOnReallocation, test_ArenaAllocator_AllocShouldReturn8ByteAligned, test_arena_alloc_out_of_memory... |
+| [2](../../tdocs/tests/batch_details_2.md) | Parser | test_ASTNode_IntegerLiteral, test_ASTNode_FloatLiteral, test_ASTNode_CharLiteral... |
+| [3](../../tdocs/tests/batch_details_3.md) | Type System | test_TypeChecker_IntegerLiteralInference, test_TypeChecker_FloatLiteralInference, test_TypeChecker_CharLiteralInference... |
+| [4](../../tdocs/tests/batch_details_4.md) | Type System | test_MemoryStability_TokenSupplierDanglingPointer, test_C89Rejection_Slice, test_C89Rejection_TryExpression... |
+| [5](../../tdocs/tests/batch_details_5.md) | Static Analysis | test_DoubleFree_SimpleDoubleFree, test_DoubleFree_BasicTracking, test_DoubleFree_UninitializedFree... |
+| [6](../../tdocs/tests/batch_details_6.md) | Type System | test_TypeChecker_StructDeclaration_Valid, test_TypeChecker_StructDeclaration_DuplicateField, test_TypeChecker_StructInitialization_Valid... |
+| [7](../../tdocs/tests/batch_details_7.md) | Type System | test_Task142_ErrorFunctionDetection, test_Task142_ErrorFunctionRejection, test_Task143_TryExpressionDetection_Contexts... |
+| [8](../../tdocs/tests/batch_details_8.md) | Type System | test_Task154_RejectAnytypeParam, test_Task154_RejectTypeParam, test_Task154_CatalogueComptimeDefinition... |
+| [9](../../tdocs/tests/batch_details_9.md) | Type System | test_platform_alloc, test_platform_realloc, test_platform_string... |
+| [10](../../tdocs/tests/batch_details_10.md) | Compiler | test_simple_mangling, test_generic_mangling, test_multiple_generic_mangling... |
+| [11](../../tdocs/tests/batch_details_11.md) | Lexer | test_Milestone4_Lexer_Tokens, test_Milestone4_Parser_AST, test_OptionalType_Creation... |
+| [12](../../tdocs/tests/batch_details_12.md) | Type System | test_BootstrapTypes_Allowed_Primitives, test_BootstrapTypes_Allowed_Pointers, test_BootstrapTypes_Allowed_Arrays... |
+| [13](../../tdocs/tests/batch_details_13.md) | Compiler | test_IfStatementIntegration_BoolCondition, test_IfStatementIntegration_IntCondition, test_IfStatementIntegration_PointerCondition... |
+| [14](../../tdocs/tests/batch_details_14.md) | Compiler | test_WhileLoopIntegration_BoolCondition, test_WhileLoopIntegration_IntCondition, test_WhileLoopIntegration_PointerCondition... |
+| [15](../../tdocs/tests/batch_details_15.md) | Compiler | test_StructIntegration_BasicNamedStruct, test_StructIntegration_MemberAccess, test_StructIntegration_NamedInitializerOrder... |
+| [16](../../tdocs/tests/batch_details_16.md) | Compiler | test_PointerIntegration_AddressOfDereference, test_PointerIntegration_DereferenceExpression, test_PointerIntegration_PointerArithmeticAdd... |
+| [17](../../tdocs/tests/batch_details_17.md) | Validation | test_C89Validator_GCC_KnownGood, test_C89Validator_GCC_KnownBad, test_C89Validator_MSVC6_LongIdentifier... |
+| [18](../../tdocs/tests/batch_details_18.md) | Type System | test_ArrayIntegration_FixedSizeDecl, test_ArrayIntegration_Indexing, test_ArrayIntegration_MultiDimensionalIndexing... |
+| [19](../../tdocs/tests/batch_details_19.md) | Type System | test_Task183_USizeISizeSupported, test_Task182_ArenaAllocReturnsVoidPtr, test_Task182_ImplicitVoidPtrToTypedPtrAssignment... |
+| [20](../../tdocs/tests/batch_details_20.md) | Type System | test_PtrCast_Basic, test_PtrCast_ToConst, test_PtrCast_FromVoid... |
+| [21](../../tdocs/tests/batch_details_21.md) | Type System | test_SizeOf_Primitive, test_SizeOf_Struct, test_SizeOf_Array... |
+| [22](../../tdocs/tests/batch_details_22.md) | Codegen | test_c89_emitter_basic, test_c89_emitter_buffering, test_plat_file_raw_io... |
+| [23](../../tdocs/tests/batch_details_23.md) | Compiler | test_CVariableAllocator_Basic, test_CVariableAllocator_Keywords, test_CVariableAllocator_Truncation... |
+| [24](../../tdocs/tests/batch_details_24.md) | Codegen | test_Codegen_Int_i32, test_Codegen_Int_u32, test_Codegen_Int_i64... |
+| [25](../../tdocs/tests/batch_details_25.md) | Codegen | test_Codegen_Float_f64, test_Codegen_Float_f32, test_Codegen_Float_WholeNumber... |
+| [26](../../tdocs/tests/batch_details_26.md) | Codegen | test_Codegen_StringSimple, test_Codegen_StringEscape, test_Codegen_StringQuotes... |
+| [27](../../tdocs/tests/batch_details_27.md) | Codegen | test_Codegen_Local_Simple, test_Codegen_Local_AfterStatement, test_Codegen_Local_Const... |
+| [28](../../tdocs/tests/batch_details_28.md) | Compiler | test_Task168_MutualRecursion, test_Task168_IndirectCallRejection, test_Task168_GenericCallChain... |
+| [29](../../tdocs/tests/batch_details_29.md) | Codegen | test_Codegen_Binary_Arithmetic, test_Codegen_Binary_Comparison, test_Codegen_Binary_Bitwise... |
+| [30](../../tdocs/tests/batch_details_30.md) | Codegen | test_Codegen_MemberAccess_Simple, test_Codegen_MemberAccess_Pointer, test_Codegen_MemberAccess_ExplicitDeref... |
+| [31](../../tdocs/tests/batch_details_31.md) | Codegen | test_Codegen_Array_Simple, test_Codegen_Array_MultiDim, test_Codegen_Array_Pointer... |
+| [32](../../tdocs/tests/batch_details_32.md) | End-to-End | test_EndToEnd_HelloWorld, test_EndToEnd_PrimeNumbers... |
+| [33](../../tdocs/tests/batch_details_33.md) | Imports | test_Import_Simple, test_Import_Circular, test_Import_Missing... |
+| [34](../../tdocs/tests/batch_details_34.md) | Imports | test_MultiModule_BasicCall, test_MultiModule_StructUsage, test_MultiModule_PrivateVisibility... |
+| [35](../../tdocs/tests/batch_details_35.md) | Imports | test_ImportResolution_Basic, test_ImportResolution_IncludePath, test_ImportResolution_DefaultLib... |
+| [36](../../tdocs/tests/batch_details_36.md) | Compiler | test_Pointer_Pointer_Decl, test_Pointer_Pointer_Dereference, test_Pointer_Pointer_Triple... |
+| [37](../../tdocs/tests/batch_details_37.md) | Type System | test_ManyItemPointer_Parsing, test_ManyItemPointer_Indexing, test_SingleItemPointer_Indexing_Rejected... |
+| [38](../../tdocs/tests/batch_details_38.md) | Type System | test_TypeSystem_FunctionPointerType, test_TypeSystem_SignaturesMatch, test_TypeSystem_AreTypesEqual_FnPtr... |
+| [39](../../tdocs/tests/batch_details_39.md) | Compiler | test_DeferIntegration_Basic, test_DeferIntegration_LIFO, test_DeferIntegration_Return... |
+| [40](../../tdocs/tests/batch_details_40.md) | Slices | test_SliceIntegration_Declaration, test_SliceIntegration_ParametersAndReturn, test_SliceIntegration_IndexingAndLength... |
+| [41](../../tdocs/tests/batch_details_41.md) | Compiler | test_ForIntegration_Array, test_ForIntegration_Slice, test_ForIntegration_Range... |
+| [42](../../tdocs/tests/batch_details_42.md) | Compiler | test_ForIntegration_Basic, test_ForIntegration_InvalidIterable, test_ForIntegration_ImmutableCapture... |
+| [43](../../tdocs/tests/batch_details_43.md) | Type System | test_SwitchNoreturn_BasicDivergence, test_SwitchNoreturn_AllDivergent, test_SwitchNoreturn_BreakInProng... |
+| [44](../../tdocs/tests/batch_details_44.md) | Compiler | test_Task225_2_BracelessIfExpr, test_Task225_2_PrintLowering, test_Task225_2_SwitchIfExpr... |
+| [45](../../tdocs/tests/batch_details_45.md) | Compiler | test_ErrorHandling_ErrorSetDefinition, test_ErrorHandling_ErrorLiteral, test_ErrorHandling_SuccessWrapping... |
+| [46](../../tdocs/tests/batch_details_46.md) | Parser | test_Parser_Catch_WithBlock, test_Parser_Try_Nested, test_Parser_Catch_Precedence_Arithmetic... |
+| [47](../../tdocs/tests/batch_details_47.md) | Optionals | test_Task228_OptionalBasics, test_Task228_OptionalOrelse, test_Task228_OptionalIfCapture... |
+| [48](../../tdocs/tests/batch_details_48.md) | Type System | test_RecursiveTypes_SelfRecursiveStruct, test_RecursiveTypes_MutualRecursiveStructs, test_RecursiveTypes_RecursiveSlice... |
+| [49](../../tdocs/tests/batch_details_49.md) | Compiler | test_MultiError_Reporting... |
+| [50](../../tdocs/tests/batch_details_50.md) | Compiler | test_RecursiveSlice_MultiModule, test_RecursiveSlice_SelfReference, test_RecursiveSlice_MutuallyRecursive... |
+| [51](../../tdocs/tests/batch_details_51.md) | Compiler | test_UnionCapture_ForwardDeclaredStruct, test_UnionCapture_NestedUnion, test_UnionCapture_PointerToIncomplete... |
+| [52](../../tdocs/tests/batch_details_52.md) | Compiler | test_Task9_8_StringLiteralCoercion, test_Task9_8_ImplicitReturnErrorVoid, test_Task9_8_WhileContinueExpr... |
+| [53](../../tdocs/tests/batch_details_53.md) | Type System | test_MetadataPreparation_TransitiveHeaders, test_MetadataPreparation_SpecialTypes, test_MetadataPreparation_RecursivePlaceholder... |
+| [54](../../tdocs/tests/batch_details_54.md) | Compiler | test_ASTCloning_Basic, test_ASTCloning_FunctionCall, test_ASTCloning_Switch... |
+| [55](../../tdocs/tests/batch_details_55.md) | AST Lifter | test_ASTLifter_BasicIf, test_ASTLifter_Nested, test_ASTLifter_ComplexAssignment... |
+| [56](../../tdocs/tests/batch_details_56.md) | Compiler | test_UnionSliceLifting_Basic, test_UnionSliceLifting_Coercion, test_UnionSliceLifting_ManualConstruction... |
+| [57](../../tdocs/tests/batch_details_57.md) | Codegen | test_Codegen_AnonymousUnion_Basic, test_Codegen_AnonymousUnion_Nested, test_Codegen_AnonymousStruct_Nested... |
+| [58](../../tdocs/tests/batch_details_58.md) | Compiler | test_BracelessControlFlow_If, test_BracelessControlFlow_ElseIf, test_BracelessControlFlow_While... |
+| [60](../../tdocs/tests/batch_details_60.md) | Parser | test_clone_basic, test_clone_binary_op, test_clone_range... |
+| [61](../../tdocs/tests/batch_details_61.md) | Compiler | test_BracelessControlFlow_If, test_BracelessControlFlow_ElseIf, test_BracelessControlFlow_While... |
+| [62](../../tdocs/tests/batch_details_62.md) | Compiler | test_IssueSegfaultReturn... |
+| [63](../../tdocs/tests/batch_details_63.md) | Compiler | test_Union_NakedTagsImplicitEnum, test_Union_NakedTagsExplicitEnum, test_Union_NakedTagsRejectionUntagged... |
+| [65](../../tdocs/tests/batch_details_65.md) | Tagged Unions | test_TaggedUnionEmission_Named, test_TaggedUnionEmission_Named, test_TaggedUnionEmission_AnonymousField... |
+| [66](../../tdocs/tests/batch_details_66.md) | Type System | test_SliceDefinition_PrivateFunction, test_SliceDefinition_RecursiveType, test_SliceDefinition_NestedType... |
+| [67](../../tdocs/tests/batch_details_67.md) | Imports | test_UnionTagAccess_Basic, test_UnionTagAccess_AliasChain, test_UnionTagAccess_Alias... |
+| [68](../../tdocs/tests/batch_details_68.md) | Compiler | test_StringLiteral_To_ManyPtr, test_StringLiteral_To_Slice, test_StringLiteral_BackwardCompat... |
+| [69](../../tdocs/tests/batch_details_69.md) | Codegen | test_Phase1_TaggedUnion_Codegen, test_Phase1_TaggedUnion_ForwardDecl... |
+| [70](../../tdocs/tests/batch_details_70.md) | Compiler | test_Unreachable_Statement, test_Unreachable_DeadCode, test_Unreachable_Initializer... |
+| [71](../../tdocs/tests/batch_details_71.md) | Compiler | test_Phase3_ErrorUnionRecursion... |
+| [72](../../tdocs/tests/batch_details_72.md) | Compiler | test_SwitchProng_ReturnNoSemicolon, test_SwitchProng_BlockMandatoryComma, test_SwitchProng_ExprRequiredCommaFail... |
+| [73](../../tdocs/tests/batch_details_73.md) | Recursion | test_Phase7_ValidMutualRecursionPointers, test_Phase7_InvalidValueCycle, test_Phase7_DefinitionOrderValueDependency... |
+| [74](../../tdocs/tests/batch_details_74.md) | Compiler | test_AnonInit_TaggedUnion_NestedStruct, test_AnonInit_DeeplyNested, test_AnonInit_Alias... |
+| [75](../../tdocs/tests/batch_details_75.md) | Compiler | test_DoubleFree_StructFieldTracking, test_DoubleFree_StructFieldLeak, test_DoubleFree_ArrayCollapseTracking... |
+| [80](../../tdocs/tests/batch_details_80.md) | Aggregates | test_TaggedUnion_ArrayDecomposition, test_TaggedUnion_NestedIfExpr, test_TaggedUnion_NestedSwitchExpr... |
+| [7_debug](../../tdocs/tests/batch_details_7_debug.md) | Type System | test_Task142_ErrorFunctionDetection, test_Task142_ErrorFunctionRejection, test_Task143_TryExpressionDetection_Contexts... |
+| [9a](../../tdocs/tests/batch_details_9a.md) | Compiler | test_Phase9a_ModuleQualifiedTaggedUnion, test_Phase9a_LocalAliasTaggedUnion, test_Phase9a_RecursiveAliasEnum... |
+| [9b](../../tdocs/tests/batch_details_9b.md) | Compiler | test_TaggedUnionInit_ReturnAnonymous, test_TaggedUnionInit_Assignment, test_TaggedUnionInit_NakedTag... |
+| [9c](../../tdocs/tests/batch_details_9c.md) | Type System | test_ExpectedType_SwitchReturn, test_ExpectedType_Assignment, test_ExpectedType_VarDecl... |
+| [_bugs](../../tdocs/tests/batch_details__bugs.md) | Codegen | test_SwitchLifter_NestedControlFlow, test_Codegen_StringSplit, test_Codegen_ForPtrToArray... |
 
 ---
 
-## 4. Type System & Checking (Batch 3, 6, 38, 45, 47, 74, 80)
+## 3. High-Level Logic Specifications
 
-### 4.1 Type Inference & Implicit Rules
-- **Constant Folding**:
-  ```pseudocode
-  type_checker.init("const x = 1 + 2 * 3;")
-  ast = type_checker.check()
-  assert ast.initializer.is_constant == true
-  assert ast.initializer.int_value == 7
-  ```
-- **Pointer Coercion**:
-  ```pseudocode
-  type_checker.init("var p: *void = @ptrCast(*i32, x);")
-  assert type_checker.check() == SUCCESS
-  ```
-
-### 4.2 Slices (Batch 40, 66)
-**Goal**: Verify slice mechanics and ABI compatibility.
-
-- **Slicing Syntax**:
-  ```pseudocode
-  type_checker.init("var arr: [5]i32; var s = arr[1..4];")
-  ast = type_checker.check()
-  assert ast.s.resolved_type == []i32
-  assert ast.s.base_ptr == &arr[1]
-  assert ast.s.len == 3
-  ```
-
-### 4.3 Tagged Unions (Batch 65, 69, 80, 9b)
-- **Naked Tag Coercion**:
-  ```pseudocode
-  type_checker.init("const U = union(enum) { A, B }; var u: U = .A;")
-  assert type_checker.check() == SUCCESS
-  ```
-- **Switch Payload Capture**:
-  ```pseudocode
-  type_checker.init("switch (u) { .A => | val | { ... } }")
-  type_checker.check()
-  assert symbol("val").type == U.A_type
-  ```
-
----
-
-## 5. Static Analyzers (Batch 5, 7, 75, 252, 253)
-
-### 5.1 Double Free Detection
-- **Path-Awareness**:
-  ```pseudocode
-  analyzer.init("if (c) p.free(); else p.free(); p.free();")
-  assert analyzer.check() == ERR_DOUBLE_FREE
-  ```
-- **Loop Uncertainty**:
-  ```pseudocode
-  analyzer.init("while (c) { p.free(); }")
-  assert analyzer.check() == WARN_POTENTIAL_DOUBLE_FREE // because of 2nd iteration
-  ```
-
-### 5.2 Null Pointer Analysis
-- **Guard Resolution**:
-  ```pseudocode
-  analyzer.init("if (p != null) { p.* = 1; }")
-  assert analyzer.check() == SUCCESS // p is known SAFE inside if
-  ```
-
----
-
-## 6. Code Generation & AST Lifting (Batch 26-31, 44, 55, 65)
-
-### 6.1 Control-Flow Lifting
-**Goal**: Ensure Zig's expression-based features are safely hoisted for C89.
-
-- **If-Expression Lifting**:
-  ```pseudocode
-  lifter.init("var x = if (c) f() else g();")
-  lifter.lift()
-  assert root.statements[0].type == NODE_VAR_DECL("__tmp_1")
-  assert root.statements[1].type == NODE_IF(c, {__tmp_1 = f()}, {__tmp_1 = g()})
-  assert root.statements[2].type == NODE_ASSIGNMENT(x, "__tmp_1")
-  ```
-
-### 6.2 C89 Compatibility Patterns
-- **Two-Pass Block Emission**:
-  ```pseudocode
-  emitter.init("{ var x = 1; f(); var y = 2; }")
-  emitter.emit()
-  assert output_starts_with("{ int x; int y; x = 1; f(); y = 2; }")
-  ```
-
----
-
-## 7. Multi-Module System (Batch 33, 34, 35, 73)
-
-### 7.1 Import Resolution & Topological Sorting
-- **Circular Imports**:
-  ```pseudocode
-  fileA: "@import(\"B.zig\")"
-  fileB: "@import(\"A.zig\")"
-  assert compiler.topological_sort([A, B]) == [B, A] // or [A, B], ensuring no infinite loop
-  ```
-
-### 7.2 Cross-Module Visibility
-- **Pub Enforcement**:
-  ```pseudocode
-  fileA: "fn f() {}"
-  fileB: "@import(\"A.zig\").f()"
-  assert type_checker.check(B) == ERR_SYMBOL_NOT_PUBLIC
-  ```
-
----
-
-## 8. C89 Compliance Validation (Batch 17)
-
-### 8.1 MSVC 6.0 Restrictions
-- **Identifier Length**:
-  ```pseudocode
-  validator.init("const a_very_long_name_exceeding_31_chars = 1;")
-  assert validator.check_msvc6() == false // Warning or Error
-  ```
-- **C++ Comment Rejection**:
-  ```pseudocode
-  validator.init("int x; // comment")
-  assert validator.check_msvc6() == false
-  ```
-
----
-
-## 9. Test Batch Inventory (Detailed Coverage)
-
-| Batch | Component | Focus Areas |
-|-------|-----------|-------------|
-| [1](../../tdocs/tests/batch_details_1.md) |Infrastructure|Arena Allocator, Dynamic Array, Symbol Table|
-| [2-3](../../tdocs/tests/batch_details_2.md) |Lexer/Type|AST nodes, Basic type inference, C89 integer compatibility|
-| [4](../../tdocs/tests/batch_details_4.md) |Safety|Token stability, C89 rejection of try/catch/slice|
-| [5](../../tdocs/tests/batch_details_5.md) |Analyzer|Double free, memory leaks, uninitialized free|
-| [6](../../tdocs/tests/batch_details_6.md) |Type System|Struct declarations, member access, initializer validation|
-| [7](../../tdocs/tests/batch_details_7.md) |Error Handling|Detection of error functions, try/catch/orelse cataloguing|
-| [8](../../tdocs/tests/batch_details_8.md) |Comptime|Rejection of generics, anytype, type params|
-| [9](../../tdocs/tests/batch_details_9.md) |Platform|Platform-specific IO, File, Alloc, Module derivation|
-| [10](../../tdocs/tests/batch_details_10.md) |Mangler|Simple/Generic mangling, keyword collision, determinism|
-| [11](../../tdocs/tests/batch_details_11.md) |Imports|Modular parsing, symbol lookup across files|
-| [12-16](../../tdocs/tests/batch_details_12.md) |Parser|Expression precedence, Statements, Declarations|
-| [17](../../tdocs/tests/batch_details_17.md) |Validation|C89/MSVC 6.0 strictness checks|
-| [18](../../tdocs/tests/batch_details_18.md) |Switch|Switch expressions and statement lowering|
-| [20](../../tdocs/tests/batch_details_20.md) |Casts|@ptrCast, @intCast, @floatCast validation|
-| [21](../../tdocs/tests/batch_details_21.md) |Builtins|@sizeOf, @alignOf, @offsetOf constant folding|
-| [25-27](../../tdocs/tests/batch_details_25.md) |Codegen|Local/Global variables, String literals|
-| [28](../../tdocs/tests/batch_details_28.md) |Call Sites|Resolution, Mutual recursion, Indirect call rejection|
-| [29-31](../../tdocs/tests/batch_details_29.md) |Codegen|Binary/Unary ops, Member access, Array indexing|
-| [32](../../tdocs/tests/batch_details_32.md) |End-to-End|Hello World, Prime Sieve (full pipeline)|
-| [33-35](../../tdocs/tests/batch_details_33.md) |Multi-Module|Circular imports, Private visibility, Include paths|
-| [36-37](../../tdocs/tests/batch_details_36.md) |Pointers|Multi-level pointers (**T), Many-item pointers ([*]T)|
-| [38](../../tdocs/tests/batch_details_38.md) |Func Pointers|Signature matching, coercion, indirect calls|
-| [39](../../tdocs/tests/batch_details_39.md) |Defer|LIFO execution, Return/Break/Continue interaction|
-| [40](../../tdocs/tests/batch_details_40.md) |Slices|Indexing, .len, Array-to-slice coercion, slicing syntax|
-| [41-42](../../tdocs/tests/batch_details_41.md) |For Loops|Array/Slice/Range iteration, Captures, Mutability|
-| [43](../../tdocs/tests/batch_details_43.md) |Switch|Noreturn prongs, divergent control flow|
-| [44](../../tdocs/tests/batch_details_44.md) |If/Print|Braceless if-expr, std.debug.print lowering|
-| [45-46](../../tdocs/tests/batch_details_45.md) |Error Union|!T representation, Try/Catch lifting (revised)|
-| [47](../../tdocs/tests/batch_details_47.md) |Optionals|?T, null, orelse, if-capture unwrapping|
-| [48-50](../../tdocs/tests/batch_details_48.md) |Recursion|Recursive structs/slices, multi-module recursion|
-| [51](../../tdocs/tests/batch_details_51.md) |Unions|Tagged union captures, nested anonymous structs|
-| [53](../../tdocs/tests/batch_details_53.md) |Metadata|Transitively reachable types, post-order dependency traversal|
-| [54-55](../../tdocs/tests/batch_details_54.md) |AST/Lifter|Deep cloning, Control-flow expression hoisting|
-| [56-57](../../tdocs/tests/batch_details_56.md) |Advanced|Union/Slice lifting, Anonymous aggregate emission|
-| [58, 61](../../tdocs/tests/batch_details_58.md) |Braceless|Braceless if/while/for normalization|
-| [63-65](../../tdocs/tests/batch_details_63.md) |Tagged Unions|Naked tags, Implicit enums, Field-wise assignment|
-| [66-68](../../tdocs/tests/batch_details_66.md) |Slices/Strings|Private nested slices, String literal to ManyPtr coercion|
-| [70-71](../../tdocs/tests/batch_details_70.md) |Unreachable|Dead code elimination, Error union recursion|
-| [73](../../tdocs/tests/batch_details_73.md) |Recursion|Value dependency cycles, Pointer dependency forward-decls|
-| [74-75](../../tdocs/tests/batch_details_74.md) |Initialization|Tagged union nested struct init, Field-level leak tracking|
-| [80](../../tdocs/tests/batch_details_80.md) |Complex Expr|Tagged union array decomposition, Nested switch/if expr|
-| [_bugs](../../tdocs/tests/batch_details__bugs.md) |Regressions|String split, For-ptr-to-array, Nested switch lifter|
+Detailed logic for each batch can be found in the individual documents linked in the table above.

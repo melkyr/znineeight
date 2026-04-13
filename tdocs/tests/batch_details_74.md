@@ -1,99 +1,89 @@
-# Batch 74 Details: General Compiler Integration
+# Z98 Test Batch 74 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 4 test cases focusing on general compiler integration.
+This test batch comprises 4 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_AnonInit_TaggedUnion_NestedStruct`
-- **Primary File**: `tests/integration/anon_init_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn test_anon() void {
-  ```
-  ```zig
-var v: Value = undefined;
-  ```
+- **Implementation Source**: `tests/integration/anon_init_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Value = union(enum) {
+    Cons: struct { car: i32, cdr: i32 },
+    Nil: void,
+};
+fn test_anon() void {
+    var v: Value = undefined;
+    v = Value{ .Cons = .{ .car = 1, .cdr = 2 } };
+}
+
   ```
-  ```zig
-Cons: struct { car: i32, cdr: i32 },
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `run_real_emission_test(source, "test_anon", "v.tag = zE_"` is satisfied
+  2. Validate that `run_real_emission_test(source, "test_anon", "v.data.Cons.car = 1;"` is satisfied
+  3. Validate that `run_real_emission_test(source, "test_anon", "v.data.Cons.cdr = 2;"` is satisfied
   ```
 
 ### `test_AnonInit_DeeplyNested`
-- **Primary File**: `tests/integration/anon_init_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn test_deep() void {
-  ```
-  ```zig
-var n: Node = undefined;
-  ```
+- **Implementation Source**: `tests/integration/anon_init_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Node = struct {
+    data: union(enum) {
+        Int: i32,
+        Nested: struct { x: i32, y: i32 },
+    },
+};
+fn test_deep() void {
+    var n: Node = undefined;
+    n = Node{ .data = .{ .Nested = .{ .x = 10, .y = 20 } } };
+}
+
   ```
-  ```zig
-Nested: struct { x: i32, y: i32 },
-  ```
-  ```zig
-data: union(enum) {
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `run_real_emission_test(source, "test_deep", "n.data.tag = "` is satisfied
+  2. Validate that `run_real_emission_test(source, "test_deep", "n.data.data.Nested.x = 10;"` is satisfied
+  3. Validate that `run_real_emission_test(source, "test_deep", "n.data.data.Nested.y = 20;"` is satisfied
   ```
 
 ### `test_AnonInit_Alias`
-- **Primary File**: `tests/integration/anon_init_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn test_alias() void {
-  ```
-  ```zig
-var v: V2 = .{ .A = 100 };
-  ```
+- **Implementation Source**: `tests/integration/anon_init_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Value = union(enum) {
-  ```
-  ```zig
+    A: i32,
+    B: void,
+};
 const V2 = Value;
+fn test_alias() void {
+    var v: V2 = .{ .A = 100 };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `run_real_emission_test(source, "test_alias", "v.tag = "` is satisfied
+  2. Validate that `run_real_emission_test(source, "test_alias", "v.data.A = 100;"` is satisfied
   ```
 
 ### `test_AnonInit_NakedTag_Coercion`
-- **Primary File**: `tests/integration/anon_init_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn test_naked() void {
-  ```
-  ```zig
-var v: Value = .B;
-  ```
+- **Implementation Source**: `tests/integration/anon_init_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Value = union(enum) {
+    A: i32,
+    B: void,
+};
+fn test_naked() void {
+    var v: Value = .B;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_real_emission_test(source, "test_naked", "v.tag = "` is satisfied
   ```

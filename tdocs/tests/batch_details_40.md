@@ -1,467 +1,192 @@
-# Batch 40 Details: General Compiler Integration
+# Z98 Test Batch 40 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Slices Support: Full integration testing for Zig slices ([]T), including implicit array-to-slice coercion, slicing syntax [start..end], and length property access.
 
-This batch contains 22 test cases focusing on general compiler integration.
+This test batch comprises 11 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_SliceIntegration_Declaration`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var global_slice: []i32 = undefined;
+fn foo() void {
+    var local_slice: []const u8 = undefined;
+}
+
   ```
-  ```zig
-var local_slice: []const u8 = undefined;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `global_sym not equals null` is satisfied
+  3. Assert that `TYPE_SLICE` matches `global_sym.kind of symbol_type`
+  4. Assert that `TYPE_I32` matches `global_sym.symbol_type.as.slice.kind of element_type`
+  5. Ensure that `global_sym.symbol_type.as.slice.is_const` is false
+  6. Validate that `fn not equals null` is satisfied
   ```
 
 ### `test_SliceIntegration_ParametersAndReturn`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn process(s: []i32) []i32 {
+    return s;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `fn_sym not equals null` is satisfied
+  3. Assert that `TYPE_FUNCTION` matches `kind of fn_type`
+  4. Assert that `1` matches `fn_type.as.function.params.length`
+  5. Assert that `TYPE_SLICE` matches `*fn_type.as.function.params)[0].kind`
+  6. Assert that `TYPE_SLICE` matches `fn_type.as.function.kind of return_type`
   ```
 
 ### `test_SliceIntegration_IndexingAndLength`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(s: []i32) i32 {
+    var len: usize = s.len;
+    return s[0];
+}
+
   ```
-  ```zig
-var len: usize = s.len;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `emission.find("s.len"` is satisfied
+  3. Validate that `emission.find("s.ptr[0]"` is satisfied
   ```
 
 ### `test_SliceIntegration_SlicingArrays`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var arr: [10]i32 = undefined;
+fn foo() void {
+    var s1 = arr[0..5];
+    var s2 = arr[5..];
+    var s3 = arr[..5];
+    var s4 = arr[..];
+}
+
   ```
-  ```zig
-var s1 = arr[0..5];
-  ```
-  ```zig
-var s2 = arr[5..];
-  ```
-  ```zig
-var s3 = arr[..5];
-  ```
-  ```zig
-var s4 = arr[..];
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_SliceIntegration_SlicingSlices`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(s: []i32) void {
+    var s1 = s[1..4];
+    var s2 = s[2..];
+    var s3 = s[..3];
+    var s4 = s[..];
+}
+
   ```
-  ```zig
-var s1 = s[1..4];
-  ```
-  ```zig
-var s2 = s[2..];
-  ```
-  ```zig
-var s3 = s[..3];
-  ```
-  ```zig
-var s4 = s[..];
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_SliceIntegration_SlicingPointers`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32) void {
+    var s1 = ptr[0..10];
+}
+
   ```
-  ```zig
-var s1 = ptr[0..10];
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_SliceIntegration_ArrayToSliceCoercion`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn takeSlice(s: []const i32) void {}
-  ```
-  ```zig
 fn foo() void {
+    var arr: [5]i32 = undefined;
+    takeSlice(arr);
+    var s: []const i32 = arr;
+}
+
   ```
-  ```zig
-var arr: [5]i32 = undefined;
-  ```
-  ```zig
-var s: []const i32 = arr;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_SliceIntegration_ConstCorrectness`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(s: []const i32) void {
+    s[0] = 42;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_SliceIntegration_CompileTimeBoundsChecks`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var arr: [10]i32 = undefined;
+    var s = arr[5..11];
+}
+
   ```
-  ```zig
-var arr: [10]i32 = undefined;
-  ```
-  ```zig
-var s = arr[5..11];
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_SliceIntegration_ManyItemPointerMissingIndices`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32) void {
+    var s = ptr[0..];
+}
+
   ```
-  ```zig
-var s = ptr[0..];
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_SliceIntegration_ConstPointerToArraySlicing`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: *const [10]i32) void {
-  ```
-  ```zig
-var s = ptr[0..5];
-  ```
-  ```zig
-// s should be []const i32
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
+    var s = ptr[0..5];
+    // s should be []const i32
+    // s[0] = 1; // would be error
+}
 
-### `test_SliceIntegration_Declaration`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
   ```
-  ```zig
-var global_slice: []i32 = undefined;
-  ```
-  ```zig
-var local_slice: []const u8 = undefined;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
-  ```
-
-### `test_SliceIntegration_ParametersAndReturn`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn process(s: []i32) []i32 {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
-  ```
-
-### `test_SliceIntegration_IndexingAndLength`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: []i32) i32 {
-  ```
-  ```zig
-var len: usize = s.len;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_SliceIntegration_SlicingArrays`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var arr: [10]i32 = undefined;
-  ```
-  ```zig
-var s1 = arr[0..5];
-  ```
-  ```zig
-var s2 = arr[5..];
-  ```
-  ```zig
-var s3 = arr[..5];
-  ```
-  ```zig
-var s4 = arr[..];
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SliceIntegration_SlicingSlices`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: []i32) void {
-  ```
-  ```zig
-var s1 = s[1..4];
-  ```
-  ```zig
-var s2 = s[2..];
-  ```
-  ```zig
-var s3 = s[..3];
-  ```
-  ```zig
-var s4 = s[..];
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SliceIntegration_SlicingPointers`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(ptr: [*]i32) void {
-  ```
-  ```zig
-var s1 = ptr[0..10];
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SliceIntegration_ArrayToSliceCoercion`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn takeSlice(s: []const i32) void {}
-  ```
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var arr: [5]i32 = undefined;
-  ```
-  ```zig
-var s: []const i32 = arr;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SliceIntegration_ConstCorrectness`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: []const i32) void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_SliceIntegration_CompileTimeBoundsChecks`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var arr: [10]i32 = undefined;
-  ```
-  ```zig
-var s = arr[5..11];
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_SliceIntegration_ManyItemPointerMissingIndices`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn foo(ptr: [*]i32) void {
-  ```
-  ```zig
-var s = ptr[0..];
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_SliceIntegration_ConstPointerToArraySlicing`
-- **Primary File**: `tests/integration/slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(ptr: *const [10]i32) void {
-  ```
-  ```zig
-var s = ptr[0..5];
-  ```
-  ```zig
-// s should be []const i32
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

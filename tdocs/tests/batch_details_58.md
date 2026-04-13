@@ -1,210 +1,194 @@
-# Batch 58 Details: General Compiler Integration
+# Z98 Test Batch 58 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 13 test cases focusing on general compiler integration.
+This test batch comprises 13 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_BracelessControlFlow_If`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) i32 {
+    if (b) return 1; else return 0;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_If and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_ElseIf`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    if (x > 0) return 1;
+    else if (x < 0) return -1;
+    else return 0;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_ElseIf and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_While`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(n: i32) void {
+    var i: i32 = 0;
+    while (i < n) i = i + 1;
+}
   ```
-  ```zig
-var i: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_While and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_For`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [5]i32) i32 {
+    var sum: i32 = 0;
+    for (arr) |item| sum = sum + item;
+    return sum;
+}
   ```
-  ```zig
-var sum: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_BracelessControlFlow_ErrDefer`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn cleanup() void {}
-  ```
-  ```zig
 fn foo(b: bool) !void {
+    errdefer cleanup();
+    if (b) return error.Fail;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_ErrDefer and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_Defer`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn cleanup() void {}
-  ```
-  ```zig
 fn foo(b: bool) void {
+    defer cleanup();
+    if (b) return;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_Defer and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_Nested`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(a: bool, b: bool) i32 {
+    if (a) if (b) return 1; else return 2; else return 3;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_Nested and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_MixedBraced`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) void {
-  ```
-  ```zig
+    if (b) {
+        var x: i32 = 1;
+    } else bar();
+}
 fn bar() void {}
+
   ```
-  ```zig
-var x: i32 = 1;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_MixedBraced and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_EmptyWhile`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) void {
+    while (b) ;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_EmptyWhile and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_ForBreak`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [5]i32) void {
+    for (arr) |item| if (item > 0) break;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_BracelessControlFlow_CombinedDefers`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn cleanup() void {}
-  ```
-  ```zig
 fn foo() !void {
+    defer cleanup();
+    errdefer cleanup();
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_CombinedDefers and validate component behavior
   ```
 
 ### `test_BracelessControlFlow_InsideLifted`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) i32 {
+    const x = if (b) (if (true) 1 else 2) else 0;
+    return x;
+}
   ```
-  ```zig
-const x = if (b) (if (true) 1 else 2) else 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_BracelessControlFlow_EmptyFor`
-- **Primary File**: `tests/integration/braceless_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/braceless_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [5]i32) void {
+    for (arr) |_| ;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_BracelessControlFlow_EmptyFor and validate component behavior
   ```

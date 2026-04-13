@@ -1,30 +1,36 @@
-# Batch 62 Details: General Compiler Integration
+# Z98 Test Batch 62 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 1 test cases focusing on general compiler integration.
+This test batch comprises 1 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_IssueSegfaultReturn`
-- **Primary File**: `tests/issue_regression_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn makeBoolean(b: bool) JsonValue {
-  ```
-  ```zig
-pub fn main() void {
-  ```
+- **Implementation Source**: `tests/issue_regression_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const JsonValue = union(enum) {
+    Null: void,
+    Boolean: bool,
+};
+
+fn makeBoolean(b: bool) JsonValue {
+    if (b) {
+        return JsonValue{ .Boolean = true };
+    } else {
+        return JsonValue{ .Null = {} };
+    }
+}
+
+pub fn main() void {
+    _ = makeBoolean(true);
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `unit.getErrorHandler` is false
   ```

@@ -1,16 +1,31 @@
-# Batch 71 Details: General Compiler Integration
+# Z98 Test Batch 71 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 1 test cases focusing on general compiler integration.
+This test batch comprises 1 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Phase3_ErrorUnionRecursion`
-- **Primary File**: `tests/integration/phase3_error_union_recursion.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/phase3_error_union_recursion.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+pub const Node = struct {
+    next: ?*Node,
+};
+pub fn get_node() !Node {
+    return undefined;
+}
+
+  ```
+  ```zig
+struct zS_0_Node {
+  ```
+  ```zig
+ErrorUnion_zS_0_Node
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_Phase3_ErrorUnionRecursion specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Perform code generation phase
   ```

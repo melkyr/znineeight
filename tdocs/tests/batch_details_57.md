@@ -1,133 +1,78 @@
-# Batch 57 Details: Code Generation (C89)
+# Z98 Test Batch 57 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 6 test cases focusing on code generation (c89).
+This test batch comprises 3 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Codegen_AnonymousUnion_Basic`
-- **Primary File**: `tests/integration/anon_union_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-export fn my_test() void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
+- **Implementation Source**: `tests/integration/anon_union_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct {
+    data: union {
+        z_int: i32,
+        z_float: f64,
+    },
+    tag: i32,
+};
+export fn my_test() void {
+    var s: S = undefined;
+    s.data.z_int = 42;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_AnonymousUnion_Basic and validate component behavior
   ```
 
 ### `test_Codegen_AnonymousUnion_Nested`
-- **Primary File**: `tests/integration/anon_union_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-export fn my_test() void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
+- **Implementation Source**: `tests/integration/anon_union_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct {
+    data: union {
+        z_inner: union {
+            val: i32,
+        },
+        z_other: f32,
+    },
+};
+export fn my_test() void {
+    var s: S = undefined;
+    s.data.z_inner.val = 10;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_AnonymousUnion_Nested and validate component behavior
   ```
 
 ### `test_Codegen_AnonymousStruct_Nested`
-- **Primary File**: `tests/integration/anon_union_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-export fn my_test() void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
+- **Implementation Source**: `tests/integration/anon_union_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct {
-  ```
-  ```zig
-data: struct {
-  ```
-  ```zig
-z_inner: struct {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
+    data: struct {
+        z_inner: struct {
+            val: i32,
+        },
+        z_other: f32,
+    },
+};
+export fn my_test() void {
+    var s: S = undefined;
+    s.data.z_inner.val = 10;
+}
 
-### `test_Codegen_AnonymousUnion_Basic`
-- **Primary File**: `tests/integration/anon_union_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-export fn my_test() void {
   ```
-  ```zig
-var s: S = undefined;
-  ```
-  ```zig
-const S = struct {
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_AnonymousUnion_Nested`
-- **Primary File**: `tests/integration/anon_union_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-export fn my_test() void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
-  ```zig
-const S = struct {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_AnonymousStruct_Nested`
-- **Primary File**: `tests/integration/anon_union_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-export fn my_test() void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
-  ```zig
-const S = struct {
-  ```
-  ```zig
-data: struct {
-  ```
-  ```zig
-z_inner: struct {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_AnonymousStruct_Nested and validate component behavior
   ```

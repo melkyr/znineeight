@@ -1,377 +1,155 @@
-# Batch 30 Details: Syntactic Analysis (Parser & AST)
+# Z98 Test Batch 30 Technical Specification
 
-## Focus
-Syntactic Analysis (Parser & AST)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 22 test cases focusing on syntactic analysis (parser & ast).
+This test batch comprises 11 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Codegen_MemberAccess_Simple`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) i32 { return s.f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn foo(s: S) i32 { return s.f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Simple and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_Pointer`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(sp: *S) i32 { return sp.f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn foo(sp: *S) i32 { return sp.f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Pointer and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_ExplicitDeref`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(sp: *S) i32 { return sp.*.f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn foo(sp: *S) i32 { return sp.*.f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_ExplicitDeref and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_AddressOf`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) i32 { return (&s).f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn foo(s: S) i32 { return (&s).f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_AddressOf and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_Union`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) i32 { return u.f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union { f: i32, g: f32 };
+fn foo(u: U) i32 { return u.f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Union and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_Nested`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s2: S2) i32 { return s2.s1.f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S1 = struct { f: i32 };
-  ```
-  ```zig
 const S2 = struct { s1: S1 };
+fn foo(s2: S2) i32 { return s2.s1.f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Nested and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_Array`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(arr: [5]S) i32 { return arr[0].f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn foo(arr: [5]S) i32 { return arr[0].f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Array and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_Call`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-extern fn getS() S;
-  ```
-  ```zig
-fn foo() i32 { return getS().f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+extern fn getS() S;
+fn foo() i32 { return getS().f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Call and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_Cast`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(p: *void) i32 {
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn foo(p: *void) i32 {
+    return @ptrCast(*S, p).f;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_Cast and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_NestedPointer`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s2: S2) i32 { return s2.p1.f; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S1 = struct { f: i32 };
-  ```
-  ```zig
 const S2 = struct { p1: *S1 };
+fn foo(s2: S2) i32 { return s2.p1.f; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_NestedPointer and validate component behavior
   ```
 
 ### `test_Codegen_MemberAccess_ComplexPostfix`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) i32 { return s.arr[0]; }
-  ```
+- **Implementation Source**: `tests/integration/codegen_member_access_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { arr: [5]i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Simple`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) i32 { return s.f; }
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Pointer`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(sp: *S) i32 { return sp.f; }
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_ExplicitDeref`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(sp: *S) i32 { return sp.*.f; }
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_AddressOf`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) i32 { return (&s).f; }
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Union`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) i32 { return u.f; }
-  ```
-  ```zig
-const U = union { f: i32, g: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Nested`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s2: S2) i32 { return s2.s1.f; }
-  ```
-  ```zig
-const S1 = struct { f: i32 };
-  ```
-  ```zig
-const S2 = struct { s1: S1 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Array`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(arr: [5]S) i32 { return arr[0].f; }
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Call`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-extern fn getS() S;
-  ```
-  ```zig
-fn foo() i32 { return getS().f; }
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_Cast`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(p: *void) i32 {
-  ```
-  ```zig
-const S = struct { f: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_NestedPointer`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s2: S2) i32 { return s2.p1.f; }
-  ```
-  ```zig
-const S1 = struct { f: i32 };
-  ```
-  ```zig
-const S2 = struct { p1: *S1 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_MemberAccess_ComplexPostfix`
-- **Primary File**: `tests/integration/codegen_member_access_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
 fn foo(s: S) i32 { return s.arr[0]; }
   ```
-  ```zig
-const S = struct { arr: [5]i32 };
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_MemberAccess_ComplexPostfix and validate component behavior
   ```

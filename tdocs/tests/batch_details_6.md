@@ -1,413 +1,324 @@
-# Batch 6 Details: Semantic Analysis (Type Checking)
+# Z98 Test Batch 6 Technical Specification
 
-## Focus
-Semantic Analysis (Type Checking)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 33 test cases focusing on semantic analysis (type checking).
+This test batch comprises 33 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_TypeChecker_StructDeclaration_Valid`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Ensure that `context.getCompilationUnit` is false
   ```
 
 ### `test_TypeChecker_StructDeclaration_DuplicateField`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { x: i32, x: bool };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `context.getCompilationUnit` is satisfied
   ```
 
 ### `test_TypeChecker_StructInitialization_Valid`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn main() -> void {
-  ```
-  ```zig
-var p: Point = Point { .x = 10, .y = 20 };
-  ```
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn main() -> void {
+    var p: Point = Point { .x = 10, .y = 20 };
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Ensure that `context.getCompilationUnit` is false
   ```
 
 ### `test_TypeChecker_MemberAccess_Valid`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn main() -> void {
-  ```
-  ```zig
-var p: Point = Point { .x = 10, .y = 20 };
-  ```
-  ```zig
-var x_val: i32 = p.x;
-  ```
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn main() -> void {
+    var p: Point = Point { .x = 10, .y = 20 };
+    var x_val: i32 = p.x;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Ensure that `context.getCompilationUnit` is false
   ```
 
 ### `test_TypeChecker_MemberAccess_InvalidField`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn main() -> void {
-  ```
-  ```zig
-var p: Point = Point { .x = 10, .y = 20 };
-  ```
-  ```zig
-var z_val: i32 = p.z;
-  ```
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn main() -> void {
+    var p: Point = Point { .x = 10, .y = 20 };
+    var z_val: i32 = p.z;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `context.getCompilationUnit` is satisfied
   ```
 
 ### `test_TypeChecker_StructInitialization_MissingField`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn main() -> void {
-  ```
-  ```zig
-var p: Point = Point { .x = 10 };
-  ```
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn main() -> void {
+    var p: Point = Point { .x = 10 };
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `context.getCompilationUnit` is satisfied
   ```
 
 ### `test_TypeChecker_StructInitialization_ExtraField`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn main() -> void {
-  ```
-  ```zig
-var p: Point = Point { .x = 10, .y = 20, .z = 30 };
-  ```
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn main() -> void {
+    var p: Point = Point { .x = 10, .y = 20, .z = 30 };
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `context.getCompilationUnit` is satisfied
   ```
 
 ### `test_TypeChecker_StructInitialization_TypeMismatch`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
-  ```zig
-fn main() -> void {
-  ```
-  ```zig
-var p: Point = Point { .x = 10, .y = true };
-  ```
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn main() -> void {
+    var p: Point = Point { .x = 10, .y = true };
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `context.getCompilationUnit` is satisfied
   ```
 
 ### `test_TypeChecker_StructLayout_Verification`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 11 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { a: u8, b: i32, c: u8 };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 11 semantic properties match expected values
+  1. Validate that `sym not equals null` is satisfied
+  2. Assert that `TYPE_STRUCT` matches `kind of type`
+  3. Assert that `3` matches `fields.length`
+  4. Assert that `0` matches `*fields)[0].offset`
+  5. Assert that `1` matches `*fields)[0].size`
+  6. Assert that `4` matches `*fields)[1].offset`
+  7. Assert that `4` matches `*fields)[1].size`
+  8. Assert that `8` matches `*fields)[2].offset`
+  9. Assert that `1` matches `*fields)[2].size`
+  10. Assert that `12` matches `type.size`
+  11. Assert that `4` matches `type.alignment`
   ```
 
 ### `test_TypeChecker_UnionDeclaration_DuplicateField`
-- **Primary File**: `tests/type_checker_struct_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_struct_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union { x: i32, x: bool };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `context.getCompilationUnit` is satisfied
   ```
 
 ### `test_TypeCheckerEnum_MemberAccess`
-- **Primary File**: `tests/test_enum_member_access.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_enum_member_access.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Color = enum { Red, Green, Blue };
-  ```
-  ```zig
 const my_color = Color.Green;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.getErrorHandler` is false
+  3. Validate that `sym not equals null` is satisfied
+  4. Validate that `sym.symbol_type not equals null` is satisfied
+  5. Assert that `TYPE_ENUM` matches `sym.kind of symbol_type`
   ```
 
 ### `test_TypeCheckerEnum_InvalidMemberAccess`
-- **Primary File**: `tests/test_enum_member_access.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_enum_member_access.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Color = enum { Red, Green };
-  ```
-  ```zig
 const x = Color.Blue;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_TypeCheckerEnum_ImplicitConversion`
-- **Primary File**: `tests/test_enum_member_access.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_enum_member_access.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Color = enum { Red, Green, Blue };
-  ```
-  ```zig
 const x: i32 = Color.Red;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.getErrorHandler` is false
   ```
 
 ### `test_TypeCheckerEnum_Switch`
-- **Primary File**: `tests/test_enum_member_access.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(c: Color) -> i32 {
-  ```
+- **Implementation Source**: `tests/test_enum_member_access.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Color = enum { Red, Green, Blue };
+fn foo(c: Color) -> i32 {
+    return switch (c) {
+        Color.Red => 1,
+        Color.Green => 2,
+        else => 3,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.getErrorHandler` is false
   ```
 
 ### `test_TypeCheckerEnum_DuplicateMember`
-- **Primary File**: `tests/test_enum_member_access.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_enum_member_access.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Color = enum { Red, Green, Red };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_TypeCheckerEnum_AutoIncrement`
-- **Primary File**: `tests/test_enum_member_access.cpp`
-- **Verification Points**: 8 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_enum_member_access.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Status = enum { Ok = 0, Error = 10, Unknown, Fatal };
-  ```
-  ```zig
 const u = Status.Unknown;
-  ```
-  ```zig
 const f = Status.Fatal;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 8 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.getErrorHandler` is false
+  3. Validate that `sym_status not equals null` is satisfied
+  4. Assert that `TYPE_ENUM` matches `kind of status_type`
+  5. Assert that `4` matches `members.length`
+  6. Assert that `0` matches `*members)[0].value`
+  7. Assert that `10` matches `*members)[1].value`
+  8. Assert that `11` matches `*members)[2].value`
+  9. Assert that `12` matches `*members)[3].value`
   ```
 
 ### `test_C89Rejection_ErrorUnionType_FnReturn`
-- **Primary File**: `tests/test_task_135.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_135.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() !i32 { return 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_OptionalType_VarDecl`
-- **Primary File**: `tests/test_task_135.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_135.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: ?i32 = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_ErrorUnionType_Param`
-- **Primary File**: `tests/test_task_135.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_135.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: !i32) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_ErrorUnionType_StructField`
-- **Primary File**: `tests/test_task_135.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_135.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { field: !i32 };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_NestedErrorUnionType`
-- **Primary File**: `tests/test_task_135.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_135.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: *!u8 = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_Task136_ErrorSet_Catalogue`
-- **Primary File**: `tests/test_task_136.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn myTest() error{C}!void { }
-  ```
+- **Implementation Source**: `tests/test_task_136.cpp`
+- **Sub-system Coverage**: Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const MyErrors = error { A, B };
+  ```
+  ```zig
+fn myTest() error{C}!void { }
   ```
   ```zig
 const Merged = error{D} || error{E};
@@ -415,188 +326,174 @@ const Merged = error{D} || error{E};
   ```zig
 const std = @import(\
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+    Parser* parser = unit.createParser(file_id);
+
+    parser->parse();
+
+    ErrorSetCatalogue& catalogue = unit.getErrorSetCatalogue();
+    // 1. MyErrors {A, B}
+    // 2. anonymous {C}
+    // 3. anonymous {D}
+    // 4. anonymous {E}
+
+    ASSERT_EQ(4, catalogue.count());
+
+    const DynamicArray<ErrorSetInfo>* entries = catalogue.getErrorSets();
+    ASSERT_TRUE(entries != NULL);
+
+    bool found_myerrors = false;
+    for (size_t i = 0; i < entries->length(); ++i) {
+        if ((*entries)[i].name && strcmp((*entries)[i].name,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Assert that `catalogue.count` matches `4`
+  2. Validate that `entries not equals null` is satisfied
+  3. Assert that `*entries` matches `2`
+  4. Validate that `found_myerrors` is satisfied
   ```
 
 ### `test_Task136_ErrorSet_Rejection`
-- **Primary File**: `tests/test_task_136.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_136.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const E = error { A };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_Task136_ErrorSetMerge_Rejection`
-- **Primary File**: `tests/test_task_136.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_136.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Merged = E1 || E2;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_C89Rejection_ExplicitGeneric`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() void { max(i32, 1, 2); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_C89Rejection_ImplicitGeneric`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn max(comptime T: type, a: T, b: T) T { return a; }
  fn main() void { max(1, 2); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_GenericCatalogue_TracksExplicit`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(comptime T: type, a: i32) void {}
  fn main() void { bar(i32, 1); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Assert that `unit.getGenericCatalogue` matches `1`
+  2. Assert that `inst.param_count` matches `2`
   ```
 
 ### `test_GenericCatalogue_TracksImplicit`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn max(comptime T: i32, a: i32, b: i32) i32 { return a; }
  fn main() void { max(1, 2, 3); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Assert that `unit.getGenericCatalogue` matches `1`
   ```
 
 ### `test_C89Rejection_ComptimeValueParam`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn makeArray(comptime n: i32) void {}
  fn main() void { makeArray(10); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_GenericCatalogue_Deduplication`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn generic(comptime T: type) void {}
  fn main() void { generic(i32); generic(i32); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Assert that `unit.getGenericCatalogue` matches `1`
   ```
 
 ### `test_Task155_AllTemplateFormsDetectedAndRejected`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn explicit_fn(comptime T: type, x: T) T { return x; }
-  ```
-  ```zig
 fn implicit_fn(anytype x) void {}
-  ```
-  ```zig
 fn test_caller() void {
+    _ = explicit_fn(i32, 5);  // explicit instantiation
+    implicit_fn(42);      // implicit instantiation
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task155_TypeParamRejected`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f(comptime T: type) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task155_AnytypeParamRejected`
-- **Primary File**: `tests/test_generics_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_generics_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f(anytype x) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```

@@ -1,111 +1,118 @@
-# Batch 24 Details: Code Generation (C89)
+# Z98 Test Batch 24 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 8 test cases focusing on code generation (c89).
+This test batch comprises 8 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Codegen_Int_i32`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 { return 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_i32 and validate component behavior
   ```
 
 ### `test_Codegen_Int_u32`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u32 { return 42u; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_u32 and validate component behavior
   ```
 
 ### `test_Codegen_Int_i64`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i64 { return 42l; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+#else
+    return run_codegen_int_test(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_i64 and validate component behavior
   ```
 
 ### `test_Codegen_Int_u64`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u64 { return 42ul; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+#else
+    return run_codegen_int_test(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_u64 and validate component behavior
   ```
 
 ### `test_Codegen_Int_usize`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize { return @intCast(usize, 42); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_usize and validate component behavior
   ```
 
 ### `test_Codegen_Int_u8`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u8 { return @intCast(u8, 42); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_u8 and validate component behavior
   ```
 
 ### `test_Codegen_Int_HexToDecimal`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 { return 0x1F; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_HexToDecimal and validate component behavior
   ```
 
 ### `test_Codegen_Int_LargeU64`
-- **Primary File**: `tests/integration/codegen_integer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_integer_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u64 { return 18446744073709551615ul; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+#else
+    return run_codegen_int_test(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Int_LargeU64 and validate component behavior
   ```

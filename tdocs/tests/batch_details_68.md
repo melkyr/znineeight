@@ -1,69 +1,97 @@
-# Batch 68 Details: General Compiler Integration
+# Z98 Test Batch 68 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 10 test cases focusing on general compiler integration.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_StringLiteral_To_ManyPtr`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task_9_3_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 extern fn puts(s: [*]const u8) i32;
   ```
   ```zig
 pub fn main() void {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+    if (!unit.performTestPipeline(file_id)) {
+        printf(
+  ```
+  ```zig
+, source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    /* Verify that the string literal was passed directly as a pointer in C */
+    if (!unit.validateFunctionCallEmission(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_StringLiteral_To_Slice`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task_9_3_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 extern fn take_slice(s: []const u8) void;
   ```
   ```zig
 pub fn main() void {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+    if (!unit.performTestPipeline(file_id)) {
+        printf(
+  ```
+  ```zig
+, source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    /* Verify that it calls __make_slice_u8 (or similar) with the literal and length 5 */
+    if (!unit.validateFunctionCallEmission(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_StringLiteral_BackwardCompat`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task_9_3_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 extern fn legacy_puts(s: *const u8) i32;
   ```
   ```zig
 pub fn main() void {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+    if (!unit.performTestPipeline(file_id)) {
+        printf(
+  ```
+  ```zig
+, source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    if (!unit.validateFunctionCallEmission(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PtrToArray_To_ManyPtr`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task_9_3_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 extern fn puts(s: [*]const u8) i32;
   ```
@@ -76,18 +104,29 @@ const arr: [5]u8 = \
   ```zig
 const arr_ptr: *const [5]u8 = &arr;
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+    if (!unit.performTestPipeline(file_id)) {
+        printf(
+  ```
+  ```zig
+, source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    /* Verify decay to &(*arr_ptr)[0] */
+    /* Note: Mock emitter currently emits it as &*arr_ptr[0U] because it handles pointer-to-array indexing by dereferencing. */
+    if (!unit.validateFunctionCallEmission(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PtrToArray_To_Slice`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task_9_3_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 extern fn take_slice(s: []const u8) void;
   ```
@@ -100,112 +139,21 @@ const arr: [5]u8 = \
   ```zig
 const arr_ptr: *const [5]u8 = &arr;
   ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  ```zig
+, source);
+    if (!unit.performTestPipeline(file_id)) {
+        printf(
   ```
+  ```zig
+, source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
 
-### `test_StringLiteral_To_ManyPtr`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-extern fn puts(s: [*]const u8) i32;
+    /* Verify slice creation from pointer to array: __make_slice_u8(&(*arr_ptr)[0], 5) */
+    if (!unit.validateFunctionCallEmission(
   ```
-  ```zig
-pub fn main() void {
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_StringLiteral_To_Slice`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-extern fn take_slice(s: []const u8) void;
-  ```
-  ```zig
-pub fn main() void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_StringLiteral_BackwardCompat`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-extern fn legacy_puts(s: *const u8) i32;
-  ```
-  ```zig
-pub fn main() void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_PtrToArray_To_ManyPtr`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-extern fn puts(s: [*]const u8) i32;
-  ```
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-const arr: [5]u8 = \
-  ```
-  ```zig
-const arr_ptr: *const [5]u8 = &arr;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_PtrToArray_To_Slice`
-- **Primary File**: `tests/integration/task_9_3_test.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-extern fn take_slice(s: []const u8) void;
-  ```
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-const arr: [5]u8 = \
-  ```
-  ```zig
-const arr_ptr: *const [5]u8 = &arr;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

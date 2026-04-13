@@ -1,106 +1,93 @@
-# Batch 73 Details: General Compiler Integration
+# Z98 Test Batch 73 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Advanced Type Resolution: Verifies recursive type handling, topological dependency sorting of modules, and value-dependency cycles.
 
-This batch contains 5 test cases focusing on general compiler integration.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Phase7_ValidMutualRecursionPointers`
-- **Primary File**: `tests/integration/phase7_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var a: A = undefined;
-  ```
-  ```zig
-var b: B = undefined;
-  ```
+- **Implementation Source**: `tests/integration/phase7_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const A = struct {
-  ```
-  ```zig
+    b: *B,
+};
 const B = struct {
+    a: *A,
+};
+pub fn main() void {
+    var a: A = undefined;
+    var b: B = undefined;
+    a.b = &b;
+    b.a = &a;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase7_InvalidValueCycle`
-- **Primary File**: `tests/integration/phase7_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/phase7_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const A = struct {
-  ```
-  ```zig
+    b: B,
+};
 pub const B = struct {
+    a: A,
+};
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase7_DefinitionOrderValueDependency`
-- **Primary File**: `tests/integration/phase7_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/phase7_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const B = struct { x: i32 };
-  ```
-  ```zig
 pub const A = struct {
+    b: B,
+};
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase7_PointerDependencyForwardDecl`
-- **Primary File**: `tests/integration/phase7_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/phase7_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const A = struct {
-  ```
-  ```zig
+    b: *B,
+};
 pub const B = struct { x: i32 };
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase7_TaggedUnionStructOrdering`
-- **Primary File**: `tests/integration/phase7_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/phase7_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Payload = struct { data: i32 };
-  ```
-  ```zig
 const U = union(enum) {
+    a: Payload,
+    b: i32,
+};
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

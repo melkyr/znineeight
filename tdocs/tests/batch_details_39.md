@@ -1,333 +1,175 @@
-# Batch 39 Details: General Compiler Integration
+# Z98 Test Batch 39 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 20 test cases focusing on general compiler integration.
+This test batch comprises 10 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_DeferIntegration_Basic`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: i32 = 0;
+    defer x = 1;
+    x = 2;
+}
   ```
-  ```zig
-var x: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_Basic and validate component behavior
   ```
 
 ### `test_DeferIntegration_LIFO`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: i32 = 0;
+    defer x = 1;
+    defer x = 2;
+    x = 10;
+}
   ```
-  ```zig
-var x: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_LIFO and validate component behavior
   ```
 
 ### `test_DeferIntegration_Return`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 {
+    var x: i32 = 10;
+    defer x = 20;
+    return x;
+}
   ```
-  ```zig
-var x: i32 = 10;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_Return and validate component behavior
   ```
 
 ### `test_DeferIntegration_NestedScopes`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
-  ```
-  ```zig
+    defer a();
+    {
+        defer b();
+    }
+}
 fn a() void {}
-  ```
-  ```zig
 fn b() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_NestedScopes and validate component behavior
   ```
 
 ### `test_DeferIntegration_Break`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
-  ```
-  ```zig
+    while (true) {
+        defer bar();
+        break;
+    }
+}
 fn bar() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_Break and validate component behavior
   ```
 
 ### `test_DeferIntegration_LabeledBreak`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
-  ```
-  ```zig
+    outer: while (true) {
+        defer a();
+        while (true) {
+            defer b();
+            break :outer;
+        }
+    }
+}
 fn a() void {}
-  ```
-  ```zig
 fn b() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_LabeledBreak and validate component behavior
   ```
 
 ### `test_DeferIntegration_Continue`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
-  ```
-  ```zig
+    while (true) {
+        defer bar();
+        continue;
+    }
+}
 fn bar() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_Continue and validate component behavior
   ```
 
 ### `test_DeferIntegration_NestedContinue`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
-  ```
-  ```zig
+    while (true) {
+        defer a();
+        {
+            defer b();
+            continue;
+        }
+    }
+}
 fn a() void {}
-  ```
-  ```zig
 fn b() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_DeferIntegration_NestedContinue and validate component behavior
   ```
 
 ### `test_DeferIntegration_RejectReturn`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    defer return;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Type Checker correctly rejects invalid input
   ```
 
 ### `test_DeferIntegration_RejectBreak`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/defer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    while (true) {
+        defer break;
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_Basic`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_LIFO`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_Return`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() i32 {
-  ```
-  ```zig
-var x: i32 = 10;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_NestedScopes`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-fn a() void {}
-  ```
-  ```zig
-fn b() void {}
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_Break`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-fn bar() void {}
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_LabeledBreak`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-fn a() void {}
-  ```
-  ```zig
-fn b() void {}
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_Continue`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-fn bar() void {}
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_NestedContinue`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-fn a() void {}
-  ```
-  ```zig
-fn b() void {}
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_RejectReturn`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_DeferIntegration_RejectBreak`
-- **Primary File**: `tests/integration/defer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Type Checker correctly rejects invalid input
   ```

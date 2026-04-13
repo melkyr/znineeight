@@ -1,517 +1,537 @@
-# Batch 11 Details: Lexical Analysis
+# Z98 Test Batch 11 Technical Specification
 
-## Focus
-Lexical Analysis
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 30 test cases focusing on lexical analysis.
+This test batch comprises 30 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Milestone4_Lexer_Tokens`
-- **Primary File**: `tests/test_milestone4_lexer_parser.cpp`
-- **Verification Points**: 13 assertions
-- **Operations**: Source Loading
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_milestone4_lexer_parser.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+!i32 ?u8 error{A} E1 || E2 @import
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_Milestone4_Lexer_Tokens specific test data structures
-  3. Execute Source Loading phase
-  4. Verify that the 13 semantic properties match expected values
+  1. Assert that `t.type` matches `TOKEN_BANG`
+  2. Assert that `t.type` matches `TOKEN_IDENTIFIER`
+  3. Assert that `t.type` matches `TOKEN_QUESTION`
+  4. Assert that `t.type` matches `TOKEN_ERROR_SET`
+  5. Assert that `t.type` matches `TOKEN_LBRACE`
+  6. Assert that `t.type` matches `TOKEN_RBRACE`
+  7. Assert that `t.type` matches `TOKEN_PIPE_PIPE`
+  8. Assert that `t.type` matches `TOKEN_AT_IMPORT`
+  9. Assert that `t.type` matches `TOKEN_EOF`
   ```
 
 ### `test_Milestone4_Parser_AST`
-- **Primary File**: `tests/test_milestone4_lexer_parser.cpp`
-- **Verification Points**: 8 assertions
-- **Operations**: Syntactic Parsing, Source Loading
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_milestone4_lexer_parser.cpp`
+- **Sub-system Coverage**: Syntactic Analysis
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_Milestone4_Parser_AST specific test data structures
-  3. Execute Syntactic Parsing phase
-  3. Execute Source Loading phase
-  4. Verify that the 8 semantic properties match expected values
+  1. Assert that `type.type` matches `NODE_ERROR_UNION_TYPE`
+  2. Validate that `type.as.error_union_type.error_set equals null` is satisfied
+  3. Assert that `type.as.error_union_type.payload_type.type` matches `NODE_TYPE_NAME`
+  4. Assert that `type.type` matches `NODE_OPTIONAL_TYPE`
+  5. Assert that `type.as.optional_type.payload_type.type` matches `NODE_TYPE_NAME`
+  6. Assert that `type.type` matches `NODE_ERROR_SET_MERGE`
+  7. Assert that `type.as.error_set_merge.left.type` matches `NODE_TYPE_NAME`
+  8. Assert that `type.as.error_set_merge.right.type` matches `NODE_TYPE_NAME`
   ```
 
 ### `test_OptionalType_Creation`
-- **Primary File**: `tests/test_optional_type.cpp`
-- **Verification Points**: 5 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_optional_type.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_OptionalType_Creation specific test data structures
-  4. Verify that the 5 semantic properties match expected values
+  1. Validate that `opt_type not equals null` is satisfied
+  2. Assert that `kind of opt_type` matches `TYPE_OPTIONAL`
+  3. Validate that `opt_type.as.optional.payload equals base_type` is satisfied
+  4. Assert that `opt_type.size` matches `8`
+  5. Assert that `opt_type.alignment` matches `4`
   ```
 
 ### `test_OptionalType_ToString`
-- **Primary File**: `tests/test_optional_type.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_optional_type.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_OptionalType_ToString specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute core verification logic for test_OptionalType_ToString and validate component behavior
   ```
 
 ### `test_TypeChecker_OptionalType`
-- **Primary File**: `tests/test_optional_type_checker.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_optional_type_checker.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: ?i32 = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Assert that `var_decl_node.type` matches `NODE_VAR_DECL`
+  2. Validate that `sym not equals null` is satisfied
+  3. Validate that `sym.symbol_type not equals null` is satisfied
+  4. Assert that `sym.kind of symbol_type` matches `TYPE_OPTIONAL`
+  5. Assert that `sym.symbol_type.as.optional.kind of payload` matches `TYPE_I32`
   ```
 
 ### `test_NameMangler_Milestone4Types`
-- **Primary File**: `tests/test_milestone4_name_mangling.cpp`
-- **Verification Points**: 4 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_milestone4_name_mangling.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, mangler.mangleType(optional_type));
+
+    // Error Set: error{A, B} -> errset_A_B
+    DynamicArray<const char*>* tags = new (arena.alloc(sizeof(DynamicArray<const char*>))) DynamicArray<const char*>(arena);
+    tags->append(interner.intern(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_NameMangler_Milestone4Types specific test data structures
-  4. Verify that the 4 semantic properties match expected values
+  1. Execute core verification logic for test_NameMangler_Milestone4Types and validate component behavior
   ```
 
 ### `test_CallSiteLookupTable_Basic`
-- **Primary File**: `tests/test_call_site_lookup.cpp`
-- **Verification Points**: 6 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_call_site_lookup.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, CALL_DIRECT);
+    ASSERT_EQ(0, table.getUnresolvedCount());
+    ASSERT_EQ(true, table.getEntry(id).resolved);
+    // Use plat_strcmp for C++98 compatibility and avoidance of <cstring>
+    ASSERT_TRUE(plat_strcmp(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_CallSiteLookupTable_Basic specific test data structures
-  4. Verify that the 6 semantic properties match expected values
+  1. Assert that `table.count` matches `1`
+  2. Assert that `table.getUnresolvedCount` matches `1`
+  3. Assert that `table.getUnresolvedCount` matches `0`
+  4. Assert that `table.getEntry(id` matches `true`
+  5. Validate that `plat_strcmp("mangled_foo", table.getEntry(id` is satisfied
+  6. Assert that `table.getEntry(id` matches `CALL_DIRECT`
   ```
 
 ### `test_CallSiteLookupTable_Unresolved`
-- **Primary File**: `tests/test_call_site_lookup.cpp`
-- **Verification Points**: 4 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_call_site_lookup.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_CallSiteLookupTable_Unresolved specific test data structures
-  4. Verify that the 4 semantic properties match expected values
+  1. Assert that `table.getUnresolvedCount` matches `1`
+  2. Assert that `table.getEntry(id` matches `false`
+  3. Validate that `plat_strcmp("Function pointer", table.getEntry(id` is satisfied
+  4. Assert that `table.getEntry(id` matches `CALL_INDIRECT`
   ```
 
 ### `test_TypeChecker_CallSiteRecording_Direct`
-- **Primary File**: `tests/type_checker_call_site_tests.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_call_site_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn main() void { foo(); }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `1`
+  4. Assert that `table.getUnresolvedCount` matches `0`
+  5. Validate that `plat_strcmp(entry.context, "main"` is satisfied
+  6. Assert that `entry.call_type` matches `CALL_DIRECT`
+  7. Validate that `entry.mangled_name not equals null` is satisfied
   ```
 
 ### `test_TypeChecker_CallSiteRecording_Recursive`
-- **Primary File**: `tests/type_checker_call_site_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_call_site_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn factorial(n: i32) i32 {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `1`
+  4. Assert that `table.getUnresolvedCount` matches `0`
+  5. Validate that `plat_strcmp(entry.context, "factorial"` is satisfied
+  6. Assert that `entry.call_type` matches `CALL_RECURSIVE`
   ```
 
 ### `test_TypeChecker_CallSiteRecording_Generic`
-- **Primary File**: `tests/type_checker_call_site_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_call_site_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn identity(comptime T: type, x: T) T { return x; }
-  ```
-  ```zig
 fn main() void {
+    identity(i32, 42);
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `table.count` is satisfied
+  3. Assert that `entry.call_type` matches `CALL_GENERIC`
+  4. Validate that `entry.resolved` is satisfied
+  5. Validate that `entry.mangled_name not equals null` is satisfied
+  6. Validate that `found` is satisfied
   ```
 
 ### `test_Task165_ForwardReference`
-- **Primary File**: `tests/test_task_165_resolution.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_165_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() void { foo(); }
-  ```
-  ```zig
 fn foo() void {}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `1`
+  4. Assert that `table.getUnresolvedCount` matches `0`
+  5. Assert that `entry.call_type` matches `CALL_DIRECT`
+  6. Validate that `entry.resolved` is satisfied
+  7. Validate that `entry.mangled_name not equals null` is satisfied
   ```
 
 ### `test_Task165_BuiltinRejection`
-- **Primary File**: `tests/test_task_165_resolution.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_task_165_resolution.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Initialize test_Task165_BuiltinRejection specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task165_BuiltinRejection and validate component behavior
   ```
 
 ### `test_Task165_C89Incompatible`
-- **Primary File**: `tests/test_task_165_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_165_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn takeIncompatible(e: test_incompatible) void {}
-  ```
-  ```zig
 fn main() void { takeIncompatible(undefined); }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `table.count` is satisfied
+  3. Validate that `found_incompatible` is satisfied
   ```
 
 ### `test_IndirectCall_Variable`
-- **Primary File**: `tests/test_indirect_calls.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_indirect_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
-fn main() void { fp(); }
-  ```
-  ```zig
 const fp = foo;
+fn main() void { fp(); }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `catalogue.count` matches `1`
+  4. Assert that `catalogue.get(0` matches `INDIRECT_VARIABLE`
   ```
 
 ### `test_IndirectCall_Member`
-- **Primary File**: `tests/test_indirect_calls.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn main() void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
+- **Implementation Source**: `tests/test_indirect_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: fn() void };
+fn main() void {
+    var s: S = undefined;
+    s.f();
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `catalogue.count` matches `1`
+  4. Assert that `catalogue.get(0` matches `INDIRECT_MEMBER`
   ```
 
 ### `test_IndirectCall_Array`
-- **Primary File**: `tests/test_indirect_calls.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn main() void {
-  ```
+- **Implementation Source**: `tests/test_indirect_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const funcs: [2]fn() void = undefined;
+fn main() void {
+    funcs[0]();
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `catalogue.count` matches `1`
+  4. Assert that `catalogue.get(0` matches `INDIRECT_ARRAY`
   ```
 
 ### `test_IndirectCall_Returned`
-- **Primary File**: `tests/test_indirect_calls.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_indirect_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn getFunc() fn() void { return undefined; }
-  ```
-  ```zig
 fn main() void {
+    getFunc()();
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `catalogue.count` matches `1`
+  4. Assert that `catalogue.get(0` matches `INDIRECT_RETURNED`
   ```
 
 ### `test_IndirectCall_Complex`
-- **Primary File**: `tests/test_indirect_calls.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_indirect_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn main() void {
+    (switch (0) { else => foo })();
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `catalogue.count` matches `1`
+  4. Assert that `catalogue.get(0` matches `INDIRECT_COMPLEX`
   ```
 
 ### `test_ForwardReference_GlobalVariable`
-- **Primary File**: `tests/test_forward_reference.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_forward_reference.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() i32 { return x; }
-  ```
-  ```zig
 const x: i32 = 42;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
   ```
 
 ### `test_ForwardReference_MutualFunction`
-- **Primary File**: `tests/test_forward_reference.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_forward_reference.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn a() void { b(); }
-  ```
-  ```zig
 fn b() void { a(); }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
   ```
 
 ### `test_ForwardReference_StructType`
-- **Primary File**: `tests/test_forward_reference.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_forward_reference.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const p: Point = Point { .x = 1, .y = 2 };
-  ```
-  ```zig
 const Point = struct { x: i32, y: i32 };
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
   ```
 
 ### `test_Recursive_Factorial`
-- **Primary File**: `tests/test_recursive_calls.cpp`
-- **Verification Points**: 10 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_recursive_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn factorial(n: i32) i32 {
-  ```
-  ```zig
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
 fn main() void {
+    var x: i32 = factorial(5);
+}
+
   ```
-  ```zig
-var x: i32 = factorial(5);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 10 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `2`
+  4. Assert that `entry.call_type` matches `CALL_RECURSIVE`
+  5. Validate that `entry.mangled_name not equals null` is satisfied
+  6. Assert that `entry.call_type` matches `CALL_DIRECT`
+  7. Validate that `found_recursive` is satisfied
+  8. Validate that `found_direct` is satisfied
   ```
 
 ### `test_Recursive_Mutual_Mangled`
-- **Primary File**: `tests/test_recursive_calls.cpp`
-- **Verification Points**: 8 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_recursive_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn isEven(n: i32) bool {
-  ```
-  ```zig
+    if (n == 0) { return true; }
+    return isOdd(n - 1);
+}
 fn isOdd(n: i32) bool {
+    if (n == 0) { return false; }
+    return isEven(n - 1);
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 8 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `2`
+  4. Assert that `entry.call_type` matches `CALL_DIRECT`
+  5. Validate that `found_isEven_call` is satisfied
+  6. Validate that `found_isOdd_call` is satisfied
   ```
 
 ### `test_Recursive_Forward_Mangled`
-- **Primary File**: `tests/test_recursive_calls.cpp`
-- **Verification Points**: 8 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_recursive_calls.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn start() void { later(); }
-  ```
-  ```zig
 fn later() void { start(); }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 8 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `2`
+  4. Assert that `entry.call_type` matches `CALL_DIRECT`
+  5. Validate that `found_start_call` is satisfied
+  6. Validate that `found_later_call` is satisfied
   ```
 
 ### `test_CallSyntax_AtImport`
-- **Primary File**: `tests/test_call_syntax.cpp`
-- **Verification Points**: 7 assertions
-- **Operations**: Syntactic Parsing, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_call_syntax.cpp`
+- **Sub-system Coverage**: Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const std = @import(\
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* ast = parser->parse();
+
+    ASSERT_TRUE(ast != NULL);
+    ASSERT_EQ(NODE_BLOCK_STMT, ast->type);
+    ASSERT_EQ(1, ast->as.block_stmt.statements->length());
+
+    ASTNode* stmt = (*ast->as.block_stmt.statements)[0];
+    ASSERT_EQ(NODE_VAR_DECL, stmt->type);
+
+    ASTNode* init = stmt->as.var_decl->initializer;
+    ASSERT_TRUE(init != NULL);
+
+    // Check if it's NODE_IMPORT_STMT
+    ASSERT_EQ(NODE_IMPORT_STMT, init->type);
+    ASSERT_STREQ(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Source Loading phase
-  4. Verify that the 7 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Assert that `ast.type` matches `NODE_BLOCK_STMT`
+  3. Assert that `ast.as.block_stmt.statements.length` matches `1`
+  4. Assert that `stmt.type` matches `NODE_VAR_DECL`
+  5. Validate that `init not equals null` is satisfied
+  6. Assert that `init.type` matches `NODE_IMPORT_STMT`
   ```
 
 ### `test_CallSyntax_AtImport_Pipeline`
-- **Primary File**: `tests/test_call_syntax.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_call_syntax.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const std = @import(\
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+    if (f) {
+        fprintf(f,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
   ```
 
 ### `test_CallSyntax_ComplexPostfix`
-- **Primary File**: `tests/test_call_syntax.cpp`
-- **Verification Points**: 13 assertions
-- **Operations**: Syntactic Parsing, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_call_syntax.cpp`
+- **Sub-system Coverage**: Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void { a().b().c(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Source Loading phase
-  4. Verify that the 13 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Assert that `fn_decl.type` matches `NODE_FN_DECL`
+  3. Assert that `body.type` matches `NODE_BLOCK_STMT`
+  4. Assert that `expr_stmt.type` matches `NODE_EXPRESSION_STMT`
+  5. Assert that `call_c.type` matches `NODE_FUNCTION_CALL`
+  6. Assert that `member_c.type` matches `NODE_MEMBER_ACCESS`
+  7. Assert that `call_b.type` matches `NODE_FUNCTION_CALL`
+  8. Assert that `member_b.type` matches `NODE_MEMBER_ACCESS`
+  9. Assert that `call_a.type` matches `NODE_FUNCTION_CALL`
+  10. Assert that `call_a.as.function_call.callee.type` matches `NODE_IDENTIFIER`
   ```
 
 ### `test_CallSyntax_MethodCall`
-- **Primary File**: `tests/test_call_syntax.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_call_syntax.cpp`
+- **Sub-system Coverage**: Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void { s.method(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Assert that `call.type` matches `NODE_FUNCTION_CALL`
+  3. Assert that `call.as.function_call.callee.type` matches `NODE_MEMBER_ACCESS`
   ```
 
 ### `test_Task168_ComplexContexts`
-- **Primary File**: `tests/task_168_validation.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_168_validation.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn getInt() i32 { return 42; }
-  ```
-  ```zig
 fn process(n: i32) void {}
-  ```
-  ```zig
 fn doubleInt(n: i32) i32 { return n * 2; }
-  ```
-  ```zig
-fn main() void {
-  ```
-  ```zig
 const S = struct { f: i32 };
+fn main() void {
+    defer { process(getInt()); }
+    switch (getInt()) {
+        42 => process(1),
+        else => process(0),
+    };
+    while (getInt() > 0) {
+        process(getInt());
+    }
+    const s: S = S { .f = getInt() };
+    process(doubleInt(doubleInt(getInt())));
+}
+
   ```
-  ```zig
-const s: S = S { .f = getInt() };
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Lexical Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `table.count` is satisfied
+  3. Assert that `table.getUnresolvedCount` matches `0`
   ```

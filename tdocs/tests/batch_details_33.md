@@ -1,64 +1,62 @@
-# Batch 33 Details: Multi-Module & Imports
+# Z98 Test Batch 33 Technical Specification
 
-## Focus
-Multi-Module & Imports
+## High-Level Objective
+Multi-Module Import System: Validates the recursive import resolution, circular dependency detection, and cross-module symbol visibility.
 
-This batch contains 3 test cases focusing on multi-module & imports.
+This test batch comprises 3 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Import_Simple`
-- **Primary File**: `tests/integration/import_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/import_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub fn add(a: i32, b: i32) i32 { return a + b; }
+
   ```
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-const lib = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `3` matches `unit.getModules().length`
   ```
 
 ### `test_Import_Circular`
-- **Primary File**: `tests/integration/import_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/import_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+);
+    if (!fa) return false;
+    fprintf(fa,
+  ```
+  ```zig
+);
+    if (!fb) return false;
+    fprintf(fb,
+  ```
+  ```zig
+);
+    fclose(fb);
+
+    // Use a different filename to avoid collision with existing modules if any
+    u32 a_id = unit.addSource(
+  ```
   ```zig
 const b = @import(\
   ```
-  ```zig
-const a = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
   ```
 
 ### `test_Import_Missing`
-- **Primary File**: `tests/integration/import_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/import_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const lib = @import(\
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `success` is false
   ```

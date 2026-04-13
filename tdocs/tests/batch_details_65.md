@@ -1,421 +1,203 @@
-# Batch 65 Details: Code Generation (C89)
+# Z98 Test Batch 65 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Tagged Unions (union(enum)): Advanced aggregate support, including implicit enum generation, payload captures in switches, and field-wise positional initialization.
 
-This batch contains 18 test cases focusing on code generation (c89).
+This test batch comprises 12 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_TaggedUnionEmission_Named`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x: U = u;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_TaggedUnionEmission_AnonymousField`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) void {
-  ```
-  ```zig
-var x = s;
-  ```
-  ```zig
-const S = struct {
-  ```
-  ```zig
-u: union(enum) { a: i32, b: f32 },
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_TaggedUnionEmission_Return`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() U {
-  ```
-  ```zig
-const U = union(enum) { a: i32, b: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_TaggedUnionEmission_Param`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {}
-  ```
-  ```zig
-const U = union(enum) { a: i32, b: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_TaggedUnionEmission_VoidField`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
 fn foo(u: U) void {
+    var x: U = u;
+}
   ```
-  ```zig
-var x = u;
-  ```
-  ```zig
-const U = union(enum) { a: void, b: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_TaggedUnionEmission_NakedTag`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x = u;
-  ```
-  ```zig
-const U = union(enum) { A, B: i32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionEmission_Named`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x: U = u;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_TaggedUnionEmission_Named`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
 fn foo(u: U) void {
+    var x: U = u;
+}
   ```
-  ```zig
-var x: U = u;
-  ```
-  ```zig
-const U = union(enum) { a: i32, b: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionEmission_AnonymousField`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) void {
-  ```
-  ```zig
-var x = s;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct {
+    u: union(enum) { a: i32, b: f32 },
+};
+fn foo(s: S) void {
+    var x = s;
+}
+
   ```
-  ```zig
-u: union(enum) { a: i32, b: f32 },
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `t not equals null` is satisfied
+  3. Validate that `kind of t equals TYPE_STRUCT` is satisfied
+  4. Validate that `t.as.struct_details.fields.length` is satisfied
+  5. Validate that `isTaggedUnion(field_type` is satisfied
   ```
 
 ### `test_TaggedUnionEmission_AnonymousField`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(s: S) void {
-  ```
-  ```zig
-var x = s;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct {
+    u: union(enum) { a: i32, b: f32 },
+};
+fn foo(s: S) void {
+    var x = s;
+}
+
   ```
-  ```zig
-u: union(enum) { a: i32, b: f32 },
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `t not equals null` is satisfied
+  3. Validate that `kind of t equals TYPE_STRUCT` is satisfied
+  4. Validate that `t.as.struct_details.fields.length` is satisfied
+  5. Validate that `isTaggedUnion(field_type` is satisfied
   ```
 
 ### `test_TaggedUnionEmission_Return`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() U {
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32 };
+fn foo() U {
+    return undefined;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionEmission_Return`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
+const U = union(enum) { a: i32, b: f32 };
 fn foo() U {
+    return undefined;
+}
   ```
-  ```zig
-const U = union(enum) { a: i32, b: f32 };
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionEmission_Param`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {}
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32 };
+fn foo(u: U) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionEmission_Param`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {}
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32 };
+fn foo(u: U) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionEmission_VoidField`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x = u;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: void, b: i32 };
+fn foo(u: U) void {
+    var x = u;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `t not equals null` is satisfied
+  3. Validate that `isTaggedUnion(t` is satisfied
+  4. Validate that `fields not equals null` is satisfied
+  5. Validate that `*fields` is satisfied
+  6. Validate that `found_a && found_b` is satisfied
   ```
 
 ### `test_TaggedUnionEmission_VoidField`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x = u;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: void, b: i32 };
+fn foo(u: U) void {
+    var x = u;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `t not equals null` is satisfied
+  3. Validate that `isTaggedUnion(t` is satisfied
+  4. Validate that `fields not equals null` is satisfied
+  5. Validate that `*fields` is satisfied
+  6. Validate that `found_a && found_b` is satisfied
   ```
 
 ### `test_TaggedUnionEmission_NakedTag`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x = u;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { A, B: i32 };
+fn foo(u: U) void {
+    var x = u;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `t not equals null` is satisfied
+  3. Validate that `isTaggedUnion(t` is satisfied
+  4. Validate that `*fields` is satisfied
+  5. Validate that `found_a && found_b` is satisfied
   ```
 
 ### `test_TaggedUnionEmission_NakedTag`
-- **Primary File**: `tests/integration/tagged_union_emission_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
-  ```zig
-var x = u;
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_emission_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { A, B: i32 };
+fn foo(u: U) void {
+    var x = u;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `t not equals null` is satisfied
+  3. Validate that `isTaggedUnion(t` is satisfied
+  4. Validate that `*fields` is satisfied
+  5. Validate that `found_a && found_b` is satisfied
   ```

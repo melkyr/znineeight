@@ -1,179 +1,145 @@
-# Batch 48 Details: Multi-Module & Imports
+# Z98 Test Batch 48 Technical Specification
 
-## Focus
-Multi-Module & Imports
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 8 test cases focusing on multi-module & imports.
+This test batch comprises 8 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_RecursiveTypes_SelfRecursiveStruct`
-- **Primary File**: `tests/integration/recursive_type_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn main() void {
-  ```
-  ```zig
-var n: Node = undefined;
-  ```
+- **Implementation Source**: `tests/integration/recursive_type_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Node = struct {
+    value: i32,
+    next: *Node,
+};
+fn main() void {
+    var n: Node = undefined;
+    n.value = 1;
+    n.next = &n;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveTypes_MutualRecursiveStructs`
-- **Primary File**: `tests/integration/recursive_type_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn main() void {
-  ```
-  ```zig
-var a: A = undefined;
-  ```
-  ```zig
-var b: B = undefined;
-  ```
+- **Implementation Source**: `tests/integration/recursive_type_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const A = struct {
-  ```
-  ```zig
+    b: *B,
+};
 const B = struct {
+    a: *A,
+};
+fn main() void {
+    var a: A = undefined;
+    var b: B = undefined;
+    a.b = &b;
+    b.a = &a;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveTypes_RecursiveSlice`
-- **Primary File**: `tests/integration/recursive_type_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn main() void {
-  ```
-  ```zig
-var j: JsonValue = undefined;
-  ```
+- **Implementation Source**: `tests/integration/recursive_type_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const JsonValue = struct {
+    tag: i32,
+    children: []JsonValue,
+};
+fn main() void {
+    var j: JsonValue = undefined;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveTypes_IllegalDirectRecursion`
-- **Primary File**: `tests/integration/recursive_type_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/recursive_type_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Node = struct {
+    inner: Node,
+};
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_CrossModule_EnumAccess`
-- **Primary File**: `tests/integration/cross_module_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn main() void {
-  ```
-  ```zig
-var t: json.JsonValueTag = json.JsonValueTag.Number;
-  ```
-  ```zig
-var v: json.JsonValue = undefined;
-  ```
+- **Implementation Source**: `tests/integration/cross_module_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const JsonValueTag = enum { Number, String };
-  ```
-  ```zig
 pub const JsonValue = struct { tag: JsonValueTag };
+
   ```
-  ```zig
-const json = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_OptionalStabilization_UndefinedPayload`
-- **Primary File**: `tests/integration/task9_3_optional_stabilization_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task9_3_optional_stabilization_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub fn main() void {
+    var x: ?Unknown = null;
+}
+
   ```
-  ```zig
-var x: ?Unknown = null;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_OptionalStabilization_RecursiveOptional`
-- **Primary File**: `tests/integration/task9_3_optional_stabilization_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var x: Node = undefined;
-  ```
+- **Implementation Source**: `tests/integration/task9_3_optional_stabilization_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Node = struct {
+    data: i32,
+    next: ?Node,
+};
+pub fn main() void {
+    var x: Node = undefined;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_OptionalStabilization_AlignedLayout`
-- **Primary File**: `tests/integration/task9_3_optional_stabilization_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
+- **Implementation Source**: `tests/integration/task9_3_optional_stabilization_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: ?f64 = null;
+pub fn main() void {
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `sym not equals null` is satisfied
+  3. Assert that `kind of type` matches `TYPE_OPTIONAL`
+  4. Assert that `type.size` matches `16`
+  5. Assert that `type.alignment` matches `8`
   ```

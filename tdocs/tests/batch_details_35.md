@@ -1,87 +1,93 @@
-# Batch 35 Details: Multi-Module & Imports
+# Z98 Test Batch 35 Technical Specification
 
-## Focus
-Multi-Module & Imports
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 10 test cases focusing on multi-module & imports.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_ImportResolution_Basic`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
+- **Implementation Source**: `tests/test_import_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const other = @import(\
   ```
   ```zig
+); pub fn main() void {}
+  ```
+  ```zig
 pub const x = 1;
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, &source, &size)) return false;
+
+    u32 file_id = unit.addSource(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Validate that `unit.getModule("other"` is satisfied
   ```
 
 ### `test_ImportResolution_IncludePath`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
+- **Implementation Source**: `tests/test_import_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const ext = @import(\
   ```
   ```zig
+); pub fn main() void {}
+  ```
+  ```zig
 pub const y = 2;
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+
+    char* source = NULL;
+    size_t size = 0;
+    if (!plat_file_read(
+  ```
+  ```zig
+, &source, &size)) return false;
+
+    u32 file_id = unit.addSource(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Validate that `unit.getModule("ext"` is satisfied
   ```
 
 ### `test_ImportResolution_DefaultLib`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
+- **Implementation Source**: `tests/test_import_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const z = 3;
   ```
   ```zig
 const std = @import(\
   ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_ImportResolution_PrecedenceLocal`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
   ```zig
 ); pub fn main() void {}
   ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Validate that `unit.getModule("std_mock"` is satisfied
+  ```
+
+### `test_ImportResolution_PrecedenceLocal`
+- **Implementation Source**: `tests/test_import_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const mod = @import(\
+  ```
+  ```zig
+); pub fn main() void {}
   ```
   ```zig
 pub const source = 1;
@@ -89,133 +95,44 @@ pub const source = 1;
   ```zig
 pub const source = 2;
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+
+    char* source = NULL;
+    size_t size = 0;
+    if (!plat_file_read(
+  ```
+  ```zig
+, &source, &size)) return false;
+
+    u32 file_id = unit.addSource(
+  ```
+  ```zig
+// Since we normalize paths, we can check if it contains
+  ```
+  ```zig
+const char* p = m->filename;
+    bool found_inc = false;
+    while (*p) {
+        if (plat_strncmp(p,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Validate that `m not equals null` is satisfied
+  4. Ensure that `found_inc` is false
   ```
 
 ### `test_ImportResolution_NotFound`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_import_resolution.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const missing = @import(\
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_ImportResolution_Basic`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
-  ```zig
-const other = @import(\
-  ```
-  ```zig
-pub const x = 1;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_ImportResolution_IncludePath`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
-  ```zig
-const ext = @import(\
-  ```
-  ```zig
-pub const y = 2;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_ImportResolution_DefaultLib`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
-  ```zig
-pub const z = 3;
-  ```
-  ```zig
-const std = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_ImportResolution_PrecedenceLocal`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-); pub fn main() void {}
-  ```
-  ```zig
-const mod = @import(\
-  ```
-  ```zig
-pub const source = 1;
-  ```
-  ```zig
-pub const source = 2;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
-  ```
-
-### `test_ImportResolution_NotFound`
-- **Primary File**: `tests/test_import_resolution.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-const missing = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `success` is false
+  3. Validate that `unit.getErrorHandler` is satisfied
   ```

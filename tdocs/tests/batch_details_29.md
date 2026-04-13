@@ -1,397 +1,225 @@
-# Batch 29 Details: Code Generation (C89)
+# Z98 Test Batch 29 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 30 test cases focusing on code generation (c89).
+This test batch comprises 15 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Codegen_Binary_Arithmetic`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: i32, b: i32) i32 { return a + b * 2 / (10 - a) % 3; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return a + b * 2 / (10 - a) % 3;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `return a + b * 2 / (10 - a) % 3;`
   ```
 
 ### `test_Codegen_Binary_Comparison`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: i32, b: i32) bool { return a == b and a != 0 or b < 10 and a >= b; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return a == b && a != 0 || b < 10 && a >= b;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `return a == b && a != 0 || b < 10 && a >= b;`
   ```
 
 ### `test_Codegen_Binary_Bitwise`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: u32, b: u32) u32 { return (a & b) | (a ^ b) ^ (a << 1) >> 2; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return (a & b) | (a ^ b) ^ (a << 1) >> 2;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `return (a & b) | (a ^ b) ^ (a << 1) >> 2;`
   ```
 
 ### `test_Codegen_Binary_CompoundAssignment`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: *i32, b: i32) void { a.* += b; a.* -= 1; a.* *= 2; a.* /= 2; a.* %= 3; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `(void)(*a += b);\n    (void)(*a -= 1);\n    (void)(*a *= 2);\n    (void)(*a /= 2);\n    (void)(*a %= 3);`
   ```
 
 ### `test_Codegen_Binary_BitwiseCompoundAssignment`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: *u32, b: u32) void { a.* &= b; a.* |= 1; a.* ^= 0xF; a.* <<= 1; a.* >>= 2; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `(void)(*a &= b);\n    (void)(*a |= 1);\n    (void)(*a ^= 15);\n    (void)(*a <<= 1);\n    (void)(*a >>= 2);`
   ```
 
 ### `test_Codegen_Binary_Wrapping`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: u32, b: u32) u32 { return a +% b -% 1 *% a; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return a + b - 1 * a;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `return a + b - 1 * a;`
   ```
 
 ### `test_Codegen_Binary_Logical_Keywords`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_binary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: bool, b: bool) bool { return a and b or !a; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return a && b || !a;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Generate C89 code and verify critical lowering: `return a && b || !a;`
   ```
 
 ### `test_Codegen_Unary_Negation`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: i32) i32 { return -a; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return -a;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_Negation and validate component behavior
   ```
 
 ### `test_Codegen_Unary_Plus`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: i32) i32 { return +a; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return +a;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_Plus and validate component behavior
   ```
 
 ### `test_Codegen_Unary_LogicalNot`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: bool) bool { return !a; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return !a;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_LogicalNot and validate component behavior
   ```
 
 ### `test_Codegen_Unary_BitwiseNot`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: u32) u32 { return ~a; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return ~a;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_BitwiseNot and validate component behavior
   ```
 
 ### `test_Codegen_Unary_AddressOf`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() void { var x: i32 = 42; var p: *i32 = &x; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_AddressOf and validate component behavior
   ```
 
 ### `test_Codegen_Unary_Dereference`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(p: *i32) i32 { return p.*; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return *p;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_Dereference and validate component behavior
   ```
 
 ### `test_Codegen_Unary_Nested`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(p: *i32) i32 { return -p.*; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return -*p;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_Nested and validate component behavior
   ```
 
 ### `test_Codegen_Unary_Mixed`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_unary_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test(a: i32, b: bool) i32 { if (!b) { return -a; } return a; }
   ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_Arithmetic`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
   ```zig
-fn my_test(a: i32, b: i32) i32 { return a + b * 2 / (10 - a) % 3; }
+if (!b) {
+        return -a;
+    }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_Comparison`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: i32, b: i32) bool { return a == b and a != 0 or b < 10 and a >= b; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_Bitwise`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: u32, b: u32) u32 { return (a & b) | (a ^ b) ^ (a << 1) >> 2; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_CompoundAssignment`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: *i32, b: i32) void { a.* += b; a.* -= 1; a.* *= 2; a.* /= 2; a.* %= 3; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_BitwiseCompoundAssignment`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: *u32, b: u32) void { a.* &= b; a.* |= 1; a.* ^= 0xF; a.* <<= 1; a.* >>= 2; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_Wrapping`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: u32, b: u32) u32 { return a +% b -% 1 *% a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Binary_Logical_Keywords`
-- **Primary File**: `tests/integration/codegen_binary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: bool, b: bool) bool { return a and b or !a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_Negation`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: i32) i32 { return -a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_Plus`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: i32) i32 { return +a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_LogicalNot`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: bool) bool { return !a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_BitwiseNot`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: u32) u32 { return ~a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_AddressOf`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test() void { var x: i32 = 42; var p: *i32 = &x; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_Dereference`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(p: *i32) i32 { return p.*; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_Nested`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(p: *i32) i32 { return -p.*; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Codegen_Unary_Mixed`
-- **Primary File**: `tests/integration/codegen_unary_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn my_test(a: i32, b: bool) i32 { if (!b) { return -a; } return a; }
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Codegen_Unary_Mixed and validate component behavior
   ```

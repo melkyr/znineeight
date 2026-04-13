@@ -1,79 +1,101 @@
-# Batch 9b Details: General Compiler Integration
+# Z98 Test Batch 9b Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 8 test cases focusing on general compiler integration.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
-### `test_compilation_unit`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_compilation_unit specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_assign`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_assign specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_naked`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_naked specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
+## Test Case Specifications
 ### `test_TaggedUnionInit_ReturnAnonymous`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9b.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A: i32, B: bool };
+fn foo() U {
+    return .{ .A = 42 };
+}
+fn bar() U {
+    return .{ .B = true };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_TaggedUnionInit_ReturnAnonymous specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionInit_Assignment`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9b.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A: i32, B: bool };
+export fn test_assign() void {
+    var u: U = .{ .A = 42 };
+    u = .{ .B = false };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_TaggedUnionInit_Assignment specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionInit_NakedTag`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9b.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A, B: i32 };
+fn foo() U {
+    return .{ .A };
+}
+export fn test_naked() void {
+    var u: U = .{ .A };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_TaggedUnionInit_NakedTag specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionInit_SwitchInference`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9b.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A: i32, B: bool };
+fn foo(u: U) U {
+    return switch (u) {
+        .A => |a| .{ .A = a },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_TaggedUnionInit_SwitchInference specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnionInit_ErrorCases`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9b.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A: i32, B: bool }; fn f() void { var u: U = .{ .A = 1, .B = true }; }
+  ```
+  ```zig
+const U = union(enum) { A: i32, B: bool }; fn f() void { var u: U = .{ .C = 1 }; }
+  ```
+  ```zig
+const U = union(enum) { A: i32, B: bool }; fn f() void { var u: U = .{ .A = true }; }
+  ```
+  ```zig
+const U = union(enum) { A: i32, B: bool }; fn f() void { var u: U = .{ .A }; }
+  ```
+  ```zig
+const U = union(enum) { A, B: i32 }; fn f() void { var u: U = .{ .A = 1 }; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_TaggedUnionInit_ErrorCases specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Type Checker correctly rejects invalid input
   ```

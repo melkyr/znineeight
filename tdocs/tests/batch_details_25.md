@@ -1,72 +1,67 @@
-# Batch 25 Details: Code Generation (C89)
+# Z98 Test Batch 25 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on code generation (c89).
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Codegen_Float_f64`
-- **Primary File**: `tests/integration/codegen_float_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_float_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 3.14159; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify float literal emits exactly as `3.14159` in C
   ```
 
 ### `test_Codegen_Float_f32`
-- **Primary File**: `tests/integration/codegen_float_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_float_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f32 { return @floatCast(f32, 3.14); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify float literal emits exactly as `3.14f` in C
   ```
 
 ### `test_Codegen_Float_WholeNumber`
-- **Primary File**: `tests/integration/codegen_float_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_float_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 2.0; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify float literal emits exactly as `2.0` in C
   ```
 
 ### `test_Codegen_Float_Scientific`
-- **Primary File**: `tests/integration/codegen_float_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_float_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 1e20; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify float literal emits exactly as `1e+20` in C
   ```
 
 ### `test_Codegen_Float_HexConversion`
-- **Primary File**: `tests/integration/codegen_float_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/codegen_float_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 0x1.Ap2; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify float literal emits exactly as `6.5` in C
   ```

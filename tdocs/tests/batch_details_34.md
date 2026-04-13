@@ -1,201 +1,80 @@
-# Batch 34 Details: Multi-Module & Imports
+# Z98 Test Batch 34 Technical Specification
 
-## Focus
-Multi-Module & Imports
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 10 test cases focusing on multi-module & imports.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_MultiModule_BasicCall`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_module_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub fn add(a: i32, b: i32) i32 { return a + b; }
+
   ```
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-const math = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(math_id` is satisfied
+  3. Validate that `unit.performFullPipeline(main_id` is satisfied
   ```
 
 ### `test_MultiModule_StructUsage`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var p = types.Point { .x = 1, .y = 2 };
-  ```
+- **Implementation Source**: `tests/integration/multi_module_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const Point = struct { x: i32, y: i32 };
+
   ```
-  ```zig
-const types = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(main_id` is satisfied
   ```
 
 ### `test_MultiModule_PrivateVisibility`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/multi_module_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Initialize test_MultiModule_PrivateVisibility specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_MultiModule_PrivateVisibility and validate component behavior
   ```
 
 ### `test_MultiModule_CircularImport`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/multi_module_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const b = @import(\
   ```
   ```zig
-const a = @import(\
+;
+    const char* b_source =
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+
+    // We can't easily test circular imports with addSource because resolveImports
+    // is called inside performFullPipeline, and it attempts to load from disk.
+    // I would need to mock the file system or use real files.
+
+    // I'll use real files for this.
+    plat_write_file(plat_open_file(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `!success` is satisfied
   ```
 
 ### `test_MultiModule_RelativePath`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void { _ = sub.VAL; }
-  ```
+- **Implementation Source**: `tests/integration/multi_module_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const VAL = 42;
-  ```
-  ```zig
-const sub = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
 
-### `test_MultiModule_BasicCall`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn add(a: i32, b: i32) i32 { return a + b; }
   ```
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-const math = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_MultiModule_StructUsage`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var p = types.Point { .x = 1, .y = 2 };
-  ```
-  ```zig
-pub const Point = struct { x: i32, y: i32 };
-  ```
-  ```zig
-const types = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_MultiModule_PrivateVisibility`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Initialize test_MultiModule_PrivateVisibility specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_MultiModule_CircularImport`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-const b = @import(\
-  ```
-  ```zig
-const a = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_MultiModule_RelativePath`
-- **Primary File**: `tests/integration/multi_module_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void { _ = sub.VAL; }
-  ```
-  ```zig
-pub const VAL = 42;
-  ```
-  ```zig
-const sub = @import(\
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
   ```

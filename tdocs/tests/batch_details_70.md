@@ -1,107 +1,96 @@
-# Batch 70 Details: General Compiler Integration
+# Z98 Test Batch 70 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on general compiler integration.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Unreachable_Statement`
-- **Primary File**: `tests/integration/unreachable_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/unreachable_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    unreachable;
+}
   ```
   ```zig
-__bootstrap_panic((const char*)(\
+temp_unreachable_stmt.c
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Unreachable_DeadCode`
-- **Primary File**: `tests/integration/unreachable_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/unreachable_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    unreachable;
+    var x: i32 = 1;
+}
   ```
   ```zig
-var x: i32 = 1;
+temp_unreachable_dead.c
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Unreachable_Initializer`
-- **Primary File**: `tests/integration/unreachable_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/unreachable_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    const x: i32 = unreachable;
+    var y: i32 = 1;
+}
   ```
   ```zig
-var y: i32 = 1;
+temp_unreachable_init.c
   ```
-  ```zig
-const x: i32 = unreachable;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Unreachable_ErrDefer`
-- **Primary File**: `tests/integration/unreachable_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/unreachable_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() !void {
+    errdefer unreachable;
+    return error.Fail;
+}
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+temp_unreachable_errdefer.c
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Unreachable_IfExpr`
-- **Primary File**: `tests/integration/unreachable_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/unreachable_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(c: bool) i32 {
+    const val = if (c) 1 else unreachable;
+    return val;
+}
   ```
   ```zig
-const val = if (c) 1 else unreachable;
+temp_unreachable_ifexpr.c
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

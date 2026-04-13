@@ -1,228 +1,197 @@
-# Batch 15 Details: General Compiler Integration
+# Z98 Test Batch 15 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 12 test cases focusing on general compiler integration.
+This test batch comprises 12 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_StructIntegration_BasicNamedStruct`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-var p: Point = Point{ .x = 1, .y = 2 };
-  ```
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+var p: Point = Point{ .x = 1, .y = 2 };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_StructIntegration_BasicNamedStruct and validate component behavior
   ```
 
 ### `test_StructIntegration_MemberAccess`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() i32 {
-  ```
-  ```zig
-var p: Point = Point{ .x = 10, .y = 20 };
-  ```
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn foo() i32 {
+    var p: Point = Point{ .x = 10, .y = 20 };
+    return p.x;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_StructIntegration_NamedInitializerOrder`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-var p: Point = Point{ .y = 20, .x = 10 };
-  ```
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+var p: Point = Point{ .y = 20, .x = 10 };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_StructIntegration_NamedInitializerOrder and validate component behavior
   ```
 
 ### `test_StructIntegration_RejectAnonymousStruct`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var s: struct { x: i32 } = null;
+}
   ```
-  ```zig
-var s: struct { x: i32 } = null;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_StructIntegration_RejectStructMethods`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn length(self: *Point) i32 { return self.x; }
-  ```
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct {
+    x: i32,
+    fn length(self: *Point) i32 { return self.x; }
+};
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Parser correctly identifies and rejects syntax error
   ```
 
 ### `test_StructIntegration_AllowSliceField`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Buffer = struct {
+    data: []i32,
+};
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_StructIntegration_AllowMultiLevelPointerField`
-- **Primary File**: `tests/integration/struct_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/struct_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Data = struct {
+    ptr: **i32,
+};
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_BasicSwitch`
-- **Primary File**: `tests/integration/tagged_union_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) i32 {
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Tag = enum { a, b };
-  ```
-  ```zig
 const U = union(Tag) { a: i32, b: f32 };
+fn foo(u: U) i32 {
+    return switch (u) {
+        .a => |val| val,
+        .b => |val| 0,
+        else => 0,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_ImplicitEnum`
-- **Primary File**: `tests/integration/tagged_union_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) i32 {
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32 };
+fn foo(u: U) i32 {
+    return switch (u) {
+        .a => |val| val,
+        .b => |_| 0,
+        else => 0,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_ElseProng`
-- **Primary File**: `tests/integration/tagged_union_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) i32 {
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32, b: f32, c: bool };
+fn foo(u: U) i32 {
+    return switch (u) {
+        .a => |val| val,
+        else => 0,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_ExplicitEnumCustomValues`
-- **Primary File**: `tests/integration/tagged_union_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) i32 {
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Tag = enum(i32) { a = 100, b = 200 };
-  ```
-  ```zig
 const U = union(Tag) { a: i32, b: f32 };
+fn foo(u: U) i32 {
+    return switch (u) {
+        .a => |val| val,
+        .b => |_| 0,
+        else => 0,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_CaptureImmutability`
-- **Primary File**: `tests/integration/tagged_union_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(u: U) void {
-  ```
+- **Implementation Source**: `tests/integration/tagged_union_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { a: i32 };
+fn foo(u: U) void {
+    switch (u) {
+        .a => |val| {
+            val = 42;
+        },
+        else => {},
+    }
+}
+
   ```
-  ```zig
-FAIL: Expected type error for immutable capture assignment, but succeeded.
-  ```
-  ```zig
-FAIL: Did not find expected error message about immutable capture.
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

@@ -1,717 +1,295 @@
-# Batch 38 Details: Syntactic Analysis (Parser & AST)
+# Z98 Test Batch 38 Technical Specification
 
-## Focus
-Syntactic Analysis (Parser & AST)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 38 test cases focusing on syntactic analysis (parser & ast).
+This test batch comprises 19 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_TypeSystem_FunctionPointerType`
-- **Primary File**: `tests/test_type_system_fn_pointer.cpp`
-- **Verification Points**: 8 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_type_system_fn_pointer.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_TypeSystem_FunctionPointerType specific test data structures
-  4. Verify that the 8 semantic properties match expected values
+  1. Validate that `fn_ptr not equals null` is satisfied
+  2. Assert that `TYPE_FUNCTION_POINTER` matches `kind of fn_ptr`
+  3. Assert that `4` matches `fn_ptr.size`
+  4. Assert that `4` matches `fn_ptr.alignment`
+  5. Assert that `1` matches `fn_ptr.as.function_pointer.param_types.length`
+  6. Assert that `get_g_type_i32` matches `*fn_ptr.as.function_pointer.param_types)[0]`
+  7. Assert that `get_g_type_void` matches `fn_ptr.as.function_pointer.return_type`
   ```
 
 ### `test_TypeSystem_SignaturesMatch`
-- **Primary File**: `tests/test_type_system_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_type_system_fn_pointer.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_TypeSystem_SignaturesMatch specific test data structures
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `signaturesMatch(params1, get_g_type_void` is satisfied
+  2. Ensure that `signaturesMatch(params1, get_g_type_void` is false
   ```
 
 ### `test_TypeSystem_AreTypesEqual_FnPtr`
-- **Primary File**: `tests/test_type_system_fn_pointer.cpp`
-- **Verification Points**: 3 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_type_system_fn_pointer.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_TypeSystem_AreTypesEqual_FnPtr specific test data structures
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `areTypesEqual(fn_ptr1, fn_ptr2` is satisfied
+  2. Validate that `fn_ptr1 not equals fn_ptr2` is satisfied
+  3. Ensure that `areTypesEqual(fn_ptr1, fn_ptr3` is false
   ```
 
 ### `test_TypeChecker_FunctionPointer_Coercion`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_type_checker_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) void {}
-  ```
-  ```zig
 const fp: fn(i32) void = foo;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_TypeChecker_FunctionPointer_Mismatch`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_type_checker_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) void {}
-  ```
-  ```zig
 const fp: fn(bool) void = foo;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
   ```
 
 ### `test_TypeChecker_FunctionPointer_Null`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_type_checker_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var fp: fn(i32) void = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_TypeChecker_FunctionPointer_Parameter`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_type_checker_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn call_it(fp: fn(i32) void, val: i32) void {
-  ```
-  ```zig
+    fp(val);
+}
 fn foo(x: i32) void {}
-  ```
-  ```zig
 fn bar() void {
+    call_it(foo, 42);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_Codegen_FunctionPointer_Simple`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_fn_pointer_codegen.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, &buffer, &size));
+
+    // Expected: void (* my_fp)(int);
+    if (strstr(buffer,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_FunctionPointer_Simple specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Validate that `plat_file_read("temp_fp.c", &buffer, &size` is satisfied
+  2. Validate that `false` is satisfied
   ```
 
 ### `test_Codegen_FunctionPointer_InArray`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_fn_pointer_codegen.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, &buffer, &size));
+
+    // Expected: int (* fp_arr[10])(int);
+    if (strstr(buffer,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_FunctionPointer_InArray specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Validate that `plat_file_read("temp_fp_array.c", &buffer, &size` is satisfied
+  2. Validate that `false` is satisfied
   ```
 
 ### `test_Codegen_PointerToFunctionPointer`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_fn_pointer_codegen.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, &buffer, &size));
+
+    // Expected: void (* (* pfp))(void);
+    if (strstr(buffer,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_PointerToFunctionPointer specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Validate that `plat_file_read("temp_pfp.c", &buffer, &size` is satisfied
+  2. Validate that `false` is satisfied
   ```
 
 ### `test_Codegen_FunctionReturningFunctionPointer`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_fn_pointer_codegen.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, &buffer, &size));
+
+    // Expected: void (* foo(int))(double);
+    if (strstr(buffer,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_FunctionReturningFunctionPointer specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Validate that `plat_file_read("temp_frfp.c", &buffer, &size` is satisfied
+  2. Validate that `false` is satisfied
   ```
 
 ### `test_Validation_FunctionPointer_Arithmetic`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_validation_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fp: fn() void = foo;
+    _ = fp + 1;
+}
   ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `has_error` is satisfied
   ```
 
 ### `test_Validation_FunctionPointer_Relational`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_validation_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fp1: fn() void = foo;
+    var fp2: fn() void = foo;
+    _ = fp1 < fp2;
+}
   ```
-  ```zig
-var fp1: fn() void = foo;
-  ```
-  ```zig
-var fp2: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `has_error` is satisfied
   ```
 
 ### `test_Validation_FunctionPointer_Deref`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_validation_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fp: fn() void = foo;
+    _ = fp.*;
+}
   ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `has_error` is satisfied
   ```
 
 ### `test_Validation_FunctionPointer_Index`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_validation_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fp: fn() void = foo;
+    _ = fp[0];
+}
   ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `has_error` is satisfied
   ```
 
 ### `test_Validation_FunctionPointer_Equality`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_validation_fn_pointer.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fp1: fn() void = foo;
+    var fp2: fn() void = foo;
+    var b1: bool = (fp1 == fp2);
+    var b2: bool = (fp1 != fp2);
+}
   ```
-  ```zig
-var fp1: fn() void = foo;
-  ```
-  ```zig
-var fp2: fn() void = foo;
-  ```
-  ```zig
-var b1: bool = (fp1 == fp2);
-  ```
-  ```zig
-var b2: bool = (fp1 != fp2);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_Integration_ManyItemFunctionPointer`
-- **Primary File**: `tests/integration/function_pointer_codegen_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_pointer_codegen_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fps: [*]fn() void = undefined;
+    _ = fps[0]();
+}
   ```
-  ```zig
-var fps: [*]fn() void = undefined;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_Integration_FunctionPointerPtrCast`
-- **Primary File**: `tests/integration/function_pointer_codegen_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_pointer_codegen_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var p: *void = @ptrCast(*void, foo);
+    var fp: fn() void = @ptrCast(fn() void, p);
+    fp();
+}
   ```
-  ```zig
-var p: *void = @ptrCast(*void, foo);
-  ```
-  ```zig
-var fp: fn() void = @ptrCast(fn() void, p);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_Integration_MultiLevelFunctionPointer`
-- **Primary File**: `tests/integration/function_pointer_codegen_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_pointer_codegen_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    var fp: fn() void = foo;
+    var pfp: *fn() void = &fp;
+    var ppfp: **fn() void = &pfp;
+    ppfp.*.*();
+}
   ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-  ```zig
-var pfp: *fn() void = &fp;
-  ```
-  ```zig
-var ppfp: **fn() void = &pfp;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_TypeSystem_FunctionPointerType`
-- **Primary File**: `tests/test_type_system_fn_pointer.cpp`
-- **Verification Points**: 8 assertions
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_TypeSystem_FunctionPointerType specific test data structures
-  4. Verify that the 8 semantic properties match expected values
-  ```
-
-### `test_TypeSystem_SignaturesMatch`
-- **Primary File**: `tests/test_type_system_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_TypeSystem_SignaturesMatch specific test data structures
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_TypeSystem_AreTypesEqual_FnPtr`
-- **Primary File**: `tests/test_type_system_fn_pointer.cpp`
-- **Verification Points**: 3 assertions
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_TypeSystem_AreTypesEqual_FnPtr specific test data structures
-  4. Verify that the 3 semantic properties match expected values
-  ```
-
-### `test_TypeChecker_FunctionPointer_Coercion`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(x: i32) void {}
-  ```
-  ```zig
-const fp: fn(i32) void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_TypeChecker_FunctionPointer_Mismatch`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(x: i32) void {}
-  ```
-  ```zig
-const fp: fn(bool) void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_TypeChecker_FunctionPointer_Null`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-var fp: fn(i32) void = null;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_TypeChecker_FunctionPointer_Parameter`
-- **Primary File**: `tests/test_type_checker_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn call_it(fp: fn(i32) void, val: i32) void {
-  ```
-  ```zig
-fn foo(x: i32) void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_Codegen_FunctionPointer_Simple`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_FunctionPointer_Simple specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_Codegen_FunctionPointer_InArray`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_FunctionPointer_InArray specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_Codegen_PointerToFunctionPointer`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_PointerToFunctionPointer specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_Codegen_FunctionReturningFunctionPointer`
-- **Primary File**: `tests/test_fn_pointer_codegen.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_Codegen_FunctionReturningFunctionPointer specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 2 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_Validation_FunctionPointer_Arithmetic`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_Validation_FunctionPointer_Relational`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fp1: fn() void = foo;
-  ```
-  ```zig
-var fp2: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_Validation_FunctionPointer_Deref`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_Validation_FunctionPointer_Index`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
-  ```
-
-### `test_Validation_FunctionPointer_Equality`
-- **Primary File**: `tests/test_validation_fn_pointer.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fp1: fn() void = foo;
-  ```
-  ```zig
-var fp2: fn() void = foo;
-  ```
-  ```zig
-var b1: bool = (fp1 == fp2);
-  ```
-  ```zig
-var b2: bool = (fp1 != fp2);
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_Integration_ManyItemFunctionPointer`
-- **Primary File**: `tests/integration/function_pointer_codegen_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fps: [*]fn() void = undefined;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_Integration_FunctionPointerPtrCast`
-- **Primary File**: `tests/integration/function_pointer_codegen_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var p: *void = @ptrCast(*void, foo);
-  ```
-  ```zig
-var fp: fn() void = @ptrCast(fn() void, p);
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_Integration_MultiLevelFunctionPointer`
-- **Primary File**: `tests/integration/function_pointer_codegen_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
-  ```zig
-fn bar() void {
-  ```
-  ```zig
-var fp: fn() void = foo;
-  ```
-  ```zig
-var pfp: *fn() void = &fp;
-  ```
-  ```zig
-var ppfp: **fn() void = &pfp;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```

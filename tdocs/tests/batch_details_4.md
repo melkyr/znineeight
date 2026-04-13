@@ -1,514 +1,439 @@
-# Batch 4 Details: Semantic Analysis (Type Checking)
+# Z98 Test Batch 4 Technical Specification
 
-## Focus
-Semantic Analysis (Type Checking)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 37 test cases focusing on semantic analysis (type checking).
+This test batch comprises 37 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_MemoryStability_TokenSupplierDanglingPointer`
-- **Primary File**: `tests/memory_stability_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/memory_stability_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var v1 = 1; var v2 = 2; var v3 = 3;
   ```
-  ```zig
-var x = 1;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `parser not equals null` is satisfied
+  2. Validate that `true` is satisfied
   ```
 
 ### `test_C89Rejection_Slice`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var my_slice: []u8 = undefined;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Ensure that `expect_type_checker_abort(source` is false
   ```
 
 ### `test_C89Rejection_TryExpression`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() !void { return; }
  fn main() !void { try f(); return; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_CatchExpression`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() !void { return; }
  fn main() void { f() catch {}; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_OrelseExpression`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() ?*i32 { return null; }
  fn main() void { var x = f() orelse null; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_TypeChecker_AllowSliceExpression`
-- **Primary File**: `tests/type_checker_slice_expression_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_slice_expression_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var my_array: [16]i32; var x = my_array[0..4];
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Ensure that `expect_type_checker_abort(source` is false
   ```
 
 ### `test_dynamic_array_destructor_fix`
-- **Primary File**: `tests/bug_test_memory.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/bug_test_memory.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_dynamic_array_destructor_fix specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `DestructorTracker::destructor_call_count equals 17` is satisfied
   ```
 
 ### `test_Task119_DetectMalloc`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { malloc(10); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectCalloc`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { calloc(1, 10); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectRealloc`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { realloc(null, 10); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectFree`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { free(null); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectAlignedAlloc`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { aligned_alloc(16, 1024); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectStrdup`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { strdup(\
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectMemcpy`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { memcpy(null, null, 0); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectMemset`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { memset(null, 0, 0); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task119_DetectStrcpy`
-- **Primary File**: `tests/task_119_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_119_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() { strcpy(null, null); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_SymbolFlags_GlobalVariable`
-- **Primary File**: `tests/test_symbol_flags.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_symbol_flags.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var global_x: i32 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `root not equals null` is satisfied
+  2. Validate that `sym not equals null` is satisfied
+  3. Validate that `sym.flags & SYMBOL_FLAG_GLOBAL` is satisfied
+  4. Ensure that `sym.flags & SYMBOL_FLAG_LOCAL` is false
   ```
 
 ### `test_SymbolFlags_SymbolBuilder`
-- **Primary File**: `tests/test_symbol_flags.cpp`
-- **Verification Points**: 3 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_symbol_flags.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_SymbolFlags_SymbolBuilder specific test data structures
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `sym.flags & SYMBOL_FLAG_LOCAL` is satisfied
+  2. Validate that `sym.flags & SYMBOL_FLAG_PARAM` is satisfied
+  3. Ensure that `sym.flags & SYMBOL_FLAG_GLOBAL` is false
   ```
 
 ### `test_safe_append_null_termination`
-- **Primary File**: `tests/test_utils_bug.cpp`
-- **Verification Points**: 6 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_utils_bug.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_safe_append_null_termination specific test data structures
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `buffer[3] equals '\0'` is satisfied
+  2. Validate that `remaining equals 7` is satisfied
+  3. Validate that `dest equals buffer + 3` is satisfied
+  4. Validate that `buffer[9] equals '\0'` is satisfied
+  5. Validate that `remaining equals 0` is satisfied
+  6. Validate that `dest equals buffer + 9` is satisfied
   ```
 
 ### `test_safe_append_explicit_check`
-- **Primary File**: `tests/test_utils_bug.cpp`
-- **Verification Points**: 6 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_utils_bug.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_safe_append_explicit_check specific test data structures
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `buf[0] equals 'L'` is satisfied
+  2. Validate that `buf[1] equals 'O'` is satisfied
+  3. Validate that `buf[2] equals 'N'` is satisfied
+  4. Validate that `buf[3] equals '\0'` is satisfied
+  5. Validate that `buf[3] not equals '0'` is satisfied
+  6. Validate that `len equals 3` is satisfied
   ```
 
 ### `test_plat_itoa_null_termination`
-- **Primary File**: `tests/test_utils_bug.cpp`
-- **Verification Points**: 6 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_utils_bug.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+-> buffer[0]='1', [1]='2', [2]='3', [3]='\0'
+    ASSERT_TRUE(buffer[3] == '\0');
+    if (buffer[3] == '0') return false; // Bug detection
+    ASSERT_TRUE(strcmp(buffer,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_plat_itoa_null_termination specific test data structures
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `buffer[0] equals '0'` is satisfied
+  2. Validate that `buffer[1] equals '\0'` is satisfied
+  3. Validate that `buffer[3] equals '\0'` is satisfied
+  4. Validate that `strcmp(buffer, "123"` is satisfied
+  5. Validate that `strcmp(buffer, "-456"` is satisfied
+  6. Validate that `buffer[4] equals '\0'` is satisfied
   ```
 
 ### `test_Lifetime_DirectReturnLocalAddress`
-- **Primary File**: `tests/lifetime_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/lifetime_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bad() -> *i32 {
+  var x: i32 = 42;
+  return &x;
+}
+
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION` is satisfied
   ```
 
 ### `test_Lifetime_ReturnLocalPointer`
-- **Primary File**: `tests/lifetime_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/lifetime_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bad() -> *i32 {
+  var x: i32 = 42;
+  var p: *i32 = &x;
+  return p;
+}
+
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION` is satisfied
   ```
 
 ### `test_Lifetime_ReturnParamOK`
-- **Primary File**: `tests/lifetime_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/lifetime_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn ok(p: *i32) -> *i32 {
+  var x: i32 = 42;
+  p = &x;
+  return p;
+}
+
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION` is satisfied
   ```
 
 ### `test_Lifetime_ReturnAddrOfParam`
-- **Primary File**: `tests/lifetime_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/lifetime_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bad(p: i32) -> *i32 {
+  return &p;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION` is satisfied
   ```
 
 ### `test_Lifetime_ReturnGlobalOK`
-- **Primary File**: `tests/lifetime_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Static Analysis Pass
-- **Test Input (Zig)**:
-  ```zig
-fn ok() -> *i32 {
-  ```
+- **Implementation Source**: `tests/lifetime_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var y: i32 = 100;
+fn ok() -> *i32 {
+  return &y;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_lifetime_analyzer_test(source` is satisfied
   ```
 
 ### `test_Lifetime_ReassignedPointerOK`
-- **Primary File**: `tests/lifetime_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Static Analysis Pass
-- **Test Input (Zig)**:
-  ```zig
-fn ok() -> *i32 {
-  ```
+- **Implementation Source**: `tests/lifetime_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var g: i32 = 0;
+fn ok() -> *i32 {
+  var x: i32 = 42;
+  var p: *i32 = &x;
+  p = &g;
+  return p;
+}
+
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_lifetime_analyzer_test(source` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_BasicTracking`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: i32 = 0;
+    var p: *i32 = &x;
+}
+
   ```
-  ```zig
-var x: i32 = 0;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_PersistentStateTracking`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: i32 = 0;
+    var p: *i32 = null;
+    {
+        p = &x;
+    }
+}
+
   ```
-  ```zig
-var x: i32 = 0;
-  ```
-  ```zig
-var p: *i32 = null;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_AssignmentTracking`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var p: *i32 = null;
+    p = null;
+}
+
   ```
-  ```zig
-var p: *i32 = null;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_IfNullGuard`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
   ```zig
 var p: *i32 = null;
+  ```
+  ```zig
+if (p != null) {
   ```
   ```zig
 var x: i32 = p.*;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_IfElseMerge`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
@@ -517,25 +442,26 @@ var x: i32 = 0;
   ```
   ```zig
 var p: *i32 = null;
+  ```
+  ```zig
+if (p == null) {
+  ```
+  ```zig
+// p is safe here too if it wasn't null
   ```
   ```zig
 var y: i32 = p.*;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_WhileGuard`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
@@ -543,23 +469,21 @@ fn foo() void {
 var p: *i32 = null;
   ```
   ```zig
+while (p != null) {
+  ```
+  ```zig
 var x: i32 = p.*;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_WhileConservativeReset`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
@@ -570,26 +494,21 @@ var x: i32 = 0;
 var p: *i32 = &x;
   ```
   ```zig
-var y: i32 = p.*;
+while (p != null) {
   ```
   ```zig
-// Should be a warning/error after loop
+var y: i32 = p.*;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_Shadowing`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
@@ -608,60 +527,46 @@ var y: i32 = p.*;
   ```zig
 var z: i32 = p.*;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_NoLeakage`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: i32 = 0;
+    if (true) {
+        var inner: *i32 = &x;
+        var a: i32 = inner.*;
+    }
+    // inner should not exist here
+    // var b: i32 = inner.*; // This would be a type error
+}
+
   ```
-  ```zig
-var x: i32 = 0;
-  ```
-  ```zig
-var inner: *i32 = &x;
-  ```
-  ```zig
-var a: i32 = inner.*;
-  ```
-  ```zig
-// var b: i32 = inner.*; // This would be a type error
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```
 
 ### `test_NullPointerAnalyzer_SliceIndexingSafe`
-- **Primary File**: `tests/null_pointer_analysis_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/null_pointer_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(s: []const u8) u8 {
+    return s[0];
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `!ctx.getCompilationUnit` is satisfied
   ```

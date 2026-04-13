@@ -1,130 +1,85 @@
-# Batch 9a Details: Syntactic Analysis (Parser & AST)
+# Z98 Test Batch 9a Technical Specification
 
-## Focus
-Syntactic Analysis (Parser & AST)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on syntactic analysis (parser & ast).
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Phase9a_ModuleQualifiedTaggedUnion`
-- **Primary File**: `tests/integration/phase9a_unwrapping_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn doTest() json.JsonValue {
-  ```
+- **Implementation Source**: `tests/integration/phase9a_unwrapping_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const JsonValue = union(enum) {
+    Null: void,
+    Integer: i32,
+};
+
   ```
-  ```zig
-const json = @import(\
-  ```
-  ```zig
-const x = json.JsonValue.Null;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase9a_LocalAliasTaggedUnion`
-- **Primary File**: `tests/integration/phase9a_unwrapping_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
+- **Implementation Source**: `tests/integration/phase9a_unwrapping_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const U = union(enum) { A, B };
-  ```
-  ```zig
 const Alias = U;
+fn foo() void {
+    const val = Alias.A;
+    _ = val;
+}
+
   ```
-  ```zig
-const val = Alias.A;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase9a_RecursiveAliasEnum`
-- **Primary File**: `tests/integration/phase9a_unwrapping_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() i32 {
-  ```
+- **Implementation Source**: `tests/integration/phase9a_unwrapping_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const E = enum { First, Second };
-  ```
-  ```zig
 const Alias1 = E;
-  ```
-  ```zig
 const Alias2 = Alias1;
+fn foo() i32 {
+    const val = Alias2.Second;
+    return @enumToInt(val);
+}
+
   ```
-  ```zig
-const val = Alias2.Second;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase9a_ErrorSetAlias`
-- **Primary File**: `tests/integration/phase9a_unwrapping_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() Alias {
-  ```
+- **Implementation Source**: `tests/integration/phase9a_unwrapping_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const MyError = error { Fail, Bad };
-  ```
-  ```zig
 const Alias = MyError;
+fn foo() Alias {
+    return Alias.Fail;
+}
+
   ```
-  ```zig
-FAIL: Pipeline execution failed for error set alias.
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Phase9a_ModuleQualifiedEnum`
-- **Primary File**: `tests/integration/phase9a_unwrapping_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn doTest() i32 {
-  ```
+- **Implementation Source**: `tests/integration/phase9a_unwrapping_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 pub const Color = enum { Red, Green, Blue };
+
   ```
-  ```zig
-const colors = @import(\
-  ```
-  ```zig
-const c = colors.Color.Green;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

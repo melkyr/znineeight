@@ -1,85 +1,68 @@
-# Batch 75 Details: Static Analysis
+# Z98 Test Batch 75 Technical Specification
 
-## Focus
-Static Analysis
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on static analysis.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_DoubleFree_StructFieldTracking`
-- **Primary File**: `tests/double_free_aggregate_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_aggregate_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const S = struct { ptr: *u8 };
+  ```
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var s: S = undefined;
   ```
-  ```zig
-const S = struct { ptr: *u8 };
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_StructFieldLeak`
-- **Primary File**: `tests/double_free_aggregate_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
-  ```zig
-fn my_func() -> void {
-  ```
-  ```zig
-var s: S = undefined;
-  ```
+- **Implementation Source**: `tests/double_free_aggregate_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { ptr: *u8 };
+fn my_func() -> void {
+    var s: S = undefined;
+    s.ptr = arena_alloc_default(100u);
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_leak` is satisfied
   ```
 
 ### `test_DoubleFree_ArrayCollapseTracking`
-- **Primary File**: `tests/double_free_aggregate_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_aggregate_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var arr: [2]*u8 = undefined;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_ErrorUnionAllocation`
-- **Primary File**: `tests/double_free_aggregate_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_aggregate_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn alloc() -> !*u8 { return error.Fail; }
   ```
@@ -89,36 +72,29 @@ fn my_func() -> void {
   ```zig
 var p: *u8 = alloc() catch return;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_LoopMergingPreservesUnmodified`
-- **Primary File**: `tests/double_free_aggregate_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_aggregate_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(cond: bool) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    var q: *u8 = arena_alloc_default(100u);
+    while (cond) {
+        arena_free(p);
+    }
+    arena_free(p); // Should be a double free risk
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-  ```zig
-var q: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `q_leaked` is satisfied
   ```

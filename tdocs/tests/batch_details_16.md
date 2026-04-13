@@ -1,257 +1,210 @@
-# Batch 16 Details: General Compiler Integration
+# Z98 Test Batch 16 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 15 test cases focusing on general compiler integration.
+This test batch comprises 15 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_PointerIntegration_AddressOfDereference`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 {
+    var x: i32 = 42;
+    var p: *i32 = &x;
+    return p.*;
+}
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_AddressOfDereference and validate component behavior
   ```
 
 ### `test_PointerIntegration_DereferenceExpression`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 {
+    var x: i32 = 42;
+    var p: *i32 = &x;
+    return p.*;
+}
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-var p: *i32 = &x;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_DereferenceExpression and validate component behavior
   ```
 
 ### `test_PointerIntegration_PointerArithmeticAdd`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(p: [*]i32, i: usize) [*]i32 {
+    return p + i;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_PointerArithmeticAdd and validate component behavior
   ```
 
 ### `test_PointerIntegration_PointerArithmeticSub`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(p: [*]i32, i: usize) [*]i32 {
+    return p - i;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_PointerArithmeticSub and validate component behavior
   ```
 
 ### `test_PointerIntegration_NullLiteral`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var p: *i32 = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_NullLiteral and validate component behavior
   ```
 
 ### `test_PointerIntegration_NullComparison`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(p: *i32) bool {
+    return p == null;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_NullComparison and validate component behavior
   ```
 
 ### `test_PointerIntegration_PointerToStruct`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
-  ```zig
-fn foo(p: *Point) i32 {
-  ```
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Point = struct { x: i32, y: i32 };
+fn foo(p: *Point) i32 {
+    return p.x;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_PointerToStruct and validate component behavior
   ```
 
 ### `test_PointerIntegration_VoidPointerAssignment`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(p: *i32) *void {
+    var v: *void = p;
+    return v;
+}
   ```
-  ```zig
-var v: *void = p;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_VoidPointerAssignment and validate component behavior
   ```
 
 ### `test_PointerIntegration_ConstAdding`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(p: *i32) *const i32 {
+    var cp: *const i32 = p;
+    return cp;
+}
   ```
-  ```zig
-var cp: *const i32 = p;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerIntegration_ConstAdding and validate component behavior
   ```
 
 ### `test_PointerIntegration_ReturnLocalAddressError`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar() *i32 {
+    var x: i32 = 42;
+    return &x;
+}
   ```
-  ```zig
-var x: i32 = 42;
-  ```
-  ```zig
-FAIL: Expected lifetime error but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PointerIntegration_DereferenceNullError`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar() void {
+    var p: *i32 = null;
+    var v = p.*;
+}
   ```
-  ```zig
-var p: *i32 = null;
-  ```
-  ```zig
-var v = p.*;
-  ```
-  ```zig
-FAIL: Expected null pointer error but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PointerIntegration_PointerPlusPointerError`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(p: *i32, q: *i32) *i32 {
+    return p + q;
+}
   ```
-  ```zig
-FAIL: Expected pointer + pointer error but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PointerIntegration_DereferenceNonPointerError`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(x: i32) i32 {
+    return x.*;
+}
   ```
-  ```zig
-FAIL: Expected dereference error but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PointerIntegration_AddressOfNonLValue`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar() *i32 {
+    return &(1 + 2);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Type Checker correctly rejects invalid input
   ```
 
 ### `test_PointerIntegration_IncompatiblePointerAssignment`
-- **Primary File**: `tests/integration/pointer_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(p: *i32) *f32 {
+    var q: *f32 = p;
+    return q;
+}
   ```
-  ```zig
-var q: *f32 = p;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

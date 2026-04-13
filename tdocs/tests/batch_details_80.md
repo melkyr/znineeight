@@ -1,79 +1,58 @@
-# Batch 80 Details: General Compiler Integration
+# Z98 Test Batch 80 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Complex Aggregate Decomposition: Validates nested expression coercion and array-level decomposition for tagged unions and other complex structures.
 
-This batch contains 3 test cases focusing on general compiler integration.
+This test batch comprises 3 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_TaggedUnion_ArrayDecomposition`
-- **Primary File**: `tests/integration/nested_expr_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var arr: [2]Cell = .{ .Alive, .Dead };
-  ```
+- **Implementation Source**: `tests/integration/nested_expr_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Cell = union(enum) { Alive: void, Dead: void };
+pub fn main() void {
+    var arr: [2]Cell = .{ .Alive, .Dead };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_NestedIfExpr`
-- **Primary File**: `tests/integration/nested_expr_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var a = true;
-  ```
-  ```zig
-var b = false;
-  ```
-  ```zig
-var x: Cell = if (a) (if (b) .A else .B) else .C;
-  ```
+- **Implementation Source**: `tests/integration/nested_expr_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Cell = union(enum) { A: void, B: void, C: void };
+pub fn main() void {
+    var a = true;
+    var b = false;
+    var x: Cell = if (a) (if (b) .A else .B) else .C;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_TaggedUnion_NestedSwitchExpr`
-- **Primary File**: `tests/integration/nested_expr_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var a = 1;
-  ```
-  ```zig
-var x: Cell = switch (a) {
-  ```
+- **Implementation Source**: `tests/integration/nested_expr_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const Cell = union(enum) { A: void, B: void, C: void };
+pub fn main() void {
+    var a = 1;
+    var x: Cell = switch (a) {
+        1 => switch (a) { 1 => .A, else => .B },
+        else => .C,
+    };
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

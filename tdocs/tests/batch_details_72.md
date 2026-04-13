@@ -1,75 +1,89 @@
-# Batch 72 Details: Syntactic Analysis (Parser & AST)
+# Z98 Test Batch 72 Technical Specification
 
-## Focus
-Syntactic Analysis (Parser & AST)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on syntactic analysis (parser & ast).
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_SwitchProng_ReturnNoSemicolon`
-- **Primary File**: `tests/integration/switch_prong_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_prong_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    switch (x) {
+        1 => return 1,
+        else => return 0
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SwitchProng_ReturnNoSemicolon and validate component behavior
   ```
 
 ### `test_SwitchProng_BlockMandatoryComma`
-- **Primary File**: `tests/integration/switch_prong_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_prong_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    switch (x) {
+        1 => {
+            return 1;
+        },
+        else => return 0,
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SwitchProng_BlockMandatoryComma and validate component behavior
   ```
 
 ### `test_SwitchProng_ExprRequiredCommaFail`
-- **Primary File**: `tests/integration/switch_prong_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_prong_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    switch (x) {
+        1 => 1
+        else => 0,
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Parser correctly identifies and rejects syntax error
   ```
 
 ### `test_SwitchProng_LastProngOptionalComma`
-- **Primary File**: `tests/integration/switch_prong_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_prong_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    return switch (x) {
+        1 => 1,
+        else => 0
+    };
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_SwitchProng_LastProngOptionalComma and validate component behavior
   ```
 
 ### `test_SwitchProng_DeclRequiresBlockFail`
-- **Primary File**: `tests/integration/switch_prong_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_prong_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    switch (x) {
+        1 => var y: i32 = 1,
+        else => 0,
+    }
+}
   ```
-  ```zig
-1 => var y: i32 = 1,
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Parser correctly identifies and rejects syntax error
   ```

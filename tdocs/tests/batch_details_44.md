@@ -1,54 +1,81 @@
-# Batch 44 Details: General Compiler Integration
+# Z98 Test Batch 44 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 3 test cases focusing on general compiler integration.
+This test batch comprises 3 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Task225_2_BracelessIfExpr`
-- **Primary File**: `tests/integration/task225_2_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_Task225_2_BracelessIfExpr specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_Task225_2_PrintLowering`
-- **Primary File**: `tests/integration/task225_2_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task225_2_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
-pub fn main() void {
+fn foo(b: bool) i32 {
+    return if (b) 1 else 2;
+}
+
+  ```
+  ```zig
+temp_if_expr.c
   ```
   ```zig
 pub extern fn print(fmt: *const u8, args: anytype) void;
+
   ```
   ```zig
-const debug = @import(\
+temp_print.c
   ```
   ```zig
-const x = 42;
+fn bar(x: i32, b: bool) i32 {
+    return switch (x) {
+        0 => if (b) 1 else 2,
+        else => 0,
+    };
+}
+
   ```
   ```zig
-__bootstrap_print((const char*)(\
+temp_switch_if.c
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_Task225_2_PrintLowering`
+- **Implementation Source**: `tests/integration/task225_2_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+pub extern fn print(fmt: *const u8, args: anytype) void;
+
+  ```
+  ```zig
+temp_print.c
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Task225_2_SwitchIfExpr`
-- **Primary File**: `tests/integration/task225_2_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/task225_2_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn bar(x: i32, b: bool) i32 {
+    return switch (x) {
+        0 => if (b) 1 else 2,
+        else => 0,
+    };
+}
+
+  ```
+  ```zig
+temp_switch_if.c
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_Task225_2_SwitchIfExpr specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

@@ -1,133 +1,245 @@
-# Batch 9c Details: General Compiler Integration
+# Z98 Test Batch 9c Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 14 test cases focusing on general compiler integration.
+This test batch comprises 13 individual verification units for exhaustive coverage.
 
-## Test Case Details
-### `test_compilation_unit`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_compilation_unit specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
+## Test Case Specifications
 ### `test_ExpectedType_SwitchReturn`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+fn testSwitch(u: MyUnion) MyUnion {
+    return switch (u) {
+        .A => |a| .{ .A = a },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_SwitchReturn specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_Assignment`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+export fn testAssign(u: MyUnion) void {
+    var result: MyUnion = .{ .A = 0 };
+    result = switch (u) {
+        .A => |a| .{ .A = a },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_Assignment specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_VarDecl`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+export fn testVarDecl(u: MyUnion) void {
+    const result: MyUnion = switch (u) {
+        .A => |a| .{ .A = a },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_VarDecl specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_FunctionArg`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+fn consume(u: MyUnion) void {}
+export fn testArg(u: MyUnion) void {
+    consume(switch (u) {
+        .A => |a| .{ .A = a },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    });
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_FunctionArg specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_NestedSwitch`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+fn testNested(u: MyUnion, v: MyUnion) MyUnion {
+    return switch (u) {
+        .A => |a| switch (v) {
+            .A => |va| .{ .A = a + va },
+            else => .{ .A = a },
+        },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_NestedSwitch specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_IfExpr`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+fn testIf(b: bool) MyUnion {
+    return if (b) .{ .A = 1 } else .{ .B = true };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_IfExpr specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_BlockExpr`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyUnion = union(enum) { A: i32, B: bool };
+fn testBlock(b: bool) MyUnion {
+    return {
+        var x = b;
+        .{ .A = 1 }
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_BlockExpr specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_SwitchEnumToUnion`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const MyEnum = enum { A, B };
+const MyUnion = union(enum) { A: i32, B: bool };
+fn translate(e: MyEnum) MyUnion {
+    return switch (e) {
+        .A => .{ .A = 1 },
+        .B => .{ .B = true },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_SwitchEnumToUnion specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_VoidPayloads`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A, B: void, C: i32 };
+fn getVoid() void {}
+export fn testVoid() void {
+    var u: U = .{ .A };
+    u = .{ .B = {} };
+    u = .{ .B = getVoid() };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_VoidPayloads specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_DeeplyNested`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const Inner = union(enum) { A: i32, B: bool };
+const Outer = union(enum) { I: Inner, C: i32 };
+export fn testNestedAnon() void {
+    var o: Outer = .{ .I = .{ .A = 42 } };
+    o = .{ .I = .{ .B = true } };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_DeeplyNested specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ExpectedType_SwitchMissingElseError`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A, B };
+fn testMissingElse(u: U) i32 {
+    return switch (u) {
+        .A => 1,
+        .B => 2,
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_SwitchMissingElseError specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Type Checker correctly rejects invalid input
   ```
 
 ### `test_ExpectedType_AnonymousToNonUnionError`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+export fn testAnonToNonUnion() void {
+    var x: i32 = .{ .A = 1 };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_AnonymousToNonUnionError specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Confirm Type Checker correctly rejects invalid input
   ```
 
 ### `test_ExpectedType_MixedSwitch`
-- **Primary File**: `Unknown`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/main_batch9c.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const U = union(enum) { A: i32, B: bool };
+fn testMixed(u: U) U {
+    return switch (u) {
+        .A => |a| U{ .A = a },
+        .B => |b| .{ .B = b },
+        else => .{ .A = 0 },
+    };
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ExpectedType_MixedSwitch specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

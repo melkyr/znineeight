@@ -1,229 +1,189 @@
-# Batch 5 Details: Static Analysis
+# Z98 Test Batch 5 Technical Specification
 
-## Focus
-Static Analysis
+## High-Level Objective
+Double Free and Memory Leak Analyzer: Data-flow analysis tracking allocation states across branches and defer scopes.
 
-This batch contains 34 test cases focusing on static analysis.
+This test batch comprises 34 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_DoubleFree_SimpleDoubleFree`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    arena_free(p);
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_BasicTracking`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_relevant_diagnostics` is false
   ```
 
 ### `test_DoubleFree_UninitializedFree`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
+    var p: *u8;
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_warning` is satisfied
   ```
 
 ### `test_DoubleFree_MemoryLeak`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_leak` is satisfied
   ```
 
 ### `test_DoubleFree_DeferDoubleFree`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    defer { arena_free(p); }
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_ReassignmentLeak`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_leak` is satisfied
   ```
 
 ### `test_DoubleFree_NullReassignmentLeak`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_leak` is satisfied
   ```
 
 ### `test_DoubleFree_ReturnExempt`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> *u8 {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return p;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_leak` is false
   ```
 
 ### `test_DoubleFree_SwitchAnalysis`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+switch (x) {
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_TryAnalysis`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fallible() -> void {}
-  ```
-  ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    try fallible();
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
   ```
 
 ### `test_DoubleFree_TryAnalysisComplex`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fallible() -> void {}
   ```
@@ -233,129 +193,167 @@ fn my_func() -> void {
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+try fallible();
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_CatchAnalysis`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fallible() -> *u8 { return null; }
-  ```
-  ```zig
 fn my_func() -> void {
+    var p: *u8 = fallible() catch arena_alloc_default(100u);
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = fallible() catch arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_uninit_warning` is false
   ```
 
 ### `test_DoubleFree_BinaryOpAnalysis`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u) + 0u;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_uninit_warning` is false
   ```
 
 ### `test_DoubleFree_LocationInLeakWarning`
-- **Primary File**: `tests/test_double_free_locations.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_locations.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool found_leak_with_loc = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            // Check if message contains allocation info.
+            // We expect something like
+  ```
+  ```zig
+if (contains(warnings[i].message,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `found_leak_with_loc` is satisfied
   ```
 
 ### `test_DoubleFree_LocationInReassignmentLeak`
-- **Primary File**: `tests/test_double_free_locations.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_locations.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool found_leak_with_loc = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            if (contains(warnings[i].message,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `found_leak_with_loc` is satisfied
   ```
 
 ### `test_DoubleFree_LocationInDoubleFreeError`
-- **Primary File**: `tests/test_double_free_locations.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_locations.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool found_double_free_with_loc = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            // Check if hint contains allocation AND first free info.
+            if (errors[i].hint &&
+                contains(errors[i].hint,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `found_double_free_with_loc` is satisfied
   ```
 
 ### `test_DoubleFree_TransferTracking`
-- **Primary File**: `tests/test_double_free_task_129.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_task_129.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arena_alloc_default(size: usize) -> *void { return null; }
   ```
@@ -368,21 +366,20 @@ fn my_func() -> void {
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+// Use whitelisted function for transfer
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_leak` is false
+  3. Validate that `has_transfer_warning` is satisfied
   ```
 
 ### `test_DoubleFree_DeferContextInError`
-- **Primary File**: `tests/test_double_free_task_129.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_task_129.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arena_alloc_default(size: usize) -> *void { return null; }
   ```
@@ -395,21 +392,38 @@ fn my_func() -> void {
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool found_double_free_with_defer = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            // Check in hint
+            if (errors[i].hint &&
+                contains_substring(errors[i].hint,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `found_double_free_with_defer` is satisfied
   ```
 
 ### `test_DoubleFree_ErrdeferContextInError`
-- **Primary File**: `tests/test_double_free_task_129.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_task_129.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arena_alloc_default(size: usize) -> *void { return null; }
   ```
@@ -422,240 +436,256 @@ fn my_func() -> void {
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool found_double_free_with_errdefer = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            // Check in hint
+            if (errors[i].hint &&
+                contains_substring(errors[i].hint,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `found_double_free_with_errdefer` is satisfied
   ```
 
 ### `test_DoubleFree_IfElseBranching`
-- **Primary File**: `tests/test_double_free_path_aware.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_path_aware.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    if (x > 0) {
+        arena_free(p);
+    } else {
+        // p NOT freed
+    }
+    // After if/else, p should be AS_UNKNOWN
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_IfElseBothFree`
-- **Primary File**: `tests/test_double_free_path_aware.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_path_aware.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    if (x > 0) {
+        arena_free(p);
+    } else {
+        arena_free(p);
+    }
+    // After if/else, p should be AS_FREED
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_WhileConservative`
-- **Primary File**: `tests/test_double_free_path_aware.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_double_free_path_aware.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    while (x > 0) {
+        arena_free(p);
+        p = arena_alloc_default(200u);
+    }
+    // p is AS_UNKNOWN here
+    arena_free(p);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_SwitchPathAware`
-- **Primary File**: `tests/test_task_130_switch.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_130_switch.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    switch (x) {
+        1 => arena_free(p),
+        else => {},
+    }
+    // After switch, p should be AS_UNKNOWN
+    arena_free(p); // Should NOT be a definite double free error
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `ctx.getCompilationUnit` is false
+  3. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_SwitchBothFree`
-- **Primary File**: `tests/test_task_130_switch.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_130_switch.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    switch (x) {
+        1 => arena_free(p),
+        else => arena_free(p),
+    }
+    // After switch, p should be AS_FREED
+    arena_free(p); // Should be a double free error
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `ctx.getCompilationUnit` is false
+  3. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_TryPathAware`
-- **Primary File**: `tests/test_task_130_error_handling.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_130_error_handling.cpp`
+- **Sub-system Coverage**: Static Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn mightFail() -> i32 {}
-  ```
-  ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    try mightFail();
+    // After try, p should be AS_UNKNOWN
+    arena_free(p); // Should NOT be a definite double free error
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_CatchPathAware`
-- **Primary File**: `tests/test_task_130_error_handling.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_130_error_handling.cpp`
+- **Sub-system Coverage**: Static Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn mightFail() -> i32 {}
-  ```
-  ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    // Use a simple expression for catch body
+    mightFail() catch arena_free(p);
+    // On success path, p is still AS_ALLOCATED
+    // On failure path, p is AS_FREED
+    // Merged state should be AS_UNKNOWN
+    arena_free(p); // Should NOT be a definite double free error
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_OrelsePathAware`
-- **Primary File**: `tests/test_task_130_error_handling.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_130_error_handling.cpp`
+- **Sub-system Coverage**: Static Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn maybeAlloc() -> *u8 { return null; }
-  ```
-  ```zig
 fn my_func() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    // Use a simple expression for orelse body
+    var q: *u8 = maybeAlloc() orelse arena_alloc_default(10u);
+    // In both paths p is still AS_ALLOCATED
+    arena_free(p);
+    arena_free(q);
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-  ```zig
-var q: *u8 = maybeAlloc() orelse arena_alloc_default(10u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_LoopConservativeVerification`
-- **Primary File**: `tests/test_task_130_loops.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_130_loops.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    while (x > 0) {
+        arena_free(p);
+        p = arena_alloc_default(200u);
+    }
+    // p should be AS_UNKNOWN here because it was modified in the loop
+    arena_free(p); // Should NOT be a definite double free error
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `ctx.getCompilationUnit` is false
+  3. Ensure that `has_double_free` is false
   ```
 
 ### `test_DoubleFree_NestedDeferScopes`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
   ```zig
 var p: *u8 = arena_alloc_default(100u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
   ```
 
 ### `test_DoubleFree_PointerAliasing`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func() -> void {
   ```
@@ -665,108 +695,91 @@ var p: *u8 = arena_alloc_default(100u);
   ```zig
 var q: *u8 = p;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_double_free` is false
+  3. Validate that `has_uninit_free` is satisfied
   ```
 
 ### `test_DoubleFree_DeferInLoop`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    var i: i32 = 0;
+    while (i < x) {
+        defer { arena_free(p); }
+        i = i + 1;
+    }
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-  ```zig
-var i: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
   ```
 
 ### `test_DoubleFree_ConditionalAllocUnconditionalFree`
-- **Primary File**: `tests/double_free_analysis_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/double_free_analysis_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_func(x: i32) -> void {
   ```
   ```zig
 var p: *u8 = null;
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+if (x > 0) {
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `has_warning` is false
   ```
 
 ### `test_Integration_FullPipeline`
-- **Primary File**: `tests/integration_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() -> void {
-  ```
-  ```zig
+    var p: *u8 = arena_alloc_default(100u);
+    arena_free(p);
+    arena_free(p);  // Double free
+    var q: *i32 = null;
+    q.* = 10;       // Null dereference
+}
 fn leak_test() -> *i32 {
+    var x: i32 = 42;
+    return &x;      // Lifetime violation
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-  ```zig
-var q: *i32 = null;
-  ```
-  ```zig
-var x: i32 = 42;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `has_double_free` is satisfied
+  3. Validate that `has_null_deref` is satisfied
+  4. Validate that `has_lifetime_violation` is satisfied
   ```
 
 ### `test_Integration_CorrectUsage`
-- **Primary File**: `tests/integration_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration_tests.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() -> void {
+    var p: *u8 = arena_alloc_default(100u);
+    arena_free(p);  // Correct usage
+}
+
   ```
-  ```zig
-var p: *u8 = arena_alloc_default(100u);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Static Analysis environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `unit.getErrorHandler` is false
   ```

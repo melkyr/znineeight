@@ -1,14 +1,14 @@
-# Batch 19 Details: Syntactic Analysis (Parser & AST)
+# Z98 Test Batch 19 Technical Specification
 
-## Focus
-Syntactic Analysis (Parser & AST)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 31 test cases focusing on syntactic analysis (parser & ast).
+This test batch comprises 31 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Task183_USizeISizeSupported`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
@@ -18,95 +18,89 @@ var x: usize = 10u;
   ```zig
 var y: isize = -5;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task183_USizeISizeSupported and validate component behavior
   ```
 
 ### `test_Task182_ArenaAllocReturnsVoidPtr`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
   ```zig
 var p: *void = arena_alloc_default(16u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_ArenaAllocReturnsVoidPtr and validate component behavior
   ```
 
 ### `test_Task182_ImplicitVoidPtrToTypedPtrAssignment`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
   ```zig
 var p: *i32 = arena_alloc_default(4u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_ImplicitVoidPtrToTypedPtrAssignment and validate component behavior
   ```
 
 ### `test_Task182_ImplicitVoidPtrToTypedPtrArgument`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(p: *f64) void {}
   ```
   ```zig
 fn foo() void {
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_ImplicitVoidPtrToTypedPtrArgument and validate component behavior
   ```
 
 ### `test_Task182_ImplicitVoidPtrToTypedPtrReturn`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() *u8 {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return arena_alloc_default(10u);
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_ImplicitVoidPtrToTypedPtrReturn and validate component behavior
   ```
 
 ### `test_Task182_ConstCorrectness_AddConst`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
   ```zig
 var p: *const i32 = arena_alloc_default(4u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_ConstCorrectness_AddConst and validate component behavior
   ```
 
 ### `test_Task182_ConstCorrectness_PreserveConst`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(p: *const void) *const i32 {
+  ```
+  ```zig
+return p;
   ```
   ```zig
 fn foo() void {
@@ -117,299 +111,259 @@ var p: *const void = arena_alloc_default(4u);
   ```zig
 var q: *const i32 = bar(p);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_ConstCorrectness_PreserveConst and validate component behavior
   ```
 
 ### `test_Task182_ConstCorrectness_DiscardConst_REJECT`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(p: *const void) *i32 {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+return p;
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_Task182_MultiLevelPointer_Support`
-- **Primary File**: `tests/integration/task182_183_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/task182_183_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
   ```
   ```zig
 var p: **i32 = arena_alloc_default(4u);
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_Task182_MultiLevelPointer_Support and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrPlusUSize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32, offset: usize) [*]i32 {
+    return ptr + offset;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrPlusUSize and validate component behavior
   ```
 
 ### `test_PointerArithmetic_USizePlusPtr`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32, offset: usize) [*]i32 {
+    return offset + ptr;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_USizePlusPtr and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrMinusUSize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32, offset: usize) [*]i32 {
+    return ptr - offset;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrMinusUSize and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrMinusPtr`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr1: [*]i32, ptr2: [*]i32) isize {
+    return ptr1 - ptr2;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrMinusPtr and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrPlusISize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32, offset: isize) [*]i32 {
+    return ptr + offset;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrPlusISize and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrMinusPtr_ConstCompatible`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr1: [*]i32, ptr2: [*]const i32) isize {
+    return ptr1 - ptr2;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrMinusPtr_ConstCompatible and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrPlusSigned_Error`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32, offset: i32) void {
+    var res: [*]i32 = ptr + offset;
+}
   ```
-  ```zig
-var res: [*]i32 = ptr + offset;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrPlusSigned_Error and validate component behavior
   ```
 
 ### `test_PointerArithmetic_VoidPtr_Error`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]void, offset: usize) void {
+    var res: [*]void = ptr + offset;
+}
   ```
-  ```zig
-var res: [*]void = ptr + offset;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_VoidPtr_Error and validate component behavior
   ```
 
 ### `test_PointerArithmetic_MultiLevel_Error`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: **i32, offset: usize) void {
+    var res: **i32 = ptr + offset;
+}
   ```
-  ```zig
-var res: **i32 = ptr + offset;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_MultiLevel_Error and validate component behavior
   ```
 
 ### `test_PointerArithmetic_SizeOfUSize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize {
+    return @sizeOf(usize);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_SizeOfUSize and validate component behavior
   ```
 
 ### `test_PointerArithmetic_AlignOfISize`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() usize {
+    return @alignOf(isize);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_AlignOfISize and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrCast`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: *void) *i32 {
+    return @ptrCast(*i32, ptr);
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_PtrCast and validate component behavior
   ```
 
 ### `test_PointerArithmetic_OffsetOf`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const Point = struct { x: i32, y: i32 };
+  ```
   ```zig
 fn foo() usize {
   ```
   ```zig
-const Point = struct { x: i32, y: i32 };
+return @offsetOf(Point, \
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+;
+    // Now constant-folded to literal 4
+    return run_ptr_arith_test(source, TYPE_USIZE,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_PointerArithmetic_OffsetOf and validate component behavior
   ```
 
 ### `test_PointerArithmetic_PtrPlusPtr_Error`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr1: [*]i32, ptr2: [*]i32) void {
+    var res: [*]i32 = ptr1 + ptr2;
+}
   ```
-  ```zig
-var res: [*]i32 = ptr1 + ptr2;
-  ```
-  ```zig
-FAIL: Expected pointer + pointer error but pipeline succeeded
-  ```
-  ```zig
-FAIL: Expected error 'Cannot use this operator on two pointers' but got other errors:
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PointerArithmetic_PtrMulInt_Error`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: [*]i32) void {
+    var res: [*]i32 = ptr * 2;
+}
   ```
-  ```zig
-var res: [*]i32 = ptr * 2;
-  ```
-  ```zig
-FAIL: Expected pointer * int error but pipeline succeeded
-  ```
-  ```zig
-FAIL: Expected error 'Invalid operator for pointer arithmetic' but got other errors:
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_PointerArithmetic_DiffDifferentTypes_Error`
-- **Primary File**: `tests/integration/pointer_arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/pointer_arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr1: [*]i32, ptr2: [*]u8) void {
+    var res: isize = ptr1 - ptr2;
+}
   ```
-  ```zig
-var res: isize = ptr1 - ptr2;
-  ```
-  ```zig
-FAIL: Expected pointer difference type mismatch error but pipeline succeeded
-  ```
-  ```zig
-FAIL: Expected error 'Cannot subtract pointers to different types' but got other errors:
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_IntegerWidening_Args_Signed`
-- **Primary File**: `tests/integer_widening_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integer_widening_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_i64(x: i64) void {}
   ```
@@ -419,17 +373,14 @@ fn foo() void {
   ```zig
 var x: i32 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_IntegerWidening_Args_ISize`
-- **Primary File**: `tests/integer_widening_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integer_widening_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_isize(x: isize) void {}
   ```
@@ -439,17 +390,14 @@ fn foo() void {
   ```zig
 var x: i32 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_IntegerNarrowing_Args_Error`
-- **Primary File**: `tests/integer_widening_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integer_widening_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_i32(x: i32) void {}
   ```
@@ -459,17 +407,15 @@ fn foo() void {
   ```zig
 var x: i64 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_IntegerNarrowing_ISize_Error`
-- **Primary File**: `tests/integer_widening_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integer_widening_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_isize(x: isize) void {}
   ```
@@ -479,17 +425,15 @@ fn foo() void {
   ```zig
 var x: i64 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_IntegerWidening_Args_Unsigned`
-- **Primary File**: `tests/integer_widening_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integer_widening_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_u64(x: u64) void {}
   ```
@@ -499,17 +443,14 @@ fn foo() void {
   ```zig
 var x: u32 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_IntegerWidening_Args_USize`
-- **Primary File**: `tests/integer_widening_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integer_widening_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_usize(x: usize) void {}
   ```
@@ -519,9 +460,7 @@ fn foo() void {
   ```zig
 var x: u32 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```

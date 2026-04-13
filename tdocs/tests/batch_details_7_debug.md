@@ -1,983 +1,797 @@
-# Batch 7_debug Details: Syntactic Analysis (Parser & AST)
+# Z98 Test Batch 7_debug Technical Specification
 
-## Focus
-Syntactic Analysis (Parser & AST)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 51 test cases focusing on syntactic analysis (parser & ast).
+This test batch comprises 51 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Task142_ErrorFunctionDetection`
-- **Primary File**: `tests/test_task_142.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn open() !File { return File{}; }
-  ```
-  ```zig
-fn read() FileError!i32 { return 0; }
-  ```
-  ```zig
-fn valid(a: i32) i32 { return a; }
-  ```
+- **Implementation Source**: `tests/test_task_142.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const File = struct {};
-  ```
-  ```zig
 const FileError = error{NotFound, Permission};
+fn open() !File { return File{}; }
+fn read() FileError!i32 { return 0; }
+fn valid(a: i32) i32 { return a; }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Assert that `unit.getErrorFunctionCatalogue` matches `2`
   ```
 
 ### `test_Task142_ErrorFunctionRejection`
-- **Primary File**: `tests/test_task_142.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_142.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn open() !i32 { return 0; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_Task143_TryExpressionDetection_Contexts`
-- **Primary File**: `tests/test_task_143.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_143.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn mightFail() !i32 { return 42; }
-  ```
-  ```zig
 fn doTest() void {
-  ```
-  ```zig
+    var x: i32 = try mightFail();
+    x = try mightFail();
+}
 fn returnTry() !i32 {
+    return try mightFail();
+}
+
   ```
-  ```zig
-var x: i32 = try mightFail();
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Validate that `program not equals null` is satisfied
+  2. Assert that `cat.count` matches `3`
   ```
 
 ### `test_Task143_TryExpressionDetection_Nested`
-- **Primary File**: `tests/test_task_143.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_143.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn inner() !i32 { return 1; }
-  ```
-  ```zig
 fn doTest() void {
+    var x: i32 = try (try inner());
+}
+
   ```
-  ```zig
-var x: i32 = try (try inner());
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `program not equals null` is satisfied
+  2. Assert that `cat.count` matches `2`
+  3. Assert that `*tries` matches `0`
+  4. Assert that `*tries` matches `1`
   ```
 
 ### `test_Task143_TryExpressionDetection_MultipleInStatement`
-- **Primary File**: `tests/test_task_143.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_143.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn a() !i32 { return 1; }
-  ```
-  ```zig
 fn b() !i32 { return 2; }
-  ```
-  ```zig
 fn doTest() void {
+    var x: i32 = try a() + try b();
+}
+
   ```
-  ```zig
-var x: i32 = try a() + try b();
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `program not equals null` is satisfied
+  2. Assert that `cat.count` matches `2`
   ```
 
 ### `test_CatchExpressionCatalogue_Basic`
-- **Primary File**: `tests/test_catalogues_task_144.cpp`
-- **Verification Points**: 8 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_catalogues_task_144.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, 0, false);
+    ASSERT_EQ(1, cat.count());
+
+    const DynamicArray<CatchExpressionInfo>* exprs = cat.getCatchExpressions();
+    ASSERT_EQ(loc.line, (*exprs)[0].location.line);
+    ASSERT_STREQ(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_CatchExpressionCatalogue_Basic specific test data structures
-  4. Verify that the 8 semantic properties match expected values
+  1. Assert that `cat.count` matches `0`
+  2. Assert that `cat.count` matches `1`
+  3. Assert that `*exprs` matches `loc.line`
+  4. Assert that `*exprs` matches `error_type`
+  5. Assert that `*exprs` matches `0`
+  6. Ensure that `*exprs` is false
   ```
 
 ### `test_CatchExpressionCatalogue_Chaining`
-- **Primary File**: `tests/test_catalogues_task_144.cpp`
-- **Verification Points**: 5 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_catalogues_task_144.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_CatchExpressionCatalogue_Chaining specific test data structures
-  4. Verify that the 5 semantic properties match expected values
+  1. Assert that `cat.count` matches `2`
+  2. Assert that `*exprs` matches `0`
+  3. Validate that `*exprs` is satisfied
+  4. Assert that `*exprs` matches `1`
   ```
 
 ### `test_OrelseExpressionCatalogue_Basic`
-- **Primary File**: `tests/test_catalogues_task_144.cpp`
-- **Verification Points**: 4 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_catalogues_task_144.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, t, t, t);
+    ASSERT_EQ(1, cat.count());
+
+    const DynamicArray<OrelseExpressionInfo>* exprs = cat.getOrelseExpressions();
+    ASSERT_STREQ(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Initialize test_OrelseExpressionCatalogue_Basic specific test data structures
-  4. Verify that the 4 semantic properties match expected values
+  1. Assert that `cat.count` matches `0`
+  2. Assert that `cat.count` matches `1`
+  3. Assert that `*exprs` matches `loc.line`
   ```
 
 ### `test_Task144_CatchExpressionDetection_Basic`
-- **Primary File**: `tests/test_task_144_detection.cpp`
-- **Verification Points**: 8 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_144_detection.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn mightFail() !i32 { return 42; }
-  ```
-  ```zig
 fn doTest() void {
+    var x: i32 = mightFail() catch 0;
+    x = mightFail() catch |err| 1;
+}
+
   ```
-  ```zig
-var x: i32 = mightFail() catch 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 8 semantic properties match expected values
+  1. Validate that `program not equals null` is satisfied
+  2. Assert that `cat.count` matches `2`
+  3. Assert that `*exprs` matches `null`
+  4. Ensure that `*exprs` is false
   ```
 
 ### `test_Task144_CatchExpressionDetection_Chained`
-- **Primary File**: `tests/test_task_144_detection.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_144_detection.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn mightFail() !i32 { return 42; }
-  ```
-  ```zig
 fn doTest() void {
+    var x: i32 = mightFail() catch mightFail() catch 0;
+}
+
   ```
-  ```zig
-var x: i32 = mightFail() catch mightFail() catch 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `program not equals null` is satisfied
+  2. Assert that `cat.count` matches `2`
+  3. Validate that `*exprs` is satisfied
+  4. Assert that `*exprs` matches `0`
+  5. Assert that `*exprs` matches `1`
   ```
 
 ### `test_Task144_OrelseExpressionDetection`
-- **Primary File**: `tests/test_task_144_detection.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_144_detection.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn maybeInt() ?i32 { return 42; }
-  ```
-  ```zig
 fn doTest() void {
+    var x: i32 = maybeInt() orelse 0;
+}
+
   ```
-  ```zig
-var x: i32 = maybeInt() orelse 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `program not equals null` is satisfied
+  2. Assert that `cat.count` matches `1`
   ```
 
 ### `test_TypeChecker_VarDecl_Inferred_Crash`
-- **Primary File**: `tests/type_checker_inference_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_inference_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn myTest() void { var x = 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `root not equals null` is satisfied
+  2. Ensure that `ctx.getCompilationUnit` is false
   ```
 
 ### `test_TypeChecker_VarDecl_Inferred_Loop`
-- **Primary File**: `tests/type_checker_inference_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_inference_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn myTest() void { var i = 0; while (i < 10) { i = i + 1; } }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `root not equals null` is satisfied
+  2. Ensure that `ctx.getCompilationUnit` is false
   ```
 
 ### `test_TypeChecker_VarDecl_Inferred_Multiple`
-- **Primary File**: `tests/type_checker_inference_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/type_checker_inference_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn myTest() void { var x = 1; var y = 2.0; var z = true; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `root not equals null` is satisfied
+  2. Ensure that `ctx.getCompilationUnit` is false
   ```
 
 ### `test_C89Rejection_NestedTryInMemberAccess`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn getS() !S { return S { .f = 42 }; }
-  ```
-  ```zig
-fn main() !void { var x = (try getS()).f; return; }
-  ```
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn getS() !S { return S { .f = 42 }; }
+fn main() !void { var x = (try getS()).f; return; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_NestedTryInStructInitializer`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn f() !i32 { return 42; }
-  ```
-  ```zig
-fn main() !void { var s = S { .f = try f() }; return; }
-  ```
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { f: i32 };
+fn f() !i32 { return 42; }
+fn main() !void { var s = S { .f = try f() }; return; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_NestedTryInArrayAccess`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn getArr() ![5]i32 { return undefined; }
-  ```
-  ```zig
 fn main() !void { var x = (try getArr())[0]; return; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_ExtractionAnalysis_StackStrategy`
-- **Primary File**: `tests/extraction_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/extraction_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() !i32 { return 42; }
-  ```
-  ```zig
 fn main() void { try f(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_extraction_test_verbose(source, EXTRACTION_STACK, true` is satisfied
   ```
 
 ### `test_ExtractionAnalysis_ArenaStrategy_LargePayload`
-- **Primary File**: `tests/extraction_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn f() !S { return undefined; }
-  ```
-  ```zig
-fn main() void { try f(); }
-  ```
+- **Implementation Source**: `tests/extraction_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 };
+fn f() !S { return undefined; }
+fn main() void { try f(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_extraction_test_verbose(source, EXTRACTION_ARENA, false` is satisfied
   ```
 
 ### `test_ExtractionAnalysis_ArenaStrategy_DeepNesting`
-- **Primary File**: `tests/extraction_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-fn f() !S { return undefined; }
-  ```
-  ```zig
-fn main() void {
-  ```
+- **Implementation Source**: `tests/extraction_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32, j: i32 };
   ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
-  ```
-
-### `test_ExtractionAnalysis_OutParamStrategy`
-- **Primary File**: `tests/extraction_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
   ```zig
 fn f() !S { return undefined; }
   ```
   ```zig
-fn main() void { try f(); }
+fn main() void {
   ```
   ```zig
-const S = struct { a: [1025]u8 };
+try f();
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_extraction_test_verbose(source2, EXTRACTION_ARENA, true` is satisfied
+  ```
+
+### `test_ExtractionAnalysis_OutParamStrategy`
+- **Implementation Source**: `tests/extraction_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+const S = struct { a: [1025]u8 };
+fn f() !S { return undefined; }
+fn main() void { try f(); }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Validate that `run_extraction_test_verbose(source, EXTRACTION_OUT_PARAM, true` is satisfied
   ```
 
 ### `test_ExtractionAnalysis_ArenaStrategy_Alignment`
-- **Primary File**: `tests/extraction_analysis_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/extraction_analysis_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() !i64 { return 42; }
-  ```
-  ```zig
 fn main() void { try f(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_extraction_test_verbose(source, EXTRACTION_ARENA, false` is satisfied
   ```
 
 ### `test_ExtractionAnalysis_Linking`
-- **Primary File**: `tests/extraction_analysis_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/extraction_analysis_tests.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() !i32 { return 42; }
-  ```
-  ```zig
 fn main() void {
+  var x = try f();
+  var y = f() catch 0;
+}
   ```
-  ```zig
-var x = try f();
-  ```
-  ```zig
-var y = f() catch 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
+  1. Assert that `int` matches `2`
+  2. Validate that `try_site.try_info_index not equals -1` is satisfied
+  3. Validate that `catch_site.catch_info_index not equals -1` is satisfied
+  4. Assert that `int` matches `int)try_site.strategy`
+  5. Assert that `int` matches `int)catch_site.strategy`
   ```
 
 ### `test_Task147_ErrDeferRejection`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() void { errdefer {}; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Ensure that `expect_type_checker_abort(source` is false
   ```
 
 ### `test_Task147_AnyErrorRejection`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: anyerror = 0;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task149_ErrorHandlingFeaturesCatalogued`
-- **Primary File**: `tests/test_task_149.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_149.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn my_test() !i32 {
-  ```
-  ```zig
+    errdefer {}
+    const x = try foo();
+    const y = bar() catch 0;
+    const z = maybe() orelse 0;
+    return 0;
+}
 fn foo() !i32 { return 0; }
-  ```
-  ```zig
 fn bar() !i32 { return 0; }
-  ```
-  ```zig
 fn maybe() ?i32 { return 0; }
+
   ```
-  ```zig
-const x = try foo();
-  ```
-  ```zig
-const y = bar() catch 0;
-  ```
-  ```zig
-const z = maybe() orelse 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `unit.getTryExpressionCatalogue` is satisfied
+  3. Validate that `unit.getCatchExpressionCatalogue` is satisfied
+  4. Validate that `unit.getOrelseExpressionCatalogue` is satisfied
+  5. Validate that `unit.getErrDeferCatalogue` is satisfied
+  6. Validate that `unit.getErrorHandler` is satisfied
   ```
 
 ### `test_Task150_ErrorTypeEliminatedFromFinalTypeSystem`
-- **Primary File**: `tests/test_task_150.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_150.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() void { var x: !i32 = 0; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.areErrorTypesEliminated` is satisfied
   ```
 
 ### `test_C89Rejection_GenericFnDecl_ShouldBeRejected`
-- **Primary File**: `tests/test_task_150_extra.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_150_extra.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(comptime T: i32) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.getErrorHandler` is satisfied
+  3. Validate that `found_msg` is satisfied
   ```
 
 ### `test_C89Rejection_DeferAndErrDefer`
-- **Primary File**: `tests/test_c89_rejection.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_c89_rejection.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f() void { defer {}; errdefer {}; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_C89Rejection_ErrorTypeInParam_ShouldBeRejected`
-- **Primary File**: `tests/test_task_150_extra.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_150_extra.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: !i32) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.getErrorHandler` is false
   ```
 
 ### `test_Task150_MoreComprehensiveElimination`
-- **Primary File**: `tests/test_task_150_extra.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_150_extra.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) !i32 { if (x > 0) { return x; } return 0; }
-  ```
-  ```zig
 fn main() !void {
+    var res: i32 = foo(1) catch 0;
+    var res2: i32 = 0;
+    if (res > 0) { res2 = try foo(res); }
+    return;
+}
+
   ```
-  ```zig
-var res: i32 = foo(1) catch 0;
-  ```
-  ```zig
-var res2: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.getErrorHandler` is false
+  3. Validate that `unit.areErrorTypesEliminated` is satisfied
   ```
 
 ### `test_C89Support_ArraySliceExpression`
-- **Primary File**: `tests/test_task_150_extra.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_150_extra.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() void { var a: [10]i32 = undefined; var b = a[0..5]; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_Task151_ErrorTypeRejection`
-- **Primary File**: `tests/test_task_151.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_151.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func() !i32 { return 0; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_Task151_OptionalTypeRejection`
-- **Primary File**: `tests/test_task_151.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_task_151.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func(x: ?i32) void { _ = x; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_FunctionNameCollisionSameScope`
-- **Primary File**: `tests/test_name_collision.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_name_collision.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn foo() i32 { return 0; }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `checker.hasCollisions` is satisfied
+  3. Assert that `checker.getCollisionCount` matches `1`
   ```
 
 ### `test_FunctionVariableCollisionSameScope`
-- **Primary File**: `tests/test_name_collision.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_name_collision.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 var foo: i32 = 5;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Validate that `checker.hasCollisions` is satisfied
   ```
 
 ### `test_ShadowingAllowed`
-- **Primary File**: `tests/test_name_collision.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_name_collision.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn bar() void {
+    const foo: i32 = 5;
+}
+
   ```
-  ```zig
-const foo: i32 = 5;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `checker.hasCollisions` is false
   ```
 
 ### `test_SignatureAnalysisNonC89Types`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bad2(a: !i32) void {}      // Error union - should reject
-  ```
-  ```zig
 fn good(a: i32) void {}       // Simple type - should pass
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
+  3. Assert that `analyzer.getInvalidSignatureCount` matches `0`
   ```
 
 ### `test_SignatureAnalysis_ManyParams_Accepted`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn manyParams(a: i32, b: i32, c: i32, d: i32, e: i32) void {}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
   ```
 
 ### `test_SignatureAnalysis_ExtremeParams_Accepted`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
-fn extremeParams(p1: i32, p2: i32, p3: i32, p4: i32, p5: i32, p6: i32, p7: i32, p8: i32,
+fn extremeParams(p1: i32, p2: i32, p3: i32, p4: i32, p5: i32, p6: i32, p7: i32, p8: i32,                  p9: i32, p10: i32, p11: i32, p12: i32, p13: i32, p14: i32, p15: i32, p16: i32,                  p17: i32, p18: i32, p19: i32, p20: i32, p21: i32, p22: i32, p23: i32, p24: i32,                  p25: i32, p26: i32, p27: i32, p28: i32, p29: i32, p30: i32, p31: i32, p32: i32) void {}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
   ```
 
 ### `test_SignatureAnalysisMultiLevelPointers`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn multiPtr(a: * * i32) void {}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
   ```
 
 ### `test_SignatureAnalysisTypeAliasResolution`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn good(a: MyInt) void {}  // Should pass - resolves to i32
-  ```
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const MyInt = i32;
+fn good(a: MyInt) void {}  // Should pass - resolves to i32
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
   ```
 
 ### `test_SignatureAnalysisArrayParameterWarning`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arrayParam(a: [10]i32) void {}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
+  3. Validate that `unit.getErrorHandler` is satisfied
+  4. Validate that `found_warning` is satisfied
   ```
 
 ### `test_SignatureAnalysisReturnTypeRejection`
-- **Primary File**: `tests/test_signature_analyzer.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Static Analysis Pass, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_signature_analyzer.cpp`
+- **Sub-system Coverage**: Static Analysis, Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn badRet() !i32 { return 0; }
-  ```
-  ```zig
 fn goodRet() i32 { return 0; }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Static Analysis Pass phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `analyzer.hasInvalidSignatures` is false
+  3. Assert that `analyzer.getInvalidSignatureCount` matches `0`
   ```
 
 ### `test_TypeChecker_BreakContinue_InLoop`
-- **Primary File**: `tests/test_break_continue.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_break_continue.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func() void {
+    while (true) {
+        break;
+        continue;
+    }
+    var arr: [5]i32 = undefined;
+    for (arr) |item| {
+        break;
+        continue;
+    }
+}
+
   ```
-  ```zig
-var arr: [5]i32 = undefined;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_TypeChecker_BreakOutsideLoop_Error`
-- **Primary File**: `tests/test_break_continue.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_break_continue.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func() void {
+    break;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `found_error` is satisfied
   ```
 
 ### `test_TypeChecker_ContinueOutsideLoop_Error`
-- **Primary File**: `tests/test_break_continue.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_break_continue.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func() void {
+    continue;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `found_error` is satisfied
   ```
 
 ### `test_TypeChecker_BreakInDefer_Error`
-- **Primary File**: `tests/test_break_continue.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_break_continue.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func() void {
+    while (true) {
+        defer { break; }
+    }
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performFullPipeline(file_id` is false
+  3. Validate that `found_error` is satisfied
   ```
 
 ### `test_TypeChecker_BreakInSwitchInLoop`
-- **Primary File**: `tests/test_break_continue.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_break_continue.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn test_func(x: i32) void {
+    while (true) {
+        switch (x) {
+            1 => { break; },
+            else => {},
+        };
+    }
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_TypeChecker_ManyParams_FunctionPointer`
-- **Primary File**: `tests/test_many_params.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_many_params.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
-const fp: fn(i32, i32, i32, i32, i32, i32, i32, i32,
+const fp: fn(i32, i32, i32, i32, i32, i32, i32, i32,             i32, i32, i32, i32, i32, i32, i32, i32,             i32, i32, i32, i32, i32, i32, i32, i32,             i32, i32, i32, i32, i32, i32, i32, i32) void = undefined;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_TypeChecker_ManyParams_GenericInstantiation`
-- **Primary File**: `tests/test_many_params.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_many_params.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
-fn generic(comptime T: type,
-  ```
-  ```zig
+fn generic(comptime T: type,            p1: T, p2: T, p3: T, p4: T, p5: T, p6: T, p7: T, p8: T,            p9: T, p10: T, p11: T, p12: T, p13: T, p14: T, p15: T, p16: T,            p17: T, p18: T, p19: T, p20: T, p21: T, p22: T, p23: T, p24: T,            p25: T, p26: T, p27: T, p28: T, p29: T, p30: T, p31: T, p32: T) void {}
 fn main() void {
+    generic(i32, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,                  17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32);
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Syntactic Analysis (Parser & AST) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `AST is successfully constructed` is satisfied
+  2. Ensure that `unit.getErrorHandler` is false
+  3. Assert that `catalogue.count` matches `1`
+  4. Assert that `inst.param_count` matches `33`
   ```

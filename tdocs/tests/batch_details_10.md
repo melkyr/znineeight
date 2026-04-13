@@ -1,77 +1,94 @@
-# Batch 10 Details: General Compiler Integration
+# Z98 Test Batch 10 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 7 test cases focusing on general compiler integration.
+This test batch comprises 7 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_simple_mangling`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_simple_mangling specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `plat_strcmp(mangled, "zF_0_foo"` is satisfied
   ```
 
 ### `test_generic_mangling`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+);
+    params.append(info);
+
+    // foo__i32
+    const char* mangled = mangler.mangleFunction(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_generic_mangling specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `plat_strcmp(mangled, "zF_0_foo__i32"` is satisfied
   ```
 
 ### `test_multiple_generic_mangling`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+);
+    params.append(p2);
+
+    // bar__i32_f64
+    const char* mangled = mangler.mangleFunction(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_multiple_generic_mangling specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `plat_strcmp(mangled, "zF_0_bar__i32_f64"` is satisfied
   ```
 
 ### `test_c_keyword_collision`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 2 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+) == 0);
+
+    const char* mangled_while = mangler.mangleFunction(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_c_keyword_collision specific test data structures
-  4. Verify that the 2 semantic properties match expected values
+  1. Validate that `plat_strcmp(mangled_if, "zF_0_if"` is satisfied
+  2. Validate that `plat_strcmp(mangled_while, "zF_1_while"` is satisfied
   ```
 
 ### `test_reserved_name_collision`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_reserved_name_collision specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `plat_strcmp(mangled, "zF_0__Test"` is satisfied
   ```
 
 ### `test_length_limit`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+this_is_a_very_long_function_name_that_exceeds_thirty_one_characters
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_length_limit specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `plat_strlen(mangled` is satisfied
   ```
 
 ### `test_determinism`
-- **Primary File**: `tests/name_mangler_tests.cpp`
-- **Verification Points**: 1 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/name_mangler_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+);
+    params.append(info);
+
+    const char* mangled1 = mangler.mangleFunction(
+  ```
+  ```zig
+, &params, 1);
+    const char* mangled2 = mangler.mangleFunction(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_determinism specific test data structures
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `mangled1 equals mangled2` is satisfied
   ```

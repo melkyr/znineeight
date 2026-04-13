@@ -1,178 +1,193 @@
-# Batch 13 Details: General Compiler Integration
+# Z98 Test Batch 13 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 13 test cases focusing on general compiler integration.
+This test batch comprises 13 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_IfStatementIntegration_BoolCondition`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) void {
+    if (b) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_BoolCondition and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_IntCondition`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) void {
+    if (x) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_IntCondition and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_PointerCondition`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: *i32) void {
+    if (ptr) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_PointerCondition and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_IfElse`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) i32 {
+    if (b) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_IfElse and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_ElseIfChain`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    if (x < 0) {
+        return -1;
+    } else if (x == 0) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_ElseIfChain and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_NestedIf`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(a: bool, b: bool) void {
+    if (a) {
+        if (b) {
+            return;
+        }
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_NestedIf and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_LogicalAnd`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(a: bool, b: bool) void {
+    if (a and b) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_LogicalAnd and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_LogicalOr`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(a: bool, b: bool) void {
+    if (a or b) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_LogicalOr and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_LogicalNot`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(a: bool) void {
+    if (!a) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_LogicalNot and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_EmptyBlocks`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) void {
+    if (b) { } else { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_EmptyBlocks and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_ReturnFromBranches`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    if (x > 10) {
+        return 1;
+    }
+    return 0;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_ReturnFromBranches and validate component behavior
   ```
 
 ### `test_IfStatementIntegration_RejectFloatCondition`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(f: f64) void {
+    if (f) { }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_IfStatementIntegration_AllowBracelessIf`
-- **Primary File**: `tests/integration/if_statement_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/if_statement_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(b: bool) void {
+    if (b) return;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_IfStatementIntegration_AllowBracelessIf and validate component behavior
   ```

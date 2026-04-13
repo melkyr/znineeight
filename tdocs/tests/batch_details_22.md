@@ -1,40 +1,61 @@
-# Batch 22 Details: Code Generation (C89)
+# Z98 Test Batch 22 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 3 test cases focusing on code generation (c89).
+This test batch comprises 3 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_c89_emitter_basic`
-- **Primary File**: `tests/test_c89_emitter.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: C89 Code Generation
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c89_emitter.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+test_emitter_basic.c
+  ```
+  ```zig
+/* Hello World */
+int main() {
+    return 0;
+}
+
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_c89_emitter_basic specific test data structures
-  3. Execute C89 Code Generation phase
-  4. Verify that the 4 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Validate that `emitter.isValid` is satisfied
+  2. Validate that `plat_file_read(filename, &buffer, &size` is satisfied
+  3. Validate that `buffer not equals null` is satisfied
+  4. Assert that `plat_strcmp(buffer, expected` matches `0`
   ```
 
 ### `test_c89_emitter_buffering`
-- **Primary File**: `tests/test_c89_emitter.cpp`
-- **Verification Points**: 6 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c89_emitter.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+test_emitter_buffering.c
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_c89_emitter_buffering specific test data structures
-  4. Verify that the 6 semantic properties match expected values
+  1. Validate that `emitter.isValid` is satisfied
+  2. Validate that `plat_file_read(filename, &buffer, &size` is satisfied
+  3. Assert that `int` matches `4097`
+  4. Assert that `buffer[0]` matches `'A'`
+  5. Assert that `buffer[4095]` matches `'A'`
+  6. Assert that `buffer[4096]` matches `'B'`
   ```
 
 ### `test_plat_file_raw_io`
-- **Primary File**: `tests/test_c89_emitter.cpp`
-- **Verification Points**: 4 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_c89_emitter.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+test_raw_io.txt
+  ```
+  ```zig
+Hello Raw IO
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_plat_file_raw_io specific test data structures
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `f not equals PLAT_INVALID_FILE` is satisfied
+  2. Assert that `read` matches `plat_strlen(data`
+  3. Assert that `plat_strcmp(buf, data` matches `0`
   ```

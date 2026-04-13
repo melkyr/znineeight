@@ -1,256 +1,228 @@
-# Batch 45 Details: General Compiler Integration
+# Z98 Test Batch 45 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 12 test cases focusing on general compiler integration.
+This test batch comprises 12 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_ErrorHandling_ErrorSetDefinition`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {}
-  ```
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const MyErrors = error { FileNotFound, AccessDenied, OutOfMemory };
+fn foo() void {}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
+  3. Validate that `registry.getTagId(interner.intern("FileNotFound"` is satisfied
+  4. Validate that `registry.getTagId(interner.intern("AccessDenied"` is satisfied
+  5. Validate that `registry.getTagId(interner.intern("OutOfMemory"` is satisfied
   ```
 
 ### `test_ErrorHandling_ErrorLiteral`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fail() !i32 {
+    return error.FileNotFound;
+}
+
   ```
-  ```zig
-__return_val.is_error = 1
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
+  3. Validate that `emitter.contains("__return_val.is_error = 1"` is satisfied
+  4. Validate that `emitter.contains("__return_val.data = {.err = ERROR_FileNotFound}"` is satisfied
   ```
 
 ### `test_ErrorHandling_SuccessWrapping`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn succeed() !i32 {
+    return 42;
+}
+
   ```
-  ```zig
-__return_val.is_error = 0
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
+  3. Validate that `emitter.contains("__return_val.is_error = 0"` is satisfied
+  4. Validate that `emitter.contains("__return_val.data = {.payload = 42}"` is satisfied
   ```
 
 ### `test_ErrorHandling_VoidPayload`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn doSomething() !void {
+    if (false) { return error.Failed; }
+    return;
+}
+
   ```
-  ```zig
-__return_val.is_error = 1
-  ```
-  ```zig
-__return_val.is_error = 0
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
+  3. Validate that `emitter.contains("__return_val.is_error = 1"` is satisfied
+  4. Validate that `emitter.contains("__return_val.err = ERROR_Failed"` is satisfied
+  5. Validate that `emitter.contains("__return_val.is_error = 0"` is satisfied
   ```
 
 ### `test_ErrorHandling_TryExpression`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fallible() !i32 { return 10; }
-  ```
-  ```zig
 fn caller() !i32 {
+    const x = try fallible();
+    return x + 5;
+}
+
   ```
-  ```zig
-const x = try fallible();
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
+  3. Validate that `emitter.contains("__tmp_try_res_"` is satisfied
+  4. Validate that `emitter.contains(" = zF_0_fallible` is satisfied
+  5. Validate that `emitter.contains(".is_error"` is satisfied
   ```
 
 ### `test_ErrorHandling_CatchExpression`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 5 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fallible() !i32 { return error.Fail; }
-  ```
-  ```zig
 fn caller() i32 {
+    const x = fallible() catch 42;
+    return x;
+}
+
   ```
-  ```zig
-const x = fallible() catch 42;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 5 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
+  3. Validate that `emitter.contains("__tmp_catch_res_"` is satisfied
+  4. Validate that `emitter.contains(" = zF_0_fallible` is satisfied
+  5. Validate that `emitter.contains(".is_error"` is satisfied
+  6. Validate that `emitter.contains(" = 42"` is satisfied
   ```
 
 ### `test_ErrorHandling_NestedErrorUnion`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() !!i32 {
+    return 42;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
   ```
 
 ### `test_ErrorHandling_StructField`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var s: S;
-  ```
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct {
+    res: !i32,
+};
+fn foo() void {
+    var s: S;
+    s.res = 10;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
   ```
 
 ### `test_ErrorHandling_C89Execution`
-- **Primary File**: `tests/integration/error_handling_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_handling_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn fallible(val: i32) !i32 {
-  ```
-  ```zig
+    if (val == 0) { return error.ZeroValue; }
+    return val * 2;
+}
 pub fn main() i32 {
+    const a = fallible(10) catch 0;
+    const b = fallible(0) catch 42;
+    if (a == 20 and b == 42) { return 0; }
+    return 1;
+}
+
   ```
   ```zig
-const a = fallible(10) catch 0;
+temp_error_test.c
   ```
-  ```zig
-const b = fallible(0) catch 42;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performFullPipeline(file_id` is satisfied
   ```
 
 ### `test_ErrorHandling_DuplicateTags`
-- **Primary File**: `tests/integration/error_revision_tests.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_revision_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const E = error { Foo, Bar, Foo };
   ```
   ```zig
 Duplicate error tag 'Foo'
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.getErrorHandler` is satisfied
+  3. Validate that `found_dup_error` is satisfied
   ```
 
 ### `test_ErrorHandling_SetMerging`
-- **Primary File**: `tests/integration/error_revision_tests.cpp`
-- **Verification Points**: 6 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/error_revision_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const E1 = error { A, B };
-  ```
-  ```zig
 const E2 = error { B, C };
-  ```
-  ```zig
 const E3 = E1 || E2;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 6 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `!unit.getErrorHandler` is satisfied
+  3. Validate that `sym not equals null` is satisfied
+  4. Validate that `sym.kind of symbol_type equals TYPE_ERROR_SET` is satisfied
+  5. Validate that `tags not equals null` is satisfied
+  6. Assert that `int` matches `3`
+  7. Validate that `found_a && found_b && found_c` is satisfied
   ```
 
 ### `test_ErrorHandling_Layout`
-- **Primary File**: `tests/integration/error_revision_tests.cpp`
-- **Verification Points**: 6 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/error_revision_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Initialize test_ErrorHandling_Layout specific test data structures
-  4. Verify that the 6 semantic properties match expected values
+  1. Assert that `int` matches `8`
+  2. Assert that `int` matches `4`
+  3. Assert that `int` matches `16`
   ```

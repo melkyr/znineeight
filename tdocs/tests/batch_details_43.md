@@ -1,149 +1,219 @@
-# Batch 43 Details: Code Generation (C89)
+# Z98 Test Batch 43 Technical Specification
 
-## Focus
-Code Generation (C89)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 8 test cases focusing on code generation (c89).
+This test batch comprises 8 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_SwitchNoreturn_BasicDivergence`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Initialize test_SwitchNoreturn_BasicDivergence specific test data structures
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SwitchNoreturn_AllDivergent`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn bar() void {}
-  ```
-  ```zig
-fn foo(x: i32) noreturn {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SwitchNoreturn_BreakInProng`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SwitchNoreturn_LabeledBreakInProng`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: i32 = 0;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SwitchNoreturn_MixedTypesError`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) i32 {
+    return switch (x) {
+        0 => 10,
+        1 => return 20,
+        else => unreachable,
+    };
+}
   ```
-  ```zig
-FAIL: Expected type mismatch error but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SwitchNoreturn_VariableNoreturnError`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: noreturn = unreachable;
-  ```
-  ```zig
-FAIL: Expected error for variable of type noreturn but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_SwitchNoreturn_BlockProng`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
   ```zig
 fn foo(x: i32) i32 {
+    return switch (x) {
+        0 => 10,
+        1 => return 20,
+        else => unreachable,
+    };
+}
   ```
   ```zig
-var y = 5;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_SwitchNoreturn_RealCodegen`
-- **Primary File**: `tests/integration/switch_noreturn_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(x: i32) i32 {
+temp_switch_noreturn.c
   ```
   ```zig
 fn bar() void { unreachable; }
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+fn bar() void {}
+fn foo(x: i32) noreturn {
+    switch (x) {
+        0 => unreachable,
+        else => unreachable,
+    }
+}
+  ```
+  ```zig
+fn foo() void {
+    while (true) {
+        var x: i32 = 0;
+        _ = switch (x) {
+            0 => break,
+            else => 1,
+        };
+    }
+}
+  ```
+  ```zig
+fn foo() void {
+    outer: while (true) {
+        var x: i32 = 0;
+        _ = switch (x) {
+            0 => break :outer,
+            else => 1,
+        };
+    }
+}
+  ```
+  ```zig
+fn foo() void {
+    var x: noreturn = unreachable;
+}
+  ```
+  ```zig
+fn foo(x: i32) i32 {
+    return switch (x) {
+        0 => {
+            var y = 5;
+            y + 5
+        },
+        else => 0,
+    };
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Code Generation (C89) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_AllDivergent`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn bar() void {}
+fn foo(x: i32) noreturn {
+    switch (x) {
+        0 => unreachable,
+        else => unreachable,
+    }
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_BreakInProng`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() void {
+    while (true) {
+        var x: i32 = 0;
+        _ = switch (x) {
+            0 => break,
+            else => 1,
+        };
+    }
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_LabeledBreakInProng`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() void {
+    outer: while (true) {
+        var x: i32 = 0;
+        _ = switch (x) {
+            0 => break :outer,
+            else => 1,
+        };
+    }
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_MixedTypesError`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo(x: i32) i32 {
+  ```
+  ```zig
+return switch (x) {
+  ```
+  ```zig
+, source);
+    // This should fail during type checking
+    if (unit.performTestPipeline(file_id)) {
+        printf(
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_VariableNoreturnError`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo() void {
+    var x: noreturn = unreachable;
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_BlockProng`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo(x: i32) i32 {
+    return switch (x) {
+        0 => {
+            var y = 5;
+            y + 5
+        },
+        else => 0,
+    };
+}
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
+  ```
+
+### `test_SwitchNoreturn_RealCodegen`
+- **Implementation Source**: `tests/integration/switch_noreturn_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+fn foo(x: i32) i32 {
+    return switch (x) {
+        0 => 10,
+        1 => return 20,
+        else => unreachable,
+    };
+}
+  ```
+  ```zig
+temp_switch_noreturn.c
+  ```
+  ```zig
+fn bar() void { unreachable; }
+  ```
+- **Verification Logic (Behavioral Specification)**:
+  ```pseudocode
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

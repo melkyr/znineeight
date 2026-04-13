@@ -1,89 +1,67 @@
-# Batch 8 Details: General Compiler Integration
+# Z98 Test Batch 8 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on general compiler integration.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Task154_RejectAnytypeParam`
-- **Primary File**: `tests/task_154_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_154_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn printAny(anytype value) void { }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task154_RejectTypeParam`
-- **Primary File**: `tests/task_154_test.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_154_test.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(T: type) void { }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_Task154_CatalogueComptimeDefinition`
-- **Primary File**: `tests/task_154_test.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_154_test.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn generic(comptime x: i32) void { }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `unit.getGenericCatalogue` is satisfied
   ```
 
 ### `test_Task154_CatalogueAnytypeDefinition`
-- **Primary File**: `tests/task_154_test.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_154_test.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn generic(anytype x) void { }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `unit.getGenericCatalogue` is satisfied
   ```
 
 ### `test_Task154_CatalogueTypeParamDefinition`
-- **Primary File**: `tests/task_154_test.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Syntactic Parsing, Semantic Type Checking, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_154_test.cpp`
+- **Sub-system Coverage**: Semantic Analysis, Syntactic Analysis
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn generic(T: type) void { }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Syntactic Parsing phase
-  3. Execute Semantic Type Checking phase
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `unit.getGenericCatalogue` is satisfied
   ```

@@ -1,92 +1,82 @@
-# Batch 28 Details: General Compiler Integration
+# Z98 Test Batch 28 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Call Resolution and Site Tracking: Verifies function call resolution across modules, including mutual recursion, and rejection of unsupported indirect calls in the bootstrap phase.
 
-This batch contains 4 test cases focusing on general compiler integration.
+This test batch comprises 4 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_Task168_MutualRecursion`
-- **Primary File**: `tests/task_168_validation.cpp`
-- **Verification Points**: 4 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_168_validation.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn a() void { b(); }
-  ```
-  ```zig
 fn b() void { c(); }
-  ```
-  ```zig
 fn c() void { a(); }
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 4 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `3`
+  4. Validate that `table.getEntry(i` is satisfied
+  5. Assert that `table.getEntry(i` matches `CALL_DIRECT`
   ```
 
 ### `test_Task168_IndirectCallRejection`
-- **Primary File**: `tests/task_168_validation.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_168_validation.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn main() void {
+    const f = foo;
+    f();
+}
+
   ```
-  ```zig
-const f = foo;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `unit.getIndirectCallCatalogue` matches `1`
+  4. Assert that `unit.getIndirectCallCatalogue` matches `INDIRECT_VARIABLE`
   ```
 
 ### `test_Task168_GenericCallChain`
-- **Primary File**: `tests/task_168_validation.cpp`
-- **Verification Points**: 3 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_168_validation.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn max(comptime T: type, a: T, b: T) T { return a; }
-  ```
-  ```zig
 fn main() void {
+    const x: i32 = max(i32, 10, 20) + max(i32, 5, 15);
+}
+
   ```
-  ```zig
-const x: i32 = max(i32, 10, 20) + max(i32, 5, 15);
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 3 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `table.getEntry(i` is satisfied
+  3. Assert that `generic_calls` matches `2`
   ```
 
 ### `test_Task168_BuiltinCall`
-- **Primary File**: `tests/task_168_validation.cpp`
-- **Verification Points**: 2 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/task_168_validation.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main() void {
   ```
   ```zig
 const std = @import(\
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+    if (f) {
+        fprintf(f,
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 2 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `success` is satisfied
+  3. Assert that `table.count` matches `0`
   ```

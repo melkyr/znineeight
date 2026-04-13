@@ -1,267 +1,119 @@
-# Batch 42 Details: General Compiler Integration
+# Z98 Test Batch 42 Technical Specification
 
-## Focus
-General Compiler Integration
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 14 test cases focusing on general compiler integration.
+This test batch comprises 7 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_ForIntegration_Basic`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/for_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [5]i32) void {
+    for (arr) |item| {
+        var dummy = item;
+    }
+}
   ```
-  ```zig
-var dummy = item;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ForIntegration_InvalidIterable`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/for_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var x: bool = true;
+    for (x) |item| {
+        var dummy = item;
+    }
+}
   ```
-  ```zig
-var x: bool = true;
-  ```
-  ```zig
-var dummy = item;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ForIntegration_ImmutableCapture`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/for_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [3]i32) void {
+    for (arr) |item| {
+        item = 10;
+    }
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ForIntegration_DiscardCapture`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/for_tests.cpp`
+- **Sub-system Coverage**: Code Generation
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [3]i32) void {
+    for (arr) |_, index| {
+        var x: usize = index;
+    }
+    for (arr) |item, _| {
+        var y: i32 = item;
+    }
+    for (0..10) |_| {
+        var z: i32 = 1;
+    }
+}
   ```
-  ```zig
-var x: usize = index;
-  ```
-  ```zig
-var y: i32 = item;
-  ```
-  ```zig
-var z: i32 = 1;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ForIntegration_Scoping`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/for_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(arr: [3]i32) void {
+    for (arr) |item| {
+        var x: i32 = item;
+    }
+    // item should not be visible here
+}
   ```
-  ```zig
-var x: i32 = item;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ParamIntegration_Immutable`
-- **Primary File**: `tests/integration/param_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/param_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(x: i32) void {
+    x = 10;
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ParamIntegration_MutablePointer`
-- **Primary File**: `tests/integration/param_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/param_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo(ptr: *i32) void {
+    ptr.* = 10; // This should be allowed
+    // ptr = @ptrCast(*i32, 0); // This should be forbidden
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_ForIntegration_Basic`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(arr: [5]i32) void {
-  ```
-  ```zig
-var dummy = item;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_ForIntegration_InvalidIterable`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo() void {
-  ```
-  ```zig
-var x: bool = true;
-  ```
-  ```zig
-var dummy = item;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_ForIntegration_ImmutableCapture`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(arr: [3]i32) void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_ForIntegration_DiscardCapture`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: C89 Code Generation, Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(arr: [3]i32) void {
-  ```
-  ```zig
-var x: usize = index;
-  ```
-  ```zig
-var y: i32 = item;
-  ```
-  ```zig
-var z: i32 = 1;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute C89 Code Generation phase
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  5. Validate that emitted C code is syntactically correct C89
-  ```
-
-### `test_ForIntegration_Scoping`
-- **Primary File**: `tests/integration/for_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(arr: [3]i32) void {
-  ```
-  ```zig
-var x: i32 = item;
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_ParamIntegration_Immutable`
-- **Primary File**: `tests/integration/param_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(x: i32) void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
-  ```
-
-### `test_ParamIntegration_MutablePointer`
-- **Primary File**: `tests/integration/param_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(ptr: *i32) void {
-  ```
-- **How it is tested (Pseudocode)**:
-  ```pseudocode
-  1. Setup General Compiler Integration environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```

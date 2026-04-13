@@ -1,15 +1,14 @@
-# Batch 12 Details: Semantic Analysis (Type Checking)
+# Z98 Test Batch 12 Technical Specification
 
-## Focus
-Semantic Analysis (Type Checking)
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 89 test cases focusing on semantic analysis (type checking).
+This test batch comprises 89 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_BootstrapTypes_Allowed_Primitives`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var a: i8 = 0;
   ```
@@ -49,1182 +48,947 @@ var l: isize = 0;
   ```zig
 var m: usize = 0;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(primitives[i]` is satisfied
   ```
 
 ### `test_BootstrapTypes_Allowed_Pointers`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var a: *i32 = null;
-  ```
-  ```zig
 var b: *const u8 = null;
-  ```
-  ```zig
 var c: *void = null;
-  ```
-  ```zig
 var d: **i32 = null;
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_BootstrapTypes_Allowed_Arrays`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var a: [10]i32;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_BootstrapTypes_Allowed_Structs`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-var s: S = S { .x = 1, .y = 2.0 };
-  ```
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const S = struct { x: i32, y: f64 };
+var s: S = S { .x = 1, .y = 2.0 };
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_BootstrapTypes_Allowed_Enums`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
-  ```zig
-var e: E = E.A;
-  ```
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const E = enum { A, B, C };
+var e: E = E.A;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_BootstrapTypes_Rejected_Slice`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const arr: [5]u8 = undefined; var x: []u8 = arr[0..5];
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully("const arr: [5]u8 = undefined; var x: []u8 = arr[0..5];"` is satisfied
   ```
 
 ### `test_BootstrapTypes_Rejected_ErrorUnion`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: !i32 = 0;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully("var x: !i32 = 0;"` is satisfied
   ```
 
 ### `test_BootstrapTypes_Rejected_Optional`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: ?i32 = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully("var x: ?i32 = null;"` is satisfied
   ```
 
 ### `test_BootstrapTypes_Allowed_FunctionPointer`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f(p: fn(i32) void) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_BootstrapTypes_Allowed_ManyArgs`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn f(a: i32, b: i32, c: i32, d: i32, e: i32) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Validate that `run_type_checker_test_successfully(source` is satisfied
   ```
 
 ### `test_BootstrapTypes_Rejected_VoidVariable`
-- **Primary File**: `tests/test_bootstrap_types.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/test_bootstrap_types.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: void;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_MsvcCompatibility_Int64Mapping`
-- **Primary File**: `tests/test_msvc_types.cpp`
-- **Verification Points**: 4 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_msvc_types.cpp`
+- **Zig Source Input (Test Case Context)**:
+  ```zig
+, c89_type_map[i].c89_type_name);
+            found_i64 = true;
+        } else if (c89_type_map[i].zig_type_kind == TYPE_U64) {
+            ASSERT_STREQ(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_MsvcCompatibility_Int64Mapping specific test data structures
-  4. Verify that the 4 semantic properties match expected values
+  1. Validate that `found_i64` is satisfied
+  2. Validate that `found_u64` is satisfied
   ```
 
 ### `test_MsvcCompatibility_TypeSizes`
-- **Primary File**: `tests/test_msvc_types.cpp`
-- **Verification Points**: 7 assertions
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/test_msvc_types.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_MsvcCompatibility_TypeSizes specific test data structures
-  4. Verify that the 7 semantic properties match expected values
+  1. Assert that `get_g_type_i8` matches `1`
+  2. Assert that `get_g_type_i16` matches `2`
+  3. Assert that `get_g_type_i32` matches `4`
+  4. Assert that `get_g_type_i64` matches `8`
+  5. Assert that `get_g_type_f32` matches `4`
+  6. Assert that `get_g_type_f64` matches `8`
+  7. Assert that `get_g_type_bool` matches `4`
   ```
 
 ### `test_LiteralIntegration_IntegerDecimal`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 { return 42; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_I32` and generates C code: `42`
   ```
 
 ### `test_LiteralIntegration_IntegerHex`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i32 { return 0x1F; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_I32` and generates C code: `31`
   ```
 
 ### `test_LiteralIntegration_IntegerUnsigned`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u32 { return 123u; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_U32` and generates C code: `123U`
   ```
 
 ### `test_LiteralIntegration_IntegerLong`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() i64 { return 123l; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_I64` and generates C code: `123LL`
   ```
 
 ### `test_LiteralIntegration_IntegerUnsignedLong`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u64 { return 123ul; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_U64` and generates C code: `123ULL`
   ```
 
 ### `test_LiteralIntegration_FloatSimple`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 3.14; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_F64` and generates C code: `3.14`
   ```
 
 ### `test_LiteralIntegration_FloatScientific`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 2.0e1; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_F64` and generates C code: `20.0`
   ```
 
 ### `test_LiteralIntegration_FloatExplicitF64`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() f64 { return 1.5; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_F64` and generates C code: `1.5`
   ```
 
 ### `test_LiteralIntegration_CharBasic`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u8 { return 'A'; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_U8` and generates C code: `'A'`
   ```
 
 ### `test_LiteralIntegration_CharEscape`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() u8 { return '\
 '; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_U8` and generates C code: `'\\n'`
   ```
 
 ### `test_LiteralIntegration_StringBasic`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() *const u8 { return \
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_POINTER` and generates C code: `\"hello\"`
   ```
 
 ### `test_LiteralIntegration_StringEscape`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() *const u8 { return \
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_POINTER` and generates C code: `\"line1\\nline2\"`
   ```
 
 ### `test_LiteralIntegration_BoolTrue`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() bool { return true; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_BOOL` and generates C code: `1`
   ```
 
 ### `test_LiteralIntegration_BoolFalse`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() bool { return false; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_BOOL` and generates C code: `0`
   ```
 
 ### `test_LiteralIntegration_NullLiteral`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() *i32 { return null; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_NULL` and generates C code: `((void*)0)`
   ```
 
 ### `test_LiteralIntegration_ExpressionStatement`
-- **Primary File**: `tests/integration/literal_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/literal_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void { 3.14; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify literal resolves to type `TYPE_F64` and generates C code: `3.14`
   ```
 
 ### `test_VariableIntegration_BasicI32`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: i32 = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_BasicI32 and validate component behavior
   ```
 
 ### `test_VariableIntegration_BasicConstF64`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const y: f64 = 3.14;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_BasicConstF64 and validate component behavior
   ```
 
 ### `test_VariableIntegration_GlobalVar`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var global_val: u32 = 100u;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_GlobalVar and validate component behavior
   ```
 
 ### `test_VariableIntegration_LocalVar`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {
+    var local_val: i16 = 500;
+}
   ```
-  ```zig
-var local_val: i16 = 500;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_LocalVar and validate component behavior
   ```
 
 ### `test_VariableIntegration_InferredInt`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x = 42;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_InferredInt and validate component behavior
   ```
 
 ### `test_VariableIntegration_InferredFloat`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var y = 3.14;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_InferredFloat and validate component behavior
   ```
 
 ### `test_VariableIntegration_InferredBool`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const b = true;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_InferredBool and validate component behavior
   ```
 
 ### `test_VariableIntegration_MangleKeyword`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var int: i32 = 0;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_MangleKeyword and validate component behavior
   ```
 
 ### `test_VariableIntegration_MangleReserved`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var __reserved: i32 = 1;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_MangleReserved and validate component behavior
   ```
 
 ### `test_VariableIntegration_MangleLongName`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
-var this_is_a_very_long_variable_name_that_exceeds_31_chars: i32 = 1;
+this_is_a_very_long_variable_name_that_exceeds_31_chars
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_MangleLongName and validate component behavior
   ```
 
 ### `test_VariableIntegration_DuplicateNameError`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var x: i32 = 1;
-  ```
-  ```zig
 var x: i32 = 2;
   ```
-  ```zig
-FAIL: Expected duplicate name error but pipeline succeeded
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_VariableIntegration_AllowSlice`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var s: []u8 = undefined;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_VariableIntegration_PointerToVoid`
-- **Primary File**: `tests/integration/variable_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/variable_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 var p: *void = null;
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_VariableIntegration_PointerToVoid and validate component behavior
   ```
 
 ### `test_ArithmeticIntegration_IntAdd`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntAdd specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `1 + 2`
   ```
 
 ### `test_ArithmeticIntegration_IntSub`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntSub specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `10 - 5`
   ```
 
 ### `test_ArithmeticIntegration_IntMul`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntMul specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `3 * 4`
   ```
 
 ### `test_ArithmeticIntegration_IntDiv`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntDiv specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `20 / 4`
   ```
 
 ### `test_ArithmeticIntegration_IntMod`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntMod specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `7 % 3`
   ```
 
 ### `test_ArithmeticIntegration_FloatAdd`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_FloatAdd specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_F64` and emits `1.5 + 2.5`
   ```
 
 ### `test_ArithmeticIntegration_FloatSub`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_FloatSub specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_F64` and emits `5.0 - 1.25`
   ```
 
 ### `test_ArithmeticIntegration_FloatMul`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_FloatMul specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_F64` and emits `2.0 * 3.14`
   ```
 
 ### `test_ArithmeticIntegration_FloatDiv`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_FloatDiv specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_F64` and emits `10.0 / 4.0`
   ```
 
 ### `test_ArithmeticIntegration_IntEq`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntEq specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `1 == 1`
   ```
 
 ### `test_ArithmeticIntegration_IntNe`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntNe specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `1 != 2`
   ```
 
 ### `test_ArithmeticIntegration_IntLt`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntLt specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `5 < 10`
   ```
 
 ### `test_ArithmeticIntegration_IntLe`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntLe specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `5 <= 5`
   ```
 
 ### `test_ArithmeticIntegration_IntGt`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntGt specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `10 > 5`
   ```
 
 ### `test_ArithmeticIntegration_IntGe`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_IntGe specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `10 >= 10`
   ```
 
 ### `test_ArithmeticIntegration_LogicalAnd`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_LogicalAnd specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `1 && 0`
   ```
 
 ### `test_ArithmeticIntegration_LogicalOr`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_LogicalOr specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `0 || 1`
   ```
 
 ### `test_ArithmeticIntegration_LogicalNot`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_LogicalNot specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_BOOL` and emits `!1`
   ```
 
 ### `test_ArithmeticIntegration_UnaryMinus`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_UnaryMinus specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `-42`
   ```
 
 ### `test_ArithmeticIntegration_Parentheses`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_Parentheses specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `(1 + 2) * 3`
   ```
 
 ### `test_ArithmeticIntegration_NestedParentheses`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **How it is tested (Pseudocode)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Initialize test_ArithmeticIntegration_NestedParentheses specific test data structures
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify arithmetic resolves to `TYPE_I32` and emits `((1 + 2) * (3 + 4))`
   ```
 
 ### `test_ArithmeticIntegration_Int8LiteralPromotion`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arithmetic_func() void {
   ```
   ```zig
 var a: i8 = 10;
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+, source);
+    if (!unit.performTestPipeline(file_id)) {
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    if (!unit.validateExpressionType(TYPE_I8)) return false;
+    if (!unit.validateExpressionEmission(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ArithmeticIntegration_TypeMismatchError`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arithmetic_func() void { var x: i32 = 1; var y: f64 = 2.0; x + y; }
   ```
-  ```zig
-FAIL: Expected type mismatch error but pipeline succeeded.
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ArithmeticIntegration_FloatModuloError`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arithmetic_func() void { 3.14 % 2.0; }
   ```
-  ```zig
-FAIL: Expected float modulo error but pipeline succeeded.
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_ArithmeticIntegration_BoolArithmeticError`
-- **Primary File**: `tests/integration/arithmetic_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/arithmetic_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn arithmetic_func() void { true + false; }
   ```
-  ```zig
-FAIL: Expected boolean arithmetic error but pipeline succeeded.
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_FunctionIntegration_NoParams`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify function signature lowering: `void zF_0_foo(void)`
   ```
 
 ### `test_FunctionIntegration_FourParams`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn add4(a: i32, b: i32, c: i32, d: i32) i32 { return a + b + c + d; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionIntegration_FourParams and validate component behavior
   ```
 
 ### `test_FunctionIntegration_PointerTypes`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn ptr_func(p: *i32, s: *const u8) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionIntegration_PointerTypes and validate component behavior
   ```
 
 ### `test_FunctionIntegration_MangleKeyword`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn int() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Verify function signature lowering: `void zF_0_int(void)`
   ```
 
 ### `test_FunctionIntegration_MangleLongName`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
-fn this_is_a_very_long_function_name_that_exceeds_31_chars() void {}
+this_is_a_very_long_function_name_that_exceeds_31_chars
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionIntegration_MangleLongName and validate component behavior
   ```
 
 ### `test_FunctionIntegration_Recursion`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn factorial(n: i32) i32 {
+    if (n <= 1) { return 1; }
+    return (n * factorial(n - 1));
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionIntegration_Recursion and validate component behavior
   ```
 
 ### `test_FunctionIntegration_ForwardReference`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn first() void { zF_0_second(); }
-  ```
-  ```zig
 fn zF_0_second() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionIntegration_ForwardReference and validate component behavior
   ```
 
 ### `test_FunctionIntegration_AllowFiveParams`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn many_params(a: i32, b: i32, c: i32, d: i32, e: i32) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_FunctionIntegration_RejectSliceReturn`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn get_slice() []u8 { return null; }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_FunctionIntegration_AllowMultiLevelPointer`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn multi_ptr(p: **i32) void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_FunctionIntegration_RejectDuplicateName`
-- **Primary File**: `tests/integration/function_decl_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_decl_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
+fn foo() void {}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_FunctionCallIntegration_NoParams`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn foo() void {}
-  ```
-  ```zig
 fn main_func() void { foo(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionCallIntegration_NoParams and validate component behavior
   ```
 
 ### `test_FunctionCallIntegration_TwoArgs`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn add(a: i32, b: i32) i32 { return a + b; }
-  ```
-  ```zig
 fn main_func() i32 { return add(1, 2); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionCallIntegration_TwoArgs and validate component behavior
   ```
 
 ### `test_FunctionCallIntegration_FourArgs`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn bar(a: i32, b: f64, c: bool, d: *i32) void {}
-  ```
-  ```zig
 fn main_func(p: *i32) void { bar(1, 2.0, true, p); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionCallIntegration_FourArgs and validate component behavior
   ```
 
 ### `test_FunctionCallIntegration_Nested`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn inner() i32 { return 42; }
-  ```
-  ```zig
 fn outer(a: i32) i32 { return a; }
-  ```
-  ```zig
 fn main_func() i32 { return outer(inner()); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionCallIntegration_Nested and validate component behavior
   ```
 
 ### `test_FunctionCallIntegration_MangleKeyword`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn int() void {}
-  ```
-  ```zig
 fn main_func() void { int(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionCallIntegration_MangleKeyword and validate component behavior
   ```
 
 ### `test_FunctionCallIntegration_VoidStatement`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn do_work() void {}
-  ```
-  ```zig
 fn main_func() void {
+    do_work();
+}
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute core verification logic for test_FunctionCallIntegration_VoidStatement and validate component behavior
   ```
 
 ### `test_FunctionCallIntegration_CallResolution`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn add(a: i32, b: i32) i32 { return a + b; }
-  ```
-  ```zig
 fn main_func() void { var x = add(1, 2); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
   ```
 
 ### `test_FunctionCallIntegration_AllowFiveArgs`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn many_args(a: i32, b: i32, c: i32, d: i32, e: i32) void {}
-  ```
-  ```zig
 fn main_func() void { many_args(1, 2, 3, 4, 5); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
   ```
 
 ### `test_FunctionCallIntegration_AllowFunctionPointer`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn target() void {}
-  ```
-  ```zig
 fn main_func() void {
+    var fp = target;
+    fp();
+}
   ```
-  ```zig
-var fp = target;
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Validate that `unit.performTestPipeline(file_id` is satisfied
   ```
 
 ### `test_FunctionCallIntegration_TypeMismatch`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn take_int(a: i32) void {}
-  ```
-  ```zig
 fn main_func() void { take_int(3.14); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  4. Verify that the 1 semantic properties match expected values
+  1. Confirm Type Checker correctly rejects invalid input
+  2. Validate that `expect_type_checker_abort(source` is satisfied
   ```
 
 ### `test_FunctionCallIntegration_UndefinedFunction`
-- **Primary File**: `tests/integration/function_call_tests.cpp`
-- **Verification Points**: 1 assertions
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/function_call_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 fn main_func() void { undefined_func(); }
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Semantic Analysis (Type Checking) environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Verify that the 1 semantic properties match expected values
+  1. Execute complete compilation pipeline (Front-to-Back)
+  2. Ensure that `unit.performTestPipeline(file_id` is false
   ```

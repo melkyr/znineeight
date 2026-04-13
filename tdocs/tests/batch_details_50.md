@@ -1,15 +1,14 @@
-# Batch 50 Details: Multi-Module & Imports
+# Z98 Test Batch 50 Technical Specification
 
-## Focus
-Multi-Module & Imports
+## High-Level Objective
+Technical validation of compiler components.
 
-This batch contains 5 test cases focusing on multi-module & imports.
+This test batch comprises 5 individual verification units for exhaustive coverage.
 
-## Test Case Details
+## Test Case Specifications
 ### `test_RecursiveSlice_MultiModule`
-- **Primary File**: `tests/integration/recursive_slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/recursive_slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const b = @import(\
   ```
@@ -17,77 +16,72 @@ const b = @import(\
 pub const A = struct {
   ```
   ```zig
-const a = @import(\
+;
+
+    const char* b_source =
   ```
   ```zig
 pub const B = struct {
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveSlice_SelfReference`
-- **Primary File**: `tests/integration/recursive_slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-fn foo(v: JsonValue) usize {
-  ```
+- **Implementation Source**: `tests/integration/recursive_slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const JsonValue = union(enum) {
-  ```
-  ```zig
-String: []const u8,
-  ```
-  ```zig
+    Object: []JsonField,
+    Array: []JsonValue,
+    String: []const u8,
+    Number: f64,
+};
 const JsonField = struct {
+    name: []const u8,
+    value: []JsonValue,
+};
+fn foo(v: JsonValue) usize {
+    return switch (v) {
+        .Array => |arr| arr.len,
+        .Object => |obj| obj.len,
+        else => @intCast(usize, 0),
+    };
+}
+
   ```
-  ```zig
-name: []const u8,
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveSlice_MutuallyRecursive`
-- **Primary File**: `tests/integration/recursive_slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var a: A = undefined;
-  ```
-  ```zig
-var b: B = undefined;
-  ```
+- **Implementation Source**: `tests/integration/recursive_slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const A = struct {
-  ```
-  ```zig
+    bs: []B,
+};
 const B = struct {
+    as: []A,
+};
+pub fn main() void {
+    var a: A = undefined;
+    var b: B = undefined;
+    _ = a;
+    _ = b;
+}
+
   ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveSlice_CrossModuleMutual`
-- **Primary File**: `tests/integration/recursive_slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
+- **Implementation Source**: `tests/integration/recursive_slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const b = @import(\
   ```
@@ -95,45 +89,45 @@ const b = @import(\
 pub const A = struct {
   ```
   ```zig
-const a = @import(\
+;
+
+    const char* b_source =
   ```
   ```zig
 pub const B = struct {
   ```
-- **How it is tested (Pseudocode)**:
+  ```zig
+);
+
+    if (!unit.performFullPipeline(b_id)) {
+        printf(
+  ```
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
 
 ### `test_RecursiveSlice_InsideUnion`
-- **Primary File**: `tests/integration/recursive_slice_tests.cpp`
-- **Operations**: Source Loading
-- **Test Input (Zig)**:
-  ```zig
-pub fn main() void {
-  ```
-  ```zig
-var v: JsonValue = undefined;
-  ```
+- **Implementation Source**: `tests/integration/recursive_slice_tests.cpp`
+- **Zig Source Input (Test Case Context)**:
   ```zig
 const JsonValue = union(enum) {
-  ```
-  ```zig
-String: []const u8,
-  ```
-  ```zig
+    Object: []JsonField,
+    Array: []JsonValue,
+    String: []const u8,
+    Number: f64,
+};
 const JsonField = struct {
+    name: []const u8,
+    value: []JsonValue,
+};
+pub fn main() void {
+    var v: JsonValue = undefined;
+    _ = v;
+}
+
   ```
-  ```zig
-name: []const u8,
-  ```
-- **How it is tested (Pseudocode)**:
+- **Verification Logic (Behavioral Specification)**:
   ```pseudocode
-  1. Setup Multi-Module & Imports environment in a clean arena
-  2. Pass the Zig source code to the compiler frontend
-  3. Execute Source Loading phase
-  4. Ensure execution completes without internal errors or crashes
+  1. Execute complete compilation pipeline (Front-to-Back)
   ```
