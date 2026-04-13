@@ -70,3 +70,27 @@ TEST_FUNC(platform_print) {
     plat_print_debug("Testing plat_print_debug\n");
     return true;
 }
+
+TEST_FUNC(platform_socket) {
+    if (plat_socket_init() != 0) return false;
+
+    PlatSocket server = plat_create_tcp_server(0); // Random port
+    if (server == PLAT_INVALID_SOCKET) return false;
+
+    if (plat_bind_listen(server, 5) < 0) {
+        plat_close_socket(server);
+        return false;
+    }
+
+    plat_fd_set read_fds;
+    plat_socket_fd_zero(&read_fds);
+    plat_socket_fd_set(server, &read_fds);
+
+    // Select with timeout should return 0 (no connection)
+    int ready = plat_socket_select((int)server + 1, &read_fds, NULL, NULL, 10);
+    ASSERT_EQ(0, ready);
+
+    plat_close_socket(server);
+    plat_socket_cleanup();
+    return true;
+}

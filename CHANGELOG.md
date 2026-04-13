@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Networking Support**: Added a minimal socket API to the Platform Abstraction Layer (PAL), supporting TCP server creation, `select()`, `recv()`, and `send()` on both Windows (Winsock 1.1) and POSIX.
+- **MUD Server Example**: Added a minimal telnet Multi-User Dungeon (MUD) server example in `examples/mud_server/` to demonstrate networked application development in Z98.
+
 ## [0.11.0] - "para-Cresol"
 
 ### Added

@@ -7,6 +7,12 @@
 #ifdef _WIN32
 #include "platform_win98.h"
 #include <windows.h>
+#include <winsock.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/select.h>
 #endif
 
 // Utility functions
@@ -79,6 +85,42 @@ bool plat_file_exists(const char* path);
 
 // Gets the directory containing the current executable.
 void plat_get_executable_dir(char* buffer, size_t size);
+
+// Networking / Sockets
+#ifdef _WIN32
+typedef SOCKET PlatSocket;
+#define PLAT_INVALID_SOCKET INVALID_SOCKET
+typedef fd_set plat_fd_set;
+#else
+typedef int PlatSocket;
+#define PLAT_INVALID_SOCKET (-1)
+typedef fd_set plat_fd_set;
+#endif
+
+#define PLAT_FD_ZERO(s) FD_ZERO(s)
+#define PLAT_FD_SET(fd, s) FD_SET(fd, s)
+#define PLAT_FD_ISSET(fd, s) FD_ISSET(fd, s)
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int plat_socket_init(void);
+void plat_socket_cleanup(void);
+PlatSocket plat_create_tcp_server(u16 port);
+int plat_bind_listen(PlatSocket sock, int backlog);
+PlatSocket plat_accept(PlatSocket server_sock);
+int plat_recv(PlatSocket sock, char* buf, int len);
+int plat_send(PlatSocket sock, const char* buf, int len);
+void plat_close_socket(PlatSocket sock);
+int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, plat_fd_set* exceptfds, int timeout_ms);
+void plat_socket_fd_zero(plat_fd_set* s);
+void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s);
+bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s);
+
+#ifdef __cplusplus
+}
+#endif
 
 // Aborts the process immediately. This function does not return.
 void plat_abort();
