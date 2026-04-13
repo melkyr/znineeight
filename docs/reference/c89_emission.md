@@ -46,12 +46,19 @@ The suffixes `i64` and `ui64` are specific to **MSVC 6.0**. To support other com
 
 Every generated `.c` file should include `zig_runtime.h` at the top.
 
+### 1.2.1 Unified Assignment and Initializers
+Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). The Z98 emitter overcomes this by decomposing such assignments into field-by-field or element-by-element assignments.
+
+- **Simple L-values**: If the target is a variable, it is assigned directly.
+- **Complex L-values**: If the target is a dereference or array access, the emitter evaluates its address into a temporary pointer (e.g., `T* __tmp = &complex_lval;`) and performs assignments through that pointer (`(*__tmp).field = value;`). This ensures side-effectful expressions are only evaluated once.
+
 ### 1.3 C89 Compatibility Layer (`zig_compat.h`)
 
 All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`. This header provides a unified abstraction for:
 - **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
 - **Boolean types**: Provides `bool`, `true`, and `false` for strict C89 compilers.
 - **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
+- **`ZIG_UNUSED`**: Macros for suppressing "unused variable" or "unused label" warnings.
 
 ### 1.4 `noreturn` Type
 
