@@ -40,7 +40,11 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
     - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
         - **Naked Tags**: In tagged unions, fields without an explicit type (e.g., `A,` instead of `A: void,`) are automatically treated as having a `void` payload. This sugar is NOT allowed in bare unions or structs.
         - **Anonymous Payloads**: Tagged union variants can have nested anonymous struct payloads (e.g., `Cons: struct { car: *Value, cdr: *Value }`). The compiler handles the C89 declaration and initialization of these internal structures.
-- **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
+- **Tuples**: `struct { T1, T2, ... }` for types and `.{ val1, val2, ... }` for positional anonymous literals.
+    - **Member Access**: Accessed via numeric indices (e.g., `t.0`, `t.1`).
+    - **C89 Representation**: Lowered to C structs with fields named `field0`, `field1`, etc.
+    - **Usage**: Primarily used for `std.debug.print` arguments and grouped return values.
+    - **Initialization**: Anonymous tuple literals are automatically coerced to concrete tuple types based on context.
 
 ### 1.4 Arrays and Slices
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
@@ -231,7 +235,9 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 
 ## 4. Built-in Functions
 - `@import("file.zig")`: Includes another module.
-- `std.debug.print(fmt: []const u8, args: anytype)`: Lowered by the compiler to a sequence of runtime print calls. Decomposes `{}` in the format string. Supports tuple literals for `args`.
+- `std.debug.print(fmt: []const u8, args: anytype)`: Lowered by the compiler to a sequence of runtime print calls.
+    - **Format Specifiers**: Supports `{}` (default), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string).
+    - **Arguments**: `args` **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element.
 - `@sizeOf(T)`: Byte size of type `T`.
 - `@alignOf(T)`: Alignment of type `T`.
 - `@offsetOf(T, "field")`: Byte offset of a field.
@@ -253,27 +259,55 @@ To maintain C89 compatibility and compiler simplicity, Z98 has the following lim
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
+- **Global Constant Aggregates**: Global constant arrays of aggregates (structs) with complex nested initializers (e.g., optionals, unions) may fail to emit correctly.
+  - **Workaround**: Use `var` for the global and initialize it at runtime within an `init()` function.
+
+## 6. Z98 Idioms and Best Practices
+
+### 6.1 The Arena Pattern
+Dynamic memory should almost exclusively be managed via `ArenaAllocator`.
+- **Ownership**: Functions should accept an `*Arena` rather than "owning" their memory.
+- **Transient vs Permanent**: Use a dual-arena system to separate short-lived temporary allocations from long-lived application state.
+- **Cleanup**: Call `arena.deinit()` at the highest possible level (e.g., end of `main` or after a major processing loop).
+
+### 6.2 Manual Virtual Tables
+Since Z98 lacks classes and methods, use structs of function pointers to implement polymorphism.
+```zig
+const Shape = struct {
+    draw_fn: fn(*void) void,
+    data: *void,
+};
+```
+
+### 6.3 Runtime Initialization
+For complex global state, avoid large constant initializers. Use a dedicated `init()` function called at startup.
+```zig
+var global_registry: [100]Item = undefined;
+fn initRegistry() void {
+    // initialize here
+}
+```
 
 ## Type Coercions
 
-### Implicit Coercion to Many-Item Pointers
-In specific contexts where a pointer is expected, the compiler provides implicit coercion for slices and arrays.
+### Implicit Coercion to Many-Item Pointers and Slices
+In specific contexts where a pointer or slice is expected, the compiler provides implicit coercion for slices and arrays.
 
 **Allowed Contexts:**
-- Assignments to variables of type [*]T or [*]const T.
-- Passing arguments to functions where the parameter type is [*]T or [*]const T.
-- Returning values from functions where the return type is [*]T or [*]const T.
+- Assignments to variables of type `[*]T` or `[]T`.
+- Passing arguments to functions.
+- Returning values from functions.
 
 **Coercion Rules:**
 - **Slice to Pointer**: A slice `[]T` is coerced to `[*]T` by accessing its `.ptr` field.
 - **Array to Pointer**: A fixed-size array `[N]T` is coerced to `[*]T` by taking the address of its first element (`&arr[0]`).
-- **String Literal to Pointer**: A string literal is typed as a pointer to a constant array of bytes (`*const [N]u8`), and can be implicitly coerced to a many-item pointer (`[*]const u8`) or a legacy single-item pointer (`*const u8`).
+- **String Literal to Pointer**: A string literal is typed as `*const [N]u8` and can be implicitly coerced to `[*]const u8`, `[]const u8`, or `*const u8`.
+- **Array/Pointer to Slice**: Handled via a synthetic slicing node `arr[0..arr.len]`.
 
 **Const Correctness:**
 Coercions are only allowed if they do not discard const qualifiers.
-- []T -> [*]const T (Allowed)
-- []const T -> [*]T (Forbidden)
-- [N]T -> [*]const T (Allowed)
+- `[]T` -> `[*]const T` (Allowed)
+- `[]const T` -> `[*]T` (Forbidden)
 
 **Restriction:**
 These coercions are **not** allowed in other contexts, such as arithmetic operations or comparisons.

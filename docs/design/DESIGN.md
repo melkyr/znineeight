@@ -1229,3 +1229,22 @@ The result of a tag coercion is an anonymous union initializer with a `TYPE_ANON
 ## 17. Usage Guidelines
 - **Structural Match Required**: Every anonymous literal must eventually resolve to a concrete type with a known memory layout before the code generation phase.
 - **Context Awareness**: Anonymous literals rely on downward type information. They are most effective in assignments, function calls, and return statements where the target type is explicitly defined.
+## 18. Bootstrap Compiler Limitations
+This section tracks known limitations of the Stage 0 (C++) compiler. For recommended workarounds, see [Caveats and Workarounds](../reference/Caveats_and_Workarounds.md).
+
+### 18.1 Global Constant Aggregates
+Declaring a `pub const` array of aggregates (structs/unions) with complex nested initializers may fail to emit the definition in the generated C source.
+- **Root Cause**: The emitter identifies simple array struct initializers as constant, but nested aggregates currently bypass the constant initializer detection logic.
+- **Workaround**: Use `pub var` and initialize at runtime.
+
+### 18.2 Pointers to Fixed-Size Arrays
+Function arguments of type `*[N]T` are incorrectly lowered to `T*` instead of `T(*)[N]`.
+- **Root Cause**: `C89Emitter` lacks specialization for array pointer declarators in parameter lists.
+- **Workaround**: Use slices (`[]T`) instead.
+
+### 18.3 Pointer Captures
+Payload captures in `if` and `while` statements do not yet support pointers (e.g., `if (opt) |*p|`).
+- **Workaround**: Use value captures or explicit flag checks.
+
+### 18.4 MSVC 6.0 Memory Constraints
+The compiler is strictly limited to < 16MB of peak memory usage. While sufficient for the bootstrap task, extremely large single-file modules or deep recursive type cascades may trigger a fatal memory limit abort.
