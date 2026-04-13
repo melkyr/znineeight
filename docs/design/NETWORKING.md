@@ -15,9 +15,18 @@ The value representing an invalid socket handle.
 - **POSIX**: `-1`
 
 ### `plat_fd_set`
-A structure for managing sets of sockets, used with `plat_socket_select`. Maps directly to the platform's `fd_set`.
+A structure for managing sets of sockets, used with `plat_socket_select`.
+
+**Bootstrap Workaround**: To handle platform-specific size differences (128 bytes on Linux vs. 260+ bytes on Windows) without full struct introspection, Z98 represents this as an opaque 512-byte buffer in Zig code:
+```zig
+const plat_fd_set = [512]u8;
+```
+This ensures safe stack allocation in Zig while allowing the PAL (in C++) to cast the pointer to the native `fd_set`.
 
 ## Functions
+
+### Linkage Note
+All networking functions are implemented in `src/bootstrap/platform.cpp` (C++) but must be accessible from the generated C code. To avoid C++ name mangling issues, all signatures in `src/include/platform.hpp` are wrapped in `extern "C"`.
 
 ### `int plat_socket_init(void)`
 Initializes the underlying networking subsystem.

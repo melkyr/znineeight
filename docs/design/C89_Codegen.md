@@ -120,6 +120,7 @@ To simplify the emission of control flow structures and ensure consistent format
 - **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.
 - **`writeBlockClose()`**: Decrements the indentation level, writes an indented `}`, and a line ending.
 - **`writeExprStmt(const ASTNode* expr)`**: Indents, emits the C representation of the provided expression node, and appents a statement terminator (`endStmt()`).
+- **`captureExpression(const ASTNode* expr)`**: Temporarily redirects output to a buffer to obtain the C string representation of an expression without writing it to the file. This is essential for decomposing complex L-values.
 
 #### Example: Refactoring `while` loops
 **Before:**
@@ -387,6 +388,7 @@ To avoid signedness warnings when coercing string literals (which are `char*` in
 - **Signature**: `ZIG_INLINE ZIG_UNUSED Slice_u8 __make_slice_u8(const char* ptr, usize len)`
 - **Implementation**: The pointer parameter is explicitly cast to `unsigned char*` when assigning to the slice's `ptr` field: `s.ptr = (unsigned char*)ptr;`.
 - **Rationale**: This allows string literals to be passed directly to the helper without generating `-Wpointer-sign` warnings, while maintaining the correct unsigned representation for `u8` data.
+- **Backward Compatibility**: String literals also implicitly coerce to `[*]const u8` (many-item pointer) and `*const u8` (legacy single-item pointer) to support standard C interop.
 
 ### 4.5 Array and Struct Initializers
 Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
