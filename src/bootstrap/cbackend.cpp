@@ -201,6 +201,11 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     writer.writeString(extra_flags);
     writer.writeLine("-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o");
 
+    // Compile net_runtime.c
+    writer.writeString("gcc -std=c89 -m32 ");
+    writer.writeString(extra_flags);
+    writer.writeLine("-pedantic -Wall -O2 -I. -Isrc/include -c net_runtime.c -o net_runtime.o");
+
     // Compile all modules
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -223,7 +228,10 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     writer.writeString(extra_flags);
     writer.writeString("-o ");
     writer.writeString(executable_name_);
-    writer.writeString(".exe zig_runtime.o ");
+    writer.writeString(".exe zig_runtime.o net_runtime.o ");
+#ifdef _WIN32
+    writer.writeString("-lwsock32 ");
+#endif
 
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -432,6 +440,15 @@ bool CBackend::generateMakefile(const char* output_dir) {
     const char* runtime_cmd_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o\n";
     if (plat_write_file(f, runtime_cmd_rest, plat_strlen(runtime_cmd_rest)) < 0) return false;
 
+    // Compile net_runtime.c
+    plat_write_file(f, "gcc -std=c89 -m32 ", 18);
+    if (extra_flags[0] != '\0') {
+        plat_write_file(f, extra_flags, plat_strlen(extra_flags));
+        plat_write_file(f, " ", 1);
+    }
+    const char* net_runtime_cmd_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c net_runtime.c -o net_runtime.o\n";
+    if (plat_write_file(f, net_runtime_cmd_rest, plat_strlen(net_runtime_cmd_rest)) < 0) return false;
+
     // Compile all modules
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -463,7 +480,12 @@ bool CBackend::generateMakefile(const char* output_dir) {
     const char* link_cmd_start = "-o ";
     if (plat_write_file(f, link_cmd_start, plat_strlen(link_cmd_start)) < 0) return false;
     if (plat_write_file(f, executable_name_, plat_strlen(executable_name_)) < 0) return false;
-    if (plat_write_file(f, " zig_runtime.o ", 15) < 0) return false;
+    const char* runtime_objs = " zig_runtime.o net_runtime.o ";
+    if (plat_write_file(f, runtime_objs, plat_strlen(runtime_objs)) < 0) return false;
+#ifdef _WIN32
+    const char* wsock_objs = "-lwsock32 ";
+    if (plat_write_file(f, wsock_objs, plat_strlen(wsock_objs)) < 0) return false;
+#endif
 
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -486,6 +508,7 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
     const char* compat_h = "src/include/zig_compat.h";
     const char* runtime_h = "src/include/zig_runtime.h";
     const char* runtime_c = "src/runtime/zig_runtime.c";
+    const char* net_runtime_c = "src/runtime/net_runtime.c";
     const char* win98_h = "src/include/platform_win98.h";
 
     char* content_compat = NULL;
@@ -551,6 +574,26 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
         plat_close_file(f_c);
     }
     plat_free(content_c);
+
+    char* content_net_c = NULL;
+    size_t size_net_c = 0;
+    if (plat_file_read(net_runtime_c, &content_net_c, &size_net_c)) {
+        char dest_net_c[1024];
+        char* cur_net_c = dest_net_c;
+        size_t rem_net_c = sizeof(dest_net_c);
+        safe_append(cur_net_c, rem_net_c, output_dir);
+        safe_append(cur_net_c, rem_net_c, "/net_runtime.c");
+
+        PlatFile f_net_c = plat_open_file(dest_net_c, true);
+        if (f_net_c != PLAT_INVALID_FILE) {
+            if (plat_write_file(f_net_c, content_net_c, size_net_c) < 0) {
+                plat_close_file(f_net_c);
+                return false;
+            }
+            plat_close_file(f_net_c);
+        }
+        plat_free(content_net_c);
+    }
 
     char* content_win98 = NULL;
     size_t size_win98 = 0;

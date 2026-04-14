@@ -71,6 +71,22 @@ extern Arena* zig_default_arena;
 void* arena_alloc_default(usize size);
 void arena_free(void* ptr);
 
+void __bootstrap_sleep_ms(unsigned int ms);
+
+/* Networking (optional, requires linking net_runtime.o on Windows) */
+int plat_socket_init(void);
+void plat_socket_cleanup(void);
+int plat_create_tcp_server(unsigned short port);
+int plat_bind_listen(int sock, int backlog);
+int plat_accept(int server_sock);
+int plat_recv(int sock, char* buf, int len);
+int plat_send(int sock, const char* buf, int len);
+void plat_close_socket(int sock);
+int plat_socket_select(int nfds, void* readfds, void* writefds, void* exceptfds, int timeout_ms);
+void plat_socket_fd_zero(void* set);
+void plat_socket_fd_set(int fd, void* set);
+int plat_socket_fd_isset(int fd, void* set);
+
 usize __bootstrap_usize_from_i64(i64 x);
 
 /* Runtime checked numeric conversions */
