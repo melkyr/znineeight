@@ -8,8 +8,24 @@ const Cell = union(enum) {
     Alive,
 };
 
+const Point = struct {
+    x: usize,
+    y: usize,
+};
+
 const WIDTH: usize = 40;
 const HEIGHT: usize = 20;
+
+fn setPattern(grid: []Cell, base_x: usize, base_y: usize, cells: []const Point) void {
+    var i: usize = 0;
+    while (i < cells.len) {
+        const offset = cells[i];
+        const x = base_x + offset.x;
+        const y = base_y + offset.y;
+        set(grid, x, y, Cell{ .Alive = {} });
+        i += 1;
+    }
+}
 
 pub fn main() !void {
     var grid: [800]Cell = undefined;
@@ -25,13 +41,46 @@ pub fn main() !void {
         i += 1;
     }
 
-    // Set glider pattern
-    // (1, 0), (2, 1), (0, 2), (1, 2), (2, 2)
+    // Glider
     set(s_grid, 1, 0, Cell{ .Alive = {} });
     set(s_grid, 2, 1, Cell{ .Alive = {} });
     set(s_grid, 0, 2, Cell{ .Alive = {} });
     set(s_grid, 1, 2, Cell{ .Alive = {} });
     set(s_grid, 2, 2, Cell{ .Alive = {} });
+
+    // Blinker at (10,5)
+    const blinker = [3]Point{
+        Point{ .x = @intCast(usize, 0), .y = @intCast(usize, 0) },
+        Point{ .x = @intCast(usize, 1), .y = @intCast(usize, 0) },
+        Point{ .x = @intCast(usize, 2), .y = @intCast(usize, 0) },
+    };
+    setPattern(s_grid, 10, 5, blinker[0..]);
+
+    // Block at (20,5)
+    const block = [4]Point{
+        Point{ .x = @intCast(usize, 0), .y = @intCast(usize, 0) },
+        Point{ .x = @intCast(usize, 1), .y = @intCast(usize, 0) },
+        Point{ .x = @intCast(usize, 0), .y = @intCast(usize, 1) },
+        Point{ .x = @intCast(usize, 1), .y = @intCast(usize, 1) },
+    };
+    setPattern(s_grid, 20, 5, block[0..]);
+
+    // Beehive at (25,10)
+    const beehive = [6]Point{
+        Point{ .x = @intCast(usize, 1), .y = @intCast(usize, 0) }, Point{ .x = @intCast(usize, 2), .y = @intCast(usize, 0) },
+        Point{ .x = @intCast(usize, 0), .y = @intCast(usize, 1) }, Point{ .x = @intCast(usize, 3), .y = @intCast(usize, 1) },
+        Point{ .x = @intCast(usize, 1), .y = @intCast(usize, 2) }, Point{ .x = @intCast(usize, 2), .y = @intCast(usize, 2) }
+    };
+    setPattern(s_grid, 25, 10, beehive[0..]);
+
+    // LWSS at (5,15) – Lightweight Spaceship (moves right)
+    const lwss = [9]Point{
+        Point{ .x = @intCast(usize, 1), .y = @intCast(usize, 0) }, Point{ .x = @intCast(usize, 2), .y = @intCast(usize, 0) }, Point{ .x = @intCast(usize, 3), .y = @intCast(usize, 0) }, Point{ .x = @intCast(usize, 4), .y = @intCast(usize, 0) },
+        Point{ .x = @intCast(usize, 0), .y = @intCast(usize, 1) }, Point{ .x = @intCast(usize, 4), .y = @intCast(usize, 1) },
+        Point{ .x = @intCast(usize, 4), .y = @intCast(usize, 2) },
+        Point{ .x = @intCast(usize, 0), .y = @intCast(usize, 3) }, Point{ .x = @intCast(usize, 3), .y = @intCast(usize, 3) }
+    };
+    setPattern(s_grid, 5, 15, lwss[0..]);
 
     var gen: u32 = 0;
     while (gen < 100) {
