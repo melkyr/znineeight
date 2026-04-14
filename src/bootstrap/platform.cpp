@@ -136,7 +136,8 @@ void* plat_alloc(size_t size) {
 void plat_free(void* ptr) {
     if (!ptr) return;
     /* Freeing a VirtualAlloc block requires VirtualFree */
-    MEMORY_BASIC_INFORMATION mbi;
+    /* OpenWatcom requires 'struct' keyword for MEMORY_BASIC_INFORMATION */
+    struct _MEMORY_BASIC_INFORMATION mbi;
     if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
         VirtualFree(ptr, 0, MEM_RELEASE);
     } else {

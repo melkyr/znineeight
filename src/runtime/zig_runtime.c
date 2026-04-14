@@ -53,12 +53,14 @@ static void* platform_alloc(usize size) {
 static void platform_free(void* ptr) {
     if (!ptr) return;
 #ifdef _WIN32
-    /* Freeing a VirtualAlloc block requires VirtualFree */
-    MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
-        VirtualFree(ptr, 0, MEM_RELEASE);
-    } else {
-        HeapFree(GetProcessHeap(), 0, ptr);
+    {
+        /* OpenWatcom requires 'struct' keyword for MEMORY_BASIC_INFORMATION */
+        struct _MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
+            VirtualFree(ptr, 0, MEM_RELEASE);
+        } else {
+            HeapFree(GetProcessHeap(), 0, ptr);
+        }
     }
 #else
     free(ptr);
