@@ -6,6 +6,24 @@
 static Logger* g_logger = NULL;
 static bool g_logging_in_progress = false;
 
+extern "C" int plat_atoi(const char* str) {
+    if (!str) return 0;
+    int res = 0;
+    int sign = 1;
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') str++;
+    if (*str == '-') {
+        sign = -1;
+        str++;
+    } else if (*str == '+') {
+        str++;
+    }
+    while (*str >= '0' && *str <= '9') {
+        res = res * 10 + (*str - '0');
+        str++;
+    }
+    return res * sign;
+}
+
 void plat_set_logger(Logger* logger) { g_logger = logger; }
 Logger* plat_get_logger() { return g_logger; }
 
@@ -886,21 +904,4 @@ void plat_socket_fd_zero(plat_fd_set* s) { FD_ZERO((fd_set*)s); }
 void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s) { FD_SET(fd, (fd_set*)s); }
 bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
 
-int plat_atoi(const char* str) {
-    if (!str) return 0;
-    int res = 0;
-    int sign = 1;
-    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') str++;
-    if (*str == '-') {
-        sign = -1;
-        str++;
-    } else if (*str == '+') {
-        str++;
-    }
-    while (*str >= '0' && *str <= '9') {
-        res = res * 10 + (*str - '0');
-        str++;
-    }
-    return res * sign;
-}
 #endif

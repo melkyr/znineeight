@@ -16,7 +16,6 @@
 #endif
 
 // Utility functions
-int plat_atoi(const char* str);
 // Memory allocation
 void* plat_alloc(size_t size);
 void plat_free(void* ptr);
@@ -105,6 +104,7 @@ typedef fd_set plat_fd_set;
 extern "C" {
 #endif
 
+int plat_atoi(const char* str);
 int plat_socket_init(void);
 void plat_socket_cleanup(void);
 PlatSocket plat_create_tcp_server(u16 port);
