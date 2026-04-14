@@ -6,6 +6,7 @@
 #include "platform_win98.h"
 #include <windows.h>
 #else
+#define _XOPEN_SOURCE 500
 #include <unistd.h>
 #endif
 
@@ -154,6 +155,14 @@ void* arena_alloc_default(usize size) {
 void arena_free(void* ptr) {
     /* No-op: individual allocations cannot be freed in an arena. */
     (void)ptr;
+}
+
+void __bootstrap_sleep_ms(unsigned int ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    usleep(ms * 1000);
+#endif
 }
 
 void __bootstrap_write(const char* s, usize len) {

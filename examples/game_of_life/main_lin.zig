@@ -1,7 +1,7 @@
 const std = @import("std.zig");
 
 extern "c" fn system(s: *const c_char) i32;
-extern "c" fn usleep(usec: u32) i32;
+extern "c" fn __bootstrap_sleep_ms(ms: u32) void;
 
 const Cell = union(enum) {
     Dead,
@@ -84,7 +84,7 @@ pub fn main() !void {
         }
 
         gen += 1;
-        _ = usleep(100000);
+        __bootstrap_sleep_ms(100);
     }
 }
 
@@ -101,13 +101,10 @@ fn set(grid: []Cell, x: usize, y: usize, cell: Cell) void {
 fn countNeighbors(grid: []Cell, x: usize, y: usize) u8 {
     var count: u8 = 0;
     var dy: i32 = -1;
-    while (dy <= 1) {
+    while (dy <= 1) : (dy += 1) {
         var dx: i32 = -1;
-        while (dx <= 1) {
-            if (dx == 0 and dy == 0) {
-                dx += 1;
-                continue;
-            }
+        while (dx <= 1) : (dx += 1) {
+            if (dx == 0 and dy == 0) continue;
 
             const nx = @intCast(i32, x) + dx;
             const ny = @intCast(i32, y) + dy;
@@ -120,9 +117,7 @@ fn countNeighbors(grid: []Cell, x: usize, y: usize) u8 {
                     else => unreachable,
                 }
             }
-            dx += 1;
         }
-        dy += 1;
     }
     return count;
 }
