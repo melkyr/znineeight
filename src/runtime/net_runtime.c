@@ -87,19 +87,19 @@ int plat_accept(int server_sock) {
 #endif
 }
 
-int plat_recv(int sock, char* buf, int len) {
+int plat_recv(int sock, u8* buf, int len) {
 #ifdef _WIN32
-    return recv((SOCKET)sock, buf, len, 0);
+    return recv((SOCKET)sock, (char*)buf, len, 0);
 #else
-    return recv(sock, buf, len, 0);
+    return recv(sock, (char*)buf, len, 0);
 #endif
 }
 
-int plat_send(int sock, const char* buf, int len) {
+int plat_send(int sock, const u8* buf, int len) {
 #ifdef _WIN32
-    return send((SOCKET)sock, buf, len, 0);
+    return send((SOCKET)sock, (const char*)buf, len, 0);
 #else
-    return send(sock, buf, len, 0);
+    return send(sock, (const char*)buf, len, 0);
 #endif
 }
 
@@ -111,7 +111,7 @@ void plat_close_socket(int sock) {
 #endif
 }
 
-int plat_socket_select(int nfds, void* readfds, void* writefds, void* exceptfds, int timeout_ms) {
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms) {
     struct timeval tv;
     struct timeval* p_tv = NULL;
     if (timeout_ms >= 0) {
@@ -126,7 +126,7 @@ int plat_socket_select(int nfds, void* readfds, void* writefds, void* exceptfds,
 #endif
 }
 
-void plat_socket_fd_zero(void* set) {
+void plat_socket_fd_zero(u8* set) {
 #ifdef _WIN32
     FD_ZERO((fd_set*)set);
 #else
@@ -134,7 +134,7 @@ void plat_socket_fd_zero(void* set) {
 #endif
 }
 
-void plat_socket_fd_set(int fd, void* set) {
+void plat_socket_fd_set(int fd, u8* set) {
 #ifdef _WIN32
     FD_SET((SOCKET)fd, (fd_set*)set);
 #else
@@ -142,7 +142,7 @@ void plat_socket_fd_set(int fd, void* set) {
 #endif
 }
 
-int plat_socket_fd_isset(int fd, void* set) {
+int plat_socket_fd_isset(int fd, u8* set) {
 #ifdef _WIN32
     return FD_ISSET((SOCKET)fd, (fd_set*)set) != 0;
 #else

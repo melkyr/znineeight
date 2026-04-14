@@ -20,12 +20,12 @@ const plat_fd_set = struct {
     data: [512]u8,
 };
 
-extern "c" fn plat_socket_select(nfds: i32, readfds: *plat_fd_set, writefds: *plat_fd_set, exceptfds: *plat_fd_set, timeout_ms: i32) i32;
+extern "c" fn plat_socket_select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32;
 
 // Macros/Helper wrappers
-extern "c" fn plat_socket_fd_zero(s: *plat_fd_set) void;
-extern "c" fn plat_socket_fd_set(fd: i32, s: *plat_fd_set) void;
-extern "c" fn plat_socket_fd_isset(fd: i32, s: *plat_fd_set) bool;
+extern "c" fn plat_socket_fd_zero(s: *u8) void;
+extern "c" fn plat_socket_fd_set(fd: i32, s: *u8) void;
+extern "c" fn plat_socket_fd_isset(fd: i32, s: *u8) bool;
 
 // Constants
 const MAX_CLIENTS: usize = 10;
@@ -120,20 +120,20 @@ pub fn main() !void {
     var read_fds: plat_fd_set = undefined;
 
     while (true) {
-        plat_socket_fd_zero(&read_fds);
-        plat_socket_fd_set(server, &read_fds);
+        plat_socket_fd_zero(@ptrCast(*u8, &read_fds));
+        plat_socket_fd_set(server, @ptrCast(*u8, &read_fds));
 
         var max_fd = server;
         i = 0;
         while (i < MAX_CLIENTS) {
             if (players[i].is_active) {
-                plat_socket_fd_set(players[i].socket, &read_fds);
+                plat_socket_fd_set(players[i].socket, @ptrCast(*u8, &read_fds));
                 if (players[i].socket > max_fd) max_fd = players[i].socket;
             }
             i += 1;
         }
 
-        const ready_count = plat_socket_select(max_fd + 1, &read_fds, null, null, 100);
+        const ready_count = plat_socket_select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 100);
         if (ready_count < 0) {
             std.debug.print("select error\n", .{});
             break;
@@ -141,7 +141,7 @@ pub fn main() !void {
         if (ready_count == 0) continue; // timeout
 
         // Check server socket for new connection
-        if (plat_socket_fd_isset(server, &read_fds)) {
+        if (plat_socket_fd_isset(server, @ptrCast(*u8, &read_fds))) {
             const client = plat_accept(server);
             if (client >= 0) {
                 // find free slot
@@ -175,7 +175,7 @@ pub fn main() !void {
         // Data on client sockets
         i = 0;
         while (i < MAX_CLIENTS) {
-            if (players[i].is_active and plat_socket_fd_isset(players[i].socket, &read_fds)) {
+            if (players[i].is_active and plat_socket_fd_isset(players[i].socket, @ptrCast(*u8, &read_fds))) {
                 var p = &players[i];
                 const n = plat_recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
                 if (n <= 0) {
