@@ -76,5 +76,7 @@ tagged_union.c
 test_forward_decl.h
 test_*.c
 test_*.h
-examples/lisp_interpreter_curr/*.c
-examples/lisp_interpreter_curr/*.h
+examples/**/*.c
+examples/**/*.h
+temp_*.c
+temp_*.h
