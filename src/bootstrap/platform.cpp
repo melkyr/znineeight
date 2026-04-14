@@ -96,19 +96,19 @@ PlatSocket plat_accept(PlatSocket server_sock) {
     return accept(server_sock, NULL, NULL);
 }
 
-int plat_recv(PlatSocket sock, char* buf, int len) {
-    return recv(sock, buf, len, 0);
+int plat_recv(PlatSocket sock, u8* buf, int len) {
+    return recv(sock, (char*)buf, len, 0);
 }
 
-int plat_send(PlatSocket sock, const char* buf, int len) {
-    return send(sock, buf, len, 0);
+int plat_send(PlatSocket sock, const u8* buf, int len) {
+    return send(sock, (const char*)buf, len, 0);
 }
 
 void plat_close_socket(PlatSocket sock) {
     closesocket(sock);
 }
 
-int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, plat_fd_set* exceptfds, int timeout_ms) {
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms) {
     struct timeval tv;
     struct timeval* p_tv = NULL;
     if (timeout_ms >= 0) {
@@ -119,9 +119,9 @@ int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, pl
     return select(nfds, (fd_set*)readfds, (fd_set*)writefds, (fd_set*)exceptfds, p_tv);
 }
 
-void plat_socket_fd_zero(plat_fd_set* s) { FD_ZERO((fd_set*)s); }
-void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s) { FD_SET(fd, (fd_set*)s); }
-bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
+void plat_socket_fd_zero(u8* s) { FD_ZERO((fd_set*)s); }
+void plat_socket_fd_set(PlatSocket fd, u8* s) { FD_SET(fd, (fd_set*)s); }
+bool plat_socket_fd_isset(PlatSocket fd, u8* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
 
 void* plat_alloc(size_t size) {
     if (size == 0) return NULL;
@@ -878,19 +878,19 @@ PlatSocket plat_accept(PlatSocket server_sock) {
     return accept(server_sock, NULL, NULL);
 }
 
-int plat_recv(PlatSocket sock, char* buf, int len) {
-    return recv(sock, buf, len, 0);
+int plat_recv(PlatSocket sock, u8* buf, int len) {
+    return recv(sock, (char*)buf, len, 0);
 }
 
-int plat_send(PlatSocket sock, const char* buf, int len) {
-    return send(sock, buf, len, 0);
+int plat_send(PlatSocket sock, const u8* buf, int len) {
+    return send(sock, (const char*)buf, len, 0);
 }
 
 void plat_close_socket(PlatSocket sock) {
     close(sock);
 }
 
-int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, plat_fd_set* exceptfds, int timeout_ms) {
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms) {
     struct timeval tv;
     struct timeval* p_tv = NULL;
     if (timeout_ms >= 0) {
@@ -901,8 +901,8 @@ int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, pl
     return select(nfds, (fd_set*)readfds, (fd_set*)writefds, (fd_set*)exceptfds, p_tv);
 }
 
-void plat_socket_fd_zero(plat_fd_set* s) { FD_ZERO((fd_set*)s); }
-void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s) { FD_SET(fd, (fd_set*)s); }
-bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
+void plat_socket_fd_zero(u8* s) { FD_ZERO((fd_set*)s); }
+void plat_socket_fd_set(PlatSocket fd, u8* s) { FD_SET(fd, (fd_set*)s); }
+bool plat_socket_fd_isset(PlatSocket fd, u8* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
 
 #endif

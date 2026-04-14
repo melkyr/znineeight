@@ -110,13 +110,13 @@ void plat_socket_cleanup(void);
 PlatSocket plat_create_tcp_server(u16 port);
 int plat_bind_listen(PlatSocket sock, int backlog);
 PlatSocket plat_accept(PlatSocket server_sock);
-int plat_recv(PlatSocket sock, char* buf, int len);
-int plat_send(PlatSocket sock, const char* buf, int len);
+int plat_recv(PlatSocket sock, u8* buf, int len);
+int plat_send(PlatSocket sock, const u8* buf, int len);
 void plat_close_socket(PlatSocket sock);
-int plat_socket_select(int nfds, plat_fd_set* readfds, plat_fd_set* writefds, plat_fd_set* exceptfds, int timeout_ms);
-void plat_socket_fd_zero(plat_fd_set* s);
-void plat_socket_fd_set(PlatSocket fd, plat_fd_set* s);
-bool plat_socket_fd_isset(PlatSocket fd, plat_fd_set* s);
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms);
+void plat_socket_fd_zero(u8* s);
+void plat_socket_fd_set(PlatSocket fd, u8* s);
+bool plat_socket_fd_isset(PlatSocket fd, u8* s);
 
 #ifdef __cplusplus
 }
