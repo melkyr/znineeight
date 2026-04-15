@@ -19,6 +19,12 @@ To compile the MUD server using the Z98 bootstrap compiler:
 
 The resulting executable will be named `main` (or `main.exe` on Windows).
 
+**Note for Windows Native Builds:**
+When compiling the generated C89 code using native compilers, you must link against the Winsock library:
+- **MinGW**: Add `-lwsock32` to the linking command.
+- **OpenWatcom**: Add `library wsock32.lib` to the `wlink` command.
+- **MSVC 6.0**: Add `wsock32.lib` to the `link` command.
+
 ## Running
 
 1. Start the server:

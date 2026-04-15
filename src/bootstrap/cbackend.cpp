@@ -32,7 +32,8 @@ bool CBackend::generate(const char* output_dir) {
     }
 
     if (!generateBuildBat(output_dir)) return false;
-    if (!generateExperimentalBuildBat(output_dir)) return false;
+    if (!generateMSVCBuildBat(output_dir)) return false;
+    if (!generateOpenWatcomBuildBat(output_dir)) return false;
     if (!generateMakefile(output_dir)) return false;
     if (!generateSpecialTypesHeader(output_dir)) return false;
     if (!copyRuntimeFiles(output_dir)) return false;
@@ -250,14 +251,14 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     return true;
 }
 
-bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
+bool CBackend::generateMSVCBuildBat(const char* output_dir) {
     if (!executable_name_) return true;
 
     char path[1024];
     char* cur = path;
     size_t rem = sizeof(path);
     safe_append(cur, rem, output_dir);
-    safe_append(cur, rem, "/b_nativ_exp.bat");
+    safe_append(cur, rem, "/build_msvc.bat");
 
     PlatFile f = plat_open_file(path, true);
     if (f == PLAT_INVALID_FILE) return false;
@@ -265,10 +266,9 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     FileTextWriter writer(f, unit_.getOptions().win_friendly_line_endings ? "\r\n" : "\n");
 
     writer.writeLine("@echo off");
-    writer.writeLine(":: Experimental Native Build script (MSVC 6.0 / OpenWatcom)");
+    writer.writeLine(":: Native Build script for MSVC 6.0 (cl.exe)");
     writer.writeLine();
 
-    writer.writeLine("REM ========== MSVC 6.0 (cl.exe) ==========");
     writer.writeLine("REM /O2        : optimize for speed");
     writer.writeLine("REM /I.        : add current directory for includes");
     writer.writeLine("REM /Isrc\\include : add compiler include path");
@@ -284,6 +284,9 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     writer.writeLine(":: Compile zig_runtime.c");
     writer.writeLine("cl /O2 /I. /Isrc/include /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0410 /D_CRT_NONSTDC_NO_DEPRECATE /GX /Zm400 /nologo /W3 /c zig_runtime.c");
     writer.writeLine();
+    writer.writeLine(":: Compile net_runtime.c");
+    writer.writeLine("cl /O2 /I. /Isrc/include /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0410 /D_CRT_NONSTDC_NO_DEPRECATE /GX /Zm400 /nologo /W3 /c net_runtime.c");
+    writer.writeLine();
     writer.writeLine(":: Compile modules");
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         writer.writeString("cl /O2 /I. /Isrc/include /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0410 /D_CRT_NONSTDC_NO_DEPRECATE /GX /Zm400 /nologo /W3 /c ");
@@ -292,10 +295,31 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     writer.writeLine();
     writer.writeString("link /nologo /out:");
     writer.writeString(executable_name_);
-    writer.writeLine(".exe *.obj");
+    writer.writeLine(".exe *.obj wsock32.lib");
     writer.writeLine();
 
-    writer.writeLine("REM ========== OpenWatcom (wcc386 / wpp386) ==========");
+    plat_close_file(f);
+    return true;
+}
+
+bool CBackend::generateOpenWatcomBuildBat(const char* output_dir) {
+    if (!executable_name_) return true;
+
+    char path[1024];
+    char* cur = path;
+    size_t rem = sizeof(path);
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/build_openw.bat");
+
+    PlatFile f = plat_open_file(path, true);
+    if (f == PLAT_INVALID_FILE) return false;
+
+    FileTextWriter writer(f, unit_.getOptions().win_friendly_line_endings ? "\r\n" : "\n");
+
+    writer.writeLine("@echo off");
+    writer.writeLine(":: Native Build script for OpenWatcom (wcc386 / wpp386)");
+    writer.writeLine();
+
     writer.writeLine("REM /bt=nt     : target Windows NT (also works for 9x)");
     writer.writeLine("REM /d_WIN32   : define _WIN32");
     writer.writeLine("REM /dWINVER=0x0410 : target Windows 98");
@@ -304,20 +328,22 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     writer.writeLine("REM /I.        : include current directory");
     writer.writeLine("REM /Isrc\\include : include compiler path");
     writer.writeLine("REM /w4        : warning level 4");
-    writer.writeLine("REM /c         : compile only");
     writer.writeLine();
     writer.writeLine(":: Compile zig_runtime.c");
-    writer.writeLine("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 /c zig_runtime.c");
+    writer.writeLine("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 zig_runtime.c");
+    writer.writeLine();
+    writer.writeLine(":: Compile net_runtime.c");
+    writer.writeLine("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 net_runtime.c");
     writer.writeLine();
     writer.writeLine(":: Compile modules");
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
-        writer.writeString("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 /c ");
+        writer.writeString("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 ");
         writer.writeLine(generated_sources_[i]);
     }
     writer.writeLine();
-    writer.writeString("wlink system nt file {*.obj} name ");
+    writer.writeString("wlink system nt file *.obj name ");
     writer.writeString(executable_name_);
-    writer.writeLine(".exe");
+    writer.writeString(".exe library wsock32.lib");
     writer.writeLine();
 
     plat_close_file(f);
