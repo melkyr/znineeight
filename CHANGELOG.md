@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **OpenWatcom Compatibility**: The bootstrap compiler and generated C89 code are now fully compatible with the OpenWatcom 1.9 compiler suite, including optimized build scripts and standardized PAL headers.
 - **Tuple Support**: Implemented Tuple types (`struct { T1, T2 }`), literals (`.{ a, b }`), and member access (`t.0`). C89 lowering uses structs with indexed fields (`field0`, `field1`, etc.).
 - **Networking Support**: Added a minimal socket API to the Platform Abstraction Layer (PAL), supporting TCP server creation, `select()`, `recv()`, and `send()` on both Windows (Winsock 1.1) and POSIX.
 - **MUD Server Example**: Added a minimal telnet Multi-User Dungeon (MUD) server example in `examples/mud_server/` to demonstrate networked application development in Z98.
