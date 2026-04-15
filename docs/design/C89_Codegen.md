@@ -66,6 +66,11 @@ All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`
 #### Sign-Correct IO Helpers
 The runtime IO helpers `__bootstrap_print`, `__bootstrap_write`, and `__bootstrap_panic` accept `const char*` instead of `const unsigned char*`. This eliminates pointer-sign mismatch warnings when passing string literals (which are `char*` in C) to these functions. Internal casts to `unsigned char*` are performed within the runtime implementation where necessary.
 
+#### %zu Format Specifier Avoidance
+Standard C89 and many legacy C runtimes (like MSVC 6.0's `msvcrt.dll`) do not support the `%zu` format specifier for `size_t`. To ensure the bootstrap compiler produces correct output even when compiled with these toolchains, the `C89Emitter` and all internal logging functions strictly avoid `%zu`.
+- **Strategy**: Use `%lu` and explicitly cast `size_t` arguments to `(unsigned long)`.
+- **Rationale**: On 32-bit platforms, `size_t` and `unsigned long` are both 32-bit, making this cast safe and portable.
+
 To ensure compliance even when passing Zig's `u8` pointers (which map to `unsigned char*` in C), the `C89Emitter` automatically injects an explicit `(const char*)` cast at the call site for the string arguments of these functions.
 
 ### 2.1 Line Ending and Statement Terminator Abstraction
@@ -307,6 +312,8 @@ This unification reduces code duplication and ensures consistent behavior across
         }
     }
     ```
+- **While Loops**:
+  - **Empty Body Protection**: If a `while` or `for` loop has an empty body (`NODE_EMPTY_STMT`), the emitter explicitly outputs a semicolon (`;`). This prevents some C compilers from generating illegal tight infinite loops or "no-op" jumps that could hang the system.
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`, unless the loop requires labels (e.g., due to an iteration expression or being a `for` loop).
   - **Labeled or requiring labels**: Mapped to `goto __loop_<id>_end;` for `break` and `goto __loop_<id>_continue;` (or `_start` if no iteration expr) for `continue`.

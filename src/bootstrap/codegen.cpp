@@ -508,7 +508,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             if (!elements) return;
             for (size_t i = 0; i < elements->length(); ++i) {
                 char nested_name[256];
-                plat_snprintf(nested_name, sizeof(nested_name), "%s.field%d", base_name, (int)i);
+                plat_snprintf(nested_name, sizeof(nested_name), "%s.field%lu", base_name, (unsigned long)i);
                 Type* f_type = (*type->as.tuple.elements)[i];
                 emitAssignmentWithLifting(nested_name, NULL, (*elements)[i], f_type);
             }
@@ -709,7 +709,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             if (!elements) return;
             for (size_t i = 0; i < elements->length(); ++i) {
                 char nested_name[256];
-                plat_snprintf(nested_name, sizeof(nested_name), "%s[%zu]", base_name, i);
+                plat_snprintf(nested_name, sizeof(nested_name), "%s[%lu]", base_name, (unsigned long)i);
                 emitAssignmentWithLifting(nested_name, NULL, (*elements)[i], type->as.array.element_type);
             }
         } else if (init_node->type == NODE_STRUCT_INITIALIZER) {
@@ -719,7 +719,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             for (size_t i = 0; i < init->fields->length(); ++i) {
                 ASTNode* val = (*init->fields)[i]->value;
                 char nested_name[256];
-                plat_snprintf(nested_name, sizeof(nested_name), "%s[%zu]", base_name, i);
+                plat_snprintf(nested_name, sizeof(nested_name), "%s[%lu]", base_name, (unsigned long)i);
                 emitAssignmentWithLifting(nested_name, NULL, val, type->as.array.element_type);
             }
         } else {
@@ -1888,7 +1888,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
                         /* Access field of tuple variable: tuple_name.field0 */
                         emitExpression(tuple_node);
                         char field_name[32];
-                        plat_snprintf(field_name, sizeof(field_name), ".field%d", (int)element_idx);
+                        plat_snprintf(field_name, sizeof(field_name), ".field%lu", (unsigned long)element_idx);
                         writeString(field_name);
                     }
 
@@ -2228,6 +2228,9 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     if (node->body->type == NODE_BLOCK_STMT) {
         writeIndent();
         emitBlock(&node->body->as.block_stmt, node->label_id);
+    } else if (node->body->type == NODE_EMPTY_STMT) {
+        writeIndent();
+        writeString(";\n");
     } else {
         emitStatement(node->body);
     }
@@ -2331,6 +2334,9 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         /* Emit body */
         if (node->body->type == NODE_BLOCK_STMT) {
             emitBlock(&node->body->as.block_stmt, node->label_id);
+        } else if (node->body->type == NODE_EMPTY_STMT) {
+            writeIndent();
+            writeString(";\n");
         } else {
             emitStatement(node->body);
         }
@@ -2381,6 +2387,9 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         if (node->body->type == NODE_BLOCK_STMT) {
             writeIndent();
             emitBlock(&node->body->as.block_stmt, node->label_id);
+        } else if (node->body->type == NODE_EMPTY_STMT) {
+            writeIndent();
+            writeString(";\n");
         } else {
             emitStatement(node->body);
         }
@@ -3575,7 +3584,7 @@ void C89Emitter::ensureTupleType(Type* type) {
         } else {
             for (size_t i = 0; i < elements->length(); ++i) {
                 char field_name[32];
-                plat_snprintf(field_name, sizeof(field_name), "field%d", (int)i);
+                plat_snprintf(field_name, sizeof(field_name), "field%lu", (unsigned long)i);
                 writeIndent();
                 emitType((*elements)[i], field_name);
                 endStmt();

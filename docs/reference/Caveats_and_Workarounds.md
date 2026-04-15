@@ -32,7 +32,7 @@ This document tracks known limitations, bugs, and recommended workarounds for th
 
 ### 2.2 Optional Struct Field Order
 **Bug**: In some coercion contexts, the `C89Emitter` may generate `Optional` struct initializers with fields in the wrong order (e.g., `{1, &ptr}` instead of `{&ptr, 1}`).
-**Workaround**: Pass non-optional pointers to `extern "c"` functions where possible. Unwrap the optional before calling the external function.
+**Status**: Fixed for `extern "c"` calls. The TypeChecker now automatically coerces arguments to raw pointers at the C boundary. For non-extern contexts, unwrapping before assignment is still recommended if ordering issues persist.
 
 ### 2.3 MSVC 6.0 String Limits
 **Constraint**: MSVC 6.0 limits string literals to 2048 characters.
@@ -40,9 +40,9 @@ This document tracks known limitations, bugs, and recommended workarounds for th
 
 ## 3. Platform and Runtime
 
-### 3.1 `plat_fd_set` Size
-**Issue**: The size of `fd_set` varies by platform.
-**Workaround**: Z98 uses an opaque `[512]u8` buffer for `plat_fd_set` in Zig code. Always use this size when declaring sets for use with `plat_socket_select`.
+### 3.1 `plat_fd_set` Alignment
+**Issue**: The size and alignment of `fd_set` varies by platform. WinSock specifically requires 4-byte alignment for the `fd_set` structure.
+**Workaround**: Z98 uses an opaque buffer for `plat_fd_set`. To ensure correct alignment, define it using an array of `u32` (e.g., `data: [128]u32`). This maintains the 512-byte size while forcing 4-byte alignment.
 
 ### 3.2 PAL Linkage
 **Issue**: The PAL is C++ but the generated code is C.
