@@ -2,6 +2,8 @@
 #include <string.h>
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <winsock.h>
 #pragma comment(lib, "wsock32.lib")
 #else
@@ -31,9 +33,9 @@ void plat_socket_cleanup(void) {
 int plat_create_tcp_server(unsigned short port) {
 #ifdef _WIN32
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in addr;
     if (s == INVALID_SOCKET) return -1;
 
-    struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
