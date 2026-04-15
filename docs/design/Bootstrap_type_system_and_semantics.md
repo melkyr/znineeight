@@ -1684,7 +1684,12 @@ Function calls are resolved during the Type Checking phase (Pass 0) using the fo
 3. **Argument Validation**: Each argument expression is visited and its type is compared against the corresponding parameter type from the function's signature.
 4. **Call Site Registration**: Once validated, the call is recorded in the `CallSiteLookupTable`. This table stores the mapping between the AST call node and the resolved function's mangled name, which is crucial for code generation.
 
-### 16.2 Argument Type Checking Rules
+### 16.2 extern "c" Function Coercion
+When calling a function marked as `extern "c"`, the TypeChecker automatically uses the **C ABI compatible type** (calculated during Pass 1) for argument checking and coercion.
+- **Goal**: This prevents the Zig TypeChecker from wrapping nullable pointers in `Optional_T` structs at the boundary between Zig and C.
+- **Implementation**: In `visitFunctionCall`, if the callee is `extern`, the `effective_param_type` is retrieved from `sym->c_prototype_type`. This ensures that `coerceNode` sees a raw pointer target instead of an optional struct target.
+
+### 16.3 Argument Type Checking Rules
 
 The `TypeChecker` enforces strict type compatibility for arguments:
 - **Exact Match**: The argument type must ideally match the parameter type exactly.

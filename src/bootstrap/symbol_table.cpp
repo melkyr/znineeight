@@ -211,7 +211,7 @@ void SymbolTable::enterScope() {
     all_scopes_.append(new_scope);
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] ENTER_SCOPE depth=%zu\n", scopes.length());
+    plat_printf_debug("[SYMBOL] ENTER_SCOPE depth=%lu\n", (unsigned long)scopes.length());
 #endif
 #endif
 }
@@ -220,7 +220,7 @@ void SymbolTable::exitScope() {
     if (scopes.length() > 1) { // Do not exit the global scope.
 #ifdef DEBUG_SYMBOL
         #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] EXIT_SCOPE depth=%zu\n", scopes.length());
+    plat_printf_debug("[SYMBOL] EXIT_SCOPE depth=%lu\n", (unsigned long)scopes.length());
 #endif
 #endif
         scopes.pop_back();
@@ -231,7 +231,7 @@ void SymbolTable::exitScope() {
 bool SymbolTable::insert(Symbol& symbol) {
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] INSERT '%s' module=%s scope_level=%u depth=%zu\n", symbol.name, symbol.module_name ? symbol.module_name : "NULL", symbol.scope_level, scopes.length());
+    plat_printf_debug("[SYMBOL] INSERT '%s' module=%s scope_level=%u depth=%lu\n", symbol.name, symbol.module_name ? symbol.module_name : "NULL", symbol.scope_level, (unsigned long)scopes.length());
 #endif
 #endif
     // Check for redeclaration in the current scope.
@@ -250,7 +250,7 @@ bool SymbolTable::insert(Symbol& symbol) {
     // Add the symbol to the current scope.
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] INSERTED '%s' into scope level %zu\n", symbol.name, scopes.length());
+    plat_printf_debug("[SYMBOL] INSERTED '%s' into scope level %lu\n", symbol.name, (unsigned long)scopes.length());
 #endif
 #endif
     scopes.back()->insert(symbol);
@@ -260,7 +260,7 @@ bool SymbolTable::insert(Symbol& symbol) {
 Symbol* SymbolTable::lookup(const char* name) {
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] LOOKUP '%s' current_module=%s scopes=%zu\n", name, current_module_ ? current_module_ : "NULL", scopes.length());
+    plat_printf_debug("[SYMBOL] LOOKUP '%s' current_module=%s scopes=%lu\n", name, current_module_ ? current_module_ : "NULL", (unsigned long)scopes.length());
 #endif
 #endif
     // Search from the innermost scope to the outermost.
@@ -312,8 +312,8 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     const char* mod_filter = (scopes.length() == 1) ? current_module_ : NULL;
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] LOOKUP_IN_CURRENT_SCOPE '%s' depth=%zu mod_filter=%s\n", 
-                     name, scopes.length(), mod_filter ? mod_filter : "NULL");
+    plat_printf_debug("[SYMBOL] LOOKUP_IN_CURRENT_SCOPE '%s' depth=%lu mod_filter=%s\n",
+                     name, (unsigned long)scopes.length(), mod_filter ? mod_filter : "NULL");
 #endif
 #endif
     Symbol* sym = scopes.back()->find(name, mod_filter);

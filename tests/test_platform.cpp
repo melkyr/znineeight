@@ -83,11 +83,11 @@ TEST_FUNC(platform_socket) {
     }
 
     plat_fd_set read_fds;
-    plat_socket_fd_zero(&read_fds);
-    plat_socket_fd_set(server, &read_fds);
+    plat_socket_fd_zero((u8*)&read_fds);
+    plat_socket_fd_set(server, (u8*)&read_fds);
 
     // Select with timeout should return 0 (no connection)
-    int ready = plat_socket_select((int)server + 1, &read_fds, NULL, NULL, 10);
+    int ready = plat_socket_select((int)server + 1, (u8*)&read_fds, NULL, NULL, 10);
     ASSERT_EQ(0, ready);
 
     plat_close_socket(server);

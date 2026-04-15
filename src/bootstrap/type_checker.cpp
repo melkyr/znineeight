@@ -1329,6 +1329,14 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
     actual_args = node->args->length();
 
+    Symbol* callee_symbol = NULL;
+    if (node->callee->type == NODE_IDENTIFIER) {
+        callee_symbol = node->callee->as.identifier.symbol;
+    } else if (node->callee->type == NODE_MEMBER_ACCESS) {
+        callee_symbol = node->callee->as.member_access->symbol;
+    }
+    bool is_extern = callee_symbol && (callee_symbol->flags & SYMBOL_FLAG_EXTERN);
+
     if (actual_args != expected_args) {
         is_generic_call = false;
         if (node->callee->type == NODE_IDENTIFIER) {
@@ -1359,11 +1367,18 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 
         if (i < expected_args) {
             param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
-            ExpectedTypeGuard guard(*this, param_type);
+
+            Type* effective_param_type = param_type;
+            if (is_extern && callee_symbol->c_prototype_type && i < callee_symbol->c_prototype_type->as.function.params->length()) {
+                effective_param_type = (*callee_symbol->c_prototype_type->as.function.params)[i];
+            }
+
+            ExpectedTypeGuard guard(*this, effective_param_type);
             arg_type = visit(arg_node);
             if (arg_type && arg_type->kind == TYPE_PLACEHOLDER) {
                 arg_type = resolvePlaceholder(arg_type);
             }
+            param_type = effective_param_type;
         } else {
             arg_type = visit(arg_node);
         }

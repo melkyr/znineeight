@@ -17,7 +17,8 @@ const plat_fd_set = struct {
     // but we treat it as an opaque blob in Zig since we use the PAL macros/functions.
     // On Windows, fd_set is 260 bytes (FD_SETSIZE=64). On Linux, it's 128 bytes (FD_SETSIZE=1024).
     // 512 bytes provides a safe buffer for most legacy environments.
-    data: [512]u8,
+    // Using [128]u32 instead of [512]u8 forces 4-byte alignment, which is required by WinSock.
+    data: [128]u32,
 };
 
 extern "c" fn plat_socket_select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32;
