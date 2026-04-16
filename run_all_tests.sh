@@ -1,51 +1,53 @@
 #!/bin/bash
 
-POSTCLEAN=true
-for arg in "$@"; do
-    if [ "$arg" == "--no-postclean" ]; then
-        POSTCLEAN=false
+RESULTS_FILE="test_results.log"
+rm -f $RESULTS_FILE
+
+BATCHES=$(ls tests/main_batch*.cpp)
+
+TOTAL_PASSES=0
+TOTAL_FAILS=0
+TOTAL_BATCHES=0
+
+# Compiler and Flags
+CXX="g++"
+CXXFLAGS="-std=c++98 -m32 -Isrc/include -Itests -Itests/c89_validation -Itests/integration -DZ98_TEST"
+
+for batch_file in $BATCHES; do
+    # Extract batch name (e.g., batch1, batch9a, batch_bugs)
+    batch_name=$(basename "$batch_file" .cpp | sed 's/main_//')
+    runner_file="tests/${batch_name/batch/batch_runner_}.cpp"
+
+    # Handle special case for batch_bugs
+    if [[ "$batch_name" == "batch_bugs" ]]; then
+        runner_file="tests/batch_runner__bugs.cpp"
     fi
-done
 
-echo "Running Z98 test batches..."
-echo "================================"
+    echo "Running $batch_name..." | tee -a $RESULTS_FILE
 
-FAILED=0
+    executable="./${batch_name}_test"
 
-# Use find to get all batch runners and sort them numerically
-BATCHES=$(ls ./test_runner_batch* 2>/dev/null | sed 's/\.\/test_runner_batch//' | sort -n)
+    $CXX $CXXFLAGS "$runner_file" -o "$executable" 2>>$RESULTS_FILE
 
-if [ -z "$BATCHES" ]; then
-    echo "No test runners found. Run ./test.sh first."
-    exit 1
-fi
-
-for i in $BATCHES; do
-    BINARY="./test_runner_batch$i"
-    echo "Batch $i..."
-
-    # Run the binary directly to ensure output goes to console
-    $BINARY
-    RESULT=$?
-    if [ $RESULT -ne 0 ]; then
-        echo "✗ Batch $i failed"
-        FAILED=1
+    if [ $? -ne 0 ]; then
+        echo "COMPILATION FAILED for $batch_name" | tee -a $RESULTS_FILE
+        ((TOTAL_FAILS++))
     else
-        echo "✓ Batch $i passed"
+        "$executable" >> $RESULTS_FILE 2>&1
+        if [ $? -eq 0 ]; then
+            echo "$batch_name: PASS" | tee -a $RESULTS_FILE
+            ((TOTAL_PASSES++))
+        else
+            echo "$batch_name: FAIL" | tee -a $RESULTS_FILE
+            ((TOTAL_FAILS++))
+        fi
+        rm "$executable"
     fi
-
-    if [ "$POSTCLEAN" = true ]; then
-        rm -f "$BINARY"
-        echo "Cleaned up $BINARY"
-    fi
-    echo ""
+    ((TOTAL_BATCHES++))
+    echo "-----------------------------------" >> $RESULTS_FILE
 done
 
-echo "================================"
-if [ $FAILED -eq 0 ]; then
-    echo "All test batches passed!"
-    exit 0
-else
-    echo "Some test batches failed."
-    exit 1
-fi
+echo "Summary:" | tee -a $RESULTS_FILE
+echo "Total Batches: $TOTAL_BATCHES" | tee -a $RESULTS_FILE
+echo "Passed: $TOTAL_PASSES" | tee -a $RESULTS_FILE
+echo "Failed: $TOTAL_FAILS" | tee -a $RESULTS_FILE

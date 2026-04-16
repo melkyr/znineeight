@@ -78,5 +78,8 @@ test_*.c
 test_*.h
 examples/**/*.c
 examples/**/*.h
+examples/**/build_*.bat
+examples/**/build_*.sh
+examples/**/Makefile
 temp_*.c
 temp_*.h
