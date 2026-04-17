@@ -942,11 +942,11 @@ void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
 }
 
 bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
-    return isAllocationCall(node);
+    return isAllocationCall(node, 0);
 }
 
-bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
-    if (!node) return false;
+bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node, int depth) {
+    if (!node || depth > MAX_RECURSION_DEPTH) return false;
     if (node->type == NODE_FUNCTION_CALL) {
         ASTFunctionCallNode* call = node->as.function_call;
         if (call->callee->type == NODE_IDENTIFIER) {
@@ -964,15 +964,15 @@ bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
             }
         }
     } else if (node->type == NODE_TRY_EXPR) {
-        return isAllocationCall(node->as.try_expr.expression);
+        return isAllocationCall(node->as.try_expr.expression, depth + 1);
     } else if (node->type == NODE_CATCH_EXPR) {
-        return isAllocationCall(node->as.catch_expr->payload) || isAllocationCall(node->as.catch_expr->else_expr);
+        return isAllocationCall(node->as.catch_expr->payload, depth + 1) || isAllocationCall(node->as.catch_expr->else_expr, depth + 1);
     } else if (node->type == NODE_ORELSE_EXPR) {
-        return isAllocationCall(node->as.orelse_expr->payload) || isAllocationCall(node->as.orelse_expr->else_expr);
+        return isAllocationCall(node->as.orelse_expr->payload, depth + 1) || isAllocationCall(node->as.orelse_expr->else_expr, depth + 1);
     } else if (node->type == NODE_BINARY_OP) {
-        return isAllocationCall(node->as.binary_op->left) || isAllocationCall(node->as.binary_op->right);
+        return isAllocationCall(node->as.binary_op->left, depth + 1) || isAllocationCall(node->as.binary_op->right, depth + 1);
     } else if (node->type == NODE_PTR_CAST) {
-        return isAllocationCall(node->as.ptr_cast->expr);
+        return isAllocationCall(node->as.ptr_cast->expr, depth + 1);
     }
     return false;
 }
@@ -998,15 +998,15 @@ bool DoubleFreeAnalyzer::isOwnershipTransferCall(ASTFunctionCallNode* call) {
     return false;
 }
 
-bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
-    if (!rvalue) return true;
+bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue, int depth) {
+    if (!rvalue || depth > MAX_RECURSION_DEPTH) return true;
 
     if (rvalue->type == NODE_NULL_LITERAL) return true;
     if (rvalue->type == NODE_UNARY_OP && rvalue->as.unary_op.op == TOKEN_AMPERSAND) return true;
-    if (rvalue->type == NODE_FUNCTION_CALL && !isAllocationCall(rvalue)) return true;
+    if (rvalue->type == NODE_FUNCTION_CALL && !isAllocationCall(rvalue, depth + 1)) return true;
     if (rvalue->type == NODE_IDENTIFIER) return true; // Reassigning from another variable also loses track
-    if (rvalue->type == NODE_PTR_CAST) return isChangingPointerValue(rvalue->as.ptr_cast->expr);
-    if (isAllocationCall(rvalue)) return true; // Reassigning to a new allocation also loses track of old one
+    if (rvalue->type == NODE_PTR_CAST) return isChangingPointerValue(rvalue->as.ptr_cast->expr, depth + 1);
+    if (isAllocationCall(rvalue, depth + 1)) return true; // Reassigning to a new allocation also loses track of old one
 
     return true;
 }
@@ -1046,42 +1046,41 @@ TrackedPointer* DoubleFreeAnalyzer::findTrackedPointer(const char* name) {
     return current_state_->getState(name);
 }
 
-const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
-    if (!node) return NULL;
-    if (node->type == NODE_IDENTIFIER) {
-        return node->as.identifier.name;
-    }
-    if (node->type == NODE_MEMBER_ACCESS) {
-        const char* base_name = extractVariableName(node->as.member_access->base);
-        if (base_name) {
-            const char* field_name = node->as.member_access->field_name;
-            size_t len1 = plat_strlen(base_name);
-            size_t len2 = plat_strlen(field_name);
-            char* combined = (char*)unit_.getArena().alloc(len1 + len2 + 2);
-            if (combined) {
-                char* p = combined;
-                size_t rem = len1 + len2 + 2;
-                safe_append(p, rem, base_name);
-                safe_append(p, rem, ".");
-                safe_append(p, rem, field_name);
-                // Important: intern the composite name so identifiers_equal (pointer comparison) works!
-                return unit_.getStringInterner().intern(combined);
+const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node, int depth) {
+    if (!node || depth > MAX_RECURSION_DEPTH) return NULL;
+
+    switch (node->type) {
+        case NODE_PAREN_EXPR:
+            return extractVariableName(node->as.paren_expr.expr, depth + 1);
+        case NODE_PTR_CAST:
+            return extractVariableName(node->as.ptr_cast->expr, depth + 1);
+        case NODE_INT_CAST:
+            return extractVariableName(node->as.numeric_cast->expr, depth + 1);
+        case NODE_IDENTIFIER:
+            return node->as.identifier.name;
+        case NODE_MEMBER_ACCESS: {
+            const char* base_name = extractVariableName(node->as.member_access->base, depth + 1);
+            if (base_name) {
+                const char* field_name = node->as.member_access->field_name;
+                size_t len1 = plat_strlen(base_name);
+                size_t len2 = plat_strlen(field_name);
+                char* combined = (char*)unit_.getArena().alloc(len1 + len2 + 2);
+                if (combined) {
+                    char* p = combined;
+                    size_t rem = len1 + len2 + 2;
+                    safe_append(p, rem, base_name);
+                    safe_append(p, rem, ".");
+                    safe_append(p, rem, field_name);
+                    // Important: intern the composite name so identifiers_equal (pointer comparison) works!
+                    return unit_.getStringInterner().intern(combined);
+                }
             }
+            break;
         }
-    }
-    if (node->type == NODE_ARRAY_ACCESS) {
-        const char* base_name = extractVariableName(node->as.array_access->array);
-        if (base_name) {
-            size_t len = plat_strlen(base_name);
-            char* combined = (char*)unit_.getArena().alloc(len + 3);
-            if (combined) {
-                char* p = combined;
-                size_t rem = len + 3;
-                safe_append(p, rem, base_name);
-                safe_append(p, rem, "[]");
-                return unit_.getStringInterner().intern(combined);
-            }
+        case NODE_ARRAY_ACCESS: {
+            return extractArrayAccessName(node->as.array_access, depth + 1);
         }
+        default: break;
     }
     return NULL;
 }
@@ -1215,6 +1214,21 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
     }
 
     unit_.getErrorHandler().reportWarning(code, loc, msg, unit_.getArena());
+}
+
+const char* DoubleFreeAnalyzer::extractArrayAccessName(ASTArrayAccessNode* access, int depth) {
+    if (!access || depth > MAX_RECURSION_DEPTH) return NULL;
+    const char* base_name = extractVariableName(access->array, depth + 1);
+    if (!base_name) return NULL;
+
+    char buffer[256];
+    if (access->index && access->index->type == NODE_INTEGER_LITERAL) {
+        u64 idx = access->index->as.integer_literal.value;
+        plat_snprintf(buffer, sizeof(buffer), "%s[%lu]", base_name, (unsigned long)idx);
+    } else {
+        plat_snprintf(buffer, sizeof(buffer), "%s[]", base_name);
+    }
+    return unit_.getStringInterner().intern(buffer);
 }
 
 void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocation loc) {

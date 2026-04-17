@@ -75,7 +75,13 @@ Detects double `arena_free` calls and memory leaks when using the `ArenaAllocato
 
 ### Known Limitations
 - **Errdefer Semantics**: Does not distinguish between success and error exit paths for `errdefer`; executes all defers on scope exit (conservative).
-- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership to avoid false negatives. Whitelist functions (`arena_create`, `deep_copy`, `transfer_ownership`) are used to explicitly mark transfers.
+- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership to avoid false negatives. Whitelist functions (`arena_create`, `deep_copy`, `transfer_ownership`) are used to explicitly mark transfers. Note: `@ptrToInt` is treated as a read, not a transfer, even when used as an argument to a whitelisted function.
+
+### Enhancements (Post-Milestone 11)
+- **Recursion Depth Guards**: Implemented `MAX_RECURSION_DEPTH = 64` for all recursive analysis functions to prevent stack overflow on deeply nested expressions.
+- **Transparent Cast Tracking**: `extractVariableName` now looks through `NODE_PAREN_EXPR`, `NODE_PTR_CAST`, and `NODE_INT_CAST` (including `@ptrToInt` and `@intToPtr`) to maintain state tracking across identity-preserving casts.
+- **Precise Array Indexing**: The analyzer now distinguishes between distinct constant array indices (e.g., `arr[0]` vs `arr[1]`). Non-constant indices are collapsed to a generic `arr[]` for conservative tracking.
+- **Tuple Support**: Full support for tuple member access (e.g., `tup.0`) using the same composite name tracking logic as struct fields.
 
 ## Pipeline Order
 The analyzers run in the following sequence after `TypeChecker`:

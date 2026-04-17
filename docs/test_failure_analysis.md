@@ -8,17 +8,15 @@ This document provides a comprehensive breakdown of failing tests in the Z98 boo
 
 | Batch | Fails | Primary Reason |
 |-------|-------|----------------|
-| 5 | 1 | `test_DoubleFree_TransferTracking` has incorrect semantic expectations. |
 | 44 | 1 | Print lowering mismatch due to tuple evolution (regression). |
 
 ---
 
 ## Detailed Diagnostics
 
-### Batch 5 (Double Free Analyzer)
-- **Failure**: `test_DoubleFree_TransferTracking`
-- **Root Cause**: The test expects `@ptrToInt(p)` to count as an ownership transfer. In Zig, this is a value-read only. The analyzer correctly identifies a leak because `p` is never freed, but the test's `ASSERT_FALSE(has_leak)` fails.
-- **Status**: Analysis complete. Correction planned in follow-up task. See `docs/batch5_failure_analysis.md` for details.
+### Batch 5 (Double Free Analyzer) [RESOLVED]
+- **Status**: ALL TESTS PASSING (34/34).
+- **Resolution**: Updated `test_DoubleFree_TransferTracking` to reflect correct ownership transfer semantics (casts to integers are reads). Added `test_DoubleFree_DirectPointerTransfer` to verify actual transfers. Implemented stack guards and transparent cast tracking in the analyzer.
 
 ### Batch 44 (Print Lowering)
 - **Failure**: Mismatch in lowered C code for `std.debug.print`.

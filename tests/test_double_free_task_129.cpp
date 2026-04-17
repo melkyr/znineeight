@@ -35,10 +35,52 @@ TEST_FUNC(DoubleFree_TransferTracking) {
 
     const char* source =
         "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
-        "fn arena_create(initial_size: usize) -> *void { return null; }\n"
+        "fn arena_create(addr: usize) -> *void { return null; }\n"
         "fn my_func() -> void {\n"
         "    var p: *u8 = arena_alloc_default(100u);\n"
-        "    arena_create(@ptrToInt(p));\n" // Use whitelisted function for transfer
+        "    arena_create(@ptrToInt(p));\n" // @ptrToInt is a read, not a transfer
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    // Should HAVE a leak warning (6005) and NO transfer warning (6007)
+    bool has_leak = false;
+    bool has_transfer_warning = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            has_leak = true;
+        }
+        if (warnings[i].code == WARN_TRANSFERRED_MEMORY) {
+            has_transfer_warning = true;
+        }
+    }
+    ASSERT_TRUE(has_leak);
+    ASSERT_FALSE(has_transfer_warning);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_DirectPointerTransfer) {
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
+        "fn arena_create(p: *u8) -> *void { return null; }\n"
+        "fn my_func() -> void {\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
+        "    arena_create(p);\n" // direct pointer -> transfer occurs
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);
