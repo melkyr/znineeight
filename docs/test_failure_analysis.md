@@ -8,13 +8,21 @@ This document provides a comprehensive breakdown of failing tests in the Z98 boo
 
 | Batch | Fails | Primary Reason |
 |-------|-------|----------------|
-| None | 0 | All test batches are currently passing. |
+| 5 | 1 | `test_DoubleFree_TransferTracking` has incorrect semantic expectations. |
+| 44 | 1 | Print lowering mismatch due to tuple evolution (regression). |
 
 ---
 
 ## Detailed Diagnostics
 
-No active failures to report. All previously observed failures in Batches 3, 5, and 51 have been resolved following the optimization of the test runner script (`test.sh`), which eliminated symbol collisions and reduced compilation overhead.
+### Batch 5 (Double Free Analyzer)
+- **Failure**: `test_DoubleFree_TransferTracking`
+- **Root Cause**: The test expects `@ptrToInt(p)` to count as an ownership transfer. In Zig, this is a value-read only. The analyzer correctly identifies a leak because `p` is never freed, but the test's `ASSERT_FALSE(has_leak)` fails.
+- **Status**: Analysis complete. Correction planned in follow-up task. See `docs/batch5_failure_analysis.md` for details.
+
+### Batch 44 (Print Lowering)
+- **Failure**: Mismatch in lowered C code for `std.debug.print`.
+- **Root Cause**: Evolution of tuple support and anonymous literals caused a regression in the synthetic AST generated for print lowering.
 
 ---
 
@@ -22,7 +30,6 @@ No active failures to report. All previously observed failures in Batches 3, 5, 
 
 - **Batch 51 (Union Capture)**: All 4 tests passing. Resolved via runner optimization.
 - **Batch 3 (Compound Assignment Leak)**: All 115 tests passing. Resolved via runner optimization.
-- **Batch 5 (Double Free Analyzer)**: All 34 tests passing. Resolved via runner optimization.
 - **Batch 2 (Parser Expressions)**: All 114 tests passing. Fixed floating-point precision issues in test assertions.
 - **Batch 19 (void conversions)**: All 31 tests passing. Resolved by fixing built-in symbol visibility (`arena_alloc_default`) in the `SymbolTable`.
 - **Batch 31 (Multi-file)**: All 10 tests passing. Resolved memory corruption in `ErrorHandler` and improved cross-module symbol resolution.
