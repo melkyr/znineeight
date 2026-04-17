@@ -4,26 +4,21 @@ This document tracks technical debt, architectural limitations, and stability ri
 
 ## 1. DoubleFreeAnalyzer
 
-### 1.1 Recursion Stability
-The analyzer uses recursive traversal for variable name extraction and allocation call detection. Currently, there are no depth guards, posing a stack overflow risk on deeply nested ASTs, particularly on MSVC 6.0 with limited stack space.
-- **Affected Methods**: `extractVariableName`, `isAllocationCall`, `isChangingPointerValue`.
-- **Mitigation**: Implement `MAX_RECURSION_DEPTH = 64`.
+### 1.1 Recursion Stability [RESOLVED]
+The analyzer uses recursive traversal for variable name extraction and allocation call detection.
+- **Mitigation**: Implemented `MAX_RECURSION_DEPTH = 64` in `extractVariableName`, `isAllocationCall`, and `isChangingPointerValue`.
 
-### 1.2 Fragmented Cast Tracking
+### 1.2 Fragmented Cast Tracking [RESOLVED]
 The analyzer "loses track" of pointers when they are wrapped in certain expressions that preserve their numeric value but change their AST node type.
-- **Issue**: `extractVariableName` returns `NULL` for `(p)`, `@ptrCast(*T, p)`, and `@ptrToInt(p)`.
-- **Impact**: Incorrect leak reports or missed double-frees when casts are used.
-- **Mitigation**: Update `extractVariableName` to "look through" `NODE_PAREN_EXPR`, `NODE_PTR_CAST`, and `NODE_INT_CAST`.
+- **Mitigation**: Updated `extractVariableName` to "look through" `NODE_PAREN_EXPR`, `NODE_PTR_CAST`, and `NODE_INT_CAST`.
 
 ### 1.3 `errdefer` Inaccuracy
 The analyzer currently executes all deferred actions (both `defer` and `errdefer`) at scope exit, regardless of whether the exit was triggered by an error.
 - **Impact**: False positives in double-free detection if an `errdefer` frees memory that is also freed on the success path.
 - **Requirement**: Track the "error state" of the current execution path to selectively execute `errdefer`.
 
-### 1.4 Aggregate Nesting Limits
-Composite name tracking (e.g., `s.ptr`) is currently limited to a single level.
-- **Impact**: Fails to track allocations in nested structures like `outer.inner.ptr`.
-- **Mitigation**: Extend `extractVariableName` to recursively build interned composite names.
+### 1.4 Aggregate Nesting Limits [RESOLVED]
+- **Mitigation**: `extractVariableName` now recursively builds interned composite names for `NODE_MEMBER_ACCESS` and `NODE_ARRAY_ACCESS`.
 
 ## 2. LifetimeAnalyzer
 

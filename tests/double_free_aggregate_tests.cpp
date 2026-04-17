@@ -88,8 +88,82 @@ TEST_FUNC(DoubleFree_ArrayCollapseTracking) {
         "fn my_func() -> void {\n"
         "    var arr: [2]*u8 = undefined;\n"
         "    arr[0] = arena_alloc_default(100u);\n"
+        "    arr[1] = arena_alloc_default(100u);\n"
         "    arena_free(arr[0]);\n"
-        "    arena_free(arr[1]);\n" // Double free due to collapse to "arr[]"
+        "    arena_free(arr[1]);\n" // Distinct elements, no double free!
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_double_free = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            has_double_free = true;
+            break;
+        }
+    }
+    ASSERT_FALSE(has_double_free);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_ArrayVariableCollapse) {
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func(i: usize) -> void {\n"
+        "    var arr: [2]*u8 = undefined;\n"
+        "    arr[i] = arena_alloc_default(100u);\n"
+        "    arena_free(arr[i]);\n"
+        "    arena_free(arr[i]);\n" // Double free due to collapse to "arr[]"
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_double_free = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            has_double_free = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(has_double_free);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_TupleTracking) {
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func() -> void {\n"
+        "    var tup: struct { *u8, *u8 } = .{ arena_alloc_default(100u), arena_alloc_default(100u) };\n"
+        "    arena_free(tup.0);\n"
+        "    arena_free(tup.0);\n" // Double free of tuple element 0
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);

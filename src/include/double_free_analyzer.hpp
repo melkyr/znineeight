@@ -150,12 +150,14 @@ private:
     void executeDefers(int depth_limit);
     bool isArenaAllocCall(ASTNode* node);
     bool isArenaFreeCall(ASTFunctionCallNode* call);
-    bool isAllocationCall(ASTNode* node);
+    static const int MAX_RECURSION_DEPTH = 64;
+    bool isAllocationCall(ASTNode* node, int depth = 0);
     bool isOwnershipTransferCall(ASTFunctionCallNode* call);
-    bool isChangingPointerValue(ASTNode* rvalue);
+    bool isChangingPointerValue(ASTNode* rvalue, int depth = 0);
     void trackAllocation(const char* name, SourceLocation loc);
     TrackedPointer* findTrackedPointer(const char* name);
-    const char* extractVariableName(ASTNode* node);
+    const char* extractVariableName(ASTNode* node, int depth = 0);
+    const char* extractArrayAccessName(ASTArrayAccessNode* access, int depth);
 
     // Branching helpers
     void mergeSwitchProngStates(AllocationStateMap* entry_state, const DynamicArray<AllocationStateMap*>& prong_states);

@@ -2361,6 +2361,14 @@ Implementation steps (minimal):
     - **Error Reporting**: Improved messages with specific field paths and differentiated "returning address of" vs "returning pointer to".
     - **Documentation**: Updated `static_analyzers.md` with new capabilities and documented limitations.
 
+253. [COMPLETE] **Task 253: DoubleFreeAnalyzer Upgrade (Post-Milestone 11)**
+    - **Phase 1: Fix Test Semantics**: Updated `TransferTracking` test to reflect that `@ptrToInt` is a read. Added `DirectPointerTransfer` test.
+    - **Phase 2: Recursion Depth Guards**: Implemented `MAX_RECURSION_DEPTH = 64` for `extractVariableName`, `isAllocationCall`, and `isChangingPointerValue` to ensure stack safety.
+    - **Phase 3: Transparent Cast Tracking**: Updated `extractVariableName` to handle `NODE_PAREN_EXPR`, `NODE_PTR_CAST`, and `NODE_INT_CAST` transparently.
+    - **Phase 4: Precise Array Index Tracking**: Implemented precise indexing for constant array indices and conservative collapse to `arr[]` for variables. Added tuple support for field access.
+    - **Verification**: Verified Batch 5 (34/34) and Batch 75 (5/5) tests pass.
+    - **Documentation**: Updated `docs/design/static_analyzers.md` and `docs/tech_debt/static_analyzers.md`.
+
 ---
 
 
