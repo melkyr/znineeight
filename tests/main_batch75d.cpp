@@ -3,7 +3,8 @@
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
-        test_DoubleFree_ArenaLeakSuppression
+        test_DoubleFree_ArenaLeakSuppression,
+        test_DoubleFree_TupleTracking
     };
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
 }
