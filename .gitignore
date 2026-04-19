@@ -83,3 +83,4 @@ examples/**/build_*.sh
 examples/**/Makefile
 temp_*.c
 temp_*.h
+.opencode/*
