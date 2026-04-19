@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - "Isophthalic acid"
+
 ### Added
 - **OpenWatcom Compatibility**: The bootstrap compiler and generated C89 code are now fully compatible with the OpenWatcom 1.9 compiler suite, including optimized build scripts and standardized PAL headers.
 - **Tuple Support**: Implemented Tuple types (`struct { T1, T2 }`), literals (`.{ a, b }`), and member access (`t.0`). C89 lowering uses structs with indexed fields (`field0`, `field1`, etc.).
@@ -14,16 +16,18 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Lifetime Analysis**: Upgraded `LifetimeAnalyzer` to detect dangling pointers in complex expressions involving field access, array indexing, and slices via recursive provenance tracking.
-- **Double-Free Detection**: Enhanced `DoubleFreeAnalyzer` with composite name tracking (e.g., `s.ptr`) and improved loop merging for aggregate types and error unions.
+- **Double-Free Detection**: Major upgrade to `DoubleFreeAnalyzer` (Phases 5-8). Added multi-level aggregate tracking (nested members, arrays, tuples), transfer history diagnostics showing original owner/transfer site, path-aware `errdefer` semantics, and arena leak suppression via the `-Warena-leak` flag.
 - **Aggregate Lifting**: Resolved issues where `TYPE_ANYTYPE` placeholders reached the emitter. Implemented two-layer defense for error unions and preserved direct assignments for literals.
 - **C89 Global Visibility**: Fixed `CBackend::generateHeaderFile` to correctly emit `extern` declarations for public global variables while skipping type aliases and imports.
 - **TypeChecker Robustness**: Improved handling of error unions in control-flow conditions (`if`, `while`) and refined lookahead disambiguation for anonymous literals (named initializers vs. tuples vs. naked tags).
 - **Array Initialization**: Ensured valid C89 static initialization for global arrays of aggregates by forcing decomposition of initializers in `C89Emitter`.
+- **Lexer Stability**: Resolved an infinite loop bug in the lexer when encountering tuple member access (e.g., `.0`) and stabilized numeric literal parsing.
 
 ### Changed
 - **Lexer**: Standardized floating-point literal rules (must have a leading digit; `.5` is invalid) and removed `TOKEN_MEMBER_NUMBER` in favor of generic numeric member access.
 - **C89 Emitter**: Optimized `emitArrayInitializer` to use positional C89 compound literals to ensure compatibility and valid static initialization.
 - **PAL**: Standardized `plat_write_file` to return `long` (bytes written) and simplified `plat_accept` signature for cross-platform ease.
+- **Project Status**: Marked as the final feature release for the bootstrap compiler (`zig0`). Future development transitions to the self-hosted phase.
 
 ## [0.11.0] - "para-Cresol"
 
