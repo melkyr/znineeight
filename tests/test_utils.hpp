@@ -25,7 +25,9 @@ class ParserTestContext {
 public:
     ParserTestContext(const char* source, ArenaAllocator& arena, StringInterner& interner)
         : unit_(arena, interner) {
+        arena.setHardLimit(64 * 1024 * 1024);
         file_id_ = unit_.addSource("test.zig", source);
+        unit_.getOptions().warn_arena_leaks = true;
     }
 
     Parser* getParser() {

@@ -65,17 +65,21 @@ Detects double `arena_free` calls and memory leaks when using the `ArenaAllocato
 ### Features
 - **Allocation Tracking**: Tracks variables and fields initialized with `arena_alloc` or function calls returning `!*T`.
 - **Aggregate Tracking**: Supports tracking pointers within structures and slices using composite names (e.g., `container.ptr`, `slice.ptr`). Recursive name generation supports single-level nesting.
-- **Array Support**: Collapses all array index accesses into a generic name (e.g., `arr[]`) to conservatively track potential allocations within arrays of pointers.
+- **Array Support**: Distinguishes between distinct constant array indices (e.g., `arr[0]` vs `arr[1]`). Non-constant indices are collapsed to a generic `arr[]`.
 - **Free Validation**: Ensures `arena_free` is called exactly once on each allocated pointer, including composite names.
 - **Leak Detection**: Warns if an allocated pointer is not freed or is reassigned before being freed. It understands base variable scope depths for composite names to avoid premature leak reporting.
 - **Improved Control Flow**:
   - **Loops**: Only marks variables modified within a loop as `AS_UNKNOWN`, preserving the state of untouched pointers.
   - **Error Unions**: Recognizes `try` expressions and `!*T` return types as potential allocation sources.
-- **Defer/Errdefer**: Correctly handles cleanup actions queued via `defer` and `errdefer`.
+- **Path-Aware Errdefer**: Correctly distinguishes between success and error exit paths. `errdefer` blocks only execute if the function returns an error type (`error` or `!T`).
+- **Ownership Transfer Tracking**: Tracks explicit ownership transfers (e.g., `var b = a;` where `a` is allocated). The source variable is marked as `AS_TRANSFERRED`, and the target variable inherits the allocation state.
+- **Arena Leak Suppression**: By default, the analyzer suppresses leak warnings for arena-allocated pointers unless the `-Warena-leak` flag is provided.
+
+### Enhanced Diagnostics
+- **Transfer History**: Leak and double-free messages include information about the original owner and the location where ownership was transferred, improving debuggability for complex ownership models.
 
 ### Known Limitations
-- **Errdefer Semantics**: Does not distinguish between success and error exit paths for `errdefer`; executes all defers on scope exit (conservative).
-- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership to avoid false negatives. Whitelist functions (`arena_create`, `deep_copy`, `transfer_ownership`) are used to explicitly mark transfers. Note: `@ptrToInt` is treated as a read, not a transfer, even when used as an argument to a whitelisted function.
+- **Ownership Transfer**: Conservatively assumes unknown function calls do NOT transfer ownership unless they are whitelisted (`arena_create`, `deep_copy`, `transfer_ownership`). Note: `@ptrToInt` is treated as a read, not a transfer.
 
 ### Enhancements (Post-Milestone 11)
 - **Recursion Depth Guards**: Implemented `MAX_RECURSION_DEPTH = 64` for all recursive analysis functions to prevent stack overflow on deeply nested expressions.

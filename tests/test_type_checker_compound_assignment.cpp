@@ -99,6 +99,7 @@ TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment) {
     TypeChecker tc(unit);
     tc.check(root);
 
+    unit.getOptions().warn_arena_leaks = true;
     DoubleFreeAnalyzer dfa(unit);
     dfa.analyze(root);
 

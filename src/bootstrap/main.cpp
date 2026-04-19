@@ -48,6 +48,7 @@ int main(int argc, char* argv[]) {
     bool debug_codegen = false;
     bool no_logs = false;
     bool verbose = false;
+    bool warn_arena_leaks = false;
     const char* log_file_path = NULL;
 
     for (int i = 1; i < argc; ++i) {
@@ -55,6 +56,8 @@ int main(int argc, char* argv[]) {
             no_logs = true;
         } else if (plat_strcmp(argv[i], "--verbose") == 0 || plat_strcmp(argv[i], "-v") == 0) {
             verbose = true;
+        } else if (plat_strcmp(argv[i], "-Warena-leak") == 0) {
+            warn_arena_leaks = true;
         } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0) {
             log_file_path = argv[i] + 11;
         }
@@ -212,6 +215,7 @@ int main(int argc, char* argv[]) {
         opts.win_friendly_line_endings = win_line_endings;
         opts.no_logs = no_logs;
         opts.verbose = verbose;
+        opts.warn_arena_leaks = warn_arena_leaks;
         opts.log_file_path = log_file_path;
         unit.setOptions(opts);
 
@@ -249,6 +253,7 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --log-file=<path>       Enable logging to a file\n");
     plat_print_info("  --no-logs               Suppress all non-essential output\n");
     plat_print_info("  --verbose, -v           Enable verbose debug logging on console\n");
+    plat_print_info("  -Warena-leak            Report memory leaks for arena allocations\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 
