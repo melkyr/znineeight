@@ -304,6 +304,7 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `null`                  | `?T`                   | ✓           | `null` compatible with all optional types.                         |
 | `[]T`                   | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `.ptr`).               |
 | `[N]T`                  | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `&arr[0]`).            |
+| `tuple`                 | `tuple`                | ✓           | Structural equality matching.                                      |
 
 
 ## 4. Semantic Analysis
@@ -492,6 +493,10 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
 - **Braces Optional**: Braces are optional for `if`, `while`, `for`, `defer`, and `errdefer` statement bodies. Single statements are normalized into blocks during the lifting pass.
+- **Tuple Support**: Full support for tuple types (`struct { T1, T2 }`) and literals (`.{ a, b }`).
+    - **Numeric Access**: Fields are accessed via `t.0`, `t.1`, etc.
+    - **C89 Representation**: Lowered to C structs with `field0`, `field1` members.
+    - **Empty Tuples**: Represented as a struct with a dummy byte to ensure non-zero size.
 
 ### Enum Type Declarations
 
@@ -619,6 +624,20 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
     -   **`@intToEnum(T, val)`**: Converts an integer to an enum of type `T`. Constant folded if `val` is a literal.
     -   **`@import("module")`**: Supported for discovering and loading Zig modules.
 
+### C89 Compatibility of Types
+
+To ensure generated code is compatible with C89 backend constraints, the bootstrap compiler performs a dedicated signature analysis pass (`SignatureAnalyzer`) after type resolution. The following rules govern which Z98 types are considered C89-compatible for use in function signatures (parameters and return types):
+
+1.  **Primitive Types**: All standard integer types (`i8`-`i64`, `u8`-`u64`, `isize`, `usize`), floating-point types (`f32`, `f64`), `bool`, and `c_char` are C89-compatible.
+2.  **Pointers and Function Pointers**: Both single-item (`*T`) and many-item (`[*]T`) pointers, as well as function pointers, are C89-compatible if their base/parameter/return types are also compatible.
+3.  **Aggregates (Structs, Unions, Tagged Unions)**: These are C89-compatible **only if they have a complete definition** (i.e., their size and layout are known). Incomplete or opaque types are rejected in signatures to ensure the C89 compiler can allocate space for them or access their fields.
+4.  **Modern Z98 Types**: Slices (`[]T`), Optionals (`?T`), Error Unions (`!T`), and Error Sets (`error{...}`) are considered C89-compatible because they are lowered into C structures or integers by the backend.
+5.  **Arrays**: Array parameters (e.g., `[N]T`) are accepted but trigger a warning (`WARN_ARRAY_PARAMETER`), as they decay to pointers in C89.
+6.  **Rejected Types**:
+    -   `anytype`: Rejected everywhere (formerly allowed only for `print`).
+    -   `void`: Allowed as a return type, but strictly rejected as a parameter type (`ERR_TYPE_MISMATCH`).
+    -   Truly non-C89 types (e.g., `type`, `anyerror`) are rejected.
+
 #### Call Resolution Completeness (Task 168)
 
 The bootstrap compiler includes a `CallResolutionValidator` (active in DEBUG builds) that verifies the following after Pass 0 (Type Checking):
@@ -679,7 +698,7 @@ To clarify the current capabilities of the type checker and guide future develop
 
 -   **Literals:**
     -   **`true`, `false`:** Inferred as type `bool`.
-    -   **Integer Literals:** The type is determined by the literal's value and suffix. Small values default to `i32` or `u32` for C compatibility, while larger values or those with `l`/`LL` suffixes are inferred as `i64`/`u64`.
+    -   **Integer Literals:** The type is determined by the literal's value and suffix. Small values default to `i32` or `u32` for C compatibility, while larger values or those with `l`/`LL` suffixes are inferred as `i64`/`u64`. Decimal constants larger than 2,147,483,647 (2^31-1) must have a `U` suffix to ensure they are treated as unsigned in C90/C89 mode.
         -   **Unsigned Literals (e.g., `123u`):**
             -   `0` to `4294967295`: `u32`
             -   Larger values or with `ul` suffix: `u64`
@@ -847,7 +866,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 To ensure that compiler-generated symbols (like temporaries and runtime intrinsics) never collide with user-defined identifiers, a specialized bypass mechanism is used:
 
-1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`. It also whitelists exact matches for runtime types and globals: `Arena` and `zig_default_arena`.
+1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, `__ErrorUnion_`, `__Optional_`, and `__implicit_ret`. It also whitelists exact matches for runtime types and globals: `Arena` and `zig_default_arena`.
 2. **Mangling Bypass**: These identifiers bypass the standard mangling process (module prefixing, keyword avoidance, and character sanitization).
 3. **Truncation Only**: They are emitted verbatim, except for truncation to 31 characters to ensure compatibility with MSVC 6.0.
 4. **User Symbol Protection**: User-defined identifiers starting with `__` are **not** treated as internal and are mangled with a `z_` prefix (e.g., `__reserved` becomes `z__reserved`).
@@ -1665,7 +1684,12 @@ Function calls are resolved during the Type Checking phase (Pass 0) using the fo
 3. **Argument Validation**: Each argument expression is visited and its type is compared against the corresponding parameter type from the function's signature.
 4. **Call Site Registration**: Once validated, the call is recorded in the `CallSiteLookupTable`. This table stores the mapping between the AST call node and the resolved function's mangled name, which is crucial for code generation.
 
-### 16.2 Argument Type Checking Rules
+### 16.2 extern "c" Function Coercion
+When calling a function marked as `extern "c"`, the TypeChecker automatically uses the **C ABI compatible type** (calculated during Pass 1) for argument checking and coercion.
+- **Goal**: This prevents the Zig TypeChecker from wrapping nullable pointers in `Optional_T` structs at the boundary between Zig and C.
+- **Implementation**: In `visitFunctionCall`, if the callee is `extern`, the `effective_param_type` is retrieved from `sym->c_prototype_type`. This ensures that `coerceNode` sees a raw pointer target instead of an optional struct target.
+
+### 16.3 Argument Type Checking Rules
 
 The `TypeChecker` enforces strict type compatibility for arguments:
 - **Exact Match**: The argument type must ideally match the parameter type exactly.
@@ -1844,6 +1868,7 @@ As part of Task 9.3 and Task 9.5.7, the type system implementation was hardened 
 To ensure that types containing slices of themselves (e.g., `Node = struct { children: []Node }`) resolve correctly during layout calculation and usage, the bootstrap compiler employs several strategies:
 
 1.  **Fixed Slice Layout**: `TYPE_SLICE` always returns `true` for `isTypeComplete` because its size (8 bytes) and alignment (4 bytes) are constant for the 32-bit target, regardless of the element type. This prevents "incomplete type" errors when a slice is used as a field in the type it refers to.
+2.  **Distributed Coercion (Slices in Branches)**: When an `if` or `switch` expression yields a slice in its branches, the `TypeChecker` ensures that all branches are coerced to the concrete `Slice_T` struct type before the expression is lifted. This prevents branches from incorrectly yielding `T*` pointers when an array literal or string literal is used.
 2.  **Completeness Deferral**: `visitArrayType` and `createSliceType` do not require the element type to be complete when creating a slice type. They correctly handle elements that are `TYPE_PLACEHOLDER`.
 3.  **On-Demand Element Resolution**: The `TypeChecker` aggressively resolves placeholders when performing operations on slice elements.
     -   **Member Access**: Accessing `.ptr` of a slice via `visitMemberAccess` resolves the element type to ensure the resulting pointer type is accurate.
@@ -1865,3 +1890,19 @@ The following issues were identified during the attempt to compile a comprehensi
 - **Switch Prong Commas**: Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong before the closing brace.
 - **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
 - **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.
+
+## 26. Phase A & B: Refined Anonymous Types and Tag Coercion
+
+### 26.1 Refined Anonymous Type Resolution
+The resolution of anonymous aggregate literals (`.{}`) is refined to support deferred resolution until a target type is known, while preventing regressions in type-defining contexts:
+- **`anytype` Contexts**: In contexts like `std.debug.print` arguments where the expected type is `anytype`, anonymous literals remain `TYPE_UNDEFINED`.
+- **`TYPE_TYPE` Contexts**: When an anonymous literal is used where a `type` is expected (e.g., `const T = .{};`), empty literals resolve to a concrete empty tuple. Non-empty literals remain undefined to avoid incorrect named type resolution.
+- **Lazy Resolution**: Literal elements are visited only once an expected type is available or when the literal is lifted into a temporary.
+
+### 26.2 Tagged Union Coercion Rules
+The compiler supports implicit coercion of tags into tagged unions if the target variant has no payload:
+- **Constraint**: Coercion only occurs if the target is a tagged union and the variant payload type is `void`.
+- **Transformation**: The tag (naked or qualified) is transformed into an anonymous union initializer `.{ .Tag }` with a `TYPE_ANONYMOUS_UNION` type.
+- **Error Handling**:
+    - If the tag is not found in the union: `ERR_UNDEFINED_ENUM_MEMBER`.
+    - If the tag requires a non-void payload: `ERR_TYPE_MISMATCH`.

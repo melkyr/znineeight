@@ -9,6 +9,7 @@
 #include "symbol_table.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+#include <new>
 
 // Default arena size for the bootstrap compiler: 16MB
 static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
@@ -45,8 +46,30 @@ RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 f
 int main(int argc, char* argv[]) {
     bool debug_lifter = false;
     bool debug_codegen = false;
+    bool no_logs = false;
+    bool verbose = false;
+    bool warn_arena_leaks = false;
+    const char* log_file_path = NULL;
+
+    for (int i = 1; i < argc; ++i) {
+        if (plat_strcmp(argv[i], "--no-logs") == 0) {
+            no_logs = true;
+        } else if (plat_strcmp(argv[i], "--verbose") == 0 || plat_strcmp(argv[i], "-v") == 0) {
+            verbose = true;
+        } else if (plat_strcmp(argv[i], "-Warena-leak") == 0) {
+            warn_arena_leaks = true;
+        } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0) {
+            log_file_path = argv[i] + 11;
+        }
+    }
 
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
+        ArenaAllocator logger_arena(1024 * 1024);
+        Logger* logger = new (logger_arena.alloc(sizeof(Logger))) Logger(logger_arena, !no_logs, log_file_path);
+        logger->setSuppressAll(no_logs);
+        logger->setVerbose(verbose);
+        plat_set_logger(logger);
+
         plat_print_info("Executing self-test...\n");
 
         const char* source =
@@ -81,6 +104,8 @@ int main(int argc, char* argv[]) {
         if (runCompilationPipeline(unit, file_id)) {
             // We expect an error in this self-test because of the double free
             plat_print_error("Self-test failed: expected double free error not detected.\n");
+            Logger* logger = plat_get_logger();
+            if (logger) logger->flush();
             return 1;
         }
 
@@ -96,11 +121,15 @@ int main(int argc, char* argv[]) {
 
         if (has_double_free && has_null_deref && has_lifetime_violation) {
             plat_print_info("Self-test passed: All memory safety violations correctly detected.\n");
+            Logger* logger = plat_get_logger();
+            if (logger) logger->flush();
             return 0;
         } else {
             if (!has_double_free) plat_print_error("Self-test failed: ERR_DOUBLE_FREE not detected.\n");
             if (!has_null_deref) plat_print_error("Self-test failed: ERR_NULL_POINTER_DEREFERENCE not detected.\n");
             if (!has_lifetime_violation) plat_print_error("Self-test failed: ERR_LIFETIME_VIOLATION not detected.\n");
+            Logger* logger = plat_get_logger();
+            if (logger) logger->flush();
             return 1;
         }
     }
@@ -139,6 +168,11 @@ int main(int argc, char* argv[]) {
         } else if (plat_strcmp(argv[i], "--compile") == 0 || plat_strcmp(argv[i], "full_pipeline") == 0) {
             full_pipeline = true;
             if (i + 1 < argc) input_file = argv[++i];
+        } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0 ||
+                   plat_strcmp(argv[i], "--no-logs") == 0 ||
+                   plat_strcmp(argv[i], "--verbose") == 0 ||
+                   plat_strcmp(argv[i], "-v") == 0) {
+            // Already handled in first pass
         } else if (input_file == NULL) {
             input_file = argv[i];
             full_pipeline = true;
@@ -156,6 +190,12 @@ int main(int argc, char* argv[]) {
         }
 
         ArenaAllocator arena(DEFAULT_ARENA_SIZE);
+
+        Logger* logger = new (arena.alloc(sizeof(Logger))) Logger(arena, !no_logs, log_file_path);
+        logger->setSuppressAll(no_logs);
+        logger->setVerbose(verbose);
+        plat_set_logger(logger);
+
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
 
@@ -173,6 +213,10 @@ int main(int argc, char* argv[]) {
         opts.debug_lifter = debug_lifter;
         opts.debug_codegen = debug_codegen;
         opts.win_friendly_line_endings = win_line_endings;
+        opts.no_logs = no_logs;
+        opts.verbose = verbose;
+        opts.warn_arena_leaks = warn_arena_leaks;
+        opts.log_file_path = log_file_path;
         unit.setOptions(opts);
 
         u32 file_id = unit.addSource(input_file, source);
@@ -192,6 +236,7 @@ int main(int argc, char* argv[]) {
         }
 
         plat_free(source);
+        if (logger) logger->flush();
         return success ? 0 : 1;
     }
 
@@ -205,6 +250,10 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --debug-lifter          Enable debug logging in AST lifter\n");
     plat_print_info("  --debug-codegen         Enable debug tracing in C89 code generator\n");
     plat_print_info("  --win-line-endings      Use CRLF line endings in generated C code\n");
+    plat_print_info("  --log-file=<path>       Enable logging to a file\n");
+    plat_print_info("  --no-logs               Suppress all non-essential output\n");
+    plat_print_info("  --verbose, -v           Enable verbose debug logging on console\n");
+    plat_print_info("  -Warena-leak            Report memory leaks for arena allocations\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 

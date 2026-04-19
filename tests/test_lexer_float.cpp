@@ -3,6 +3,7 @@
 #include "source_manager.hpp"
 #include "memory.hpp"
 #include "string_interner.hpp"
+#include "test_utils.hpp"
 
 #include <cmath> // For fabs
 
@@ -33,10 +34,13 @@ TEST_FUNC(Lexer_FloatNoFractionalPart) {
     return true;
 }
 
-TEST_FUNC(Lexer_FloatNoIntegerPart) {
+TEST_FUNC(Lexer_LeadingDotIsTokenDot) {
+    // In Z98, like in Zig, floating-point literals MUST have a leading digit.
+    // A sequence like '.123' is NOT a single float token; it is lexed as
+    // TOKEN_DOT followed by an integer literal (TOKEN_INTEGER_LITERAL).
     ArenaAllocator alloc(1024);
-    Token token = lex_string(".123", alloc); // Invalid: must have digits before '.'
-    ASSERT_EQ(token.type, TOKEN_ERROR);
+    Token token = lex_string(".123", alloc);
+    ASSERT_EQ(token.type, TOKEN_DOT);
     return true;
 }
 

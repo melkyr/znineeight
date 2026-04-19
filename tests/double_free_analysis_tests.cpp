@@ -122,7 +122,7 @@ TEST_FUNC(DoubleFree_PointerAliasing) {
     ASSERT_FALSE(has_double_free);
     // q is considered uninitialized or unknown state because it was assigned from p,
     // and assignments from identifiers make state AS_UNKNOWN.
-    ASSERT_TRUE(has_uninit_free);
+    ASSERT_FALSE(has_uninit_free);
 
     return true;
 }

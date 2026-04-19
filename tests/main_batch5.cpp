@@ -21,6 +21,7 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_LocationInReassignmentLeak,
         test_DoubleFree_LocationInDoubleFreeError,
         test_DoubleFree_TransferTracking,
+        test_DoubleFree_TransferDiagnostics,
         test_DoubleFree_DeferContextInError,
         test_DoubleFree_ErrdeferContextInError,
         test_DoubleFree_IfElseBranching,

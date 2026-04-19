@@ -620,7 +620,7 @@ The `parsePostfixExpression` function is responsible for handling postfix operat
 - It starts by calling `parsePrimaryExpr` to get the base of the expression (e.g., an identifier, a literal, or a parenthesized expression).
 - It then enters a loop, checking for either a `TOKEN_LPAREN` (indicating a function call) or a `TOKEN_LBRACKET` (indicating an array access).
 - **For a member access**:
-    - When a `TOKEN_DOT` is encountered, it expects an identifier.
+    - When a `TOKEN_DOT` is encountered, it expects an identifier or an integer literal (for tuple indexing).
     - It constructs an `ASTMemberAccessNode`.
 - **For a struct initializer**:
     - When a `TOKEN_LBRACE` is encountered after an identifier (type name), it parses a list of field initializers like `.field = value`.

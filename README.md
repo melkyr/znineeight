@@ -31,6 +31,7 @@ The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of gener
 - **Built-in Lowering**: Compiler-assisted lowering for `std.debug.print` and safe narrowing casts.
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
 - **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
+- **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer, supporting multiple log levels, buffering, and file output.
 
 ### Technical Constraints
 To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
@@ -67,7 +68,7 @@ g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
 On Windows (MinGW 3.x):
 ```batch
-g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe
+g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe -lwsock32
 ```
 
 ### Build Flags and Options
@@ -79,6 +80,9 @@ The Z98 compiler (`zig0`) supports several command-line options to control the b
 -   `--debug-lifter`: Enables verbose logging of the AST lifting pass, showing how expression-flow is transformed into statements.
 -   `--debug-codegen`: Enables debug tracing in the C89 code generator, including variable allocation and scope tracking.
 -   `--test-mode`: Enables deterministic name mangling (using counters instead of hashes) for stable integration testing.
+-   `--log-file=<path>`: Enables centralized logging to the specified file. Logs are buffered and flushed after each compilation phase.
+-   `--no-logs`: Suppresses all non-essential console output (INFO and DEBUG levels). Fatal errors and reported compilation errors/warnings are still displayed on stderr.
+-   `--verbose` or `-v`: Enables DEBUG-level logging on the console. By default, DEBUG logs are only sent to the log file (if enabled).
 
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.

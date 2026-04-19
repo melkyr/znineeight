@@ -18,7 +18,7 @@ On Windows 98, the bootstrap compiler is primarily built using **MinGW 3.x** (e.
 
 #### Compilation
 ```batch
-g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe
+g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe -lwsock32
 ```
 
 ---

@@ -4,6 +4,7 @@
 #include "platform.hpp"
 #include "utils.hpp"
 #include "text_writer.hpp"
+#include "ast_utils.hpp"
 
 CBackend::CBackend(CompilationUnit& unit) : unit_(unit), executable_name_(NULL), generated_sources_(unit.getArena()) {}
 
@@ -31,7 +32,8 @@ bool CBackend::generate(const char* output_dir) {
     }
 
     if (!generateBuildBat(output_dir)) return false;
-    if (!generateExperimentalBuildBat(output_dir)) return false;
+    if (!generateMSVCBuildBat(output_dir)) return false;
+    if (!generateOpenWatcomBuildBat(output_dir)) return false;
     if (!generateMakefile(output_dir)) return false;
     if (!generateSpecialTypesHeader(output_dir)) return false;
     if (!copyRuntimeFiles(output_dir)) return false;
@@ -127,6 +129,12 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
     }
     emitter.emitBufferedOptionals();
 
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        visited_types.clear();
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_TUPLES, visited_types);
+    }
+    emitter.emitBufferedTuples();
+
     // Pass 1.5: Private Type Definitions (Public types are in the .h file)
     for (size_t i = 0; i < stmts->length(); ++i) {
         if ((*stmts)[i]->type == NODE_VAR_DECL) {
@@ -194,6 +202,11 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     writer.writeString(extra_flags);
     writer.writeLine("-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o");
 
+    // Compile net_runtime.c
+    writer.writeString("gcc -std=c89 -m32 ");
+    writer.writeString(extra_flags);
+    writer.writeLine("-pedantic -Wall -O2 -I. -Isrc/include -c net_runtime.c -o net_runtime.o");
+
     // Compile all modules
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -216,7 +229,10 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     writer.writeString(extra_flags);
     writer.writeString("-o ");
     writer.writeString(executable_name_);
-    writer.writeString(".exe zig_runtime.o ");
+    writer.writeString(".exe zig_runtime.o net_runtime.o ");
+#ifdef _WIN32
+    writer.writeString("-lwsock32 ");
+#endif
 
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -235,14 +251,14 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     return true;
 }
 
-bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
+bool CBackend::generateMSVCBuildBat(const char* output_dir) {
     if (!executable_name_) return true;
 
     char path[1024];
     char* cur = path;
     size_t rem = sizeof(path);
     safe_append(cur, rem, output_dir);
-    safe_append(cur, rem, "/b_nativ_exp.bat");
+    safe_append(cur, rem, "/build_msvc.bat");
 
     PlatFile f = plat_open_file(path, true);
     if (f == PLAT_INVALID_FILE) return false;
@@ -250,10 +266,9 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     FileTextWriter writer(f, unit_.getOptions().win_friendly_line_endings ? "\r\n" : "\n");
 
     writer.writeLine("@echo off");
-    writer.writeLine(":: Experimental Native Build script (MSVC 6.0 / OpenWatcom)");
+    writer.writeLine(":: Native Build script for MSVC 6.0 (cl.exe)");
     writer.writeLine();
 
-    writer.writeLine("REM ========== MSVC 6.0 (cl.exe) ==========");
     writer.writeLine("REM /O2        : optimize for speed");
     writer.writeLine("REM /I.        : add current directory for includes");
     writer.writeLine("REM /Isrc\\include : add compiler include path");
@@ -269,6 +284,9 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     writer.writeLine(":: Compile zig_runtime.c");
     writer.writeLine("cl /O2 /I. /Isrc/include /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0410 /D_CRT_NONSTDC_NO_DEPRECATE /GX /Zm400 /nologo /W3 /c zig_runtime.c");
     writer.writeLine();
+    writer.writeLine(":: Compile net_runtime.c");
+    writer.writeLine("cl /O2 /I. /Isrc/include /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0410 /D_CRT_NONSTDC_NO_DEPRECATE /GX /Zm400 /nologo /W3 /c net_runtime.c");
+    writer.writeLine();
     writer.writeLine(":: Compile modules");
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         writer.writeString("cl /O2 /I. /Isrc/include /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0410 /D_CRT_NONSTDC_NO_DEPRECATE /GX /Zm400 /nologo /W3 /c ");
@@ -277,10 +295,31 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     writer.writeLine();
     writer.writeString("link /nologo /out:");
     writer.writeString(executable_name_);
-    writer.writeLine(".exe *.obj");
+    writer.writeLine(".exe *.obj wsock32.lib");
     writer.writeLine();
 
-    writer.writeLine("REM ========== OpenWatcom (wcc386 / wpp386) ==========");
+    plat_close_file(f);
+    return true;
+}
+
+bool CBackend::generateOpenWatcomBuildBat(const char* output_dir) {
+    if (!executable_name_) return true;
+
+    char path[1024];
+    char* cur = path;
+    size_t rem = sizeof(path);
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/build_openw.bat");
+
+    PlatFile f = plat_open_file(path, true);
+    if (f == PLAT_INVALID_FILE) return false;
+
+    FileTextWriter writer(f, unit_.getOptions().win_friendly_line_endings ? "\r\n" : "\n");
+
+    writer.writeLine("@echo off");
+    writer.writeLine(":: Native Build script for OpenWatcom (wcc386 / wpp386)");
+    writer.writeLine();
+
     writer.writeLine("REM /bt=nt     : target Windows NT (also works for 9x)");
     writer.writeLine("REM /d_WIN32   : define _WIN32");
     writer.writeLine("REM /dWINVER=0x0410 : target Windows 98");
@@ -289,20 +328,22 @@ bool CBackend::generateExperimentalBuildBat(const char* output_dir) {
     writer.writeLine("REM /I.        : include current directory");
     writer.writeLine("REM /Isrc\\include : include compiler path");
     writer.writeLine("REM /w4        : warning level 4");
-    writer.writeLine("REM /c         : compile only");
     writer.writeLine();
     writer.writeLine(":: Compile zig_runtime.c");
-    writer.writeLine("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 /c zig_runtime.c");
+    writer.writeLine("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 zig_runtime.c");
+    writer.writeLine();
+    writer.writeLine(":: Compile net_runtime.c");
+    writer.writeLine("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 net_runtime.c");
     writer.writeLine();
     writer.writeLine(":: Compile modules");
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
-        writer.writeString("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 /c ");
+        writer.writeString("wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /d_CRT_SECURE_NO_WARNINGS /ox /I. /Isrc/include /w4 ");
         writer.writeLine(generated_sources_[i]);
     }
     writer.writeLine();
-    writer.writeString("wlink system nt file {*.obj} name ");
+    writer.writeString("wlink system nt file *.obj name ");
     writer.writeString(executable_name_);
-    writer.writeLine(".exe");
+    writer.writeString(".exe library wsock32.lib");
     writer.writeLine();
 
     plat_close_file(f);
@@ -408,7 +449,7 @@ bool CBackend::generateMakefile(const char* output_dir) {
         "#!/bin/sh\n"
         "set -e\n"
         "# Build script generated by Z98 bootstrap compiler\n\n";
-    plat_write_file(f, header, plat_strlen(header));
+    if (plat_write_file(f, header, plat_strlen(header)) < 0) return false;
 
     // Determine platform-specific flags for GCC
     const char* extra_flags = "";
@@ -423,7 +464,16 @@ bool CBackend::generateMakefile(const char* output_dir) {
         plat_write_file(f, " ", 1);
     }
     const char* runtime_cmd_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o\n";
-    plat_write_file(f, runtime_cmd_rest, plat_strlen(runtime_cmd_rest));
+    if (plat_write_file(f, runtime_cmd_rest, plat_strlen(runtime_cmd_rest)) < 0) return false;
+
+    // Compile net_runtime.c
+    plat_write_file(f, "gcc -std=c89 -m32 ", 18);
+    if (extra_flags[0] != '\0') {
+        plat_write_file(f, extra_flags, plat_strlen(extra_flags));
+        plat_write_file(f, " ", 1);
+    }
+    const char* net_runtime_cmd_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c net_runtime.c -o net_runtime.o\n";
+    if (plat_write_file(f, net_runtime_cmd_rest, plat_strlen(net_runtime_cmd_rest)) < 0) return false;
 
     // Compile all modules
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
@@ -440,23 +490,28 @@ bool CBackend::generateMakefile(const char* output_dir) {
             plat_write_file(f, " ", 1);
         }
         const char* cmd_part1_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c ";
-        plat_write_file(f, cmd_part1_rest, plat_strlen(cmd_part1_rest));
-        plat_write_file(f, source, len);
-        plat_write_file(f, " -o ", 4);
-        plat_write_file(f, obj, plat_strlen(obj));
-        plat_write_file(f, "\n", 1);
+        if (plat_write_file(f, cmd_part1_rest, plat_strlen(cmd_part1_rest)) < 0) return false;
+        if (plat_write_file(f, source, len) < 0) return false;
+        if (plat_write_file(f, " -o ", 4) < 0) return false;
+        if (plat_write_file(f, obj, plat_strlen(obj)) < 0) return false;
+        if (plat_write_file(f, "\n", 1) < 0) return false;
     }
 
     // Link everything
-    plat_write_file(f, "gcc -m32 ", 9);
+    if (plat_write_file(f, "gcc -m32 ", 9) < 0) return false;
     if (extra_flags[0] != '\0') {
-        plat_write_file(f, extra_flags, plat_strlen(extra_flags));
-        plat_write_file(f, " ", 1);
+        if (plat_write_file(f, extra_flags, plat_strlen(extra_flags)) < 0) return false;
+        if (plat_write_file(f, " ", 1) < 0) return false;
     }
     const char* link_cmd_start = "-o ";
-    plat_write_file(f, link_cmd_start, plat_strlen(link_cmd_start));
-    plat_write_file(f, executable_name_, plat_strlen(executable_name_));
-    plat_write_file(f, " zig_runtime.o ", 15);
+    if (plat_write_file(f, link_cmd_start, plat_strlen(link_cmd_start)) < 0) return false;
+    if (plat_write_file(f, executable_name_, plat_strlen(executable_name_)) < 0) return false;
+    const char* runtime_objs = " zig_runtime.o net_runtime.o ";
+    if (plat_write_file(f, runtime_objs, plat_strlen(runtime_objs)) < 0) return false;
+#ifdef _WIN32
+    const char* wsock_objs = "-lwsock32 ";
+    if (plat_write_file(f, wsock_objs, plat_strlen(wsock_objs)) < 0) return false;
+#endif
 
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
         const char* source = generated_sources_[i];
@@ -466,10 +521,10 @@ bool CBackend::generateMakefile(const char* output_dir) {
         obj[len-1] = 'o';
         obj[len] = '\0';
 
-        plat_write_file(f, obj, plat_strlen(obj));
-        plat_write_file(f, " ", 1);
+        if (plat_write_file(f, obj, plat_strlen(obj)) < 0) return false;
+        if (plat_write_file(f, " ", 1) < 0) return false;
     }
-    plat_write_file(f, "\n", 1);
+    if (plat_write_file(f, "\n", 1) < 0) return false;
 
     plat_close_file(f);
     return true;
@@ -479,6 +534,7 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
     const char* compat_h = "src/include/zig_compat.h";
     const char* runtime_h = "src/include/zig_runtime.h";
     const char* runtime_c = "src/runtime/zig_runtime.c";
+    const char* net_runtime_c = "src/runtime/net_runtime.c";
     const char* win98_h = "src/include/platform_win98.h";
 
     char* content_compat = NULL;
@@ -492,7 +548,10 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
 
         PlatFile f_compat = plat_open_file(dest_compat, true);
         if (f_compat != PLAT_INVALID_FILE) {
-            plat_write_file(f_compat, content_compat, size_compat);
+            if (plat_write_file(f_compat, content_compat, size_compat) < 0) {
+                plat_close_file(f_compat);
+                return false;
+            }
             plat_close_file(f_compat);
         }
         plat_free(content_compat);
@@ -512,7 +571,10 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
 
     PlatFile f_h = plat_open_file(dest_h, true);
     if (f_h != PLAT_INVALID_FILE) {
-        plat_write_file(f_h, content_h, size_h);
+        if (plat_write_file(f_h, content_h, size_h) < 0) {
+            plat_close_file(f_h);
+            return false;
+        }
         plat_close_file(f_h);
     }
     plat_free(content_h);
@@ -531,10 +593,33 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
 
     PlatFile f_c = plat_open_file(dest_c, true);
     if (f_c != PLAT_INVALID_FILE) {
-        plat_write_file(f_c, content_c, size_c);
+        if (plat_write_file(f_c, content_c, size_c) < 0) {
+            plat_close_file(f_c);
+            return false;
+        }
         plat_close_file(f_c);
     }
     plat_free(content_c);
+
+    char* content_net_c = NULL;
+    size_t size_net_c = 0;
+    if (plat_file_read(net_runtime_c, &content_net_c, &size_net_c)) {
+        char dest_net_c[1024];
+        char* cur_net_c = dest_net_c;
+        size_t rem_net_c = sizeof(dest_net_c);
+        safe_append(cur_net_c, rem_net_c, output_dir);
+        safe_append(cur_net_c, rem_net_c, "/net_runtime.c");
+
+        PlatFile f_net_c = plat_open_file(dest_net_c, true);
+        if (f_net_c != PLAT_INVALID_FILE) {
+            if (plat_write_file(f_net_c, content_net_c, size_net_c) < 0) {
+                plat_close_file(f_net_c);
+                return false;
+            }
+            plat_close_file(f_net_c);
+        }
+        plat_free(content_net_c);
+    }
 
     char* content_win98 = NULL;
     size_t size_win98 = 0;
@@ -547,7 +632,10 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
 
         PlatFile f_win98 = plat_open_file(dest_win98, true);
         if (f_win98 != PLAT_INVALID_FILE) {
-            plat_write_file(f_win98, content_win98, size_win98);
+            if (plat_write_file(f_win98, content_win98, size_win98) < 0) {
+                plat_close_file(f_win98);
+                return false;
+            }
             plat_close_file(f_win98);
         }
         plat_free(content_win98);
@@ -630,7 +718,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
 
         /* Only emit the actual definition if this module owns the type.
            Types from other modules are already forward-declared or included via headers. */
-        if (t->owner_module == module || t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL) {
+        if (t->owner_module == module || t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL || t->kind == TYPE_TUPLE) {
             emitter.emitTypeDefinition(t);
             emitter.emitBufferedTypeDefinitions();
         }
@@ -652,15 +740,15 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
             if ((*stmts)[i]->type == NODE_VAR_DECL) {
                 ASTVarDeclNode* decl = (*stmts)[i]->as.var_decl;
                 if (decl->is_pub && !decl->is_extern) {
-                    // Skip type and module declarations
-                    if (decl->initializer && decl->initializer->resolved_type) {
-                        Type* init_type = decl->initializer->resolved_type;
-                        if (init_type->kind == TYPE_MODULE ||
-                            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM))) {
+                    // Skip if it is a type definition
+                    if (decl->is_const && decl->initializer) {
+                        if (isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+                            continue;
+                        }
+                        if (decl->initializer->type == NODE_IMPORT_STMT) {
                             continue;
                         }
                     }
-
                     emitter.writeIndent();
                     emitter.writeString("extern ");
 
@@ -711,6 +799,8 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
         emitter.ensureErrorUnionType(type);
     } else if ((kinds & SCAN_OPTIONALS) && type->kind == TYPE_OPTIONAL) {
         emitter.ensureOptionalType(type);
+    } else if ((kinds & SCAN_TUPLES) && type->kind == TYPE_TUPLE) {
+        emitter.ensureTupleType(type);
     }
 
     // Recurse based on kind

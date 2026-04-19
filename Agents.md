@@ -55,7 +55,7 @@ The AI agent acts as a focused, knowledgeable assistant for implementing specifi
 2. **Consult Documentation**: Read and comprehend relevant project documents (`docs/design/DESIGN.md`, `docs/design/Lexer.md`, `docs/design/AST_Parser.md`, etc.) before implementing.
 3. **Adhere to Constraints**: Strictly follow all technical constraints (C++98, memory limits, dependencies) without deviation.
     - **C++ Standard Library Usage Policy**:
-        - **Allowed**: Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for size_t), `<cassert>` (for assert), and `<climits>`.
+        - **Allowed**: Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for size_t), `<cassert>` (for assert), `<climits>`, and `<cstdarg>`.
         - **Forbidden**: Headers that depend on a C/C++ runtime library (like msvcrt.dll beyond kernel32.dll) or perform dynamic memory allocation. This includes headers like `<cstdio>` (fprintf), `<cstdlib>` (malloc), `<iostream>`, `<string>` (std::string), and `<vector>` (std::vector).
         - **Exceptions**:
             - `<cstdlib>`: Allowed *only* for `abort()` (for fatal error handling in the parser), and `strtol`/`strtod` (for number parsing in the lexer). Direct memory management functions like `malloc` and `free` are strictly forbidden; use `plat_alloc` and `plat_free` instead.
@@ -311,6 +311,17 @@ When instructing the AI agent, provide a structured prompt that includes:
 3. **Consider Lazy Allocation**: Only allocate when feature is actually used.
 4. **Shared Structures**: Reuse common objects (types, error sets).
 5. **Validate Cleanup Impact**: After optimization, run `clean_binaries.sh` and re-measure to confirm savings persist in final binary.
+
+### Implementation Best Practices (C++98 / C90 Compatibility)
+
+1.  **Large Constants**: Always use the `U` suffix for decimal constants larger than 2^31-1 (2147483647) to ensure they are treated as unsigned across all standards (C89/C90, C99, C++).
+    - Example: `static const u32 FNV_OFFSET_BASIS = 2166136261U;`
+2.  **Platform Abstraction**:
+    - All file I/O must use the PAL (`plat_open_file`, `plat_write_file`, etc.).
+    - `plat_write_file` returns a `long` representing the number of bytes written, or -1 on error. Always check this return value in critical paths like the Logger.
+3.  **Logging**:
+    - Use `plat_printf_debug` for internal compiler tracing. These are automatically routed through the global `Logger` if initialized, ensuring they reach both the console (if verbose) and the log file.
+    - Ensure `Logger::flush()` is called at significant pipeline milestones and before program exit to prevent loss of buffered logs.
 
 ### Critical Files for Memory Analysis
 - `src/include/compilation_unit.hpp` - Pipeline orchestration

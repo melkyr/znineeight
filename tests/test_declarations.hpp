@@ -41,7 +41,7 @@ TEST_FUNC(Lexer_FloatWithUnderscores_ExponentPart);
 TEST_FUNC(Lexer_FloatWithUnderscores_AllParts);
 TEST_FUNC(Lexer_FloatSimpleDecimal);
 TEST_FUNC(Lexer_FloatNoFractionalPart);
-TEST_FUNC(Lexer_FloatNoIntegerPart);
+TEST_FUNC(Lexer_LeadingDotIsTokenDot);
 TEST_FUNC(Lexer_FloatWithExponent);
 TEST_FUNC(Lexer_FloatWithNegativeExponent);
 TEST_FUNC(Lexer_FloatExponentNoSign);
@@ -454,6 +454,7 @@ TEST_FUNC(DoubleFree_LocationInLeakWarning);
 TEST_FUNC(DoubleFree_LocationInReassignmentLeak);
 TEST_FUNC(DoubleFree_LocationInDoubleFreeError);
 TEST_FUNC(DoubleFree_TransferTracking);
+TEST_FUNC(DoubleFree_TransferDiagnostics);
 TEST_FUNC(DoubleFree_DeferContextInError);
 TEST_FUNC(DoubleFree_ErrdeferContextInError);
 TEST_FUNC(DoubleFree_IfElseBranching);
@@ -1183,3 +1184,22 @@ TEST_FUNC(IssueSegfaultReturn);
 TEST_FUNC(Phase3_ErrorUnionRecursion);
 
 #endif // TEST_DECLARATIONS_HPP
+
+// Batch 75: Double Free Aggregate Tracking
+bool test_DoubleFree_StructFieldTracking();
+bool test_DoubleFree_StructFieldLeak();
+bool test_DoubleFree_ArrayCollapseTracking();
+bool test_DoubleFree_ErrorUnionAllocation();
+bool test_DoubleFree_LoopMergingPreservesUnmodified();
+bool test_DoubleFree_ArenaLeakSuppression();
+bool test_DoubleFree_TupleTracking();
+bool test_DoubleFree_ArrayVariableCollapse();
+TEST_FUNC(platform_alloc);
+TEST_FUNC(platform_realloc);
+TEST_FUNC(platform_string);
+TEST_FUNC(platform_file);
+TEST_FUNC(platform_print);
+TEST_FUNC(platform_socket);
+bool test_Integration_InvalidLeadingDotFloat();
+bool test_Integration_IdentifierAsFloatLeadingDot();
+bool test_Integration_InferenceLeadingDot();

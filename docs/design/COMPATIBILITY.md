@@ -23,6 +23,7 @@ The `src/include/compat.hpp` header is the single source of truth for compiler a
 
 -   **Include `common.hpp`**: All source files should include `common.hpp`, which in turn includes `compat.hpp`.
 -   **Avoid `long long`**: Use the `i64` and `u64` typedefs instead of `long long` or `unsigned long long` to ensure compatibility with MSVC 6.0.
+-   **Large Decimal Constants**: Decimal constants larger than 2^31-1 (2147483647) MUST have a `U` suffix (e.g., `2166136261U`) to ensure they are treated as unsigned in C90/C89 mode and prevent "unsigned only in ISOC90" warnings.
 -   **No `<stdint.h>` or `<cstddef>`**: Use `common.hpp` which provides `size_t` and fixed-width types via `compat.hpp`.
 -   **Silence Warnings**: Use `RETR_UNUSED(param)` at the beginning of functions with unused parameters to maintain a warning-free build on strict compilers.
 
@@ -60,6 +61,10 @@ C89 requires all variable declarations to appear at the beginning of a block, be
 - **Workaround**: The `ControlFlowLifter` pass ensures most complex control flow is transformed into statement form, which helps in grouping declarations.
 - **Future Work**: A full hoisting pass is planned to ensure *all* compiler-generated temporaries are also moved to the top of the block, achieving 100% strict C89 compliance.
 
+### Centralized Logging
+
+The compiler strictly uses a centralized logging system that respects `--no-logs` (suppressing all but fatal errors) and `--verbose` (enabling debug output) flags. All platform-specific output is routed through this system to ensure consistency across different hardware targets.
+
 ### Runtime IO Signature Fix
 
 Standard Zig string literals and slices often use `u8` (`unsigned char`). However, many standard C functions (and the Win32 `WriteConsoleA` API) expect `const char*`.
@@ -80,3 +85,48 @@ The following features were finalized in Milestone 11 and are fully supported by
 - **@intToPtr and @ptrToInt**: Supported for low-level memory operations, respecting the target's pointer size.
 - **@intToFloat**: Supported for converting integers to floating-point types, with constant folding for literals.
 - **Braceless Control Flow**: Single-statement `if`, `while`, and `for` bodies are supported and normalized into braced blocks during the lifting pass.
+
+## Milestone 11 Analyzer Upgrades
+
+To support the full Z98 feature set, the static analysis passes have been upgraded:
+
+- **SignatureAnalyzer**: Now correctly accepts modern Z98 types that map to C89 (slices `[]T`, optionals `?T`, error unions `!T`, error sets `error{...}`, and tagged unions). It also enforces completeness checks for all aggregate types (structs, unions, tagged unions) used in function signatures.
+- **NullPointerAnalyzer**: Understands optional types and handles `orelse` and `if` captures as non-null.
+- **LifetimeAnalyzer**: Tracks pointer provenance through field and slice accesses.
+
+## Current C89 Compliance Gaps (Post-Milestone 11 Audit)
+
+An audit of the generated code for major examples (including `hello`, `mud_server`, `game_of_life`, and `lisp_interpreter_curr`) using `gcc -std=c89 -pedantic` revealed the following non-compliance issues and areas for improvement.
+
+### 1. Language Extensions and Keywords
+
+- **`long long` Usage**: `zig_compat.h` currently uses `long long` for 64-bit integers on non-MSVC compilers. This triggers warnings under `-std=c89 -pedantic`.
+  - *Status*: Accepted as a necessary extension for most 32-bit compilers, but technically non-compliant with strict C89.
+- **`ZIG_INLINE`**: Resolves to `static` in strict C89 mode. Some compilers may still warn if the function is not used.
+
+### 2. Type Safety and Pointer Rules
+
+- **Pointer Signedness**: Zig's `u8` maps to `unsigned char`, but many C string functions and generated slice helpers (like `__make_slice_u8`) occasionally mix `unsigned char*` with `const char*`. This triggers `-Wpointer-sign` warnings.
+  - *Example*: `__make_slice_u8` expecting `const char*` but receiving `unsigned char*` from a buffer.
+- **Function Pointer Conversions**: Strict C89 forbids the conversion of a function pointer to an object pointer (`void*`). This is observed in the Lisp interpreter when passing built-in function addresses to allocation helpers.
+  - *Warning*: `ISO C forbids conversion of function pointer to object pointer type`.
+
+### 3. Syntactic and Emission Artifacts
+
+- **Unused Variables**: The `ControlFlowLifter` and `C89Emitter` often generate temporary variables (e.g., `struct Tuple_empty __tmp_tup_...`) to preserve evaluation order or handle `anytype` prints. If these are not subsequently used (e.g., in a braceless `if` that was normalized), they trigger `-Wunused-variable`.
+- **Empty Declarations**: Some generated headers or source files contain trailing semicolons or struct definitions that the compiler flags as "does not declare anything".
+  - *Example*: `struct Name { ... };;` or empty union payload wrappers.
+- **Uninitialized Variables**: Complex control flow paths (especially in `switch` expressions) can lead to "may be used uninitialized" warnings for lifted result variables.
+
+### 4. Target Specifics (MSVC 6.0 / OpenWatcom)
+
+- **Identifier Length**: While the `NameMangler` targets 31 characters, very deep module nesting or long symbol names can still approach this limit.
+- **64-bit Literals**: Must consistently use `i64`/`ui64` suffixes for MSVC 6.0 and `LL`/`ULL` for others, which is currently handled but requires constant vigilance in the `C89Emitter`.
+
+### 5. Future Compliance Roadmap
+
+To achieve "Maximum C89 Compatibility" before the self-hosted compiler phase, the following improvements are prioritized:
+1. **Strict Casts**: Ensure all pointer conversions at the C level use explicit casts to the correct expected signedness.
+2. **Dead Code Elimination (Lighter)**: Simple tracking in the emitter to skip emitting temporary variables that are never referenced.
+3. **Internal Helper Standardization**: Standardizing the signatures of all `__bootstrap_*` runtime helpers to use `const char*` for strings consistently.
+4. **Function Pointer Wrappers**: Use a dedicated union or wrapper struct for cases where function pointers must be stored alongside data pointers.

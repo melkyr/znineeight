@@ -34,7 +34,9 @@ int ErrorSetCatalogue::count() const {
 
 void ErrorSetCatalogue::printSummary() const {
     plat_print_info("--- Error Set Catalogue Summary ---\n");
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug("--- Error Set Catalogue Summary ---\n");
+#endif
     for (size_t i = 0; i < error_sets_->length(); ++i) {
         const ErrorSetInfo& info = (*error_sets_)[i];
         char buffer[512];
@@ -59,7 +61,9 @@ void ErrorSetCatalogue::printSummary() const {
 
         safe_append(ptr, remaining, "\n");
         plat_print_info(buffer);
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug(buffer);
+#endif
 
         if (info.tags) {
             for (size_t j = 0; j < info.tags->length(); ++j) {
@@ -69,10 +73,14 @@ void ErrorSetCatalogue::printSummary() const {
                 safe_append(ptr, remaining, (*info.tags)[j]);
                 safe_append(ptr, remaining, "\n");
                 plat_print_info(buffer);
+#ifdef Z98_ENABLE_DEBUG_LOGS
                 plat_print_debug(buffer);
+#endif
             }
         }
     }
     plat_print_info("-----------------------------------\n");
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug("-----------------------------------\n");
+#endif
 }

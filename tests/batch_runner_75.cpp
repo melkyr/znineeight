@@ -1,21 +1,7 @@
-#include "test_runner_main.hpp"
-
-extern bool test_Aggregate_ArrayLiteral_Coercion();
-extern bool test_Aggregate_TupleLiteral_Coercion();
-extern bool test_Aggregate_UnionLiteral_Coercion();
-extern bool test_Aggregate_Nested_Mixed();
-extern bool test_Aggregate_Error_NoContext();
-extern bool test_Aggregate_Array_SizeMismatch();
-
-bool (*tests[])() = {
-    test_Aggregate_ArrayLiteral_Coercion,
-    test_Aggregate_TupleLiteral_Coercion,
-    test_Aggregate_UnionLiteral_Coercion,
-    test_Aggregate_Nested_Mixed,
-    test_Aggregate_Error_NoContext,
-    test_Aggregate_Array_SizeMismatch
-};
-
-int main(int argc, char* argv[]) {
-    return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
-}
+// Generated batch runner for tests/main_batch75.cpp
+#include "../src/bootstrap/bootstrap_all.cpp"
+#include "test_utils.cpp"
+#include "c89_validation/gcc_validator.cpp"
+#include "c89_validation/msvc6_validator.cpp"
+#include "double_free_aggregate_tests.cpp"
+#include "main_batch75.cpp"

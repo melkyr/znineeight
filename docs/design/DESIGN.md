@@ -149,7 +149,14 @@ extern Arena* zig_default_arena;
 ### 3.2 Utility Functions (`utils.hpp`) & Platform Utilities (`platform.hpp`)
 **Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies and satisfy strict environment constraints (no `msvcrt.dll`/`sprintf` in core bootstrap).
 
+* **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer. To ensure all output is captured, all compiler output MUST go through the `plat_print_*` or `plat_printf_debug` functions.
+  - **Log Levels**: `LOG_ERROR`, `LOG_WARNING`, `LOG_INFO`, and `LOG_DEBUG`.
+  - **Buffering**: A 16KB arena-allocated buffer to reduce I/O overhead.
+  - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase and at program exit via the `--log-file=<path>` flag.
+  - **Robustness**: The Platform Abstraction Layer (PAL) ensures that any output during logger initialization or in case of logger failure falls back to direct low-level console writes. Recursion protection is implemented to prevent infinite loops if the logger itself triggers an error.
+  - **Runtime Control**: `--no-logs` for quiet mode (suppresses all but fatal errors), `--verbose` for console debug output.
 * **`arena_safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
+* **Instrumentation Guarding**: Internal compiler instrumentation (e.g., `TypeRegistry` lookups, `LIFTER` traces) is guarded by the `Z98_ENABLE_DEBUG_LOGS` compile-time macro. When enabled, these logs are routed to `LOG_DEBUG` and can be viewed on the console using the `--verbose` flag.
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
@@ -409,9 +416,13 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
     - `SAFE` + `SAFE` = `SAFE`
     - `NULL` + `NULL` = `NULL`
     - Anything + `MAYBE` = `MAYBE`
-- **Null Guards:**
+- **Null Guards and Captures:**
     - **If Statements:** Recognizes patterns like `if (p != null)`, `if (p == null)`, `if (p)`, and `if (!p)`. It refines the state of `p` within the `then` and `else` blocks accordingly.
     - **While Loops:** Recognizes `while (p != null)` and treats `p` as `SAFE` within the loop body. After the loop, variables modified within the loop are conservatively set to `MAYBE`.
+    - **Payload Captures:** Recognizes `if (opt) |val|` and `while (opt) |val|` for both Optional types and Error Unions. The captured variable `val` is treated as `SAFE` within the scope of the block.
+- **Operator Support:**
+    - **Orelse:** Correctly merges the state of the optional payload (treated as `SAFE` on the success path) with the fallback expression state.
+    - **Try/Catch:** Supports state propagation for error-union unwrapping. `try` results for pointer payloads are treated as `SAFE`. `catch` merges the success payload state with the fallback state.
 - **Violation Detection:**
     - **Definite Null Dereference (`ERR_NULL_POINTER_DEREFERENCE` - 2004):** Reported when a pointer explicitly set to `null` or `0` is dereferenced.
     - **Uninitialized Pointer Warning (`WARN_UNINITIALIZED_POINTER` - 6001):** Reported when a pointer declared without an initializer is dereferenced before being assigned a value.
@@ -1198,8 +1209,42 @@ In Zig, the `.{}` syntax is used for anonymous struct initializers, tuple litera
    - **Arrays**: Elements are coerced to the array's element type; length is verified.
    - **Tuples**: Elements are matched to the tuple's component types.
    - **Structs/Unions**: Named fields are matched and validated against the aggregate's definition.
-4. **Anytype Context**: When an anonymous literal is passed to an `anytype` parameter (e.g., in `std.debug.print`), the compiler "defaults" it to a concrete tuple or struct to ensure a valid C89 representation can be emitted.
+4. **Anytype/Type Context**: When an anonymous literal is passed to an `anytype` context, the compiler returns `TYPE_UNDEFINED` to let existing logic handle it. In a `TYPE_TYPE` context (type constants), empty literals resolve to concrete empty tuples, while non-empty literals remain undefined to prevent incorrect resolution.
 
-### 15.3 Usage Guidelines
+## 16. Tagged Union Coercion (Phase B)
+**Concept:** Implicitly transforming naked or qualified tags into tagged union initializers.
+
+### 16.1 Naked Tag Coercion
+Naked tags (e.g., `.Alive`) are expressions that lack an explicit type. If used in a context where a tagged union is expected (assignment, function argument, or return statement), the compiler attempts to coerce them:
+1. The tag name is looked up in the target union's payload fields.
+2. If the tag is found and has a `void` payload, the node is transformed into an anonymous union initializer: `.{ .Tag }`.
+3. If the tag requires a non-void payload, a type mismatch error is reported.
+
+### 16.2 Qualified Tag Coercion
+Qualified tags (e.g., `Status.Alive`) are resolved as enum members (folded into integer literals with an `original_name`). When the target context is a tagged union, these follow the same coercion rules as naked tags, ensuring that `Status.Alive` can be assigned directly to a variable of type `Status` if the payload is void.
+
+### 16.3 Integration with Anonymous Types
+The result of a tag coercion is an anonymous union initializer with a `TYPE_ANONYMOUS_UNION` type. This type is then further resolved to the concrete target union type via the deferred resolution mechanism described in Section 15.
+
+## 17. Usage Guidelines
 - **Structural Match Required**: Every anonymous literal must eventually resolve to a concrete type with a known memory layout before the code generation phase.
 - **Context Awareness**: Anonymous literals rely on downward type information. They are most effective in assignments, function calls, and return statements where the target type is explicitly defined.
+## 18. Bootstrap Compiler Limitations
+This section tracks known limitations of the Stage 0 (C++) compiler. For recommended workarounds, see [Caveats and Workarounds](../reference/Caveats_and_Workarounds.md).
+
+### 18.1 Global Constant Aggregates
+Declaring a `pub const` array of aggregates (structs/unions) with complex nested initializers may fail to emit the definition in the generated C source.
+- **Root Cause**: The emitter identifies simple array struct initializers as constant, but nested aggregates currently bypass the constant initializer detection logic.
+- **Workaround**: Use `pub var` and initialize at runtime.
+
+### 18.2 Pointers to Fixed-Size Arrays
+Function arguments of type `*[N]T` are incorrectly lowered to `T*` instead of `T(*)[N]`.
+- **Root Cause**: `C89Emitter` lacks specialization for array pointer declarators in parameter lists.
+- **Workaround**: Use slices (`[]T`) instead.
+
+### 18.3 Pointer Captures
+Payload captures in `if` and `while` statements do not yet support pointers (e.g., `if (opt) |*p|`).
+- **Workaround**: Use value captures or explicit flag checks.
+
+### 18.4 MSVC 6.0 Memory Constraints
+The compiler is strictly limited to < 16MB of peak memory usage. While sufficient for the bootstrap task, extremely large single-file modules or deep recursive type cascades may trigger a fatal memory limit abort.

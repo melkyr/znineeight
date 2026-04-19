@@ -166,6 +166,11 @@ private:
      */
     ASTNode* createNodeAt(NodeType type, SourceLocation loc);
 
+    /**
+     * @brief Clones an AST node while preserving semantic metadata (resolved_type, module, etc).
+     */
+    ASTNode* cloneASTNodeWithMetadata(const ASTNode* src);
+
     // Lowering Helpers
     ASTNode* lowerIfExpr(ASTNode* node, Symbol* temp_sym);
     ASTNode* lowerSwitchExpr(ASTNode* node, Symbol* temp_sym);
@@ -178,7 +183,6 @@ private:
     Symbol* createSymbol(const char* name, Type* type, bool is_const);
 
     // ABI Lowering Helpers
-    bool isAggregateType(Type* t);
     void lowerExternCall(ASTNode** node_slot, ASTNode* parent);
     void lowerExportPrologue(ASTFnDeclNode* fn);
     void lowerExportReturn(ASTNode** node_slot, ASTNode* parent);

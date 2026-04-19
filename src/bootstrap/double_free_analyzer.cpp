@@ -86,9 +86,27 @@ AllocationStateMap* AllocationStateMap::fork() {
     return new (mem) AllocationStateMap(arena_, this);
 }
 
+static bool isDirectArenaCall(ASTNode* node, int depth) {
+    if (!node || depth > 64) return false;
+    if (node->type == NODE_FUNCTION_CALL) {
+        ASTFunctionCallNode* call = node->as.function_call;
+        if (call->callee->type == NODE_IDENTIFIER) {
+            const char* name = call->callee->as.identifier.name;
+            return (strings_equal(name, "arena_alloc") || strings_equal(name, "arena_alloc_default"));
+        }
+    } else if (node->type == NODE_TRY_EXPR) {
+        return isDirectArenaCall(node->as.try_expr.expression, depth + 1);
+    } else if (node->type == NODE_PTR_CAST) {
+        return isDirectArenaCall(node->as.ptr_cast->expr, depth + 1);
+    } else if (node->type == NODE_PAREN_EXPR) {
+        return isDirectArenaCall(node->as.paren_expr.expr, depth + 1);
+    }
+    return false;
+}
+
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
     : unit_(unit), current_state_(NULL), scopes_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0),
-      current_is_errdefer_(false), is_executing_defers_(false) {
+      in_error_path_(false), current_is_errdefer_(false), is_executing_defers_(false) {
     current_defer_loc_.file_id = 0;
     current_defer_loc_.line = 0;
     current_defer_loc_.column = 0;
@@ -237,7 +255,10 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
             // that are still AS_ALLOCATED or AS_TRANSFERRED are leaked.
             if (tp.scope_depth == current_scope_depth_ && !(tp.flags & TP_FLAG_RETURNED)) {
                 if (tp.state == AS_ALLOCATED || tp.state == AS_TRANSFERRED) {
-                    reportLeak(tp.name, node->loc, false);
+                    // Phase 5: Arena Leak Suppression
+                    if (!tp.is_arena || unit_.getOptions().warn_arena_leaks) {
+                        reportLeak(tp.name, node->loc, false);
+                    }
                 }
             }
             curr = curr->next;
@@ -285,6 +306,26 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
         if (var->initializer && isAllocationCall(var->initializer)) {
             tp.state = AS_ALLOCATED;
             tp.alloc_loc = var->initializer->loc;
+            tp.is_arena = isDirectArenaCall(var->initializer, 0);
+        } else if (var->initializer) {
+            // Check for ownership transfer: var b = a;
+            const char* src_name = extractVariableName(var->initializer);
+            TrackedPointer* src_tp = src_name ? findTrackedPointer(src_name) : NULL;
+            if (src_tp && src_tp->state == AS_ALLOCATED) {
+                tp = *src_tp;
+                tp.name = var->name;
+                tp.scope_depth = current_scope_depth_;
+                tp.transferred_from = src_name;
+                tp.transfer_loc = node->loc;
+
+                // Mark source as transferred
+                TrackedPointer updated_src = *src_tp;
+                updated_src.state = AS_TRANSFERRED;
+                updated_src.transfer_loc = node->loc;
+                current_state_->setState(src_name, updated_src);
+            } else {
+                tp.state = AS_UNKNOWN;
+            }
         } else {
             tp.state = AS_UNINITIALIZED;
         }
@@ -309,7 +350,10 @@ void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
 
         // Phase 7: Check for leak BEFORE updating state
         if (tp && tp->state == AS_ALLOCATED && isChangingPointerValue(assign->rvalue)) {
-            reportLeak(var_name, node->loc, true);
+            // Phase 5: Arena Leak Suppression
+            if (!tp->is_arena || unit_.getOptions().warn_arena_leaks) {
+                reportLeak(var_name, node->loc, true);
+            }
         }
 
         // Update state based on new value
@@ -319,15 +363,39 @@ void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
                 next_tp.state = AS_ALLOCATED;
                 next_tp.flags &= ~TP_FLAG_RETURNED; // Reset returned flag if reassigned to new allocation
                 next_tp.alloc_loc = assign->rvalue->loc; // Update allocation site
+                next_tp.is_arena = isDirectArenaCall(assign->rvalue, 0);
                 current_state_->setState(var_name, next_tp);
             } else {
                 trackAllocation(var_name, assign->rvalue->loc);
+                TrackedPointer* new_tp = findTrackedPointer(var_name);
+                if (new_tp) {
+                    new_tp->is_arena = isDirectArenaCall(assign->rvalue, 0);
+                }
             }
         } else if (isChangingPointerValue(assign->rvalue)) {
              if (tp) {
                 TrackedPointer next_tp = *tp;
                 next_tp.state = AS_UNKNOWN; // State becomes unknown after general reassignment
                 current_state_->setState(var_name, next_tp);
+             } else {
+                 // Check if it's an ownership transfer: b = a;
+                 const char* src_name = extractVariableName(assign->rvalue);
+                 if (src_name) {
+                     TrackedPointer* src_tp = findTrackedPointer(src_name);
+                     if (src_tp && src_tp->state == AS_ALLOCATED) {
+                         TrackedPointer next_tp = *src_tp;
+                         next_tp.name = var_name;
+                         next_tp.transferred_from = src_name;
+                         next_tp.transfer_loc = node->loc;
+                         current_state_->setState(var_name, next_tp);
+
+                         // Original owner is now 'transferred'
+                         TrackedPointer updated_src = *src_tp;
+                         updated_src.state = AS_TRANSFERRED;
+                         updated_src.transfer_loc = node->loc;
+                         current_state_->setState(src_name, updated_src);
+                     }
+                 }
              }
         }
     }
@@ -498,11 +566,14 @@ void DoubleFreeAnalyzer::visitWhileStmt(ASTNode* node) {
     AllocationStateMap* loop_state = current_state_;
     popScope();
 
-    // Conservative: all variables modified in loop become AS_UNKNOWN
+    // Refined loop merging: only variables modified in the loop become AS_UNKNOWN.
+    // We already have loop_state->modified containing exactly those variables.
     if (current_state_) {
         for (size_t i = 0; i < loop_state->modified.length(); ++i) {
             const char* name = loop_state->modified[i];
-            TrackedPointer* tp = findTrackedPointer(name);
+            // Only affect variables that existed BEFORE the loop.
+            // If it was declared inside the loop, it will be checked for leaks at loop scope exit.
+            TrackedPointer* tp = current_state_->getState(name);
             if (tp) {
                 TrackedPointer next_tp = *tp;
                 next_tp.state = AS_UNKNOWN;
@@ -528,11 +599,11 @@ void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
     AllocationStateMap* loop_state = current_state_;
     popScope();
 
-    // Conservative: all variables modified in loop become AS_UNKNOWN
+    // Refined loop merging: only variables modified in the loop become AS_UNKNOWN.
     if (current_state_) {
         for (size_t i = 0; i < loop_state->modified.length(); ++i) {
             const char* name = loop_state->modified[i];
-            TrackedPointer* tp = findTrackedPointer(name);
+            TrackedPointer* tp = current_state_->getState(name);
             if (tp) {
                 TrackedPointer next_tp = *tp;
                 next_tp.state = AS_UNKNOWN;
@@ -546,12 +617,33 @@ void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
     mergeScopesLinear(current_state_, final_for_state);
 }
 
+// RAII guard for scoped flag management
+class ErrorPathGuard {
+    bool& flag_;
+    bool old_value_;
+public:
+    ErrorPathGuard(bool& flag, bool new_val) : flag_(flag), old_value_(flag) {
+        flag_ = new_val;
+    }
+    ~ErrorPathGuard() {
+        flag_ = old_value_;
+    }
+};
+
 void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
+    ASTReturnStmtNode& ret = node->as.return_stmt;
+    bool is_error_return = false;
+    if (ret.expression && ret.expression->resolved_type) {
+        Type* t = ret.expression->resolved_type;
+        is_error_return = (t->kind == TYPE_ERROR_SET || t->kind == TYPE_ERROR_UNION);
+    }
+
+    ErrorPathGuard guard(in_error_path_, is_error_return);
+
     // Phase 6: Execute all defers for the entire function (depth_limit = 1)
     // We execute them all because return exits all nested scopes.
     executeDefers(1);
 
-    ASTReturnStmtNode& ret = node->as.return_stmt;
     if (ret.expression) {
         // Phase 7: Exempt returned pointers from leak checks
         const char* var_name = extractVariableName(ret.expression);
@@ -603,7 +695,9 @@ void DoubleFreeAnalyzer::visitCompoundAssignment(ASTNode* node) {
         TrackedPointer* tp = findTrackedPointer(var_name);
         if (tp && tp->state == AS_ALLOCATED) {
             // Compound assignment like p += 1 changes the pointer value.
-            reportLeak(var_name, node->loc, true);
+            if (!tp->is_arena || unit_.getOptions().warn_arena_leaks) {
+                reportLeak(var_name, node->loc, true);
+            }
 
             TrackedPointer next_tp = *tp;
             next_tp.state = AS_UNKNOWN;
@@ -932,6 +1026,10 @@ void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
         current_defer_loc_ = action.defer_loc;
         current_is_errdefer_ = action.is_errdefer;
 
+        if (action.is_errdefer && !in_error_path_) {
+            continue;
+        }
+
         visit(action.statement);
     }
 
@@ -939,30 +1037,41 @@ void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
 }
 
 bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
-    return isAllocationCall(node);
+    return isAllocationCall(node, 0);
 }
 
-bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
-    if (!node) return false;
+bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node, int depth) {
+    if (!node || depth > MAX_RECURSION_DEPTH) return false;
     if (node->type == NODE_FUNCTION_CALL) {
         ASTFunctionCallNode* call = node->as.function_call;
         if (call->callee->type == NODE_IDENTIFIER) {
             const char* name = call->callee->as.identifier.name;
-            return strings_equal(name, "arena_alloc") || strings_equal(name, "arena_alloc_default");
+            if (strings_equal(name, "arena_alloc") || strings_equal(name, "arena_alloc_default")) {
+                return true;
+            }
+        }
+
+        // Handle functions returning !*T as allocation calls
+        if (node->resolved_type && node->resolved_type->kind == TYPE_ERROR_UNION) {
+            Type* payload = node->resolved_type->as.error_union.payload;
+            if (payload && payload->kind == TYPE_POINTER) {
+                return true;
+            }
         }
     } else if (node->type == NODE_TRY_EXPR) {
-        return isAllocationCall(node->as.try_expr.expression);
+        return isAllocationCall(node->as.try_expr.expression, depth + 1);
     } else if (node->type == NODE_CATCH_EXPR) {
-        return isAllocationCall(node->as.catch_expr->payload) || isAllocationCall(node->as.catch_expr->else_expr);
+        return isAllocationCall(node->as.catch_expr->payload, depth + 1) || isAllocationCall(node->as.catch_expr->else_expr, depth + 1);
     } else if (node->type == NODE_ORELSE_EXPR) {
-        return isAllocationCall(node->as.orelse_expr->payload) || isAllocationCall(node->as.orelse_expr->else_expr);
+        return isAllocationCall(node->as.orelse_expr->payload, depth + 1) || isAllocationCall(node->as.orelse_expr->else_expr, depth + 1);
     } else if (node->type == NODE_BINARY_OP) {
-        return isAllocationCall(node->as.binary_op->left) || isAllocationCall(node->as.binary_op->right);
+        return isAllocationCall(node->as.binary_op->left, depth + 1) || isAllocationCall(node->as.binary_op->right, depth + 1);
     } else if (node->type == NODE_PTR_CAST) {
-        return isAllocationCall(node->as.ptr_cast->expr);
+        return isAllocationCall(node->as.ptr_cast->expr, depth + 1);
     }
     return false;
 }
+
 
 bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
     if (!call || call->callee->type != NODE_IDENTIFIER) return false;
@@ -970,25 +1079,32 @@ bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
 }
 
 bool DoubleFreeAnalyzer::isOwnershipTransferCall(ASTFunctionCallNode* call) {
-    RETR_UNUSED(call);
-    // For bootstrap: assume any function call that isn't arena_free
-    // and takes a pointer argument could be a transfer.
-    // In a more advanced analyzer, we would check the function signature
-    // or look for specific ownership-transferring patterns.
-    return true;
+    if (!call || call->callee->type != NODE_IDENTIFIER) return false;
+    const char* name = call->callee->as.identifier.name;
+
+    // List of known ownership-transferring functions
+    if (strings_equal(name, "arena_create") ||
+        strings_equal(name, "deep_copy") ||
+        strings_equal(name, "transfer_ownership")) {
+        return true;
+    }
+
+    // By default, assume unknown functions do NOT transfer ownership.
+    // This reduces false negatives (leaks not reported).
+    return false;
 }
 
-bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
-    if (!rvalue) return true;
+bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue, int depth) {
+    if (!rvalue || depth > MAX_RECURSION_DEPTH) return true;
 
     if (rvalue->type == NODE_NULL_LITERAL) return true;
     if (rvalue->type == NODE_UNARY_OP && rvalue->as.unary_op.op == TOKEN_AMPERSAND) return true;
-    if (rvalue->type == NODE_FUNCTION_CALL && !isAllocationCall(rvalue)) return true;
+    if (rvalue->type == NODE_FUNCTION_CALL && !isAllocationCall(rvalue, depth + 1)) return true;
     if (rvalue->type == NODE_IDENTIFIER) return true; // Reassigning from another variable also loses track
-    if (rvalue->type == NODE_PTR_CAST) return isChangingPointerValue(rvalue->as.ptr_cast->expr);
-    if (isAllocationCall(rvalue)) return true; // Reassigning to a new allocation also loses track of old one
+    if (rvalue->type == NODE_PTR_CAST) return isChangingPointerValue(rvalue->as.ptr_cast->expr, depth + 1);
+    if (isAllocationCall(rvalue, depth + 1)) return true; // Reassigning to a new allocation also loses track of old one
 
-    return false;
+    return true;
 }
 
 void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
@@ -998,6 +1114,24 @@ void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
     tp.scope_depth = current_scope_depth_;
     tp.flags = TP_FLAG_NONE;
     tp.alloc_loc = loc;
+
+    // For composite names like "s.ptr", try to find the scope depth of the base variable "s".
+    // This prevents false leaks if "s.ptr" is assigned in a nested scope but "s" is outer.
+    const char* dot = plat_strchr(name, '.');
+    if (dot) {
+        size_t base_len = dot - name;
+        char* base_name = (char*)unit_.getArena().alloc(base_len + 1);
+        if (base_name) {
+            plat_strncpy(base_name, name, base_len);
+            base_name[base_len] = '\0';
+            const char* interned_base = unit_.getStringInterner().intern(base_name);
+            TrackedPointer* base_tp = findTrackedPointer(interned_base);
+            if (base_tp) {
+                tp.scope_depth = base_tp->scope_depth;
+            }
+        }
+    }
+
     if (current_state_) {
         current_state_->addVariable(name, tp);
     }
@@ -1008,10 +1142,25 @@ TrackedPointer* DoubleFreeAnalyzer::findTrackedPointer(const char* name) {
     return current_state_->getState(name);
 }
 
-const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
-    if (!node) return NULL;
-    if (node->type == NODE_IDENTIFIER) {
-        return node->as.identifier.name;
+const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node, int depth) {
+    if (!node || depth > MAX_RECURSION_DEPTH) return NULL;
+
+    switch (node->type) {
+        case NODE_PAREN_EXPR:
+            return extractVariableName(node->as.paren_expr.expr, depth + 1);
+        case NODE_PTR_CAST:
+            return extractVariableName(node->as.ptr_cast->expr, depth + 1);
+        case NODE_INT_CAST:
+            return extractVariableName(node->as.numeric_cast->expr, depth + 1);
+        case NODE_IDENTIFIER:
+            return node->as.identifier.name;
+        case NODE_MEMBER_ACCESS: {
+            return extractMemberAccessName(node->as.member_access, depth + 1);
+        }
+        case NODE_ARRAY_ACCESS: {
+            return extractArrayAccessName(node->as.array_access, depth + 1);
+        }
+        default: break;
     }
     return NULL;
 }
@@ -1027,6 +1176,26 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
     safe_append(p, rem, "Double free of pointer '");
     safe_append(p, rem, name);
     safe_append(p, rem, "'");
+
+    if (tp && tp->transferred_from) {
+        safe_append(p, rem, ", originally held by '");
+        safe_append(p, rem, tp->transferred_from);
+        safe_append(p, rem, "'");
+        if (tp->transfer_loc.line > 0) {
+            const SourceFile* file = unit_.getSourceManager().getFile(tp->transfer_loc.file_id);
+            safe_append(p, rem, " (transferred at ");
+            if (file) safe_append(p, rem, file->filename);
+            else safe_append(p, rem, "unknown");
+            safe_append(p, rem, ":");
+            char buf[16];
+            plat_i64_to_string(tp->transfer_loc.line, buf, sizeof(buf));
+            safe_append(p, rem, buf);
+            safe_append(p, rem, ":");
+            plat_i64_to_string(tp->transfer_loc.column, buf, sizeof(buf));
+            safe_append(p, rem, buf);
+            safe_append(p, rem, ")");
+        }
+    }
 
     if (tp && tp->alloc_loc.line > 0) {
         const SourceFile* file = unit_.getSourceManager().getFile(tp->alloc_loc.file_id);
@@ -1116,6 +1285,27 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
         }
         safe_append(p, rem, " - receiver responsible for freeing");
     } else {
+        if (tp && tp->transferred_from) {
+            safe_append(p, rem, "Memory leak: pointer '");
+            safe_append(p, rem, name);
+            safe_append(p, rem, "' originally held by '");
+            safe_append(p, rem, tp->transferred_from);
+            safe_append(p, rem, "' leaked");
+            if (tp->transfer_loc.line > 0) {
+                const SourceFile* file = unit_.getSourceManager().getFile(tp->transfer_loc.file_id);
+                safe_append(p, rem, " (transferred at ");
+                if (file) safe_append(p, rem, file->filename);
+                else safe_append(p, rem, "unknown");
+                safe_append(p, rem, ":");
+                char buf[16];
+                plat_i64_to_string(tp->transfer_loc.line, buf, sizeof(buf));
+                safe_append(p, rem, buf);
+                safe_append(p, rem, ":");
+                plat_i64_to_string(tp->transfer_loc.column, buf, sizeof(buf));
+                safe_append(p, rem, buf);
+                safe_append(p, rem, ")");
+            }
+        } else
         if (is_reassignment) {
             safe_append(p, rem, "Memory leak: reassigning allocated pointer '");
         } else {
@@ -1145,6 +1335,41 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
     }
 
     unit_.getErrorHandler().reportWarning(code, loc, msg, unit_.getArena());
+}
+
+const char* DoubleFreeAnalyzer::extractArrayAccessName(ASTArrayAccessNode* access, int depth) {
+    if (!access || depth > MAX_RECURSION_DEPTH) return NULL;
+    const char* base_name = extractVariableName(access->array, depth + 1);
+    if (!base_name) return NULL;
+
+    char buffer[256];
+    if (access->index && access->index->type == NODE_INTEGER_LITERAL) {
+        u64 idx = access->index->as.integer_literal.value;
+        plat_snprintf(buffer, sizeof(buffer), "%s[%lu]", base_name, (unsigned long)idx);
+    } else {
+        plat_snprintf(buffer, sizeof(buffer), "%s[]", base_name);
+    }
+    return unit_.getStringInterner().intern(buffer);
+}
+
+const char* DoubleFreeAnalyzer::extractMemberAccessName(ASTMemberAccessNode* node, int depth) {
+    if (!node || depth > MAX_RECURSION_DEPTH) return NULL;
+    const char* base_name = extractVariableName(node->base, depth + 1);
+    if (!base_name) return NULL;
+
+    const char* field_name = node->field_name;
+    size_t len1 = plat_strlen(base_name);
+    size_t len2 = plat_strlen(field_name);
+    char* combined = (char*)unit_.getArena().alloc(len1 + len2 + 2);
+    if (combined) {
+        char* p = combined;
+        size_t rem = len1 + len2 + 2;
+        safe_append(p, rem, base_name);
+        safe_append(p, rem, ".");
+        safe_append(p, rem, field_name);
+        return unit_.getStringInterner().intern(combined);
+    }
+    return NULL;
 }
 
 void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocation loc) {

@@ -1,3 +1,49 @@
+# Z98 0.12.0 “Isophthalic acid” Release Notes
+
+We are proud to announce the release of Z98 version **0.12.0**, codenamed **“Isophthalic acid”**.
+
+**Isophthalic acid** marks a monumental milestone in the Z98 project. This release represents the final feature-set for our C++ bootstrap compiler (`zig0`) and the official commencement of our journey toward a self-hosted Zig compiler. This release introduces fundamental language features like Tuples, a robust Networking PAL, and a significant evolution in our static analysis capabilities.
+
+## 🛡️ Double-Free Analyzer 2.0
+
+Stability and memory safety are paramount when targeting resource-constrained legacy systems. In this release, the `DoubleFreeAnalyzer` has undergone a major upgrade (Phases 5-8), transforming it from a basic check into a sophisticated static analysis tool:
+
+- **Composite Tracking**: The analyzer now tracks lifetimes across complex aggregate members (e.g., `s.ptr`) and nested structures (arrays, tuples).
+- **Transfer History Diagnostics**: Error messages now include a complete transfer history, showing exactly where ownership was originally established and through which assignments it was transferred before a violation occurred.
+- **Path-Aware `errdefer`**: The analyzer now correctly understands that `errdefer` blocks only execute on error paths, eliminating false positives in complex cleanup logic.
+- **Arena Leak Detection**: Introducing the `-Warena-leak` flag, which helps developers identify memory that was allocated in an arena but never properly managed, ensuring peak efficiency.
+
+## 🏗️ Expanding the Language: Tuples & Networking
+
+### 🧊 Full Tuple Support
+Z98 now supports **Tuples**. This includes tuple types (`struct { i32, f32 }`), literals (`.{ 42, 3.14 }`), and zero-indexed member access (`t.0`). In the C89 backend, tuples are lowered into specialized structs with indexed fields, providing a seamless and efficient mapping to the target hardware.
+
+### 🌐 Networking PAL & Socket API
+To support the next generation of Z98 applications, we have introduced a minimal **Socket API** to our Platform Abstraction Layer (PAL). This API provides a cross-platform interface for TCP server creation, non-blocking I/O via `select()`, and standard `send`/`recv` operations. It is fully compatible with both Winsock 1.1 on Windows 95/98 and standard POSIX sockets.
+
+## 🔌 Compatibility & Tooling
+
+### 🛠️ OpenWatcom 1.9 Support
+Continuing our commitment to legacy toolchains, the bootstrap compiler and its generated code are now fully compatible with the **OpenWatcom 1.9** compiler suite. We have included optimized build scripts (`build_openw.bat`) and standardized PAL headers to ensure a smooth development experience on native 90s hardware.
+
+### 📜 100% Test Stability
+The Z98 test suite now comprises **82 batches** of tests, all of which are passing with 100% stability. This includes rigorous verification of the new Tuple support, Networking PAL, and advanced static analysis rules.
+
+## 🚀 The Road to Self-Hosting
+With the completion of Milestone 11, we are freezing the feature set of the bootstrap compiler. Our focus now shifts to the **Self-Hosting Phase**. We have already drafted comprehensive design documents for the self-hosted compiler, covering the new LIR-based architecture, advanced type system, and modular design. These documents can be found in `docs/sf/`.
+
+## 📂 New & Updated Examples
+- **[MUD Server](examples/mud_server/)**: A minimal telnet Multi-User Dungeon server demonstrating the new Networking PAL and Tuple support.
+- **[Game of Life](examples/game_of_life/)**: Enhanced with patterns and optimized C89 lowering.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Jules (AI-Agent)*
+
+---
+
 # Z98 0.11.0 “para-Cresol” Release Notes
 
 We are proud to announce the release of Z98 version **0.11.0**, codenamed **“para-Cresol”**.

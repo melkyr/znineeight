@@ -75,7 +75,9 @@ static Type* allocateType(ArenaAllocator& arena) {
 
 Type* createModuleType(ArenaAllocator& arena, const char* name) {
     if (!name) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createModuleType: name is NULL\n");
+#endif
     }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_MODULE;
@@ -86,15 +88,25 @@ Type* createModuleType(ArenaAllocator& arena, const char* name) {
     return new_type;
 }
 
+static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent);
+
 Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
     if (!elements) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createTupleType: elements array is NULL\n");
+#endif
     }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_TUPLE;
-    new_type->size = 0; // Not used for runtime storage in bootstrap
-    new_type->alignment = 0;
     new_type->as.tuple.elements = elements;
+
+    calculateTupleLayout(new_type);
+
+    if (elements) {
+        for (size_t i = 0; i < elements->length(); ++i) {
+            registerDependent(arena, (*elements)[i], new_type);
+        }
+    }
     return new_type;
 }
 
@@ -195,7 +207,9 @@ static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
     if (!base_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createPointerType: base type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (interner) {
@@ -216,7 +230,9 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, b
 
 Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
     if (!return_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createFunctionType: return type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     Type* new_type = allocateType(arena);
@@ -230,7 +246,9 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
 
 Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type, TypeInterner* /*interner*/) {
     if (!return_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createFunctionPointerType: return type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     Type* new_type = allocateType(arena);
@@ -244,7 +262,9 @@ Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* para
 
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner) {
     if (!element_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createArrayType: element type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (interner) {
@@ -269,7 +289,9 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
 
 Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, TypeInterner* interner) {
     if (!element_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createSliceType: element type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (interner) {
@@ -288,7 +310,7 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
 }
 
 Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, Type* placeholder) {
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("CREATE_STRUCT: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
@@ -296,12 +318,16 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 #endif
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
+#endif
         } else {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+#endif
         }
 #endif
         if (existing) {
@@ -325,7 +351,7 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
     new_type->as.struct_details.fields = fields;
     new_type->owner_module = mod;
 
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
@@ -343,7 +369,7 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 }
 
 Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type, Type* placeholder) {
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("CREATE_UNION: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
@@ -351,12 +377,16 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
 #endif
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
+#endif
         } else {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+#endif
         }
 #endif
         if (existing) {
@@ -368,7 +398,9 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
 
     if (!fields) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createUnionType: fields array is NULL\n");
+#endif
     }
     Type* new_type = placeholder;
     if (!new_type) {
@@ -384,7 +416,7 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     new_type->as.struct_details.tag_type = tag_type;
     new_type->owner_module = mod;
 
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
@@ -405,7 +437,7 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
 }
 
 Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name, Type* placeholder) {
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("CREATE_TAGGED_UNION: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
@@ -413,12 +445,16 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
 #endif
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
+#endif
         } else {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+#endif
         }
 #endif
         if (existing) {
@@ -430,7 +466,9 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
 
     if (!payload_fields) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createTaggedUnionType: payload_fields array is NULL\n");
+#endif
     }
     Type* new_type = placeholder;
     if (!new_type) {
@@ -449,7 +487,7 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
         new_type->c_name = unit.getNameMangler().mangleType(new_type);
     }
 
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
@@ -467,7 +505,9 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
     if (!payload) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createErrorUnionType: payload is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (interner) {
@@ -532,7 +572,9 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
 
 Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* interner) {
     if (!payload) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createOptionalType: payload is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (interner) {
@@ -771,6 +813,14 @@ void refreshLayout(Type* t) {
                 t->alignment = t->as.enum_details.backing_type->alignment;
             }
             break;
+        case TYPE_TUPLE:
+            if (t->as.tuple.elements) {
+                for (size_t i = 0; i < t->as.tuple.elements->length(); ++i) {
+                    refreshLayout((*t->as.tuple.elements)[i]);
+                }
+            }
+            calculateTupleLayout(t);
+            break;
         default:
             break;
     }
@@ -824,6 +874,39 @@ void calculateTaggedUnionLayout(Type* type) {
     if (type->alignment > 0 && type->size % type->alignment != 0) {
         type->size += (type->alignment - (type->size % type->alignment));
     }
+}
+
+void calculateTupleLayout(Type* tuple_type) {
+    if (tuple_type->kind != TYPE_TUPLE) return;
+    DynamicArray<Type*>* elements = tuple_type->as.tuple.elements;
+    if (!elements || elements->length() == 0) {
+        tuple_type->size = 1; // dummy member
+        tuple_type->alignment = 1;
+        return;
+    }
+
+    size_t current_offset = 0;
+    size_t max_alignment = 1;
+
+    for (size_t i = 0; i < elements->length(); ++i) {
+        Type* elem = (*elements)[i];
+        size_t align = elem->alignment;
+        if (align == 0) align = 1;
+
+        if (current_offset % align != 0) {
+            current_offset += (align - (current_offset % align));
+        }
+
+        current_offset += elem->size;
+        if (align > max_alignment) max_alignment = align;
+    }
+
+    if (current_offset % max_alignment != 0) {
+        current_offset += (max_alignment - (current_offset % max_alignment));
+    }
+
+    tuple_type->size = current_offset;
+    tuple_type->alignment = max_alignment;
 }
 
 void calculateStructLayout(Type* struct_type) {
@@ -884,25 +967,31 @@ void calculateStructLayout(Type* struct_type) {
 }
 
 Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val, Type* placeholder) {
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("CREATE_ENUM: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
         (void*)mod);
 #endif
     if (!backing_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createEnumType: backing type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
 
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
+#endif
         } else {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+#endif
         }
 #endif
         if (existing) {
@@ -914,7 +1003,9 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
 
     if (!name) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("createEnumType: name is NULL\n");
+#endif
     }
     Type* new_type = placeholder;
     if (!new_type) {
@@ -937,7 +1028,7 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
         new_type->c_name = unit.getNameMangler().mangleType(new_type);
     }
 
-#ifdef DEBUG_TYPE_IDENTITY
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
@@ -995,7 +1086,9 @@ static bool containsPlaceholder(Type* type) {
 
 Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many) {
     if (!base_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("TypeInterner::getPointerType: base type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (containsPlaceholder(base_type)) {
@@ -1023,7 +1116,9 @@ Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many)
 
 Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_inferred) {
     if (!payload) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("TypeInterner::getErrorUnionType: payload is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (containsPlaceholder(payload) || (!is_inferred && containsPlaceholder(error_set))) {
@@ -1058,7 +1153,9 @@ Type* TypeInterner::getErrorSetType(const char* /*name*/, DynamicArray<const cha
 
 Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
     if (!element_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("TypeInterner::getArrayType: element type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (containsPlaceholder(element_type)) {
@@ -1085,7 +1182,9 @@ Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
 
 Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
     if (!element_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("TypeInterner::getSliceType: element type is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (containsPlaceholder(element_type)) {
@@ -1112,7 +1211,9 @@ Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
 
 Type* TypeInterner::getOptionalType(Type* payload) {
     if (!payload) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("TypeInterner::getOptionalType: payload is NULL\n");
+#endif
         return get_g_type_undefined();
     }
     if (containsPlaceholder(payload)) {
@@ -1175,13 +1276,15 @@ bool isTypeComplete(Type* type) {
         case TYPE_TAGGED_UNION:
             return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
 
+        case TYPE_TUPLE:
+            return type->alignment >= 1 && type->as.tuple.elements != NULL;
+
         case TYPE_PLACEHOLDER:
         case TYPE_INTEGER_LITERAL:
         case TYPE_ANYTYPE:
         case TYPE_TYPE:
         case TYPE_UNDEFINED:
         case TYPE_MODULE:
-        case TYPE_TUPLE:
         case TYPE_ANONYMOUS_INIT:
         case TYPE_ANONYMOUS_ARRAY:
         case TYPE_ANONYMOUS_TUPLE:
@@ -1330,6 +1433,19 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             }
             break;
         }
+        case TYPE_TUPLE: {
+            safe_append(current, remaining, ".{");
+            if (type->as.tuple.elements) {
+                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
+                    typeToStringInternal((*type->as.tuple.elements)[i], current, remaining);
+                    if (i < type->as.tuple.elements->length() - 1) {
+                        safe_append(current, remaining, ", ");
+                    }
+                }
+            }
+            safe_append(current, remaining, "}");
+            break;
+        }
         case TYPE_OPTIONAL: {
             safe_append(current, remaining, "?");
             typeToStringInternal(type->as.optional.payload, current, remaining);
@@ -1372,9 +1488,15 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
 #ifdef DEBUG
     if (type && type->kind == TYPE_PLACEHOLDER) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("Warning: typeToString called on TYPE_PLACEHOLDER: ");
+#endif
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug(type->as.placeholder.name);
+#endif
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("\n");
+#endif
     }
 #endif
     if (!type || buffer_size == 0) {
@@ -1489,6 +1611,17 @@ bool areTypesEqual(Type* a, Type* b) {
                 if ((*members_a)[i].value != (*members_b)[i].value) return false;
             }
             return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
+        }
+
+        case TYPE_TUPLE: {
+            DynamicArray<Type*>* elements_a = a->as.tuple.elements;
+            DynamicArray<Type*>* elements_b = b->as.tuple.elements;
+            if (!elements_a || !elements_b) return elements_a == elements_b;
+            if (elements_a->length() != elements_b->length()) return false;
+            for (size_t i = 0; i < elements_a->length(); ++i) {
+                if (!areTypesEqual((*elements_a)[i], (*elements_b)[i])) return false;
+            }
+            return true;
         }
 
         case TYPE_ANONYMOUS_INIT:

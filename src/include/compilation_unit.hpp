@@ -34,6 +34,10 @@ struct CompilationOptions {
     bool debug_lifter;
     bool debug_codegen;
     bool win_friendly_line_endings;
+    bool no_logs;
+    bool verbose;
+    bool warn_arena_leaks;
+    const char* log_file_path;
 
     CompilationOptions()
         : enable_double_free_analysis(false),
@@ -41,7 +45,11 @@ struct CompilationOptions {
           enable_lifetime_analysis(false),
           debug_lifter(false),
           debug_codegen(false),
-          win_friendly_line_endings(false) {}
+          win_friendly_line_endings(false),
+          no_logs(false),
+          verbose(false),
+          warn_arena_leaks(false),
+          log_file_path(NULL) {}
 };
 
 // Forward-declare to avoid circular dependencies.

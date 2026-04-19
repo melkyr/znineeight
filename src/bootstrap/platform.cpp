@@ -1,6 +1,47 @@
 #include "platform.hpp"
-#include <stdio.h>
+#include "logger.hpp"
 #include <stdarg.h>
+#include <stdio.h>
+
+static Logger* g_logger = NULL;
+static bool g_logging_in_progress = false;
+
+extern "C" int plat_atoi(const char* str) {
+    if (!str) return 0;
+    int res = 0;
+    int sign = 1;
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') str++;
+    if (*str == '-') {
+        sign = -1;
+        str++;
+    } else if (*str == '+') {
+        str++;
+    }
+    while (*str >= '0' && *str <= '9') {
+        res = res * 10 + (*str - '0');
+        str++;
+    }
+    return res * sign;
+}
+
+void plat_set_logger(Logger* logger) { g_logger = logger; }
+Logger* plat_get_logger() { return g_logger; }
+
+// Internal low-level write functions (bypassing logger)
+#ifdef _WIN32
+void plat_write_stdout_internal(const char* message);
+void plat_write_stderr_internal(const char* message);
+#else
+#include <unistd.h>
+void plat_write_stdout_internal(const char* message) {
+    if (!message) return;
+    write(STDOUT_FILENO, message, plat_strlen(message));
+}
+void plat_write_stderr_internal(const char* message) {
+    if (!message) return;
+    write(STDERR_FILENO, message, plat_strlen(message));
+}
+#endif
 
 static void plat_reverse(char* str, int length) {
     int start = 0;
@@ -17,6 +58,71 @@ static void plat_reverse(char* str, int length) {
 #ifdef _WIN32
 // --- Windows Implementation ---
 
+#pragma comment(lib, "wsock32.lib")
+
+int plat_socket_init(void) {
+    WSADATA wsa;
+    return WSAStartup(MAKEWORD(1, 1), &wsa);
+}
+
+void plat_socket_cleanup(void) {
+    WSACleanup();
+}
+
+PlatSocket plat_create_tcp_server(u16 port) {
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET) return PLAT_INVALID_SOCKET;
+
+    struct sockaddr_in addr;
+    plat_memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(s);
+        return PLAT_INVALID_SOCKET;
+    }
+
+    return s;
+}
+
+int plat_bind_listen(PlatSocket sock, int backlog) {
+    if (listen(sock, backlog) == SOCKET_ERROR) return -1;
+    return 0;
+}
+
+PlatSocket plat_accept(PlatSocket server_sock) {
+    return accept(server_sock, NULL, NULL);
+}
+
+int plat_recv(PlatSocket sock, u8* buf, int len) {
+    return recv(sock, (char*)buf, len, 0);
+}
+
+int plat_send(PlatSocket sock, const u8* buf, int len) {
+    return send(sock, (const char*)buf, len, 0);
+}
+
+void plat_close_socket(PlatSocket sock) {
+    closesocket(sock);
+}
+
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms) {
+    struct timeval tv;
+    struct timeval* p_tv = NULL;
+    if (timeout_ms >= 0) {
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        p_tv = &tv;
+    }
+    return select(nfds, (fd_set*)readfds, (fd_set*)writefds, (fd_set*)exceptfds, p_tv);
+}
+
+void plat_socket_fd_zero(u8* s) { FD_ZERO((fd_set*)s); }
+void plat_socket_fd_set(PlatSocket fd, u8* s) { FD_SET(fd, (fd_set*)s); }
+bool plat_socket_fd_isset(PlatSocket fd, u8* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
+
 void* plat_alloc(size_t size) {
     if (size == 0) return NULL;
     if (size > 4 * 1024 * 1024) {  /* > 4 MB */
@@ -30,7 +136,8 @@ void* plat_alloc(size_t size) {
 void plat_free(void* ptr) {
     if (!ptr) return;
     /* Freeing a VirtualAlloc block requires VirtualFree */
-    MEMORY_BASIC_INFORMATION mbi;
+    /* OpenWatcom requires 'struct' keyword for MEMORY_BASIC_INFORMATION */
+    struct _MEMORY_BASIC_INFORMATION mbi;
     if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
         VirtualFree(ptr, 0, MEM_RELEASE);
     } else {
@@ -49,10 +156,13 @@ PlatFile plat_open_file(const char* path, bool write) {
     return CreateFileA(path, access, FILE_SHARE_READ, NULL, creation, FILE_ATTRIBUTE_NORMAL, NULL);
 }
 
-void plat_write_file(PlatFile file, const void* data, size_t size) {
-    if (file == PLAT_INVALID_FILE) return;
+long plat_write_file(PlatFile file, const void* data, size_t size) {
+    if (file == PLAT_INVALID_FILE) return -1;
     DWORD written;
-    WriteFile(file, data, (DWORD)size, &written, NULL);
+    if (WriteFile(file, data, (DWORD)size, &written, NULL)) {
+        return (long)written;
+    }
+    return -1;
 }
 
 size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size) {
@@ -101,25 +211,22 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
     return true;
 }
 
-void plat_print_info(const char* message) {
+void plat_write_stdout_internal(const char* message) {
     if (!message) return;
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) {
-        /* Fallback to stderr if stdout is invalid (rare) */
         hOut = GetStdHandle(STD_ERROR_HANDLE);
         if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) return;
     }
 
     DWORD written = 0;
     DWORD len = (DWORD)plat_strlen(message);
-    /* Try WriteConsoleA first - it works better with Win9x console */
     if (!WriteConsoleA(hOut, (LPCSTR)message, len, &written, NULL)) {
-        /* Fallback to WriteFile for redirected output */
         WriteFile(hOut, message, len, &written, NULL);
     }
 }
 
-void plat_print_error(const char* message) {
+void plat_write_stderr_internal(const char* message) {
     if (!message) return;
     HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
     if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
@@ -131,49 +238,63 @@ void plat_print_error(const char* message) {
     }
 }
 
+void plat_print_info(const char* message) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
+        g_logger->log(LOG_INFO, message);
+        g_logging_in_progress = false;
+    } else {
+        plat_write_stdout_internal(message);
+    }
+}
+
+void plat_print_error(const char* message) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
+        g_logger->log(LOG_ERROR, message);
+        g_logging_in_progress = false;
+    } else {
+        plat_write_stderr_internal(message);
+    }
+}
+
 void plat_print_debug(const char* message) {
     OutputDebugStringA(message);
-    plat_print_error(message);
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
+        g_logger->log(LOG_DEBUG, message);
+        g_logging_in_progress = false;
+    } else {
+        plat_write_stderr_internal(message);
+    }
 }
 
 void plat_printf_debug(const char* format, ...) {
     char buffer[4096];
     va_list args;
     va_start(args, format);
-#ifdef _MSC_VER
-    _vsnprintf(buffer, sizeof(buffer), format, args);
-#else
-    vsnprintf(buffer, sizeof(buffer), format, args);
-#endif
+    plat_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     buffer[sizeof(buffer)-1] = '\0';
-    OutputDebugStringA(buffer);
-    plat_print_error(buffer);
+    plat_print_debug(buffer);
 }
 
 int plat_snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
-#ifdef _MSC_VER
-    int result = _vsnprintf(str, size, format, args);
-#else
-    int result = vsnprintf(str, size, format, args);
-#endif
+    int result = plat_vsnprintf(str, size, format, args);
     va_end(args);
     return result;
 }
 
-void plat_write_str(const char* s) {
-    if (!s) return;
-    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
-    if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
-
-    DWORD written = 0;
-    DWORD len = (DWORD)plat_strlen(s);
-    if (!WriteConsoleA(hErr, (LPCSTR)s, len, &written, NULL)) {
-        WriteFile(hErr, s, len, &written, NULL);
-    }
+int plat_vsnprintf(char* str, size_t size, const char* format, va_list args) {
+#ifdef _MSC_VER
+    return _vsnprintf(str, size, format, args);
+#else
+    return vsnprintf(str, size, format, args);
+#endif
 }
+
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;
@@ -231,10 +352,9 @@ void plat_float_to_string(double value, char* buffer, size_t buffer_size) {
     /*
      * TODO: Implement a custom dtoa to fully avoid msvcrt.dll dependency
      * in the final kernel32-only bootstrap.
-     * For now, we use sprintf to maintain %.15g behavior required by tests.
+     * For now, we use plat_snprintf to maintain %.15g behavior required by tests.
      */
-    (void)buffer_size;
-    sprintf(buffer, "%.15g", value);
+    plat_snprintf(buffer, buffer_size, "%.15g", value);
 }
 
 size_t plat_strlen(const char* s) {
@@ -408,14 +528,18 @@ PlatFile plat_open_file(const char* path, bool write) {
     return open(path, flags, mode);
 }
 
-void plat_write_file(PlatFile file, const void* data, size_t size) {
-    if (file == PLAT_INVALID_FILE) return;
+long plat_write_file(PlatFile file, const void* data, size_t size) {
+    if (file == PLAT_INVALID_FILE) return -1;
     size_t total_written = 0;
     while (total_written < size) {
         ssize_t written = write(file, (const char*)data + total_written, size - total_written);
-        if (written <= 0) break;
-        total_written += written;
+        if (written <= 0) {
+            if (total_written > 0) return (long)total_written;
+            return -1;
+        }
+        total_written += (size_t)written;
     }
+    return (long)total_written;
 }
 
 size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size) {
@@ -462,43 +586,58 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
 }
 
 void plat_print_info(const char* message) {
-    write(STDOUT_FILENO, message, plat_strlen(message));
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
+        g_logger->log(LOG_INFO, message);
+        g_logging_in_progress = false;
+    } else {
+        plat_write_stdout_internal(message);
+    }
 }
 
 void plat_print_error(const char* message) {
-    write(STDERR_FILENO, message, plat_strlen(message));
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
+        g_logger->log(LOG_ERROR, message);
+        g_logging_in_progress = false;
+    } else {
+        plat_write_stderr_internal(message);
+    }
 }
 
 void plat_print_debug(const char* message) {
-    plat_print_error("[DEBUG] ");
-    plat_print_error(message);
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
+        g_logger->log(LOG_DEBUG, message);
+        g_logging_in_progress = false;
+    } else {
+        plat_write_stderr_internal("[DEBUG] ");
+        plat_write_stderr_internal(message);
+    }
 }
 
 void plat_printf_debug(const char* format, ...) {
-    plat_print_error("[DEBUG] ");
+    char buffer[4096];
     va_list args;
     va_start(args, format);
-    vfprintf(stderr, format, args);
+    plat_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
+    buffer[sizeof(buffer)-1] = '\0';
+    plat_print_debug(buffer);
 }
 
 int plat_snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    int result = vsnprintf(str, size, format, args);
+    int result = plat_vsnprintf(str, size, format, args);
     va_end(args);
     return result;
 }
 
-void plat_write_str(const char* s) {
-    size_t len = plat_strlen(s);
-    size_t total_written = 0;
-    while (total_written < len) {
-        ssize_t written = write(STDERR_FILENO, s + total_written, len - total_written);
-        if (written <= 0) break;
-        total_written += written;
-    }
+int plat_vsnprintf(char* str, size_t size, const char* format, va_list args) {
+    return vsnprintf(str, size, format, args);
 }
+
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;
@@ -556,10 +695,9 @@ void plat_float_to_string(double value, char* buffer, size_t buffer_size) {
     /*
      * TODO: Implement a custom dtoa to fully avoid msvcrt.dll dependency
      * in the final kernel32-only bootstrap.
-     * For now, we use sprintf to maintain %.15g behavior required by tests.
+     * For now, we use plat_snprintf to maintain %.15g behavior required by tests.
      */
-    (void)buffer_size;
-    sprintf(buffer, "%.15g", value);
+    plat_snprintf(buffer, buffer_size, "%.15g", value);
 }
 
 size_t plat_strlen(const char* s) {
@@ -706,5 +844,65 @@ void plat_get_executable_dir(char* buffer, size_t size) {
 void plat_abort() {
     abort();
 }
+
+int plat_socket_init(void) { return 0; }
+void plat_socket_cleanup(void) {}
+
+PlatSocket plat_create_tcp_server(u16 port) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return PLAT_INVALID_SOCKET;
+
+    int opt = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr;
+    plat_memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(s);
+        return PLAT_INVALID_SOCKET;
+    }
+
+    return s;
+}
+
+int plat_bind_listen(PlatSocket sock, int backlog) {
+    if (listen(sock, backlog) < 0) return -1;
+    return 0;
+}
+
+PlatSocket plat_accept(PlatSocket server_sock) {
+    return accept(server_sock, NULL, NULL);
+}
+
+int plat_recv(PlatSocket sock, u8* buf, int len) {
+    return recv(sock, (char*)buf, len, 0);
+}
+
+int plat_send(PlatSocket sock, const u8* buf, int len) {
+    return send(sock, (const char*)buf, len, 0);
+}
+
+void plat_close_socket(PlatSocket sock) {
+    close(sock);
+}
+
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms) {
+    struct timeval tv;
+    struct timeval* p_tv = NULL;
+    if (timeout_ms >= 0) {
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        p_tv = &tv;
+    }
+    return select(nfds, (fd_set*)readfds, (fd_set*)writefds, (fd_set*)exceptfds, p_tv);
+}
+
+void plat_socket_fd_zero(u8* s) { FD_ZERO((fd_set*)s); }
+void plat_socket_fd_set(PlatSocket fd, u8* s) { FD_SET(fd, (fd_set*)s); }
+bool plat_socket_fd_isset(PlatSocket fd, u8* s) { return FD_ISSET(fd, (fd_set*)s) != 0; }
 
 #endif

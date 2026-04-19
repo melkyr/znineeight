@@ -57,3 +57,27 @@ This document records the issues, bugs, and limitations discovered while attempt
 - **Arena Alignment**: `sand_alloc` enforces 8-byte alignment via `@intCast(usize, 8)` to support `i64` and pointers on 32-bit systems.
 - **Braceless Control Flow**: Full support for braceless `if`, `while`, `for`, and `defer`.
 - **Switch Range Support**: Support for character and integer ranges (e.g., `'a'...'z'`) in switch prongs.
+
+## 5. Workarounds & Syntax Quirks
+
+### Manual Tail-Call Optimization (TCO)
+**Workaround**: The `eval` function in `eval.zig` was manually refactored from a recursive tree-walker into a `while (true)` loop with explicit state management for tail positions (e.g., in `if` prongs and `lambda` calls).
+**Rationale**: Even with Milestone 11 optimizations, deep recursion in a 32-bit environment with fixed arena sizes quickly exhausts the C stack or arena memory if every call is recursive. Manual TCO is necessary for robust Lisp execution.
+
+### Pointer-Sign Mitigation
+**Workaround**: In `main.zig`, strings are passed to `print_str` using slice literals or explicit `[*]u8` to `[]u8` conversions to satisfy the Z98/C89 strict typing rules and avoid compiler warnings.
+**Rationale**: Z98 is very strict about `[]u8` vs `const char*`. The interpreter uses a helper `print_str` that takes a slice to remain idiomatic while interfacing with the runtime.
+
+### Single Expression REPL
+**Workaround**: `main.zig` reads a line and evaluates only the first parsed expression.
+**Rationale**: Multi-expression line parsing would require more complex tokenizer state management or a sequence (`begin`) wrapper. For this bootstrap phase, one expression per line is sufficient and documented as a known limitation.
+
+### Mutable Slot for Recursion
+**Workaround**: `define` uses a two-step process: it first creates an environment node with a `Nil` placeholder, then evaluates the body, and finally updates the placeholder in-place.
+**Rationale**: This enables recursive closures (like `fact` calling `fact`) where the closure needs to capture an environment that already contains itself.
+
+## 6. Current Run Observations (Milestone 11 Verification)
+- **TCO Stability**: Verified. Handled `(even? 1000)` mutually recursive tail calls successfully.
+- **Memory Limits**: The 1MB temporary arena allows for approximately 2000-3000 recursive iterations in `countdown` before returning `OutOfMemory`. This is a known constraint of the bootstrap environment.
+- **Integer Safety**: Confirmed that `(fact 13)` triggers a runtime panic due to integer overflow, as expected for checked Z98 operations.
+- **Compiler Warnings**: Pedantic warnings remain for function pointer conversions in `eval.c` and `main.c` when interfacing with builtins. These are acceptable for the C89 bootstrap phase.

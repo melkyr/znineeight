@@ -15,6 +15,7 @@
 #include "type_system.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+#include "logger.hpp"
 
 #ifdef MEASURE_MEMORY
 class PhaseMemoryTracker {
@@ -114,14 +115,16 @@ public:
 #include <new>       // For placement new
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug(message);
+#endif
     plat_abort();
 }
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
-      token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
-      transient_arena_(1024 * 1024 * 16), // 16MB cap for transient
+      token_arena_(1024 * 1024 * 16), // 64MB cap for tokens
+      transient_arena_(1024 * 1024 * 16), // 64MB cap for transient
       type_interner_(arena),
       type_registry_(arena),
       pending_resolutions_(arena),
@@ -234,7 +237,9 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     if (mod_mem == NULL) fatalError("Out of memory allocating Module");
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("Module created: %s (%p) for file %s\n", mod->name, (void*)mod, interned_filename);
+#endif
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
@@ -519,6 +524,26 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* fn_type = createFunctionType(arena_, params, arena_ptr_type);
 
         const char* name = interner_.intern("arena_create");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withModule(builtin_name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
+            .build();
+        table.insert(sym);
+    }
+
+    // __bootstrap_print_char(c: i32) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print_char");
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(get_g_type_i32());
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("__bootstrap_print_char");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
             .withModule(builtin_name)
@@ -888,6 +913,7 @@ bool CompilationUnit::generateCode(const char* output_path) {
 }
 
 bool CompilationUnit::performFullPipeline(u32 file_id) {
+    Logger* logger = plat_get_logger();
 #ifdef MEASURE_MEMORY
     PhaseMemoryTracker tracker(*this);
 #endif
@@ -900,6 +926,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     last_ast_ = ast;
     if (!ast) return false;
@@ -926,7 +953,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (!resolveImports(mod)) {
         return false;
     }
-
+    if (logger) logger->flush();
 
     // Topological Sort of modules to respect import dependencies
     {
@@ -1008,6 +1035,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         // Replace modules_ with sorted order
         modules_ = sorted;
     }
+    if (logger) logger->flush();
 
     // Phase 0: Register Placeholders for all modules
     for (size_t i = 0; i < modules_.length(); ++i) {
@@ -1017,6 +1045,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         TypeChecker checker(*this);
         checker.registerPlaceholders(m->ast_root);
     }
+    if (logger) logger->flush();
 
     // Phase 0.5: Resolve Named Placeholders (Pass 2)
     {
@@ -1026,6 +1055,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             checker.resolveNamedPlaceholder(pending[i].placeholder);
         }
     }
+    if (logger) logger->flush();
 
     // Now run semantic analysis on ALL modules
     bool all_success = true;
@@ -1045,6 +1075,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
     if (!all_success) return false;
 
     // Phase 2: Type Checking
@@ -1055,13 +1086,17 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
 #ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
+#endif
 #endif
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.check(m->ast_root);
 #ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
+#endif
 #endif
     }
     if (error_handler_.hasErrors()) all_success = false;
@@ -1073,6 +1108,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     // Phase 2.1: AST Lifting
 #ifdef MEASURE_MEMORY
@@ -1086,6 +1122,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     // Phase 2.5: Metadata Preparation
 #ifdef MEASURE_MEMORY
@@ -1098,9 +1135,12 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
 #ifdef DEBUG
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
+#endif
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
@@ -1129,6 +1169,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     // Phase 4: C89 Validation
 #ifdef MEASURE_MEMORY
@@ -1145,6 +1186,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     validation_completed_ = true;
     c89_validation_passed_ = validation_success && !signature_errors;
@@ -1181,6 +1223,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 
         m->is_analyzed = true;
     }
+    if (logger) logger->flush();
 
     // Task 163: Report unresolved call sites
     if (call_site_table_.getUnresolvedCount() > 0) {
@@ -1351,7 +1394,9 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
     stack.append(module->filename);
 
 #ifdef DEBUG_VISIBILITY
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("DEBUG_VISIBILITY: Resolving imports for module '%s' (%s)\n", module->name, module->filename);
+#endif
 #endif
 
     const char* saved_module = current_module_;

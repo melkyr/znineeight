@@ -2,12 +2,20 @@
 #define PLATFORM_HPP
 
 #include "common.hpp"
+#include <stdarg.h>
 
 #ifdef _WIN32
 #include "platform_win98.h"
 #include <windows.h>
+#include <winsock.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/select.h>
 #endif
 
+// Utility functions
 // Memory allocation
 void* plat_alloc(size_t size);
 void plat_free(void* ptr);
@@ -23,10 +31,15 @@ typedef int PlatFile;
 #endif
 
 PlatFile plat_open_file(const char* path, bool write);
-void plat_write_file(PlatFile file, const void* data, size_t size);
+long plat_write_file(PlatFile file, const void* data, size_t size);
 size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size);
 void plat_close_file(PlatFile file);
 bool plat_file_read(const char* path, char** buffer, size_t* size);
+
+// Logger integration
+class Logger;
+void plat_set_logger(Logger* logger);
+Logger* plat_get_logger();
 
 // Console output
 void plat_print_info(const char* message);  // stdout
@@ -34,7 +47,7 @@ void plat_print_error(const char* message); // stderr
 void plat_print_debug(const char* message); // debugger only
 void plat_printf_debug(const char* format, ...); // variadic debug print
 int plat_snprintf(char* str, size_t size, const char* format, ...);
-void plat_write_str(const char* s);         // low-level stderr write
+int plat_vsnprintf(char* str, size_t size, const char* format, va_list args);
 
 // String operations (CRT-free on Windows)
 void plat_i64_to_string(i64 value, char* buffer, size_t buffer_size);
@@ -71,6 +84,43 @@ bool plat_file_exists(const char* path);
 
 // Gets the directory containing the current executable.
 void plat_get_executable_dir(char* buffer, size_t size);
+
+// Networking / Sockets
+#ifdef _WIN32
+typedef SOCKET PlatSocket;
+#define PLAT_INVALID_SOCKET INVALID_SOCKET
+typedef fd_set plat_fd_set;
+#else
+typedef int PlatSocket;
+#define PLAT_INVALID_SOCKET (-1)
+typedef fd_set plat_fd_set;
+#endif
+
+#define PLAT_FD_ZERO(s) FD_ZERO(s)
+#define PLAT_FD_SET(fd, s) FD_SET(fd, s)
+#define PLAT_FD_ISSET(fd, s) FD_ISSET(fd, s)
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int plat_atoi(const char* str);
+int plat_socket_init(void);
+void plat_socket_cleanup(void);
+PlatSocket plat_create_tcp_server(u16 port);
+int plat_bind_listen(PlatSocket sock, int backlog);
+PlatSocket plat_accept(PlatSocket server_sock);
+int plat_recv(PlatSocket sock, u8* buf, int len);
+int plat_send(PlatSocket sock, const u8* buf, int len);
+void plat_close_socket(PlatSocket sock);
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms);
+void plat_socket_fd_zero(u8* s);
+void plat_socket_fd_set(PlatSocket fd, u8* s);
+bool plat_socket_fd_isset(PlatSocket fd, u8* s);
+
+#ifdef __cplusplus
+}
+#endif
 
 // Aborts the process immediately. This function does not return.
 void plat_abort();

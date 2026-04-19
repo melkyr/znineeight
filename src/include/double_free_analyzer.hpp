@@ -31,13 +31,15 @@ struct TrackedPointer {
     unsigned int flags;
     SourceLocation alloc_loc;
     SourceLocation first_free_loc;
+    const char* transferred_from;
     SourceLocation transfer_loc;
     SourceLocation defer_loc;
     bool freed_via_defer;
     bool is_errdefer;
+    bool is_arena;
 
     TrackedPointer() : name(NULL), state(AS_UNKNOWN), scope_depth(0), flags(TP_FLAG_NONE),
-                       freed_via_defer(false), is_errdefer(false) {
+                       transferred_from(NULL), freed_via_defer(false), is_errdefer(false), is_arena(false) {
         alloc_loc.file_id = 0;
         alloc_loc.line = 0;
         alloc_loc.column = 0;
@@ -115,6 +117,7 @@ private:
     DynamicArray<AllocationStateMap*> scopes_;
     DynamicArray<DeferredAction> deferred_actions_;
     int current_scope_depth_;
+    bool in_error_path_;
 
     void visit(ASTNode* node);
     void visitBlockStmt(ASTNode* node);
@@ -150,12 +153,15 @@ private:
     void executeDefers(int depth_limit);
     bool isArenaAllocCall(ASTNode* node);
     bool isArenaFreeCall(ASTFunctionCallNode* call);
-    bool isAllocationCall(ASTNode* node);
+    static const int MAX_RECURSION_DEPTH = 64;
+    bool isAllocationCall(ASTNode* node, int depth = 0);
     bool isOwnershipTransferCall(ASTFunctionCallNode* call);
-    bool isChangingPointerValue(ASTNode* rvalue);
+    bool isChangingPointerValue(ASTNode* rvalue, int depth = 0);
     void trackAllocation(const char* name, SourceLocation loc);
     TrackedPointer* findTrackedPointer(const char* name);
-    const char* extractVariableName(ASTNode* node);
+    const char* extractVariableName(ASTNode* node, int depth = 0);
+    const char* extractArrayAccessName(ASTArrayAccessNode* access, int depth);
+    const char* extractMemberAccessName(ASTMemberAccessNode* node, int depth);
 
     // Branching helpers
     void mergeSwitchProngStates(AllocationStateMap* entry_state, const DynamicArray<AllocationStateMap*>& prong_states);

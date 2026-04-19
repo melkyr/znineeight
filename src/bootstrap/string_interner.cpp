@@ -4,8 +4,8 @@
 #include <cassert>
 
 // FNV-1a hash constants
-static const unsigned int FNV_PRIME = 16777619;
-static const unsigned int FNV_OFFSET_BASIS = 2166136261;
+static const unsigned int FNV_PRIME = 16777619U;
+static const unsigned int FNV_OFFSET_BASIS = 2166136261U;
 
 // Hash function for null-terminated strings
 static unsigned int hash_nt(const char* str) {

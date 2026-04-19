@@ -83,12 +83,27 @@ TEST_FUNC(Union_NakedTagsRejectionUntagged) {
     return expect_parser_abort(source);
 }
 
-TEST_FUNC(Struct_NakedTagsRejection) {
+TEST_FUNC(Struct_NakedTagsSupport) {
     const char* source =
         "const S = struct {\n"
-        "    A,\n"
+        "    A: void,\n"
         "    B: i32,\n"
-        "};\n";
+        "};\n"
+        "pub fn main() void {\n"
+        "    var s: S = .{ .A = {}, .B = 42 };\n"
+        "}\n";
 
-    return expect_parser_abort(source);
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+
+    if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Pipeline execution failed for:\n%s\n", source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    return true;
 }

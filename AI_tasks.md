@@ -183,7 +183,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 
 
     
-### Milestone 4: Bootstrap Type System & Semantic Analysis (IN PROGRESS)
+### Milestone 4: Bootstrap Type System & Semantic Analysis (COMPLETE)
 81. **Task 81:** Define core Type struct and TypeKind for C89-compatible types
     - Risk Level: LOW
     - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T
@@ -1361,7 +1361,7 @@ Phase 6C: Bootstrap Compiler Integration
     - Keep it C89-compatible
     - Use in zig1 compiler source
 
-### Milestone 7: Extended Feature Set for Writing `zig1`
+### Milestone 7: Extended Feature Set for Writing `zig1` (COMPLETE)
 
 With the bootstrap compiler (`zig0`) now stable and capable of generating multi‑module C89 code, we can extend its supported language subset to include features essential for writing a self‑hosted compiler in Zig (`zig1`).
 
@@ -1494,9 +1494,15 @@ Key changes:
     - **Verification**: Verified with tests for error set declarations and functions returning error unions.
 
 227. [COMPLETE] **Task 227: try and catch Expressions (DONE)**
-    - **Parser**: Implemented `try` as a prefix unary operator and `catch` as a binary operator (with optional `|err|` capture).
-    - **Type Checker**: Validated that `try` operands are error unions and that enclosing functions return compatible error unions. Handled result type merging for `catch`.
-    - **Codegen**: Implemented "lifting" of `try` and `catch` expressions into statement blocks with temporary variables. Ensured LIFO `defer` execution on early returns from `try`.
+     - **Parser**: Implemented `try` as a prefix unary operator and `catch` as a binary operator (with optional `|err|` capture).
+     - **Type Checker**: Validated that `try` operands are error unions and that enclosing functions return compatible error unions. Handled result type merging for `catch`.
+     - **Codegen**: Implemented "lifting" of `try` and `catch` expressions into statement blocks with temporary variables. Ensured LIFO `defer` execution on early returns from `try`.
+
+227.1 [COMPLETE] **Task 227.1: Centralized Logging System (DONE)**
+    - **Platform Abstraction**: Removed direct output bypasses (`plat_write_stdout`, `plat_write_stderr`) from the public PAL API.
+    - **Logger Integration**: Unified all `plat_print_*` functions to route through the global `Logger` instance.
+    - **Robustness**: Implemented recursion protection and internal low-level fallbacks for initialization and logger failures.
+    - **Documentation**: Updated `DESIGN.md`, `C89_Codegen.md`, and `COMPATIBILITY.md` with details on the unified logging architecture.
     - **Note**: Deeply nested `try`/`catch` in complex expressions are handled via a second-pass lifter; basic nesting is fully supported.
     - **Verification**: Created comprehensive integration tests (Batch 46) covering nested scenarios and defer interactions.
 
@@ -2340,6 +2346,28 @@ Implementation steps (minimal):
     - **CBackend**: Specialized `__make_slice_u8` to accept `const char*` and perform an explicit cast to `unsigned char*` internally.
     - **Documentation**: Updated `docs/design/C89_Codegen.md` to reflect the specialized helper.
     - **Verification**: Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
+
+250. [COMPLETE] **Task 250: SignatureAnalyzer Upgrade (Milestone 11)**
+    - **Shared Helper**: Implemented `isTypeC89Compatible` to consolidate type validity logic for both parameters and return types.
+    - **Modern Type Support**: Added support for slices, optionals, error unions, error sets, and tagged unions.
+    - **Completeness Checks**: Enforced that structs, unions, and tagged unions must have a complete definition in signatures.
+    - **Parameter Restrictions**: Strictly rejected `void` as a parameter type and removed the legacy `anytype` exception for `print`.
+    - **Documentation**: Updated `Bootstrap_type_system_and_semantics.md` and created `static_analyzers.md`.
+
+252. [COMPLETE] **Task 252: LifetimeAnalyzer Upgrade (Milestone 11)**
+    - **Provenance Tracking**: Implemented recursive `getPointerOrigin` and assignment-aware `getPointerProvenance`.
+    - **Modern Type Support**: Enhanced detection for dangling pointers in struct fields, array indexing, and slices of local variables.
+    - **Safety**: Correctly handles parameter safety and tracks pointer reassignments to global/safe addresses.
+    - **Error Reporting**: Improved messages with specific field paths and differentiated "returning address of" vs "returning pointer to".
+    - **Documentation**: Updated `static_analyzers.md` with new capabilities and documented limitations.
+
+253. [COMPLETE] **Task 253: DoubleFreeAnalyzer Upgrade (Post-Milestone 11)**
+    - **Phase 1: Fix Test Semantics**: Updated `TransferTracking` test to reflect that `@ptrToInt` is a read. Added `DirectPointerTransfer` test.
+    - **Phase 2: Recursion Depth Guards**: Implemented `MAX_RECURSION_DEPTH = 64` for `extractVariableName`, `isAllocationCall`, and `isChangingPointerValue` to ensure stack safety.
+    - **Phase 3: Transparent Cast Tracking**: Updated `extractVariableName` to handle `NODE_PAREN_EXPR`, `NODE_PTR_CAST`, and `NODE_INT_CAST` transparently.
+    - **Phase 4: Precise Array Index Tracking**: Implemented precise indexing for constant array indices and conservative collapse to `arr[]` for variables. Added tuple support for field access.
+    - **Verification**: Verified Batch 5 (34/34) and Batch 75 (5/5) tests pass.
+    - **Documentation**: Updated `docs/design/static_analyzers.md` and `docs/tech_debt/static_analyzers.md`.
 
 ---
 

@@ -147,6 +147,7 @@ struct Type {
             Type* payload;
             Type* error_set; // NULL for inferred
             bool is_inferred;
+            Type* data_type; // Cached concrete union type for .data field
         } error_union;
         struct {
             const char* name; // NULL for anonymous
@@ -197,6 +198,28 @@ static inline bool isTaggedUnion(const Type* type) {
     if (type->kind == TYPE_TAGGED_UNION) return true;
     if (type->kind == TYPE_UNION && type->as.struct_details.is_tagged) return true;
     return false;
+}
+
+/**
+ * @brief Checks if a type is an aggregate type (struct, union, array, etc.) that may require decomposition.
+ * @param t The type to check.
+ * @return True if it is an aggregate type, false otherwise.
+ */
+static inline bool isAggregateType(const Type* t) {
+    if (!t) return false;
+    switch (t->kind) {
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
+        case TYPE_SLICE:
+        case TYPE_OPTIONAL:
+        case TYPE_ERROR_UNION:
+        case TYPE_ARRAY:
+        case TYPE_TUPLE:
+            return true;
+        default:
+            return false;
+    }
 }
 
 /**
@@ -410,6 +433,12 @@ void calculateStructLayout(Type* struct_type);
  * @param tagged_union_type The tagged union type to calculate the layout for.
  */
 void calculateTaggedUnionLayout(Type* tagged_union_type);
+
+/**
+ * @brief Calculates the layout of a tuple type.
+ * @param tuple_type The tuple type to calculate the layout for.
+ */
+void calculateTupleLayout(Type* tuple_type);
 
 void updateArrayLayout(Type* t);
 void updateOptionalLayout(Type* t);

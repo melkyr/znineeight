@@ -134,58 +134,44 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
 bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
     if (!type) return true;
 
-    switch (type->kind) {
-        case TYPE_VOID:
-            return true;
-
-        case TYPE_BOOL:
-        case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
-        case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
-        case TYPE_C_CHAR:
-        case TYPE_F32: case TYPE_F64:
-        case TYPE_ENUM:
-            return true;
-
-        case TYPE_ISIZE: case TYPE_USIZE:
-        case TYPE_NORETURN:
-            return true;
-
-        case TYPE_POINTER:
-        case TYPE_FUNCTION_POINTER:
-        case TYPE_SLICE:
-            return true;
-
-        case TYPE_STRUCT:
-        case TYPE_UNION:
-        case TYPE_TAGGED_UNION:
-            // Check struct/union size for return
-            if (type->size > 64) {
-                error_handler_.reportWarning(WARN_EXTRACTION_LARGE_PAYLOAD, loc, "Struct return size > 64 bytes may be problematic for MSVC 6.0");
-            }
-            return true;
-
-        case TYPE_ERROR_UNION:
-            return true;
-
-        case TYPE_ERROR_SET:
-            return true;
-
-        case TYPE_OPTIONAL:
-            return true;
-
-        default:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "Non-C89 return type not supported");
-            return false;
+    if (!isTypeC89Compatible(type, loc, false)) {
+        return false;
     }
+
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION) {
+        // Check struct/union size for return
+        if (type->size > 64) {
+            error_handler_.reportWarning(WARN_EXTRACTION_LARGE_PAYLOAD, loc, "Struct return size > 64 bytes may be problematic for MSVC 6.0");
+        }
+    }
+
+    return true;
 }
 
 bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, const char* fn_name) {
+    (void)fn_name;
+    if (!type) return true;
+
+    if (type->kind == TYPE_VOID) {
+        error_handler_.report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Parameter cannot be 'void'");
+        return false;
+    }
+
+    if (type->kind == TYPE_ARRAY) {
+        // Arrays in parameters treated as pointers
+        error_handler_.reportWarning(WARN_ARRAY_PARAMETER, loc, "Array parameter will be treated as a pointer in C89");
+        return true;
+    }
+
+    return isTypeC89Compatible(type, loc, true);
+}
+
+bool SignatureAnalyzer::isTypeC89Compatible(Type* type, SourceLocation loc, bool isParameter) {
     if (!type) return true;
 
     switch (type->kind) {
         case TYPE_VOID:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Parameter cannot be 'void'");
-            return false;
+            return !isParameter;
 
         case TYPE_BOOL:
         case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
@@ -193,44 +179,30 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, con
         case TYPE_C_CHAR:
         case TYPE_F32: case TYPE_F64:
         case TYPE_ENUM:
-            return true;
-
-        case TYPE_ISIZE: case TYPE_USIZE:
-            return true;
-
         case TYPE_POINTER:
         case TYPE_FUNCTION_POINTER:
         case TYPE_SLICE:
+        case TYPE_OPTIONAL:
+        case TYPE_ERROR_UNION:
+        case TYPE_ERROR_SET:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_NORETURN:
+        case TYPE_ANYTYPE:
             return true;
 
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_TAGGED_UNION:
-            return true;
-
-        case TYPE_ARRAY:
-            // Arrays in parameters treated as pointers
-            error_handler_.reportWarning(WARN_ARRAY_PARAMETER, loc, "Array parameter will be treated as a pointer in C89");
-            return true;
-
-        case TYPE_ERROR_UNION:
-            return true;
-
-        case TYPE_ERROR_SET:
-            return true;
-
-        case TYPE_OPTIONAL:
-            return true;
-
-        case TYPE_ANYTYPE:
-            if (fn_name && plat_strcmp(fn_name, "print") == 0) {
-                return true;
+        case TYPE_TUPLE:
+            if (!isTypeComplete(type)) {
+                error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE),
+                                      unit_.getArena(), "Incomplete struct/union type in function signature");
+                return false;
             }
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "anytype is not supported in bootstrap compiler");
-            return false;
+            return true;
 
         default:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "Non-C89 type in parameter not supported");
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "Non-C89 type in function signature not supported");
             return false;
     }
 }

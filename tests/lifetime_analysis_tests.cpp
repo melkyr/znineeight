@@ -65,9 +65,12 @@ TEST_FUNC(Lifetime_ReturnLocalPointer) {
 TEST_FUNC(Lifetime_ReturnParamOK) {
     const char* source =
         "fn ok(p: *i32) -> *i32 {\n"
+        "  var x: i32 = 42;\n"
+        "  p = &x;\n"
         "  return p;\n"
         "}\n";
-    ASSERT_TRUE(run_lifetime_analyzer_test(source));
+    // This should fail because p is reassigned to a local.
+    ASSERT_TRUE(run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION));
     return true;
 }
 
@@ -87,6 +90,62 @@ TEST_FUNC(Lifetime_ReturnGlobalOK) {
         "  return &y;\n"
         "}\n";
     ASSERT_TRUE(run_lifetime_analyzer_test(source));
+    return true;
+}
+
+TEST_FUNC(Lifetime_ReturnAddrOfField) {
+    const char* source =
+        "const S = struct { x: i32 };\n"
+        "fn bad() -> *i32 {\n"
+        "  var s: S = .{ .x = 42 };\n"
+        "  var p: *i32 = &s.x;\n"
+        "  return p;\n"
+        "}\n";
+    ASSERT_TRUE(run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION));
+    return true;
+}
+
+TEST_FUNC(Lifetime_ReturnAddrOfNestedField) {
+    const char* source =
+        "const Inner = struct { y: i32 };\n"
+        "const Outer = struct { x: Inner };\n"
+        "fn bad() -> *i32 {\n"
+        "  var s: Outer = .{ .x = .{ .y = 42 } };\n"
+        "  var p: *i32 = &s.x.y;\n"
+        "  return p;\n"
+        "}\n";
+    ASSERT_TRUE(run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION));
+    return true;
+}
+
+TEST_FUNC(Lifetime_ReturnAddrOfArrayElement) {
+    const char* source =
+        "fn bad() -> *i32 {\n"
+        "  var arr: [10]i32 = undefined;\n"
+        "  return &arr[0];\n"
+        "}\n";
+    ASSERT_TRUE(run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION));
+    return true;
+}
+
+TEST_FUNC(Lifetime_ReturnSliceOfLocalArray) {
+    const char* source =
+        "fn bad() -> []i32 {\n"
+        "  var arr: [10]i32 = undefined;\n"
+        "  return arr[0..5];\n"
+        "}\n";
+    ASSERT_TRUE(run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION));
+    return true;
+}
+
+TEST_FUNC(Lifetime_ReturnSlicePtr) {
+    const char* source =
+        "fn bad() -> *i32 {\n"
+        "  var arr: [10]i32 = undefined;\n"
+        "  var slice = arr[0..5];\n"
+        "  return slice.ptr;\n"
+        "}\n";
+    ASSERT_TRUE(run_lifetime_analyzer_test(source, ERR_LIFETIME_VIOLATION));
     return true;
 }
 

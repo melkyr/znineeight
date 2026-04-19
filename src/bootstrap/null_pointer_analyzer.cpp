@@ -146,6 +146,18 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
         case NODE_RETURN_STMT:
             visitReturnStmt(&node->as.return_stmt);
             break;
+        case NODE_ORELSE_EXPR:
+            visitOrelseExpr(node->as.orelse_expr);
+            break;
+        case NODE_TRY_EXPR:
+            visitTryExpr(&node->as.try_expr);
+            break;
+        case NODE_CATCH_EXPR:
+            visitCatchExpr(node->as.catch_expr);
+            break;
+        case NODE_MEMBER_ACCESS:
+            visitMemberAccess(node->as.member_access);
+            break;
         case NODE_EXPRESSION_STMT:
             visit(node->as.expression_stmt.expression);
             break;
@@ -291,6 +303,10 @@ void NullPointerAnalyzer::visitIfStmt(ASTIfStmtNode* node) {
             setState(varName, PS_SAFE); // p != null
         }
 
+        if (node->capture_name) {
+            addVariable(node->capture_name, PS_SAFE);
+        }
+
         visit(node->then_block);
         StateMap* then_branch = current_scope_;
         popScope(); // Exit then branch
@@ -373,6 +389,10 @@ void NullPointerAnalyzer::visitWhileStmt(ASTWhileStmtNode* node) {
         pushScope(true);
         setState(varName, PS_SAFE);
 
+        if (node->capture_name) {
+            addVariable(node->capture_name, PS_SAFE);
+        }
+
         visit(node->body);
         StateMap* loop_state = current_scope_;
         popScope();
@@ -423,6 +443,31 @@ void NullPointerAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
     }
 }
 
+void NullPointerAnalyzer::visitOrelseExpr(ASTOrelseExprNode* node) {
+    visit(node->payload);
+    visit(node->else_expr);
+}
+
+void NullPointerAnalyzer::visitTryExpr(ASTTryExprNode* node) {
+    visit(node->expression);
+}
+
+void NullPointerAnalyzer::visitCatchExpr(ASTCatchExprNode* node) {
+    visit(node->payload);
+    if (node->error_name) {
+        pushScope(true);
+        addVariable(node->error_name, PS_SAFE);
+        visit(node->else_expr);
+        popScope();
+    } else {
+        visit(node->else_expr);
+    }
+}
+
+void NullPointerAnalyzer::visitMemberAccess(ASTMemberAccessNode* node) {
+    visit(node->base);
+}
+
 PointerState NullPointerAnalyzer::getExpressionState(ASTNode* expr) {
     if (!expr) return PS_MAYBE;
 
@@ -442,6 +487,30 @@ PointerState NullPointerAnalyzer::getExpressionState(ASTNode* expr) {
             PointerState state = getState(name);
             return state;
         }
+        case NODE_ORELSE_EXPR: {
+            PointerState opt_state = getExpressionState(expr->as.orelse_expr->payload);
+            PointerState fallback_state = getExpressionState(expr->as.orelse_expr->else_expr);
+            if (opt_state == PS_SAFE) return PS_SAFE;
+            if (opt_state == PS_IS_NULL) return fallback_state;
+            return mergeStates(PS_SAFE, fallback_state);
+        }
+        case NODE_TRY_EXPR: {
+            Type* t = expr->resolved_type;
+            if (t && t->kind == TYPE_POINTER) return PS_SAFE;
+            return PS_MAYBE;
+        }
+        case NODE_CATCH_EXPR: {
+            // Payload vs Fallback
+            PointerState fallback_state = getExpressionState(expr->as.catch_expr->else_expr);
+            Type* t = expr->resolved_type;
+            if (t && t->kind == TYPE_POINTER) {
+                // If it's a pointer, payload is PS_SAFE (since *T is non-null)
+                return mergeStates(PS_SAFE, fallback_state);
+            }
+            return PS_MAYBE;
+        }
+        case NODE_MEMBER_ACCESS:
+            return PS_MAYBE;
         case NODE_FUNCTION_CALL:
             return PS_MAYBE;
         default:
@@ -459,6 +528,16 @@ bool NullPointerAnalyzer::isNullExpression(ASTNode* expr) {
 
 bool NullPointerAnalyzer::isNullComparison(ASTNode* cond, const char*& varName, bool& isEqual) {
     if (!cond) return false;
+
+    // Pattern: Optional/Error check (if (opt) |val|)
+    if (cond->type == NODE_IDENTIFIER) {
+        Type* t = cond->resolved_type;
+        if (t && (t->kind == TYPE_OPTIONAL || t->kind == TYPE_ERROR_UNION)) {
+            varName = cond->as.identifier.name;
+            isEqual = false;
+            return true;
+        }
+    }
 
     // Pattern: p == null, p != null
     if (cond->type == NODE_BINARY_OP) {

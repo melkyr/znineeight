@@ -494,6 +494,12 @@ public:
     void ensureOptionalType(Type* type);
 
     /**
+     * @brief Ensures a tuple type is defined.
+     * @param type The tuple type.
+     */
+    void ensureTupleType(Type* type);
+
+    /**
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
@@ -511,6 +517,7 @@ public:
     void emitBufferedSlices();
     void emitBufferedErrorUnions();
     void emitBufferedOptionals();
+    void emitBufferedTuples();
 
     /**
      * @brief Emits deferred statements for a scope exit.
@@ -543,6 +550,11 @@ private:
      * @brief Emits a literal expression (integer, float, string, char, bool, null, error).
      */
     void emitLiteral(const ASTNode* node);
+
+    /**
+     * @brief Emits a positional array initializer for C89.
+     */
+    void emitArrayInitializer(const ASTStructInitializerNode* init, Type* array_type);
 
     /**
      * @brief Emits a unary operator expression.
@@ -681,6 +693,7 @@ private:
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
+    DynamicArray<const char*> emitted_tuples_;
     DynamicArray<const char*> emitted_enums_;
     DynamicArray<const char*> emitted_forward_decls_;
     DynamicArray<const char*>* external_cache_;
@@ -703,6 +716,8 @@ private:
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];
     DynamicArray<bool> loop_has_continue_;
+
+    bool allow_aggregate_literal_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

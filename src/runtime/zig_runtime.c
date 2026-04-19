@@ -6,6 +6,7 @@
 #include "platform_win98.h"
 #include <windows.h>
 #else
+#define _XOPEN_SOURCE 500
 #include <unistd.h>
 #endif
 
@@ -52,12 +53,14 @@ static void* platform_alloc(usize size) {
 static void platform_free(void* ptr) {
     if (!ptr) return;
 #ifdef _WIN32
-    /* Freeing a VirtualAlloc block requires VirtualFree */
-    MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
-        VirtualFree(ptr, 0, MEM_RELEASE);
-    } else {
-        HeapFree(GetProcessHeap(), 0, ptr);
+    {
+        /* OpenWatcom requires 'struct' keyword for MEMORY_BASIC_INFORMATION */
+        struct _MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
+            VirtualFree(ptr, 0, MEM_RELEASE);
+        } else {
+            HeapFree(GetProcessHeap(), 0, ptr);
+        }
     }
 #else
     free(ptr);
@@ -154,6 +157,14 @@ void* arena_alloc_default(usize size) {
 void arena_free(void* ptr) {
     /* No-op: individual allocations cannot be freed in an arena. */
     (void)ptr;
+}
+
+void __bootstrap_sleep_ms(unsigned int ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    usleep(ms * 1000);
+#endif
 }
 
 void __bootstrap_write(const char* s, usize len) {
@@ -254,6 +265,13 @@ void __bootstrap_print_int(i32 n) {
         s[1] = '\0';
         __bootstrap_print(s);
     }
+}
+
+void __bootstrap_print_char(i32 c) {
+    char s[2];
+    s[0] = (char)c;
+    s[1] = '\0';
+    __bootstrap_print(s);
 }
 
 

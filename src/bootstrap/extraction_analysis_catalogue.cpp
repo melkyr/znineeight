@@ -112,9 +112,12 @@ bool ExtractionAnalysisCatalogue::isStackSafe(Type* payload_type) {
 }
 
 void ExtractionAnalysisCatalogue::generateReport(CompilationUnit* unit) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
     ErrorHandler& handler = unit->getErrorHandler();
 
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     handler.reportInfo(INFO_EXTRACTION_REPORT_HEADER, SourceLocation(), "=== Extraction Analysis Report ===");
+#endif
 
     for (size_t i = 0; i < sites_->length(); ++i) {
         ExtractionSiteInfo& site = (*sites_)[i];
@@ -165,4 +168,5 @@ void ExtractionAnalysisCatalogue::generateReport(CompilationUnit* unit) {
             handler.reportInfo(INFO_EXTRACTION_STACK_USAGE, site.location, msg, arena_);
         }
     }
+#endif
 }

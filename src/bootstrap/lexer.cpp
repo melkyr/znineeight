@@ -412,8 +412,7 @@ Token Lexer::lexNumericLiteral() {
     if (*start == '.') {
         this->current++;
         this->column++;
-        token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
-        return token;
+        return Token(TOKEN_ERROR, "float literal must have leading digit", token.location);
     }
 
     bool is_hex = false;
@@ -565,7 +564,7 @@ Token Lexer::nextToken() {
         return token;
     }
 
-    if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
+    if (isdigit(c)) {
         return lexNumericLiteral();
     }
 

@@ -1,3 +1,135 @@
+# Z98 Upcoming Bugfixes & Investigations
+
+## Investigation: Aggregate Initializer Lifting in Expression Contexts
+
+### Problem Description
+Currently, the Z98 compiler emits C99-style compound literals (e.g., `(struct S){.x = 1}`) or braced initializers (e.g., `{.tag = ...}`) directly at the call site when an aggregate (struct, union, tagged union, or array) is passed as a function argument. Standard C89 does not support compound literals or braced initializers in expression contexts; they are only permitted in variable declarations.
+
+### Minimal Reproduction
+The following Zig code demonstrates the issue:
+
+```zig
+const MyType = union(enum) {
+    A: i32,
+    B: f32,
+};
+
+const MyStruct = struct {
+    x: i32,
+    y: i32,
+};
+
+fn takeTaggedUnion(u: MyType) void { _ = u; }
+fn takeStruct(s: MyStruct) void { _ = s; }
+
+pub fn main() void {
+    // Both of these currently emit invalid C89
+    takeTaggedUnion(.{ .A = 42 });
+    takeStruct(.{ .x = 1, .y = 2 });
+}
+```
+
+### Observed Output (Invalid C89)
+The `C89Emitter` generates the following call sites:
+
+```c
+int main(void) {
+    zF_b3368a_takeTaggedUnion({.tag = zE_8aa302_MyType_Tag_A, .data = {.A = 42}});
+    zF_b3368a_takeStruct({1, 2});
+    return 0;
+}
+```
+
+Legacy compilers like MSVC 6.0 will reject this syntax with "error C2059: syntax error : '{'".
+
+### Proposed Fix Strategy
+
+The fix involves extending the `ControlFlowLifter` pass to treat aggregate initializers as "lifting candidates" when they appear in expression contexts that are not direct assignments or variable initializers.
+
+#### 1. Identification of Lifting Candidates
+Update `isControlFlowExpr` in `src/include/ast_utils.hpp` or create a new `isLiftingCandidate` helper to include aggregate literals:
+
+```cpp
+inline bool isLiftingCandidate(NodeType type) {
+    return isControlFlowExpr(type) ||
+           type == NODE_STRUCT_INITIALIZER ||
+           type == NODE_TUPLE_LITERAL;
+}
+```
+
+#### 2. Update `ControlFlowLifter`
+Modify `ControlFlowLifter::needsLifting` and `ControlFlowLifter::transformNode` to recognize these nodes. When an aggregate initializer is found in an "unsafe" context (like a function call argument), the lifter should:
+1.  Generate a unique temporary name (e.g., `__tmp_agg_1`).
+2.  Create a `NODE_VAR_DECL` for the temporary, using the aggregate initializer as the init expression.
+3.  Insert the declaration before the current statement.
+4.  Replace the initializer in the expression with an identifier referencing the temporary.
+
+#### 3. Leverage Existing Emitter Logic
+The `C89Emitter` already contains robust logic for "lifting" initializers in `emitLocalVarDecl` and `emitAssignmentWithLifting`. By lifting the aggregate to a temporary variable at the AST level, we ensure that:
+-   The emitter sees a simple `NODE_VAR_DECL`.
+-   `emitLocalVarDecl` will trigger `emitAssignmentWithLifting`.
+-   `emitAssignmentWithLifting` will correctly decompose the initializer into field-by-field assignments (e.g., `tmp.x = 1; tmp.y = 2;`), which is perfectly valid C89.
+
+### Impact on Emitter
+This change allows `C89Emitter::emitExpression` to be simplified. It can eventually report an internal error if it encounters a `NODE_STRUCT_INITIALIZER` or `NODE_TUPLE_LITERAL`, as the lifter should have already removed them from expression contexts.
+
+### Estimated Effort
+-   **Effort**: Low (1-2 hours)
+-   **Risk**: Low (Relies on proven lifting infrastructure)
+-   **Verification**: Batch 76 (to be created) should verify that all aggregate initializers in function arguments are lifted and decomposed.
+
+---
+
+## Investigation: Tagged Union Coercion in Expressions
+
+### Problem Description
+The Z98 bootstrap compiler does not currently support implicit coercion from an enum tag literal (e.g., `.Alive`) or a qualified enum member (e.g., `Cell.Alive`) to its corresponding tagged union type when used within branches of control-flow expressions like `if` or `switch`.
+
+### Minimal Reproduction
+```zig
+const Cell = union(enum) {
+    Alive: void,
+    Dead: void,
+};
+
+pub fn main() void {
+    var cond: bool = true;
+    // This currently fails or causes an internal compiler error
+    var next_state: Cell = if (cond) .Alive else .Dead;
+    _ = next_state;
+}
+```
+
+### Observed Behavior
+The `TypeChecker` currently resolves naked tags (`.Alive`) to `TYPE_UNDEFINED` during the initial visitation of `if` expression branches. When both branches are `TYPE_UNDEFINED`, the unification logic in `visitIfExpr` fails to determine a common result type, even if the parent assignment provides a clear `expected_type`.
+
+### Root Cause Analysis
+1.  **Naked Tag Resolution**: In `visitMemberAccess`, tags with no base (naked tags) are explicitly returned as `get_g_type_undefined()`.
+2.  **Unification Failure**: `visitIfExpr` and `validateSwitch` rely on `areTypesCompatible` or `areTypesEqual` to find a common type between branches. If branches are `TYPE_UNDEFINED`, they cannot be unified to a specific tagged union unless that union is already the `expected_type` and distributive coercion is applied.
+3.  **Distributive Coercion Interaction**: While `coerceNode` has logic to transform tags into unions, it is often called after the initial visitation has already failed or returned an ambiguous type.
+
+### Proposed Fix Strategy
+
+The goal is to allow the `TypeChecker` to recognize that a tag literal is a "potential" tagged union value during the unification phase.
+
+#### 1. Improve Tag Literal Typing
+Modify `visitMemberAccess` to return a specialized sentinel type (e.g., `TYPE_TAG_LITERAL`) for naked tags, or ensure they carry the field name for later resolution.
+
+#### 2. Enhance Unification Logic
+Update `areTypesCompatible` to recognize that:
+-   A tag literal is compatible with a tagged union if the union has a matching `void` variant.
+-   Two tag literals are compatible with each other if they belong to the same expected tagged union type.
+
+#### 3. Proactive Coercion in Control-Flow
+Update `visitIfExpr` and `validateSwitch` to check if branches are tag literals. If an `expected_type` (which is a tagged union) is available, proactively call `coerceNode` on the branches *before* final unification. This will transform `.Alive` into a synthetic `Cell{ .Alive = {} }` AST node, which already has proven support in the emitter.
+
+### Estimated Effort
+-   **Effort**: Medium (3-5 hours)
+-   **Risk**: Medium (Requires careful changes to type unification and compatibility rules)
+-   **Verification**: Add tests for `if` and `switch` expressions returning both qualified and unqualified tags.
+
+---
+[Previous content of Z98_upcoming_bugfixes.md continues here...]
 ## Issue 4: Loop State & Capture Sensitivity
 
 **Effort:** Low to Medium (2-4 hours) – this is a compiler bug that may affect some complex loops.

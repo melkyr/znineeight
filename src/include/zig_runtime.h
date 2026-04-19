@@ -52,6 +52,11 @@ void __bootstrap_print(const char* s);
 void __bootstrap_print_int(i32 n);
 
 /**
+ * @brief Print character helper
+ */
+void __bootstrap_print_char(i32 c);
+
+/**
  * @brief Print bytes helper
  */
 void __bootstrap_write(const char* s, usize len);
@@ -65,6 +70,22 @@ void arena_destroy(Arena* a);
 extern Arena* zig_default_arena;
 void* arena_alloc_default(usize size);
 void arena_free(void* ptr);
+
+void __bootstrap_sleep_ms(unsigned int ms);
+
+/* Networking (optional, requires linking net_runtime.o on Windows) */
+int plat_socket_init(void);
+void plat_socket_cleanup(void);
+int plat_create_tcp_server(unsigned short port);
+int plat_bind_listen(int sock, int backlog);
+int plat_accept(int server_sock);
+int plat_recv(int sock, u8* buf, int len);
+int plat_send(int sock, const u8* buf, int len);
+void plat_close_socket(int sock);
+int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms);
+void plat_socket_fd_zero(u8* set);
+void plat_socket_fd_set(int fd, u8* set);
+int plat_socket_fd_isset(int fd, u8* set);
 
 usize __bootstrap_usize_from_i64(i64 x);
 
@@ -135,6 +156,10 @@ ZIG_INLINE ZIG_UNUSED i16 __bootstrap_i16_from_i32(i32 x) {
 ZIG_INLINE ZIG_UNUSED i32 __bootstrap_i32_from_i64(i64 x) {
     if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
     return (i32)x;
+}
+
+ZIG_INLINE ZIG_UNUSED c_char __bootstrap_c_char_from_u8(u8 x) {
+    return (c_char)x;
 }
 
 #endif /* ZIG_RUNTIME_H */

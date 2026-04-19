@@ -66,6 +66,11 @@ All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`
 #### Sign-Correct IO Helpers
 The runtime IO helpers `__bootstrap_print`, `__bootstrap_write`, and `__bootstrap_panic` accept `const char*` instead of `const unsigned char*`. This eliminates pointer-sign mismatch warnings when passing string literals (which are `char*` in C) to these functions. Internal casts to `unsigned char*` are performed within the runtime implementation where necessary.
 
+#### %zu Format Specifier Avoidance
+Standard C89 and many legacy C runtimes (like MSVC 6.0's `msvcrt.dll`) do not support the `%zu` format specifier for `size_t`. To ensure the bootstrap compiler produces correct output even when compiled with these toolchains, the `C89Emitter` and all internal logging functions strictly avoid `%zu`.
+- **Strategy**: Use `%lu` and explicitly cast `size_t` arguments to `(unsigned long)`.
+- **Rationale**: On 32-bit platforms, `size_t` and `unsigned long` are both 32-bit, making this cast safe and portable.
+
 To ensure compliance even when passing Zig's `u8` pointers (which map to `unsigned char*` in C), the `C89Emitter` automatically injects an explicit `(const char*)` cast at the call site for the string arguments of these functions.
 
 ### 2.1 Line Ending and Statement Terminator Abstraction
@@ -87,18 +92,40 @@ Using these constants simplifies maintenance and ensures that any necessary mang
 ### 2.3 Temporary Variable Allocation
 As of the "para-Cresol" release, `C89Emitter` employs a unified strategy for generating temporary variables via `makeTempVarForType`. This ensures that all compiler-generated symbols (like `opt_tmp` for optionals or `for_idx` for loops) are declared at the beginning of their respective C blocks, adhering to strict C89 rules.
 
-### 2.4 Unused Continue Labels
+### 2.4 Type and Field Declaration Helpers
+To standardize the emission of variable and field declarations and ensure correct placement of semicolons and line endings, the `C89Emitter` provides two primary helpers:
+
+- **`writeDecl(Type* type, const char* name)`**: Emits a C declaration (`type name;`) followed by a statement terminator (`endStmt()`). This is used for top-level variables and local variables that do not require immediate C-level initialization.
+- **`writeFieldDecl(Type* type, const char* name)`**: Similar to `writeDecl`, but automatically includes the current indentation. This is the preferred method for emitting fields within `struct` and `union` bodies.
+
+These helpers reduce manual string manipulation and ensure that type-specific formatting (like function pointer syntax) is handled correctly through the underlying `emitType` and `emitDeclarator` calls.
+
+#### Example: Refactoring `struct` field emission
+**Before:**
+```cpp
+writeIndent();
+emitType(field_type, field_name);
+writeString(";\n");
+```
+
+**After:**
+```cpp
+writeFieldDecl(field_type, field_name);
+```
+
+### 2.5 Unused Continue Labels
 To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.
 - **Mechanism**: A stack `loop_has_continue_` is maintained alongside `loop_id_stack_`.
 - **Flag Activation**: The flag for the current loop is set to `true` whenever `emitContinue` is called for that loop's ID.
 - **Conditional Emission**: The continue label (e.g., `__loop_1_continue: ;`) is only emitted at the end of the loop body if the flag is true.
 
-### 2.5 Combined Block and Statement Helpers
+### 2.6 Combined Block and Statement Helpers
 To simplify the emission of control flow structures and ensure consistent formatting of blocks and expression-statements, the `C89Emitter` provides several higher-level helpers:
 
 - **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.
 - **`writeBlockClose()`**: Decrements the indentation level, writes an indented `}`, and a line ending.
 - **`writeExprStmt(const ASTNode* expr)`**: Indents, emits the C representation of the provided expression node, and appents a statement terminator (`endStmt()`).
+- **`captureExpression(const ASTNode* expr)`**: Temporarily redirects output to a buffer to obtain the C string representation of an expression without writing it to the file. This is essential for decomposing complex L-values.
 
 #### Example: Refactoring `while` loops
 **Before:**
@@ -139,7 +166,7 @@ Zig: `total += i;`
 Generated C: `(void)(total += i);`
 
 ### Usage in Pipeline:
-The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.
+The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase. All compiler output and diagnostics during code generation are routed through the centralized logging system. Users can capture this output using the `--log-file=<path>` flag, while `--verbose` enables detailed emission tracing on the console.
 
 ```cpp
 C89Emitter emitter(arena, "output.c");
@@ -285,6 +312,8 @@ This unification reduces code duplication and ensures consistent behavior across
         }
     }
     ```
+- **While Loops**:
+  - **Empty Body Protection**: If a `while` or `for` loop has an empty body (`NODE_EMPTY_STMT`), the emitter explicitly outputs a semicolon (`;`). This prevents some C compilers from generating illegal tight infinite loops or "no-op" jumps that could hang the system.
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`, unless the loop requires labels (e.g., due to an iteration expression or being a `for` loop).
   - **Labeled or requiring labels**: Mapped to `goto __loop_<id>_end;` for `break` and `goto __loop_<id>_continue;` (or `_start` if no iteration expr) for `continue`.
@@ -366,6 +395,7 @@ To avoid signedness warnings when coercing string literals (which are `char*` in
 - **Signature**: `ZIG_INLINE ZIG_UNUSED Slice_u8 __make_slice_u8(const char* ptr, usize len)`
 - **Implementation**: The pointer parameter is explicitly cast to `unsigned char*` when assigning to the slice's `ptr` field: `s.ptr = (unsigned char*)ptr;`.
 - **Rationale**: This allows string literals to be passed directly to the helper without generating `-Wpointer-sign` warnings, while maintaining the correct unsigned representation for `u8` data.
+- **Backward Compatibility**: String literals also implicitly coerce to `[*]const u8` (many-item pointer) and `*const u8` (legacy single-item pointer) to support standard C interop.
 
 ### 4.5 Array and Struct Initializers
 Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
