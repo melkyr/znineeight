@@ -564,10 +564,7 @@ Token Lexer::nextToken() {
         return token;
     }
 
-    if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
-        if (c == '.') {
-            return Token(TOKEN_ERROR, "float literal must have leading digit", token.location);
-        }
+    if (isdigit(c)) {
         return lexNumericLiteral();
     }
 

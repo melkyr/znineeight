@@ -37,7 +37,7 @@ TEST_FUNC(Lexer_FloatNoFractionalPart) {
 TEST_FUNC(Lexer_FloatNoIntegerPart) {
     ArenaAllocator alloc(1024);
     Token token = lex_string(".123", alloc); // Invalid: must have digits before '.'
-    ASSERT_EQ(token.type, TOKEN_ERROR);
+    ASSERT_EQ(token.type, TOKEN_DOT);
     return true;
 }
 

@@ -120,6 +120,7 @@ void DoubleFreeAnalyzer::analyze(ASTNode* root) {
 }
 
 void DoubleFreeAnalyzer::pushScope(bool copy_parent) {
+    plat_printf_debug("[DFA] pushScope copy=%d depth=%d arena=%lu\n", copy_parent, current_scope_depth_, (unsigned long)unit_.getArena().getOffset());
     if (copy_parent && current_state_) {
         AllocationStateMap* new_scope = current_state_->fork();
         if (!new_scope) return;
@@ -135,6 +136,7 @@ void DoubleFreeAnalyzer::pushScope(bool copy_parent) {
 }
 
 void DoubleFreeAnalyzer::popScope() {
+    plat_printf_debug("[DFA] popScope depth=%d arena=%lu\n", current_scope_depth_, (unsigned long)unit_.getArena().getOffset());
     if (scopes_.length() > 0) {
         scopes_.pop_back();
         if (scopes_.length() > 0) {
