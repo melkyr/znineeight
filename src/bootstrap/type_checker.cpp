@@ -3502,6 +3502,17 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             }
         } else {
             /* Infer type from initializer */
+            if (isAmbiguousTag(node->initializer)) {
+                char msg[256];
+                if (node->initializer->type == NODE_MEMBER_ACCESS) {
+                    plat_snprintf(msg, sizeof(msg), "Ambiguous naked tag '.%s': missing target tagged union type",
+                                 node->initializer->as.member_access->field_name);
+                } else {
+                    plat_snprintf(msg, sizeof(msg), "Ambiguous tag '%s': missing target tagged union type",
+                                 node->initializer->as.integer_literal.original_name);
+                }
+                return reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, msg);
+            }
             declared_type = initializer_type;
         }
     }
@@ -7608,7 +7619,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             plat_snprintf(msg, sizeof(msg), "Ambiguous tag '%s': missing target tagged union type",
                          node->as.integer_literal.original_name);
         }
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->loc, msg);
+        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
         --recursion_depth;
         return;
     }

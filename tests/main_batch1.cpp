@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
         test_Lexer_FloatWithUnderscores_AllParts,
         test_Lexer_FloatSimpleDecimal,
         test_Lexer_FloatNoFractionalPart,
-        test_Lexer_FloatNoIntegerPart,
+        test_Lexer_LeadingDotIsTokenDot,
         test_Lexer_FloatWithExponent,
         test_Lexer_FloatWithNegativeExponent,
         test_Lexer_FloatExponentNoSign,
