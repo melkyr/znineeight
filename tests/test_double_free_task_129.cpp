@@ -163,10 +163,12 @@ TEST_FUNC(DoubleFree_ErrdeferContextInError) {
     const char* source =
         "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
         "fn arena_free(p: *void) -> void {}\n"
-        "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc_default(100u);\n"   // Line 4
-        "    errdefer { arena_free(p); }\n"      // Line 5 (executes 2nd)
-        "    errdefer { arena_free(p); }\n"      // Line 6 (executes 1st)
+        "const MyErrorSet = error { MyError };\n"
+        "fn my_func() -> !void {\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"   // Line 5
+        "    errdefer { arena_free(p); }\n"      // Line 6 (executes 2nd)
+        "    errdefer { arena_free(p); }\n"      // Line 7 (executes 1st)
+        "    return MyErrorSet.MyError;\n"
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);
@@ -187,13 +189,54 @@ TEST_FUNC(DoubleFree_ErrdeferContextInError) {
             // Check in hint
             if (errors[i].hint &&
                 contains_substring(errors[i].hint, "via errdefer at") &&
-                contains_substring(errors[i].hint, ":6:")) {
+                contains_substring(errors[i].hint, ":7:")) {
                 found_double_free_with_errdefer = true;
             }
         }
     }
 
     ASSERT_TRUE(found_double_free_with_errdefer);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_TransferDiagnostics) {
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
+        "fn my_func() -> void {\n"
+        "    var a: *u8 = arena_alloc_default(100u);\n"
+        "    var b = a;\n"
+        "}\n"; // b leaks, transferred from a
+
+    ParserTestContext ctx(source, arena, interner);
+    ctx.getCompilationUnit().getOptions().warn_arena_leaks = true;
+
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool found_transfer_msg = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            if (warnings[i].message &&
+                contains_substring(warnings[i].message, "originally held by 'a'") &&
+                contains_substring(warnings[i].message, "transferred at")) {
+                found_transfer_msg = true;
+            }
+        }
+    }
+    ASSERT_TRUE(found_transfer_msg);
 
     return true;
 }

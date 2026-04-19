@@ -9,14 +9,19 @@ This document provides a comprehensive breakdown of failing tests in the Z98 boo
 | Batch | Fails | Primary Reason |
 |-------|-------|----------------|
 | 44 | 1 | Print lowering mismatch due to tuple evolution (regression). |
+| 3 | ? | Regression in expression evaluation or type resolution. |
 
 ---
 
 ## Detailed Diagnostics
 
 ### Batch 5 (Double Free Analyzer) [RESOLVED]
-- **Status**: ALL TESTS PASSING (34/34).
-- **Resolution**: Updated `test_DoubleFree_TransferTracking` to reflect correct ownership transfer semantics (casts to integers are reads). Added `test_DoubleFree_DirectPointerTransfer` to verify actual transfers. Implemented stack guards and transparent cast tracking in the analyzer.
+- **Status**: ALL TESTS PASSING (35/35).
+- **Resolution**: Implemented Phases 5-8 of the analyzer upgrade. Added path-aware `errdefer` semantics, ownership transfer tracking (`b = a`), and arena leak suppression via the `-Warena-leak` flag. Updated test expectations and corrected pointer aliasing assumptions.
+
+### Batch 75 (Aggregate Tracking) [RESOLVED]
+- **Status**: ALL TESTS PASSING (6/6).
+- **Resolution**: Enhanced `DoubleFreeAnalyzer` to support precise constant array indexing and unified member access tracking. Added `test_DoubleFree_ArenaLeakSuppression` to verify flag behavior.
 
 ### Batch 44 (Print Lowering)
 - **Failure**: Mismatch in lowered C code for `std.debug.print`.

@@ -36,6 +36,7 @@ struct CompilationOptions {
     bool win_friendly_line_endings;
     bool no_logs;
     bool verbose;
+    bool warn_arena_leaks;
     const char* log_file_path;
 
     CompilationOptions()
@@ -47,6 +48,7 @@ struct CompilationOptions {
           win_friendly_line_endings(false),
           no_logs(false),
           verbose(false),
+          warn_arena_leaks(false),
           log_file_path(NULL) {}
 };
 

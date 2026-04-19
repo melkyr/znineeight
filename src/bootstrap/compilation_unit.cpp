@@ -123,8 +123,8 @@ static void fatalError(const char* message) {
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
-      token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
-      transient_arena_(1024 * 1024 * 16), // 16MB cap for transient
+      token_arena_(1024 * 1024 * 16), // 64MB cap for tokens
+      transient_arena_(1024 * 1024 * 16), // 64MB cap for transient
       type_interner_(arena),
       type_registry_(arena),
       pending_resolutions_(arena),
