@@ -31,13 +31,15 @@ struct TrackedPointer {
     unsigned int flags;
     SourceLocation alloc_loc;
     SourceLocation first_free_loc;
+    const char* transferred_from;
     SourceLocation transfer_loc;
     SourceLocation defer_loc;
     bool freed_via_defer;
     bool is_errdefer;
+    bool is_arena;
 
     TrackedPointer() : name(NULL), state(AS_UNKNOWN), scope_depth(0), flags(TP_FLAG_NONE),
-                       freed_via_defer(false), is_errdefer(false) {
+                       transferred_from(NULL), freed_via_defer(false), is_errdefer(false), is_arena(false) {
         alloc_loc.file_id = 0;
         alloc_loc.line = 0;
         alloc_loc.column = 0;
@@ -115,6 +117,7 @@ private:
     DynamicArray<AllocationStateMap*> scopes_;
     DynamicArray<DeferredAction> deferred_actions_;
     int current_scope_depth_;
+    bool in_error_path_;
 
     void visit(ASTNode* node);
     void visitBlockStmt(ASTNode* node);
@@ -158,6 +161,7 @@ private:
     TrackedPointer* findTrackedPointer(const char* name);
     const char* extractVariableName(ASTNode* node, int depth = 0);
     const char* extractArrayAccessName(ASTArrayAccessNode* access, int depth);
+    const char* extractMemberAccessName(ASTMemberAccessNode* node, int depth);
 
     // Branching helpers
     void mergeSwitchProngStates(AllocationStateMap* entry_state, const DynamicArray<AllocationStateMap*>& prong_states);

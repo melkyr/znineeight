@@ -12,13 +12,16 @@ The analyzer uses recursive traversal for variable name extraction and allocatio
 The analyzer "loses track" of pointers when they are wrapped in certain expressions that preserve their numeric value but change their AST node type.
 - **Mitigation**: Updated `extractVariableName` to "look through" `NODE_PAREN_EXPR`, `NODE_PTR_CAST`, and `NODE_INT_CAST`.
 
-### 1.3 `errdefer` Inaccuracy
-The analyzer currently executes all deferred actions (both `defer` and `errdefer`) at scope exit, regardless of whether the exit was triggered by an error.
-- **Impact**: False positives in double-free detection if an `errdefer` frees memory that is also freed on the success path.
-- **Requirement**: Track the "error state" of the current execution path to selectively execute `errdefer`.
+### 1.3 `errdefer` Inaccuracy [RESOLVED]
+The analyzer now correctly tracks error paths.
+- **Mitigation**: Implemented path-aware `errdefer` semantics. `errdefer` blocks only execute if the function returns an error type (`error` or `!T`). Managed via `ErrorPathGuard` RAII helper.
 
 ### 1.4 Aggregate Nesting Limits [RESOLVED]
-- **Mitigation**: `extractVariableName` now recursively builds interned composite names for `NODE_MEMBER_ACCESS` and `NODE_ARRAY_ACCESS`.
+- **Mitigation**: `extractVariableName` now recursively builds interned composite names for `NODE_MEMBER_ACCESS` and `NODE_ARRAY_ACCESS`. Improved to handle multi-level nesting and precise constant array indexing.
+
+### 1.5 Diagnostic Context
+Messages lacked context about ownership transfers.
+- **Mitigation**: Added `transferred_from` and `transfer_loc` tracking. Diagnostics now report original owners and transfer sites for leaked/double-freed pointers.
 
 ## 2. LifetimeAnalyzer
 
