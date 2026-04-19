@@ -16,10 +16,10 @@
 ## Progress Report (32-bit)
 
 - **Compiler Stability**: **VERIFIED**. `zig0` compiles properly with `g++ -std=c++98`.
-- **Lexer Robustness**: **FIXED**. Resolved an infinite loop bug when lexing tuple member access (e.g., `.0`).
-- **Tuple Integration**: **VERIFIED**. Full integration of tuple support, including print lowering decomposition.
-- **Example Programs**: **VERIFIED**. All key examples (hello, prime, mandelbrot, lisp_interpreter, mud_server) compile and execute correctly.
-- **Lisp Interpreter (curr)**: **VERIFIED**. Compiles with `gcc -m32` and correctly executes basic Lisp expressions.
+- **Lexer Robustness**: **FIXED**. Resolved an infinite loop bug when lexing tuple member access (e.g., `.0`). Floating-point literals now strictly require a leading digit, consistent with Zig rules.
+- **Tuple Integration**: **VERIFIED**. Full integration of tuple support, including improved print lowering decomposition using synthetic tuple literals.
+- **Example Programs**: **VERIFIED**. All key examples (hello, prime, mandelbrot, lisp_interpreter, mud_server, etc.) compile and execute correctly.
+- **Error Consistency**: **IMPROVED**. Standardized error reporting for ambiguous naked tags across assignment and type inference paths.
 
 ---
 
@@ -35,7 +35,7 @@
 
 ### 3. Batch 1 (Lexer)
 - **Status**: **PASS**
-- **Analysis**: Updated `Lexer_FloatNoIntegerPart` test. Zig does not allow `.123` as a float; it is now correctly lexed as a `TOKEN_DOT` followed by an integer.
+- **Analysis**: Renamed and updated `Lexer_FloatNoIntegerPart` to `Lexer_LeadingDotIsTokenDot`. Z98 follows Zig rules where `.123` is lexed as a `TOKEN_DOT` followed by an integer, not a float literal.
 
 ---
 
@@ -61,20 +61,11 @@
 
 ## Deep Investigation of Fixes
 
-### 1. Lexer Infinite Loop
-The lexer's `nextToken` had a check:
-```cpp
-if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
-    if (c == '.') {
-        return Token(TOKEN_ERROR, "float literal must have leading digit", token.location);
-    }
-    return lexNumericLiteral();
-}
-```
-This failed to advance `this->current` when `c == '.'`, causing the caller to repeatedly call `nextToken` on the same character. The fix was to restrict numeric literal entry to digits only, allowing the later `case '.'` to handle dots correctly.
+### 1. Lexer Infinite Loop and Float Rules
+The lexer was previously too aggressive in identifying float literals. By enforcing the "leading digit" rule, we not only align with the Zig specification but also resolve a critical infinite loop where a leading dot would trigger an error message without advancing the lexer's position. Leading dots are now correctly handled as `TOKEN_DOT` (e.g., for member access or anonymous literals).
 
-### 2. Print Lowering with Tuples
-The `std.debug.print` lowering now correctly generates synthetic tuple literals for arguments. This ensures type safety and consistency with how Zig handles anonymous literals. Batch 44 tests were updated to reflect this improved AST structure.
+### 2. Ambiguous Tag Rejection
+New regression tests in `batch_bugs` verify that using a leading dot (like `.123`) where a float is expected is correctly rejected as an ambiguous naked tag. This provides better diagnostics when users accidentally use modern C/Javascript-style float literals.
 
-### 3. Memory Hygiene
-Test batches are maintained within the <16MB peak memory constraint, ensuring the test suite can run on target legacy hardware. The fix in the lexer resolved the pseudo-leak that was causing Batch 75d to exceed this limit.
+### 3. Print Lowering with Tuples
+The `std.debug.print` lowering now generates synthetic tuple literals. This ensures that the arguments are correctly typed and handled by the backend's aggregate decomposition logic, providing a more robust and consistent implementation.
