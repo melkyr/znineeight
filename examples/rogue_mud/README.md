@@ -15,12 +15,17 @@ An enhanced roguelike MUD server implemented in the Z98 subset of Zig. This proj
 
 ### Run the smoke test (requires GCC)
 ```bash
-gcc -m32 examples/rogue_mud/test/dungeon_test.c src/runtime/zig_runtime.c -Isrc/runtime -o dungeon_test
+gcc -m32 examples/rogue_mud/test/dungeon_test.c src/runtime/zig_runtime.c -Isrc/include -o dungeon_test
 ./dungeon_test
 ```
 
+### Lifetime Violation Repro
+```bash
+./zig0 examples/rogue_mud/test/lifetime_repro.zig -o examples/rogue_mud/test/lifetime_repro.c
+```
+
 ## Documentation
-- [Design Document](../../docs/ROGUE_MUD/DESIGN.md)
-- [Week-by-Week Plan](../../docs/ROGUE_MUD/WEEK_BY_WEEK.md)
-- [Z98 Workarounds](../../docs/ROGUE_MUD/Z98_WORKAROUNDS.md)
+- [Design Document](docs/DESIGN.md)
+- [Week-by-Week Plan](docs/WEEK_BY_WEEK.md)
+- [Z98 Workarounds](docs/Z98_WORKAROUNDS.md)
 - [Missing Features & Quirks](missing_features_rmud.md)

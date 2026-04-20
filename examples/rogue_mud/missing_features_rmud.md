@@ -5,15 +5,23 @@ During the implementation of the `rogue_mud` example as a stress test for `zig0`
 ## 1. Lifetime Violation on Slice Returns
 Returning a slice derived from a many-item pointer stored in a struct field (e.g., `self.ptr[0..self.len]`) is incorrectly flagged as a lifetime violation: "Returning pointer to local variable creates dangling pointer".
 
-### Workaround
-Use an out-parameter to "return" the slice.
+### Status of Reproduction
+The following pattern consistently triggers the `ERR_LIFETIME_VIOLATION` in `zig0`.
+
 ```zig
-// ❌ Fails
+// ❌ FAILS: Triggers Lifetime Violation
+// Found in ArrayListRoom_toSlice (src/dungeon/room.zig)
+// and ArrayListBspNodePtr_toSlice (src/dungeon/bsp.zig)
 pub fn toSlice(self: *List) []u8 {
     return self.ptr[0..self.len];
 }
+```
 
-// ✅ Works
+### Working Workaround
+Using an out-parameter to "return" the slice bypasses the analyzer and produces valid C code.
+
+```zig
+// ✅ WORKS: Verified in examples/rogue_mud/test/lifetime_repro.zig
 pub fn toSlice(self: *List, out: *[]u8) void {
     if (out != null) {
         out.* = self.ptr[0..self.len];
