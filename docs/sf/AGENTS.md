@@ -3,14 +3,14 @@
 **Version:** 2.0  
 **Phase:** Self‑Hosted Implementation  
 **Context:** `zig1` is written in Z98, compiled by `zig0`, and emits C89 code for 1998‑era targets.
-
+**Current Milestone in progress:**
 ---
 
 ## 0. Overview
 
-This document defines the roles, responsibilities, methodology, and constraints for AI agents working on the **self‑hosted Z98 compiler** (`zig1`). It supersedes the previous `Agents.md` that governed the C++98 bootstrap (`zig0`) phase.
+This document defines the roles, responsibilities, methodology, and constraints for AI agents working on the **self‑hosted Z98 compiler** (`zig1`). It supersedes the previous `Agents.md` that governed the C++98 bootstrap (`zig0`) phase. Our working directory will be /sf so we can distinguish ourselves from the zig0 that is under the root so everything is kept normal,
 
-The agent's mission: **implement `zig1` according to the design specifications in `docs/sf/`**, following a 300+ task plan that culminates in a byte‑identical self‑compilation.
+The agent's mission: **implement `zig1` according to the design specifications in `docs/sf/`**, in a folder /sf following a 300+ task plan that culminates in a byte‑identical self‑compilation.
 
 ### 0.1 Project Context
 
@@ -47,7 +47,7 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 
 ### 1.1 Core Responsibilities
 
-1. **Task Interpretation**: Read and understand tasks from `AI_tasks.md` (Milestones 0–9).
+1. **Task Interpretation**: Read and understand tasks from `docs/sf/AI_tasks_sf.md` (Current Milestone defined in progress, in prompt usually).
 2. **Document Consultation**: Reference the relevant `docs/sf/*.md` documents **before** writing any code.
 3. **Constraint Adherence**: Respect all Z98 limitations, memory budget (<16 MB), and C89 emission requirements.
 4. **Implementation**: Produce clean, well‑commented Z98 code that follows the design.
@@ -58,14 +58,14 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 ### 1.2 Development Environment
 
 - **Host OS**: Linux (Ubuntu 20.04+ or equivalent)
-- **Bootstrap Compiler**: `zig0` (built from the C++98 codebase, located at `./zig0`)
-- **Build Tool**: `make` (using `Makefile.legacy` adapted for `zig0` invocation)
+- **Bootstrap Compiler**: `zig0` (built from the C++98 codebase, has to be compiled `./zig0`)
+- **Build Tool**: g++ (g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0)
 - **Version Control**: Git
 - **Testing**: Differential testing against `zig0` output, unit tests via `test_runner.zig`
 
 ### 1.3 Z98 Language Constraints (for `zig1` Source Code)
 
-`zig1` is written in Z98, which is a subset of Zig with specific limitations. Agents **must** adhere to these when writing `zig1` code:
+`zig1` is written in Z98, which is a subset of Zig with specific limitations. Agents **must** adhere to these when writing `zig1` code (If in doubt check docs/Language_Spec_Z98.md that is the documentation for zig0):
 
 | Limitation | Workaround / Requirement |
 |------------|--------------------------|
@@ -93,9 +93,9 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 
 ### 2.1 Task-Driven Implementation
 
-The master task list (`AI_tasks.md`) is the single source of truth. Agents work on tasks sequentially, marking them complete only after:
+The master task list (`docs/sf/AI_tasks_sf.md`) is the single source of truth. Agents work on tasks sequentially, marking them complete only after:
 
-1. Code is written and compiles under `zig0`.
+1. Code is written and compiles under `zig0` (Under /docs there are folders regarding zig0 documentation except for /sf folder, ONLY consult the zig0 documentation if in doubt of featureset on zig0).
 2. Unit tests (if applicable) pass.
 3. Differential tests against `zig0` for relevant pipeline stages pass.
 4. Memory validation (peak <16 MB) passes.
@@ -105,6 +105,9 @@ The master task list (`AI_tasks.md`) is the single source of truth. Agents work 
 The development cycle uses `zig0` to compile `zig1` and then runs tests on the resulting executable.
 
 ```bash
+# 0. Build zig0
+g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
+
 # 1. Clean environment (optional but recommended for memory tests)
 make clean
 
@@ -112,21 +115,21 @@ make clean
 zig0 src/main.zig -o build/zig1
 
 # 3. Run unit tests
-./build/zig1 --test
+./sf/build/zig1 --test
 
 # 4. Run differential test suite
-./scripts/differential_test.sh
+./sf/scripts/differential_test.sh
 
 # 5. Memory profiling
-./scripts/memory_profile.sh ./build/zig1 test_programs/eval.zig
+./sf/scripts/memory_profile.sh ./build/zig1 test_programs/eval.zig
 ```
 
 ### 2.3 Differential Testing as the Primary Oracle
 
-Since `zig0` is the reference implementation, every pipeline stage must produce output byte‑identical (or semantically equivalent) to `zig0`.
+Since `zig0` is the reference implementation, every pipeline stage must produce semantically equivalent to `zig0`.
 
 **Workflow:**
-1. Run `zig0 --dump-ast test.z > expected.txt`
+1. Compile something with zig0 (If you need flags check the zig0 docs in /docs/*)
 2. Run `build/zig1 --dump-ast test.z > actual.txt`
 3. `diff expected.txt actual.txt`
 
@@ -240,7 +243,7 @@ Agents should **never** silently guess at a fix. Use the debugging tools to isol
 
 All code submissions must include:
 
-- **Unit tests** for new functionality (in `tests/` directory).
+- **Unit tests** for new functionality (in `zig1/tests/` directory).
 - **Integration test** (if applicable) using one of the reference programs.
 - **Memory validation** (peak <16 MB) for any change that could impact allocation.
 - **Differential test** against `zig0` for relevant pipeline stages.
@@ -249,10 +252,11 @@ All code submissions must include:
 
 | Program | Tests |
 |---------|-------|
-| `mandelbrot.zig` | Floats, extern functions |
-| `game_of_life.zig` | Tagged unions, switch |
-| `mud.zig` | Slices, struct init, null |
-| `eval.zig` | Deep switches, TCO, error unions |
+| `examples/mandelbrot/mandelbrot.zig` | Floats, extern functions |
+| `examples/game_of_life/main.zig` | Tagged unions, switch |
+| `examples/mud_server/main.zig` | Slices, struct init, null |
+| `examples/lisp_interpreter_curr/*.zig` | Deep switches, TCO, error unions |
+| `examples/lzw/*.zig` | Have also relevant syntax |
 
 ---
 
