@@ -1,7 +1,7 @@
 // src/dungeon/scenario.zig (Module name renamed to avoid conflict with Dungeon struct name)
-const sand_mod = @import("../../lib/sand.zig");
-const array_list = @import("../../lib/array_list.zig");
-const rng_mod = @import("../util/rng.zig");
+const sand_mod = @import("sand.zig");
+const array_list = @import("array_list.zig");
+const rng_mod = @import("rng.zig");
 const tile_mod = @import("tile.zig");
 const room_mod = @import("room.zig");
 const bsp_mod = @import("bsp.zig");
@@ -25,7 +25,8 @@ pub fn generateDungeon(
     const tile_mem = try sand_mod.sand_alloc(arena,
         tile_count * @sizeOf(tile_mod.Tile),
         @alignOf(tile_mod.Tile));
-    const tiles = @ptrCast([*]tile_mod.Tile, tile_mem)[0..tile_count];
+    const tiles_ptr = @ptrCast([*]tile_mod.Tile, tile_mem);
+    const tiles = tiles_ptr[0..tile_count];
 
     // 2. Initialize to walls
     var i: usize = 0;
@@ -68,7 +69,8 @@ pub fn generateDungeon(
         }
     }
 
-    const rooms_slice = room_mod.ArrayListRoom_toSlice(&rooms_list);
+    var rooms_slice: []room_mod.Room_t = undefined;
+    room_mod.ArrayListRoom_toSlice(&rooms_list, &rooms_slice);
 
     // 7. Connect rooms
     try connectRooms(tiles, width, height, rooms_slice, random);
@@ -231,13 +233,13 @@ fn carveHCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, x1: u8, x2: u8,
     }
 }
 
-fn carveVCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, yy1: u8, yy2: u8, xx: u8) void {
-    const start = if (yy1 < yy2) yy1 else yy2;
-    const end = if (yy1 > yy2) yy1 else yy2;
+fn carveVCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, cy1: u8, cy2: u8, cx: u8) void {
+    const start = if (cy1 < cy2) cy1 else cy2;
+    const end = if (cy1 > cy2) cy1 else cy2;
     var y = start;
     while (y <= end) : (y += 1) {
-        if (xx >= width or y >= height) continue;
-        const idx = @intCast(usize, y) * @intCast(usize, width) + @intCast(usize, xx);
+        if (cx >= width or y >= height) continue;
+        const idx = @intCast(usize, y) * @intCast(usize, width) + @intCast(usize, cx);
         if (tiles[idx] == .Wall) tiles[idx] = .Floor;
     }
 }

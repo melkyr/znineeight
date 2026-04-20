@@ -1,5 +1,5 @@
 // src/dungeon/bsp.zig
-const sand_mod = @import("../../lib/sand.zig");
+const sand_mod = @import("sand.zig");
 const room_mod = @import("room.zig");
 
 pub const BspNode = struct {
@@ -54,6 +54,8 @@ pub fn ArrayListBspNodePtr_pop(self: *ArrayListBspNodePtr) ?*BspNode {
     return self.items[self.len];
 }
 
-pub fn ArrayListBspNodePtr_toSlice(self: *ArrayListBspNodePtr) []*BspNode {
-    return self.items[0..self.len];
+pub fn ArrayListBspNodePtr_toSlice(self: *ArrayListBspNodePtr, out: *[]*BspNode) void {
+    if (out != null) {
+        out.* = self.items[0..self.len];
+    }
 }

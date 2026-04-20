@@ -1,5 +1,5 @@
 // src/dungeon/room.zig
-const sand_mod = @import("../../lib/sand.zig");
+const sand_mod = @import("sand.zig");
 
 pub const Room_t = struct {
     x: u8,
@@ -55,6 +55,8 @@ pub fn ArrayListRoom_append(self: *ArrayListRoom, item: Room_t) !void {
     self.len += 1;
 }
 
-pub fn ArrayListRoom_toSlice(self: *ArrayListRoom) []Room_t {
-    return self.items[0..self.len];
+pub fn ArrayListRoom_toSlice(self: *ArrayListRoom, out: *[]Room_t) void {
+    if (out != null) {
+        out.* = self.items[0..self.len];
+    }
 }

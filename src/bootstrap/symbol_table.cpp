@@ -119,42 +119,20 @@ void Scope::insert(Symbol& symbol) {
     // Check for existing symbol and update if found
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
         if (plat_strcmp(entry->symbol.name, symbol.name) == 0) {
-            bool same_module = (symbol.module_name == NULL || entry->symbol.module_name == NULL ||
-                                plat_strcmp(entry->symbol.module_name, symbol.module_name) == 0);
-            if (same_module) {
-                // Traverse same-name chain to check for same kind
-                SymbolEntry* current = entry;
-                while (current) {
-                    if (current->symbol.kind == symbol.kind) {
-                        current->symbol = symbol; // Same kind: overwrite
-                        return;
-                    }
-                    if (!current->next_same_name) break;
-                    current = current->next_same_name;
-                }
-
-                // Different kind: append to same-name chain
-                SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
-#ifdef MEASURE_MEMORY
-                MemoryTracker::symbols++;
-#endif
-                new_entry->symbol = symbol;
-                new_entry->next = NULL; // It's not the head of the bucket
-                new_entry->next_same_name = NULL;
-                current->next_same_name = new_entry;
-                symbol_count++;
+            if (symbol.module_name == NULL || entry->symbol.module_name == NULL ||
+                plat_strcmp(entry->symbol.module_name, symbol.module_name) == 0) {
+                entry->symbol = symbol;
                 return;
             }
         }
     }
 
-    // Allocate a new entry from the arena (head of bucket)
+    // Allocate a new entry from the arena
     SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
 #ifdef MEASURE_MEMORY
     MemoryTracker::symbols++;
 #endif
     new_entry->symbol = symbol;
-    new_entry->next_same_name = NULL;
 
     // Insert at the head of the bucket's linked list
     new_entry->next = buckets[index];
@@ -162,7 +140,7 @@ void Scope::insert(Symbol& symbol) {
     symbol_count++;
 }
 
-Symbol* Scope::find(const char* name, const char* module_name, SymbolType kind) {
+Symbol* Scope::find(const char* name, const char* module_name) {
     u32 hash = hash_string(name);
     size_t index = hash % bucket_count;
 
@@ -178,12 +156,7 @@ Symbol* Scope::find(const char* name, const char* module_name, SymbolType kind) 
             }
 
             if (module_matches) {
-                // Search same-name chain for requested kind
-                for (SymbolEntry* current = entry; current != NULL; current = current->next_same_name) {
-                    if (kind == SYMBOL_UNKNOWN || current->symbol.kind == kind) {
-                        return &current->symbol;
-                    }
-                }
+                return &entry->symbol;
             }
         }
     }
@@ -201,12 +174,12 @@ void Scope::resize() {
     for (size_t i = 0; i < bucket_count; ++i) {
         SymbolEntry* entry = buckets[i];
         while (entry != NULL) {
-            SymbolEntry* next = entry->next; // Save next entry (next head of bucket)
+            SymbolEntry* next = entry->next; // Save next entry
 
             u32 hash = hash_string(entry->symbol.name);
             size_t new_index = hash % new_bucket_count;
 
-            // Insert into the new bucket (entry is head of a same-name chain)
+            // Insert into the new bucket
             entry->next = new_buckets[new_index];
             new_buckets[new_index] = entry;
 
@@ -264,11 +237,11 @@ bool SymbolTable::insert(Symbol& symbol) {
     // Check for redeclaration in the current scope.
     // If it's the global scope, we must check for collisions within the same module
     if (scopes.length() == 1) {
-        if (scopes.back()->find(symbol.name, symbol.module_name, symbol.kind)) {
+        if (scopes.back()->find(symbol.name, symbol.module_name)) {
             return false;
         }
     } else {
-        if (lookupInCurrentScope(symbol.name, symbol.kind)) {
+        if (lookupInCurrentScope(symbol.name)) {
             return false; // Symbol already exists.
         }
     }
@@ -284,19 +257,19 @@ bool SymbolTable::insert(Symbol& symbol) {
     return true;
 }
 
-Symbol* SymbolTable::lookup(const char* name, SymbolType kind) {
+Symbol* SymbolTable::lookup(const char* name) {
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] LOOKUP '%s' (kind=%d) current_module=%s scopes=%lu\n", name, (int)kind, current_module_ ? current_module_ : "NULL", (unsigned long)scopes.length());
+    plat_printf_debug("[SYMBOL] LOOKUP '%s' current_module=%s scopes=%lu\n", name, current_module_ ? current_module_ : "NULL", (unsigned long)scopes.length());
 #endif
 #endif
     // Search from the innermost scope to the outermost.
     for (int i = (int)scopes.length() - 1; i >= 0; --i) {
         // Try local lookup (NULL module) first in all scopes
-        Symbol* symbol = scopes[i]->find(name, NULL, kind);
+        Symbol* symbol = scopes[i]->find(name, NULL);
         if (!symbol) {
             // Then try current module lookup
-            symbol = scopes[i]->find(name, current_module_, kind);
+            symbol = scopes[i]->find(name, current_module_);
         }
 
         if (symbol) {
@@ -330,7 +303,7 @@ Symbol* SymbolTable::lookup(const char* name, SymbolType kind) {
     return NULL; // Not found in any scope.
 }
 
-Symbol* SymbolTable::lookupInCurrentScope(const char* name, SymbolType kind) {
+Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     if (scopes.length() == 0) {
         return NULL;
     }
@@ -339,11 +312,11 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name, SymbolType kind) {
     const char* mod_filter = (scopes.length() == 1) ? current_module_ : NULL;
 #ifdef DEBUG_SYMBOL
     #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[SYMBOL] LOOKUP_IN_CURRENT_SCOPE '%s' (kind=%d) depth=%lu mod_filter=%s\n",
-                     name, (int)kind, (unsigned long)scopes.length(), mod_filter ? mod_filter : "NULL");
+    plat_printf_debug("[SYMBOL] LOOKUP_IN_CURRENT_SCOPE '%s' depth=%lu mod_filter=%s\n",
+                     name, (unsigned long)scopes.length(), mod_filter ? mod_filter : "NULL");
 #endif
 #endif
-    Symbol* sym = scopes.back()->find(name, mod_filter, kind);
+    Symbol* sym = scopes.back()->find(name, mod_filter);
 
 #ifdef DEBUG_SYMBOL
     if (sym) {
@@ -361,11 +334,11 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name, SymbolType kind) {
     return sym;
 }
 
-Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbol_name, SymbolType kind) {
+Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbol_name) {
     // Look directly into the global scope with the specified module name
     Symbol* result = NULL;
     if (scopes.length() > 0) {
-        result = scopes[0]->find(symbol_name, module_name, kind);
+        result = scopes[0]->find(symbol_name, module_name);
     }
 #ifdef DEBUG_VISIBILITY
     #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -376,25 +349,25 @@ Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbo
     return result;
 }
 
-Symbol* SymbolTable::findInAnyScope(const char* name, const char* preferred_module, SymbolType kind) {
+Symbol* SymbolTable::findInAnyScope(const char* name, const char* preferred_module) {
     Symbol* local_fallback = NULL;
 
     // Search all scopes ever created, from most recent to oldest.
     for (int i = (int)all_scopes_.length() - 1; i >= 0; --i) {
         // 1. Try preferred module first
         if (preferred_module) {
-            Symbol* sym = all_scopes_[i]->find(name, preferred_module, kind);
+            Symbol* sym = all_scopes_[i]->find(name, preferred_module);
             if (sym) return sym;
         }
 
         // 2. Try NULL module (local variables)
         if (!local_fallback) {
-            local_fallback = all_scopes_[i]->find(name, NULL, kind);
+            local_fallback = all_scopes_[i]->find(name, NULL);
         }
 
         // 3. Try current module
         if (current_module_ && current_module_ != preferred_module) {
-            Symbol* sym = all_scopes_[i]->find(name, current_module_, kind);
+            Symbol* sym = all_scopes_[i]->find(name, current_module_);
             if (sym) return sym;
         }
     }

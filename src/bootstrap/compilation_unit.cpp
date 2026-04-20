@@ -1575,7 +1575,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
             .build();
 
-        if (!getSymbolTable().lookupInCurrentScope(import_alias, SYMBOL_MODULE)) {
+        if (!getSymbolTable().lookupInCurrentScope(import_alias)) {
             getSymbolTable().insert(mod_sym);
         }
     }
