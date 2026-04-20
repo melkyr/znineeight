@@ -43,7 +43,8 @@ TEST_FUNC(FunctionVariableCollisionSameScope) {
     NameCollisionDetector checker(unit);
     checker.check(ast);
 
-    ASSERT_TRUE(checker.hasCollisions());
+    /* Post-Milestone 11 Bugfix: Function and variable can share a name. */
+    ASSERT_TRUE(!checker.hasCollisions());
     return true;
 }
 

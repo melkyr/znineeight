@@ -143,7 +143,16 @@ void NameCollisionDetector::visit(ASTNode* node) {
 }
 
 void NameCollisionDetector::visitFnDecl(ASTFnDeclNode* node) {
-    if (checkCollisionInCurrentScope(node->name)) {
+    bool collision = false;
+    ScopeInfo* current = scope_stack_.back();
+    for (size_t i = 0; i < current->function_names.length(); ++i) {
+        if (plat_strcmp(current->function_names[i], node->name) == 0) {
+            collision = true;
+            break;
+        }
+    }
+
+    if (collision) {
         SourceLocation loc = node->body ? node->body->loc : SourceLocation();
         reportCollision(loc, node->name, "function");
     } else {
@@ -166,7 +175,16 @@ void NameCollisionDetector::visitFnDecl(ASTFnDeclNode* node) {
 }
 
 void NameCollisionDetector::visitVarDecl(ASTVarDeclNode* node) {
-    if (checkCollisionInCurrentScope(node->name)) {
+    bool collision = false;
+    ScopeInfo* current = scope_stack_.back();
+    for (size_t i = 0; i < current->variable_names.length(); ++i) {
+        if (plat_strcmp(current->variable_names[i], node->name) == 0) {
+            collision = true;
+            break;
+        }
+    }
+
+    if (collision) {
         reportCollision(node->name_loc, node->name, "variable");
     } else {
         scope_stack_.back()->variable_names.append(node->name);

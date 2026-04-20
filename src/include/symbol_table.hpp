@@ -15,7 +15,8 @@ enum SymbolType {
     SYMBOL_FUNCTION,
     SYMBOL_TYPE,
     SYMBOL_UNION_TYPE,
-    SYMBOL_MODULE
+    SYMBOL_MODULE,
+    SYMBOL_UNKNOWN // Used for lookups to match any kind
 };
 
 enum SymbolFlag {
@@ -73,7 +74,8 @@ public:
 struct Scope {
     struct SymbolEntry {
         Symbol symbol;
-        SymbolEntry* next;
+        SymbolEntry* next;           // Next entry in the hash bucket
+        SymbolEntry* next_same_name; // Next symbol with the same name and module, but different kind
     };
 
     DynamicArray<SymbolEntry*> buckets;
@@ -83,7 +85,7 @@ struct Scope {
 
     Scope(ArenaAllocator& arena, size_t initial_bucket_count = 4);
     void insert(Symbol& symbol);
-    Symbol* find(const char* name, const char* module_name = NULL);
+    Symbol* find(const char* name, const char* module_name = NULL, SymbolType kind = SYMBOL_UNKNOWN);
     void resize();
 };
 
@@ -100,10 +102,10 @@ public:
     void enterScope();
     void exitScope();
     bool insert(Symbol& symbol);
-    Symbol* lookup(const char* name);
-    Symbol* lookupInCurrentScope(const char* name);
-    Symbol* lookupWithModule(const char* module_name, const char* symbol_name);
-    Symbol* findInAnyScope(const char* name, const char* preferred_module = NULL); // Used by subsequent passes
+    Symbol* lookup(const char* name, SymbolType kind = SYMBOL_UNKNOWN);
+    Symbol* lookupInCurrentScope(const char* name, SymbolType kind = SYMBOL_UNKNOWN);
+    Symbol* lookupWithModule(const char* module_name, const char* symbol_name, SymbolType kind = SYMBOL_UNKNOWN);
+    Symbol* findInAnyScope(const char* name, const char* preferred_module = NULL, SymbolType kind = SYMBOL_UNKNOWN); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
 
     void registerTempSymbol(Symbol* symbol); // Register compiler-generated symbol
