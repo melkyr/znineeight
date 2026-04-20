@@ -1991,11 +1991,19 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
         return get_g_type_void(); /* Placeholder type for built-ins */
     }
 
-    sym = unit_.getSymbolTable().lookup(name);
+    /* Preference order: variable, then function, then type */
+    sym = unit_.getSymbolTable().lookup(name, SYMBOL_VARIABLE);
+    if (!sym) sym = unit_.getSymbolTable().lookup(name, SYMBOL_FUNCTION);
+    if (!sym) sym = unit_.getSymbolTable().lookup(name, SYMBOL_TYPE);
+    if (!sym) sym = unit_.getSymbolTable().lookup(name, SYMBOL_UNION_TYPE);
+    if (!sym) sym = unit_.getSymbolTable().lookup(name, SYMBOL_MODULE);
+
     if (!sym) {
         // Fallback for local variables that might have been inserted during Pass 2
         // but are being looked up in a nested scope.
-        sym = unit_.getSymbolTable().findInAnyScope(name, unit_.getCurrentModule());
+        sym = unit_.getSymbolTable().findInAnyScope(name, unit_.getCurrentModule(), SYMBOL_VARIABLE);
+        if (!sym) sym = unit_.getSymbolTable().findInAnyScope(name, unit_.getCurrentModule(), SYMBOL_FUNCTION);
+        if (!sym) sym = unit_.getSymbolTable().findInAnyScope(name, unit_.getCurrentModule(), SYMBOL_TYPE);
     }
 
     if (!sym) {
@@ -3230,7 +3238,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     /* Avoid double resolution but ensure flags are set. */
-    existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+    existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name, SYMBOL_VARIABLE);
     placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
@@ -4511,7 +4519,12 @@ after_module_handling:
         if (target_mod) {
             // First check: Is this a function/variable? (SymbolTable)
             if (target_mod->symbols) {
-                Symbol* sym = target_mod->symbols->lookup(node->field_name);
+                /* Preference order for module access: type, then function, then variable */
+                Symbol* sym = target_mod->symbols->lookup(node->field_name, SYMBOL_TYPE);
+                if (!sym) sym = target_mod->symbols->lookup(node->field_name, SYMBOL_UNION_TYPE);
+                if (!sym) sym = target_mod->symbols->lookup(node->field_name, SYMBOL_FUNCTION);
+                if (!sym) sym = target_mod->symbols->lookup(node->field_name, SYMBOL_VARIABLE);
+                if (!sym) sym = target_mod->symbols->lookup(node->field_name, SYMBOL_MODULE);
 
                 // CRITICAL: If not found in target module, check if it's re-exported
                 if (!sym) {
@@ -7004,15 +7017,21 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
             return BUILTIN_REJECTED;
         }
 
-        /* Guard 3: Symbol must exist */
-        sym = unit_.getSymbolTable().lookup(callee_name);
+        /* Guard 3: Symbol must exist. Prefer FUNCTION, then VARIABLE (func pointer) */
+        sym = unit_.getSymbolTable().lookup(callee_name, SYMBOL_FUNCTION);
+        if (!sym) sym = unit_.getSymbolTable().lookup(callee_name, SYMBOL_VARIABLE);
     } else if (call->callee->type == NODE_MEMBER_ACCESS) {
         /* Module member access: utils.add() */
         Type* base_type = visit(call->callee->as.member_access->base);
         if (base_type && base_type->kind == TYPE_MODULE) {
             Module* target_mod = (Module*)base_type->as.module.module_ptr;
             if (target_mod && target_mod->symbols) {
-                sym = target_mod->symbols->lookup(call->callee->as.member_access->field_name);
+                /* When calling a function from a module, we prefer SYMBOL_FUNCTION but fallback to SYMBOL_VARIABLE
+                   (which could be a function pointer or a generic). */
+                sym = target_mod->symbols->lookup(call->callee->as.member_access->field_name, SYMBOL_FUNCTION);
+                if (!sym) {
+                    sym = target_mod->symbols->lookup(call->callee->as.member_access->field_name, SYMBOL_VARIABLE);
+                }
             }
         }
     }
@@ -8245,7 +8264,12 @@ Type* TypeChecker::resolveNamedType(Module* defining_mod, const char* name, Symb
     if (!registered) {
         // Fallback: check symbol table of defining module
         if (defining_mod->symbols) {
-            Symbol* defining_sym = defining_mod->symbols->lookup(name);
+            /* For types, we specifically look for SYMBOL_TYPE or SYMBOL_UNION_TYPE,
+               but fallback to SYMBOL_VARIABLE if it's a type alias. */
+            Symbol* defining_sym = defining_mod->symbols->lookup(name, SYMBOL_TYPE);
+            if (!defining_sym) defining_sym = defining_mod->symbols->lookup(name, SYMBOL_UNION_TYPE);
+            if (!defining_sym) defining_sym = defining_mod->symbols->lookup(name, SYMBOL_VARIABLE);
+
             if (defining_sym && defining_sym->symbol_type) {
                 registered = defining_sym->symbol_type;
             }
@@ -8279,6 +8303,10 @@ Type* TypeChecker::resolveNamedType(Module* defining_mod, const char* name, Symb
 }
 
 Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, Module* target_mod, Symbol* sym, bool* out_is_type_access, Type** out_base_type) {
+    /* If we found multiple symbols with the same name in the target module,
+       we need to pick the right one. visitMemberAccess should have already
+       provided a symbol, but that symbol might be the head of a chain. */
+
     bool is_actually_type = (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE || sym->kind == SYMBOL_MODULE);
     if (!is_actually_type && sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST) && sym->details) {
         ASTVarDeclNode* vd = (ASTVarDeclNode*)sym->details;
