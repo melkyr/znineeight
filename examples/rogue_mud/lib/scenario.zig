@@ -230,6 +230,9 @@ fn carveHCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, x1: u8, x2: u8,
     while (x <= end) : (x += 1) {
         if (x >= width or y >= height) continue;
         const idx = @intCast(usize, y) * @intCast(usize, width) + @intCast(usize, x);
+
+        // REPRO: if (tiles[idx] == .Wall) tiles[idx] = .Floor;
+        // Naked tags in binary ops trigger zig0 abort. Use switch workaround.
         switch (tiles[idx]) {
             .Wall => tiles[idx] = .Floor,
             else => {},
@@ -244,6 +247,9 @@ fn carveVCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, cy1: u8, cy2: u
     while (y <= end) : (y += 1) {
         if (cx >= width or y >= height) continue;
         const idx = @intCast(usize, y) * @intCast(usize, width) + @intCast(usize, cx);
+
+        // REPRO: if (tiles[idx] == .Wall) tiles[idx] = .Floor;
+        // Naked tags in binary ops trigger zig0 abort. Use switch workaround.
         switch (tiles[idx]) {
             .Wall => tiles[idx] = .Floor,
             else => {},
