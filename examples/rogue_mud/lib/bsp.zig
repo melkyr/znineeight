@@ -6,7 +6,7 @@ pub const BspNode = struct {
     x: u8, y: u8, w: u8, h: u8,
     left: ?*BspNode,
     right: ?*BspNode,
-    room: ?room_mod.Room_t,
+    room: ?*room_mod.Room_t,
 };
 
 // --- ArrayListBspNodePtr ---

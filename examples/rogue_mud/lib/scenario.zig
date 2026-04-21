@@ -117,7 +117,8 @@ fn carveRoom(
         .x = room_x, .y = room_y, .w = room_w, .h = room_h,
     };
     try room_mod.ArrayListRoom_append(rooms_list, room);
-    node.room = room;
+    const rooms_slice = rooms_list.items[0..rooms_list.len];
+    node.room = &rooms_slice[rooms_list.len - 1];
 }
 
 fn splitNode(
@@ -229,7 +230,10 @@ fn carveHCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, x1: u8, x2: u8,
     while (x <= end) : (x += 1) {
         if (x >= width or y >= height) continue;
         const idx = @intCast(usize, y) * @intCast(usize, width) + @intCast(usize, x);
-        if (tiles[idx] == .Wall) tiles[idx] = .Floor;
+        switch (tiles[idx]) {
+            .Wall => tiles[idx] = .Floor,
+            else => {},
+        }
     }
 }
 
@@ -240,6 +244,9 @@ fn carveVCorridor(tiles: []tile_mod.Tile, width: u8, height: u8, cy1: u8, cy2: u
     while (y <= end) : (y += 1) {
         if (cx >= width or y >= height) continue;
         const idx = @intCast(usize, y) * @intCast(usize, width) + @intCast(usize, cx);
-        if (tiles[idx] == .Wall) tiles[idx] = .Floor;
+        switch (tiles[idx]) {
+            .Wall => tiles[idx] = .Floor,
+            else => {},
+        }
     }
 }
