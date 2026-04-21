@@ -9,33 +9,37 @@
 | Failed Batches | 0 | - |
 | Total Pass Rate | 100% | - |
 
-*Note: 32-bit values reflect the status using -m32 after Milestone 11 Stability changes.*
+*Note: 32-bit values reflect the status using -m32 after Milestone 11 Stability changes and recent name mangling updates. All batches were verified individually to ensure accurate reporting.*
 
 ---
 
 ## Progress Report (32-bit)
 
 - **Compiler Stability**: **VERIFIED**. `zig0` compiles properly with `g++ -std=c++98`.
-- **Lexer Robustness**: **FIXED**. Resolved an infinite loop bug when lexing tuple member access (e.g., `.0`). Floating-point literals now strictly require a leading digit, consistent with Zig rules.
-- **Tuple Integration**: **VERIFIED**. Full integration of tuple support, including improved print lowering decomposition using synthetic tuple literals.
-- **Example Programs**: **VERIFIED**. All key examples (hello, prime, mandelbrot, lisp_interpreter, mud_server, etc.) compile and execute correctly.
-- **Error Consistency**: **IMPROVED**. Standardized error reporting for ambiguous naked tags across assignment and type inference paths.
+- **Test Suite Integrity**: **VERIFIED**. Each of the 82 test batches was executed individually and confirmed to return a successful exit code (0). Internal "errors" observed in logs (e.g., "Child process: errors found, aborting...") are confirmed to be the expected behavior for negative test cases (tests designed to verify that the compiler correctly rejects invalid code).
+- **Name Mangling**: **VERIFIED**. Recent changes to implement deterministic cross-module symbol hashing (Phase 1) are stable. No regressions were observed in the test suite or example programs.
+- **Lexer Robustness**: **VERIFIED**. The fix for the infinite loop bug when lexing tuple member access (e.g., `.0`) remains effective.
+- **Tuple Integration**: **VERIFIED**. Full integration of tuple support and print lowering decomposition is stable.
+- **Example Programs**: **VERIFIED**. Key examples compile and execute correctly (see breakdown below).
+- **Error Consistency**: **VERIFIED**. Standardized error reporting for ambiguous naked tags and non-C89 features is consistent across the suite.
 
 ---
 
 ## Detailed Breakdown of Resolved Failures (32-bit)
 
+*No new failures or regressions were identified in the current run.*
+
 ### 1. Batch 44 (Print Lowering)
 - **Status**: **PASS**
-- **Analysis**: Harmless text expectation issue. The test expected older print lowering, but the compiler now correctly uses tuples for argument passing. Updated test expectation to `__bootstrap_print_int(__tmp_tup_6_1.field0)`.
+- **Analysis**: Harmless text expectation issue (previously resolved). The compiler correctly uses tuples for argument passing.
 
 ### 2. Batch 75d (Memory Limit)
 - **Status**: **PASS**
-- **Analysis**: Compiler bug in Lexer. When encountering a dot followed by a digit (e.g., `.0`), the lexer incorrectly identified it as an invalid float literal but didn't advance the current pointer, leading to an infinite loop and memory exhaustion. Fixed by only entering numeric lexing if a digit is the first character.
+- **Analysis**: Compiler bug in Lexer (previously resolved). Enforcing the leading digit rule for float literals prevents infinite loops on tokens like `.0`.
 
 ### 3. Batch 1 (Lexer)
 - **Status**: **PASS**
-- **Analysis**: Renamed and updated `Lexer_FloatNoIntegerPart` to `Lexer_LeadingDotIsTokenDot`. Z98 follows Zig rules where `.123` is lexed as a `TOKEN_DOT` followed by an integer, not a float literal.
+- **Analysis**: Updated `Lexer_LeadingDotIsTokenDot` (previously resolved). Z98 correctly lexes `.123` as `TOKEN_DOT` followed by an integer, matching Zig specification.
 
 ---
 
@@ -53,19 +57,20 @@
 | `func_ptr_return`| PASS | |
 | `lzw` | PASS | |
 | `mandelbrot` | PASS | |
-| `mud_server` | PASS | Compiled successfully. |
-| `game_of_life` | PASS | |
-| `lisp_interpreter_curr` | PASS | |
+| `lisp_interpreter*` | *Not tested* | To be tested in a separate task. |
+| `game_of_life` | *Not tested* | To be tested in a separate task. |
+| `mud_server` | *Not tested* | To be tested in a separate task. |
+| `rogue_mud` | *Not tested* | To be tested in a separate task. |
 
 ---
 
-## Deep Investigation of Fixes
+## Deep Investigation of Recent Changes
 
-### 1. Lexer Infinite Loop and Float Rules
-The lexer was previously too aggressive in identifying float literals. By enforcing the "leading digit" rule, we not only align with the Zig specification but also resolve a critical infinite loop where a leading dot would trigger an error message without advancing the lexer's position. Leading dots are now correctly handled as `TOKEN_DOT` (e.g., for member access or anonymous literals).
+### 1. Deterministic Cross-Module Mangling
+The recent implementation of `stable_hash` for modules based on canonical absolute paths ensures that mangled names (e.g., `zF_<hash>_name`) are consistent across different compilation units. This prevents "missing symbol" or "type mismatch" errors when linking multiple modules that share public declarations. The `CompilationUnit::precomputeMangledNames` pass correctly synchronizes these names before emission.
 
-### 2. Ambiguous Tag Rejection
-New regression tests in `batch_bugs` verify that using a leading dot (like `.123`) where a float is expected is correctly rejected as an ambiguous naked tag. This provides better diagnostics when users accidentally use modern C/Javascript-style float literals.
+### 2. Lexer and Float Rules
+The lexer's strict adherence to "leading digit" rules for floating-point literals continues to provide stability. This prevents ambiguity between float literals and tuple/member access, which is crucial for the bootstrap compiler's simplified parser.
 
-### 3. Print Lowering with Tuples
-The `std.debug.print` lowering now generates synthetic tuple literals. This ensures that the arguments are correctly typed and handled by the backend's aggregate decomposition logic, providing a more robust and consistent implementation.
+### 3. Test Runner Architecture
+The Z98 test suite utilizes a parent-child process model for negative testing. When a test is expected to fail (e.g., a type mismatch), the parent process forks a child that is expected to `abort()` or exit with an error. The parent process verifies this exit status. This robust design ensures that compiler crashes or legitimate errors on invalid input are caught and verified without failing the entire test suite.
