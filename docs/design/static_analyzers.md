@@ -20,16 +20,26 @@ The analyzer validates that all types used in function signatures have a direct 
 Detects potential dangling pointers by tracking the provenance of local variable addresses. It supports Milestone 11 features including field access, array indexing, and slices.
 
 ### Enhanced Provenance Tracking
-The analyzer uses a recursive "origin" resolver to track pointers back to their base local variables:
-- **Field Access**: Detects returning addresses of fields (`return &s.x;`) or pointers derived from local fields.
-- **Array Indexing**: Recognizes that `&arr[i]` points to the local array `arr`.
-- **Slices**: Understands that slicing a local array (`arr[0..5]`) results in a slice whose lifetime is tied to that array.
+The analyzer uses a recursive "origin" resolver to track pointers back to their base local variables. It distinguishes between storage allocated on the stack and memory owned by the caller.
+
+#### Base Symbol Classification
+In Z98, `SYMBOL_FLAG_LOCAL` is set for all symbols in a function's activation record. The analyzer classifies these as:
+- **True Locals**: Variables declared with `var` or `const` inside the function. Always dangerous to return by address.
+- **By-Value Parameters**: Parameters of aggregate types (structs, arrays) passed by value. Their storage is local to the call and dangerous to return by address or internal pointer.
+- **Pointer-Like Parameters**: Parameters of type `*T` or `[]T`. While the pointer/slice variable itself is local, the memory it *refers to* is owned by the caller and is safe to return as an interior pointer or slice.
+
+#### Resolution Rules
+- **Field Access**: Detects returning addresses of fields (`return &s.x;`). If `s` is a True Local or By-Value Parameter, this is a violation.
+- **Dereference**: When a pointer is dereferenced (`ptr.*` or `ptr[i]`), the provenance follows the *data* being pointed to. If `ptr` is a tracked local variable, the provenance follows `ptr`'s assignment history. If `ptr` is an untracked pointer parameter, it is considered "External" (safe).
+- **Array Indexing**: Recognizes that `&arr[i]` points to the storage of `arr`.
+- **Slices**: Understands that slicing an array (`arr[0..5]`) results in a slice whose lifetime is tied to that array's storage.
 - **Composition**: Handles nested structures like `&outer.inner.field`.
 
 ### Checks
-- **Returning Local Address**: Rejects returning the address of a local variable or any of its sub-fields/elements.
+- **Returning Local Address**: Rejects returning the address of a local variable or parameter (`return &x;`).
+- **Returning Pointer to Local Storage**: Rejects returning a pointer or slice that refers to the internal storage of a local variable or by-value parameter.
 - **Dangling Assignments**: Tracks when a local pointer or slice variable is assigned a local address. If that variable is later returned, it is flagged.
-- **Differentiated Reporting**: Distinguishes between "returning address of" (direct `&local`) and "returning pointer to" (via tracked variable).
+- **Differentiated Reporting**: Distinguishes between "returning address of" (direct `&local`) and "returning pointer to" (via tracked variable or interior pointer).
 
 ### Known Limitations
 - **No Field-Level Assignment Tracking**: Tracking assignments to fields (e.g., `s.ptr = &local;`) is currently deferred.
