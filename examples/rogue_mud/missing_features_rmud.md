@@ -105,3 +105,6 @@ pub const BspNode = struct {
     room: ?*room_mod.Room_t, // Changed from ?room_mod.Room_t to avoid incomplete type error
 };
 ```
+
+### Reproduction
+A minimal reproduction of this issue can be found in `examples/rogue_mud/test/header_repro.zig`.
