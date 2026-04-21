@@ -1133,7 +1133,72 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     if (logger) logger->flush();
 
-    // Phase 2.1: AST Lifting
+    // Phase 3: Validation Passes
+    // Moved before AST Lifting to ensure clean validation against resolved cross-module signatures
+    if (all_success) {
+#ifdef DEBUG
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
+        #endif
+        for (size_t i = 0; i < modules_.length(); ++i) {
+            Module* m = modules_[i];
+            if (m->is_analyzed || !m->ast_root) continue;
+            setCurrentModule(m->name);
+            if (!CallResolutionValidator::validate(*this, m->ast_root)) {
+                error_handler_.report(ERR_INTERNAL_ERROR, m->ast_root->loc, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Call resolution validation failed");
+                all_success = false;
+            }
+        }
+#endif
+
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("Signature Analysis");
+#endif
+        bool signature_errors = false;
+        for (size_t i = 0; i < modules_.length(); ++i) {
+            Module* m = modules_[i];
+            if (m->is_analyzed || !m->ast_root) continue;
+            setCurrentModule(m->name);
+            SignatureAnalyzer sig_analyzer(*this);
+            sig_analyzer.analyze(m->ast_root);
+            if (sig_analyzer.hasInvalidSignatures()) signature_errors = true;
+        }
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
+        if (logger) logger->flush();
+
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("C89 Validation");
+#endif
+        bool validation_success = true;
+        for (size_t i = 0; i < modules_.length(); ++i) {
+            Module* m = modules_[i];
+            if (m->is_analyzed || !m->ast_root) continue;
+            setCurrentModule(m->name);
+            C89FeatureValidator validator(*this);
+            if (!validator.validate(m->ast_root)) validation_success = false;
+        }
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
+        if (logger) logger->flush();
+
+        validation_completed_ = true;
+        c89_validation_passed_ = validation_success && !signature_errors;
+
+        if (!c89_validation_passed_) all_success = false;
+    }
+
+    if (!all_success) {
+#ifdef MEASURE_MEMORY
+        tracker.print_report();
+        MemoryTracker::reset_counts();
+#endif
+        return false;
+    }
+
+    // Phase 4: AST Lifting
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("AST Lifting");
 #endif
@@ -1147,7 +1212,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     if (logger) logger->flush();
 
-    // Phase 2.5: Metadata Preparation
+    // Phase 4.5: Metadata Preparation
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("Metadata Preparation");
 #endif
@@ -1159,68 +1224,6 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.end_phase();
 #endif
     if (logger) logger->flush();
-
-#ifdef DEBUG
-    #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
-#endif
-    for (size_t i = 0; i < modules_.length(); ++i) {
-        Module* m = modules_[i];
-        if (m->is_analyzed || !m->ast_root) continue;
-        setCurrentModule(m->name);
-        if (!CallResolutionValidator::validate(*this, m->ast_root)) {
-            error_handler_.report(ERR_INTERNAL_ERROR, m->ast_root->loc, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Call resolution validation failed");
-            all_success = false;
-        }
-    }
-#endif
-    if (!all_success) return false;
-
-    // Phase 3: Signature Analysis
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("Signature Analysis");
-#endif
-    bool signature_errors = false;
-    for (size_t i = 0; i < modules_.length(); ++i) {
-        Module* m = modules_[i];
-        if (m->is_analyzed || !m->ast_root) continue;
-        setCurrentModule(m->name);
-        SignatureAnalyzer sig_analyzer(*this);
-        sig_analyzer.analyze(m->ast_root);
-        if (sig_analyzer.hasInvalidSignatures()) signature_errors = true;
-    }
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (logger) logger->flush();
-
-    // Phase 4: C89 Validation
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("C89 Validation");
-#endif
-    bool validation_success = true;
-    for (size_t i = 0; i < modules_.length(); ++i) {
-        Module* m = modules_[i];
-        if (m->is_analyzed || !m->ast_root) continue;
-        setCurrentModule(m->name);
-        C89FeatureValidator validator(*this);
-        if (!validator.validate(m->ast_root)) validation_success = false;
-    }
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (logger) logger->flush();
-
-    validation_completed_ = true;
-    c89_validation_passed_ = validation_success && !signature_errors;
-
-    if (!c89_validation_passed_) {
-#ifdef MEASURE_MEMORY
-        tracker.print_report();
-        MemoryTracker::reset_counts();
-#endif
-        return false;
-    }
 
     // Phase 5: Static Analyzers
     for (size_t i = 0; i < modules_.length(); ++i) {

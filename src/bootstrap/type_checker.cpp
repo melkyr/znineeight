@@ -8360,6 +8360,10 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
             target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
         } else if (sym->kind == SYMBOL_FUNCTION) {
             target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
+            // Ensure mangled name is computed immediately for cross-module function calls
+            if (!sym->mangled_name) {
+                sym->mangled_name = unit_.getNameMangler().mangle('F', target_mod, sym->name);
+            }
         }
 
         unit_.setCurrentModule(saved_module);
