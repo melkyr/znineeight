@@ -116,6 +116,11 @@ ZIG_INLINE ZIG_UNUSED i32 __bootstrap_i32_from_usize(usize x) {
     return (i32)x;
 }
 
+ZIG_INLINE ZIG_UNUSED u8 __bootstrap_u8_from_usize(usize x) {
+    if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}
+
 ZIG_INLINE ZIG_UNUSED u8 __bootstrap_u8_from_bool(bool b) {
     return (u8)b;
 }
