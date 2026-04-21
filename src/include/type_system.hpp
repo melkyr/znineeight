@@ -97,6 +97,7 @@ struct Type {
     struct Module* owner_module;
     DependentNode* dependents_head;
     DependentNode* dependents_tail;
+    bool is_global_empty_tuple;
 
     union {
         struct {

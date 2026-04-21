@@ -1177,6 +1177,7 @@ The `parseVarDecl` function is responsible for parsing variable and constant dec
 - It expects an identifier, a colon, and a type expression (parsed via `parseType`).
 - It then checks for an optional initializer, which starts with an equals sign.
 - If an initializer is present, it is parsed by `parseExpression`.
+- The function constructs a `Symbol` for the variable and sets its `mangle_kind` based on whether it is a `const` ('C') or a `var` ('V').
 - The function constructs and returns a `NODE_VAR_DECL` AST node.
 - Any deviation from this grammar results in a fatal error.
 
@@ -1221,6 +1222,7 @@ The `parseFnDecl` function is responsible for parsing function declarations. It 
 - It parses the parameter list inside `()`.
 - It then checks for a return type. The return type can be specified with an optional `->` token followed by a type expression, or just the type expression itself. If no return type is present before the opening `{` of the body, it defaults to `void`.
 - For `extern` functions, it expects a semicolon. For normal functions, it calls `parseBlockStatement` to parse the function's body.
+- It constructs a `Symbol` for the function and sets its `mangle_kind` to 'F'.
 
 #### Parsing Logic (`parseFunctionType`)
 The `parseFunctionType` function parses function pointer types (e.g., `fn(i32) void`).

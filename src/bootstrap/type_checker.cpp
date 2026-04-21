@@ -228,7 +228,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 }
 
                 Type* placeholder = (Type*)unit_.getArena().alloc(sizeof(Type));
-                plat_memset(placeholder, 0, sizeof(Type));
+                plat_memset(placeholder, 0, sizeof(Type)); placeholder->is_global_empty_tuple = false;
                 placeholder->kind = TYPE_PLACEHOLDER;
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
@@ -3271,7 +3271,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             if (!placeholder) {
                 /* Create and register placeholder */
                 placeholder = (Type*)unit_.getArena().alloc(sizeof(Type));
-                plat_memset(placeholder, 0, sizeof(Type));
+                plat_memset(placeholder, 0, sizeof(Type)); placeholder->is_global_empty_tuple = false;
                 placeholder->kind = TYPE_PLACEHOLDER;
                 placeholder->as.placeholder.name = node->name;
                 placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
@@ -3595,6 +3595,16 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (existing_sym) {
         if (declared_type) {
              existing_sym->symbol_type = declared_type;
+
+             /* If it's a type declaration, update the mangle kind to 'S' */
+             if (node->is_const && (declared_type->kind == TYPE_TYPE || declared_type->kind == TYPE_MODULE)) {
+                 existing_sym->mangle_kind = 'S';
+             } else if (node->is_const && declared_type->kind == TYPE_PLACEHOLDER) {
+                 /* Placeholder could be a type or a variable; check the initializer */
+                 if (node->initializer && isTypeExpression(node->initializer, unit_.getSymbolTable())) {
+                     existing_sym->mangle_kind = 'S';
+                 }
+             }
         }
         existing_sym->details = node;
 
@@ -3608,12 +3618,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                The C89Emitter will handle them via CVariableAllocator. */
             existing_sym->mangled_name = NULL;
         } else if (!existing_sym->mangled_name) {
-            char k_char = node->is_const ? 'C' : 'V';
+            char k_char = existing_sym->mangle_kind ? existing_sym->mangle_kind : (node->is_const ? 'C' : 'V');
             existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
 #ifdef DEBUG_MANGLE
             #ifdef Z98_ENABLE_DEBUG_LOGS
-            plat_printf_debug("[MANGLE] Symbol '%s' in module '%s' assigned mangled name '%s' (is_const=%d)\n",
-                             node->name, unit_.getCurrentModule(), existing_sym->mangled_name, (int)node->is_const);
+            plat_printf_debug("[MANGLE] Symbol '%s' in module '%s' assigned mangled name '%s' (kind=%c)\n",
+                             node->name, unit_.getCurrentModule(), existing_sym->mangled_name, k_char);
             #endif
 #endif
         }
@@ -3633,10 +3643,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         /* If not found (e.g. injected in tests), create and insert. */
         if (declared_type && !is_type_undefined(declared_type)) {
             mangled = NULL;
+            char k_char = node->is_const ? 'C' : 'V';
+            if (node->is_const && (declared_type->kind == TYPE_TYPE || declared_type->kind == TYPE_MODULE)) {
+                k_char = 'S';
+            }
+
             if (node->is_extern) {
                 mangled = node->name;
             } else if (!is_local) {
-                char k_char = node->is_const ? 'C' : 'V';
                 mangled = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
             }
 
@@ -3649,6 +3663,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .atLocation(node->name_loc)
                 .definedBy(node)
                 .withFlags((is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL) | (node->is_const ? SYMBOL_FLAG_CONST : 0))
+                .withMangleKind(k_char)
                 .build();
             unit_.getSymbolTable().insert(var_symbol);
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
@@ -3756,7 +3771,8 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         if (fn_symbol->flags & SYMBOL_FLAG_EXTERN) {
             fn_symbol->mangled_name = fn_symbol->name;
         } else {
-            fn_symbol->mangled_name = unit_.getNameMangler().mangle('F', unit_.getModule(unit_.getCurrentModule()), node->name);
+            char k_char = fn_symbol->mangle_kind ? fn_symbol->mangle_kind : 'F';
+            fn_symbol->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
         }
     }
 
@@ -8432,7 +8448,7 @@ i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
 
 Type* TypeChecker::createErrorUnionDataType(ArenaAllocator& arena, Type* error_union, SourceLocation loc) {
     Type* data_union = (Type*)arena.alloc(sizeof(Type));
-    plat_memset(data_union, 0, sizeof(Type));
+    plat_memset(data_union, 0, sizeof(Type)); data_union->is_global_empty_tuple = false;
     data_union->kind = TYPE_UNION;
 
     void* fields_mem = arena.alloc(sizeof(DynamicArray<StructField>));
