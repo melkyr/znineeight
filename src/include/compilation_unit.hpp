@@ -199,6 +199,8 @@ public:
     size_t getTotalCatalogueEntries() const;
 
 private:
+    void precomputeMangledNames(Module* mod);
+
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
     ArenaAllocator transient_arena_;

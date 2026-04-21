@@ -243,6 +243,21 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
+    // Compute stable hash for the module based on absolute canonical path
+    char abs_path[1024];
+    bool got_abs = plat_get_absolute_path(interned_filename, abs_path, sizeof(abs_path));
+    if (!got_abs) {
+        // Fallback to interned filename (already normalized in addSource)
+        plat_strncpy(abs_path, interned_filename, sizeof(abs_path));
+#ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("Warning: plat_get_absolute_path failed for %s, using fallback\n", interned_filename);
+#endif
+    }
+    normalize_path(abs_path);
+    // Convert backslashes to forward slashes for cross-platform consistency
+    for (char* p = abs_path; *p; ++p) if (*p == '\\') *p = '/';
+    mod->stable_hash = fnv1a_32(abs_path);
+
     // Create per-module symbol table
     void* sym_mem = arena_.alloc(sizeof(SymbolTable));
     if (sym_mem == NULL) fatalError("Out of memory allocating SymbolTable");
@@ -1105,6 +1120,14 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (all_success && !verifyNoPlaceholders()) {
         all_success = false;
     }
+
+    // Phase 2.0.5: Precompute mangled names for all public symbols across all modules
+    if (all_success) {
+        for (size_t i = 0; i < modules_.length(); ++i) {
+            precomputeMangledNames(modules_[i]);
+        }
+    }
+
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
@@ -1611,4 +1634,44 @@ bool CompilationUnit::areErrorTypesEliminated() const {
     // and expected when the pipeline passes.
 
     return c89_validation_passed_;
+}
+
+void CompilationUnit::precomputeMangledNames(Module* mod) {
+    if (!mod->symbols) return;
+    const DynamicArray<Scope*>& scopes = mod->symbols->getAllScopes();
+    if (scopes.length() == 0) return;
+    Scope* global_scope = scopes[0];
+
+    for (size_t i = 0; i < global_scope->bucket_count; ++i) {
+        for (Scope::SymbolEntry* entry = global_scope->buckets[i]; entry; entry = entry->next) {
+            Symbol& sym = entry->symbol;
+
+            // Skip if not a public/global symbol
+            if (!(sym.flags & (SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_PUB | SYMBOL_FLAG_EXTERN))) continue;
+            if (sym.kind != SYMBOL_VARIABLE && sym.kind != SYMBOL_FUNCTION && sym.kind != SYMBOL_TYPE) continue;
+
+            // Handle extern symbols: use their original name
+            if (sym.flags & SYMBOL_FLAG_EXTERN) {
+                sym.mangled_name = sym.name;
+                if (sym.kind == SYMBOL_TYPE && sym.symbol_type) {
+                    sym.symbol_type->c_name = sym.name;
+                }
+                continue;
+            }
+
+            // Determine kind character
+            char kind = 'V';
+            if (sym.kind == SYMBOL_FUNCTION) kind = 'F';
+            else if (sym.kind == SYMBOL_TYPE) kind = 'S';
+            else if (sym.flags & SYMBOL_FLAG_CONST) kind = 'C';
+
+            // Compute and overwrite mangled name using defining module (mod)
+            sym.mangled_name = name_mangler_.mangle(kind, mod, sym.name);
+
+            // For types, also update Type::c_name
+            if (sym.kind == SYMBOL_TYPE && sym.symbol_type) {
+                sym.symbol_type->c_name = sym.mangled_name;
+            }
+        }
+    }
 }

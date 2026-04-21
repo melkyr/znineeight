@@ -37,6 +37,7 @@ struct Module {
     DynamicArray<Symbol*> static_function_prototypes;
     bool is_analyzed;
     int anon_counter;
+    u32 stable_hash;
 
     // Per-module catalogues
     ErrorSetCatalogue error_set_catalogue;
