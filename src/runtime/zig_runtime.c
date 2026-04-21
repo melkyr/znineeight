@@ -286,3 +286,11 @@ usize __bootstrap_usize_from_i64(i64 x) {
     if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (usize)x;
 }
+
+bool plat_is_windows() {
+#ifdef _WIN32
+    return true;
+#else
+    return false;
+#endif
+}
