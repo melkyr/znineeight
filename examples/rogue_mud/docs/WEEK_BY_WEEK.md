@@ -12,14 +12,16 @@
 - [x] Implement room carving and L-shaped corridor connection.
 - [x] Verify generation with `dungeon_test.zig`.
 
-## Week 2: Pathfinding (Future)
-- [ ] Implement a Priority Queue (Min-Heap).
-- [ ] Implement A* pathfinding algorithm for mobile entities.
+## Week 2: Pathfinding
+- [x] Implement a Priority Queue (Min-Heap).
+- [x] Implement A* pathfinding algorithm for mobile entities.
 
-## Week 3: Entities and Combat (Future)
-- [ ] Implement Player and Monster entities.
-- [ ] Implement turn-based combat and state persistence.
+## Week 3: Entities and Combat
+- [x] Implement Player and Monster entities.
+- [x] Implement turn-based combat and state persistence.
 
-## Week 4: Polish (Future)
-- [ ] Add ANSI color support.
-- [ ] Implement "Look" command with procedural descriptions based on nearby tiles.
+## Week 4: Polish & Stress Test Findings
+- [x] Add ANSI color support with plain text fallback.
+- [x] Implement "Look" command with procedural descriptions.
+- [x] Stress Test: Identified Cross-module Symbol Hash Inconsistency as a blocker for scaling.
+- [x] Documented all compiler blockers in `missing_features_rmud.md`.

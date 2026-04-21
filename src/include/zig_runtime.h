@@ -88,6 +88,7 @@ void plat_socket_fd_set(int fd, u8* set);
 int plat_socket_fd_isset(int fd, u8* set);
 
 usize __bootstrap_usize_from_i64(i64 x);
+bool plat_is_windows();
 
 /* Runtime checked numeric conversions */
 

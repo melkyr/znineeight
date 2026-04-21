@@ -20,8 +20,8 @@ pub fn moveEntity(dungeon: *scenario.Dungeon_t, entity_idx: usize, dx: i8, dy: i
     const entity = &dungeon.entities[entity_idx];
     if (!entity.active) return;
 
-    const nx = @intCast(u8, @intCast(i16, entity.x) + @intCast(i16, dx));
-    const ny = @intCast(u8, @intCast(i16, entity.y) + @intCast(i16, dy));
+    const nx = @intCast(u8, @intCast(i32, entity.x) + @intCast(i32, dx));
+    const ny = @intCast(u8, @intCast(i32, entity.y) + @intCast(i32, dy));
 
     if (nx >= dungeon.width or ny >= dungeon.height) return;
 

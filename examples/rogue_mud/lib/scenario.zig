@@ -60,8 +60,8 @@ pub fn generateDungeon(
         const node_opt = bsp_mod.ArrayListBspNodePtr_pop(&stack);
         if (node_opt) |node| {
 
-        const too_small = node.w < 8 or node.h < 8;
-        const random_carve = rng_mod.Random_range(random, 0, 100) < 30;
+        const too_small = node.w < 15 or node.h < 15;
+        const random_carve = rng_mod.Random_range(random, 0, 100) < 15;
 
             if (too_small or random_carve) {
                 try carveRoom(node, tiles, width, height, random, &rooms_list);

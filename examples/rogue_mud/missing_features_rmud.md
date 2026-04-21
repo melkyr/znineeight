@@ -143,3 +143,50 @@ The `zig0` `TypeChecker` operates in passes. In complex cross-module scenarios, 
 2. **Module Reorganization**: Move the frequently called utility functions into a "leaf" module that doesn't import other project modules.
 3. **Explicit Typing**: Ensure all variables involved in the call have explicit types to help the `TypeChecker` infer the call signature even if the target is not yet fully "resolved".
 4. **Ignore if compiles**: If the compiler produces a warning but still generates a valid `.c` file that compiles with `gcc`, the warning can often be ignored as the `CBackend` might still find the symbol during the final emission phase.
+
+## 14. Phase 2: Milestone 11 Stress Test Findings (Week 4)
+
+During the completion of Week 4 (Polish & UI), more severe compiler stability issues were identified that prevent linking of the generated C89 code.
+
+### A. Cross-module Symbol Hash Inconsistency
+The compiler uses hashes in mangled names (e.g., `zV_1c8b95_ANSI_GREEN`). In the Milestone 11 stress test, different modules are assigned different hashes for the same imported symbols, leading to link-time "undefined reference" errors.
+
+**Evidence:**
+- `ui.h` declares: `extern unsigned char const (* zV_1c8b95_ANSI_GREEN)[5];`
+- `ui.c` defines: `const unsigned char const (* zC_43327b_ANSI_GREEN)[5] = ...`
+- `main.c` attempts to use `zC_43327b_ANSI_GREEN`.
+
+The inconsistency between `1c8b95` and `43327b` causes the linker to fail. This appears to be triggered by deep or complex import chains.
+
+### B. Missing Empty Tuple Definition in Importers
+Functions like `std.debug.print` desugar to code using anonymous tuples. If no arguments are passed or if the lowering triggers an empty tuple, `zig0` desugars this to `struct Tuple_empty`.
+
+**The Bug:**
+The definition of `struct Tuple_empty` is emitted in the module where the empty tuple is first encountered (e.g., `ui.c`), but other modules that use it (e.g., `main.c`) do not receive the definition, nor is it exported in the module's header. This leads to "storage size of ... isn't known" errors in C.
+
+**Workaround:**
+Avoid calling `std.debug.print` with patterns that trigger empty tuple desugaring, or ensure all files have a dummy tuple definition.
+
+### C. Const vs Var Mangling Inconsistency
+`pub const` symbols sometimes get mangled with `zC_` (Constant) in the definition file but `zV_` (Variable) in the header or importing files. This mismatch (`zC_` vs `zV_`) prevents linking.
+
+**Workaround:**
+Change `pub const` to `pub var` for global configuration or constant strings that need to be shared across modules.
+
+### D. Path Length and Name warnings
+The compiler emits warnings for non-8.3 filenames (e.g., `array_list.zig`). While just a warning, it indicates the compiler's strict focus on 1998-era compatibility.
+
+### E. Failed Workaround: Getter Functions for Constants
+To solve the symbol hash inconsistency (Issue A), an attempt was made to use "getter" functions (e.g., `pub fn getAnsiGreen() []const u8`).
+
+**The Result:**
+The inconsistency persisted. The getter function itself (`zF_43327b_getAnsiGreen`) was correctly resolved by the importer, but the underlying data it returned or referenced often triggered further mangling issues or "Unresolved call" warnings at the C level during linking because the internal state of the `TypeChecker` for that module remained inconsistent with the importer's view.
+
+### F. Successful Workaround (C-level): Direct Runtime Calls
+Bypassing the Zig `std.debug.print` (which uses anonymous tuples) in favor of direct `extern "c" fn __bootstrap_print(s: *const c_char) void` calls successfully resolved the "Missing Empty Tuple Definition" (Issue B). This confirms that the issue is specifically in the lowering of anonymous aggregate literals used in `anytype` parameters.
+
+### G. Hard Blocker: Cross-module Project Scaling
+Milestone 11's `zig0` compiler currently fails to scale to projects with more than ~5-7 interacting modules where symbols are shared across the module graph. The mangling hash becomes non-deterministic or context-dependent, making it impossible to link a large project into a single binary without manually editing the generated C headers.
+
+**Recommendation for Self-Hosting (zig1):**
+The symbol mangling and cross-module resolution logic in `zig1` MUST use a more deterministic approach (e.g., fully qualified names or a stable hash based purely on the canonical path) to avoid these "mangling drift" issues.
