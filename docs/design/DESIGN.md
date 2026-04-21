@@ -402,7 +402,12 @@ The `TypeChecker` resolves identifiers, verifies type compatibility for assignme
 #### Pass 2: Lifetime Analysis (Task 125)
 The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters.
 
-- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
+- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`) using a recursive resolver. It distinguishes between storage allocated on the stack (True Locals, By-Value Parameters) and memory owned by the caller (Pointer-Like Parameters).
+- **Dereference Awareness**: The analyzer correctly handles dereferences (`ptr.*`, `ptr[i]`, `ptr.field`). If a pointer refers to external memory (like a pointer parameter), dereferencing it yields safe "External" provenance.
+- **Classification**:
+    - **True Locals**: `var`/`const` inside a function. Always dangerous to return by address.
+    - **By-Value Parameters**: Aggregate types passed by value. Dangerous to return by address or internal pointer.
+    - **Pointer Parameters**: `*T` or `[]T`. Safe to return internal pointers/slices derived from what they point to.
 
 #### Pass 3: Null Pointer Analysis (Task 126)
 The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage using flow-sensitive analysis.

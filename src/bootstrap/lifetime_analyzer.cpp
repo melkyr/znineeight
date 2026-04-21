@@ -224,7 +224,25 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
         base_name[255] = '\0';
     }
 
-    bool dangerous = isSymbolLocalVariable(base_name);
+    Symbol* sym = unit_.getSymbolTable().findInAnyScope(base_name);
+    if (!sym) return false;
+
+    bool dangerous = false;
+    if (sym->flags & SYMBOL_FLAG_LOCAL) {
+        // Direct address-of a local variable or parameter is always dangerous.
+        if (expr->type == NODE_UNARY_OP && expr->as.unary_op.op == TOKEN_AMPERSAND) {
+            dangerous = true;
+        } else if (sym->flags & SYMBOL_FLAG_PARAM) {
+            // For parameters, if we are NOT taking the address,
+            // it's only dangerous if it's by-value (struct, array, etc).
+            // Pointer parameters are safe because they point to caller-owned memory.
+            bool is_pointer_like = (sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE));
+            dangerous = !is_pointer_like;
+        } else {
+            dangerous = true;
+        }
+    }
+
 #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[LifetimeAnalysis] isDangerousLocalPointer('");
     plat_printf_debug(base_name);
@@ -238,7 +256,10 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
 bool LifetimeAnalyzer::isSymbolLocalVariable(const char* name) {
     Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
     if (!sym) return false;
-    return (sym->flags & SYMBOL_FLAG_LOCAL);
+    // Parameters are technically in the local activation record, but they
+    // are handled specifically in isDangerousLocalPointer.
+    if (sym->flags & SYMBOL_FLAG_PARAM) return false;
+    return (sym->flags & SYMBOL_FLAG_LOCAL) != 0;
 }
 
 void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, ASTNode* rvalue) {
@@ -351,6 +372,14 @@ const char* LifetimeAnalyzer::getPointerProvenance(ASTNode* expr) {
                 }
             }
         }
+
+        // If not explicitly tracked, check if it's a pointer-like parameter.
+        // Pointer parameters point to memory owned by the caller (external).
+        Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+        if (sym && (sym->flags & SYMBOL_FLAG_PARAM)) {
+            bool is_pointer_like = (sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE));
+            if (is_pointer_like) return NULL; // External
+        }
     }
 
     return getPointerOrigin(expr);
@@ -360,6 +389,14 @@ const char* LifetimeAnalyzer::getPointerOrigin(ASTNode* expr) {
     if (!expr) return NULL;
 
     switch (expr->type) {
+        case NODE_PAREN_EXPR:
+            return getPointerOrigin(expr->as.paren_expr.expr);
+        case NODE_PTR_CAST:
+            return getPointerOrigin(expr->as.ptr_cast->expr);
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+            return getPointerOrigin(expr->as.numeric_cast->expr);
+
         case NODE_IDENTIFIER:
             return expr->as.identifier.name;
 
@@ -367,10 +404,21 @@ const char* LifetimeAnalyzer::getPointerOrigin(ASTNode* expr) {
             if (expr->as.unary_op.op == TOKEN_AMPERSAND) {
                 return getPointerOrigin(expr->as.unary_op.operand);
             }
+            if (expr->as.unary_op.op == TOKEN_STAR || expr->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                // Dereference: origin is what the pointer points to.
+                return getPointerProvenance(expr->as.unary_op.operand);
+            }
             break;
 
         case NODE_MEMBER_ACCESS: {
             if (expr->as.member_access->base) {
+                // Automatic dereference check: if base is a pointer, this access
+                // refers to memory pointed to, not the local pointer itself.
+                Type* base_type = expr->as.member_access->base->resolved_type;
+                if (base_type && (base_type->kind == TYPE_POINTER || base_type->kind == TYPE_SLICE)) {
+                    return getPointerProvenance(expr->as.member_access->base);
+                }
+
                 const char* base_origin = getPointerOrigin(expr->as.member_access->base);
                 if (!base_origin) return NULL;
 
@@ -386,6 +434,11 @@ const char* LifetimeAnalyzer::getPointerOrigin(ASTNode* expr) {
         }
 
         case NODE_ARRAY_ACCESS: {
+            // Check for pointer indexing (dereference)
+            Type* base_type = expr->as.array_access->array->resolved_type;
+            if (base_type && (base_type->kind == TYPE_POINTER || base_type->kind == TYPE_SLICE)) {
+                return getPointerProvenance(expr->as.array_access->array);
+            }
             return getPointerOrigin(expr->as.array_access->array);
         }
 
