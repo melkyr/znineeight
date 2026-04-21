@@ -275,10 +275,12 @@ void __bootstrap_print_char(i32 c) {
 }
 
 
+#if 0
 u8 __bootstrap_u8_from_usize(usize x) {
     if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u8)x;
 }
+#endif
 
 usize __bootstrap_usize_from_i64(i64 x) {
     if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
