@@ -120,3 +120,24 @@ Always use `@intCast` even for constants in initializers: `.field = @intCast(u8,
 
 ## 13. Unresolved Calls in cross-module code
 Function calls across modules can sometimes result in "Unresolved call" warnings if the `TypeChecker` hasn't reached the target function's definition yet. This is especially prevalent in larger projects. It doesn't always prevent compilation but can lead to incorrect code generation or compiler aborts in complex scenarios.
+
+### Example
+```zig
+// lib/a.zig
+const b = @import("b.zig");
+pub fn callB() void {
+    b.doSomething(); // ⚠️ Warning: Unresolved call at ... in context 'doSomething'
+}
+
+// lib/b.zig
+pub fn doSomething() void { ... }
+```
+
+### What is happening?
+The `zig0` `TypeChecker` operates in passes. In complex cross-module scenarios, it might attempt to validate a function call before the target function's signature has been fully catalogued in the symbol table's cross-module cache. This is often triggered by deep import chains or circular dependencies.
+
+### Workarounds
+1. **Signature Simplification**: Reduce the complexity of the function arguments (e.g., use pointers instead of passing large structs by value).
+2. **Module Reorganization**: Move the frequently called utility functions into a "leaf" module that doesn't import other project modules.
+3. **Explicit Typing**: Ensure all variables involved in the call have explicit types to help the `TypeChecker` infer the call signature even if the target is not yet fully "resolved".
+4. **Ignore if compiles**: If the compiler produces a warning but still generates a valid `.c` file that compiles with `gcc`, the warning can often be ignored as the `CBackend` might still find the symbol during the final emission phase.
