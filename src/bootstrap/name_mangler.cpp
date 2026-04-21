@@ -28,6 +28,12 @@ const char* NameMangler::mangle(char kind, const char* module_path, const char* 
         char rel_path[1024];
         get_relative_path(module_path, ".", rel_path, sizeof(rel_path));
         hash = fnv1a_32(rel_path);
+#ifdef DEBUG_MANGLE
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("[MANGLE] module_path='%s' rel_path='%s' hash=%06x\n",
+                         module_path, rel_path, hash & 0xFFFFFF);
+        #endif
+#endif
     } else {
         hash = fnv1a_32("global");
     }

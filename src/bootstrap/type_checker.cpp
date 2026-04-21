@@ -3610,6 +3610,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         } else if (!existing_sym->mangled_name) {
             char k_char = node->is_const ? 'C' : 'V';
             existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
+#ifdef DEBUG_MANGLE
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+            plat_printf_debug("[MANGLE] Symbol '%s' in module '%s' assigned mangled name '%s' (is_const=%d)\n",
+                             node->name, unit_.getCurrentModule(), existing_sym->mangled_name, (int)node->is_const);
+            #endif
+#endif
         }
 
         existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
@@ -8317,6 +8323,13 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
 
     // Ensure symbol type is resolved
     if (!sym->symbol_type && sym->details) {
+#ifdef DEBUG_MANGLE
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("[MANGLE] Resolving type for symbol '%s' from module '%s' (mangled: %s, is_const=%d)\n",
+                         sym->name, target_mod->name, sym->mangled_name ? sym->mangled_name : "NULL",
+                         (sym->flags & SYMBOL_FLAG_CONST) != 0);
+        #endif
+#endif
         const char* saved_module = unit_.getCurrentModule();
         unit_.setCurrentModule(target_mod->name);
         TypeChecker target_checker(unit_);
