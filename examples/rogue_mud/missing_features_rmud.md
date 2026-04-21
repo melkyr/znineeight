@@ -106,6 +106,8 @@ pub const BspNode = struct {
 };
 ```
 
+### Reproduction
+A minimal reproduction of this issue can be found in `examples/rogue_mud/test/header_repro.zig`.
 ## 11. Aggregate Initialization Quirks
 Anonymous aggregate initialization (e.g., `.{ .x = 0 }`) sometimes fails to coerce correctly when used in nested structures or if types are imported from other modules.
 
