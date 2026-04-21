@@ -369,6 +369,14 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
     emitter.writeString("#include <stddef.h>\n");
     emitter.writeString("#include \"zig_compat.h\"\n\n");
 
+    emitter.writeString("#ifndef ZIG_TUPLE_EMPTY\n");
+    emitter.writeString("#define ZIG_TUPLE_EMPTY\n");
+    emitter.writeIndent();
+    emitter.writeString("struct Tuple_empty { char __dummy; };\n");
+    emitter.writeIndent();
+    emitter.writeString("typedef struct Tuple_empty Tuple_empty;\n");
+    emitter.writeString("#endif\n\n");
+
     const DynamicArray<Type*>& slices = unit_.getGlobalSliceTypes();
     for (size_t i = 0; i < slices.length(); ++i) {
         Type* type = slices[i];

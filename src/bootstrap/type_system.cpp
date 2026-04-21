@@ -18,7 +18,7 @@
             t.size = sz; \
             t.alignment = align_val; \
             t.c_name = NULL; \
-            t.is_resolving = false; \
+            t.is_resolving = false; t.is_global_empty_tuple = false; \
             initialized = true; \
         } \
         return &t; \
@@ -55,10 +55,10 @@ Type* get_g_type_anyerror() {
         t.size = 4;
         t.alignment = 4;
         t.c_name = NULL;
-        t.is_resolving = false;
+        t.is_resolving = false; t.is_global_empty_tuple = false;
         t.as.error_set.name = "anyerror";
         t.as.error_set.tags = NULL;
-        t.as.error_set.is_anonymous = false;
+        t.as.error_set.is_anonymous = false; t.is_global_empty_tuple = false;
         initialized = true;
     }
     return &t;
@@ -69,7 +69,7 @@ static Type* allocateType(ArenaAllocator& arena) {
 #ifdef MEASURE_MEMORY
     MemoryTracker::types++;
 #endif
-    if (t) plat_memset(t, 0, sizeof(Type));
+    if (t) { plat_memset(t, 0, sizeof(Type)); t->is_global_empty_tuple = false; }
     return t;
 }
 
@@ -99,6 +99,10 @@ Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_TUPLE;
     new_type->as.tuple.elements = elements;
+
+    if (elements && elements->length() == 0) {
+        new_type->is_global_empty_tuple = true;
+    }
 
     calculateTupleLayout(new_type);
 
@@ -341,6 +345,7 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
     if (!new_type) {
         new_type = allocateType(unit.getArena());
     } else {
+        new_type->is_global_empty_tuple = false;
         plat_memset(&new_type->as, 0, sizeof(new_type->as));
     }
 
@@ -406,6 +411,7 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     if (!new_type) {
         new_type = allocateType(unit.getArena());
     } else {
+        new_type->is_global_empty_tuple = false;
         plat_memset(&new_type->as, 0, sizeof(new_type->as));
     }
 
@@ -474,6 +480,7 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
     if (!new_type) {
         new_type = allocateType(unit.getArena());
     } else {
+        new_type->is_global_empty_tuple = false;
         plat_memset(&new_type->as, 0, sizeof(new_type->as));
     }
 
@@ -642,6 +649,7 @@ Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* 
     if (!new_type) {
         new_type = allocateType(unit.getArena());
     } else {
+        new_type->is_global_empty_tuple = false;
         plat_memset(&new_type->as, 0, sizeof(new_type->as));
     }
 
@@ -1011,6 +1019,7 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     if (!new_type) {
         new_type = allocateType(unit.getArena());
     } else {
+        new_type->is_global_empty_tuple = false;
         plat_memset(&new_type->as, 0, sizeof(new_type->as));
     }
 

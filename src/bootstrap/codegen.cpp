@@ -3532,6 +3532,7 @@ void C89Emitter::emitBufferedTypeDefinitions() {
 
 void C89Emitter::ensureTupleType(Type* type) {
     if (!type || type->kind != TYPE_TUPLE) return;
+    if (type->is_global_empty_tuple) return;
 
     const char* mangled_name = unit_.getNameMangler().mangleType(type);
 
@@ -4132,8 +4133,13 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     } else {
         char k_char = 'V';
         if (sym) {
-            if (sym->kind == SYMBOL_FUNCTION) k_char = 'F';
-            else if (sym->kind == SYMBOL_TYPE) k_char = 'S';
+            if (sym->mangle_kind) {
+                k_char = sym->mangle_kind;
+            } else if (sym->kind == SYMBOL_FUNCTION) {
+                k_char = 'F';
+            } else if (sym->kind == SYMBOL_TYPE) {
+                k_char = 'S';
+            }
         }
         
         Module* mod = unit_.getModule(location);
