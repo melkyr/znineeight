@@ -570,7 +570,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             if (t_type && t_type->c_name) {
                 writeString(t_type->c_name);
             } else if (t_type && t_type->as.enum_details.name) {
-                writeString(unit_.getNameMangler().mangleTypeName(t_type->as.enum_details.name, t_type->owner_module ? t_type->owner_module->name : "unknown"));
+                writeString(unit_.getNameMangler().mangleTypeName(t_type->as.enum_details.name, t_type->owner_module));
             } else {
                 writeString("/* enum */");
             }
@@ -3251,7 +3251,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                                               actual_type->as.module.name :
                                               (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
                         if (mod_name) {
-                            writeString(unit_.getNameMangler().mangle('V', mod_name, node->as.member_access->field_name));
+                            writeString(unit_.getNameMangler().mangle('V', unit_.getModule(mod_name), node->as.member_access->field_name));
                         } else {
                             writeString(node->as.member_access->field_name);
                         }
@@ -4136,8 +4136,8 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
             else if (sym->kind == SYMBOL_TYPE) k_char = 'S';
         }
         
-        const char* module_path = location;
-        const char* mangled = unit_.getNameMangler().mangle(k_char, module_path, zig_name);
+        Module* mod = unit_.getModule(location);
+        const char* mangled = unit_.getNameMangler().mangle(k_char, mod, zig_name);
         plat_strcpy(final_buf, mangled);
     }
 

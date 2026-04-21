@@ -491,6 +491,11 @@ void plat_get_executable_dir(char* buffer, size_t size) {
     }
 }
 
+bool plat_get_absolute_path(const char* path, char* out_buffer, size_t out_size) {
+    DWORD result = GetFullPathNameA(path, (DWORD)out_size, out_buffer, NULL);
+    return (result > 0 && result < out_size);
+}
+
 void plat_abort() {
     /*
      * Use exit code 3 on Windows to match what expect_abort() in test_utils.cpp
@@ -839,6 +844,14 @@ void plat_get_executable_dir(char* buffer, size_t size) {
     } else {
         plat_strcpy(buffer, ".");
     }
+}
+
+bool plat_get_absolute_path(const char* path, char* out_buffer, size_t out_size) {
+    char* resolved = realpath(path, NULL);
+    if (!resolved) return false;
+    plat_strncpy(out_buffer, resolved, out_size);
+    free(resolved);
+    return true;
 }
 
 void plat_abort() {

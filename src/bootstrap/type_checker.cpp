@@ -237,7 +237,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->dependents_head = NULL;
                 placeholder->dependents_tail = NULL;
                 placeholder->is_resolving = false;
-                placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
+                placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getModule(unit_.getCurrentModule()));
 
                 /* CRITICAL: Register the placeholder immediately */
                 unit_.getTypeRegistry().insert(current_mod, vd->name, placeholder);
@@ -2679,7 +2679,7 @@ void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
         if (!placeholder->c_name && original_name) {
             placeholder->c_name = unit_.getNameMangler().mangleTypeName(
                 original_name,
-                placeholder->owner_module ? placeholder->owner_module->name : "unknown");
+                placeholder->owner_module);
         }
     }
 
@@ -3280,7 +3280,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 placeholder->dependents_head = NULL;
                 placeholder->dependents_tail = NULL;
                 placeholder->is_resolving = false;
-                placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
+                placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getModule(unit_.getCurrentModule()));
 
                 unit_.getTypeRegistry().insert(current_mod, node->name, placeholder);
 
@@ -3609,7 +3609,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             existing_sym->mangled_name = NULL;
         } else if (!existing_sym->mangled_name) {
             char k_char = node->is_const ? 'C' : 'V';
-            existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
+            existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
 #ifdef DEBUG_MANGLE
             #ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("[MANGLE] Symbol '%s' in module '%s' assigned mangled name '%s' (is_const=%d)\n",
@@ -3637,7 +3637,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 mangled = node->name;
             } else if (!is_local) {
                 char k_char = node->is_const ? 'C' : 'V';
-                mangled = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
+                mangled = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
             }
 
             Symbol var_symbol = SymbolBuilder(unit_.getArena())
@@ -3756,7 +3756,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         if (fn_symbol->flags & SYMBOL_FLAG_EXTERN) {
             fn_symbol->mangled_name = fn_symbol->name;
         } else {
-            fn_symbol->mangled_name = unit_.getNameMangler().mangle('F', unit_.getCurrentModule(), node->name);
+            fn_symbol->mangled_name = unit_.getNameMangler().mangle('F', unit_.getModule(unit_.getCurrentModule()), node->name);
         }
     }
 
@@ -4098,7 +4098,7 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
             if (sym->flags & SYMBOL_FLAG_EXTERN) {
                 struct_type->c_name = struct_name;
             } else if (struct_type->c_name == NULL) {
-                struct_type->c_name = unit_.getNameMangler().mangleTypeName(struct_name, unit_.getCurrentModule());
+                struct_type->c_name = unit_.getNameMangler().mangleTypeName(struct_name, unit_.getModule(unit_.getCurrentModule()));
             }
         }
     }
@@ -4249,7 +4249,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             if (sym->flags & SYMBOL_FLAG_EXTERN) {
                 union_type->c_name = union_name;
             } else if (union_type->c_name == NULL) {
-                union_type->c_name = unit_.getNameMangler().mangleTypeName(union_name, unit_.getCurrentModule());
+                union_type->c_name = unit_.getNameMangler().mangleTypeName(union_name, unit_.getModule(unit_.getCurrentModule()));
             }
         }
     }
@@ -5178,7 +5178,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
             if (sym->flags & SYMBOL_FLAG_EXTERN) {
                 enum_type->c_name = enum_name;
             } else if (enum_type->c_name == NULL) {
-                enum_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getCurrentModule());
+                enum_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getModule(unit_.getCurrentModule()));
             }
         }
     }
@@ -5668,6 +5668,12 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
                 }
                 if (base_type->kind == TYPE_POINTER) {
                     return base_type->as.pointer.is_const;
+                }
+
+                if (base_type->kind == TYPE_MODULE) {
+                    if (node->as.member_access->symbol) {
+                        return (node->as.member_access->symbol->flags & SYMBOL_FLAG_CONST) != 0;
+                    }
                 }
             }
             /* A member access is const if the struct itself is const. */
@@ -6981,7 +6987,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
             callee_name ? callee_name : "anonymous",
             params,
             (int)params->length(),
-            unit_.getCurrentModule()
+            unit_.getModule(unit_.getCurrentModule())
         );
 
         unit_.getGenericCatalogue().addInstantiation(
