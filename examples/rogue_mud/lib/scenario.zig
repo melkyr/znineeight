@@ -5,6 +5,7 @@ const rng_mod = @import("rng.zig");
 const tile_mod = @import("tile.zig");
 const room_mod = @import("room.zig");
 const bsp_mod = @import("bsp.zig");
+const entity_mod = @import("entity.zig");
 
 pub const Dungeon_t = struct {
     width: u8,
@@ -12,6 +13,8 @@ pub const Dungeon_t = struct {
     tiles: []tile_mod.Tile,
     rooms: []room_mod.Room_t,
     room_count: u8,
+    entities: []entity_mod.Entity,
+    entity_count: usize,
 };
 
 pub fn generateDungeon(
@@ -55,17 +58,18 @@ pub fn generateDungeon(
     // 6. Main BSP loop
     while (stack.len > 0) {
         const node_opt = bsp_mod.ArrayListBspNodePtr_pop(&stack);
-        if (node_opt == null) break;
-        var node: *bsp_mod.BspNode = undefined;
-        if (node_opt) |n| { node = n; }
+        if (node_opt) |node| {
 
         const too_small = node.w < 8 or node.h < 8;
         const random_carve = rng_mod.Random_range(random, 0, 100) < 30;
 
-        if (too_small or random_carve) {
-            try carveRoom(node, tiles, width, height, random, &rooms_list);
+            if (too_small or random_carve) {
+                try carveRoom(node, tiles, width, height, random, &rooms_list);
+            } else {
+                try splitNode(node, arena, random, &stack);
+            }
         } else {
-            try splitNode(node, arena, random, &stack);
+            break;
         }
     }
 
@@ -75,12 +79,19 @@ pub fn generateDungeon(
     // 7. Connect rooms
     try connectRooms(tiles, width, height, rooms_slice, random);
 
+    // 8. Initialize entities
+    const max_entities = 100;
+    const entities_mem = try sand_mod.sand_alloc(arena, max_entities * @sizeOf(entity_mod.Entity), @alignOf(entity_mod.Entity));
+    const entities = @ptrCast([*]entity_mod.Entity, entities_mem)[0..max_entities];
+
     return Dungeon_t{
         .width = width,
         .height = height,
         .tiles = tiles,
         .rooms = rooms_slice,
         .room_count = @intCast(u8, rooms_slice.len),
+        .entities = entities,
+        .entity_count = @intCast(usize, 0),
     };
 }
 

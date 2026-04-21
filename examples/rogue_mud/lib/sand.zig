@@ -37,3 +37,14 @@ pub fn sand_reset_temp(sand: *Sand) void {
         sand.pos = @intCast(usize, 0);  // reclaim all temp allocations
     }
 }
+
+pub fn sand_dupe_z(sand: *Sand, s: []const u8) ![*]const u8 {
+    const mem = try sand_alloc(sand, s.len + 1, 1);
+    const ptr = @ptrCast([*]u8, mem);
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        ptr[i] = s[i];
+    }
+    ptr[s.len] = @intCast(u8, 0);
+    return @ptrCast([*]const u8, ptr);
+}

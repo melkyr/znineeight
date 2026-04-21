@@ -105,3 +105,18 @@ pub const BspNode = struct {
     room: ?*room_mod.Room_t, // Changed from ?room_mod.Room_t to avoid incomplete type error
 };
 ```
+
+## 11. Aggregate Initialization Quirks
+Anonymous aggregate initialization (e.g., `.{ .x = 0 }`) sometimes fails to coerce correctly when used in nested structures or if types are imported from other modules.
+
+### Workaround
+Initialize fields individually after declaration if possible, or use explicit intermediate variables for sub-structures.
+
+## 12. Type Mismatches with Literals
+Z98 is very strict about types in assignments. A literal `0` is often treated as `i32` and will not implicitly coerce to `u8` or `usize` in a struct initializer.
+
+### Workaround
+Always use `@intCast` even for constants in initializers: `.field = @intCast(u8, 0)`.
+
+## 13. Unresolved Calls in cross-module code
+Function calls across modules can sometimes result in "Unresolved call" warnings if the `TypeChecker` hasn't reached the target function's definition yet. This is especially prevalent in larger projects. It doesn't always prevent compilation but can lead to incorrect code generation or compiler aborts in complex scenarios.
