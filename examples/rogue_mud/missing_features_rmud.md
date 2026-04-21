@@ -74,3 +74,34 @@ const x: usize = @intCast(usize, 10); // Required
 
 ## 8. Modulo Operator quirk
 The modulo operator `%` on large integers can sometimes cause issues. It is recommended to cast to `u32` before performing modulo operations if possible.
+
+## 9. Naked Tag Comparisons in Binary Operations
+Currently, `zig0` may abort or fail to resolve types when a naked tag (e.g., `.Wall`) is used in a binary operation (e.g., `tile == .Wall`).
+
+### Workaround
+Use an idiomatic `switch` statement instead of binary equality for tagged unions.
+
+```zig
+// ❌ May trigger compiler abort
+if (tile == .Wall) { ... }
+
+// ✅ Works correctly
+switch (tile) {
+    .Wall => { ... },
+    else => {},
+}
+```
+
+## 10. Recursive Type Dependencies in C Headers
+The `CBackend` may sometimes generate C headers where a struct field uses a type that is not yet fully defined (e.g., circular dependencies between modules or nested optionals/error unions).
+
+### Workaround
+If a struct field triggers "field has incomplete type" in C, try changing the field to a pointer (`*T`) or an optional pointer (`?*T`). Pointers do not require the full type definition at the point of declaration in C.
+
+Example from `bsp.zig`:
+```zig
+pub const BspNode = struct {
+    // ...
+    room: ?*room_mod.Room_t, // Changed from ?room_mod.Room_t to avoid incomplete type error
+};
+```
