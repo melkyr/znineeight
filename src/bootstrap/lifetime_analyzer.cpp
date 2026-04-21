@@ -91,6 +91,11 @@ void LifetimeAnalyzer::visitBlockStmt(ASTBlockStmtNode* node) {
 }
 
 void LifetimeAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[LifetimeAnalysis] Analyzing function: ");
+    plat_printf_debug(node->name);
+    plat_printf_debug("\n");
+#endif
     DynamicArray<PointerAssignment>* prev_assignments = current_assignments_;
     void* mem = unit_.getArena().alloc(sizeof(DynamicArray<PointerAssignment>));
     current_assignments_ = new (mem) DynamicArray<PointerAssignment>(unit_.getArena());
@@ -107,7 +112,17 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
         return;
     }
 
+#ifdef Z98_ENABLE_DEBUG_LOGS
+    const SourceFile* file = unit_.getSourceManager().getFile(node->expression->loc.file_id);
+    plat_printf_debug("[LifetimeAnalysis] Checking return statement at ");
+    plat_printf_debug(file ? file->filename : "unknown");
+    plat_printf_debug("\n");
+#endif
+
     if (isDangerousLocalPointer(node->expression)) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("[LifetimeAnalysis] VIOLATION DETECTED\n");
+#endif
         const char* var_name = extractVariableName(node->expression);
 
         const char* prefix = "Returning pointer to local variable '";
@@ -133,6 +148,11 @@ void LifetimeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
     Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
     if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
         if (node->initializer) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+            plat_printf_debug("[LifetimeAnalysis] Tracking VarDecl: ");
+            plat_printf_debug(node->name);
+            plat_printf_debug("\n");
+#endif
             trackLocalPointerAssignment(node->name, node->initializer);
         }
     }
@@ -144,6 +164,11 @@ void LifetimeAnalyzer::visitAssignment(ASTAssignmentNode* node) {
         const char* name = node->lvalue->as.identifier.name;
         Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
         if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+            plat_printf_debug("[LifetimeAnalysis] Tracking Assignment to: ");
+            plat_printf_debug(name);
+            plat_printf_debug("\n");
+#endif
             trackLocalPointerAssignment(name, node->rvalue);
         }
     }
@@ -180,6 +205,11 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
     }
 
     const char* provenance = getPointerProvenance(expr);
+#ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[LifetimeAnalysis] Provenance for expression: ");
+    plat_printf_debug(provenance ? provenance : "NULL");
+    plat_printf_debug("\n");
+#endif
     if (!provenance) return false;
 
     char base_name[256];
@@ -194,18 +224,32 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
         base_name[255] = '\0';
     }
 
-    return isSymbolLocalVariable(base_name);
+    bool dangerous = isSymbolLocalVariable(base_name);
+#ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[LifetimeAnalysis] isDangerousLocalPointer('");
+    plat_printf_debug(base_name);
+    plat_printf_debug("') -> ");
+    plat_printf_debug(dangerous ? "TRUE" : "FALSE");
+    plat_printf_debug("\n");
+#endif
+    return dangerous;
 }
 
 bool LifetimeAnalyzer::isSymbolLocalVariable(const char* name) {
     Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
     if (!sym) return false;
-    return (sym->flags & SYMBOL_FLAG_LOCAL) != 0;
+    return (sym->flags & SYMBOL_FLAG_LOCAL);
 }
 
 void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, ASTNode* rvalue) {
     if (!current_assignments_) return;
     const char* points_to_name = NULL;
+
+#ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[LifetimeAnalysis] trackLocalPointerAssignment: ");
+    plat_printf_debug(pointer_name);
+    plat_printf_debug("\n");
+#endif
 
     // 0. Explicitly handle NULL to clear assignments
     if (rvalue->type == NODE_NULL_LITERAL) {
@@ -241,18 +285,35 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
             // Check if base_name is a local variable
             Symbol* sym = unit_.getSymbolTable().findInAnyScope(base_name);
             if (sym && (sym->flags & SYMBOL_FLAG_LOCAL)) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+                plat_printf_debug("[LifetimeAnalysis] Base '");
+                plat_printf_debug(base_name);
+                plat_printf_debug("' is a local variable\n");
+#endif
                 // If base is a pointer, check if it's tracked
                 bool base_is_pointer = (sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE));
                 if (base_is_pointer) {
                     for (size_t i = 0; i < current_assignments_->length(); ++i) {
                         if (plat_strcmp((*current_assignments_)[i].pointer_name, base_name) == 0) {
                             points_to_name = (*current_assignments_)[i].points_to_name;
+#ifdef Z98_ENABLE_DEBUG_LOGS
+                            plat_printf_debug("[LifetimeAnalysis] Base '");
+                            plat_printf_debug(base_name);
+                            plat_printf_debug("' is a tracked pointer, points to: ");
+                            plat_printf_debug(points_to_name ? points_to_name : "NULL");
+                            plat_printf_debug("\n");
+#endif
                             break;
                         }
                     }
                 } else {
                     // Base is a local variable (struct, array, etc), so this pointer points to a local
                     points_to_name = sym->name;
+#ifdef Z98_ENABLE_DEBUG_LOGS
+                    plat_printf_debug("[LifetimeAnalysis] Base '");
+                    plat_printf_debug(base_name);
+                    plat_printf_debug("' is a local non-pointer, setting points_to_name to it\n");
+#endif
                 }
             }
         }

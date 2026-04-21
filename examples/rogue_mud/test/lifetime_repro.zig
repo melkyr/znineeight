@@ -8,11 +8,9 @@ const List = struct {
 
 // ❌ This triggers: "error: lifetime violation: Returning pointer to local variable 'self.ptr' creates dangling pointer"
 // To see the error, uncomment this function and its call in main.
-/*
 pub fn toSliceFails(self: *List) []u8 {
     return self.ptr[0..self.len];
 }
-*/
 
 // ✅ This workaround bypasses the lifetime analyzer and works correctly.
 pub fn toSliceWorks(self: *List, out: *[]u8) void {
@@ -28,7 +26,7 @@ pub fn main() void {
         .len = @intCast(usize, 10),
     };
 
-    // var slice_fail = toSliceFails(&list);
+    var slice_fail = toSliceFails(&list);
 
     var slice_ok: []u8 = undefined;
     toSliceWorks(&list, &slice_ok);

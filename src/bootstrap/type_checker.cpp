@@ -710,7 +710,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
         case TOKEN_STAR:
         case TOKEN_STARPERCENT:
         case TOKEN_SLASH:
-        case TOKEN_PERCENT: {
+        case TOKEN_PERCENT:  {
             /* Modulo is only defined for integer types */
             if (op == TOKEN_PERCENT && isNumericType(left_type) && isNumericType(right_type)) {
                 if (!isIntegerType(left_type) || !isIntegerType(right_type)) {
