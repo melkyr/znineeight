@@ -43,6 +43,26 @@ nc localhost 4000
 - [Z98 Workarounds](docs/Z98_WORKAROUNDS.md)
 - [Missing Features & Quirks](missing_features_rmud.md)
 
+## Z98 Milestone 11 Stress Test Report
+
+This project serves as a real-world validation of the `zig0` compiler. Below is a summary of feature stability at this scale.
+
+### Stable & Utilized Features
+- **Switch Expressions**: Used extensively for tile rendering, direction mapping, and command processing.
+- **Labeled Loops**: Critical for escaping nested loops in BSP generation (`bsp_loop`).
+- **Payload Captures**: Successfully utilized in `if` and `while` statements for optional unwrapping (e.g., pathfinding results).
+- **Anonymous Initializers**: Used for compact entity and struct creation.
+- **Control Flow Lifting**: The `ControlFlowLifter` robustly handles `if`/`switch` as expressions, even in complex nested contexts.
+- **Cross-module Symbol Resolution**: Deterministic mangling and stable hashing allow this 10+ module project to link correctly.
+
+### Unstable or Unusable Features
+- **Naked Tags in Binary Ops**: Using `.Tag == .Other` can trigger compiler aborts. *Workaround*: Always use `switch`.
+- **Mutable Array Sizes**: Using `var` or `pub var` for array sizes (e.g., `[MAX]u8`) is rejected. *Workaround*: Use constant integer literals or `const` (if simple).
+- **Struct Methods**: Methods inside structs remain unsupported in `zig0`. *Workaround*: Use prefixed standalone functions.
+- **Exhaustive Switch Inference**: The compiler often requires a mandatory `else` prong in `switch` expressions even if all enum tags are covered.
+- **Nested Aggregate Coercion**: Complex nested anonymous initializers can occasionally fail type resolution if context is too deep.
+- **Lifetime Analyzer (False Positives)**: Returning slices from struct-owned many-item pointers can trigger spurious "dangling pointer" warnings. *Workaround*: Use out-parameters.
+
 ### Lifetime Violation Repro
 ```bash
 ./zig0 examples/rogue_mud/test/lifetime_repro.zig -o examples/rogue_mud/test/lifetime_repro.c
