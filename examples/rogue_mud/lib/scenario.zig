@@ -56,20 +56,16 @@ pub fn generateDungeon(
     try bsp_mod.ArrayListBspNodePtr_append(&stack, root);
 
     // 6. Main BSP loop
-    while (stack.len > 0) {
-        const node_opt = bsp_mod.ArrayListBspNodePtr_pop(&stack);
-        if (node_opt) |node| {
+    bsp_loop: while (stack.len > 0) {
+        const node = bsp_mod.ArrayListBspNodePtr_pop(&stack) orelse break :bsp_loop;
 
         const too_small = node.w < 15 or node.h < 15;
         const random_carve = rng_mod.Random_range(random, 0, 100) < 15;
 
-            if (too_small or random_carve) {
-                try carveRoom(node, tiles, width, height, random, &rooms_list);
-            } else {
-                try splitNode(node, arena, random, &stack);
-            }
+        if (too_small or random_carve) {
+            try carveRoom(node, tiles, width, height, random, &rooms_list);
         } else {
-            break;
+            try splitNode(node, arena, random, &stack);
         }
     }
 

@@ -75,18 +75,12 @@ pub fn updateEnemies(arena: *sand_mod.Sand, dungeon: *scenario.Dungeon_t) void {
         const enemy_pt = point_mod.Point{ .x = enemy.x, .y = enemy.y };
 
         // Use A* pathfinding
-        const path_opt = pathfinding.findPath(arena, dungeon.*, enemy_pt, player_pt);
-
-        if (path_opt) |path| {
+        if (pathfinding.findPath(arena, dungeon.*, enemy_pt, player_pt)) |path| {
             if (path.len > 1) {
                 // path[0] is current position, path[1] is next step
                 const next_step = path[1];
-                const nx_val = @intCast(i32, next_step.x);
-                const ex_val = @intCast(i32, enemy.x);
-                const ny_val = @intCast(i32, next_step.y);
-                const ey_val = @intCast(i32, enemy.y);
-                const dx = @intCast(i8, nx_val - ex_val);
-                const dy = @intCast(i8, ny_val - ey_val);
+                const dx = @intCast(i8, @intCast(i32, next_step.x) - @intCast(i32, enemy.x));
+                const dy = @intCast(i8, @intCast(i32, next_step.y) - @intCast(i32, enemy.y));
                 moveEntity(dungeon, i, dx, dy);
             }
         } else {
