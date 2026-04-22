@@ -140,13 +140,19 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
 }
 
 fn getDirectionString(dx: i16, dy: i16) []const u8 {
-    if (dx == @intCast(i16, 0) and dy == @intCast(i16, -1)) return "North";
-    if (dx == @intCast(i16, 0) and dy == @intCast(i16, 1)) return "South";
-    if (dx == @intCast(i16, 1) and dy == @intCast(i16, 0)) return "East";
-    if (dx == @intCast(i16, -1) and dy == @intCast(i16, 0)) return "West";
-    if (dx == @intCast(i16, 1) and dy == @intCast(i16, -1)) return "North-East";
-    if (dx == @intCast(i16, -1) and dy == @intCast(i16, -1)) return "North-West";
-    if (dx == @intCast(i16, 1) and dy == @intCast(i16, 1)) return "South-East";
-    if (dx == @intCast(i16, -1) and dy == @intCast(i16, 1)) return "South-West";
-    return "Unknown";
+    // Z98 switch doesn't support complex tuples well yet, but we can use nested switches or packed values
+    // For now, let's keep it simple or use a better structure if possible.
+    // Actually, Milestone 11 supports switch expressions.
+    const packed_dir = dx + (dy * 3);
+    return switch (packed_dir) {
+        -3 => "North",
+        3 => "South",
+        1 => "East",
+        -1 => "West",
+        -2 => "North-East",
+        -4 => "North-West",
+        4 => "South-East",
+        2 => "South-West",
+        else => "Unknown",
+    };
 }

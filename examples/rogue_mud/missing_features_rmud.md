@@ -193,3 +193,16 @@ A deterministic hashing system based on canonical absolute paths and a stable ma
 
 **Recommendation for Self-Hosting (zig1):**
 The symbol mangling and cross-module resolution logic in `zig1` MUST follow this deterministic approach to avoid regression.
+
+## 15. Milestone 11 Stress Test Enhancements (Networking & Multi-player)
+
+The project was evolved from a single-player roguelike into a multi-player MUD to further stress test `zig0`'s networking capabilities and complex state management.
+
+### A. Non-blocking I/O and Polling
+Implementing the `select()` loop required passing `?*u8` to extern C functions to handle optional pointers. The `TypeChecker` successfully coerced optional pointers to raw C pointers at function boundaries.
+
+### B. Control Flow Lifting in Complex Loops
+The networking loop in `main.zig` uses several `if` and `while` statements with payload captures and `orelse break` logic. The `ControlFlowLifter` correctly handled these, though deep nesting still requires careful attention to avoid compiler timeouts in very large functions.
+
+### C. Telnet Negotiation and ASCII Rendering
+Basic telnet negotiation was implemented using string literals. ASCII rendering was preferred for network clients to ensure compatibility, while the local host continued to use ANSI colors, exercising the dual-mode UI capabilities.
