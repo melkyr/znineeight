@@ -185,8 +185,11 @@ The inconsistency persisted. The getter function itself (`zF_43327b_getAnsiGreen
 ### F. Successful Workaround (C-level): Direct Runtime Calls
 Bypassing the Zig `std.debug.print` (which uses anonymous tuples) in favor of direct `extern "c" fn __bootstrap_print(s: *const c_char) void` calls successfully resolved the "Missing Empty Tuple Definition" (Issue B). This confirms that the issue is specifically in the lowering of anonymous aggregate literals used in `anytype` parameters.
 
-### G. Hard Blocker: Cross-module Project Scaling
-Milestone 11's `zig0` compiler currently fails to scale to projects with more than ~5-7 interacting modules where symbols are shared across the module graph. The mangling hash becomes non-deterministic or context-dependent, making it impossible to link a large project into a single binary without manually editing the generated C headers.
+### G. Hard Blocker: Cross-module Project Scaling (RESOLVED)
+Milestone 11's `zig0` compiler previously failed to scale to projects with more than ~5-7 interacting modules where symbols are shared across the module graph due to non-deterministic mangling hashes.
+
+**Resolution:**
+A deterministic hashing system based on canonical absolute paths and a stable mangling pass (Phases 1-4 of the cross-module fix) has been implemented in `zig0`. This allows large multi-module projects like Rogue MUD to link correctly.
 
 **Recommendation for Self-Hosting (zig1):**
-The symbol mangling and cross-module resolution logic in `zig1` MUST use a more deterministic approach (e.g., fully qualified names or a stable hash based purely on the canonical path) to avoid these "mangling drift" issues.
+The symbol mangling and cross-module resolution logic in `zig1` MUST follow this deterministic approach to avoid regression.
