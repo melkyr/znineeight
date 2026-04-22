@@ -6,6 +6,7 @@ const entity_mod = @import("lib/entity.zig");
 const combat_mod = @import("lib/combat.zig");
 const tile_mod = @import("lib/tile.zig");
 const room_mod = @import("lib/room.zig");
+const persistence = @import("lib/persistence.zig");
 const ui_mod = @import("ui.zig");
 const std = @import("../mud_server/std.zig");
 
@@ -45,10 +46,11 @@ pub fn main() !void {
         combat_mod.addEntity(&dungeon, entity_mod.EntityType.Goblin, ex, ey, @intCast(i16, 5));
     }
 
-    __bootstrap_print("Game started! Use WASD to move, Q to quit, L to look.\n");
+    __bootstrap_print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
 
     while (true) {
         drawDungeon(dungeon);
+        ui_mod.printHP(dungeon.entities[0].hp, dungeon.entities[0].max_hp);
         const c = getchar();
         if (c == @intCast(i32, 'q') or c == @intCast(i32, 'Q')) break;
 
@@ -62,11 +64,25 @@ pub fn main() !void {
 
         if (dx != @intCast(i8, 0) or dy != @intCast(i8, 0)) {
             combat_mod.moveEntity(&dungeon, @intCast(usize, 0), dx, dy);
-            combat_mod.updateEnemies(&dungeon);
+            combat_mod.updateEnemies(&arena, &dungeon);
         }
 
         if (c == @intCast(i32, 'l') or c == @intCast(i32, 'L')) {
             ui_mod.lookSurroundings(dungeon);
+        }
+
+        if (c == @intCast(i32, 'v') or c == @intCast(i32, 'V')) {
+            __bootstrap_print("Saving dungeon to 'save.dat'...\n");
+            persistence.saveDungeon(&arena, dungeon, "save.dat") catch {
+                __bootstrap_print("Failed to save dungeon!\n");
+            };
+        }
+
+        if (c == @intCast(i32, 'b') or c == @intCast(i32, 'B')) {
+            __bootstrap_print("Loading dungeon from 'save.dat'...\n");
+            persistence.loadDungeon(&arena, &dungeon, "save.dat") catch {
+                __bootstrap_print("Failed to load dungeon!\n");
+            };
         }
 
         // Simple turn feedback
