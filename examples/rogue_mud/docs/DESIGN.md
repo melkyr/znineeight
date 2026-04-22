@@ -9,6 +9,8 @@ The project is organized into several modules to test cross-module visibility an
 - **Scenario (Dungeon):** Handles the generation of the tile map and rooms.
 - **RNG:** A simple LCG random number generator.
 - **Sand (Arena):** Memory management using a chunked arena allocator.
+- **Pathfinding:** A* implementation for NPC movement.
+- **Persistence:** Binary save/load system for dungeon state.
 - **Net (Server):** Platform-independent socket server.
 
 ## Data Structures

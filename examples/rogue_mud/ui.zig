@@ -23,6 +23,22 @@ pub fn getAnsiCyan() []const u8 { return ansi_cyan_val; }
 
 pub fn initUI() void { }
 
+pub fn printHP(hp: i16, max_hp: i16) void {
+    __bootstrap_print("HP: ");
+    if (hp < max_hp / 3) {
+        printColor(getAnsiRed());
+    } else if (hp < max_hp / 2) {
+        printColor(getAnsiYellow());
+    } else {
+        printColor(getAnsiGreen());
+    }
+    __bootstrap_print_int(@intCast(i32, hp));
+    __bootstrap_print("/");
+    __bootstrap_print_int(@intCast(i32, max_hp));
+    resetColor();
+    __bootstrap_print("\n");
+}
+
 pub fn useAnsi() bool {
     // On Windows, assume no ANSI support unless we are on a modern terminal (not likely for this stress test target)
     // On Linux/Unix, assume ANSI support.
