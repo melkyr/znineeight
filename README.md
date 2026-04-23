@@ -41,6 +41,28 @@ To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
 - **Architecture**: 32-bit little-endian target assumptions.
 - **MSVC 6.0 Compatibility**: Extensive use of `__int64` and C89-compliant constructs.
 
+### Peak Memory Usage (Compilation)
+The following table shows the peak memory usage of `zig0` when compiling the example programs. Measurements were taken using `valgrind --tool=massif`.
+
+| Example | Peak Memory (MB) |
+|---------|------------------|
+| `hello` | 0.82 |
+| `prime` | 0.82 |
+| `days_in_month` | 0.82 |
+| `fibonacci` | 0.82 |
+| `heapsort` | 0.82 |
+| `quicksort` | 0.82 |
+| `sort_strings` | 0.82 |
+| `func_ptr_return` | 0.82 |
+| `lzw` | 1.33 |
+| `mandelbrot` | 0.82 |
+| `lisp_interpreter_curr` | 4.11 |
+| `game_of_life` | 1.33 |
+| `mud_server` | 1.33 |
+| `rogue_mud` | 1.85 |
+
+All examples stay well within the 16MB constraint.
+
 ## Comparison with Official Zig
 
 | Feature | Official Zig Project | Z98 Bootstrap (Kind of Zig Subset) |
