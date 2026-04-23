@@ -45,22 +45,49 @@
 
 ## Examples Status (32-bit)
 
-| Example | Status | Notes |
-|---------|--------|-------|
-| `hello` | PASS | |
-| `prime` | PASS | |
-| `days_in_month` | PASS | |
-| `fibonacci` | PASS | |
-| `heapsort` | PASS | |
-| `quicksort` | PASS | |
-| `sort_strings` | PASS | |
-| `func_ptr_return`| PASS | |
-| `lzw` | PASS | |
-| `mandelbrot` | PASS | |
-| `lisp_interpreter*` | *Not tested* | To be tested in a separate task. |
-| `game_of_life` | *Not tested* | To be tested in a separate task. |
-| `mud_server` | *Not tested* | To be tested in a separate task. |
-| `rogue_mud` | *Not tested* | To be tested in a separate task. |
+| Example | Status | Compilation | Correctness | C89 Warnings | Zig0 Warnings |
+|---------|--------|-------------|-------------|--------------|---------------|
+| `hello` | PASS | OK | OK | 0 | 2 |
+| `prime` | PASS | OK | OK | 0 | 1 |
+| `days_in_month` | PASS | OK | OK | 0 | 1 |
+| `fibonacci` | PASS | OK | OK | 0 | 1 |
+| `heapsort` | PASS | OK | OK | 6 | 21 |
+| `quicksort` | PASS | OK | OK | 0 | 11 |
+| `sort_strings` | PASS | OK | OK | 0 | 14 |
+| `func_ptr_return`| PASS | OK | OK | 0 | 0 |
+| `lzw` | PASS | OK | OK | 0 | 13 |
+| `mandelbrot` | PASS | OK | OK | 0 | 5 |
+| `lisp_interpreter_curr` | PASS | OK | OK | 45 | 14 |
+| `game_of_life` | PASS | OK | OK | 0 | 4 |
+| `mud_server` | PASS | OK | LINKED | 0 | 18 |
+| `rogue_mud` | PASS | OK | LINKED | 38 | 15 |
+
+---
+
+## Example Warnings and Analysis
+
+### Zig0 Compiler Warnings (on Examples)
+The `zig0` compiler issues various warnings when processing the example programs.
+- **Portability (Windows 98)**: Many examples trigger warnings about non-8.3 filenames (e.g., `std_debug.zig`) which may cause issues on legacy Windows 98 filesystems.
+- **Static Analysis**:
+    - `mud_server` and `rogue_mud` show numerous "Potential null pointer dereference" warnings. These often occur in array accesses and pointer manipulations where the analyzer cannot prove safety.
+    - `heapsort` and `quicksort` also show some potential null dereference warnings.
+- **Unresolved Calls**: `rogue_mud` reports several "Unresolved call" warnings (e.g., `ArrayListRoom_init`, `generateDungeon`). These are related to the deferred validation pass and do not prevent code generation or correct linking, but indicate that some symbol resolution happened late in the pipeline.
+
+### Generated C89 Warnings
+- **`heapsort`**: Triggered 6 warnings regarding incompatible pointer types when passing array pointers (`int (*)[10]`) vs. element pointers (`int *`). The generated code is functionally correct but technically violates strict type checking for fixed-size array pointers.
+- **`lisp_interpreter_curr`**: Shows 45 warnings, many of which are "redundant declaration" or "declaration does not declare anything" (empty semicolons or redundant headers).
+- **`rogue_mud`**: Shows 38 warnings. Similar to Lisp, many are redundant declarations. It also has warnings about `const` qualifiers being discarded and duplicate `const` specifiers in ANSI escape code definitions.
+
+---
+
+## zig0 Status
+
+### C++98 Compilation
+Compiling `zig0` with `g++ -std=c++98 -Wall -Wextra` produces approximately 42 warnings.
+- **Unused Variables/Parameters**: Common in many files (e.g., `SymbolTable::dumpSymbols`, `TypeChecker::visit`).
+- **Set but not used**: `last_common_sep` in `utils.cpp`.
+- **C89 compatibility**: All code remains strictly C++98 compatible.
 
 ---
 
