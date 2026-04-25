@@ -23,7 +23,12 @@ An enhanced roguelike MUD server implemented in the Z98 subset of Zig. This proj
 
 ### Run the MUD Server (requires GCC)
 ```bash
+# Standard build
 gcc -m32 examples/rogue_mud/*.c -Isrc/include -Iexamples/rogue_mud -o rogue_mud
+
+# Strict C89 compliance check
+gcc -m32 examples/rogue_mud/*.c -Isrc/include -Iexamples/rogue_mud -std=c89 -pedantic -Werror -Wno-pointer-sign -Wno-format -Wno-long-long -o rogue_mud
+
 ./rogue_mud
 ```
 Wait for "Welcome to Rogue MUD!" to appear. You can play locally using WASD.
