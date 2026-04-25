@@ -23,6 +23,26 @@ pub fn getAnsiCyan() []u8 { return ansi_cyan_val[0..]; }
 
 pub fn initUI() void { }
 
+pub fn clearScreen() void {
+    if (useAnsi()) {
+        const clear: []const u8 = "\x1b[2J\x1b[H";
+        __bootstrap_print_bytes(@ptrCast([*]u8, clear.ptr), clear.len);
+    } else {
+        // Fallback for non-ANSI: just print some newlines to push old content up
+        __bootstrap_print("\n\n\n\n\n\n\n\n\n\n");
+    }
+}
+
+pub fn drawStatusBar(dungeon: scenario.Dungeon_t) void {
+    const player = dungeon.entities[0];
+    __bootstrap_print("Pos: (");
+    __bootstrap_print_int(@intCast(i32, player.x));
+    __bootstrap_print(", ");
+    __bootstrap_print_int(@intCast(i32, player.y));
+    __bootstrap_print(") | ");
+    printHP(player.hp, player.max_hp);
+}
+
 pub fn printHP(hp: i16, max_hp: i16) void {
     __bootstrap_print("HP: ");
     if (hp < max_hp / 3) {
