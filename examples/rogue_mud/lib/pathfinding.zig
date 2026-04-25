@@ -80,7 +80,9 @@ pub fn findPath(
 
             const idx = @intCast(usize, nb.y) * width_idx + @intCast(usize, nb.x);
 
-            // Workaround for naked tags
+            // Z98 Constraint: Naked tags in binary ops (e.g. dungeon.tiles[idx] == .Wall)
+            // trigger zig0 abort. Using switch is the recommended idiomatic workaround
+            // for Milestone 11.
             var is_wall = false;
             switch (dungeon.tiles[idx]) {
                 .Wall => is_wall = true,

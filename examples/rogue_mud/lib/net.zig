@@ -12,6 +12,8 @@ pub extern "c" fn plat_send(sock: PlatSocket, buf: [*]const u8, len: i32) i32;
 pub extern "c" fn plat_close_socket(sock: PlatSocket) void;
 
 pub const plat_fd_set = struct {
+    // Z98 Constraint: Use u32 array to ensure 4-byte alignment, as WinSock's select
+    // expects aligned fd_set* which contains an array of socket handles.
     data: [128]u32,
 };
 
