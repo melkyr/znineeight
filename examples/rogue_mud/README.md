@@ -23,10 +23,20 @@ An enhanced roguelike MUD server implemented in the Z98 subset of Zig. This proj
 
 ### Run the MUD Server (requires GCC)
 ```bash
-gcc -m32 examples/rogue_mud/main.c src/runtime/zig_runtime.c src/runtime/net_runtime.c -Isrc/include -Iexamples/rogue_mud -o rogue_mud
+gcc -m32 examples/rogue_mud/*.c -Isrc/include -Iexamples/rogue_mud -o rogue_mud
 ./rogue_mud
 ```
 Wait for "Welcome to Rogue MUD!" to appear. You can play locally using WASD.
+
+### Configuration and Multiplayer
+The game mode is controlled by a compile-time flag in `examples/rogue_mud/main.zig`:
+
+```zig
+const MULTIPLAYER_ENABLED: bool = false;
+```
+
+- **Single-player Mode (`false`)**: Uses local ASCII UI. Keyboard input is via standard `getchar()`.
+- **Multiplayer Mode (`true`)**: Starts a Telnet server on port 4000. Supports up to 5 remote players. Local input remains active but the UI is optimized for ANSI telnet clients.
 
 ### Connecting via Telnet
 From another terminal:

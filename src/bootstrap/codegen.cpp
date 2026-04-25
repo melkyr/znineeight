@@ -3455,9 +3455,7 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
                 writeString(data_type->c_name);
                 writeString(" ");
                 emitUnionBody(data_type);
-                writeString(";\n");
-
-                writeFieldDecl(data_type, "data");
+                writeString(" data;\n");
             } else {
                 writeIndent();
                 writeString("union {\n");
