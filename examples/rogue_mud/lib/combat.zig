@@ -76,9 +76,9 @@ pub fn updateEnemies(arena: *sand_mod.Sand, dungeon: *scenario.Dungeon_t) void {
 
         // Use A* pathfinding
         if (pathfinding.findPath(arena, dungeon.*, enemy_pt, player_pt)) |path| {
-            if (path.len > 1) {
-                // path[0] is current position, path[1] is next step
-                const next_step = path[1];
+            if (path.len > 0) {
+                // path[0] is the first step towards the player
+                const next_step = path[0];
                 const dx = @intCast(i8, @intCast(i32, next_step.x) - @intCast(i32, enemy.x));
                 const dy = @intCast(i8, @intCast(i32, next_step.y) - @intCast(i32, enemy.y));
                 moveEntity(dungeon, i, dx, dy);

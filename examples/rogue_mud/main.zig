@@ -21,8 +21,12 @@ extern "c" fn __bootstrap_print_int(n: i32) void;
 
 pub fn main() !void {
     ui_mod.initUI();
-    var buffer: [1024 * 1024]u8 = undefined;
+    var buffer: [512 * 1024]u8 = undefined;
     var arena = sand_mod.sand_init(buffer[0..], true);
+
+    var temp_buffer: [512 * 1024]u8 = undefined;
+    var temp_arena = sand_mod.sand_init(temp_buffer[0..], false);
+
     var rng = rng_mod.Random_init(@intCast(u32, 12345));
 
     __bootstrap_print("Welcome to Rogue MUD!\n");
@@ -115,8 +119,9 @@ pub fn main() !void {
         if (ready_count == 0) {
             // Periodic local UI update
             if (!ui_mod.plat_is_windows()) {
+                ui_mod.clearScreen();
                 drawDungeon(dungeon);
-                ui_mod.printHP(dungeon.entities[0].hp, dungeon.entities[0].max_hp);
+                ui_mod.drawStatusBar(dungeon);
             }
         }
 
@@ -196,7 +201,8 @@ pub fn main() !void {
 
                         if (cdx != 0 or cdy != 0) {
                             combat_mod.moveEntity(&dungeon, client.entity_idx, cdx, cdy);
-                            combat_mod.updateEnemies(&arena, &dungeon);
+                            combat_mod.updateEnemies(&temp_arena, &dungeon);
+                            sand_mod.sand_reset(&temp_arena);
                             // Broadcast update to all clients
                             broadcastDungeon(server, dungeon);
                         }
@@ -214,8 +220,9 @@ pub fn main() !void {
             }
         } else {
             // Fallback for Windows (though still potentially blocking if we don't have a good kbhit/poll)
+            ui_mod.clearScreen();
             drawDungeon(dungeon);
-            ui_mod.printHP(dungeon.entities[0].hp, dungeon.entities[0].max_hp);
+            ui_mod.drawStatusBar(dungeon);
             c = getchar();
         }
 
@@ -246,8 +253,16 @@ pub fn main() !void {
 
         if (dx != 0 or dy != 0) {
             combat_mod.moveEntity(&dungeon, @intCast(usize, 0), dx, dy);
-            combat_mod.updateEnemies(&arena, &dungeon);
+            combat_mod.updateEnemies(&temp_arena, &dungeon);
+            sand_mod.sand_reset(&temp_arena);
             broadcastDungeon(server, dungeon);
+
+            // Immediate UI update for local player
+            if (!ui_mod.plat_is_windows()) {
+                ui_mod.clearScreen();
+                drawDungeon(dungeon);
+                ui_mod.drawStatusBar(dungeon);
+            }
         }
 
         // Simple turn feedback
