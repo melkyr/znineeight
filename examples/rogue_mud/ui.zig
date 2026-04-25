@@ -46,6 +46,8 @@ pub fn useAnsi() bool {
 }
 
 pub fn printColor(color: []const u8) void {
+    // Z98 Constraint: string literals and []const u8 might trigger signedness warnings in C89
+    // if passed to functions expecting char* (like __bootstrap_write).
     if (useAnsi()) {
         __bootstrap_print_bytes(color.ptr, color.len);
     }
@@ -106,6 +108,8 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
     while (i < dungeon.entity_count) : (i += 1) {
         const e = dungeon.entities[i];
         if (e.active and e.x == x and e.y == y) {
+            // Z98 Constraint: Tagged union comparison (e.typ == .Player) is unstable in zig0.
+            // Using switch is the recommended idiomatic workaround for Milestone 11.
             switch (e.typ) {
                 .Player => {},
                 .Goblin => {

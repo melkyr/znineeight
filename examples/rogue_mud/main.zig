@@ -77,6 +77,9 @@ pub fn main() !void {
 
     game_loop: while (true) {
         // Handle Networking and Local Input via select
+        // Z98 Constraint: MSVC 6.0 and OpenWatcom may require individual field assignments
+        // for local aggregates. Passing addresses of locals to C89 structs can trigger
+        // "expression must be constant" errors if the lifter wraps them in Optionals.
         var read_fds: net_mod.plat_fd_set = undefined;
         net_mod.plat_socket_fd_zero(@ptrCast(*u8, &read_fds));
 
