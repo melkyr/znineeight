@@ -11,6 +11,8 @@ const net_mod = @import("lib/net.zig");
 const ui_mod = @import("ui.zig");
 const std = @import("../mud_server/std.zig");
 
+const MULTIPLAYER_ENABLED: bool = false;
+
 // External functions for input
 extern "c" fn getchar() i32;
 extern "c" fn kbhit() i32;
@@ -25,16 +27,26 @@ pub fn main() !void {
 
     __bootstrap_print("Welcome to Rogue MUD!\n");
 
-    var server = net_mod.Server_init(4000) catch |err| {
-        __bootstrap_print("Warning: Network server failed to start, running in local-only mode.\n");
-        // We continue anyway, just without networking
-        var s = net_mod.Server { .listen_socket = -1, .clients = undefined };
+    var server: net_mod.Server = undefined;
+    if (MULTIPLAYER_ENABLED) {
+        server = net_mod.Server_init(4000) catch |err| {
+            __bootstrap_print("Warning: Network server failed to start, running in local-only mode.\n");
+            // We continue anyway, just without networking
+            var s = net_mod.Server { .listen_socket = -1, .clients = undefined };
+            var si: usize = 0;
+            while (si < @intCast(usize, 5)) : (si += 1) {
+                s.clients[si].active = false;
+            }
+            s
+        };
+    } else {
+        __bootstrap_print("Running in single-player ASCII mode.\n");
+        server = net_mod.Server { .listen_socket = -1, .clients = undefined };
         var si: usize = 0;
         while (si < @intCast(usize, 5)) : (si += 1) {
-            s.clients[si].active = false;
+            server.clients[si].active = false;
         }
-        s
-    };
+    }
     defer if (server.listen_socket != -1) net_mod.Server_deinit(&server);
 
     __bootstrap_print("Generating dungeon...\n");

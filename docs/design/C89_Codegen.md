@@ -41,6 +41,21 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitTaggedUnionBody`: Emits the full body (tag + data union) of a tagged union.
     - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
+### Union Definitions inside Structs
+To avoid "declaration does not declare anything" warnings in C89, the compiler combines the union definition and the member declaration into a single statement when possible.
+
+Example:
+Instead of:
+```c
+union MyUnion { ... };
+union MyUnion data;
+```
+The compiler now emits:
+```c
+union MyUnion { ... } data;
+```
+This is specifically implemented in `ensureErrorUnionType` and `emitTaggedUnionBody`.
+
 ### C89 Compatibility Layer (`zig_compat.h`)
 All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`. This header provides a unified abstraction for:
 - **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
