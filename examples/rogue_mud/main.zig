@@ -58,7 +58,9 @@ pub fn main() !void {
         const first_room = dungeon.rooms[0];
         const px = room_mod.Room_centerX(first_room);
         const py = room_mod.Room_centerY(first_room);
-        combat_mod.addEntity(&dungeon, entity_mod.EntityType.Player, px, py, @intCast(i16, 20));
+        var p_typ: entity_mod.EntityType = undefined;
+        p_typ = .Player;
+        combat_mod.addEntity(&dungeon, p_typ, px, py, @intCast(i16, 20));
     } else {
         __bootstrap_print("Error: No rooms generated!\n");
         return;
@@ -70,7 +72,9 @@ pub fn main() !void {
         const room = dungeon.rooms[i];
         const ex = room_mod.Room_centerX(room);
         const ey = room_mod.Room_centerY(room);
-        combat_mod.addEntity(&dungeon, entity_mod.EntityType.Goblin, ex, ey, @intCast(i16, 5));
+        var g_typ: entity_mod.EntityType = undefined;
+        g_typ = .Goblin;
+        combat_mod.addEntity(&dungeon, g_typ, ex, ey, @intCast(i16, 5));
     }
 
     __bootstrap_print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
@@ -128,7 +132,9 @@ pub fn main() !void {
                         const first_room = dungeon.rooms[0];
                         const px = room_mod.Room_centerX(first_room);
                         const py = room_mod.Room_centerY(first_room);
-                        combat_mod.addEntity(&dungeon, entity_mod.EntityType.Player, px, py, 20);
+                        var p_typ_2: entity_mod.EntityType = undefined;
+                        p_typ_2 = .Player;
+                        combat_mod.addEntity(&dungeon, p_typ_2, px, py, 20);
 
                         server.clients[i] = net_mod.Client {
                             .socket = client_sock,

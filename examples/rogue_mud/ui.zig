@@ -7,19 +7,19 @@ const std = @import("../mud_server/std.zig");
 
 extern "c" fn plat_is_windows() bool;
 
-const ansi_reset_val = "\x1b[0m";
-const ansi_red_val = "\x1b[31m";
-const ansi_green_val = "\x1b[32m";
-const ansi_yellow_val = "\x1b[33m";
-const ansi_blue_val = "\x1b[34m";
-const ansi_cyan_val = "\x1b[36m";
+pub var ansi_reset_val: [4]u8 = [4]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '0'), @intCast(u8, 'm') };
+pub var ansi_red_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '1'), @intCast(u8, 'm') };
+pub var ansi_green_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '2'), @intCast(u8, 'm') };
+pub var ansi_yellow_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '3'), @intCast(u8, 'm') };
+pub var ansi_blue_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '4'), @intCast(u8, 'm') };
+pub var ansi_cyan_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '6'), @intCast(u8, 'm') };
 
-pub fn getAnsiReset() []const u8 { return ansi_reset_val; }
-pub fn getAnsiRed() []const u8 { return ansi_red_val; }
-pub fn getAnsiGreen() []const u8 { return ansi_green_val; }
-pub fn getAnsiYellow() []const u8 { return ansi_yellow_val; }
-pub fn getAnsiBlue() []const u8 { return ansi_blue_val; }
-pub fn getAnsiCyan() []const u8 { return ansi_cyan_val; }
+pub fn getAnsiReset() []u8 { return ansi_reset_val[0..]; }
+pub fn getAnsiRed() []u8 { return ansi_red_val[0..]; }
+pub fn getAnsiGreen() []u8 { return ansi_green_val[0..]; }
+pub fn getAnsiYellow() []u8 { return ansi_yellow_val[0..]; }
+pub fn getAnsiBlue() []u8 { return ansi_blue_val[0..]; }
+pub fn getAnsiCyan() []u8 { return ansi_cyan_val[0..]; }
 
 pub fn initUI() void { }
 
@@ -45,7 +45,7 @@ pub fn useAnsi() bool {
     return !plat_is_windows();
 }
 
-pub fn printColor(color: []const u8) void {
+pub fn printColor(color: []u8) void {
     // Z98 Constraint: string literals and []const u8 might trigger signedness warnings in C89
     // if passed to functions expecting char* (like __bootstrap_write).
     if (useAnsi()) {
@@ -61,7 +61,7 @@ pub fn resetColor() void {
 }
 
 extern "c" fn __bootstrap_write(s: *const u8, len: usize) void;
-fn __bootstrap_print_bytes(s: [*]const u8, len: usize) void {
+fn __bootstrap_print_bytes(s: [*]u8, len: usize) void {
     __bootstrap_write(@ptrCast(*const u8, s), len);
 }
 
@@ -114,12 +114,12 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
                 .Player => {},
                 .Goblin => {
                     __bootstrap_print("To the ");
-                    __bootstrap_print_bytes(dir_str.ptr, dir_str.len);
+                    __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
                     __bootstrap_print(", you see a Goblin!\n");
                 },
                 .Orc => {
                     __bootstrap_print("To the ");
-                    __bootstrap_print_bytes(dir_str.ptr, dir_str.len);
+                    __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
                     __bootstrap_print(", you see an Orc!\n");
                 },
             }
@@ -131,13 +131,13 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
     switch (dungeon.tiles[idx]) {
         .Wall => {
             __bootstrap_print("To the ");
-            __bootstrap_print_bytes(dir_str.ptr, dir_str.len);
+            __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
             __bootstrap_print(", there is a solid stone wall.\n");
         },
         .Floor => {}, // Floors are boring
         .Door => {
             __bootstrap_print("To the ");
-            __bootstrap_print_bytes(dir_str.ptr, dir_str.len);
+            __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
             __bootstrap_print(", you see a heavy wooden door.\n");
         },
     }
