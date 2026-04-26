@@ -103,12 +103,4 @@
     #define RETR_UNUSED_FUNC __attribute__((unused))
 #endif
 
-/* Header generation flags */
-/**
- * @brief If 1, emits module #includes before type definitions in headers.
- * This ensures that payload types for Special Types (Optional, ErrorUnion, Slice)
- * are complete before the special type is defined.
- */
-#define Z98_HEADER_INCLUDE_BEFORE_DEFS 1
-
 #endif /* ZIG_COMPAT_HPP */
