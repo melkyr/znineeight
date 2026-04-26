@@ -15,10 +15,10 @@ struct zS_6eff45_EntityType __tmp_agg_8_9 = {.tag = zE_6eff45_EntityType_Tag_Pla
 **Status**: ✅ RESOLVED via source workaround.
 **Resolution**: Tagged union usage in `main.zig` has been refactored to use local variables and explicit field assignments (e.g., `var p_typ: T = undefined; p_typ.tag = .Player;`). This forces the compiler's "decomposition" path, which is fully C89-compliant.
 
-### 2. Double-Buffered Console Output
-Previously, `ui.zig` relied on raw ANSI escape sequences, which caused garbled output on Windows 98 and flickering on some terminals.
+### 2. Dual-Mode Console Rendering
+Previously, `ui.zig` relied on raw ANSI escape sequences, which caused garbled output on Windows 98 and flickering on some terminals. However, ANSI is still required for remote Telnet clients.
 **Status**: ✅ RESOLVED.
-**Resolution**: Added a platform-specific Console PAL (`plat_console_gotoxy`, `plat_console_setcolor`, `plat_console_clear`) to the `zig_runtime`. `ui.zig` now uses these functions instead of raw ANSI strings. This ensures correct rendering on Windows 98 (via Win32 Console API) and Unix (via ANSI sequences).
+**Resolution**: Implemented a dual-mode rendering system. Local output uses a platform-specific Console PAL (`plat_console_gotoxy`, `plat_console_setcolor`, `plat_console_clear`) in `zig_runtime`, while remote output to network sockets uses `ui_mod.drawToSocket` to emit standard ANSI escape sequences. This ensures correct rendering on Windows 98 local consoles and remote Telnet clients.
 
 ### 3. Stack Overflow on Limited-Stack Environments
 Large arrays like the arena buffers and the cell buffer caused stack overflows on compilers like OpenWatcom and MSVC 6.0, which default to small stack sizes (64KB).

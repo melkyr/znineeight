@@ -10,6 +10,7 @@ extern "c" fn plat_console_gotoxy(x: i32, y: i32) void;
 extern "c" fn plat_console_setcolor(fg: i32, bg: i32) void;
 extern "c" fn plat_console_putchar(c: i32) void;
 extern "c" fn plat_console_clear() void;
+extern "c" fn plat_send(sock: i32, buf: [*]const u8, len: i32) i32;
 
 pub const Cell = struct {
     ch: u8,
@@ -61,6 +62,60 @@ pub fn draw(rows: usize, cols: usize, cells: []const Cell) void {
     plat_console_gotoxy(0, @intCast(i32, rows));
 }
 
+pub fn drawToSocket(sock: i32, rows: usize, cols: usize, cells: []const Cell) void {
+    // Clear screen and Move cursor home for telnet
+    const clear_home: []const u8 = "\x1b[2J\x1b[H";
+    _ = plat_send(sock, clear_home.ptr, @intCast(i32, clear_home.len));
+
+    var last_fg: u8 = 255;
+
+    var y: usize = 0;
+    while (y < rows) : (y += 1) {
+        var x: usize = 0;
+        while (x < cols) : (x += 1) {
+            const cell = cells[y * cols + x];
+
+            if (cell.fg != last_fg) {
+                sendColorANSI(sock, cell.fg);
+                last_fg = cell.fg;
+            }
+            const char_buf: [1]u8 = [1]u8{ cell.ch };
+            _ = plat_send(sock, &char_buf[0], 1);
+        }
+        const nl: []const u8 = "\r\n";
+        _ = plat_send(sock, nl.ptr, 2);
+    }
+    // Reset color at end
+    const reset: []const u8 = "\x1b[0m";
+    _ = plat_send(sock, reset.ptr, @intCast(i32, reset.len));
+}
+
+fn sendColorANSI(sock: i32, fg: u8) void {
+    const esc: []const u8 = "\x1b[";
+    _ = plat_send(sock, esc.ptr, 2);
+
+    // Z98: switch expression for ANSI codes
+    const code: []const u8 = switch (fg & 7) {
+        0 => "30", // COLOR_BLACK
+        1 => "34", // COLOR_BLUE
+        2 => "32", // COLOR_GREEN
+        3 => "36", // COLOR_CYAN
+        4 => "31", // COLOR_RED
+        5 => "35", // COLOR_MAGENTA
+        6 => "33", // COLOR_YELLOW
+        7 => "37", // COLOR_WHITE
+        else => "37",
+    };
+    _ = plat_send(sock, code.ptr, 2);
+
+    if ((fg & COLOR_BRIGHT) != 0) {
+        const bright: []const u8 = ";1";
+        _ = plat_send(sock, bright.ptr, 2);
+    }
+
+    const end: []const u8 = "m";
+    _ = plat_send(sock, end.ptr, 1);
+}
 
 pub fn initUI() void { }
 
