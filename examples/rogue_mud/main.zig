@@ -1,6 +1,7 @@
 const sand_mod = @import("lib/sand.zig");
 const rng_mod = @import("lib/rng.zig");
 const scenario = @import("lib/scenario.zig");
+
 const point_mod = @import("lib/point.zig");
 const entity_mod = @import("lib/entity.zig");
 const combat_mod = @import("lib/combat.zig");
@@ -119,9 +120,8 @@ pub fn main() !void {
         if (ready_count == 0) {
             // Periodic local UI update
             if (!ui_mod.plat_is_windows()) {
-                ui_mod.clearScreen();
-                drawDungeon(dungeon);
-                ui_mod.drawStatusBar(dungeon);
+                renderLocal(&temp_arena, dungeon);
+                sand_mod.sand_reset(&temp_arena);
             }
         }
 
@@ -220,9 +220,8 @@ pub fn main() !void {
             }
         } else {
             // Fallback for Windows (though still potentially blocking if we don't have a good kbhit/poll)
-            ui_mod.clearScreen();
-            drawDungeon(dungeon);
-            ui_mod.drawStatusBar(dungeon);
+            renderLocal(&temp_arena, dungeon);
+            sand_mod.sand_reset(&temp_arena);
             c = getchar();
         }
 
@@ -259,9 +258,8 @@ pub fn main() !void {
 
             // Immediate UI update for local player
             if (!ui_mod.plat_is_windows()) {
-                ui_mod.clearScreen();
-                drawDungeon(dungeon);
-                ui_mod.drawStatusBar(dungeon);
+                renderLocal(&temp_arena, dungeon);
+                sand_mod.sand_reset(&temp_arena);
             }
         }
 
@@ -330,57 +328,110 @@ fn drawDungeonToSocket(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) vo
     }
 }
 
-fn drawDungeon(dungeon: scenario.Dungeon_t) void {
+fn renderLocal(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t) void {
+    const rows = @intCast(usize, dungeon.height) + 1;
+    const cols = @intCast(usize, dungeon.width);
+    const cell_count = rows * cols;
+
+    const cells_mem = sand_mod.sand_alloc(arena, cell_count * @sizeOf(ui_mod.Cell), @alignOf(ui_mod.Cell)) catch return;
+    const cells = @ptrCast([*]ui_mod.Cell, cells_mem)[0..cell_count];
+
     var y: u8 = 0;
     while (y < dungeon.height) : (y += 1) {
         var x: u8 = 0;
         while (x < dungeon.width) : (x += 1) {
+            const idx = @intCast(usize, y) * cols + @intCast(usize, x);
+            var cell = ui_mod.Cell{ .ch = ' ', .fg = ui_mod.COLOR_WHITE, .bg = ui_mod.COLOR_BLACK };
+
             // Check for entities first
             var found_entity = false;
             var i: usize = 0;
             while (i < dungeon.entity_count) : (i += 1) {
                 const e = dungeon.entities[i];
                 if (e.active and e.x == x and e.y == y) {
-                    switch (e.typ) {
-                        .Player => {
-                            ui_mod.printColor(ui_mod.getAnsiGreen());
-                            __bootstrap_print("@");
-                            ui_mod.resetColor();
-                        },
-                        .Goblin => {
-                            ui_mod.printColor(ui_mod.getAnsiRed());
-                            __bootstrap_print("g");
-                            ui_mod.resetColor();
-                        },
-                        .Orc => {
-                            ui_mod.printColor(ui_mod.getAnsiRed());
-                            __bootstrap_print("o");
-                            ui_mod.resetColor();
-                        },
-                    }
+                    cell.ch = switch (e.typ) {
+                        .Player => '@',
+                        .Goblin => 'g',
+                        .Orc => 'o',
+                        else => '?',
+                    };
+                    cell.fg = switch (e.typ) {
+                        .Player => ui_mod.COLOR_GREEN | ui_mod.COLOR_BRIGHT,
+                        .Goblin => ui_mod.COLOR_RED | ui_mod.COLOR_BRIGHT,
+                        .Orc => ui_mod.COLOR_RED,
+                        else => ui_mod.COLOR_WHITE,
+                    };
                     found_entity = true;
                     break;
                 }
             }
 
             if (!found_entity) {
-                const idx = @intCast(usize, y) * @intCast(usize, dungeon.width) + @intCast(usize, x);
-                const tile = dungeon.tiles[idx];
-                switch (tile) {
-                    .Wall => {
-                        ui_mod.printColor(ui_mod.getAnsiBlue());
-                        __bootstrap_print("#");
-                        ui_mod.resetColor();
-                    },
-                    .Floor => __bootstrap_print("."),
-                    .Door => {
-                        ui_mod.printColor(ui_mod.getAnsiYellow());
-                        __bootstrap_print("+");
-                        ui_mod.resetColor();
-                    },
-                }
+                const tidx = @intCast(usize, y) * @intCast(usize, dungeon.width) + @intCast(usize, x);
+                const tile = dungeon.tiles[tidx];
+                cell.ch = switch (tile) {
+                    .Wall => '#',
+                    .Floor => '.',
+                    .Door => '+',
+                    else => '?',
+                };
+                cell.fg = switch (tile) {
+                    .Wall => ui_mod.COLOR_BLUE,
+                    .Floor => ui_mod.COLOR_WHITE,
+                    .Door => ui_mod.COLOR_YELLOW,
+                    else => ui_mod.COLOR_WHITE,
+                };
             }
+            cells[idx] = cell;
         }
-        __bootstrap_print("\n");
+    }
+
+    // Status Bar row
+    const player = dungeon.entities[0];
+    const status_y = @intCast(usize, dungeon.height);
+    var sx: usize = 0;
+    while (sx < cols) : (sx += 1) {
+        cells[status_y * cols + sx] = ui_mod.Cell{ .ch = ' ', .fg = ui_mod.COLOR_WHITE, .bg = ui_mod.COLOR_BLUE };
+    }
+
+    // Status text injection
+    const status_idx = status_y * cols;
+    injectString(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 1]), "Pos:(");
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 6]), @intCast(i32, player.x));
+    cells[status_idx + 9].ch = ',';
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 10]), @intCast(i32, player.y));
+    cells[status_idx + 13].ch = ')';
+
+    injectString(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 15]), "HP:");
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 18]), @intCast(i32, player.hp));
+    cells[status_idx + 21].ch = '/';
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 22]), @intCast(i32, player.max_hp));
+
+    ui_mod.draw(rows, cols, cells[0..cell_count]);
+}
+
+fn injectString(cells: [*]ui_mod.Cell, s: []const u8) void {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        cells[i].ch = s[i];
+    }
+}
+
+fn injectInt(cells: [*]ui_mod.Cell, n: i32) void {
+    if (n == 0) {
+        cells[0].ch = '0';
+        return;
+    }
+    var val = @intCast(u32, if (n < 0) -n else n);
+    var i: usize = 0;
+    var temp: [10]u8 = undefined;
+    while (val > 0) {
+        temp[i] = @intCast(u8, @intCast(u32, '0') + (val % 10));
+        val /= 10;
+        i += 1;
+    }
+    var j: usize = 0;
+    while (j < i) : (j += 1) {
+        cells[j].ch = temp[i - 1 - j];
     }
 }
