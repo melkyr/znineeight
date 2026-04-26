@@ -4098,17 +4098,30 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
 
     SymbolTable& table = unit_.getSymbolTable(module_name_);
     Symbol* sym = table.lookup(zig_name);
+
+    /* Prefer precomputed mangled name for non-local symbols */
+    if (sym && sym->mangled_name && !(sym->flags & SYMBOL_FLAG_LOCAL)) {
+        const char* mangled = sym->mangled_name;
+        /* Cache and return */
+        const char* interned = unit_.getStringInterner().intern(mangled);
+        used_names_.append(interned);
+
+        GlobalNameEntry entry;
+        entry.zig_name = zig_name;
+        entry.c89_name = interned;
+        entry.location = sym->module_name;
+        entry.kind = (sym->kind == SYMBOL_FUNCTION) ? "function" :
+                     (sym->kind == SYMBOL_TYPE) ? "type" : "variable";
+        global_names_.append(entry);
+        return interned;
+    }
+
     bool is_local = false;
     if (sym) {
         if (sym->flags & SYMBOL_FLAG_EXTERN) is_extern = true;
         if (sym->flags & SYMBOL_FLAG_LOCAL) is_local = true;
         
-        Module* mod = unit_.getModule(sym->module_name);
-        if (mod) {
-            char rel_path[1024];
-            get_relative_path(mod->filename, ".", rel_path, sizeof(rel_path));
-            location = unit_.getStringInterner().intern(rel_path);
-        }
+        location = sym->module_name;
 
         if (sym->kind == SYMBOL_FUNCTION) kind = "function";
         else if (sym->kind == SYMBOL_TYPE) kind = "type";
