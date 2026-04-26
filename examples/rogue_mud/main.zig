@@ -277,57 +277,88 @@ fn broadcastDungeon(server: net_mod.Server, dungeon: scenario.Dungeon_t) void {
     var i: usize = 0;
     while (i < @intCast(usize, 5)) : (i += 1) {
         if (server.clients[i].active) {
-            drawDungeonToSocket(server.clients[i].socket, dungeon);
+            broadcastOneClient(server.clients[i].socket, dungeon);
         }
     }
 }
 
-fn drawDungeonToSocket(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) void {
-    // Clear screen for telnet (simple escape)
-    const clear: []const u8 = "\x1b[2J\x1b[H";
-    _ = net_mod.plat_send(sock, clear.ptr, @intCast(i32, clear.len));
+fn broadcastOneClient(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) void {
+    const rows = @intCast(usize, dungeon.height) + 1;
+    const cols = @intCast(usize, dungeon.width);
+    const cell_count = rows * cols;
 
+    // Construct the cells for this dungeon state
+    // Note: This uses the same logic as renderLocal but doesn't print locally
     var y: u8 = 0;
     while (y < dungeon.height) : (y += 1) {
         var x: u8 = 0;
-        var line: [256]u8 = undefined;
-        var line_pos: usize = 0;
-
         while (x < dungeon.width) : (x += 1) {
-            if (line_pos >= 250) break; // Safety break
+            const idx = @intCast(usize, y) * cols + @intCast(usize, x);
+            var cell = ui_mod.Cell{ .ch = ' ', .fg = ui_mod.COLOR_WHITE, .bg = ui_mod.COLOR_BLACK };
+
             var found_entity = false;
             var i: usize = 0;
             while (i < dungeon.entity_count) : (i += 1) {
                 const e = dungeon.entities[i];
                 if (e.active and e.x == x and e.y == y) {
-                    line[line_pos] = switch (e.typ) {
-                        .Player => @intCast(u8, '@'),
-                        .Goblin => @intCast(u8, 'g'),
-                        .Orc => @intCast(u8, 'o'),
-                        else => @intCast(u8, '?'),
+                    cell.ch = switch (e.typ) {
+                        .Player => '@',
+                        .Goblin => 'g',
+                        .Orc => 'o',
+                        else => '?',
                     };
-                    line_pos += 1;
+                    cell.fg = switch (e.typ) {
+                        .Player => ui_mod.COLOR_GREEN | ui_mod.COLOR_BRIGHT,
+                        .Goblin => ui_mod.COLOR_RED | ui_mod.COLOR_BRIGHT,
+                        .Orc => ui_mod.COLOR_RED,
+                        else => ui_mod.COLOR_WHITE,
+                    };
                     found_entity = true;
                     break;
                 }
             }
 
             if (!found_entity) {
-                const idx = @intCast(usize, y) * @intCast(usize, dungeon.width) + @intCast(usize, x);
-                const tile = dungeon.tiles[idx];
-                line[line_pos] = switch (tile) {
-                    .Wall => @intCast(u8, '#'),
-                    .Floor => @intCast(u8, '.'),
-                    .Door => @intCast(u8, '+'),
-                    else => @intCast(u8, '?'),
+                const tidx = @intCast(usize, y) * @intCast(usize, dungeon.width) + @intCast(usize, x);
+                const tile = dungeon.tiles[tidx];
+                cell.ch = switch (tile) {
+                    .Wall => '#',
+                    .Floor => '.',
+                    .Door => '+',
+                    else => '?',
                 };
-                line_pos += 1;
+                cell.fg = switch (tile) {
+                    .Wall => ui_mod.COLOR_BLUE,
+                    .Floor => ui_mod.COLOR_WHITE,
+                    .Door => ui_mod.COLOR_YELLOW,
+                    else => ui_mod.COLOR_WHITE,
+                };
             }
+            local_cells[idx] = cell;
         }
-        line[line_pos] = '\r';
-        line[line_pos+1] = '\n';
-        _ = net_mod.plat_send(sock, &line[0], @intCast(i32, line_pos + 2));
     }
+
+    // Status Bar row for remote client
+    const player = dungeon.entities[0];
+    const status_y = @intCast(usize, dungeon.height);
+    var sx: usize = 0;
+    while (sx < cols) : (sx += 1) {
+        local_cells[status_y * cols + sx] = ui_mod.Cell{ .ch = ' ', .fg = ui_mod.COLOR_WHITE, .bg = ui_mod.COLOR_BLUE };
+    }
+
+    const status_idx = status_y * cols;
+    injectString(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 1]), "Pos:(");
+    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 6]), @intCast(i32, player.x));
+    local_cells[status_idx + 9].ch = ',';
+    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 10]), @intCast(i32, player.y));
+    local_cells[status_idx + 13].ch = ')';
+
+    injectString(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 15]), "HP:");
+    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 18]), @intCast(i32, player.hp));
+    local_cells[status_idx + 21].ch = '/';
+    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 22]), @intCast(i32, player.max_hp));
+
+    ui_mod.drawToSocket(sock, rows, cols, local_cells[0..cell_count]);
 }
 
 fn renderLocal(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t) void {
