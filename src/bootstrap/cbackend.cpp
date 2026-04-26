@@ -730,6 +730,22 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     emitter.emitBufferedTypeDefinitions();
     emitter.writeString("\n");
 
+#if Z98_HEADER_INCLUDE_BEFORE_DEFS
+    for (size_t i = 0; i < module->imports.length(); ++i) {
+        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+#ifdef DEBUG_HEADER_GEN
+        Logger* logger = plat_get_logger();
+        if (logger) {
+            logger->logf(LOG_DEBUG, "  Including header: %s.h (Priority Include)\n", module->imports[i]);
+        }
+#endif
+        emitter.writeString("#include \"");
+        emitter.writeString(module->imports[i]);
+        emitter.writeString(".h\"\n");
+    }
+    emitter.writeString("\n");
+#endif
+
     // Use pre-computed header types in dependency order.
     // Special types (slices, error unions, optionals) are included in header_types
     // and will be emitted via ensure... calls during this loop.
@@ -756,6 +772,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         }
     }
 
+#if !Z98_HEADER_INCLUDE_BEFORE_DEFS
     for (size_t i = 0; i < module->imports.length(); ++i) {
         if (plat_strcmp(module->imports[i], module->name) == 0) continue;
 #ifdef DEBUG_HEADER_GEN
@@ -769,6 +786,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         emitter.writeString(".h\"\n");
     }
     emitter.writeString("\n");
+#endif
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
@@ -789,6 +807,9 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
                     }
                     emitter.writeIndent();
                     emitter.writeString("extern ");
+                    if (decl->is_const) {
+                        emitter.writeString("const ");
+                    }
 
                     Type* type = (*stmts)[i]->resolved_type;
                     const char* c_name = emitter.getC89GlobalName(decl->name);
