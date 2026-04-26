@@ -6,6 +6,59 @@ const tile_mod = @import("lib/tile.zig");
 const std = @import("../mud_server/std.zig");
 
 extern "c" fn plat_is_windows() bool;
+extern "c" fn plat_console_gotoxy(x: i32, y: i32) void;
+extern "c" fn plat_console_setcolor(fg: i32, bg: i32) void;
+extern "c" fn plat_console_putchar(c: i32) void;
+
+pub const Cell = struct {
+    ch: u8,
+    fg: u8,
+    bg: u8,
+};
+
+pub const COLOR_BLACK: u8 = 0;
+pub const COLOR_BLUE: u8 = 1;
+pub const COLOR_GREEN: u8 = 2;
+pub const COLOR_CYAN: u8 = 3;
+pub const COLOR_RED: u8 = 4;
+pub const COLOR_MAGENTA: u8 = 5;
+pub const COLOR_YELLOW: u8 = 6;
+pub const COLOR_WHITE: u8 = 7;
+pub const COLOR_BRIGHT: u8 = 8;
+
+var prev_buffer: [80 * 50]Cell = undefined;
+var dirty: bool = true;
+
+pub fn draw(rows: usize, cols: usize, cells: []const Cell) void {
+    if (dirty) {
+        var i: usize = 0;
+        while (i < @intCast(usize, 80 * 50)) : (i += 1) {
+            prev_buffer[i] = Cell{ .ch = @intCast(u8, 0), .fg = @intCast(u8, 0), .bg = @intCast(u8, 0) };
+        }
+        dirty = false;
+    }
+
+    var y: usize = 0;
+    while (y < rows) : (y += 1) {
+        var x: usize = 0;
+        while (x < cols) : (x += 1) {
+            const idx = y * cols + x;
+            const cur = cells[idx];
+            const prev = prev_buffer[idx];
+
+            if (cur.ch != prev.ch or cur.fg != prev.fg or cur.bg != prev.bg) {
+                plat_console_gotoxy(@intCast(i32, x), @intCast(i32, y));
+                plat_console_setcolor(@intCast(i32, cur.fg), @intCast(i32, cur.bg));
+                plat_console_putchar(@intCast(i32, cur.ch));
+                prev_buffer[idx] = cur;
+            }
+        }
+    }
+    // Reset color to default after drawing
+    plat_console_setcolor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
+    // Move cursor out of the way
+    plat_console_gotoxy(0, @intCast(i32, rows));
+}
 
 pub var ansi_reset_val: [4]u8 = [4]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '0'), @intCast(u8, 'm') };
 pub var ansi_red_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '1'), @intCast(u8, 'm') };
@@ -86,6 +139,7 @@ fn __bootstrap_print_bytes(s: [*]u8, len: usize) void {
 }
 
 extern "c" fn __bootstrap_print_int(n: i32) void;
+extern "c" fn __bootstrap_print_char(c: i32) void;
 extern "c" fn __bootstrap_print(s: *const c_char) void;
 
 pub fn lookSurroundings(dungeon: scenario.Dungeon_t) void {
