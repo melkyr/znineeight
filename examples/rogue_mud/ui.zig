@@ -9,6 +9,7 @@ extern "c" fn plat_is_windows() bool;
 extern "c" fn plat_console_gotoxy(x: i32, y: i32) void;
 extern "c" fn plat_console_setcolor(fg: i32, bg: i32) void;
 extern "c" fn plat_console_putchar(c: i32) void;
+extern "c" fn plat_console_clear() void;
 
 pub const Cell = struct {
     ch: u8,
@@ -60,30 +61,11 @@ pub fn draw(rows: usize, cols: usize, cells: []const Cell) void {
     plat_console_gotoxy(0, @intCast(i32, rows));
 }
 
-pub var ansi_reset_val: [4]u8 = [4]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '0'), @intCast(u8, 'm') };
-pub var ansi_red_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '1'), @intCast(u8, 'm') };
-pub var ansi_green_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '2'), @intCast(u8, 'm') };
-pub var ansi_yellow_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '3'), @intCast(u8, 'm') };
-pub var ansi_blue_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '4'), @intCast(u8, 'm') };
-pub var ansi_cyan_val: [5]u8 = [5]u8{ @intCast(u8, 0x1B), @intCast(u8, '['), @intCast(u8, '3'), @intCast(u8, '6'), @intCast(u8, 'm') };
-
-pub fn getAnsiReset() []u8 { return ansi_reset_val[0..]; }
-pub fn getAnsiRed() []u8 { return ansi_red_val[0..]; }
-pub fn getAnsiGreen() []u8 { return ansi_green_val[0..]; }
-pub fn getAnsiYellow() []u8 { return ansi_yellow_val[0..]; }
-pub fn getAnsiBlue() []u8 { return ansi_blue_val[0..]; }
-pub fn getAnsiCyan() []u8 { return ansi_cyan_val[0..]; }
 
 pub fn initUI() void { }
 
 pub fn clearScreen() void {
-    if (useAnsi()) {
-        const clear: []const u8 = "\x1b[2J\x1b[H";
-        __bootstrap_print_bytes(@ptrCast([*]u8, clear.ptr), clear.len);
-    } else {
-        // Fallback for non-ANSI: just print some newlines to push old content up
-        __bootstrap_print("\n\n\n\n\n\n\n\n\n\n");
-    }
+    plat_console_clear();
 }
 
 pub fn drawStatusBar(dungeon: scenario.Dungeon_t) void {
@@ -99,38 +81,17 @@ pub fn drawStatusBar(dungeon: scenario.Dungeon_t) void {
 pub fn printHP(hp: i16, max_hp: i16) void {
     __bootstrap_print("HP: ");
     if (hp < max_hp / 3) {
-        printColor(getAnsiRed());
+        plat_console_setcolor(@intCast(i32, COLOR_RED), @intCast(i32, COLOR_BLACK));
     } else if (hp < max_hp / 2) {
-        printColor(getAnsiYellow());
+        plat_console_setcolor(@intCast(i32, COLOR_YELLOW), @intCast(i32, COLOR_BLACK));
     } else {
-        printColor(getAnsiGreen());
+        plat_console_setcolor(@intCast(i32, COLOR_GREEN), @intCast(i32, COLOR_BLACK));
     }
     __bootstrap_print_int(@intCast(i32, hp));
     __bootstrap_print("/");
     __bootstrap_print_int(@intCast(i32, max_hp));
-    resetColor();
+    plat_console_setcolor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
     __bootstrap_print("\n");
-}
-
-pub fn useAnsi() bool {
-    // On Windows, assume no ANSI support unless we are on a modern terminal (not likely for this stress test target)
-    // On Linux/Unix, assume ANSI support.
-    return !plat_is_windows();
-}
-
-pub fn printColor(color: []u8) void {
-    // Z98 Constraint: string literals and []const u8 might trigger signedness warnings in C89
-    // if passed to functions expecting char* (like __bootstrap_write).
-    if (useAnsi()) {
-        __bootstrap_print_bytes(color.ptr, color.len);
-    }
-}
-
-pub fn resetColor() void {
-    if (useAnsi()) {
-        const s = getAnsiReset();
-        __bootstrap_print_bytes(s.ptr, s.len);
-    }
 }
 
 extern "c" fn __bootstrap_write(s: *const u8, len: usize) void;

@@ -12,7 +12,9 @@ An enhanced roguelike MUD server implemented in the Z98 subset of Zig. This proj
 
 ## Progress
 - **Milestone 11 Stress Test Complete**: Integrated networking, multi-player mechanics, and refactored core logic for Z98 idiomatic constructs.
-- **Verified on 32-bit Linux**: Stable build using `zig0` and `gcc`.
+- **Verified on 32-bit Linux & Windows 98**: Stable build using `zig0` with GCC (Linux) and OpenWatcom/MSVC 6.0 (Windows).
+- **Console API Support**: Uses platform-native console functions for flicker-free double-buffered rendering.
+- **Stack Safe**: Optimized for limited-stack environments by using static storage for large buffers.
 
 ## Building and Running
 

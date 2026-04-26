@@ -319,6 +319,32 @@ void plat_console_putchar(int c) {
     __bootstrap_write(s, 1);
 }
 
+void plat_console_clear(void) {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    DWORD count;
+    DWORD cellCount;
+    COORD homeCoords = { 0, 0 };
+
+    if (hOut == INVALID_HANDLE_VALUE) return;
+    if (!GetConsoleScreenBufferInfo(hOut, &csbi)) return;
+
+    cellCount = csbi.dwSize.X * csbi.dwSize.Y;
+
+    /* Fill the entire buffer with spaces */
+    if (!FillConsoleOutputCharacter(hOut, (TCHAR) ' ', cellCount, homeCoords, &count)) return;
+
+    /* Fill the entire buffer with the current attributes */
+    if (!FillConsoleOutputAttribute(hOut, csbi.wAttributes, cellCount, homeCoords, &count)) return;
+
+    /* Move the cursor home */
+    SetConsoleCursorPosition(hOut, homeCoords);
+#else
+    __bootstrap_write("\x1b[2J\x1b[H", 7);
+#endif
+}
+
 bool plat_is_windows() {
 #ifdef _WIN32
     return true;

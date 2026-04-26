@@ -15,18 +15,15 @@ struct zS_6eff45_EntityType __tmp_agg_8_9 = {.tag = zE_6eff45_EntityType_Tag_Pla
 **Status**: ✅ RESOLVED via source workaround.
 **Resolution**: Tagged union usage in `main.zig` has been refactored to use local variables and explicit field assignments (e.g., `var p_typ: T = undefined; p_typ.tag = .Player;`). This forces the compiler's "decomposition" path, which is fully C89-compliant.
 
-### 2. Duplicate 'const' Declaration Specifiers
-In `ui.c`, global string constants were emitted with redundant `const` qualifiers:
-```c
-static const unsigned char const (* zC_f270a4_ansi_reset_val)[4] = "\033[0m";
-```
-**Status**: ✅ RESOLVED via source workaround.
-**Resolution**: Global ANSI escape strings in `ui.zig` were changed from `const` slices to `pub var` fixed-size arrays. This avoids the emitter's generation of redundant `const` qualifiers.
+### 2. Double-Buffered Console Output
+Previously, `ui.zig` relied on raw ANSI escape sequences, which caused garbled output on Windows 98 and flickering on some terminals.
+**Status**: ✅ RESOLVED.
+**Resolution**: Added a platform-specific Console PAL (`plat_console_gotoxy`, `plat_console_setcolor`, `plat_console_clear`) to the `zig_runtime`. `ui.zig` now uses these functions instead of raw ANSI strings. This ensures correct rendering on Windows 98 (via Win32 Console API) and Unix (via ANSI sequences).
 
-### 3. Incompatible Pointer Types for String Initializers
-String literals in C are `char[]`, which caused signedness mismatches when assigned to `unsigned char[]` (Zig `u8`) in global initializers.
-**Status**: ✅ RESOLVED via source workaround.
-**Resolution**: Global ANSI escape sequences in `ui.zig` now use explicit `u8` array literals (e.g., `[4]u8{ @intCast(u8, 0x1B), ... }`) instead of string literals. This produces standard C array initializers that are fully compliant.
+### 3. Stack Overflow on Limited-Stack Environments
+Large arrays like the arena buffers and the cell buffer caused stack overflows on compilers like OpenWatcom and MSVC 6.0, which default to small stack sizes (64KB).
+**Status**: ✅ RESOLVED.
+**Resolution**: Large local arrays in `main.zig` and `ui.zig` have been changed to `static var`. This moves them from the stack to the data segment, preventing overflow while maintaining Z98 compatibility.
 
 ### 4. Pointer Signedness in Slice Construction
 Calls to `__make_slice_u8` and other C-interop functions triggered signedness warnings when passing Zig `u8` (unsigned char) to functions expecting `char*`.
