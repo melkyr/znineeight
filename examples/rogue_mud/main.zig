@@ -20,12 +20,14 @@ extern "c" fn kbhit() i32;
 extern "c" fn __bootstrap_print(s: [*]const u8) void;
 extern "c" fn __bootstrap_print_int(n: i32) void;
 
+var buffer: [512 * 1024]u8 = undefined;
+var temp_buffer: [512 * 1024]u8 = undefined;
+var local_cells: [80 * 50]ui_mod.Cell = undefined;
+
 pub fn main() !void {
     ui_mod.initUI();
-    var buffer: [512 * 1024]u8 = undefined;
     var arena = sand_mod.sand_init(buffer[0..], true);
 
-    var temp_buffer: [512 * 1024]u8 = undefined;
     var temp_arena = sand_mod.sand_init(temp_buffer[0..], false);
 
     var rng = rng_mod.Random_init(@intCast(u32, 12345));
@@ -333,8 +335,7 @@ fn renderLocal(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t) void {
     const cols = @intCast(usize, dungeon.width);
     const cell_count = rows * cols;
 
-    const cells_mem = sand_mod.sand_alloc(arena, cell_count * @sizeOf(ui_mod.Cell), @alignOf(ui_mod.Cell)) catch return;
-    const cells = @ptrCast([*]ui_mod.Cell, cells_mem)[0..cell_count];
+    const cells = local_cells[0..cell_count];
 
     var y: u8 = 0;
     while (y < dungeon.height) : (y += 1) {

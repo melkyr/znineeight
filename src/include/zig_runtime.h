@@ -77,6 +77,7 @@ void __bootstrap_sleep_ms(unsigned int ms);
 void plat_console_gotoxy(int x, int y);
 void plat_console_setcolor(int fg, int bg);
 void plat_console_putchar(int c);
+void plat_console_clear(void);
 
 /* Networking (optional, requires linking net_runtime.o on Windows) */
 int plat_socket_init(void);
