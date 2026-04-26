@@ -125,6 +125,13 @@ void MetadataPreparationPass::run() {
         Module* mod = modules[i];
         if (mod->header_types.length() == 0) continue;
 
+#ifdef DEBUG_HEADER_GEN
+        Logger* logger = plat_get_logger();
+        if (logger) {
+            logger->logf(LOG_DEBUG, "Topologically sorting header types for module: %s\n", mod->name);
+        }
+#endif
+
         DynamicArray<Type*> types(unit_.getArena());
         for (size_t j = 0; j < mod->header_types.length(); ++j) {
             types.append(mod->header_types[j]);
@@ -233,6 +240,14 @@ void MetadataPreparationPass::run() {
                         }
                     }
                     if (!exists) {
+#ifdef DEBUG_HEADER_GEN
+                        Logger* logger = plat_get_logger();
+                        if (logger) {
+                            logger->logf(LOG_DEBUG, "  Edge: %s -> %s\n",
+                                        types[k]->c_name ? types[k]->c_name : "unnamed",
+                                        types[j]->c_name ? types[j]->c_name : "unnamed");
+                        }
+#endif
                         // Edge is dep -> t (k -> j), meaning dep must come before t
                         adj[k]->append(j);
                         indeg[j]++;
@@ -282,6 +297,14 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
     for (size_t i = 0; i < visited.length(); ++i) {
         if (visited[i] == type) return;
     }
+
+#ifdef DEBUG_HEADER_GEN
+    Logger* logger = plat_get_logger();
+    if (logger) {
+        logger->logf(LOG_DEBUG, "  Collecting reachable types for: %s (kind=%d)\n",
+                    type->c_name ? type->c_name : "unnamed", type->kind);
+    }
+#endif
 
     visited.append(type);
 
@@ -360,6 +383,13 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
 
     // 2. Add ourselves to header_types if we belong in this module's header.
     if (isHeaderType(type)) {
+#ifdef DEBUG_HEADER_GEN
+        Logger* logger = plat_get_logger();
+        if (logger) {
+            logger->logf(LOG_DEBUG, "    Adding to header_types: %s\n",
+                        type->c_name ? type->c_name : "unnamed");
+        }
+#endif
         /* We add the type to header_types if:
            a) It's owned by this module.
            b) It's a special type (Slice, Optional, ErrorUnion) - these are emitted in every header that uses them for self-containment.
