@@ -37,6 +37,7 @@ struct CompilationOptions {
     bool no_logs;
     bool verbose;
     bool warn_arena_leaks;
+    bool header_include_before_defs;
     const char* log_file_path;
 
     CompilationOptions()
@@ -49,6 +50,7 @@ struct CompilationOptions {
           no_logs(false),
           verbose(false),
           warn_arena_leaks(false),
+          header_include_before_defs(false),
           log_file_path(NULL) {}
 };
 
