@@ -730,21 +730,21 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     emitter.emitBufferedTypeDefinitions();
     emitter.writeString("\n");
 
-#if Z98_HEADER_INCLUDE_BEFORE_DEFS
-    for (size_t i = 0; i < module->imports.length(); ++i) {
-        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+    if (unit_.getOptions().header_include_before_defs) {
+        for (size_t i = 0; i < module->imports.length(); ++i) {
+            if (plat_strcmp(module->imports[i], module->name) == 0) continue;
 #ifdef DEBUG_HEADER_GEN
-        Logger* logger = plat_get_logger();
-        if (logger) {
-            logger->logf(LOG_DEBUG, "  Including header: %s.h (Priority Include)\n", module->imports[i]);
+            Logger* logger = plat_get_logger();
+            if (logger) {
+                logger->logf(LOG_DEBUG, "  Including header: %s.h (Priority Include)\n", module->imports[i]);
+            }
+#endif
+            emitter.writeString("#include \"");
+            emitter.writeString(module->imports[i]);
+            emitter.writeString(".h\"\n");
         }
-#endif
-        emitter.writeString("#include \"");
-        emitter.writeString(module->imports[i]);
-        emitter.writeString(".h\"\n");
+        emitter.writeString("\n");
     }
-    emitter.writeString("\n");
-#endif
 
     // Use pre-computed header types in dependency order.
     // Special types (slices, error unions, optionals) are included in header_types
@@ -772,21 +772,21 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         }
     }
 
-#if !Z98_HEADER_INCLUDE_BEFORE_DEFS
-    for (size_t i = 0; i < module->imports.length(); ++i) {
-        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+    if (!unit_.getOptions().header_include_before_defs) {
+        for (size_t i = 0; i < module->imports.length(); ++i) {
+            if (plat_strcmp(module->imports[i], module->name) == 0) continue;
 #ifdef DEBUG_HEADER_GEN
-        Logger* logger = plat_get_logger();
-        if (logger) {
-            logger->logf(LOG_DEBUG, "  Including header: %s.h\n", module->imports[i]);
+            Logger* logger = plat_get_logger();
+            if (logger) {
+                logger->logf(LOG_DEBUG, "  Including header: %s.h\n", module->imports[i]);
+            }
+#endif
+            emitter.writeString("#include \"");
+            emitter.writeString(module->imports[i]);
+            emitter.writeString(".h\"\n");
         }
-#endif
-        emitter.writeString("#include \"");
-        emitter.writeString(module->imports[i]);
-        emitter.writeString(".h\"\n");
+        emitter.writeString("\n");
     }
-    emitter.writeString("\n");
-#endif
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
