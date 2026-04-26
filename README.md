@@ -105,6 +105,7 @@ The Z98 compiler (`zig0`) supports several command-line options to control the b
 -   `--log-file=<path>`: Enables centralized logging to the specified file. Logs are buffered and flushed after each compilation phase.
 -   `--no-logs`: Suppresses all non-essential console output (INFO and DEBUG levels). Fatal errors and reported compilation errors/warnings are still displayed on stderr.
 -   `--verbose` or `-v`: Enables DEBUG-level logging on the console. By default, DEBUG logs are only sent to the log file (if enabled).
+-   `--header-priority-include`: Forces the compiler to emit module `#include` directives before type definitions in generated `.h` files. This resolves "field has incomplete type" errors when special types (Optional, Slice, etc.) have payloads from imported modules.
 
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.
