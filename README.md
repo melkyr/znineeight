@@ -162,17 +162,17 @@ The following table provides an overview of the examples included in the Z98 pro
 |:---|:---:|:---:|:---|:---|
 | `hello` | 4 | 19 | **Low**: Multi-module "Hello World". | **C89**: Similar boilerplate. **C++98**: Slightly more concise using `iostream`. |
 | `prime` | 3 | 27 | **Low**: Basic arithmetic and iteration. | **C89/C++98**: Nearly identical implementation. |
-| `days_in_month` | 3 | 29 | **Low**: Date logic and `switch`. | **C89**: Lacks Z98's expression-based `switch`, requiring more local variables. |
+| `days_in_month` | 3 | 29 | **Low**: Date logic and `switch`. | **C89**: Lacks expression-based `switch`. **C++98**: Same as C89, requires more local variables. |
 | `fibonacci` | 3 | 17 | **Low**: Recursive sequence calculation. | **C89/C++98**: Identical logic and length. |
-| `heapsort` | 3 | 63 | **Medium**: Classic in-place sorting. | **C89**: Requires more careful pointer arithmetic. **C++98**: STL makes this trivial but hides the algorithm. |
-| `quicksort` | 1 | 59 | **Medium**: Generic sorting via function pointers. | **C89**: Function pointer syntax is much harder to read/write compared to Z98. |
-| `sort_strings` | 1 | 56 | **Medium**: Pointer-to-pointer array sorting. | **C89**: String array management is more verbose and lacks Z98's slice safety. |
-| `func_ptr_return` | 1 | 24 | **Medium**: High-order function types. | **C89**: Function-returning-function-pointer syntax is notoriously opaque. |
-| `lzw` | 5 | 259 | **High**: Data compression with `defer`/`errdefer`. | **C89**: ~40% longer due to manual error propagation and resource cleanup. |
-| `mandelbrot` | 1 | 62 | **Medium**: ASCII fractal renderer. | **C89**: Very similar; Z98 provides better numeric type clarity. |
-| `lisp_interpreter_curr` | 10 | 1009 | **Very High**: Complete Lisp with Arena GC. | **C89**: Would be 2-3x longer without tagged unions and `defer`. **C++98**: Classes help, but still more verbose. |
-| `game_of_life` | 4 | 355 | **High**: Interactive simulation with PAL UI. | **C89**: Significantly more boilerplate for platform-independent UI logic. |
-| `mud_server` | 4 | 274 | **High**: Non-blocking telnet server. | **C89**: Socket error handling and buffer management is much more tedious. |
-| `rogue_mud` | 16 | 1699 | **Extreme**: Networked Roguelike with A* and BSP. | **C89**: Likely 5000+ lines. Z98's features drastically reduce the "infrastructure" code needed. |
+| `heapsort` | 3 | 63 | **Medium**: Classic in-place sorting. | **C89**: Requires manual pointer logic. **C++98**: `std::sort` is available but hides implementation. |
+| `quicksort` | 1 | 59 | **Medium**: Generic sorting via function pointers. | **C89**: Opaque function pointer syntax. **C++98**: Cleaner with functors, but more verbose to define. |
+| `sort_strings` | 1 | 56 | **Medium**: Pointer-to-pointer array sorting. | **C89**: Verbose management, no slices. **C++98**: `std::vector<std::string>` simplifies but adds overhead. |
+| `func_ptr_return` | 1 | 24 | **Medium**: High-order function types. | **C89**: Syntax is notoriously opaque. **C++98**: `typedef` helps, but raw syntax remains complex. |
+| `lzw` | 5 | 259 | **High**: Data compression with `defer`/`errdefer`. | **C89**: ~40% longer (manual cleanup). **C++98**: RAII handles cleanup, but implementation is class-heavy. |
+| `mandelbrot` | 1 | 62 | **Medium**: ASCII fractal renderer. | **C89**: Very similar. **C++98**: `std::complex` could be used but adds library dependency. |
+| `lisp_interpreter_curr` | 10 | 1009 | **Very High**: Complete Lisp with Arena GC. | **C89**: 2-3x longer without tagged unions/`defer`. **C++98**: Classes help, but boilerplate is higher. |
+| `game_of_life` | 4 | 355 | **High**: Interactive simulation with PAL UI. | **C89**: Platform boilerplate. **C++98**: OO abstractions for UI would increase file count/complexity. |
+| `mud_server` | 4 | 274 | **High**: Non-blocking telnet server. | **C89**: Tedious socket error handling. **C++98**: Lacks standard networking; raw sockets are same as C89. |
+| `rogue_mud` | 16 | 1699 | **Extreme**: Networked Roguelike with A* and BSP. | **C89**: Likely 5000+ lines. **C++98**: Better organization via classes, but manual memory management is high risk. |
 
 *Note: Line and file counts include standard library helpers (`std.zig`, `std_debug.zig`) used by the examples for full transparency.*
