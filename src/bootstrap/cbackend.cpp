@@ -369,6 +369,14 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
     emitter.writeString("#include <stddef.h>\n");
     emitter.writeString("#include \"zig_compat.h\"\n\n");
 
+    emitter.writeString("#ifndef ZIG_TUPLE_EMPTY\n");
+    emitter.writeString("#define ZIG_TUPLE_EMPTY\n");
+    emitter.writeIndent();
+    emitter.writeString("struct Tuple_empty { char __dummy; };\n");
+    emitter.writeIndent();
+    emitter.writeString("typedef struct Tuple_empty Tuple_empty;\n");
+    emitter.writeString("#endif\n\n");
+
     const DynamicArray<Type*>& slices = unit_.getGlobalSliceTypes();
     for (size_t i = 0; i < slices.length(); ++i) {
         Type* type = slices[i];
@@ -694,43 +702,91 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
 
     /* Pass 0: Forward declarations of aggregate types */
     /* We emit forward declarations for all aggregates used in the header. */
+#ifdef DEBUG_HEADER_GEN
+    Logger* logger = plat_get_logger();
+    if (logger) {
+        logger->logf(LOG_DEBUG, "--- generateHeaderFile for module: %s ---\n", module->name);
+        logger->logf(LOG_DEBUG, "Pass 0: Forward declarations\n");
+    }
+#endif
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind == TYPE_ENUM) {
+#ifdef DEBUG_HEADER_GEN
+            if (logger) logger->logf(LOG_DEBUG, "  Forward declaring enum: %s\n", t->c_name ? t->c_name : "unnamed");
+#endif
             emitter.ensureForwardDeclaration(t);
         }
     }
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind != TYPE_ENUM && t->kind != TYPE_SLICE && t->kind != TYPE_ERROR_UNION && t->kind != TYPE_OPTIONAL) {
+#ifdef DEBUG_HEADER_GEN
+            if (logger) logger->logf(LOG_DEBUG, "  Forward declaring struct/union: %s\n", t->c_name ? t->c_name : "unnamed");
+#endif
             emitter.ensureForwardDeclaration(t);
         }
     }
     emitter.emitBufferedTypeDefinitions();
     emitter.writeString("\n");
 
+    if (unit_.getOptions().header_include_before_defs) {
+        for (size_t i = 0; i < module->imports.length(); ++i) {
+            if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+#ifdef DEBUG_HEADER_GEN
+            Logger* logger = plat_get_logger();
+            if (logger) {
+                logger->logf(LOG_DEBUG, "  Including header: %s.h (Priority Include)\n", module->imports[i]);
+            }
+#endif
+            emitter.writeString("#include \"");
+            emitter.writeString(module->imports[i]);
+            emitter.writeString(".h\"\n");
+        }
+        emitter.writeString("\n");
+    }
+
     // Use pre-computed header types in dependency order.
     // Special types (slices, error unions, optionals) are included in header_types
     // and will be emitted via ensure... calls during this loop.
+#ifdef DEBUG_HEADER_GEN
+    if (logger) logger->logf(LOG_DEBUG, "Pass 1: Type definitions\n");
+#endif
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
 
         /* Only emit the actual definition if this module owns the type.
            Types from other modules are already forward-declared or included via headers. */
-        if (t->owner_module == module || t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL || t->kind == TYPE_TUPLE) {
+        bool owned = (t->owner_module == module);
+        bool special = (t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL || t->kind == TYPE_TUPLE);
+        if (owned || special) {
+#ifdef DEBUG_HEADER_GEN
+            if (logger) {
+                logger->logf(LOG_DEBUG, "  Emitting definition for: %s (owned=%d, special=%d)\n",
+                            t->c_name ? t->c_name : "unnamed", owned, special);
+            }
+#endif
             emitter.emitTypeDefinition(t);
             emitter.emitBufferedTypeDefinitions();
         }
     }
 
-    for (size_t i = 0; i < module->imports.length(); ++i) {
-        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
-        emitter.writeString("#include \"");
-        emitter.writeString(module->imports[i]);
-        emitter.writeString(".h\"\n");
+    if (!unit_.getOptions().header_include_before_defs) {
+        for (size_t i = 0; i < module->imports.length(); ++i) {
+            if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+#ifdef DEBUG_HEADER_GEN
+            Logger* logger = plat_get_logger();
+            if (logger) {
+                logger->logf(LOG_DEBUG, "  Including header: %s.h\n", module->imports[i]);
+            }
+#endif
+            emitter.writeString("#include \"");
+            emitter.writeString(module->imports[i]);
+            emitter.writeString(".h\"\n");
+        }
+        emitter.writeString("\n");
     }
-    emitter.writeString("\n");
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
@@ -751,6 +807,9 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
                     }
                     emitter.writeIndent();
                     emitter.writeString("extern ");
+                    if (decl->is_const) {
+                        emitter.writeString("const ");
+                    }
 
                     Type* type = (*stmts)[i]->resolved_type;
                     const char* c_name = emitter.getC89GlobalName(decl->name);

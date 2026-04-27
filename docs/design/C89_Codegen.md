@@ -41,6 +41,21 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitTaggedUnionBody`: Emits the full body (tag + data union) of a tagged union.
     - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
+### Union Definitions inside Structs
+To avoid "declaration does not declare anything" warnings in C89, the compiler combines the union definition and the member declaration into a single statement when possible.
+
+Example:
+Instead of:
+```c
+union MyUnion { ... };
+union MyUnion data;
+```
+The compiler now emits:
+```c
+union MyUnion { ... } data;
+```
+This is specifically implemented in `ensureErrorUnionType` and `emitTaggedUnionBody`.
+
 ### C89 Compatibility Layer (`zig_compat.h`)
 All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`. This header provides a unified abstraction for:
 - **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
@@ -219,13 +234,14 @@ The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 ### 4.2 Type Emission Order in Headers
 To support recursive types and avoid "incomplete type" errors in C89, the `CBackend` and `C89Emitter` follow a strict emission order in generated headers. To handle cross-module circular dependencies, forward declarations are prioritized over module inclusions:
 
-1. **Forward Declarations**: All aggregate types (structs, unions, and tagged unions) that are defined in the current module are forward-declared first (e.g., `struct Node;`). This occurs immediately after including `zig_runtime.h` and **before** including any other module headers (`#include "other.h"`). This ensures that if `other.h` refers back to a type in the current module (e.g. via a pointer), the C compiler already knows the type is a struct.
-2. **Module Inclusions**: Headers for imported modules are included after the local forward declarations.
+1. **Forward Declarations**: All aggregate types (structs, unions, and tagged unions) that are defined in the current module are forward-declared first (e.g., `struct Node;`). This occurs immediately after including `zig_runtime.h` and `zig_special_types.h`. This ensures that if another header refers back to a type in the current module (e.g. via a pointer), the C compiler already knows the type is a struct.
+2. **Module Inclusions (Priority)**: If the `--header-priority-include` flag is enabled, headers for imported modules are included **before** any type definitions. This is required when special types (like `Optional` or `Slice`) use types from imported modules by value as their payloads.
 3. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions defined in the current module are emitted in topological dependency order (provided by the `MetadataPreparationPass`). This order respects **value dependencies** (e.g., if `A` contains `B` by value, `B` is defined before `A`).
-4. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
-    - During the emission of a named aggregate (Step 2), if it contains a field of a special type, the `emitter.emitBufferedTypeDefinitions()` call immediately after the struct definition ensures that the special type's C `struct` is emitted.
-    - Because Step 2 follows dependency order, by the time a special type is emitted, the underlying named aggregates it depends on (the payload or element type) are guaranteed to be complete.
-4. **Globals and Prototypes**: Finally, external variables and function prototypes are emitted. Any special types used in their signatures that weren't already emitted are triggered and defined here.
+4. **Module Inclusions (Default)**: If `--header-priority-include` is not enabled, headers for imported modules are included after the local type definitions.
+5. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
+    - During the emission of a named aggregate (Step 3), if it contains a field of a special type, the `emitter.emitBufferedTypeDefinitions()` call immediately after the struct definition ensures that the special type's C `struct` is emitted.
+    - Because Step 3 follows dependency order, by the time a special type is emitted, the underlying named aggregates it depends on (the payload or element type) are guaranteed to be complete.
+6. **Globals and Prototypes**: Finally, external variables and function prototypes are emitted. Any special types used in their signatures that weren't already emitted are triggered and defined here.
 
 This strategy ensures that a recursive struct returned by value in an error union (e.g., `pub fn foo() !Node`) correctly results in `struct Node` being defined before `ErrorUnion_Node`.
 

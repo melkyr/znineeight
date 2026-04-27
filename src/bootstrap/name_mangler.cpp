@@ -7,7 +7,7 @@
 NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner, CompilationUnit& unit)
     : arena_(arena), interner_(interner), unit_(unit) {}
 
-const char* NameMangler::mangle(char kind, const char* module_path, const char* local_name) {
+const char* NameMangler::mangle(char kind, Module* mod, const char* local_name) {
     if (isInternalCompilerIdentifier(local_name)) {
         if (!local_name) return interner_.intern("anon");
         char buf[256];
@@ -17,17 +17,22 @@ const char* NameMangler::mangle(char kind, const char* module_path, const char* 
     }
 
     if (unit_.isTestMode()) {
-        return unit_.getTestName(kind, module_path, local_name);
+        const char* mod_name = mod ? mod->name : NULL;
+        return unit_.getTestName(kind, mod_name, local_name);
     }
 
     if (!local_name) local_name = "anon";
 
     // Hashed mode
     u32 hash = 0;
-    if (module_path) {
-        char rel_path[1024];
-        get_relative_path(module_path, ".", rel_path, sizeof(rel_path));
-        hash = fnv1a_32(rel_path);
+    if (mod) {
+        hash = mod->stable_hash;
+#ifdef DEBUG_MANGLE
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("[MANGLE] module='%s' hash=%06x\n",
+                         mod->name, hash & 0xFFFFFF);
+        #endif
+#endif
     } else {
         hash = fnv1a_32("global");
     }
@@ -67,7 +72,7 @@ const char* NameMangler::mangle(char kind, const char* module_path, const char* 
 const char* NameMangler::mangleFunction(const char* name,
                                        DynamicArray<GenericParamInfo>* params,
                                        int param_count,
-                                       const char* module) {
+                                       Module* mod) {
     if (isInternalCompilerIdentifier(name)) {
         char buffer[256];
         plat_strcpy(buffer, name);
@@ -100,11 +105,11 @@ const char* NameMangler::mangleFunction(const char* name,
         }
     }
 
-    return mangle('F', module, local_name);
+    return mangle('F', mod, local_name);
 }
 
-const char* NameMangler::mangleTypeName(const char* name, const char* module) {
-    return mangle('S', module, name);
+const char* NameMangler::mangleTypeName(const char* name, Module* mod) {
+    return mangle('S', mod, name);
 }
 
 const char* NameMangler::mangleType(Type* type) {
@@ -193,8 +198,6 @@ const char* NameMangler::mangleType(Type* type) {
                 kind = 'S';
             }
 
-            const char* module_path = type->owner_module ? type->owner_module->filename : NULL;
-            
             if (!name) {
                 char anon_name[64];
                 plat_strcpy(anon_name, "anon_");
@@ -205,11 +208,11 @@ const char* NameMangler::mangleType(Type* type) {
                 } else {
                     plat_strcat(anon_name, "0");
                 }
-                type->c_name = mangle(kind, module_path, anon_name);
+                type->c_name = mangle(kind, type->owner_module, anon_name);
                 return type->c_name;
             }
 
-            type->c_name = mangle(kind, module_path, name);
+            type->c_name = mangle(kind, type->owner_module, name);
             return type->c_name;
         }
         case TYPE_ERROR_SET: {

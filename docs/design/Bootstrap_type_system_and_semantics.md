@@ -93,6 +93,7 @@ struct Type {
     struct Module* owner_module;
     DependentNode* dependents_head;
     DependentNode* dependents_tail;
+    bool is_global_empty_tuple;
 
     union {
         /**
@@ -342,6 +343,7 @@ struct Symbol {
     unsigned int flags;        // Bitmask of SymbolFlag
     bool is_generic;           // True if it's a generic function
     Type* c_prototype_type;    // For extern/export functions, the C-compatible type
+    char mangle_kind;          // 'C' for const, 'V' for var, 'F' for fn, 'S' for type
 };
 
 /**

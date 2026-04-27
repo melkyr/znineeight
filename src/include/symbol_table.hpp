@@ -48,6 +48,7 @@ struct Symbol {
     unsigned int flags;        // Bitmask of SymbolFlag
     bool is_generic;           // True if it's a generic function
     Type* c_prototype_type;    // For extern/export functions, the C-compatible type
+    char mangle_kind;          // 'C' for const, 'V' for var, 'F' for fn, 'S' for type
 };
 
 class SymbolBuilder {
@@ -67,6 +68,7 @@ public:
     SymbolBuilder& withFlags(unsigned int flags);
     SymbolBuilder& asGeneric(bool generic = true);
     SymbolBuilder& withCPrototypeType(Type* type);
+    SymbolBuilder& withMangleKind(char kind);
     Symbol build();
 };
 

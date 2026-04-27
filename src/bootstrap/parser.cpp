@@ -1592,6 +1592,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
         .atLocation(name_token.location)
         .definedBy(node->as.var_decl) // Link the symbol to its declaration details
         .withFlags((is_extern ? SYMBOL_FLAG_EXTERN : 0) | (is_pub ? SYMBOL_FLAG_PUB : 0)) // Semantic flags will be set by TypeChecker
+        .withMangleKind(is_const ? 'C' : 'V')
         .build();
 
     symbol_table_->insert(symbol);
@@ -1694,6 +1695,7 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
         .atLocation(name_token.location)
         .definedBy(fn_decl)
         .withFlags((is_extern ? SYMBOL_FLAG_EXTERN : 0) | (is_pub ? SYMBOL_FLAG_PUB : 0))
+        .withMangleKind('F')
         .build();
 
     symbol_table_->insert(fn_symbol);

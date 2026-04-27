@@ -609,9 +609,16 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
         return false;
     }
 
-    // 1. Control-flow expressions always need lifting (unless they yield void)
+    // 1. Control-flow expressions always need lifting
     if (isControlFlowExpr(node->type)) {
         if (node->type == NODE_SWITCH_STMT) return false; // Statement form
+
+        // Always lift try/catch/orelse – they embed critical side effects
+        if (node->type == NODE_TRY_EXPR ||
+            node->type == NODE_CATCH_EXPR ||
+            node->type == NODE_ORELSE_EXPR) {
+            return true;
+        }
 
         if (node->resolved_type) {
             TypeKind k = node->resolved_type->kind;
@@ -1371,6 +1378,51 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     Type* temp_type = node->resolved_type;
     if (needs_wrapping && current_fn_return_type_) {
         temp_type = current_fn_return_type_;
+    }
+
+    if (temp_type && temp_type->kind == TYPE_VOID) {
+        // Void-returning control flow: lift logic but no temp variable needed
+        DynamicArray<ASTNode*> lowering_stmts(*arena_);
+        Symbol* dummy_sym = createSymbol(temp_name, get_g_type_void(), false);
+
+        switch (node->type) {
+            case NODE_TRY_EXPR:
+                lowerTryExpr(node, dummy_sym, lowering_stmts, needs_wrapping);
+                break;
+            case NODE_CATCH_EXPR:
+                lowerCatchExpr(node, dummy_sym, lowering_stmts);
+                break;
+            case NODE_ORELSE_EXPR:
+                lowerOrelseExpr(node, dummy_sym, lowering_stmts);
+                break;
+            case NODE_IF_EXPR:
+                lowering_stmts.append(lowerIfExpr(node, dummy_sym));
+                break;
+            case NODE_SWITCH_EXPR:
+                lowering_stmts.append(lowerSwitchExpr(node, dummy_sym));
+                break;
+            default:
+                error_handler_->report(ERR_INTERNAL_ERROR, node->loc, "Unknown void expression for lifting", NULL);
+                plat_abort();
+        }
+
+        if (block_stack_.length() > 0) {
+            ASTBlockStmtNode* current_block = block_stack_.back();
+            int insert_idx = -1;
+            if (stmt_stack_.length() > 0) {
+                insert_idx = findStatementIndex(current_block, stmt_stack_.back());
+            }
+            if (insert_idx == -1) insert_idx = (int)current_block->statements->length();
+
+            for (size_t i = 0; i < lowering_stmts.length(); ++i) {
+                current_block->statements->insert((size_t)insert_idx + i, lowering_stmts[i]);
+            }
+        }
+
+        // Replace with a dummy void constant that is safe to use as a statement
+        ASTNode* dummy_node = createIntegerLiteral(0, get_g_type_void(), node->loc);
+        *node_slot = dummy_node;
+        return;
     }
 
     Symbol* temp_sym = NULL;

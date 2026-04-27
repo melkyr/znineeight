@@ -85,6 +85,9 @@ bool plat_file_exists(const char* path);
 // Gets the directory containing the current executable.
 void plat_get_executable_dir(char* buffer, size_t size);
 
+// Gets the absolute path of a file.
+bool plat_get_absolute_path(const char* path, char* out_buffer, size_t out_size);
+
 // Networking / Sockets
 #ifdef _WIN32
 typedef SOCKET PlatSocket;

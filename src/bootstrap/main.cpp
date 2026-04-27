@@ -49,11 +49,14 @@ int main(int argc, char* argv[]) {
     bool no_logs = false;
     bool verbose = false;
     bool warn_arena_leaks = false;
+    bool header_priority_include = false;
     const char* log_file_path = NULL;
 
     for (int i = 1; i < argc; ++i) {
         if (plat_strcmp(argv[i], "--no-logs") == 0) {
             no_logs = true;
+        } else if (plat_strcmp(argv[i], "--header-priority-include") == 0) {
+            header_priority_include = true;
         } else if (plat_strcmp(argv[i], "--verbose") == 0 || plat_strcmp(argv[i], "-v") == 0) {
             verbose = true;
         } else if (plat_strcmp(argv[i], "-Warena-leak") == 0) {
@@ -170,6 +173,7 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) input_file = argv[++i];
         } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0 ||
                    plat_strcmp(argv[i], "--no-logs") == 0 ||
+                   plat_strcmp(argv[i], "--header-priority-include") == 0 ||
                    plat_strcmp(argv[i], "--verbose") == 0 ||
                    plat_strcmp(argv[i], "-v") == 0) {
             // Already handled in first pass
@@ -216,6 +220,7 @@ int main(int argc, char* argv[]) {
         opts.no_logs = no_logs;
         opts.verbose = verbose;
         opts.warn_arena_leaks = warn_arena_leaks;
+        opts.header_include_before_defs = header_priority_include;
         opts.log_file_path = log_file_path;
         unit.setOptions(opts);
 
@@ -254,6 +259,7 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --no-logs               Suppress all non-essential output\n");
     plat_print_info("  --verbose, -v           Enable verbose debug logging on console\n");
     plat_print_info("  -Warena-leak            Report memory leaks for arena allocations\n");
+    plat_print_info("  --header-priority-include  Emit #includes before type definitions in headers\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 

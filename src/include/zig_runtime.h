@@ -73,6 +73,12 @@ void arena_free(void* ptr);
 
 void __bootstrap_sleep_ms(unsigned int ms);
 
+/* Console PAL helpers for rogue_mud and other TUI examples */
+void plat_console_gotoxy(int x, int y);
+void plat_console_setcolor(int fg, int bg);
+void plat_console_putchar(int c);
+void plat_console_clear(void);
+
 /* Networking (optional, requires linking net_runtime.o on Windows) */
 int plat_socket_init(void);
 void plat_socket_cleanup(void);
@@ -88,6 +94,7 @@ void plat_socket_fd_set(int fd, u8* set);
 int plat_socket_fd_isset(int fd, u8* set);
 
 usize __bootstrap_usize_from_i64(i64 x);
+bool plat_is_windows();
 
 /* Runtime checked numeric conversions */
 
@@ -116,6 +123,11 @@ ZIG_INLINE ZIG_UNUSED i32 __bootstrap_i32_from_usize(usize x) {
     return (i32)x;
 }
 
+ZIG_INLINE ZIG_UNUSED u8 __bootstrap_u8_from_usize(usize x) {
+    if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}
+
 ZIG_INLINE ZIG_UNUSED u8 __bootstrap_u8_from_bool(bool b) {
     return (u8)b;
 }
@@ -130,6 +142,11 @@ ZIG_INLINE ZIG_UNUSED i32 __bootstrap_i32_from_u8(u8 x) {
 
 ZIG_INLINE ZIG_UNUSED u8 __bootstrap_u8_from_i32(i32 x) {
     if (x < 0 || x > 255) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (u8)x;
+}
+
+ZIG_INLINE ZIG_UNUSED u8 __bootstrap_u8_from_u32(u32 x) {
+    if (x > 255) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
     return (u8)x;
 }
 

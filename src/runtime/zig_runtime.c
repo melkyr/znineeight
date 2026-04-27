@@ -1,6 +1,7 @@
 #include "zig_runtime.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #ifdef _WIN32
 #include "platform_win98.h"
@@ -275,12 +276,79 @@ void __bootstrap_print_char(i32 c) {
 }
 
 
+#if 0
 u8 __bootstrap_u8_from_usize(usize x) {
     if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u8)x;
 }
+#endif
 
 usize __bootstrap_usize_from_i64(i64 x) {
     if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (usize)x;
+}
+
+void plat_console_gotoxy(int x, int y) {
+#ifdef _WIN32
+    COORD c;
+    c.X = (SHORT)x;
+    c.Y = (SHORT)y;
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c);
+#else
+    char buf[32];
+    int len = sprintf(buf, "\x1b[%d;%dH", y + 1, x + 1);
+    __bootstrap_write(buf, (usize)len);
+#endif
+}
+
+void plat_console_setcolor(int fg, int bg) {
+#ifdef _WIN32
+    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), (WORD)((fg & 0x0F) | ((bg & 0x0F) << 4)));
+#else
+    static const char* fg_ansi[] = {"30","34","32","36","31","35","33","37","90","94","92","96","91","95","93","97"};
+    static const char* bg_ansi[] = {"40","44","42","46","41","45","43","47","100","104","102","106","101","105","103","107"};
+    char buf[64];
+    int len = sprintf(buf, "\x1b[%s;%sm", fg_ansi[fg & 0x0F], bg_ansi[bg & 0x0F]);
+    __bootstrap_write(buf, (usize)len);
+#endif
+}
+
+void plat_console_putchar(int c) {
+    char s[1];
+    s[0] = (char)c;
+    __bootstrap_write(s, 1);
+}
+
+void plat_console_clear(void) {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    DWORD count;
+    DWORD cellCount;
+    COORD homeCoords = { 0, 0 };
+
+    if (hOut == INVALID_HANDLE_VALUE) return;
+    if (!GetConsoleScreenBufferInfo(hOut, &csbi)) return;
+
+    cellCount = csbi.dwSize.X * csbi.dwSize.Y;
+
+    /* Fill the entire buffer with spaces */
+    if (!FillConsoleOutputCharacter(hOut, (TCHAR) ' ', cellCount, homeCoords, &count)) return;
+
+    /* Fill the entire buffer with the current attributes */
+    if (!FillConsoleOutputAttribute(hOut, csbi.wAttributes, cellCount, homeCoords, &count)) return;
+
+    /* Move the cursor home */
+    SetConsoleCursorPosition(hOut, homeCoords);
+#else
+    __bootstrap_write("\x1b[2J\x1b[H", 7);
+#endif
+}
+
+bool plat_is_windows() {
+#ifdef _WIN32
+    return true;
+#else
+    return false;
+#endif
 }

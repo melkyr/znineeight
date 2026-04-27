@@ -570,7 +570,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             if (t_type && t_type->c_name) {
                 writeString(t_type->c_name);
             } else if (t_type && t_type->as.enum_details.name) {
-                writeString(unit_.getNameMangler().mangleTypeName(t_type->as.enum_details.name, t_type->owner_module ? t_type->owner_module->name : "unknown"));
+                writeString(unit_.getNameMangler().mangleTypeName(t_type->as.enum_details.name, t_type->owner_module));
             } else {
                 writeString("/* enum */");
             }
@@ -3251,7 +3251,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                                               actual_type->as.module.name :
                                               (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
                         if (mod_name) {
-                            writeString(unit_.getNameMangler().mangle('V', mod_name, node->as.member_access->field_name));
+                            writeString(unit_.getNameMangler().mangle('V', unit_.getModule(mod_name), node->as.member_access->field_name));
                         } else {
                             writeString(node->as.member_access->field_name);
                         }
@@ -3455,9 +3455,7 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
                 writeString(data_type->c_name);
                 writeString(" ");
                 emitUnionBody(data_type);
-                writeString(";\n");
-
-                writeFieldDecl(data_type, "data");
+                writeString(" data;\n");
             } else {
                 writeIndent();
                 writeString("union {\n");
@@ -3532,6 +3530,7 @@ void C89Emitter::emitBufferedTypeDefinitions() {
 
 void C89Emitter::ensureTupleType(Type* type) {
     if (!type || type->kind != TYPE_TUPLE) return;
+    if (type->is_global_empty_tuple) return;
 
     const char* mangled_name = unit_.getNameMangler().mangleType(type);
 
@@ -4099,17 +4098,30 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
 
     SymbolTable& table = unit_.getSymbolTable(module_name_);
     Symbol* sym = table.lookup(zig_name);
+
+    /* Prefer precomputed mangled name for non-local symbols */
+    if (sym && sym->mangled_name && !(sym->flags & SYMBOL_FLAG_LOCAL)) {
+        const char* mangled = sym->mangled_name;
+        /* Cache and return */
+        const char* interned = unit_.getStringInterner().intern(mangled);
+        used_names_.append(interned);
+
+        GlobalNameEntry entry;
+        entry.zig_name = zig_name;
+        entry.c89_name = interned;
+        entry.location = sym->module_name;
+        entry.kind = (sym->kind == SYMBOL_FUNCTION) ? "function" :
+                     (sym->kind == SYMBOL_TYPE) ? "type" : "variable";
+        global_names_.append(entry);
+        return interned;
+    }
+
     bool is_local = false;
     if (sym) {
         if (sym->flags & SYMBOL_FLAG_EXTERN) is_extern = true;
         if (sym->flags & SYMBOL_FLAG_LOCAL) is_local = true;
         
-        Module* mod = unit_.getModule(sym->module_name);
-        if (mod) {
-            char rel_path[1024];
-            get_relative_path(mod->filename, ".", rel_path, sizeof(rel_path));
-            location = unit_.getStringInterner().intern(rel_path);
-        }
+        location = sym->module_name;
 
         if (sym->kind == SYMBOL_FUNCTION) kind = "function";
         else if (sym->kind == SYMBOL_TYPE) kind = "type";
@@ -4132,12 +4144,17 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     } else {
         char k_char = 'V';
         if (sym) {
-            if (sym->kind == SYMBOL_FUNCTION) k_char = 'F';
-            else if (sym->kind == SYMBOL_TYPE) k_char = 'S';
+            if (sym->mangle_kind) {
+                k_char = sym->mangle_kind;
+            } else if (sym->kind == SYMBOL_FUNCTION) {
+                k_char = 'F';
+            } else if (sym->kind == SYMBOL_TYPE) {
+                k_char = 'S';
+            }
         }
         
-        const char* module_path = location;
-        const char* mangled = unit_.getNameMangler().mangle(k_char, module_path, zig_name);
+        Module* mod = unit_.getModule(location);
+        const char* mangled = unit_.getNameMangler().mangle(k_char, mod, zig_name);
         plat_strcpy(final_buf, mangled);
     }
 

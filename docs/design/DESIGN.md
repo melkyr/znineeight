@@ -278,7 +278,7 @@ filename.zig:23:5: error: type mismatch
     8.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks.
     10. **Pass 5: AST Lifting (Task 230):** A mandatory pass that transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents by lifting them into temporary variables. This pass ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission. **Refinement**: Lifted expressions yielding `void` (common in `try` and `catch` statements) skip variable declarations in C to avoid invalid `void __tmp` definitions. **Debugging**: Supports verbose logging via `--debug-lifter`.
     11. **Pass 6: Metadata Preparation (Task 9.15):** A post-typechecking pass that transitively collects all reachable types for module headers using a **post-order dependency traversal**. This ensures that C headers define aggregate types (structs/unions) before they are used in typedefs (slices/error unions), resolving "incomplete type" errors.
-    11. **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target. **Constraint**: C89 requires functions to be declared before use. The current backend requires Zig code to be ordered appropriately or may require a future forward-declaration pass.
+    11. **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target. **Constraint**: C89 requires functions to be declared before use. The current backend requires Zig code to be ordered appropriately or may require a future forward-declaration pass. The `--header-priority-include` option can be used to reorder `#include` directives in headers to resolve type dependencies for special types.
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 #### 4.0.1 Non-C89 Feature Detection Strategy
@@ -402,7 +402,12 @@ The `TypeChecker` resolves identifiers, verifies type compatibility for assignme
 #### Pass 2: Lifetime Analysis (Task 125)
 The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters.
 
-- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
+- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`) using a recursive resolver. It distinguishes between storage allocated on the stack (True Locals, By-Value Parameters) and memory owned by the caller (Pointer-Like Parameters).
+- **Dereference Awareness**: The analyzer correctly handles dereferences (`ptr.*`, `ptr[i]`, `ptr.field`). If a pointer refers to external memory (like a pointer parameter), dereferencing it yields safe "External" provenance.
+- **Classification**:
+    - **True Locals**: `var`/`const` inside a function. Always dangerous to return by address.
+    - **By-Value Parameters**: Aggregate types passed by value. Dangerous to return by address or internal pointer.
+    - **Pointer Parameters**: `*T` or `[]T`. Safe to return internal pointers/slices derived from what they point to.
 
 #### Pass 3: Null Pointer Analysis (Task 126)
 The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage using flow-sensitive analysis.

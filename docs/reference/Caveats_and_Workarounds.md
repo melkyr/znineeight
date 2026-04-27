@@ -8,6 +8,10 @@ This document tracks known limitations, bugs, and recommended workarounds for th
 **Issue**: Declaring a `pub const` array of structs or unions with complex nested initializers (e.g., strings, optional types, or tagged union variants) may fail to generate the necessary C89 definitions. The symbol will be referenced in the code but will result in "undefined identifier" errors during linking.
 **Workaround**: Use `pub var` for the global variable and initialize it at runtime within a dedicated `init()` function called at the start of `main`.
 
+### 1.1.1 Tagged Union Global Initializers
+**Issue**: C89 does not support designated initializers (`.tag = ...`), and union initializers can only set the *first* member. Portably initializing a global tagged union to a non-first variant is impossible in strict C89.
+**Workaround**: Use `pub var` and initialize the tagged union at runtime (e.g., in `main` or an `initGlobals()` function).
+
 ### 1.2 Strict Type Equality
 **Issue**: The Z98 bootstrap compiler follows C89's strict assignment rules. Unlike modern Zig, there is no implicit narrowing for integer literals (e.g., `var x: u8 = 255;` works, but `var x: u8 = my_i32;` fails even if the value is known to fit).
 **Workaround**: Use `@intCast(TargetType, expr)` or `@floatCast` for all numeric assignments that are not direct literal initializers.
