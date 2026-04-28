@@ -339,6 +339,10 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseNumericCastExpr(NODE_FLOAT_CAST);
         case TOKEN_AT_INT_TO_FLOAT:
             return parseNumericCastExpr(NODE_INT_TO_FLOAT);
+        case TOKEN_AT_AS:
+            return parseAsExpr();
+        case TOKEN_AT_PANIC:
+            return parsePanicExpr();
         case TOKEN_AT_OFFSETOF:
             return parseOffsetOfExpr();
         case TOKEN_AT_ENUM_TO_INT:
@@ -2481,6 +2485,42 @@ ASTNode* Parser::parseNumericCastExpr(NodeType type) {
 
     ASTNode* node = createNodeAt(type, cast_token.location);
     node->as.numeric_cast = cast_data;
+    return node;
+}
+
+ASTNode* Parser::parseAsExpr() {
+    Token as_token = expect(TOKEN_AT_AS, "Expected '@as'");
+    expect(TOKEN_LPAREN, "Expected '(' after '@as'");
+
+    ASTNode* target_type = parseType();
+    expect(TOKEN_COMMA, "Expected ',' after target type in @as");
+
+    ASTNode* expr = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after @as expression");
+
+    ASTAsExprNode* as_data = (ASTAsExprNode*)arena_->alloc(sizeof(ASTAsExprNode));
+    if (!as_data) error("Out of memory");
+    as_data->target_type = target_type;
+    as_data->expr = expr;
+
+    ASTNode* node = createNodeAt(NODE_AS_EXPR, as_token.location);
+    node->as.as_expr = as_data;
+    return node;
+}
+
+ASTNode* Parser::parsePanicExpr() {
+    Token panic_token = expect(TOKEN_AT_PANIC, "Expected '@panic'");
+    expect(TOKEN_LPAREN, "Expected '(' after '@panic'");
+
+    ASTNode* expr = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after @panic expression");
+
+    ASTPanicNode* panic_data = (ASTPanicNode*)arena_->alloc(sizeof(ASTPanicNode));
+    if (!panic_data) error("Out of memory");
+    panic_data->expr = expr;
+
+    ASTNode* node = createNodeAt(NODE_PANIC, panic_token.location);
+    node->as.panic = panic_data;
     return node;
 }
 

@@ -275,5 +275,40 @@ All code submissions must include:
 
 ---
 
-**End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation.
+---
+
+## 8. Session Memory Persistence
+
+Every session **must** persist key learnings using the memory plugin (`@knikolov/opencode-plugin-simple-memory`) at session start and end.
+
+### 8.1 Session Start
+
+`memory_recall()` — load all prior context before answering any question.
+
+### 8.2 Session End
+
+Before closing, run `memory_remember` for:
+
+| Type | Scope | What to store |
+|------|-------|---------------|
+| `decision` | `project` | Architecture/design choices (with file refs) |
+| `learning` | `project` | Codebase discoveries, Z98 constraint workarounds |
+| `preference` | `project` | User preferences or patterns learned |
+| `blocker` | `project` | Known issues or unfinished work |
+| `context` | `project` | Current task status, what was done, what's next |
+| `pattern` | `project` | Recurring implementation patterns |
+
+**Rule**: Store one memory per logical fact. Keep content single-line, detailed, with file references.
+
+### 8.3 Memory Update
+
+If new info contradicts existing memory, use `memory_update` (not `memory_forget` + `memory_remember`).
+
+### 8.4 Memory List
+
+`memory_list()` to discover all stored scopes and types in use.
+
+---
+
+**End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```

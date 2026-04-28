@@ -69,6 +69,8 @@ public:
     Type* visitOptionalType(ASTOptionalTypeNode* node);
     Type* visitFunctionType(ASTFunctionTypeNode* node);
     Type* visitPtrCast(ASTPtrCastNode* node);
+    Type* visitAsExpr(ASTNode** node_slot, ASTAsExprNode* node);
+    Type* visitPanic(ASTNode* node, ASTPanicNode* panic);
     Type* visitIntCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitFloatCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitIntToFloat(ASTNode* parent, ASTNumericCastNode* node);
@@ -102,6 +104,8 @@ private:
     void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
+    bool isFloatType(Type* type);
+    bool isPointerType(Type* type);
     bool isUnsignedIntegerType(Type* type);
     bool isCompletePointerType(Type* type);
     bool areSamePointerTypeIgnoringConst(Type* a, Type* b);
@@ -141,6 +145,7 @@ public:
 private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
+    bool isMainWithArgs(const ASTFnDeclNode* node);
 
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
     ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc);

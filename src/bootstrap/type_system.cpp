@@ -1463,6 +1463,7 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
         case TYPE_TYPE:    safe_append(current, remaining, "type"); break;
         case TYPE_NORETURN: safe_append(current, remaining, "noreturn"); break;
         case TYPE_ANYTYPE: safe_append(current, remaining, "anytype"); break;
+        case TYPE_C_CHAR:  safe_append(current, remaining, "c_char"); break;
         case TYPE_MODULE:
             safe_append(current, remaining, "module ");
             safe_append(current, remaining, type->as.module.name);

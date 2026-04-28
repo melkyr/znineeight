@@ -366,6 +366,33 @@ bool TypeChecker::checkDuplicateLabel(const char* label, SourceLocation loc) {
     return false;
 }
 
+bool TypeChecker::isMainWithArgs(const ASTFnDeclNode* node) {
+    if (!node->params || node->params->length() != 2) return false;
+
+    ASTParamDeclNode& p0 = (*node->params)[0]->as.param_decl;
+    ASTParamDeclNode& p1 = (*node->params)[1]->as.param_decl;
+
+    Type* t0 = unwrapType(p0.type);
+    Type* t1 = unwrapType(p1.type);
+
+    if (!t0 || !t1) return false;
+
+    /* p0: i32 */
+    if (t0->kind != TYPE_I32) return false;
+
+    /* p1: [*][*]const u8 */
+    if (t1->kind != TYPE_POINTER || !t1->as.pointer.is_many) return false;
+    Type* t1_base = t1->as.pointer.base;
+    if (t1_base->kind == TYPE_PLACEHOLDER) t1_base = resolvePlaceholder(t1_base);
+    if (t1_base->kind != TYPE_POINTER || t1_base->as.pointer.is_many) return false;
+    if (!t1_base->as.pointer.is_const) return false;
+    Type* t1_base_base = t1_base->as.pointer.base;
+    if (t1_base_base->kind == TYPE_PLACEHOLDER) t1_base_base = resolvePlaceholder(t1_base_base);
+    if (t1_base_base->kind != TYPE_U8) return false;
+
+    return true;
+}
+
 Type* TypeChecker::visit(ASTNode* node) {
     if (!node) {
         return NULL;
@@ -449,6 +476,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FLOAT_CAST:       resolved_type = visitFloatCast(node, node->as.numeric_cast); break;
         case NODE_INT_TO_FLOAT:     resolved_type = visitIntToFloat(node, node->as.numeric_cast); break;
         case NODE_OFFSET_OF:        resolved_type = visitOffsetOf(node, node->as.offset_of); break;
+        case NODE_AS_EXPR:          resolved_type = visitAsExpr(&node, node->as.as_expr); break;
+        case NODE_PANIC:            resolved_type = visitPanic(node, node->as.panic); break;
         case NODE_PARAM_DECL:       resolved_type = unwrapType(node->as.param_decl.type); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
@@ -3694,6 +3723,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* Bug 5: Propagate mangled_name if the initializer is an identifier pointing to an imported symbol. */
+    if (node->is_const && node->initializer && node->initializer->type == NODE_IDENTIFIER && node->symbol) {
+        Symbol* init_sym = unit_.getSymbolTable().lookup(node->initializer->as.identifier.name);
+        if (init_sym && init_sym->mangled_name && !node->symbol->mangled_name) {
+            node->symbol->mangled_name = init_sym->mangled_name;
+        }
+    }
+
     return declared_type;
 }
 
@@ -3774,6 +3811,10 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
             char k_char = fn_symbol->mangle_kind ? fn_symbol->mangle_kind : 'F';
             fn_symbol->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
         }
+
+        if (plat_strcmp(node->name, "main") == 0 && isMainWithArgs(node)) {
+            fn_symbol->flags |= SYMBOL_FLAG_MAIN_C89_ARGS;
+        }
     }
 
     if (fn_symbol && (node->is_extern || node->is_export)) {
@@ -3790,6 +3831,10 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
 
 Type* TypeChecker::transformExternType(Type* t) {
     if (!t) return NULL;
+    if (t->kind == TYPE_POINTER && t->as.pointer.is_many) {
+        /* [*]T -> *T (C-style array-pointer decay for extern) */
+        return createPointerType(unit_.getArena(), t->as.pointer.base, t->as.pointer.is_const, false, &unit_.getTypeInterner());
+    }
     if (t->kind == TYPE_OPTIONAL) {
         Type* payload = t->as.optional.payload;
         if (payload->kind == TYPE_POINTER) {
@@ -6208,7 +6253,13 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
         /* Must have the same pointer kind (single-item vs many-item) */
         if (actual->as.pointer.is_many != expected->as.pointer.is_many) {
-            return false;
+            /* C89 doesn't distinguish between single and many-item pointers.
+               For extern/standard interop, we allow implicit conversion from many-item to single-item. */
+            if (actual->as.pointer.is_many && !expected->as.pointer.is_many) {
+                 /* Check bases and const below */
+            } else {
+                return false;
+            }
         }
 
         /* Must have the same base type */
@@ -6249,6 +6300,16 @@ bool TypeChecker::isIntegerType(Type* type) {
            type->kind == TYPE_BOOL ||
            type->kind == TYPE_ERROR_SET ||
            type->kind == TYPE_ENUM;
+}
+
+bool TypeChecker::isFloatType(Type* type) {
+    if (!type) return false;
+    return type->kind == TYPE_F32 || type->kind == TYPE_F64;
+}
+
+bool TypeChecker::isPointerType(Type* type) {
+    if (!type) return false;
+    return type->kind == TYPE_POINTER || type->kind == TYPE_FUNCTION_POINTER;
 }
 
 bool TypeChecker::isUnsignedIntegerType(Type* type) {
@@ -7299,6 +7360,91 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
     }
 }
 
+Type* TypeChecker::visitAsExpr(ASTNode** node_slot, ASTAsExprNode* node) {
+    ASTNode* parent = *node_slot;
+    Type* target_type;
+    Type* src_type;
+
+    if (!node->target_type) return get_g_type_undefined();
+    target_type = unwrapType(node->target_type);
+    if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+
+    if (!node->expr) return get_g_type_undefined();
+    src_type = visit(node->expr);
+    if (!src_type || is_type_undefined(src_type)) return get_g_type_undefined();
+
+    /* Try to reuse existing cast nodes for common cases */
+    if (isIntegerType(src_type) && isIntegerType(target_type)) {
+        ASTNumericCastNode* cast_data = (ASTNumericCastNode*)unit_.getArena().alloc(sizeof(ASTNumericCastNode));
+        plat_memset(cast_data, 0, sizeof(ASTNumericCastNode));
+        cast_data->target_type = node->target_type;
+        cast_data->expr = node->expr;
+        parent->type = NODE_INT_CAST;
+        parent->as.numeric_cast = cast_data;
+        return visitIntCast(parent, cast_data);
+    } else if (isFloatType(src_type) && isFloatType(target_type)) {
+        ASTNumericCastNode* cast_data = (ASTNumericCastNode*)unit_.getArena().alloc(sizeof(ASTNumericCastNode));
+        plat_memset(cast_data, 0, sizeof(ASTNumericCastNode));
+        cast_data->target_type = node->target_type;
+        cast_data->expr = node->expr;
+        parent->type = NODE_FLOAT_CAST;
+        parent->as.numeric_cast = cast_data;
+        return visitFloatCast(parent, cast_data);
+    } else if (isPointerType(src_type) && isPointerType(target_type)) {
+        ASTPtrCastNode* cast_data = (ASTPtrCastNode*)unit_.getArena().alloc(sizeof(ASTPtrCastNode));
+        plat_memset(cast_data, 0, sizeof(ASTPtrCastNode));
+        cast_data->target_type = node->target_type;
+        cast_data->expr = node->expr;
+        parent->type = NODE_PTR_CAST;
+        parent->as.ptr_cast = cast_data;
+        return visitPtrCast(cast_data);
+    }
+
+    /* Fallback to general coercion */
+    coerceNode(&(node->expr), target_type);
+    /* After coercion, the node is replaced by a cast/conversion node if needed.
+       We want our @as node to become that result. 
+       CRITICAL: We must also copy the result to parent so that when visit() returns,
+       it sets the resolved type on the actual replaced node. */
+    *node_slot = node->expr;
+    plat_memcpy(parent, node->expr, sizeof(ASTNode));
+    return target_type;
+}
+
+Type* TypeChecker::visitPanic(ASTNode* node, ASTPanicNode* panic) {
+    Type* arg_type;
+
+    if (!panic->expr) return get_g_type_noreturn();
+    arg_type = visit(panic->expr);
+    if (!arg_type || is_type_undefined(arg_type)) return get_g_type_noreturn();
+
+    /* Ensure argument is a string type (Slice_u8, *u8, or Array of u8) */
+    Type* const_u8_ptr = unit_.getTypeInterner().getPointerType(get_g_type_u8(), true);
+    if (arg_type->kind == TYPE_SLICE && arg_type->as.slice.element_type->kind == TYPE_U8) {
+        /* Automatically extract .ptr for Slice_u8 */
+        panic->expr = createMemberAccess(panic->expr, "ptr", const_u8_ptr, panic->expr->loc);
+    } else if (arg_type->kind == TYPE_POINTER && arg_type->as.pointer.base->kind == TYPE_U8) {
+        /* Already a pointer to u8, good. */
+    } else if (arg_type->kind == TYPE_POINTER && arg_type->as.pointer.base->kind == TYPE_ARRAY &&
+               arg_type->as.pointer.base->as.array.element_type->kind == TYPE_U8) {
+        /* Pointer to array of u8 (like string literal type) - decay to pointer to u8 */
+        coerceNode(&(panic->expr), const_u8_ptr);
+    } else if (arg_type->kind == TYPE_ARRAY && arg_type->as.array.element_type->kind == TYPE_U8) {
+        /* Array decays to pointer in C89 for this purpose, but we should be explicit if possible.
+           For now, assume coercion handles it or cast it. */
+        coerceNode(&(panic->expr), const_u8_ptr);
+    } else {
+        char t_str[64];
+        typeToString(arg_type, t_str, sizeof(t_str));
+        char msg[256];
+        plat_snprintf(msg, sizeof(msg), "@panic argument must be a string, found '%s'", t_str);
+        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, panic->expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
+    }
+
+    node->resolved_type = get_g_type_noreturn();
+    return get_g_type_noreturn();
+}
+
 Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
     Type* target_type;
     Type* expr_type;
@@ -8341,7 +8487,13 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
             return get_g_type_type();
         }
     }
-    node->symbol = sym;
+
+    // Propagate mangled name to the local symbol representation if needed
+    if (sym->mangled_name && node->symbol && !node->symbol->mangled_name) {
+        node->symbol->mangled_name = sym->mangled_name;
+    } else {
+        node->symbol = sym;
+    }
 
     // Ensure symbol type is resolved
     if (!sym->symbol_type && sym->details) {
@@ -8358,6 +8510,14 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
 
         if (sym->kind == SYMBOL_VARIABLE) {
             target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+            // Ensure mangled name is computed/propagated immediately for cross-module variables
+            if (!sym->mangled_name) {
+                char k_char = (sym->flags & SYMBOL_FLAG_CONST) ? 'C' : 'V';
+                if (sym->symbol_type && (sym->symbol_type->kind == TYPE_TYPE || sym->symbol_type->kind == TYPE_MODULE)) {
+                    k_char = 'S';
+                }
+                sym->mangled_name = unit_.getNameMangler().mangle(k_char, target_mod, sym->name);
+            }
         } else if (sym->kind == SYMBOL_FUNCTION) {
             target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
             // Ensure mangled name is computed immediately for cross-module function calls

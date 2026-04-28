@@ -49,35 +49,38 @@
 |---------|--------|-------------|-------------|--------------|---------------|
 | `hello` | PASS | OK | OK | 0 | 2 |
 | `prime` | PASS | OK | OK | 0 | 1 |
-| `days_in_month` | PASS | OK | OK | 0 | 1 |
+| `days_in_month` | PASS | OK | OK | 2 | 1 |
 | `fibonacci` | PASS | OK | OK | 0 | 1 |
 | `heapsort` | PASS | OK | OK | 6 | 21 |
 | `quicksort` | PASS | OK | OK | 0 | 11 |
 | `sort_strings` | PASS | OK | OK | 0 | 14 |
-| `func_ptr_return`| PASS | OK | OK | 0 | 0 |
+| `func_ptr_return`| PASS | OK | OK | 1 | 0 |
 | `lzw` | PASS | OK | OK | 0 | 13 |
-| `mandelbrot` | PASS | OK | OK | 0 | 5 |
-| `lisp_interpreter_curr` | PASS | OK | OK | 45 | 14 |
+| `mandelbrot` | PASS | OK | OK | 1 | 5 |
+| `lisp_interpreter_curr` | PASS | OK | OK | 27 | 14 |
 | `game_of_life` | PASS | OK | OK | 0 | 4 |
 | `mud_server` | PASS | OK | LINKED | 0 | 18 |
-| `rogue_mud` | PASS | OK | LINKED | 38 | 15 |
+| `rogue_mud` | PASS | OK | LINKED | 23 | 78 |
 
 ---
 
 ## Example Warnings and Analysis
 
 ### Zig0 Compiler Warnings (on Examples)
-The `zig0` compiler issues various warnings when processing the example programs.
-- **Portability (Windows 98)**: Many examples trigger warnings about non-8.3 filenames (e.g., `std_debug.zig`) which may cause issues on legacy Windows 98 filesystems.
+The `zig0` compiler issues various warnings when processing the example programs. The increase in warnings for `rogue_mud` (78 total) is due to more aggressive static analysis.
+
+- **Portability (Windows 98)**: Many examples trigger warnings about non-8.3 filenames (e.g., `std_debug.zig`, `priority_queue.zig`) which may cause issues on legacy Windows 98 filesystems. (5 warnings in `rogue_mud`).
 - **Static Analysis**:
-    - `mud_server` and `rogue_mud` show numerous "Potential null pointer dereference" warnings. These often occur in array accesses and pointer manipulations where the analyzer cannot prove safety.
-    - `heapsort` and `quicksort` also show some potential null dereference warnings.
-- **Unresolved Calls**: `rogue_mud` reports several "Unresolved call" warnings (e.g., `ArrayListRoom_init`, `generateDungeon`). These are related to the deferred validation pass and do not prevent code generation or correct linking, but indicate that some symbol resolution happened late in the pipeline.
+    - **Potential null pointer dereference**: `rogue_mud` shows 73 warnings of this type. These occur primarily in manual memory management patterns (e.g., accessing `self.items[0]` in a `PriorityQueue` or `ArrayList`) and pointer-intensive code. The analyzer flags these because it cannot statically prove that the pointers (often returned from arena allocations) are non-null at the point of use.
+    - These warnings are **harmless** for the generated code as the examples include runtime checks or use arenas that panic on allocation failure, but they highlight areas where Z98's static analyzer is being cautious.
+- **Unresolved Calls (Informational Messages)**: `rogue_mud` also reports 52 "Unresolved call" messages (distinct from the 78 warnings).
+    - **Analysis**: These are **harmless** and are produced during the deferred validation pass. They occur when a function call (like `ArrayListRoom_init` or `generateDungeon`) is processed before its target module's symbols are completely resolved in the multi-module pipeline.
+    - Since these calls correctly resolve during the final `CompilationUnit::performFullPipeline` validation and link properly in the generated C89 code, they do not indicate a functional bug in the compiler or the example.
 
 ### Generated C89 Warnings
 - **`heapsort`**: Triggered 6 warnings regarding incompatible pointer types when passing array pointers (`int (*)[10]`) vs. element pointers (`int *`). The generated code is functionally correct but technically violates strict type checking for fixed-size array pointers.
-- **`lisp_interpreter_curr`**: Shows 45 warnings, many of which are "redundant declaration" or "declaration does not declare anything" (empty semicolons or redundant headers).
-- **`rogue_mud`**: Shows 38 warnings. Similar to Lisp, many are redundant declarations. It also has warnings about `const` qualifiers being discarded and duplicate `const` specifiers in ANSI escape code definitions.
+- **`lisp_interpreter_curr`**: Shows 27 warnings, many of which are "redundant declaration" or "declaration does not declare anything" (empty semicolons or redundant headers).
+- **`rogue_mud`**: Shows 23 warnings. Similar to Lisp, many are redundant declarations. It also has warnings about `const` qualifiers being discarded and duplicate `const` specifiers in ANSI escape code definitions.
 
 ---
 
