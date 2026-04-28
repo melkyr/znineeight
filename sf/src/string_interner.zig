@@ -27,12 +27,12 @@ fn internArrayListInit(allocator: *Sand) InternArrayList {
     };
 }
 
-fn internArrayListEnsureCapacity(self: *InternArrayList, new_capacity: usize) !void {
+fn internArrayListEnsureCapacity(self: *InternArrayList, new_capacity: usize) void {
     if (new_capacity <= self.capacity) return;
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16) * new_cap, @intCast(usize, 4));
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]InternEntry, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -43,8 +43,8 @@ fn internArrayListEnsureCapacity(self: *InternArrayList, new_capacity: usize) !v
     self.capacity = new_cap;
 }
 
-fn internArrayListAppend(self: *InternArrayList, value: InternEntry) !void {
-    try internArrayListEnsureCapacity(self, self.len + 1);
+fn internArrayListAppend(self: *InternArrayList, value: InternEntry) void {
+    internArrayListEnsureCapacity(self, self.len + 1);
     self.items[self.len] = value;
     self.len += 1;
 }
@@ -59,21 +59,21 @@ pub const StringInterner = struct {
     allocator: *Sand,
 };
 
-pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) !StringInterner {
-    var b_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4));
+pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) StringInterner {
+    var b_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var b_ptr = @ptrCast(*U32ArrayList, b_raw);
     b_ptr.* = ga_mod.u32ArrayListInit(allocator);
-    try ga_mod.u32ArrayListEnsureCapacity(b_ptr, bucket_count);
+    ga_mod.u32ArrayListEnsureCapacity(b_ptr, bucket_count);
     var i: u32 = 0;
     while (i < bucket_count) {
-        try ga_mod.u32ArrayListAppend(b_ptr, 0);
+        ga_mod.u32ArrayListAppend(b_ptr, 0);
         i += 1;
     }
 
-    var e_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4));
+    var e_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var e_ptr = @ptrCast(*InternArrayList, e_raw);
     e_ptr.* = internArrayListInit(allocator);
-    try internArrayListAppend(e_ptr, InternEntry{
+    internArrayListAppend(e_ptr, InternEntry{
         .text = "",
         .hash = @intCast(u32, 0),
         .next = @intCast(u32, 0),
@@ -86,11 +86,11 @@ pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) !StringInterner {
     };
 }
 
-pub fn stringInternerIntern(self: *StringInterner, text: []const u8) !u32 {
+pub fn stringInternerIntern(self: *StringInterner, text: []const u8) u32 {
     var hash = hash_mod.fnv1a(text);
     var bucket_count = self.buckets.len;
     if (bucket_count == 0) {
-        try stringInternerGrowBuckets(self, 8);
+        stringInternerGrowBuckets(self, 8);
         bucket_count = self.buckets.len;
     }
     var bucket = hash % @intCast(u32, bucket_count);
@@ -102,7 +102,7 @@ pub fn stringInternerIntern(self: *StringInterner, text: []const u8) !u32 {
     }
     var new_idx = self.entries.len;
     var copied = stringInternerCopyToArena(self, text);
-    try internArrayListAppend(self.entries, InternEntry{
+    internArrayListAppend(self.entries, InternEntry{
         .text = copied[0..text.len],
         .hash = hash,
         .next = self.buckets.items[@intCast(usize, bucket)],
@@ -111,7 +111,7 @@ pub fn stringInternerIntern(self: *StringInterner, text: []const u8) !u32 {
 
     var entry_count = self.entries.len;
     if (entry_count * 2 > bucket_count) {
-        try stringInternerGrowBuckets(self, @intCast(u32, bucket_count * 2));
+        stringInternerGrowBuckets(self, @intCast(u32, bucket_count * 2));
     }
     return @intCast(u32, new_idx);
 }
@@ -130,12 +130,12 @@ fn stringInternerCopyToArena(self: *StringInterner, text: []const u8) [*]u8 {
     return raw;
 }
 
-fn stringInternerGrowBuckets(self: *StringInterner, new_bucket_count: u32) !void {
+fn stringInternerGrowBuckets(self: *StringInterner, new_bucket_count: u32) void {
     self.buckets.len = @intCast(usize, 0);
-    try ga_mod.u32ArrayListEnsureCapacity(self.buckets, new_bucket_count);
+    ga_mod.u32ArrayListEnsureCapacity(self.buckets, new_bucket_count);
     var i: u32 = 0;
     while (i < new_bucket_count) {
-        try ga_mod.u32ArrayListAppend(self.buckets, 0);
+        ga_mod.u32ArrayListAppend(self.buckets, 0);
         i += 1;
     }
 

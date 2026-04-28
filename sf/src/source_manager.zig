@@ -27,12 +27,12 @@ fn sourceFileArrayListInit(allocator: *Sand) SourceFileArrayList {
     };
 }
 
-fn sourceFileArrayListEnsureCapacity(self: *SourceFileArrayList, new_capacity: usize) !void {
+fn sourceFileArrayListEnsureCapacity(self: *SourceFileArrayList, new_capacity: usize) void {
     if (new_capacity <= self.capacity) return;
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4));
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]SourceFile, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -43,8 +43,8 @@ fn sourceFileArrayListEnsureCapacity(self: *SourceFileArrayList, new_capacity: u
     self.capacity = new_cap;
 }
 
-fn sourceFileArrayListAppend(self: *SourceFileArrayList, value: SourceFile) !void {
-    try sourceFileArrayListEnsureCapacity(self, self.len + 1);
+fn sourceFileArrayListAppend(self: *SourceFileArrayList, value: SourceFile) void {
+    sourceFileArrayListEnsureCapacity(self, self.len + 1);
     self.items[self.len] = value;
     self.len += 1;
 }
@@ -74,7 +74,7 @@ pub fn sourceManagerInit(allocator: *Sand) SourceManager {
     };
 }
 
-pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content: []const u8) !u32 {
+pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content: []const u8) u32 {
     var fname_raw = sourceManagerCopyToArena(self, filename);
     var fname_copy = fname_raw[0..filename.len];
     var content_raw = sourceManagerCopyToArena(self, content);
@@ -82,21 +82,21 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
 
     var hint = content.len / 40 + 16;
     var cap = util_mod.max(@intCast(u32, hint), 64);
-    var lo_raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16), @intCast(usize, 4));
+    var lo_raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var lo_ptr = @ptrCast(*U32ArrayList, lo_raw);
     lo_ptr.* = ga_mod.u32ArrayListInit(self.allocator);
-    try ga_mod.u32ArrayListEnsureCapacity(lo_ptr, cap);
-    try ga_mod.u32ArrayListAppend(lo_ptr, 0);
+    ga_mod.u32ArrayListEnsureCapacity(lo_ptr, cap);
+    ga_mod.u32ArrayListAppend(lo_ptr, 0);
 
     var i: usize = 0;
     while (i < content.len) {
         if (content[i] == '\n') {
-            try ga_mod.u32ArrayListAppend(lo_ptr, @intCast(u32, i) + 1);
+            ga_mod.u32ArrayListAppend(lo_ptr, @intCast(u32, i) + 1);
         }
         i += 1;
     }
 
-    try sourceFileArrayListAppend(self.files, SourceFile{
+    sourceFileArrayListAppend(self.files, SourceFile{
         .filename = fname_copy,
         .content = content_copy,
         .line_offsets = lo_ptr,

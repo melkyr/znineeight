@@ -17,12 +17,12 @@ pub fn u32ArrayListInit(allocator: *Sand) U32ArrayList {
     };
 }
 
-pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) !void {
+pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) void {
     if (new_capacity <= self.capacity) return;
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try sandAlloc(self.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4));
+    var raw = sandAlloc(self.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -33,8 +33,8 @@ pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) !voi
     self.capacity = new_cap;
 }
 
-pub fn u32ArrayListAppend(self: *U32ArrayList, value: u32) !void {
-    try u32ArrayListEnsureCapacity(self, self.len + 1);
+pub fn u32ArrayListAppend(self: *U32ArrayList, value: u32) void {
+    u32ArrayListEnsureCapacity(self, self.len + 1);
     self.items[self.len] = value;
     self.len += 1;
 }

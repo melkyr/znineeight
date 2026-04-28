@@ -26,12 +26,12 @@ pub fn testResultArrayListInit(allocator: *Sand) TestResultArrayList {
     };
 }
 
-pub fn testResultArrayListEnsureCapacity(self: *TestResultArrayList, new_capacity: usize) !void {
+pub fn testResultArrayListEnsureCapacity(self: *TestResultArrayList, new_capacity: usize) void {
     if (new_capacity <= self.capacity) return;
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4));
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]TestResult, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -42,8 +42,8 @@ pub fn testResultArrayListEnsureCapacity(self: *TestResultArrayList, new_capacit
     self.capacity = new_cap;
 }
 
-pub fn testResultArrayListAppend(self: *TestResultArrayList, value: TestResult) !void {
-    try testResultArrayListEnsureCapacity(self, self.len + 1);
+pub fn testResultArrayListAppend(self: *TestResultArrayList, value: TestResult) void {
+    testResultArrayListEnsureCapacity(self, self.len + 1);
     self.items[self.len] = value;
     self.len += 1;
 }
@@ -67,8 +67,8 @@ pub fn testRunnerInit(allocator: *Sand) TestRunner {
     };
 }
 
-pub fn testRunnerAddResult(self: *TestRunner, name: []const u8, passed: bool, message: []const u8) !void {
-    try testResultArrayListAppend(self.results, TestResult{
+pub fn testRunnerAddResult(self: *TestRunner, name: []const u8, passed: bool, message: []const u8) void {
+    testResultArrayListAppend(self.results, TestResult{
         .name = name,
         .passed = passed,
         .message = message,
@@ -95,9 +95,8 @@ pub fn testRunnerAllPassed(self: *TestRunner) bool {
 }
 
 pub fn parseTestSource(arena: *Sand, source: []const u8, interner: *StringInterner, diag: *DiagnosticCollector, source_man: *SourceManager) u32 {
-    _ = arena;
-    var file_id = sm_mod.sourceManagerAddFile(source_man, "test.zig", source) catch unreachable;
-    var lexer = Lexer.init(source, interner, diag);
+    var file_id = sm_mod.sourceManagerAddFile(source_man, "test.zig", source);
+    var lexer = Lexer.init(source, file_id, interner, diag, arena);
     while (true) {
         var tok = lexer.nextToken();
         if (tok.kind == .eof) break;

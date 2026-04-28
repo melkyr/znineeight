@@ -17,12 +17,12 @@ pub fn u32ArrayListInit(allocator: *Sand) U32ArrayList {
     };
 }
 
-pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) !void {
+pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) void {
     if (new_capacity <= self.capacity) return;
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4));
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -33,8 +33,8 @@ pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) !voi
     self.capacity = new_cap;
 }
 
-pub fn u32ArrayListAppend(self: *U32ArrayList, value: u32) !void {
-    try u32ArrayListEnsureCapacity(self, self.len + 1);
+pub fn u32ArrayListAppend(self: *U32ArrayList, value: u32) void {
+    u32ArrayListEnsureCapacity(self, self.len + 1);
     self.items[self.len] = value;
     self.len += 1;
 }
@@ -46,5 +46,47 @@ pub fn u32ArrayListPopOrNull(self: *U32ArrayList) ?u32 {
 }
 
 pub fn u32ArrayListGetSlice(self: *U32ArrayList) []u32 {
+    return self.items[0..self.len];
+}
+
+pub const U8ArrayList = struct {
+    items: [*]u8,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn byteArrayListInit(allocator: *Sand) U8ArrayList {
+    return U8ArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn byteArrayListGrow(self: *U8ArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < 8) new_cap = 8;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 1) * new_cap, @intCast(usize, 1)) catch unreachable;
+    var new_items = @ptrCast([*]u8, raw);
+    var i: usize = 0;
+    while (i < self.len) {
+        new_items[i] = self.items[i];
+        i += 1;
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn byteArrayListAppend(self: *U8ArrayList, value: u8) void {
+    byteArrayListGrow(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn byteArrayListGetSlice(self: *U8ArrayList) []u8 {
     return self.items[0..self.len];
 }

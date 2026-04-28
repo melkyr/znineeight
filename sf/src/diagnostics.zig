@@ -10,6 +10,8 @@ pub const ErrorCode = enum(u16) {
     ERR_1001_UNTERMINATED_BLOCK_COMMENT,
     ERR_1002_INVALID_CHAR_LITERAL,
     ERR_1003_INVALID_ESCAPE,
+    ERR_1004_BARE_AT_SIGN,
+    ERR_1005_UNRECOGNIZED_CHAR,
     WARN_1010_UNRECOGNIZED_ESCAPE,
     WARN_1011_INTEGER_OVERFLOW,
     ERR_2000_UNEXPECTED_TOKEN,
@@ -123,12 +125,12 @@ pub fn diagnosticArrayListInit(allocator: *Sand) DiagnosticArrayList {
     };
 }
 
-pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacity: usize) !void {
+pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacity: usize) void {
     if (new_capacity <= self.capacity) return;
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 24) * new_cap, @intCast(usize, 4));
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 24) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Diagnostic, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -139,8 +141,8 @@ pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacit
     self.capacity = new_cap;
 }
 
-pub fn diagnosticArrayListAppend(self: *DiagnosticArrayList, value: Diagnostic) !void {
-    try diagnosticArrayListEnsureCapacity(self, self.len + 1);
+pub fn diagnosticArrayListAppend(self: *DiagnosticArrayList, value: Diagnostic) void {
+    diagnosticArrayListEnsureCapacity(self, self.len + 1);
     self.items[self.len] = value;
     self.len += 1;
 }
@@ -158,8 +160,8 @@ pub const DiagnosticCollector = struct {
     max_diagnostics: usize,
 };
 
-pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager) !DiagnosticCollector {
-    var d_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4));
+pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager) DiagnosticCollector {
+    var d_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var d_ptr = @ptrCast(*DiagnosticArrayList, d_raw);
     d_ptr.* = diagnosticArrayListInit(allocator);
     return DiagnosticCollector{
@@ -172,17 +174,17 @@ pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager)
     };
 }
 
-pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, file_id: u32, span_start: u32, span_end: u32, message: []const u8) !void {
+pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, file_id: u32, span_start: u32, span_end: u32, message: []const u8) void {
     if (code == 9999) return;
     if (self.diagnostics.len >= self.max_diagnostics) {
         var msg = "too many errors, stopping";
-        var raw = try alloc_mod.sandAlloc(self.allocator, msg.len, @intCast(usize, 1));
+        var raw = alloc_mod.sandAlloc(self.allocator, msg.len, @intCast(usize, 1)) catch unreachable;
         var i: usize = 0;
         while (i < msg.len) {
             raw[i] = msg[i];
             i += 1;
         }
-        try diagnosticArrayListAppend(self.diagnostics, Diagnostic{
+        diagnosticArrayListAppend(self.diagnostics, Diagnostic{
             .level = @intCast(u8, 0),
             .code = @intCast(u16, 9999),
             .file_id = file_id,
@@ -193,13 +195,13 @@ pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, 
         self.error_count += 1;
         return;
     }
-    var raw = try alloc_mod.sandAlloc(self.allocator, message.len, @intCast(usize, 1));
+    var raw = alloc_mod.sandAlloc(self.allocator, message.len, @intCast(usize, 1)) catch unreachable;
     var i: usize = 0;
     while (i < message.len) {
         raw[i] = message[i];
         i += 1;
     }
-    try diagnosticArrayListAppend(self.diagnostics, Diagnostic{
+    diagnosticArrayListAppend(self.diagnostics, Diagnostic{
         .level = level,
         .code = code,
         .file_id = file_id,
