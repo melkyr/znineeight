@@ -32,7 +32,7 @@ fn internArrayListEnsureCapacity(self: *InternArrayList, new_capacity: usize) !v
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 12) * new_cap, @intCast(usize, 4));
+    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16) * new_cap, @intCast(usize, 4));
     var new_items = @ptrCast([*]InternEntry, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -60,7 +60,7 @@ pub const StringInterner = struct {
 };
 
 pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) !StringInterner {
-    var b_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 28), @intCast(usize, 4));
+    var b_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4));
     var b_ptr = @ptrCast(*U32ArrayList, b_raw);
     b_ptr.* = ga_mod.u32ArrayListInit(allocator);
     try ga_mod.u32ArrayListEnsureCapacity(b_ptr, bucket_count);
@@ -70,7 +70,7 @@ pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) !StringInterner {
         i += 1;
     }
 
-    var e_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 28), @intCast(usize, 4));
+    var e_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4));
     var e_ptr = @ptrCast(*InternArrayList, e_raw);
     e_ptr.* = internArrayListInit(allocator);
     try internArrayListAppend(e_ptr, InternEntry{

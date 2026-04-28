@@ -32,7 +32,7 @@ fn sourceFileArrayListEnsureCapacity(self: *SourceFileArrayList, new_capacity: u
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 36) * new_cap, @intCast(usize, 4));
+    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4));
     var new_items = @ptrCast([*]SourceFile, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -65,7 +65,7 @@ pub const SourceManager = struct {
 };
 
 pub fn sourceManagerInit(allocator: *Sand) SourceManager {
-    var f_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 28), @intCast(usize, 4)) catch unreachable;
+    var f_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var f_ptr = @ptrCast(*SourceFileArrayList, f_raw);
     f_ptr.* = sourceFileArrayListInit(allocator);
     return SourceManager{
@@ -82,7 +82,7 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
 
     var hint = content.len / 40 + 16;
     var cap = util_mod.max(@intCast(u32, hint), 64);
-    var lo_raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 28), @intCast(usize, 4));
+    var lo_raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16), @intCast(usize, 4));
     var lo_ptr = @ptrCast(*U32ArrayList, lo_raw);
     lo_ptr.* = ga_mod.u32ArrayListInit(self.allocator);
     try ga_mod.u32ArrayListEnsureCapacity(lo_ptr, cap);

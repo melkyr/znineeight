@@ -52,6 +52,7 @@ pub const Diagnostic = struct {
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const sm_mod = @import("source_manager.zig");
+const mem_mod = @import("util/mem.zig");
 const SourceManager = sm_mod.SourceManager;
 const pal = @import("pal.zig");
 
@@ -127,7 +128,7 @@ pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 28) * new_cap, @intCast(usize, 4));
+    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 24) * new_cap, @intCast(usize, 4));
     var new_items = @ptrCast([*]Diagnostic, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -158,7 +159,7 @@ pub const DiagnosticCollector = struct {
 };
 
 pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager) !DiagnosticCollector {
-    var d_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 28), @intCast(usize, 4));
+    var d_raw = try alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4));
     var d_ptr = @ptrCast(*DiagnosticArrayList, d_raw);
     d_ptr.* = diagnosticArrayListInit(allocator);
     return DiagnosticCollector{
@@ -249,6 +250,43 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         writeStr("]: ");
         writeStr(d.message);
         writeStr("\n");
+        var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, d.file_id);
+        var offsets = sm_mod.sourceManagerGetLineOffsets(self.source_manager, d.file_id);
+        var line_idx = mem_mod.binary_search(offsets, d.span_start);
+        if (line_idx > 0) line_idx -= 1;
+        var line_start = @intCast(usize, offsets[@intCast(usize, line_idx)]);
+        var line_end = content.len;
+        var next_line = line_idx + 1;
+        if (next_line < @intCast(u32, offsets.len)) {
+            line_end = @intCast(usize, offsets[@intCast(usize, next_line)]);
+            if (line_end > 0 and content[line_end - 1] == '\n') line_end -= 1;
+        }
+        var l_start = line_start;
+        var l_end = line_end;
+        if (l_start < l_end and l_end <= content.len) {
+            var line_text = content[l_start..l_end];
+            writeStr(line_text);
+            writeStr("\n");
+            var loc_col: usize = @intCast(usize, loc.col);
+            var cspan: usize = @intCast(usize, d.span_end - d.span_start);
+            if (cspan == 0) cspan = 1;
+            var caret_buf: [256]u8 = undefined;
+            var caret_len: usize = 0;
+            while (caret_len < loc_col and caret_len < 256) {
+                caret_buf[caret_len] = ' ';
+                caret_len += 1;
+            }
+            var ulen = cspan;
+            if (ulen > 256 - loc_col) ulen = 256 - loc_col;
+            var j: usize = 0;
+            while (j < ulen and caret_len < 256) {
+                caret_buf[caret_len] = '^';
+                caret_len += 1;
+                j += 1;
+            }
+            writeStr(caret_buf[0..caret_len]);
+            writeStr("\n");
+        }
         i += 1;
     }
 }

@@ -31,7 +31,7 @@ pub fn testResultArrayListEnsureCapacity(self: *TestResultArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 40) * new_cap, @intCast(usize, 4));
+    var raw = try alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4));
     var new_items = @ptrCast([*]TestResult, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -58,7 +58,7 @@ pub const TestRunner = struct {
 };
 
 pub fn testRunnerInit(allocator: *Sand) TestRunner {
-    var r_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 28), @intCast(usize, 4)) catch unreachable;
+    var r_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var r_ptr = @ptrCast(*TestResultArrayList, r_raw);
     r_ptr.* = testResultArrayListInit(allocator);
     return TestRunner{
