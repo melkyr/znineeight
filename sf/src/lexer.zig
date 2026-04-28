@@ -114,7 +114,7 @@ pub fn lexerNextToken(self: *Lexer) Token {
                 return lexerScanBuiltinIdentifier(self, start);
             }
             const bare_at_msg: []const u8 = "bare '@' is not valid; expected builtin name (e.g., @sizeOf)";
-            diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1004_BARE_AT_SIGN)), self.file_id, @intCast(u32, start), @intCast(u32, self.pos), bare_at_msg);
+            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1004_BARE_AT_SIGN, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), bare_at_msg);
             return lexerMakeErrorToken(self, start);
         },
         '"' => return lexerScanString(self, start),
@@ -123,7 +123,7 @@ pub fn lexerNextToken(self: *Lexer) Token {
             if (isAlpha(c) or c == '_') return lexerScanIdentifierOrKeyword(self, start);
             if (isDigit(c)) return lexerScanNumber(self, start, c);
             const unrecognized_msg: []const u8 = "unrecognized character";
-            diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1005_UNRECOGNIZED_CHAR)), self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unrecognized_msg);
+            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1005_UNRECOGNIZED_CHAR, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unrecognized_msg);
             return lexerMakeErrorToken(self, start);
         },
     }
@@ -196,7 +196,7 @@ fn lexerSkipWSC(self: *Lexer) void {
                     }
                     if (depth > 0) {
                         const unterminated_block_msg: []const u8 = "unterminated block comment";
-                        diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1001_UNTERMINATED_BLOCK_COMMENT)), self.file_id, @intCast(u32, self.pos), @intCast(u32, self.pos), unterminated_block_msg);
+                        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1001_UNTERMINATED_BLOCK_COMMENT, self.file_id, @intCast(u32, self.pos), @intCast(u32, self.pos), unterminated_block_msg);
                     }
                 } else {
                     return;
@@ -251,7 +251,7 @@ fn lexerScanString(self: *Lexer, start: usize) Token {
         }
         if (c == '\n' or c == 0) {
             const unterminated_string_msg: []const u8 = "unterminated string literal";
-            diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1000_UNTERMINATED_STRING)), self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unterminated_string_msg);
+            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1000_UNTERMINATED_STRING, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unterminated_string_msg);
             return lexerMakeErrorToken(self, start);
         }
         _ = lexerAdvance(self);
@@ -267,7 +267,7 @@ fn lexerScanString(self: *Lexer, start: usize) Token {
 fn lexerScanChar(self: *Lexer, start: usize) Token {
     if (lexerIsAtEnd(self) or lexerPeek(self) == '\'') {
         const empty_char_msg: []const u8 = "empty character literal";
-        diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1002_INVALID_CHAR_LITERAL)), self.file_id, @intCast(u32, start), @intCast(u32, self.pos), empty_char_msg);
+        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1002_INVALID_CHAR_LITERAL, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), empty_char_msg);
         if (lexerPeek(self) == '\'') { _ = lexerAdvance(self); }
         return lexerMakeToken(self, TokenKind.char_literal, start, .{ .int_val = @intCast(u64, 0) });
     }
@@ -280,7 +280,7 @@ fn lexerScanChar(self: *Lexer, start: usize) Token {
     }
     if (lexerPeek(self) != '\'') {
         const expected_close_msg: []const u8 = "expected closing ' in character literal";
-        diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1002_INVALID_CHAR_LITERAL)), self.file_id, @intCast(u32, start), @intCast(u32, self.pos), expected_close_msg);
+        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1002_INVALID_CHAR_LITERAL, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), expected_close_msg);
     } else {
         _ = lexerAdvance(self);
     }
@@ -344,7 +344,7 @@ fn lexerScanNumber(self: *Lexer, start: usize, first: u8) Token {
         var value = parseU64(text, base);
         if (value == 0xFFFFFFFFFFFFFFFF and !isU64MaxLiteral(text)) {
             const overflow_msg: []const u8 = "integer literal overflow; value truncated";
-            diag_mod.diagnosticCollectorAdd(self.diag, 1, @intCast(u16, @enumToInt(ErrorCode.WARN_1011_INTEGER_OVERFLOW)), self.file_id, @intCast(u32, start), @intCast(u32, self.pos), overflow_msg);
+            diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1011_INTEGER_OVERFLOW, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), overflow_msg);
         }
         return lexerMakeToken(self, TokenKind.integer_literal, start, .{ .int_val = value });
     }
@@ -413,7 +413,7 @@ fn lexerParseHexEscape(self: *Lexer) u8 {
     }
     if (count == 0) {
         const s_hex: []const u8 = "\\x requires at least one hex digit";
-        diag_mod.diagnosticCollectorAdd(self.diag, 0, @intCast(u16, @enumToInt(ErrorCode.ERR_1003_INVALID_ESCAPE)), self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_hex);
+        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1003_INVALID_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_hex);
     }
     return value;
 }
@@ -432,7 +432,7 @@ fn lexerParseEscapeSequence(self: *Lexer) u8 {
         'x' => return lexerParseHexEscape(self),
         else => {
             const s_unesc: []const u8 = "unrecognized escape sequence";
-            diag_mod.diagnosticCollectorAdd(self.diag, 1, @intCast(u16, @enumToInt(ErrorCode.WARN_1010_UNRECOGNIZED_ESCAPE)), self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_unesc);
+            diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1010_UNRECOGNIZED_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_unesc);
             return c;
         },
     }

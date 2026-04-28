@@ -40,6 +40,15 @@ pub const ErrorCode = enum(u16) {
     ERR_9999_TOO_MANY_ERRORS,
 };
 
+pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
+pub const ERR_1001_UNTERMINATED_BLOCK_COMMENT: u16 = 1;
+pub const ERR_1002_INVALID_CHAR_LITERAL: u16 = 2;
+pub const ERR_1003_INVALID_ESCAPE: u16 = 3;
+pub const ERR_1004_BARE_AT_SIGN: u16 = 4;
+pub const ERR_1005_UNRECOGNIZED_CHAR: u16 = 5;
+pub const WARN_1010_UNRECOGNIZED_ESCAPE: u16 = 6;
+pub const WARN_1011_INTEGER_OVERFLOW: u16 = 7;
+
 pub const MAX_DIAGNOSTICS: usize = 256;
 
 pub const Diagnostic = struct {
