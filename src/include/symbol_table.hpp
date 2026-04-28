@@ -25,7 +25,8 @@ enum SymbolFlag {
     SYMBOL_FLAG_GLOBAL  = (1 << 3),  // Global variable
     SYMBOL_FLAG_EXTERN  = (1 << 4),  // Extern linkage
     SYMBOL_FLAG_CONST   = (1 << 5),  // Immutable symbol
-    SYMBOL_FLAG_PUB     = (1 << 6)   // Publicly visible
+    SYMBOL_FLAG_PUB     = (1 << 6),  // Publicly visible
+    SYMBOL_FLAG_MAIN_C89_ARGS = (1 << 7) // main(argc, argv) signature
 };
 
 /**

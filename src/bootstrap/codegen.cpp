@@ -1095,19 +1095,24 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
-        writeString("int main(");
-        if (!node->params || node->params->length() == 0) {
-            writeString(KW_VOID);
+        Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
+        if (sym && (sym->flags & SYMBOL_FLAG_MAIN_C89_ARGS)) {
+            writeString("int main(int argc, char* argv[]);");
         } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+            writeString("int main(");
+            if (!node->params || node->params->length() == 0) {
+                writeString(KW_VOID);
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
                 }
             }
+            writeString(");");
         }
-        writeString(");");
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_char") == 0 ||
@@ -1284,21 +1289,32 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
-        writeString("int main(");
-        if (!node->params || node->params->length() == 0) {
-            writeString(KW_VOID);
+        if (sym && (sym->flags & SYMBOL_FLAG_MAIN_C89_ARGS)) {
+            writeString("int main(int argc, char* argv[])");
+            /* Force name allocation for argc and argv in the scope */
+            if (node->params && node->params->length() == 2) {
+                ASTNode* p0 = (*node->params)[0];
+                ASTNode* p1 = (*node->params)[1];
+                if (p0->as.param_decl.symbol) var_alloc_.force_allocate(p0->as.param_decl.symbol, "argc");
+                if (p1->as.param_decl.symbol) var_alloc_.force_allocate(p1->as.param_decl.symbol, "argv");
+            }
         } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                ASTParamDeclNode& param = param_node->as.param_decl;
-                const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
-                emitDeclarator(param.type->resolved_type, param_name);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+            writeString("int main(");
+            if (!node->params || node->params->length() == 0) {
+                writeString(KW_VOID);
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    ASTParamDeclNode& param = param_node->as.param_decl;
+                    const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
+                    emitDeclarator(param.type->resolved_type, param_name);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
                 }
             }
+            writeString(")");
         }
-        writeString(")");
         is_main_function_ = true;
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
@@ -2795,8 +2811,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 writeString("(");
                 if (call->args && call->args->length() > 0) {
                     bool is_panic = (plat_strcmp(target_name, "__bootstrap_panic") == 0);
+                    bool is_write = (plat_strcmp(target_name, "__bootstrap_write") == 0);
 
-                    /* First argument for print/write/panic is always the string to be cast */
+                    /* First argument for print/write/panic is always the string to be cast.
+                       Zig u8 pointers map to unsigned char*, so we cast to const char* to avoid warnings. */
                     writeString("(const char*)(");
                     emitExpression((*call->args)[0]);
                     writeString(")");

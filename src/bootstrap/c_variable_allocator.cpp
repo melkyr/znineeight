@@ -164,6 +164,26 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     return interned;
 }
 
+void CVariableAllocator::force_allocate(Symbol* sym, const char* desired) {
+    if (!sym || !desired) return;
+
+    // 1. Check if already cached
+    for (size_t i = 0; i < symbol_cache_.length(); ++i) {
+        if (symbol_cache_[i].sym == sym) {
+            return;
+        }
+    }
+
+    // 2. Add to assigned names and cache
+    char* interned = arena_.allocString(desired);
+    assigned_names_.append(interned);
+
+    SymbolEntry entry;
+    entry.sym = sym;
+    entry.c_name = interned;
+    symbol_cache_.append(entry);
+}
+
 bool CVariableAllocator::isAssigned(const char* name) const {
     for (size_t i = 0; i < assigned_names_.length(); ++i) {
         if (plat_strcmp(assigned_names_[i], name) == 0) {

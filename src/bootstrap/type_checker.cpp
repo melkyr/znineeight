@@ -366,6 +366,33 @@ bool TypeChecker::checkDuplicateLabel(const char* label, SourceLocation loc) {
     return false;
 }
 
+bool TypeChecker::isMainWithArgs(const ASTFnDeclNode* node) {
+    if (!node->params || node->params->length() != 2) return false;
+
+    ASTParamDeclNode& p0 = (*node->params)[0]->as.param_decl;
+    ASTParamDeclNode& p1 = (*node->params)[1]->as.param_decl;
+
+    Type* t0 = unwrapType(p0.type);
+    Type* t1 = unwrapType(p1.type);
+
+    if (!t0 || !t1) return false;
+
+    /* p0: i32 */
+    if (t0->kind != TYPE_I32) return false;
+
+    /* p1: [*][*]const u8 */
+    if (t1->kind != TYPE_POINTER || !t1->as.pointer.is_many) return false;
+    Type* t1_base = t1->as.pointer.base;
+    if (t1_base->kind == TYPE_PLACEHOLDER) t1_base = resolvePlaceholder(t1_base);
+    if (t1_base->kind != TYPE_POINTER || t1_base->as.pointer.is_many) return false;
+    if (!t1_base->as.pointer.is_const) return false;
+    Type* t1_base_base = t1_base->as.pointer.base;
+    if (t1_base_base->kind == TYPE_PLACEHOLDER) t1_base_base = resolvePlaceholder(t1_base_base);
+    if (t1_base_base->kind != TYPE_U8) return false;
+
+    return true;
+}
+
 Type* TypeChecker::visit(ASTNode* node) {
     if (!node) {
         return NULL;
@@ -3784,6 +3811,10 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
             char k_char = fn_symbol->mangle_kind ? fn_symbol->mangle_kind : 'F';
             fn_symbol->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getModule(unit_.getCurrentModule()), node->name);
         }
+
+        if (plat_strcmp(node->name, "main") == 0 && isMainWithArgs(node)) {
+            fn_symbol->flags |= SYMBOL_FLAG_MAIN_C89_ARGS;
+        }
     }
 
     if (fn_symbol && (node->is_extern || node->is_export)) {
@@ -3800,6 +3831,10 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
 
 Type* TypeChecker::transformExternType(Type* t) {
     if (!t) return NULL;
+    if (t->kind == TYPE_POINTER && t->as.pointer.is_many) {
+        /* [*]T -> *T (C-style array-pointer decay for extern) */
+        return createPointerType(unit_.getArena(), t->as.pointer.base, t->as.pointer.is_const, false, &unit_.getTypeInterner());
+    }
     if (t->kind == TYPE_OPTIONAL) {
         Type* payload = t->as.optional.payload;
         if (payload->kind == TYPE_POINTER) {
@@ -6218,7 +6253,13 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
         /* Must have the same pointer kind (single-item vs many-item) */
         if (actual->as.pointer.is_many != expected->as.pointer.is_many) {
-            return false;
+            /* C89 doesn't distinguish between single and many-item pointers.
+               For extern/standard interop, we allow implicit conversion from many-item to single-item. */
+            if (actual->as.pointer.is_many && !expected->as.pointer.is_many) {
+                 /* Check bases and const below */
+            } else {
+                return false;
+            }
         }
 
         /* Must have the same base type */

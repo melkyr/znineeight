@@ -145,6 +145,7 @@ public:
 private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
+    bool isMainWithArgs(const ASTFnDeclNode* node);
 
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
     ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc);
