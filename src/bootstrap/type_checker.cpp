@@ -449,6 +449,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FLOAT_CAST:       resolved_type = visitFloatCast(node, node->as.numeric_cast); break;
         case NODE_INT_TO_FLOAT:     resolved_type = visitIntToFloat(node, node->as.numeric_cast); break;
         case NODE_OFFSET_OF:        resolved_type = visitOffsetOf(node, node->as.offset_of); break;
+        case NODE_AS_EXPR:          resolved_type = visitAsExpr(&node, node->as.as_expr); break;
+        case NODE_PANIC:            resolved_type = visitPanic(node, node->as.panic); break;
         case NODE_PARAM_DECL:       resolved_type = unwrapType(node->as.param_decl.type); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
@@ -6259,6 +6261,16 @@ bool TypeChecker::isIntegerType(Type* type) {
            type->kind == TYPE_ENUM;
 }
 
+bool TypeChecker::isFloatType(Type* type) {
+    if (!type) return false;
+    return type->kind == TYPE_F32 || type->kind == TYPE_F64;
+}
+
+bool TypeChecker::isPointerType(Type* type) {
+    if (!type) return false;
+    return type->kind == TYPE_POINTER || type->kind == TYPE_FUNCTION_POINTER;
+}
+
 bool TypeChecker::isUnsignedIntegerType(Type* type) {
     if (!type) {
         return false;
@@ -7305,6 +7317,91 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
         default:
             return "complex expression";
     }
+}
+
+Type* TypeChecker::visitAsExpr(ASTNode** node_slot, ASTAsExprNode* node) {
+    ASTNode* parent = *node_slot;
+    Type* target_type;
+    Type* src_type;
+
+    if (!node->target_type) return get_g_type_undefined();
+    target_type = unwrapType(node->target_type);
+    if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+
+    if (!node->expr) return get_g_type_undefined();
+    src_type = visit(node->expr);
+    if (!src_type || is_type_undefined(src_type)) return get_g_type_undefined();
+
+    /* Try to reuse existing cast nodes for common cases */
+    if (isIntegerType(src_type) && isIntegerType(target_type)) {
+        ASTNumericCastNode* cast_data = (ASTNumericCastNode*)unit_.getArena().alloc(sizeof(ASTNumericCastNode));
+        plat_memset(cast_data, 0, sizeof(ASTNumericCastNode));
+        cast_data->target_type = node->target_type;
+        cast_data->expr = node->expr;
+        parent->type = NODE_INT_CAST;
+        parent->as.numeric_cast = cast_data;
+        return visitIntCast(parent, cast_data);
+    } else if (isFloatType(src_type) && isFloatType(target_type)) {
+        ASTNumericCastNode* cast_data = (ASTNumericCastNode*)unit_.getArena().alloc(sizeof(ASTNumericCastNode));
+        plat_memset(cast_data, 0, sizeof(ASTNumericCastNode));
+        cast_data->target_type = node->target_type;
+        cast_data->expr = node->expr;
+        parent->type = NODE_FLOAT_CAST;
+        parent->as.numeric_cast = cast_data;
+        return visitFloatCast(parent, cast_data);
+    } else if (isPointerType(src_type) && isPointerType(target_type)) {
+        ASTPtrCastNode* cast_data = (ASTPtrCastNode*)unit_.getArena().alloc(sizeof(ASTPtrCastNode));
+        plat_memset(cast_data, 0, sizeof(ASTPtrCastNode));
+        cast_data->target_type = node->target_type;
+        cast_data->expr = node->expr;
+        parent->type = NODE_PTR_CAST;
+        parent->as.ptr_cast = cast_data;
+        return visitPtrCast(cast_data);
+    }
+
+    /* Fallback to general coercion */
+    coerceNode(&(node->expr), target_type);
+    /* After coercion, the node is replaced by a cast/conversion node if needed.
+       We want our @as node to become that result. 
+       CRITICAL: We must also copy the result to parent so that when visit() returns,
+       it sets the resolved type on the actual replaced node. */
+    *node_slot = node->expr;
+    plat_memcpy(parent, node->expr, sizeof(ASTNode));
+    return target_type;
+}
+
+Type* TypeChecker::visitPanic(ASTNode* node, ASTPanicNode* panic) {
+    Type* arg_type;
+
+    if (!panic->expr) return get_g_type_noreturn();
+    arg_type = visit(panic->expr);
+    if (!arg_type || is_type_undefined(arg_type)) return get_g_type_noreturn();
+
+    /* Ensure argument is a string type (Slice_u8, *u8, or Array of u8) */
+    Type* const_u8_ptr = unit_.getTypeInterner().getPointerType(get_g_type_u8(), true);
+    if (arg_type->kind == TYPE_SLICE && arg_type->as.slice.element_type->kind == TYPE_U8) {
+        /* Automatically extract .ptr for Slice_u8 */
+        panic->expr = createMemberAccess(panic->expr, "ptr", const_u8_ptr, panic->expr->loc);
+    } else if (arg_type->kind == TYPE_POINTER && arg_type->as.pointer.base->kind == TYPE_U8) {
+        /* Already a pointer to u8, good. */
+    } else if (arg_type->kind == TYPE_POINTER && arg_type->as.pointer.base->kind == TYPE_ARRAY &&
+               arg_type->as.pointer.base->as.array.element_type->kind == TYPE_U8) {
+        /* Pointer to array of u8 (like string literal type) - decay to pointer to u8 */
+        coerceNode(&(panic->expr), const_u8_ptr);
+    } else if (arg_type->kind == TYPE_ARRAY && arg_type->as.array.element_type->kind == TYPE_U8) {
+        /* Array decays to pointer in C89 for this purpose, but we should be explicit if possible.
+           For now, assume coercion handles it or cast it. */
+        coerceNode(&(panic->expr), const_u8_ptr);
+    } else {
+        char t_str[64];
+        typeToString(arg_type, t_str, sizeof(t_str));
+        char msg[256];
+        plat_snprintf(msg, sizeof(msg), "@panic argument must be a string, found '%s'", t_str);
+        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, panic->expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
+    }
+
+    node->resolved_type = get_g_type_noreturn();
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {

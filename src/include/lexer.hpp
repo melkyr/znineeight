@@ -169,6 +169,8 @@ enum Zig0TokenType {
     TOKEN_AT_INT_TO_PTR,    ///< '@intToPtr'
     TOKEN_AT_INT_TO_ENUM,   ///< '@intToEnum'
     TOKEN_AT_INT_TO_FLOAT,  ///< '@intToFloat'
+    TOKEN_AT_AS,            ///< '@as'
+    TOKEN_AT_PANIC,         ///< '@panic'
 
     // Delimiters
     TOKEN_LPAREN,           ///< '(' - Left parenthesis.

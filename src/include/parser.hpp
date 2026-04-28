@@ -374,6 +374,12 @@ private:
     /** @brief Parses a @ptrCast expression. */
     ASTNode* parsePtrCastExpr();
 
+    /** @brief Parses an @as expression. */
+    ASTNode* parseAsExpr();
+
+    /** @brief Parses a @panic expression. */
+    ASTNode* parsePanicExpr();
+
     /** @brief Parses an @offsetOf expression. */
     ASTNode* parseOffsetOfExpr();
 

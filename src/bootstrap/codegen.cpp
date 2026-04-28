@@ -1578,6 +1578,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitReturn(&node->as.return_stmt);
             break;
         case NODE_UNREACHABLE:
+        case NODE_PANIC:
             writeIndent();
             emitExpression(node);
             endStmt();
@@ -1641,6 +1642,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
         case NODE_INT_TO_FLOAT:
+        case NODE_AS_EXPR:
         case NODE_RANGE:
         case NODE_PAREN_EXPR:
         case NODE_ASYNC_EXPR:
@@ -2697,6 +2699,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 
         case NODE_UNREACHABLE:
             writeString("__bootstrap_panic((const char*)(\"reached unreachable\"), (const char*)(__FILE__), __LINE__)");
+            break;
+        case NODE_PANIC:
+            writeString("__bootstrap_panic((const char*)(");
+            emitExpression(node->as.panic->expr);
+            writeString("), (const char*)(__FILE__), __LINE__)");
             break;
         case NODE_IDENTIFIER:
             if (node->resolved_type && node->resolved_type->kind == TYPE_VOID) {
