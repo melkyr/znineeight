@@ -49,18 +49,18 @@
 |---------|--------|-------------|-------------|--------------|---------------|
 | `hello` | PASS | OK | OK | 0 | 2 |
 | `prime` | PASS | OK | OK | 0 | 1 |
-| `days_in_month` | PASS | OK | OK | 0 | 1 |
+| `days_in_month` | PASS | OK | OK | 2 | 1 |
 | `fibonacci` | PASS | OK | OK | 0 | 1 |
 | `heapsort` | PASS | OK | OK | 6 | 21 |
 | `quicksort` | PASS | OK | OK | 0 | 11 |
 | `sort_strings` | PASS | OK | OK | 0 | 14 |
-| `func_ptr_return`| PASS | OK | OK | 0 | 0 |
+| `func_ptr_return`| PASS | OK | OK | 1 | 0 |
 | `lzw` | PASS | OK | OK | 0 | 13 |
-| `mandelbrot` | PASS | OK | OK | 0 | 5 |
-| `lisp_interpreter_curr` | PASS | OK | OK | 45 | 14 |
+| `mandelbrot` | PASS | OK | OK | 1 | 5 |
+| `lisp_interpreter_curr` | PASS | OK | OK | 27 | 14 |
 | `game_of_life` | PASS | OK | OK | 0 | 4 |
 | `mud_server` | PASS | OK | LINKED | 0 | 18 |
-| `rogue_mud` | PASS | OK | LINKED | 38 | 15 |
+| `rogue_mud` | PASS | OK | LINKED | 23 | 78 |
 
 ---
 
