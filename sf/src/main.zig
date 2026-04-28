@@ -1,0 +1,294 @@
+const alloc_mod = @import("allocator.zig");
+const Sand = alloc_mod.Sand;
+const CompilerAlloc = alloc_mod.CompilerAlloc;
+const interner_mod = @import("string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
+const sm_mod = @import("source_manager.zig");
+const SourceManager = sm_mod.SourceManager;
+const diag_mod = @import("diagnostics.zig");
+const DiagnosticCollector = diag_mod.DiagnosticCollector;
+const nm_mod = @import("name_mangler.zig");
+const NameMangler = nm_mod.NameMangler;
+const pal = @import("pal.zig");
+
+pub const ColorMode = enum(u8) {
+    auto,
+    always,
+    never,
+};
+
+pub const ErrorFormat = enum(u8) {
+    human,
+    json,
+    sarif,
+};
+
+pub const CompilerCli = struct {
+    input_file: []const u8,
+    output_dir: []const u8,
+    dump_tokens: bool,
+    dump_ast: bool,
+    dump_types: bool,
+    dump_lir: bool,
+    max_mem: u32,
+    max_errors: u32,
+    color: ColorMode,
+    error_format: ErrorFormat,
+    warnings_as_errors: bool,
+    quiet: bool,
+    test_mode: bool,
+    track_memory: bool,
+    include_dirs: [16][]const u8,
+    include_count: u32,
+};
+
+pub const CompilerContext = struct {
+    cli: CompilerCli,
+    alloc: *CompilerAlloc,
+    interner: *StringInterner,
+    diag: *DiagnosticCollector,
+    source_man: *SourceManager,
+    name_mangler: *NameMangler,
+};
+
+pub fn main() void {
+    var cli = parseArgs();
+    if (cli.input_file.len == 0) {
+        printUsage();
+        return;
+    }
+    var compiler_alloc = alloc_mod.initCompilerAlloc();
+    compiler_alloc.max_mem = cli.max_mem;
+    var perm_sand = compiler_alloc.permanent;
+    var interner = interner_mod.stringInternerInit(&perm_sand, 4) catch unreachable;
+    var source_man = sm_mod.sourceManagerInit(&perm_sand);
+    var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man) catch unreachable;
+    diag.max_diagnostics = @intCast(usize, cli.max_errors);
+    compiler_alloc.permanent = perm_sand;
+    var name_mangler = nm_mod.nameManglerInit();
+    var ctx = CompilerContext{
+        .cli = cli,
+        .alloc = &compiler_alloc,
+        .interner = &interner,
+        .diag = &diag,
+        .source_man = &source_man,
+        .name_mangler = &name_mangler,
+    };
+    runCompiler(&ctx);
+}
+
+fn runCompiler(ctx: *CompilerContext) void {
+    phase_ImportResolution(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        pal.exit(2);
+    }
+    phase_SymbolRegistration(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    phase_TypeResolution(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        pal.exit(2);
+    }
+    phase_SemanticAnalysis(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        pal.exit(2);
+    }
+    phase_LIRLowering(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        pal.exit(2);
+    }
+    phase_C89Emission(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+    if (ctx.cli.warnings_as_errors and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
+        pal.exit(1);
+    }
+    _ = ctx.cli.track_memory;
+    _ = ctx.alloc.permanent.peak;
+    _ = ctx.alloc.module.peak;
+    _ = ctx.alloc.scratch.peak;
+}
+
+fn phase_ImportResolution(ctx: *CompilerContext) void {
+    _ = ctx;
+}
+
+fn phase_SymbolRegistration(ctx: *CompilerContext) void {
+    _ = ctx;
+}
+
+fn phase_TypeResolution(ctx: *CompilerContext) void {
+    _ = ctx;
+}
+
+fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
+    _ = ctx;
+}
+
+fn phase_LIRLowering(ctx: *CompilerContext) void {
+    _ = ctx;
+}
+
+fn phase_C89Emission(ctx: *CompilerContext) void {
+    _ = ctx;
+}
+
+fn parseArgs() CompilerCli {
+    var cli = CompilerCli{
+        .input_file = "",
+        .output_dir = ".",
+        .dump_tokens = false,
+        .dump_ast = false,
+        .dump_types = false,
+        .dump_lir = false,
+        .max_mem = @intCast(u32, 16 * 1024 * 1024),
+        .max_errors = @intCast(u32, 256),
+        .color = ColorMode.auto,
+        .error_format = ErrorFormat.human,
+        .warnings_as_errors = false,
+        .quiet = false,
+        .test_mode = false,
+        .track_memory = false,
+        .include_count = @intCast(u32, 0),
+        .include_dirs = undefined,
+    };
+    var argc = pal.argCount();
+    var i: i32 = 1;
+    while (i < argc) {
+        var arg_ptr = pal.argGet(i);
+        var arg = cstrToSlice(arg_ptr);
+        if (arg.len > 0 and arg[0] == '-') {
+            if (matchFlag(arg, "--dump-tokens") or matchFlag(arg, "-t")) {
+                cli.dump_tokens = true;
+            } else if (matchFlag(arg, "--dump-ast") or matchFlag(arg, "-a")) {
+                cli.dump_ast = true;
+            } else if (matchFlag(arg, "--dump-types") or matchFlag(arg, "-y")) {
+                cli.dump_types = true;
+            } else if (matchFlag(arg, "--dump-lir") or matchFlag(arg, "-l")) {
+                cli.dump_lir = true;
+            } else if (matchFlag(arg, "--max-mem") or matchFlag(arg, "-m")) {
+                i += 1;
+                if (i < argc) {
+                    cli.max_mem = parseSize(pal.argGet(i));
+                }
+            } else if (matchFlag(arg, "--max-errors") or matchFlag(arg, "-e")) {
+                i += 1;
+                if (i < argc) {
+                    cli.max_errors = parseU32(pal.argGet(i));
+                }
+            } else if (matchFlag(arg, "--output-dir") or matchFlag(arg, "-o")) {
+                i += 1;
+                if (i < argc) {
+                    cli.output_dir = cstrToSlice(pal.argGet(i));
+                }
+            } else if (matchFlag(arg, "--quiet") or matchFlag(arg, "-q")) {
+                cli.quiet = true;
+            } else if (matchFlag(arg, "--test")) {
+                cli.test_mode = true;
+            } else if (matchFlag(arg, "--warnings-as-errors") or matchFlag(arg, "-W")) {
+                cli.warnings_as_errors = true;
+            } else if (matchFlag(arg, "--color")) {
+                i += 1;
+                if (i < argc) {
+                    cli.color = parseColorMode(pal.argGet(i));
+                }
+            } else if (matchFlag(arg, "--error-format")) {
+                i += 1;
+                if (i < argc) {
+                    cli.error_format = parseErrorFormat(pal.argGet(i));
+                }
+            } else if (matchFlag(arg, "--track-memory")) {
+                cli.track_memory = true;
+            } else if (matchFlag(arg, "-I")) {
+                i += 1;
+                if (i < argc and cli.include_count < 16) {
+                    cli.include_dirs[@intCast(usize, cli.include_count)] = cstrToSlice(pal.argGet(i));
+                    cli.include_count += 1;
+                }
+            } else {
+                cli.input_file = cstrToSlice(arg_ptr);
+            }
+        } else {
+            cli.input_file = cstrToSlice(arg_ptr);
+        }
+        i += 1;
+    }
+    return cli;
+}
+
+fn matchFlag(arg: []const u8, flag: []const u8) bool {
+    if (arg.len != flag.len) return false;
+    var j: usize = 0;
+    while (j < arg.len) {
+        if (arg[j] != flag[j]) return false;
+        j += 1;
+    }
+    return true;
+}
+
+fn cstrToSlice(ptr: [*]const u8) []const u8 {
+    var len: usize = 0;
+    while (ptr[len] != 0) {
+        len += 1;
+    }
+    return ptr[0..len];
+}
+
+fn parseSize(ptr: [*]const u8) u32 {
+    var s = cstrToSlice(ptr);
+    var val: u32 = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        var c = s[i];
+        if (c >= '0' and c <= '9') {
+            val = val * 10 + @intCast(u32, c - '0');
+        } else if (c == 'k' or c == 'K') {
+            val = val * 1024;
+        } else if (c == 'm' or c == 'M') {
+            val = val * 1024 * 1024;
+        } else if (c == 'g' or c == 'G') {
+            val = val * 1024 * 1024 * 1024;
+        }
+        i += 1;
+    }
+    return val;
+}
+
+fn parseU32(ptr: [*]const u8) u32 {
+    var s = cstrToSlice(ptr);
+    var val: u32 = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        var c = s[i];
+        if (c >= '0' and c <= '9') {
+            val = val * 10 + @intCast(u32, c - '0');
+        }
+        i += 1;
+    }
+    return val;
+}
+
+fn parseColorMode(ptr: [*]const u8) ColorMode {
+    var s = cstrToSlice(ptr);
+    if (matchFlag(s, "always")) return ColorMode.always;
+    if (matchFlag(s, "never")) return ColorMode.never;
+    return ColorMode.auto;
+}
+
+fn parseErrorFormat(ptr: [*]const u8) ErrorFormat {
+    var s = cstrToSlice(ptr);
+    if (matchFlag(s, "json")) return ErrorFormat.json;
+    if (matchFlag(s, "sarif")) return ErrorFormat.sarif;
+    return ErrorFormat.human;
+}
+
+fn printUsage() void {
+    pal.stderr_write("zig1 - Z98 self-hosted compiler - usage: zig1 [options] <input.zig>\n");
+}

@@ -84,3 +84,7 @@ examples/**/Makefile
 temp_*.c
 temp_*.h
 .opencode/*
+node_modules/*
+bun.lock
+zig0.new
+package.json
