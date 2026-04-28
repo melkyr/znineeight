@@ -54,6 +54,18 @@ pub const CompilerContext = struct {
 
 pub fn main() void {
     var cli = parseArgs();
+    if (cli.test_mode) {
+        var compiler_alloc = alloc_mod.initCompilerAlloc();
+        var perm_sand = compiler_alloc.permanent;
+        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
+        var source_man = sm_mod.sourceManagerInit(&perm_sand);
+        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
+        compiler_alloc.permanent = perm_sand;
+        token_mod.initKeywordTable(&perm_sand);
+        const lexer_mod = @import("lexer.zig");
+        lexer_mod.lexerRunAllTests();
+        return;
+    }
     if (cli.input_file.len == 0) {
         printUsage();
         return;
@@ -63,7 +75,7 @@ pub fn main() void {
     var perm_sand = compiler_alloc.permanent;
     var interner = interner_mod.stringInternerInit(&perm_sand, 4);
     var source_man = sm_mod.sourceManagerInit(&perm_sand);
-    var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man);
+    var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
     diag.max_diagnostics = @intCast(usize, cli.max_errors);
     compiler_alloc.permanent = perm_sand;
     token_mod.initKeywordTable(&perm_sand);
@@ -143,9 +155,11 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
 }
 
 fn parseArgs() CompilerCli {
+    const empty_str: []const u8 = "";
+    const dot_str: []const u8 = ".";
     var cli = CompilerCli{
-        .input_file = "",
-        .output_dir = ".",
+        .input_file = empty_str,
+        .output_dir = dot_str,
         .dump_tokens = false,
         .dump_ast = false,
         .dump_types = false,

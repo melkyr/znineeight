@@ -2,6 +2,8 @@ const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
 const Lexer = @import("lexer.zig").Lexer;
+const lexerInit = @import("lexer.zig").lexerInit;
+const lexerNextToken = @import("lexer.zig").lexerNextToken;
 const sm_mod = @import("source_manager.zig");
 
 pub const TestResult = struct {
@@ -96,9 +98,9 @@ pub fn testRunnerAllPassed(self: *TestRunner) bool {
 
 pub fn parseTestSource(arena: *Sand, source: []const u8, interner: *StringInterner, diag: *DiagnosticCollector, source_man: *SourceManager) u32 {
     var file_id = sm_mod.sourceManagerAddFile(source_man, "test.zig", source);
-    var lexer = Lexer.init(source, file_id, interner, diag, arena);
+    var lexer = lexerInit(source, file_id, interner, diag, arena);
     while (true) {
-        var tok = lexer.nextToken();
+        var tok = lexerNextToken(&lexer);
         if (tok.kind == .eof) break;
     }
     _ = file_id;

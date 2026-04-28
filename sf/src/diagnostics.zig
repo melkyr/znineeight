@@ -48,7 +48,9 @@ pub const Diagnostic = struct {
     file_id: u32,
     span_start: u32,
     span_end: u32,
-    message: []const u8,
+    message_id: u32,
+    note_count: u8,
+    note_ids: [3]u32,
 };
 
 const Sand = @import("allocator.zig").Sand;
@@ -56,6 +58,9 @@ const alloc_mod = @import("allocator.zig");
 const sm_mod = @import("source_manager.zig");
 const mem_mod = @import("util/mem.zig");
 const SourceManager = sm_mod.SourceManager;
+const interner_mod = @import("string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
+
 const pal = @import("pal.zig");
 
 fn getLevelName(level: u8) []const u8 {
@@ -130,7 +135,7 @@ pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 24) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 36) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Diagnostic, raw);
     var i: usize = 0;
     while (i < self.len) {
@@ -155,12 +160,13 @@ pub const DiagnosticCollector = struct {
     diagnostics: *DiagnosticArrayList,
     allocator: *Sand,
     source_manager: *SourceManager,
+    interner: *StringInterner,
     error_count: usize,
     warning_count: usize,
     max_diagnostics: usize,
 };
 
-pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager) DiagnosticCollector {
+pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager, interner: *StringInterner) DiagnosticCollector {
     var d_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var d_ptr = @ptrCast(*DiagnosticArrayList, d_raw);
     d_ptr.* = diagnosticArrayListInit(allocator);
@@ -168,46 +174,44 @@ pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager)
         .diagnostics = d_ptr,
         .allocator = allocator,
         .source_manager = source_manager,
+        .interner = interner,
         .error_count = @intCast(usize, 0),
         .warning_count = @intCast(usize, 0),
         .max_diagnostics = MAX_DIAGNOSTICS,
     };
 }
 
+pub fn diagnosticCollectorIntern(self: *DiagnosticCollector, msg: []const u8) u32 {
+    return interner_mod.stringInternerIntern(self.interner, msg);
+}
+
 pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, file_id: u32, span_start: u32, span_end: u32, message: []const u8) void {
     if (code == 9999) return;
     if (self.diagnostics.len >= self.max_diagnostics) {
-        var msg = "too many errors, stopping";
-        var raw = alloc_mod.sandAlloc(self.allocator, msg.len, @intCast(usize, 1)) catch unreachable;
-        var i: usize = 0;
-        while (i < msg.len) {
-            raw[i] = msg[i];
-            i += 1;
-        }
+        var msg_id = interner_mod.stringInternerIntern(self.interner, "too many errors, stopping");
         diagnosticArrayListAppend(self.diagnostics, Diagnostic{
             .level = @intCast(u8, 0),
             .code = @intCast(u16, 9999),
             .file_id = file_id,
             .span_start = span_start,
             .span_end = span_end,
-            .message = raw[0..msg.len],
+            .message_id = msg_id,
+            .note_count = @intCast(u8, 0),
+            .note_ids = [3]u32{ @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) },
         });
         self.error_count += 1;
         return;
     }
-    var raw = alloc_mod.sandAlloc(self.allocator, message.len, @intCast(usize, 1)) catch unreachable;
-    var i: usize = 0;
-    while (i < message.len) {
-        raw[i] = message[i];
-        i += 1;
-    }
+    var msg_id = interner_mod.stringInternerIntern(self.interner, message);
     diagnosticArrayListAppend(self.diagnostics, Diagnostic{
         .level = level,
         .code = code,
         .file_id = file_id,
         .span_start = span_start,
         .span_end = span_end,
-        .message = raw[0..message.len],
+        .message_id = msg_id,
+        .note_count = @intCast(u8, 0),
+        .note_ids = [3]u32{ @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) },
     });
     if (level == 0) self.error_count += 1;
     else if (level == 1) self.warning_count += 1;
@@ -250,7 +254,8 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         var code_len = formatU32(d.code, &code_buf);
         writeStr(code_buf[0..@intCast(usize, code_len)]);
         writeStr("]: ");
-        writeStr(d.message);
+        var entry = self.interner.entries.items[@intCast(usize, d.message_id)];
+        writeStr(entry.text);
         writeStr("\n");
         var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, d.file_id);
         var offsets = sm_mod.sourceManagerGetLineOffsets(self.source_manager, d.file_id);

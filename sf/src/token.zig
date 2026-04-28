@@ -110,6 +110,9 @@ pub const TokenValue = union {
     none: void,
 };
 
+// FIXME: Desired packed layout (16 bytes) rejected by zig0 for structs with union fields.
+// Actual size: 24 bytes (TokenValue union forces 8-byte alignment).
+// Restore packed struct once zig1 can self-host.
 pub const Token = struct {
     kind: TokenKind,
     span_start: u32,

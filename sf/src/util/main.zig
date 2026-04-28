@@ -158,9 +158,9 @@ fn test_u32_arraylist() void {
 }
 
 fn test_sort() void {
-    var d0 = Diagnostic{ .level = 1, .file_id = 1, .span_start = 30, .span_end = 35, .message = "c" };
-    var d1 = Diagnostic{ .level = 1, .file_id = 0, .span_start = 10, .span_end = 15, .message = "b" };
-    var d2 = Diagnostic{ .level = 1, .file_id = 0, .span_start = 5, .span_end = 10, .message = "a" };
+    var d0 = Diagnostic{ .level = 1, .code = 0, .file_id = 1, .span_start = 30, .span_end = 35, .message_id = 0, .note_count = 0, .note_ids = [3]u32{ 0, 0, 0 } };
+    var d1 = Diagnostic{ .level = 1, .code = 0, .file_id = 0, .span_start = 10, .span_end = 15, .message_id = 0, .note_count = 0, .note_ids = [3]u32{ 0, 0, 0 } };
+    var d2 = Diagnostic{ .level = 1, .code = 0, .file_id = 0, .span_start = 5, .span_end = 10, .message_id = 0, .note_count = 0, .note_ids = [3]u32{ 0, 0, 0 } };
     var diags = [_]Diagnostic{ d0, d1, d2 };
     sortDiagnostics(diags[0..]);
     assert_eq_u32(diags[0].span_start, 5, "sort 0");
