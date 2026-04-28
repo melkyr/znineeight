@@ -4080,7 +4080,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         /* Truncate if needed, then return directly (no prefix, no uniquification) */
         char buf[256];
         plat_strcpy(buf, zig_name);
-        if (plat_strlen(buf) > 31) buf[31] = '\0';
+        if (plat_strlen(buf) > 63) buf[63] = '\0';
         return unit_.getStringInterner().intern(buf);
     }
 

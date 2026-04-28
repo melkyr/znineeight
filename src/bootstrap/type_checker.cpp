@@ -3694,6 +3694,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* Bug 5: Propagate mangled_name if the initializer is an identifier pointing to an imported symbol. */
+    if (node->is_const && node->initializer && node->initializer->type == NODE_IDENTIFIER && node->symbol) {
+        Symbol* init_sym = unit_.getSymbolTable().lookup(node->initializer->as.identifier.name);
+        if (init_sym && init_sym->mangled_name && !node->symbol->mangled_name) {
+            node->symbol->mangled_name = init_sym->mangled_name;
+        }
+    }
+
     return declared_type;
 }
 
@@ -8341,7 +8349,13 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
             return get_g_type_type();
         }
     }
-    node->symbol = sym;
+
+    // Propagate mangled name to the local symbol representation if needed
+    if (sym->mangled_name && node->symbol && !node->symbol->mangled_name) {
+        node->symbol->mangled_name = sym->mangled_name;
+    } else {
+        node->symbol = sym;
+    }
 
     // Ensure symbol type is resolved
     if (!sym->symbol_type && sym->details) {
@@ -8358,6 +8372,14 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
 
         if (sym->kind == SYMBOL_VARIABLE) {
             target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+            // Ensure mangled name is computed/propagated immediately for cross-module variables
+            if (!sym->mangled_name) {
+                char k_char = (sym->flags & SYMBOL_FLAG_CONST) ? 'C' : 'V';
+                if (sym->symbol_type && (sym->symbol_type->kind == TYPE_TYPE || sym->symbol_type->kind == TYPE_MODULE)) {
+                    k_char = 'S';
+                }
+                sym->mangled_name = unit_.getNameMangler().mangle(k_char, target_mod, sym->name);
+            }
         } else if (sym->kind == SYMBOL_FUNCTION) {
             target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
             // Ensure mangled name is computed immediately for cross-module function calls

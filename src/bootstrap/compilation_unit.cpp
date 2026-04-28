@@ -1675,6 +1675,15 @@ void CompilationUnit::precomputeMangledNames(Module* mod) {
             if (sym.kind == SYMBOL_TYPE && sym.symbol_type) {
                 sym.symbol_type->c_name = sym.mangled_name;
             }
+
+#ifdef DEBUG
+            // Bug 5: After precomputation, all public symbols must have a mangled name
+            if (!sym.mangled_name) {
+                plat_printf_debug("[ASSERT] Symbol '%s' in module '%s' has NULL mangled_name after precompute\n",
+                                 sym.name, mod->name);
+                plat_abort();
+            }
+#endif
         }
     }
 }
