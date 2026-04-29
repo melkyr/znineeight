@@ -49,7 +49,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -68,7 +68,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -89,7 +89,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -111,7 +111,6 @@ void C89Emitter::dedent() {
         indent_level_--;
     }
 }
-
 void C89Emitter::writeIndent() {
     for (int i = 0; i < indent_level_; ++i) {
         write("    ", 4);
@@ -1275,6 +1274,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     emitted_decls_.clear();
     current_fn_name_ = node->name;
     is_main_function_ = false;
+    argv_symbol_ = NULL;
 
     writeIndent();
 
@@ -1296,7 +1296,10 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
                 ASTNode* p0 = (*node->params)[0];
                 ASTNode* p1 = (*node->params)[1];
                 if (p0->as.param_decl.symbol) var_alloc_.force_allocate(p0->as.param_decl.symbol, "argc");
-                if (p1->as.param_decl.symbol) var_alloc_.force_allocate(p1->as.param_decl.symbol, "argv");
+                if (p1->as.param_decl.symbol) {
+                    var_alloc_.force_allocate(p1->as.param_decl.symbol, "argv");
+                    argv_symbol_ = p1->as.param_decl.symbol;
+                }
             }
         } else {
             writeString("int main(");
@@ -2744,6 +2747,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 #endif
                     }
 
+                    if (sym == argv_symbol_) {
+                        writeString("(unsigned char const**)");
+                    }
                     writeString(c_name);
                 } else if (sym->mangled_name) {
                     writeString(sym->mangled_name);
