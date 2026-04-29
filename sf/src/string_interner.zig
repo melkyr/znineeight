@@ -34,10 +34,8 @@ fn internArrayListEnsureCapacity(self: *InternArrayList, new_capacity: usize) vo
     if (new_cap < 8) new_cap = 8;
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]InternEntry, raw);
-    var i: usize = 0;
-    while (i < self.len) {
-        new_items[i] = self.items[i];
-        i += 1;
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
     }
     self.items = new_items;
     self.capacity = new_cap;
@@ -122,10 +120,8 @@ pub fn stringInternerGet(self: *StringInterner, id: u32) []const u8 {
 
 fn stringInternerCopyToArena(self: *StringInterner, text: []const u8) [*]u8 {
     var raw = alloc_mod.sandAlloc(self.allocator, text.len, @intCast(usize, 1)) catch unreachable;
-    var i: usize = 0;
-    while (i < text.len) {
-        raw[i] = text[i];
-        i += 1;
+    for (text) |c, i| {
+        raw[i] = c;
     }
     return raw;
 }
@@ -133,18 +129,17 @@ fn stringInternerCopyToArena(self: *StringInterner, text: []const u8) [*]u8 {
 fn stringInternerGrowBuckets(self: *StringInterner, new_bucket_count: u32) void {
     self.buckets.len = @intCast(usize, 0);
     ga_mod.u32ArrayListEnsureCapacity(self.buckets, new_bucket_count);
-    var i: u32 = 0;
-    while (i < new_bucket_count) {
-        ga_mod.u32ArrayListAppend(self.buckets, 0);
-        i += 1;
+    for (0..@intCast(usize, new_bucket_count)) |bi| {
+        self.buckets.items[bi] = 0;
     }
 
+    self.buckets.len = @intCast(usize, new_bucket_count);
+
     var entries_slice = internArrayListGetSlice(self.entries);
-    var ei: usize = 1;
-    while (ei < self.entries.len) {
-        var bucket = entries_slice[ei].hash % new_bucket_count;
-        entries_slice[ei].next = self.buckets.items[@intCast(usize, bucket)];
-        self.buckets.items[@intCast(usize, bucket)] = @intCast(u32, ei);
-        ei += 1;
+    for (1..@intCast(usize, self.entries.len)) |ei| {
+        var entry = &entries_slice[ei];
+        var bucket = entry.hash % new_bucket_count;
+        entry.next = self.buckets.items[@intCast(usize, bucket)];
+        self.buckets.items[@intCast(usize, bucket)] = @intCast(u32, ei + 1);
     }
 }

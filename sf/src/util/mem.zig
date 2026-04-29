@@ -1,9 +1,7 @@
 pub fn mem_eql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) {
-        if (a[i] != b[i]) return false;
-        i += 1;
+    for (a) |c, i| {
+        if (c != b[i]) return false;
     }
     return true;
 }

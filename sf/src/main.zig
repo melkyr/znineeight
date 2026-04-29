@@ -52,7 +52,8 @@ pub const CompilerContext = struct {
     name_mangler: *NameMangler,
 };
 
-pub fn main() void {
+pub fn main(argc: i32, argv: [*]*const u8) void {
+    pal.initArgs(argc, argv);
     var cli = parseArgs();
     if (cli.test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();

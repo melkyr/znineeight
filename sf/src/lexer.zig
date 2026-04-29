@@ -536,10 +536,8 @@ fn parseF64(text: []const u8) f64 {
         }
 
         var power: f64 = 1.0;
-        var e: i32 = 0;
-        while (e < exp) {
+        for (0..@intCast(usize, exp)) |_| {
             power *= 10.0;
-            e += 1;
         }
         if (exp_neg) {
             result /= power;

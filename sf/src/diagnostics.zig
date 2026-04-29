@@ -146,10 +146,8 @@ pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacit
     if (new_cap < 8) new_cap = 8;
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 36) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Diagnostic, raw);
-    var i: usize = 0;
-    while (i < self.len) {
-        new_items[i] = self.items[i];
-        i += 1;
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
     }
     self.items = new_items;
     self.capacity = new_cap;
@@ -288,17 +286,19 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
             if (cspan == 0) cspan = 1;
             var caret_buf: [256]u8 = undefined;
             var caret_len: usize = 0;
-            while (caret_len < loc_col and caret_len < 256) {
+            var space_count = loc_col;
+            if (space_count > 256) space_count = 256;
+            for (0..space_count) |_| {
                 caret_buf[caret_len] = ' ';
                 caret_len += 1;
             }
             var ulen = cspan;
             if (ulen > 256 - loc_col) ulen = 256 - loc_col;
-            var j: usize = 0;
-            while (j < ulen and caret_len < 256) {
+            var max_carets = ulen;
+            if (max_carets > 256 - caret_len) max_carets = 256 - caret_len;
+            for (0..max_carets) |_| {
                 caret_buf[caret_len] = '^';
                 caret_len += 1;
-                j += 1;
             }
             writeStr(caret_buf[0..caret_len]);
             writeStr("\n");

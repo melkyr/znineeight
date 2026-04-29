@@ -24,10 +24,8 @@ pub fn u32ArrayListEnsureCapacity(self: *U32ArrayList, new_capacity: usize) void
     if (new_cap < 8) new_cap = 8;
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
-    var i: usize = 0;
-    while (i < self.len) {
-        new_items[i] = self.items[i];
-        i += 1;
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
     }
     self.items = new_items;
     self.capacity = new_cap;
@@ -72,10 +70,8 @@ pub fn byteArrayListGrow(self: *U8ArrayList, new_capacity: usize) void {
     if (new_cap < 8) new_cap = 8;
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 1) * new_cap, @intCast(usize, 1)) catch unreachable;
     var new_items = @ptrCast([*]u8, raw);
-    var i: usize = 0;
-    while (i < self.len) {
-        new_items[i] = self.items[i];
-        i += 1;
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
     }
     self.items = new_items;
     self.capacity = new_cap;

@@ -35,10 +35,8 @@ pub fn testResultArrayListEnsureCapacity(self: *TestResultArrayList, new_capacit
     if (new_cap < 8) new_cap = 8;
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]TestResult, raw);
-    var i: usize = 0;
-    while (i < self.len) {
-        new_items[i] = self.items[i];
-        i += 1;
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
     }
     self.items = new_items;
     self.capacity = new_cap;
@@ -79,19 +77,14 @@ pub fn testRunnerAddResult(self: *TestRunner, name: []const u8, passed: bool, me
 
 pub fn testRunnerReport(self: *TestRunner) void {
     var results = testResultArrayListGetSlice(self.results);
-    var i: usize = 0;
-    while (i < results.len) {
-        i += 1;
-    }
+    for (results) |_| {}
     _ = results;
 }
 
 pub fn testRunnerAllPassed(self: *TestRunner) bool {
     var results = testResultArrayListGetSlice(self.results);
-    var i: usize = 0;
-    while (i < results.len) {
-        if (!results[i].passed) return false;
-        i += 1;
+    for (results) |r| {
+        if (!r.passed) return false;
     }
     return true;
 }
@@ -125,10 +118,8 @@ pub fn assert_eq_u64(actual: u64, expected: u64, msg: []const u8) void {
 
 pub fn assert_eq_str(actual: []const u8, expected: []const u8, msg: []const u8) void {
     if (actual.len != expected.len) failAndPanic(msg);
-    var i: usize = 0;
-    while (i < actual.len) {
-        if (actual[i] != expected[i]) failAndPanic(msg);
-        i += 1;
+    for (actual) |c, i| {
+        if (c != expected[i]) failAndPanic(msg);
     }
 }
 

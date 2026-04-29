@@ -34,10 +34,8 @@ fn sourceFileArrayListEnsureCapacity(self: *SourceFileArrayList, new_capacity: u
     if (new_cap < 8) new_cap = 8;
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]SourceFile, raw);
-    var i: usize = 0;
-    while (i < self.len) {
-        new_items[i] = self.items[i];
-        i += 1;
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
     }
     self.items = new_items;
     self.capacity = new_cap;
@@ -88,12 +86,10 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
     ga_mod.u32ArrayListEnsureCapacity(lo_ptr, cap);
     ga_mod.u32ArrayListAppend(lo_ptr, 0);
 
-    var i: usize = 0;
-    while (i < content.len) {
-        if (content[i] == '\n') {
+    for (content) |c, i| {
+        if (c == '\n') {
             ga_mod.u32ArrayListAppend(lo_ptr, @intCast(u32, i) + 1);
         }
-        i += 1;
     }
 
     sourceFileArrayListAppend(self.files, SourceFile{
@@ -135,10 +131,8 @@ pub fn sourceManagerGetLocation(self: *SourceManager, file_id: u32, offset: u32)
 fn sourceManagerCopyToArena(self: *SourceManager, text: []const u8) [*]u8 {
     if (text.len == 0) return undefined;
     var raw = alloc_mod.sandAlloc(self.allocator, text.len, @intCast(usize, 1)) catch unreachable;
-    var i: usize = 0;
-    while (i < text.len) {
-        raw[i] = text[i];
-        i += 1;
+    for (text) |c, i| {
+        raw[i] = c;
     }
     return raw;
 }
