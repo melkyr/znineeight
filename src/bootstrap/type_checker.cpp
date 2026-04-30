@@ -149,13 +149,23 @@ struct TypeChecker::ResolvingTypeGuard {
     }
 };
 
+struct TypeChecker::ResolvingSignatureGuard {
+    TypeChecker& checker;
+    ResolvingSignatureGuard(TypeChecker& tc) : checker(tc) {
+        checker.is_resolving_signature_ = true;
+    }
+    ~ResolvingSignatureGuard() {
+        checker.is_resolving_signature_ = false;
+    }
+};
+
 
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
-    : unit_(unit_arg), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
+    : unit_(unit_arg), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
       current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0),
-      in_ptr_indirection_depth_(0), in_defer_(false),
+      in_ptr_indirection_depth_(0), in_defer_(false), is_resolving_signature_(false),
       expected_type_stack_(unit_arg.getArena()),
       resolving_types_stack_(unit_arg.getArena()),
       deferred_decls_(unit_arg.getArena()),
@@ -279,6 +289,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
 }
 
 void TypeChecker::check(ASTNode* root) {
+    module_root_block_ = root;
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
         /* Pass 1: Resolve only variable/type declarations first. 
            This helps ensure types are resolved before function bodies are checked. */
@@ -3198,6 +3209,32 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     return get_g_type_undefined();
 }
 
+bool TypeChecker::isLocalContext() const {
+    /* A variable is local only if:
+       1. We are truly inside a function body (current_fn_return_type_ is set)
+       2. AND we are NOT merely resolving a signature */
+    return current_fn_return_type_ != NULL && !is_resolving_signature_;
+}
+
+bool TypeChecker::isTopLevelDeclaration(ASTVarDeclNode* node) const {
+    /* A declaration is top-level if its parent (the containing block)
+       is the module's root block. */
+    if (!module_root_block_ || module_root_block_->type != NODE_BLOCK_STMT) {
+        return false;
+    }
+
+    DynamicArray<ASTNode*>* stmts = module_root_block_->as.block_stmt.statements;
+    if (!stmts) return false;
+
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        ASTNode* stmt = (*stmts)[i];
+        if (stmt && stmt->type == NODE_VAR_DECL && stmt->as.var_decl == node) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
     Type* result_type = NULL;
     if (validateSwitch(node->expression, (DynamicArray<ASTSwitchProngNode*>*)node->prongs, false, result_type, node->expression->loc)) {
@@ -3232,7 +3269,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     const char* name_to_set;
 
     /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
-    is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
+    is_local = isLocalContext() && !isTopLevelDeclaration(node);
 
     /* Reject local type definitions and aliases */
     if (is_local && node->is_const && node->initializer) {
@@ -3735,6 +3772,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 }
 
 Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
+    ResolvingSignatureGuard guard(*this);
     Symbol* fn_symbol;
     void* mem;
     DynamicArray<Type*>* param_types;
@@ -8509,6 +8547,7 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
         TypeChecker target_checker(unit_);
 
         if (sym->kind == SYMBOL_VARIABLE) {
+            ResolvingSignatureGuard guard(target_checker);
             target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
             // Ensure mangled name is computed/propagated immediately for cross-module variables
             if (!sym->mangled_name) {
@@ -8519,6 +8558,7 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
                 sym->mangled_name = unit_.getNameMangler().mangle(k_char, target_mod, sym->name);
             }
         } else if (sym->kind == SYMBOL_FUNCTION) {
+            ResolvingSignatureGuard guard(target_checker);
             target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
             // Ensure mangled name is computed immediately for cross-module function calls
             if (!sym->mangled_name) {

@@ -132,6 +132,8 @@ private:
     Type* resolveTypeConstant(Symbol* sym);
     Type* resolveTypeAlias(Symbol* sym, int depth = 0);
     Type* handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, struct Module* target_mod, Symbol* sym, bool* out_is_type_access, Type** out_base_type);
+    bool isLocalContext() const;
+    bool isTopLevelDeclaration(ASTVarDeclNode* node) const;
     Type* unwrapType(ASTNode* node);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
@@ -157,6 +159,7 @@ private:
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
     CompilationUnit& unit_;
+    ASTNode* module_root_block_;
     Type* current_fn_return_type_;
     const char* current_fn_name_;
     const char* current_struct_name_;
@@ -165,6 +168,7 @@ private:
     int visit_depth_;
     int in_ptr_indirection_depth_;
     bool in_defer_; ///< True if currently checking a deferred statement.
+    bool is_resolving_signature_;
 
     struct LoopLabel {
         const char* name;
@@ -181,6 +185,7 @@ private:
     struct ExpectedTypeGuard;
     struct IndirectionGuard;
     struct ResolvingTypeGuard;
+    struct ResolvingSignatureGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
@@ -192,6 +197,7 @@ private:
     friend struct ExpectedTypeGuard;
     friend struct ResolvingTypeGuard;
     friend struct IndirectionGuard;
+    friend struct ResolvingSignatureGuard;
 
     DynamicArray<Type*> expected_type_stack_;
     DynamicArray<Type*> resolving_types_stack_;
