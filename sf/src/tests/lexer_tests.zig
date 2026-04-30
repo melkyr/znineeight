@@ -3,6 +3,7 @@ const alloc_mod = @import("../allocator.zig");
 const Sand = alloc_mod.Sand;
 const interner_mod = @import("../string_interner.zig");
 const StringInterner = interner_mod.StringInterner;
+const mem_mod = @import("../util/mem.zig");
 const sm_mod = @import("../source_manager.zig");
 const SourceManager = sm_mod.SourceManager;
 const diag_mod = @import("../diagnostics.zig");
@@ -45,6 +46,17 @@ fn assertEqU64(expected: u64, actual: u64, line: u32) void {
         pal.stderr_write(formatU64(actual, fmt_buf[0..], 24));
         const s_nl: []const u8 = "\n";
         pal.stderr_write(s_nl);
+    }
+}
+
+fn assertEqString(expected: []const u8, actual_id: u32, line: u32) void {
+    if (!mem_mod.mem_eql(expected, interner_mod.stringInternerGet(&interner, actual_id))) {
+        var fmt_buf: [12]u8 = undefined;
+        const s_fail: []const u8 = "FAIL line ";
+        pal.stderr_write(s_fail);
+        pal.stderr_write(formatU32(line, fmt_buf[0..], 12));
+        const s_msg: []const u8 = ": string mismatch\n";
+        pal.stderr_write(s_msg);
     }
 }
 
@@ -107,6 +119,42 @@ fn nextToken(l: *Lexer) Token {
 
 pub fn runLexerUnitTests() void {
     initTestHarness();
+    testIntegerOverflow();
+    initTestHarness();
+    testFloatBasic();
+    initTestHarness();
+    testFloatScientific();
+    initTestHarness();
+    testFloatNoFrac();
+    initTestHarness();
+    testShiftOps();
+    initTestHarness();
+    testFatArrow();
+    initTestHarness();
+    testEqVariants();
+    initTestHarness();
+    testBuiltinImport();
+    initTestHarness();
+    testBareAt();
+    initTestHarness();
+    testBareUnderscore();
+    initTestHarness();
+    testUnderscoreIdent();
+    initTestHarness();
+    testWhitespaceOnly();
+    initTestHarness();
+    testNestedComment();
+    initTestHarness();
+    testUnterminatedComment();
+    initTestHarness();
+    testStringBasic();
+    initTestHarness();
+    testCharEmpty();
+    initTestHarness();
+    testStringUnterminated();
+    initTestHarness();
+    testStringEscapeHex();
+    initTestHarness();
     testBlockComments();
     initTestHarness();
     testLineComments();
@@ -130,6 +178,139 @@ pub fn runLexerUnitTests() void {
     testMultiTokenRecovery();
     initTestHarness();
     testUnrecognizedChars();
+}
+
+fn testIntegerOverflow() void {
+    const s: []const u8 = "99999999999999999999";
+    var l = makeLexer(s);
+    var t = nextToken(&l);
+    assertEqTokenKind(t.kind, TokenKind.integer_literal, @intCast(u32, 0));
+    var expected_max: u64 = 0;
+    expected_max -= 1;
+    assertEqU64(expected_max, t.value.int_val, @intCast(u32, 0));
+}
+
+fn testFloatBasic() void {
+    const s: []const u8 = "3.14";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.float_literal, @intCast(u32, 0));
+}
+
+fn testFloatScientific() void {
+    const s: []const u8 = "1.0e-5";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.float_literal, @intCast(u32, 0));
+}
+
+fn testFloatNoFrac() void {
+    const s: []const u8 = "2.0";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.float_literal, @intCast(u32, 0));
+}
+
+fn testShiftOps() void {
+    const s: []const u8 = "<< >> <<= >>=";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.shl, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.shr, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.shl_eq, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.shr_eq, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 0));
+}
+
+fn testFatArrow() void {
+    const s: []const u8 = "=>";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 0));
+}
+
+fn testEqVariants() void {
+    const s: []const u8 = "= == =>";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq_eq, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 0));
+}
+
+fn testBuiltinImport() void {
+    const s: []const u8 = "@import";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.builtin_identifier, @intCast(u32, 0));
+}
+
+fn testBareAt() void {
+    const s: []const u8 = "@+";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.err_token, @intCast(u32, 0));
+}
+
+fn testBareUnderscore() void {
+    const s: []const u8 = "_";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.underscore, @intCast(u32, 0));
+}
+
+fn testUnderscoreIdent() void {
+    const s: []const u8 = "_foo";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 0));
+}
+
+fn testWhitespaceOnly() void {
+    const s: []const u8 = "   \t\n  ";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 0));
+}
+
+fn testNestedComment() void {
+    const s: []const u8 = "42 /* a /* b */ c */ 43";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 0));
+}
+
+fn testUnterminatedComment() void {
+    const s: []const u8 = "42 /* no close";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 0));
+}
+
+fn testStringBasic() void {
+    const s: []const u8 = "\"hello\"";
+    var l = makeLexer(s);
+    var t = nextToken(&l);
+    assertEqTokenKind(t.kind, TokenKind.string_literal, @intCast(u32, 0));
+    const expected: []const u8 = "hello";
+    assertEqString(expected, t.value.string_id, @intCast(u32, 0));
+}
+
+fn testCharEmpty() void {
+    const s: []const u8 = "''";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.char_literal, @intCast(u32, 0));
+}
+
+fn testStringUnterminated() void {
+    const s: []const u8 = "\"hello";
+    var l = makeLexer(s);
+    var t = nextToken(&l);
+    assertEqTokenKind(t.kind, TokenKind.string_literal, @intCast(u32, 0));
+}
+
+fn testStringEscapeHex() void {
+    const s: []const u8 = "\"\\xFF\"";
+    var l = makeLexer(s);
+    var t = nextToken(&l);
+    assertEqTokenKind(t.kind, TokenKind.string_literal, @intCast(u32, 0));
+    var got = interner_mod.stringInternerGet(&interner, t.value.string_id);
+    if (got.len != 1 or got[0] != @intCast(u8, 0xFF)) {
+        const s_fail: []const u8 = "FAIL: string \\xFF content\n";
+        pal.stderr_write(s_fail);
+    }
 }
 
 fn testBlockComments() void {
@@ -169,19 +350,27 @@ fn testLineComments() void {
 fn testNumberSeparators() void {
     const s: []const u8 = "1_000_000";
     var l = makeLexer(s);
-    assertEqTokenKind(nextKind(&l), TokenKind.integer_literal, @intCast(u32, 0));
+    var t = nextToken(&l);
+    assertEqTokenKind(t.kind, TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqU64(1000000, t.value.int_val, @intCast(u32, 0));
 
     const s2: []const u8 = "0xFFFF_FFFF";
     var l2 = makeLexer(s2);
-    assertEqTokenKind(nextKind(&l2), TokenKind.integer_literal, @intCast(u32, 0));
+    var t2 = nextToken(&l2);
+    assertEqTokenKind(t2.kind, TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqU64(0xFFFFFFFF, t2.value.int_val, @intCast(u32, 0));
 
     const s3: []const u8 = "0b1010_0101";
     var l3 = makeLexer(s3);
-    assertEqTokenKind(nextKind(&l3), TokenKind.integer_literal, @intCast(u32, 0));
+    var t3 = nextToken(&l3);
+    assertEqTokenKind(t3.kind, TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqU64(0xA5, t3.value.int_val, @intCast(u32, 0));
 
     const s4: []const u8 = "0o77_00";
     var l4 = makeLexer(s4);
-    assertEqTokenKind(nextKind(&l4), TokenKind.integer_literal, @intCast(u32, 0));
+    var t4 = nextToken(&l4);
+    assertEqTokenKind(t4.kind, TokenKind.integer_literal, @intCast(u32, 0));
+    assertEqU64(4032, t4.value.int_val, @intCast(u32, 0));
 
     const s5: []const u8 = "3.141_59";
     var l5 = makeLexer(s5);

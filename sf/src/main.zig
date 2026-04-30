@@ -56,6 +56,7 @@ pub const CompilerContext = struct {
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
     var cli = parseArgs();
+    const lexer_mod = @import("lexer.zig");
     if (cli.sanity_test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
         var perm_sand = compiler_alloc.permanent;
@@ -64,7 +65,6 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
         compiler_alloc.permanent = perm_sand;
         token_mod.initKeywordTable(&perm_sand);
-        const lexer_mod = @import("lexer.zig");
         lexer_mod.lexerTestSanityCheck();
         return;
     }
@@ -76,12 +76,30 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
         compiler_alloc.permanent = perm_sand;
         token_mod.initKeywordTable(&perm_sand);
-        const lexer_mod = @import("lexer.zig");
         lexer_mod.lexerRunAllTests();
         return;
     }
     if (cli.input_file.len == 0) {
         printUsage();
+        return;
+    }
+    if (cli.dump_tokens) {
+        var compiler_alloc = alloc_mod.initCompilerAlloc();
+        var perm_sand = compiler_alloc.permanent;
+        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
+        var source_man = sm_mod.sourceManagerInit(&perm_sand);
+        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
+        compiler_alloc.permanent = perm_sand;
+        token_mod.initKeywordTable(&perm_sand);
+        var source = pal.readFile(cli.input_file, &perm_sand) orelse {
+            const msg: []const u8 = "error: could not read input file\n";
+            pal.stderr_write(msg);
+            pal.exit(1);
+            return;
+        };
+        var lex = lexer_mod.lexerInit(source, 0, &interner, &diag, &compiler_alloc.module);
+        const dump_mod = @import("dump.zig");
+        dump_mod.dumpTokens(@ptrCast(*void, &lex), &interner);
         return;
     }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
