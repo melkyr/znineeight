@@ -658,8 +658,16 @@ pub fn lexerRunAllTests() void {
     lexerTestIdentifierKeywords();
     lexerTestBuiltinIdentifier();
     lexerTestDiagnostics();
+    const lexer_tests = @import("tests/lexer_tests.zig");
+    lexer_tests.runLexerUnitTests();
     const msg2: []const u8 = "All lexer tests passed.\n";
     pal.stderr_write(msg2);
+}
+
+pub fn lexerTestSanityCheck() void {
+    const msg: []const u8 = "Running lexer sanity check (should fail)...\n";
+    pal.stderr_write(msg);
+    @panic("intentional sanity check failure");
 }
 
 fn lexerTestHelpers() void {

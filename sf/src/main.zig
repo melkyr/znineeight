@@ -38,6 +38,7 @@ pub const CompilerCli = struct {
     warnings_as_errors: bool,
     quiet: bool,
     test_mode: bool,
+    sanity_test_mode: bool,
     track_memory: bool,
     include_dirs: [16][]const u8,
     include_count: u32,
@@ -55,6 +56,18 @@ pub const CompilerContext = struct {
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
     var cli = parseArgs();
+    if (cli.sanity_test_mode) {
+        var compiler_alloc = alloc_mod.initCompilerAlloc();
+        var perm_sand = compiler_alloc.permanent;
+        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
+        var source_man = sm_mod.sourceManagerInit(&perm_sand);
+        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
+        compiler_alloc.permanent = perm_sand;
+        token_mod.initKeywordTable(&perm_sand);
+        const lexer_mod = @import("lexer.zig");
+        lexer_mod.lexerTestSanityCheck();
+        return;
+    }
     if (cli.test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
         var perm_sand = compiler_alloc.permanent;
@@ -172,6 +185,7 @@ fn parseArgs() CompilerCli {
         .warnings_as_errors = false,
         .quiet = false,
         .test_mode = false,
+        .sanity_test_mode = false,
         .track_memory = false,
         .include_count = @intCast(u32, 0),
         .include_dirs = undefined,
@@ -187,6 +201,7 @@ fn parseArgs() CompilerCli {
     const s_output_dir: []const u8 = "--output-dir";
     const s_quiet: []const u8 = "--quiet";
     const s_test: []const u8 = "--test";
+    const s_sanity_test: []const u8 = "--sanity-test";
     const s_warnings: []const u8 = "--warnings-as-errors";
     const s_color: []const u8 = "--color";
     const s_error_format: []const u8 = "--error-format";
@@ -232,6 +247,8 @@ fn parseArgs() CompilerCli {
                 cli.quiet = true;
             } else if (matchFlag(arg, s_test)) {
                 cli.test_mode = true;
+            } else if (matchFlag(arg, s_sanity_test)) {
+                cli.sanity_test_mode = true;
             } else if (matchFlag(arg, s_warnings) or matchFlag(arg, s_W)) {
                 cli.warnings_as_errors = true;
             } else if (matchFlag(arg, s_color)) {

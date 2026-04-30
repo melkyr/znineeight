@@ -88,3 +88,5 @@ node_modules/*
 bun.lock
 zig0.new
 package.json
+sf/build/*
+out/*
