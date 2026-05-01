@@ -1069,6 +1069,12 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         for (size_t i = 0; i < pending.length(); ++i) {
             checker.resolveNamedPlaceholder(pending[i].placeholder);
         }
+#ifdef DEBUG
+        for (size_t i = 0; i < pending.length(); ++i) {
+            Z98_ASSERT(pending[i].placeholder->kind != TYPE_PLACEHOLDER &&
+                       "Unresolved placeholder after Phase 0.5");
+        }
+#endif
     }
     if (logger) logger->flush();
 
@@ -1417,6 +1423,7 @@ bool CompilationUnit::resolveImports(Module* module) {
 }
 
 bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack) {
+    Z98_ASSERT(current_module_ == module->name);
     stack.append(module->filename);
 
 #ifdef DEBUG_VISIBILITY
@@ -1556,17 +1563,26 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             }
 
             if (imported_mod && !imported_mod->ast_root) {
+                Z98_ASSERT(imported_mod->name != NULL);
+                setCurrentModule(imported_mod->name);
+
                 Parser* parser = createParser(imported_mod->file_id);
                 ASTNode* ast = parser->parse();
-                if (!ast) return false;
+                if (!ast) {
+                    setCurrentModule(saved_module);
+                    return false;
+                }
 
                 imported_mod->ast_root = ast;
 
                 collectImports(ast, imported_mod);
 
                 if (!resolveImportsRecursive(imported_mod, stack)) {
+                    setCurrentModule(saved_module);
                     return false;
                 }
+
+                setCurrentModule(saved_module);
             }
         }
 
@@ -1606,6 +1622,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         }
     }
 
+    Z98_ASSERT(current_module_ == module->name);
     setCurrentModule(saved_module);
     stack.pop_back();
     return true;
