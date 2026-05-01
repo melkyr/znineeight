@@ -282,6 +282,56 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                         .build();
                     unit_.getSymbolTable().insert(new_sym);
                 }
+            } else if (vd->is_const && vd->initializer &&
+                       vd->initializer->type == NODE_MEMBER_ACCESS) {
+                ASTNode* base = vd->initializer;
+                while (base->type == NODE_MEMBER_ACCESS)
+                    base = base->as.member_access->base;
+
+                if (base && base->type == NODE_IMPORT_STMT) {
+                    Module* current_mod = unit_.getModule(unit_.getCurrentModule());
+
+                    /* Only create placeholder if not already in the registry */
+                    Type* existing = unit_.getTypeRegistry().find(current_mod, vd->name);
+                    if (existing) continue;
+
+                    /* Create placeholder */
+                    Type* placeholder = (Type*)unit_.getArena().alloc(sizeof(Type));
+                    plat_memset(placeholder, 0, sizeof(Type));
+                    placeholder->is_global_empty_tuple = false;
+                    placeholder->kind = TYPE_PLACEHOLDER;
+                    placeholder->as.placeholder.name = vd->name;
+                    placeholder->as.placeholder.decl_node = node;
+                    placeholder->as.placeholder.module = current_mod;
+                    placeholder->owner_module = current_mod;
+                    placeholder->is_resolving = false;
+                    placeholder->c_name = unit_.getNameMangler().mangleTypeName(
+                        vd->name, current_mod);
+
+                    unit_.getTypeRegistry().insert(current_mod, vd->name, placeholder);
+
+                    PendingResolution pending;
+                    pending.placeholder = placeholder;
+                    pending.decl_node = node;
+                    unit_.getPendingResolutions().append(pending);
+
+                    /* Update or create the symbol */
+                    Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+                    if (sym) {
+                        sym->symbol_type = placeholder;
+                    } else {
+                        Symbol new_sym = SymbolBuilder(unit_.getArena())
+                            .withName(vd->name)
+                            .withModule(unit_.getCurrentModule())
+                            .ofType(SYMBOL_VARIABLE)
+                            .withType(placeholder)
+                            .atLocation(vd->name_loc)
+                            .definedBy(vd)
+                            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                            .build();
+                        unit_.getSymbolTable().insert(new_sym);
+                    }
+                }
             }
         }
 

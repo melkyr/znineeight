@@ -6,6 +6,7 @@
 :: try removing the -mconsole flag from the linking step.
 
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o
+gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c net_runtime.c -o net_runtime.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c builtin.c -o builtin.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c util.c -o util.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c token.c -o token.o
@@ -17,4 +18,4 @@ gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c parser.c -o parser.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c eval.c -o eval.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c main.c -o main.o
-gcc -m32 -mconsole -static-libgcc -o app.exe zig_runtime.o builtin.o util.o token.o sand.o value.o builtins.o deep_copy.o env.o parser.o eval.o main.o
+gcc -m32 -mconsole -static-libgcc -o app.exe zig_runtime.o net_runtime.o builtin.o util.o token.o sand.o value.o builtins.o deep_copy.o env.o parser.o eval.o main.o

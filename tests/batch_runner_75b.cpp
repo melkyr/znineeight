@@ -1,4 +1,7 @@
-#include "main_batch75b.cpp"
-#include "double_free_aggregate_tests.cpp"
-#include "test_utils.cpp"
+// Generated batch runner for tests/main_batch75b.cpp
 #include "../src/bootstrap/bootstrap_all.cpp"
+#include "test_utils.cpp"
+#include "c89_validation/gcc_validator.cpp"
+#include "c89_validation/msvc6_validator.cpp"
+#include "double_free_aggregate_tests.cpp"
+#include "main_batch75b.cpp"
