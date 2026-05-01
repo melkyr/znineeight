@@ -1099,6 +1099,22 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (logger) logger->flush();
     if (!all_success) return false;
 
+    // Phase 1.5: Global Signature Resolution
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Global Signature Resolution");
+#endif
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
+        TypeChecker checker(*this);
+        checker.resolveGlobalDeclarations(m->ast_root);
+    }
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
+    if (logger) logger->flush();
+
     // Phase 2: Type Checking
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("Type Checking");
@@ -1564,6 +1580,8 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
 
             if (imported_mod && !imported_mod->ast_root) {
                 Z98_ASSERT(imported_mod->name != NULL);
+                // Maintain correct current_module_ during parsing and import collection.
+                // This is required for symbol table registration, not for type resolution.
                 setCurrentModule(imported_mod->name);
 
                 Parser* parser = createParser(imported_mod->file_id);

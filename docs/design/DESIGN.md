@@ -254,6 +254,8 @@ filename.zig:23:5: error: type mismatch
 
 ## 4. Compilation Pipeline
 
+For a detailed breakdown of the compilation phases, see [Compilation Pipeline](CompilationPipeline.md).
+
 ### 4.0 Compilation Unit (`compilation_unit.hpp`)
 **Concept:** A `CompilationUnit` is an ownership wrapper that manages the memory and resources for a single compilation task. It ties together the `ArenaAllocator`, `StringInterner`, and `SourceManager` to provide a clean, unified interface for compiling source code.
 
