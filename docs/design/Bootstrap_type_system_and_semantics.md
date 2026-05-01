@@ -1911,3 +1911,17 @@ The compiler supports implicit coercion of tags into tagged unions if the target
 - **Error Handling**:
     - If the tag is not found in the union: `ERR_UNDEFINED_ENUM_MEMBER`.
     - If the tag requires a non-void payload: `ERR_TYPE_MISMATCH`.
+
+## 27. Cross-Module Resolution and Context Switching
+
+To ensure robust cross-module symbol resolution, the compiler implements on-demand resolution with explicit module context switching.
+
+### 27.1 resolveCallSite Context Switching
+When the `TypeChecker` encounters a function call to a symbol that has not been fully resolved yet (e.g., a forward reference to a function in another module), it triggers on-demand resolution via `resolveCallSite`.
+
+1.  **Context Preservation**: The current module context is saved before switching.
+2.  **Context Switch**: The `CompilationUnit`'s current module is switched to the module where the target symbol is defined.
+3.  **Guarded Resolution**: The signature is resolved using `ResolvingSignatureGuard`, which sets the `is_resolving_signature_` flag to prevent parameters from being incorrectly marked as local symbols.
+4.  **Context Restoration**: The original module context is restored immediately after resolution.
+
+This mechanism ensures that type lookups within the function signature (e.g., for parameter types) are correctly scoped to the callee's module, allowing it to see its own imports and local types.
