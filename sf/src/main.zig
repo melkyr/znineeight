@@ -10,6 +10,8 @@ const DiagnosticCollector = diag_mod.DiagnosticCollector;
 const nm_mod = @import("name_mangler.zig");
 const NameMangler = nm_mod.NameMangler;
 const token_mod = @import("token.zig");
+const dump_mod = @import("dump.zig");
+const lexer_mod = @import("lexer.zig");
 const pal = @import("pal.zig");
 
 pub const ColorMode = enum(u8) {
@@ -56,7 +58,6 @@ pub const CompilerContext = struct {
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
     var cli = parseArgs();
-    const lexer_mod = @import("lexer.zig");
     if (cli.sanity_test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
         var perm_sand = compiler_alloc.permanent;
@@ -97,9 +98,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
             pal.exit(1);
             return;
         };
-        var lex = lexer_mod.lexerInit(source, 0, &interner, &diag, &compiler_alloc.module);
-        const dump_mod = @import("dump.zig");
-        dump_mod.dumpTokens(@ptrCast(*void, &lex), &interner);
+        var module_sand = compiler_alloc.module;
+        var lex = lexer_mod.lexerInit(source, 0, &interner, &diag, &module_sand);
+        dump_mod.dumpTokens(&lex, &interner);
         return;
     }
     var compiler_alloc = alloc_mod.initCompilerAlloc();

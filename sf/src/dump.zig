@@ -1,11 +1,9 @@
 const pal = @import("pal.zig");
-const token_mod = @import("token.zig");
-const Token = token_mod.Token;
-const TokenKind = token_mod.TokenKind;
-const interner_mod = @import("string_interner.zig");
-const StringInterner = interner_mod.StringInterner;
 const Lexer = @import("lexer.zig").Lexer;
 const lexerNextToken = @import("lexer.zig").lexerNextToken;
+const TokenKind = @import("token.zig").TokenKind;
+const StringInterner = @import("string_interner.zig").StringInterner;
+const stringInternerGet = @import("string_interner.zig").stringInternerGet;
 
 pub fn dumpTokens(lex: *Lexer, interner: *StringInterner) void {
     var buf32: [24]u8 = undefined;
@@ -25,7 +23,7 @@ pub fn dumpTokens(lex: *Lexer, interner: *StringInterner) void {
             pal.stdout_write(formatF64(t.value.float_val, buf32[0..], 24));
         } else if (t.kind == TokenKind.string_literal or t.kind == TokenKind.identifier or t.kind == TokenKind.builtin_identifier) {
             pal.stdout_write(" \"");
-            pal.stdout_write(interner_mod.stringInternerGet(interner, t.value.string_id));
+            pal.stdout_write(stringInternerGet(interner, t.value.string_id));
             pal.stdout_write("\"");
         }
         pal.stdout_write("\n");
