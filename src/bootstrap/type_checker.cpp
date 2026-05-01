@@ -660,6 +660,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             switch (node->operand->type) {
                 case NODE_IDENTIFIER:
                 case NODE_ARRAY_ACCESS:
+                case NODE_MEMBER_ACCESS:
                     is_lvalue = true;
                     break;
                 case NODE_UNARY_OP:
@@ -5823,6 +5824,8 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
                     if (node->as.member_access->symbol) {
                         return (node->as.member_access->symbol->flags & SYMBOL_FLAG_CONST) != 0;
                     }
+                    // If no symbol resolved yet, conservatively assume const
+                    return true;
                 }
             }
             /* A member access is const if the struct itself is const. */
@@ -7221,14 +7224,23 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
 
     /* Guard 4: Forward Reference / Not resolved yet */
     if (!sym->symbol_type && sym->details) {
+        const char* saved_module = unit_.getCurrentModule();
+        if (sym->module_name) {
+            unit_.setCurrentModule(sym->module_name);
+        }
+
         if (sym->kind == SYMBOL_FUNCTION) {
+            ResolvingSignatureGuard guard(*this);
             visitFnSignature((ASTFnDeclNode*)sym->details);
         } else if (sym->kind == SYMBOL_VARIABLE) {
+            ResolvingSignatureGuard guard(*this);
             visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
         }
+
+        unit_.setCurrentModule(saved_module);
     }
 
-    if (!sym->symbol_type) {
+    if (!sym->symbol_type || is_type_undefined(sym->symbol_type)) {
         return FORWARD_REFERENCE;
     }
 
