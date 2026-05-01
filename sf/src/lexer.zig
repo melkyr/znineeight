@@ -1,3 +1,19 @@
+const token_mod = @import("token.zig");
+const Token = token_mod.Token;
+const TokenKind = token_mod.TokenKind;
+const TokenValue = token_mod.TokenValue;
+const StringInterner = @import("string_interner.zig").StringInterner;
+const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
+const ErrorCode = @import("diagnostics.zig").ErrorCode;
+const diag_mod = @import("diagnostics.zig");
+const Sand = @import("allocator.zig").Sand;
+const alloc_mod = @import("allocator.zig");
+const ga_mod = @import("growable_array.zig");
+const U8ArrayList = ga_mod.U8ArrayList;
+const pal = @import("pal.zig");
+const interner_mod = @import("string_interner.zig");
+const sm_mod = @import("source_manager.zig");
+
 pub const Lexer = struct {
     source: []const u8,
     pos: usize,
@@ -556,19 +572,6 @@ fn isU64MaxLiteral(text: []const u8) bool {
     return val == 0xFFFFFFFFFFFFFFFF;
 }
 
-const token_mod = @import("token.zig");
-const Token = token_mod.Token;
-const TokenKind = token_mod.TokenKind;
-const TokenValue = token_mod.TokenValue;
-const StringInterner = @import("string_interner.zig").StringInterner;
-const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
-const ErrorCode = @import("diagnostics.zig").ErrorCode;
-const diag_mod = @import("diagnostics.zig");
-const Sand = @import("allocator.zig").Sand;
-const alloc_mod = @import("allocator.zig");
-const ga_mod = @import("growable_array.zig");
-const U8ArrayList = ga_mod.U8ArrayList;
-
 fn assertEqBool(actual: bool, expected: bool, line: u32) void {
     if (actual != expected) {
         var fmt_buf: [12]u8 = undefined;
@@ -911,7 +914,3 @@ fn lexerTestDiagnostics() void {
     var t2 = lexerNextToken(&l2);
     assertEqTokenKind(t2.kind, TokenKind.err_token, @intCast(u32, 0));
 }
-
-const pal = @import("pal.zig");
-const interner_mod = @import("string_interner.zig");
-const sm_mod = @import("source_manager.zig");

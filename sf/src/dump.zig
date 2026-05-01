@@ -4,13 +4,13 @@ const Token = token_mod.Token;
 const TokenKind = token_mod.TokenKind;
 const interner_mod = @import("string_interner.zig");
 const StringInterner = interner_mod.StringInterner;
+const Lexer = @import("lexer.zig").Lexer;
+const lexerNextToken = @import("lexer.zig").lexerNextToken;
 
-pub fn dumpTokens(l: *void, interner: *StringInterner) void {
-    const lexer_mod = @import("lexer.zig");
-    var lex = @ptrCast(*lexer_mod.Lexer, l);
+pub fn dumpTokens(lex: *Lexer, interner: *StringInterner) void {
     var buf32: [24]u8 = undefined;
     while (true) {
-        var t = lexer_mod.lexerNextToken(lex);
+        var t = lexerNextToken(lex);
         tokenKindToString(t.kind, buf32[0..]);
         pal.stdout_write(buf32[0..]);
         pal.stdout_write(" ");
@@ -213,7 +213,7 @@ fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
     var rem = v;
     while (fi < 6) {
         var digit = extractDigit(rem);
-        fmt_buf[@intCast(usize, fi)] = @intCast(u8, '0' + @intCast(u32, digit));
+        fmt_buf[@intCast(usize, fi)] = @intCast(u8, @intCast(u32, '0') + @intCast(u32, digit));
         fi += 1;
         rem = (rem - @intToFloat(f64, digit)) * 10.0;
     }
@@ -275,7 +275,7 @@ fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
         ei -= 1;
         var expv = exp;
         while (expv > 0) {
-            exp_buf[@intCast(usize, ei)] = @intCast(u8, '0' + @intCast(u32, expv % 10));
+            exp_buf[@intCast(usize, ei)] = @intCast(u8, @intCast(u32, '0') + @intCast(u32, expv % 10));
             expv = expv / 10;
             ei -= 1;
         }
