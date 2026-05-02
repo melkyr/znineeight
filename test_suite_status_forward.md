@@ -20,6 +20,7 @@
 - **Name Mangling**: **VERIFIED**. Recent changes to implement deterministic cross-module symbol hashing are stable.
 - **Example Programs**: **VERIFIED**. All key examples compile and execute correctly. `lisp_interpreter_curr` now compiles cleanly after recent fixes to import resolution.
 - **CVariableAllocator**: **UPDATED**. The truncation limit was increased from 31 to 63 characters to support longer mangled names, causing an expectation mismatch in Batch 23.
+- **Stage 1 (sf/) Compilation**: **STABLE**. `sf/src/main.zig` no longer segfaults during compilation, although it currently reports semantic errors due to incomplete stage1 implementation.
 
 ---
 
@@ -38,6 +39,22 @@
 
 ---
 
+## Detailed Breakdown of Resolved Failures (32-bit)
+
+### 1. Batch 44 (Print Lowering)
+- **Status**: **PASS**
+- **Analysis**: The compiler correctly uses tuples for argument passing.
+
+### 2. Batch 75d (Memory Limit)
+- **Status**: **PASS**
+- **Analysis**: Lexer fix for float literals prevents infinite loops on tokens like `.0`.
+
+### 3. Batch 1 (Lexer)
+- **Status**: **PASS**
+- **Analysis**: Z98 correctly lexes `.123` as `TOKEN_DOT` followed by an integer.
+
+---
+
 ## Examples Status (32-bit)
 
 | Example | Status | Compilation | Correctness | C89 Warnings | Zig0 Warnings |
@@ -53,7 +70,9 @@
 | `lzw` | PASS | OK | OK | 0 | 13 |
 | `mandelbrot` | PASS | OK | OK | 0 | 5 |
 | `lisp_interpreter_curr` | PASS | OK | OK | 12 | 14 |
-| `rogue_mud` | PASS | OK | OK | 0 | 78 |
+| `game_of_life` | PASS | OK | OK | 0 | 4 |
+| `mud_server` | PASS | OK | LINKED | 0 | 18 |
+| `rogue_mud` | PASS | OK | LINKED | 0 | 78 |
 
 ---
 
@@ -79,3 +98,6 @@ The `zig0` compiler issues various warnings when processing the example programs
 
 ### C++98 Compilation
 Compiling `zig0` with `g++ -std=c++98 -Wall -Wextra -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0` produces zero fatal errors and is verified to work on the current environment.
+
+### Stage 1 Bootstrap (sf/)
+Compiling the Stage 1 compiler (`sf/src/main.zig`) with `zig0` is memory-stable. `valgrind` reports no errors during the compilation process. While the compilation currently stops at semantic analysis due to undeclared identifiers in the stage1 source, the compiler itself remains stable and does not crash or segfault when handling large multi-module inputs.
