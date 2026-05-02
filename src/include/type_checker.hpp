@@ -160,6 +160,7 @@ private:
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
     CompilationUnit& unit_;
+    bool is_post_check_phase_;
     ASTNode* module_root_block_;
     Type* current_fn_return_type_;
     const char* current_fn_name_;

@@ -32,5 +32,17 @@ To support cross-module type aliases and bare imports that may appear anywhere i
 
 These placeholders are registered in the defining module's scope and type registry during Pass 0. They are then resolved in a fixed-point loop during Phase 0.5 (Pass 2) to ensure all transitive dependencies between placeholders are fully satisfied before Pass 2 type checking begins.
 
-## 5. On-demand Signature Resolution Context
+## 5. Canonical Module Identity
+To ensure robust type deduplication in large multi-module projects, the `TypeRegistry` uses the interned absolute canonical path of a module as its key, rather than a `Module*` pointer. This ensures that:
+- Types are correctly identified even if multiple `Module` objects are created for the same file.
+- Lookups are case-insensitive and normalized across different platforms.
+
+## 6. Post-Check Phase Flag
+The `TypeChecker` includes an `is_post_check_phase_` flag that is enabled for all validation and analysis passes occurring after Phase 2 (Type Checking).
+
+- **Purpose**: Prevents later passes from incorrectly re-resolving identifiers or leaking scope. Once the AST is fully resolved, subsequent visitors must rely solely on the `resolved_type` already stored in the `ASTNode`.
+- **Hardenened Identifier Lookup**: When the flag is set, `visitIdentifier` skips the symbol table lookup and directly returns the pre-resolved type.
+- **Safety**: This mechanism prevents "undeclared identifier" errors in synthetic AST nodes (like those created during `visitArraySlice`) which may be visited after their lexical scope has been popped.
+
+## 7. On-demand Signature Resolution Context
 The `resolveCallSite` function handles forward references to functions and variables by triggering on-demand signature or declaration resolution. To ensure these lookups are correctly isolated to the defining module, `resolveCallSite` switches the `current_module_` context to the target module before calling `visitFnSignature` or `visitVarDecl`. It utilizes the `ResolvingSignatureGuard` to prevent parameters and return types from being incorrectly tagged with the `SYMBOL_FLAG_LOCAL` flag during this on-demand resolution.

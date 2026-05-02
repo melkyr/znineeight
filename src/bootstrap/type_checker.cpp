@@ -163,7 +163,7 @@ struct TypeChecker::ResolvingSignatureGuard {
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
-    : unit_(unit_arg), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
+    : unit_(unit_arg), is_post_check_phase_(unit_arg.is_post_check_phase_), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
       current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0),
       in_ptr_indirection_depth_(0), in_defer_(false), is_resolving_signature_(false),
       expected_type_stack_(unit_arg.getArena()),
@@ -2186,6 +2186,12 @@ Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
+    if (is_post_check_phase_) {
+        // In post-check phase, we trust the precomputed resolved_type.
+        // The symbol pointer may be nullptr (for primitives), but the type is known.
+        return node->resolved_type ? node->resolved_type : get_g_type_undefined();
+    }
+
     const char* name = node->as.identifier.name;
     Type* prim;
     Symbol* sym;
@@ -2214,11 +2220,6 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     }
 
     sym = unit_.getSymbolTable().lookup(name);
-    if (!sym) {
-        // Fallback for local variables that might have been inserted during Pass 2
-        // but are being looked up in a nested scope.
-        sym = unit_.getSymbolTable().findInAnyScope(name, unit_.getCurrentModule());
-    }
 
     if (!sym) {
         return reportAndReturnUndefined(node->loc, ERR_UNDEFINED_VARIABLE, NULL);
@@ -7335,6 +7336,12 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         Type* base_type = visit(call->callee->as.member_access->base);
         if (base_type && base_type->kind == TYPE_MODULE) {
             Module* target_mod = (Module*)base_type->as.module.module_ptr;
+#ifdef DEBUG
+            if (target_mod && !target_mod->canonical_path) {
+                plat_printf_debug("INTERNAL: Module '%s' has NULL canonical_path\n", target_mod->name ? target_mod->name : "?");
+                plat_abort();
+            }
+#endif
             if (target_mod && target_mod->symbols) {
                 sym = target_mod->symbols->lookup(call->callee->as.member_access->field_name);
             }
@@ -8722,6 +8729,12 @@ Type* TypeChecker::handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode*
     }
 
     if (is_actually_type) {
+#ifdef DEBUG
+        if (target_mod && !target_mod->canonical_path) {
+            plat_printf_debug("INTERNAL: Module '%s' has NULL canonical_path in handleModuleMemberFound\n", target_mod->name ? target_mod->name : "?");
+            plat_abort();
+        }
+#endif
         Type* registered = resolveNamedType(target_mod, sym->name, sym);
         if (registered) {
             parent->resolved_type = registered;
