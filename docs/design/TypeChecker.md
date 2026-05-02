@@ -23,3 +23,14 @@ The \`isLValueConst\` method recursively determines if an l-value is mutable. Fo
 
 ## 3. Cross-Module Context Switching
 See [Bootstrap Type System & Semantic Analysis](Bootstrap_type_system_and_semantics.md) Section 27 for details on module context switching during call site resolution.
+
+## 4. Placeholder Registration for Imports
+To support cross-module type aliases and bare imports that may appear anywhere in a file (including at the bottom), `registerPlaceholders` creates a `TYPE_PLACEHOLDER` for every top-level `const` alias that originates from an `@import`. This includes:
+- Bare module imports: `const util = @import("util.zig");`
+- Member access imports: `const LispError = @import("value.zig").LispError;`
+- Aliases-of-aliases: `const ga_mod = @import(...); const U8ArrayList = ga_mod.U8ArrayList;`
+
+These placeholders are registered in the defining module's scope and type registry during Pass 0. They are then resolved in a fixed-point loop during Phase 0.5 (Pass 2) to ensure all transitive dependencies between placeholders are fully satisfied before Pass 2 type checking begins.
+
+## 5. On-demand Signature Resolution Context
+The `resolveCallSite` function handles forward references to functions and variables by triggering on-demand signature or declaration resolution. To ensure these lookups are correctly isolated to the defining module, `resolveCallSite` switches the `current_module_` context to the target module before calling `visitFnSignature` or `visitVarDecl`. It utilizes the `ResolvingSignatureGuard` to prevent parameters and return types from being incorrectly tagged with the `SYMBOL_FLAG_LOCAL` flag during this on-demand resolution.
