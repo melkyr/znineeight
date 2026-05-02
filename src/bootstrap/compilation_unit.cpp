@@ -1066,9 +1066,24 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     {
         TypeChecker checker(*this);
         DynamicArray<PendingResolution>& pending = getPendingResolutions();
-        for (size_t i = 0; i < pending.length(); ++i) {
-            checker.resolveNamedPlaceholder(pending[i].placeholder);
+
+        bool progress = true;
+        int iterations = 0;
+        const int MAX_ITERATIONS = 10;
+        while (progress && iterations < MAX_ITERATIONS) {
+            progress = false;
+            iterations++;
+            for (size_t i = 0; i < pending.length(); ++i) {
+                Type* placeholder = pending[i].placeholder;
+                if (placeholder->kind == TYPE_PLACEHOLDER) {
+                    Type* resolved = checker.resolveNamedPlaceholder(placeholder);
+                    if (resolved && resolved->kind != TYPE_PLACEHOLDER) {
+                        progress = true;
+                    }
+                }
+            }
         }
+
 #ifdef DEBUG
         for (size_t i = 0; i < pending.length(); ++i) {
             Z98_ASSERT(pending[i].placeholder->kind != TYPE_PLACEHOLDER &&
