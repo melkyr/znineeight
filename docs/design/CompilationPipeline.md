@@ -22,7 +22,9 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
 
 ### Phase 1.3: Named Placeholder Resolution (Phase 0.5)
 - **Action**: Resolves the underlying types for the placeholders registered in the previous phase.
-- **Purpose**: Transition from placeholders to concrete (but potentially incomplete) type structures.
+- **Fixed-Point Iteration**: This phase now uses a fixed-point loop (up to 10,000 iterations) that continues as long as new placeholders are resolved.
+- **Deep Unwrapping**: When resolving a placeholder that points to a `TYPE_TYPE` constant (e.g., `const A = B;`), the resolver now deeply unwraps the alias chain to find the concrete underlying type.
+- **Purpose**: Transition from placeholders to concrete (but potentially incomplete) type structures. This robust mechanism is critical for handling deep transitive alias chains across multiple modules.
 
 ### Phase 1.4: Name Collision Detection (Phase 1)
 - **Action**: Verifies that there are no duplicate symbol definitions within the same scope across all modules.

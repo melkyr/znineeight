@@ -132,7 +132,7 @@ private:
     void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
     Type* resolveTypeConstant(Symbol* sym);
     Type* resolveTypeAlias(Symbol* sym, int depth = 0);
-    Type* handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, struct Module* mod_ptr, Symbol* sym, bool* out_is_type_access, Type** out_base_type);
+    Type* handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, struct Module* target_mod, Symbol* sym, bool* out_is_type_access, Type** out_base_type);
     bool isLocalContext() const;
     bool isTopLevelDeclaration(ASTVarDeclNode* node) const;
     Type* unwrapType(ASTNode* node);

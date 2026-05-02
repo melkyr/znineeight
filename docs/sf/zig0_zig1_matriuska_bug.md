@@ -106,10 +106,10 @@ The "undeclared identifier" and "undeclared type" errors seen in the logs are ac
 
 The compilation of the Stage 1 compiler stresses the `zig0` bootstrap compiler beyond its original single-module design. The "Matriuska" bugs are not merely edge cases but reflections of fundamental architectural assumptions that hold true for simple examples but fail under the weight of deep circularity and complex transitive dependencies.
 
-### 5.1 Recommended Architectural Fixes
-*   **Canonical Module Identity**: Module registration must be strictly idempotent, using absolute canonicalized paths to ensure that every `@import("foo.zig")` across the entire project returns the exact same `Module*` pointer.
+### 5.1 Recommended Architectural Fixes (STATUS: PARTIALLY IMPLEMENTED)
+*   **Canonical Module Identity** (FIXED in Z98 0.12.2): The `TypeRegistry` now uses interned, absolute, and lowercased canonical paths as keys. This eliminates logical identity mismatches even if multiple `Module*` pointers exist for the same file.
 *   **Scope-Aware Re-visitation**: Passes that occur after type checking must either:
     1.  Strictly avoid calling `TypeChecker::visit` on nodes that are already resolved.
     2.  Provide a mechanism to re-establish the correct scope stack before attempting re-visitation.
 *   **Abolish `findInAnyScope`**: The "safety net" of searching all historical scopes is dangerous. Identifier lookups must strictly follow the lexical parent-pointer chain. If a symbol is not in the current active scope stack, it is truly undeclared.
-*   **Aggressive Alias Unwrapping**: Phase 0.5 should be enhanced to deeply unwrap `TYPE_TYPE` constants during placeholder resolution to ensure that an alias to an alias to a struct is fully resolved before Phase 1.5 begins.
+*   **Aggressive Alias Unwrapping** (FIXED in Z98 0.12.2): Phase 0.5 now uses a fixed-point iteration loop (up to 10,000 passes) and deeply unwraps `TYPE_TYPE` constants during placeholder resolution. This ensures that transitive alias chains (e.g., `const A = B; const B = C;`) are fully resolved to concrete types before Phase 1.5 begins.
