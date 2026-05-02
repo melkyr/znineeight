@@ -178,6 +178,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     builtin_module_ = new (builtin_mem) Module(arena_);
     builtin_module_->name = interner_.intern("builtin");
     builtin_module_->filename = interner_.intern("<builtin>");
+    builtin_module_->canonical_path = builtin_module_->filename;
     builtin_module_->file_id = 0xFFFFFFFF;
     
     void* builtin_sym_mem = arena_.alloc(sizeof(SymbolTable));
@@ -257,6 +258,14 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     // Convert backslashes to forward slashes for cross-platform consistency
     for (char* p = abs_path; *p; ++p) if (*p == '\\') *p = '/';
     mod->stable_hash = fnv1a_32(abs_path);
+
+    // Compute canonical path (absolute, normalized, lowercased for case-insensitivity)
+    char canonical_buf[1024];
+    plat_strncpy(canonical_buf, abs_path, sizeof(canonical_buf));
+    for (char* p = canonical_buf; *p; ++p) {
+        if (*p >= 'A' && *p <= 'Z') *p = *p + ('a' - 'A');
+    }
+    mod->canonical_path = interner_.intern(canonical_buf);
 
     // Create per-module symbol table
     void* sym_mem = arena_.alloc(sizeof(SymbolTable));
@@ -504,7 +513,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
         if (t) {
             const char* name = interner_.intern(primitives[i]);
-            type_registry_.insert(builtin_module_, name, t);
+            type_registry_.insert(builtin_module_->canonical_path, name, t);
             Symbol sym = SymbolBuilder(arena_)
                 .withName(name)
                 .withModule(builtin_name)
@@ -1062,15 +1071,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     }
     if (logger) logger->flush();
 
-    // Phase 0.5: Resolve Named Placeholders (Pass 2)
+    // Phase 0.5: Resolve Named Placeholders (Pass 2) - Fixed-Point Iteration
     {
         TypeChecker checker(*this);
         DynamicArray<PendingResolution>& pending = getPendingResolutions();
 
         bool progress = true;
+        int max_iter = 10000;
         int iterations = 0;
-        const int MAX_ITERATIONS = 10;
-        while (progress && iterations < MAX_ITERATIONS) {
+        while (progress && iterations < max_iter) {
             progress = false;
             iterations++;
 #ifdef DEBUG
@@ -1091,15 +1100,23 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             }
         }
 
-#ifdef DEBUG
-        for (size_t i = 0; i < pending.length(); ++i) {
-            if (pending[i].placeholder->kind == TYPE_PLACEHOLDER) {
-                plat_printf_debug("CRITICAL: Unresolved placeholder '%s' after Phase 0.5\n", pending[i].placeholder->as.placeholder.name);
+        if (iterations >= max_iter && progress) {
+            plat_print_info("FATAL: Placeholder resolution loop did not converge. "
+                        "Unresolved placeholders:\n");
+            for (size_t i = 0; i < pending.length(); ++i) {
+                if (pending[i].placeholder->kind == TYPE_PLACEHOLDER) {
+                    const char* name = pending[i].placeholder->as.placeholder.name;
+                    char msg_buf[256];
+                    plat_snprintf(msg_buf, sizeof(msg_buf), "  - %s (declared in module %s)\n",
+                                name ? name : "?",
+                                pending[i].placeholder->as.placeholder.module
+                                    ? pending[i].placeholder->as.placeholder.module->name
+                                    : "?");
+                    plat_print_info(msg_buf);
+                }
             }
-            Z98_ASSERT(pending[i].placeholder->kind != TYPE_PLACEHOLDER &&
-                       "Unresolved placeholder after Phase 0.5");
+            fatalError("Unresolved placeholder cycle detected. Check for circular type dependencies.");
         }
-#endif
     }
     if (logger) logger->flush();
 

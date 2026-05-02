@@ -321,7 +321,7 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
         (void*)mod);
 #endif
     if (name != NULL) {
-        Type* existing = unit.getTypeRegistry().find(mod, name);
+        Type* existing = unit.getTypeRegistry().find(mod ? mod->canonical_path : NULL, name);
 #ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -381,7 +381,7 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
         (void*)mod);
 #endif
     if (name != NULL) {
-        Type* existing = unit.getTypeRegistry().find(mod, name);
+        Type* existing = unit.getTypeRegistry().find(mod ? mod->canonical_path : NULL, name);
 #ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -450,7 +450,7 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
         (void*)mod);
 #endif
     if (name != NULL) {
-        Type* existing = unit.getTypeRegistry().find(mod, name);
+        Type* existing = unit.getTypeRegistry().find(mod ? mod->canonical_path : NULL, name);
 #ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -632,7 +632,7 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
 
 Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner, Type* placeholder) {
     if (name != NULL) {
-        Type* existing = unit.getTypeRegistry().find(mod, name);
+        Type* existing = unit.getTypeRegistry().find(mod ? mod->canonical_path : NULL, name);
         if (existing) {
             if (existing->kind != TYPE_PLACEHOLDER) return existing;
             placeholder = existing;
@@ -989,7 +989,7 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     }
 
     if (name != NULL) {
-        Type* existing = unit.getTypeRegistry().find(mod, name);
+        Type* existing = unit.getTypeRegistry().find(mod ? mod->canonical_path : NULL, name);
 #ifdef Z98_ENABLE_DEBUG_LOGS
         if (existing) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
