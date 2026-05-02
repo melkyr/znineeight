@@ -14,6 +14,7 @@ public:
     TypeChecker(CompilationUnit& unit);
 
     void registerPlaceholders(ASTNode* root);
+    void resolveGlobalDeclarations(ASTNode* root);
     void check(ASTNode* root);
     Type* visit(ASTNode* node);
     Type* visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node);

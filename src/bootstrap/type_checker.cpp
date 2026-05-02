@@ -288,19 +288,17 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 while (base->type == NODE_MEMBER_ACCESS)
                     base = base->as.member_access->base;
 
-                bool should_create_placeholder = false;
+                bool is_module_access = false;
                 if (base && base->type == NODE_IMPORT_STMT) {
-                    should_create_placeholder = true;
-                } else if (vd->initializer->as.member_access->base->type == NODE_IDENTIFIER) {
-                    Symbol* base_sym = unit_.getSymbolTable().lookupInCurrentScope(
-                        vd->initializer->as.member_access->base->as.identifier.name);
-                    if (base_sym && base_sym->symbol_type &&
-                        base_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-                        should_create_placeholder = true;
+                    is_module_access = true;
+                } else if (base && base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = unit_.getSymbolTable().lookup(base->as.identifier.name);
+                    if (sym && sym->kind == SYMBOL_MODULE) {
+                        is_module_access = true;
                     }
                 }
 
-                if (should_create_placeholder) {
+                if (is_module_access) {
                     Module* current_mod = unit_.getModule(unit_.getCurrentModule());
 
                     /* Only create placeholder if not already in the registry */
@@ -391,9 +389,83 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                         unit_.getSymbolTable().insert(new_sym);
                     }
                 }
+            } else if (vd->is_const && vd->initializer &&
+                       vd->initializer->type == NODE_IDENTIFIER) {
+                Symbol* init_sym = unit_.getSymbolTable().lookup(vd->initializer->as.identifier.name);
+                if (init_sym && init_sym->kind == SYMBOL_MODULE) {
+                    /* This is an alias to another module, treat as possible type alias */
+                    Module* current_mod = unit_.getModule(unit_.getCurrentModule());
+                    Type* existing = unit_.getTypeRegistry().find(current_mod, vd->name);
+                    if (!existing) {
+                        Type* placeholder = (Type*)unit_.getArena().alloc(sizeof(Type));
+                        plat_memset(placeholder, 0, sizeof(Type));
+                        placeholder->is_global_empty_tuple = false;
+                        placeholder->kind = TYPE_PLACEHOLDER;
+                        placeholder->as.placeholder.name = vd->name;
+                        placeholder->as.placeholder.decl_node = node;
+                        placeholder->as.placeholder.module = current_mod;
+                        placeholder->owner_module = current_mod;
+                        placeholder->is_resolving = false;
+                        placeholder->c_name = unit_.getNameMangler().mangleTypeName(
+                            vd->name, current_mod);
+
+                        unit_.getTypeRegistry().insert(current_mod, vd->name, placeholder);
+
+                        PendingResolution pending;
+                        pending.placeholder = placeholder;
+                        pending.decl_node = node;
+                        unit_.getPendingResolutions().append(pending);
+
+                        Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+                        if (sym) {
+                            sym->symbol_type = placeholder;
+                        } else {
+                            Symbol new_sym = SymbolBuilder(unit_.getArena())
+                                .withName(vd->name)
+                                .withModule(unit_.getCurrentModule())
+                                .ofType(SYMBOL_VARIABLE)
+                                .withType(placeholder)
+                                .atLocation(vd->name_loc)
+                                .definedBy(vd)
+                                .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                                .build();
+                            unit_.getSymbolTable().insert(new_sym);
+                        }
+                    }
+                }
             }
         }
 
+    }
+}
+
+void TypeChecker::resolveGlobalDeclarations(ASTNode* root) {
+    if (!root || root->type != NODE_BLOCK_STMT) return;
+    DynamicArray<ASTNode*>* stmts = root->as.block_stmt.statements;
+    if (!stmts) return;
+
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        ASTNode* node = (*stmts)[i];
+        switch (node->type) {
+            case NODE_VAR_DECL: {
+                ASTVarDeclNode* vd = node->as.var_decl;
+                // Skip 'var' without initialiser, their type annotation is enough and
+                // visitVarDecl would try to visit NODE_UNDEFINED_LITERAL.
+                if (vd->is_const || vd->initializer != NULL) {
+                    visitVarDecl(NULL, vd);
+                }
+                break;
+            }
+            case NODE_FN_DECL: {
+                ASTFnDeclNode* fn = node->as.fn_decl;
+                // Resolve the signature (creates function type, sets symbol_type)
+                ResolvingSignatureGuard guard(*this);
+                visitFnSignature(fn);
+                break;
+            }
+            default:
+                break;
+        }
     }
 }
 
@@ -7281,22 +7353,20 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         return INDIRECT_REJECTED;
     }
 
-    /* Guard 4: Forward Reference / Not resolved yet */
+    /* Guard 4: Forward Reference / Not resolved yet (Local only) */
     if (!sym->symbol_type && sym->details) {
-        const char* saved_module = unit_.getCurrentModule();
-        if (sym->module_name) {
-            unit_.setCurrentModule(sym->module_name);
+        /* Only handle forward references within the SAME module.
+           Cross-module symbols must have been resolved by the Global Signature Resolution pass. */
+        if (sym->module_name == NULL ||
+            plat_strcmp(sym->module_name, unit_.getCurrentModule()) == 0) {
+            if (sym->kind == SYMBOL_FUNCTION) {
+                ResolvingSignatureGuard guard(*this);
+                visitFnSignature((ASTFnDeclNode*)sym->details);
+            } else if (sym->kind == SYMBOL_VARIABLE) {
+                ResolvingSignatureGuard guard(*this);
+                visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+            }
         }
-
-        if (sym->kind == SYMBOL_FUNCTION) {
-            ResolvingSignatureGuard guard(*this);
-            visitFnSignature((ASTFnDeclNode*)sym->details);
-        } else if (sym->kind == SYMBOL_VARIABLE) {
-            ResolvingSignatureGuard guard(*this);
-            visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
-        }
-
-        unit_.setCurrentModule(saved_module);
     }
 
     if (!sym->symbol_type || is_type_undefined(sym->symbol_type)) {
