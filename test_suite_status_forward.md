@@ -20,7 +20,6 @@
 - **Name Mangling**: **VERIFIED**. Recent changes to implement deterministic cross-module symbol hashing are stable.
 - **Example Programs**: **VERIFIED**. All key examples compile and execute correctly. `lisp_interpreter_curr` now compiles cleanly after recent fixes to import resolution.
 - **CVariableAllocator**: **UPDATED**. The truncation limit was increased from 31 to 63 characters to support longer mangled names, causing an expectation mismatch in Batch 23.
-- **Stage 1 (sf/) Compilation**: **STABLE**. `sf/src/main.zig` no longer segfaults during compilation, although it currently reports semantic errors due to incomplete stage1 implementation.
 
 ---
 
@@ -76,6 +75,19 @@
 
 ---
 
+## Stage 1 (zig1) Status
+
+### sf/src/main.zig Compilation
+The Stage 1 compiler source (`sf/src/`) is the primary stress test for `zig0`.
+- **Stability**: **VERIFIED**. Compilation is memory-stable under `valgrind`. No segfaults occur even with the large multi-module input.
+- **Current Status**: **SEMANTIC ERRORS**. Compilation currently fails during the type-checking phase.
+- **Analysis of Failures**:
+    - **Undeclared Types (Aliases)**: `zig0` occasionally fails to resolve transitive aliases (e.g., `const U8ArrayList = ga_mod.U8ArrayList`) during Phase 0.5/1.5 if the dependency graph is deep and contains circularity among module-level constants.
+    - **Undeclared Identifiers in Expressions**: Errors like `use of undeclared identifier 'entries_slice'` in `string_interner.zig:140` suggest a limitation in `zig0`'s l-value analysis when performing address-of operations (`&`) on sliced arrays inside loops.
+    - **Aborts in Parser**: Some modules (like `parser.zig`) trigger internal compiler aborts. This is often caused by `zig0`'s rigid expectation of return types or its handling of complex braceless control flow in the Stage 1 source.
+
+---
+
 ## Example Warnings and Analysis
 
 ### Zig0 Compiler Warnings (on Examples)
@@ -90,7 +102,6 @@ The `zig0` compiler issues various warnings when processing the example programs
 ### Generated C89 Warnings
 - **`heapsort`**: 6 warnings regarding incompatible pointer types when passing array pointers.
 - **`lisp_interpreter_curr`**: 12 warnings regarding ISO C forbids conversion between function pointers and object pointers (`void *`). This is expected due to the way builtins are stored in the Lisp environment using `void *`.
-- **Note**: Most examples that previously had C89 warnings now compile cleanly with `-std=c89 -pedantic` thanks to recent improvements in aggregate initializer lifting and type mapping.
 
 ---
 
@@ -98,6 +109,3 @@ The `zig0` compiler issues various warnings when processing the example programs
 
 ### C++98 Compilation
 Compiling `zig0` with `g++ -std=c++98 -Wall -Wextra -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0` produces zero fatal errors and is verified to work on the current environment.
-
-### Stage 1 Bootstrap (sf/)
-Compiling the Stage 1 compiler (`sf/src/main.zig`) with `zig0` is memory-stable. `valgrind` reports no errors during the compilation process. While the compilation currently stops at semantic analysis due to undeclared identifiers in the stage1 source, the compiler itself remains stable and does not crash or segfault when handling large multi-module inputs.
