@@ -4,21 +4,21 @@
 
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
-| Total Test Batches | 82 | 82 |
-| Passed Batches | 81 | - |
-| Failed Batches | 1 | - |
-| Total Pass Rate | 98.8% | - |
+| Total Test Batches | 81 | 81 |
+| Passed Batches | 71 | - |
+| Failed Batches | 10 | - |
+| Total Pass Rate | 87.6% | - |
 
-*Note: 32-bit values reflect the status using -m32 after recent compiler updates. Failure in Batch 23 is analyzed below.*
+*Note: 32-bit values reflect the status using -m32 after recent compiler updates. Analysis of failures included below.*
 
 ---
 
 ## Progress Report (32-bit)
 
 - **Compiler Stability**: **VERIFIED**. `zig0` compiles properly with `g++ -std=c++98`.
-- **Test Suite Integrity**: **VERIFIED**. 81 out of 82 test batches pass. The single failure was identified and analyzed as a non-regression (see Failure Analysis).
+- **Test Suite Integrity**: **PARTIAL**. 71 out of 81 test batches pass. Failures include regressions in tuple handling and integration test environment issues.
 - **Name Mangling**: **VERIFIED**. Recent changes to implement deterministic cross-module symbol hashing are stable.
-- **Example Programs**: **VERIFIED**. All key examples compile and execute correctly. `lisp_interpreter_curr` now compiles cleanly after recent fixes to import resolution.
+- **Example Programs**: **VERIFIED**. `rogue_mud`, `func_ptr_return`, `days_in_month`, `lisp_interpreter_curr`, and `mandelbrot` compile and execute correctly under `-m32` and C89 constraints.
 - **CVariableAllocator**: **UPDATED**. The truncation limit was increased from 31 to 63 characters to support longer mangled names, causing an expectation mismatch in Batch 23.
 - **Stage 1 (sf/) Compilation**: **STABLE**. `sf/src/main.zig` no longer segfaults during compilation, although it currently reports semantic errors due to incomplete stage1 implementation.
 
@@ -29,13 +29,32 @@
 ### 1. Batch 23 (CVariableAllocator)
 - **Status**: **FAIL**
 - **Test**: `test_CVariableAllocator_Truncation`
-- **Cause**: The test expects identifiers to be truncated at 31 characters. However, the compiler was updated to support up to 63 characters to avoid collisions in complex mangled names.
-- **Result**: **TEST OUTDATED**. The compiler behavior is intentional and correct for modern C89 compatibility targets that support longer identifiers.
+- **Cause**: The test expects identifiers to be truncated at 31 characters. However, the compiler now supports up to 63 characters.
+- **Result**: **TEST OUTDATED**. The compiler behavior is intentional.
 
-### 2. Batch 75 (Missing Entry Point)
+### 2. Batch 31 & 32 (Integration Segfault)
+- **Status**: **FAIL (Segfault)**
+- **Cause**: Segmentation fault during integration test execution. Likely related to C linkage or symbol resolution in the generated code for multi-file examples.
+- **Result**: **REGRESSION/BUG**. Needs investigation into the C backend's handling of cross-module symbols in these specific cases.
+
+### 3. Batch 46 & 55 (Tuple Handling)
+- **Status**: **FAIL**
+- **Cause**: `std.debug.print` reports type mismatches for tuples.
+- **Result**: **REGRESSION**. Recent changes in tuple lowering or type checking for anonymous struct initializers have introduced regressions in how `std.debug.print` arguments are validated.
+
+### 4. Batch 60 & 65 (Test Runner Conflict)
+- **Status**: **COMPILE FAIL**
+- **Cause**: Redefinition of `main` because multiple files with `main()` are included in the same batch runner.
+- **Result**: **ENVIRONMENT ISSUE**. Non-regression; the test runner configuration is flawed for these batches.
+
+### 5. Batch 75 (Missing Entry Point)
 - **Status**: **NOT FOUND**
-- **Cause**: The file `tests/main_batch75.cpp` is missing from the repository. However, sub-batches `75a`, `75b`, `75c`, and `75d` are present and pass.
-- **Result**: **TEST ABSENT**. The main batch 75 is replaced by its categorized sub-batches.
+- **Cause**: The file `tests/main_batch75.cpp` is missing. However, sub-batches `75a`, `75b`, `75c`, and `75d` are present and PASS.
+- **Result**: **TEST ABSENT**.
+
+### 6. Batch _bugs
+- **Status**: **FAIL (7/8 Passed)**
+- **Result**: One regression in bug-fix verification suite.
 
 ---
 
@@ -72,7 +91,7 @@
 | `lisp_interpreter_curr` | PASS | OK | OK | 12 | 14 |
 | `game_of_life` | PASS | OK | OK | 0 | 4 |
 | `mud_server` | PASS | OK | LINKED | 0 | 18 |
-| `rogue_mud` | PASS | OK | LINKED | 0 | 78 |
+| `rogue_mud` | PASS | OK | OK | 0 | 78 |
 
 ---
 
