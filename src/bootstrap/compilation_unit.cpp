@@ -1073,11 +1073,18 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         while (progress && iterations < MAX_ITERATIONS) {
             progress = false;
             iterations++;
+#ifdef DEBUG
+            plat_printf_debug("  Phase 0.5 Iteration %d...\n", iterations);
+#endif
             for (size_t i = 0; i < pending.length(); ++i) {
                 Type* placeholder = pending[i].placeholder;
                 if (placeholder->kind == TYPE_PLACEHOLDER) {
+                    const char* p_name = placeholder->as.placeholder.name;
                     Type* resolved = checker.resolveNamedPlaceholder(placeholder);
                     if (resolved && resolved->kind != TYPE_PLACEHOLDER) {
+#ifdef DEBUG
+                        plat_printf_debug("    Resolved placeholder '%s' in iteration %d to kind %d\n", p_name, iterations, (int)resolved->kind);
+#endif
                         progress = true;
                     }
                 }
@@ -1086,6 +1093,9 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 
 #ifdef DEBUG
         for (size_t i = 0; i < pending.length(); ++i) {
+            if (pending[i].placeholder->kind == TYPE_PLACEHOLDER) {
+                plat_printf_debug("CRITICAL: Unresolved placeholder '%s' after Phase 0.5\n", pending[i].placeholder->as.placeholder.name);
+            }
             Z98_ASSERT(pending[i].placeholder->kind != TYPE_PLACEHOLDER &&
                        "Unresolved placeholder after Phase 0.5");
         }
@@ -1118,9 +1128,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("Global Signature Resolution");
 #endif
+#ifdef DEBUG
+    plat_printf_debug("  Starting Phase 1.5 Global Signature Resolution...\n");
+#endif
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
+#ifdef DEBUG
+        plat_printf_debug("    Resolving signatures for module '%s'...\n", m->name);
+#endif
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.resolveGlobalDeclarations(m->ast_root);
