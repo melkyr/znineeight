@@ -158,7 +158,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       test_name_counters_(arena),
       test_name_counter_(0),
       validation_completed_(false),
-      c89_validation_passed_(false) {
+      c89_validation_passed_(false),
+      is_post_check_phase_(false) {
 
     current_module_ = interner_.intern("main");
 
@@ -1202,6 +1203,8 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.end_phase();
 #endif
     if (logger) logger->flush();
+
+    is_post_check_phase_ = true;
 
     // Phase 3: Validation Passes
     // Moved before AST Lifting to ensure clean validation against resolved cross-module signatures

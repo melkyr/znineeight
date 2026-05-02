@@ -8,6 +8,7 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
 
 ### Phase 1: Parsing and Import Resolution
 - **Action**: The entry point file is lexed and parsed.
+- **Canonical Identity**: `addSource` computes and stores the `canonical_path` (absolute, normalized, interned string) for each module, which is used for robust type deduplication.
 - **Recursion**: Any `@import` statements trigger the recursive loading and parsing of dependency modules.
 - **Scope**: Each module gets its own `SymbolTable` and AST root.
 - **Context Switch**: `setCurrentModule` is used during this phase to ensure symbols are registered to the correct module.
@@ -39,12 +40,13 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
 ### Phase 2: Type Checking (Body Checking)
 - **Action**: The compiler visits every function body and performs full semantic analysis.
 - **Local Resolution**: Forward references within the *same* module are still handled via a simplified fallback in `resolveCallSite`, but cross-module symbols are guaranteed to be resolved.
+- **Post-Check Initialization**: After Phase 2 completes, the `is_post_check_phase_` flag is set globally on the `CompilationUnit`.
 
 ### Phase 2.5: Mangled Name Precomputation
 - **Action**: Computes stable C89-compliant mangled names for all public symbols.
 
 ### Phase 3: Validation Passes
-- **Action**: Runs specialized validators:
+- **Action**: Runs specialized validators. These passes operate with `is_post_check_phase_` enabled, ensuring they rely on the pre-resolved AST and do not attempt to re-resolve identifiers.
     - `CallResolutionValidator`: Ensures all calls are resolved.
     - `SignatureAnalyzer`: Validates function signatures for C89 compatibility.
     - `C89FeatureValidator`: Rejects non-C89 Zig features.
