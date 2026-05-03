@@ -3738,6 +3738,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 }
 
                 if (!can_defer) {
+                    #ifdef Z98_ENABLE_DEBUG_LOGS
+                    plat_printf_debug("[TYPE] visitVarDecl '%s' EARLY RETURN: initializer is undefined and cannot defer\n", node->name);
+                    #endif
                     return get_g_type_undefined();
                 }
             }
@@ -3944,7 +3947,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->is_resolving = false;
     }
 
-    if (!declared_type) return NULL;
+    if (!declared_type) {
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("[TYPE] visitVarDecl '%s' EARLY RETURN: declared_type is NULL\n", node->name);
+        #endif
+        return NULL;
+    }
 
     if (is_local && node->is_const && declared_type &&
         (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION ||

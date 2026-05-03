@@ -161,3 +161,46 @@ string_buf: *U8ArrayList, // error: use of undeclared type 'U8ArrayList'
 - **Cause**: Change in lexer behavior for leading dots (`.123`). It is now lexed as `TOKEN_DOT` + `integer_literal`.
 - **Impact**: Code like `var x: f32 = .123;` now fails with "Ambiguous naked tag" because `.123` is interpreted as a field access or member access on an implicit type, rather than a float literal.
 - **Verdict**: This is a breaking change in the lexer that needs to be either accepted as the new standard for Z98 or reverted.
+
+
+---
+
+## Detailed Failure Mechanism and Proactive Proposals
+
+### Issue A: Local Symbol Insertion Latency
+**Mechanism**:
+The failure occurs in `TypeChecker::visitVarDecl` (`src/bootstrap/type_checker.cpp`, ~line 3451). For local variables with inferred types (e.g., `var aligned = ...`), the compiler must visit the initializer before it can create the symbol.
+- **Specific Failure Point**: Around line 3740, if `visit(node->initializer)` returns `TYPE_UNDEFINED` (common in complex bitwise/cast expressions in `sf/`), the code executes:
+  ```cpp
+  if (!can_defer) return get_g_type_undefined();
+  ```
+- **The "Lost" Symbol**: Because this early return happens before the `unit_.getSymbolTable().insert(var_symbol)` call (around line 3934), the variable is never registered in the current scope.
+- **Cascading Failure**: Subsequent references in the same function (e.g., `var new_pos = aligned + size`) fail with `ERR_UNDEFINED_VARIABLE` because `aligned` effectively doesn't exist in the symbol table.
+
+**Why it doesn't happen in examples**:
+Most examples (like `rogue_mud`) use explicit type annotations or very simple initializers that resolve in a single pass. The Stage 1 (`sf/`) source uses complex expressions like `(sand.pos + mask) & ~mask`, where the `~` and `+` combination frequently triggers multi-pass resolution stalls in `zig0`'s simplified logic.
+
+**Proactive Proposal**:
+Modify `TypeChecker::visitVarDecl` to perform a "Pre-insertion" of local symbols:
+1. **Structural Change**: Move the symbol insertion logic *above* the initializer resolution.
+2. **Implementation**: Insert the symbol immediately with a `TYPE_PLACEHOLDER` or `TYPE_UNDEFINED`.
+3. **Refinement**: Once `visit(node->initializer)` completes, update the existing symbol's type.
+4. **Benefit**: This guarantees that the lexical structure of the function is always preserved in the symbol table, even if the specific types are still being resolved.
+
+### Issue B: Transitive Placeholder Convergence
+**Mechanism**:
+This issue occurs in `TypeChecker::resolveNamedPlaceholder` (`src/bootstrap/type_checker.cpp`, line 2926) and its interaction with the fixed-point resolution loop in `CompilationUnit::performFullPipeline` (line 1074).
+- **The "Deadlock"**: A transitive alias like `const U8ArrayList = ga_mod.U8ArrayList` requires:
+  1. `ga_mod` (a module placeholder) to be resolved.
+  2. `U8ArrayList` to be found within that module.
+- **The Failure**: In highly coupled workloads like `sf/`, the resolution of `ga_mod` might be deferred because it's being visited from another module. The current Phase 0.5 loop is "passive"—it visits each placeholder and hopes it resolves. If `visitMemberAccess` on a module placeholder returns `TYPE_UNDEFINED` instead of forcing the module's resolution, the alias stalls.
+- **Identity Mismatch**: Stage 1's deep folder structure (`sf/src/util/`, etc.) increases the risk of `TypeRegistry` misses if `canonical_path` is not used consistently everywhere (see `TypeRegistry::find` vs `SymbolTable::lookup`).
+
+**Why it doesn't happen in examples**:
+`rogue_mud` has a relatively shallow and linear dependency graph. `sf/` is a "circular-adjacent" graph where almost every module depends on `allocator.zig`, `growable_array.zig`, and `token.zig`, creating long chains of placeholders that the current Phase 0.5 loop fails to flatten in the allotted iterations or due to resolution "shyness."
+
+**Proactive Proposal**:
+Enhance the Placeholder Resolution system:
+1. **Aggressive Resolution**: In `resolveNamedPlaceholder`, if the base of a member access is a `TYPE_PLACEHOLDER`, the compiler should **recursively force** its resolution immediately rather than returning undefined.
+2. **Canonical Enforcement**: Audit `TypeChecker::visitTypeName` and `TypeChecker::visitMemberAccess` to ensure they always use `defining_mod->canonical_path` when querying the `TypeRegistry`.
+3. **Phase 0.7**: Introduce a "Placeholder Flattening" sub-pass after Phase 0.5 that specifically targets type-to-type aliases to ensure no `TYPE_PLACEHOLDER` remains if its target is already a concrete type.
