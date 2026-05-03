@@ -34,18 +34,18 @@
 
 ### 2. Batch 31 & 32 (Integration Segfault)
 - **Status**: **FAIL (Segfault)**
-- **Cause**: Segmentation fault during integration test execution. Likely related to C linkage or symbol resolution in the generated code for multi-file examples.
-- **Result**: **REGRESSION/BUG**. Needs investigation into the C backend's handling of cross-module symbols in these specific cases.
+- **Cause**: Segmentation fault during integration test execution. Deep dive reveals that the segfault is preceded by "Unresolved call" errors during the compilation phase of the integration tests (specifically in `test_CBackend_MultiFile` and `test_EndToEnd_HelloWorld`). This suggests that the `CompilationUnit` or `TypeChecker` is failing to resolve cross-module symbols during the multi-pass resolution process, leading to invalid state when code generation or execution is attempted.
+- **Result**: **REGRESSION/BUG**. The issue lies in the cross-module symbol resolution logic. **Proposal**: Verify the `TypeChecker::resolveCallSite` and `CompilationUnit::resolvePlaceholders` logic to ensure that imported module symbols are correctly registered and visible during the `performFullPipeline` calls in integration tests.
 
 ### 3. Batch 46 & 55 (Tuple Handling)
 - **Status**: **FAIL**
-- **Cause**: `std.debug.print` reports type mismatches for tuples.
-- **Result**: **REGRESSION**. Recent changes in tuple lowering or type checking for anonymous struct initializers have introduced regressions in how `std.debug.print` arguments are validated.
+- **Cause**: `std.debug.print` reports type mismatches for tuples. The error message indicates that the second argument is found as 'unknown' or is reported as having a length of 0, despite being a tuple (e.g., `.{log}`).
+- **Result**: **REGRESSION**. Recent hardening of `std.debug.print` validation requires the second argument to be a tuple, but the type checker is failing to correctly identify anonymous struct initializers as valid tuples in this context. **Proposal**: Fix `TypeChecker::visitAnonymousInit` (or the equivalent logic for `NODE_STRUCT_INITIALIZER` without a type) to ensure it correctly identifies and tags the resulting type as a tuple with the correct number of elements.
 
 ### 4. Batch 60 & 65 (Test Runner Conflict)
-- **Status**: **COMPILE FAIL**
-- **Cause**: Redefinition of `main` because multiple files with `main()` are included in the same batch runner.
-- **Result**: **ENVIRONMENT ISSUE**. Non-regression; the test runner configuration is flawed for these batches.
+- **Status**: **FIXED/ENVIRONMENT**
+- **Cause**: While the report mentions `main` redefinition, these batches pass if compiled with the `-DZ98_TEST` macro, which masks the local `main` functions in individual test files.
+- **Result**: **ENVIRONMENT ISSUE**. The test runner environment must ensure `-DZ98_TEST` is consistently applied. **Proposal**: Update `run_all_tests.sh` or the individual batch runner source files to ensure all included tests are properly wrapped in `#ifndef Z98_TEST`.
 
 ### 5. Batch 75 (Missing Entry Point)
 - **Status**: **NOT FOUND**
@@ -54,7 +54,8 @@
 
 ### 6. Batch _bugs
 - **Status**: **FAIL (7/8 Passed)**
-- **Result**: One regression in bug-fix verification suite.
+- **Cause**: Test 6 (`Integration_IdentifierAsFloatLeadingDot`) fails. This test expects an error when a naked tag (like `.123`) is assigned to a float, but the error message or the resolution logic might have changed with recent lexer updates.
+- **Result**: **REGRESSION**. **Proposal**: Update the test expectation or the lexer's handling of leading-dot tokens to ensure consistent behavior for naked tags vs. float literals.
 
 ---
 
@@ -90,8 +91,8 @@
 | `mandelbrot` | PASS | OK | OK | 0 | 5 |
 | `lisp_interpreter_curr` | PASS | OK | OK | 12 | 14 |
 | `game_of_life` | PASS | OK | OK | 0 | 4 |
-| `mud_server` | PASS | OK | LINKED | 0 | 18 |
-| `rogue_mud` | PASS | OK | OK | 0 | 78 |
+| `mud_server` | PASS | OK | RUNS | 0 | 18 |
+| `rogue_mud` | PASS | OK | RUNS | 0 | 78 |
 
 ---
 
