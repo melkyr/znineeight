@@ -200,8 +200,6 @@ public:
     size_t getTypeCount() const;
     size_t getTotalCatalogueEntries() const;
 
-    bool is_post_check_phase_;
-
 private:
     void precomputeMangledNames(Module* mod);
 

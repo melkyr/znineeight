@@ -38,6 +38,7 @@ void MetadataPreparationPass::run() {
                     Symbol* sym = snapshot[snap_i];
                     if (sym->symbol_type) {
                         TypeChecker checker(unit_);
+                        checker.setPostCheckPhase(true);
                         sym->symbol_type = checker.resolveAllPlaceholders(sym->symbol_type);
                     }
                 }
@@ -462,6 +463,7 @@ void MetadataPreparationPass::prepareTypeMetadata(Module* mod, Type* type) {
     if (type->kind == TYPE_PLACEHOLDER) {
         if (type->as.placeholder.decl_node) {
             TypeChecker checker(unit_);
+            checker.setPostCheckPhase(true);
             type = checker.resolvePlaceholder(type);
         }
     }
