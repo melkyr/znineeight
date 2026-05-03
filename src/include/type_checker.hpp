@@ -13,6 +13,8 @@ public:
      */
     TypeChecker(CompilationUnit& unit);
 
+    void setPostCheckPhase(bool value) { is_post_check_phase_ = value; }
+
     void registerPlaceholders(ASTNode* root);
     void resolveGlobalDeclarations(ASTNode* root);
     void check(ASTNode* root);

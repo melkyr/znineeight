@@ -163,7 +163,7 @@ struct TypeChecker::ResolvingSignatureGuard {
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
-    : unit_(unit_arg), is_post_check_phase_(unit_arg.is_post_check_phase_), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
+    : unit_(unit_arg), is_post_check_phase_(false), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
       current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0),
       in_ptr_indirection_depth_(0), in_defer_(false), is_resolving_signature_(false),
       expected_type_stack_(unit_arg.getArena()),
