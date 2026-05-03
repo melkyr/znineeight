@@ -3574,7 +3574,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             .build();
 
         if (!existing_sym) {
-            unit_.getSymbolTable().insert(sym);
+            if (!unit_.getSymbolTable().insert(sym)) {
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+                plat_printf_debug("[SYMBOL] FAILED TO INSERT '%s' into scope\n", node->name);
+                #endif
+            }
             existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
         } else {
             existing_sym->symbol_type = placeholder;
@@ -3734,6 +3738,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 }
 
                 if (!can_defer) {
+                    #ifdef Z98_ENABLE_DEBUG_LOGS
+                    plat_printf_debug("[TYPE] visitVarDecl '%s' EARLY RETURN: initializer is undefined and cannot defer\n", node->name);
+                    #endif
                     return get_g_type_undefined();
                 }
             }
@@ -3927,7 +3934,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .withFlags((is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL) | (node->is_const ? SYMBOL_FLAG_CONST : 0))
                 .withMangleKind(k_char)
                 .build();
-            unit_.getSymbolTable().insert(var_symbol);
+            if (!unit_.getSymbolTable().insert(var_symbol)) {
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+                plat_printf_debug("[SYMBOL] FAILED TO INSERT LOCAL '%s' into scope\n", node->name);
+                #endif
+            }
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
         }
     }
@@ -3936,7 +3947,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->is_resolving = false;
     }
 
-    if (!declared_type) return NULL;
+    if (!declared_type) {
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+        plat_printf_debug("[TYPE] visitVarDecl '%s' EARLY RETURN: declared_type is NULL\n", node->name);
+        #endif
+        return NULL;
+    }
 
     if (is_local && node->is_const && declared_type &&
         (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION ||
