@@ -3574,7 +3574,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             .build();
 
         if (!existing_sym) {
-            unit_.getSymbolTable().insert(sym);
+            if (!unit_.getSymbolTable().insert(sym)) {
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+                plat_printf_debug("[SYMBOL] FAILED TO INSERT '%s' into scope\n", node->name);
+                #endif
+            }
             existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
         } else {
             existing_sym->symbol_type = placeholder;
@@ -3927,7 +3931,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .withFlags((is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL) | (node->is_const ? SYMBOL_FLAG_CONST : 0))
                 .withMangleKind(k_char)
                 .build();
-            unit_.getSymbolTable().insert(var_symbol);
+            if (!unit_.getSymbolTable().insert(var_symbol)) {
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+                plat_printf_debug("[SYMBOL] FAILED TO INSERT LOCAL '%s' into scope\n", node->name);
+                #endif
+            }
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
         }
     }
