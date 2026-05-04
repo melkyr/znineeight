@@ -68,6 +68,12 @@ TypeRegistry::InsertStatus TypeRegistry::insert(const char* module_path, const c
     new_entry->next = buckets[h];
     buckets[h] = new_entry;
 
+#ifdef DEBUG
+    if (type_ptr->owner_module) {
+        Z98_ASSERT(module_path == type_ptr->owner_module->canonical_path);
+    }
+#endif
+
     return OK;
 }
 

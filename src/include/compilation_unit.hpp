@@ -130,6 +130,9 @@ public:
     const CompilationOptions& getOptions() const;
     void setOptions(const CompilationOptions& options);
 
+    bool isPostCheckPhase() const { return is_post_check_phase_; }
+    void setPostCheckPhase(bool value) { is_post_check_phase_ = value; }
+
     void addIncludePath(const char* path);
     const DynamicArray<const char*>& getIncludePaths() const { return include_paths_; }
 
@@ -243,6 +246,7 @@ private:
     int test_name_counter_;
     bool validation_completed_;
     bool c89_validation_passed_;
+    bool is_post_check_phase_;
 };
 
 #endif // COMPILATION_UNIT_HPP
