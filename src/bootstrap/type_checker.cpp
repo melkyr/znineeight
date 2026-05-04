@@ -300,6 +300,9 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
 
                 if (is_module_access) {
                     Module* current_mod = unit_.getModule(unit_.getCurrentModule());
+#ifdef Z98_ENABLE_DEBUG_LOGS
+                    plat_printf_debug("[PH] Found module member alias '%s' in module '%s'\n", vd->name, current_mod ? current_mod->name : "NULL");
+#endif
 
                     /* Only create placeholder if not already in the registry */
                     Type* existing = unit_.getTypeRegistry().find(current_mod ? current_mod->canonical_path : NULL, vd->name);
@@ -2925,6 +2928,12 @@ void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
 
 Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
     if (!placeholder || placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
+
+#ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[PH] resolveNamedPlaceholder '%s' in module '%s'\n",
+                     placeholder->as.placeholder.name,
+                     placeholder->as.placeholder.module ? placeholder->as.placeholder.module->name : "NULL");
+#endif
 
     if (placeholder->is_resolving) return placeholder;
 
@@ -5596,6 +5605,10 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
     }
 
     if (!resolved_type || is_type_undefined(resolved_type)) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+        const char* current_mod_name = unit_.getCurrentModule();
+        plat_printf_debug("[TYPE] visitTypeName failed for '%s' in module '%s'\n", node->name, current_mod_name ? current_mod_name : "NULL");
+#endif
         if (!resolved_type) {
             current = msg_buffer;
             remaining = sizeof(msg_buffer);
