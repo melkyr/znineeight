@@ -5619,7 +5619,7 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         /* Look up in symbol table for type aliases (e.g., const Point = struct { ... }) */
         if (sym) {
             /* Resolve on demand if needed */
-            if (!sym->symbol_type && sym->kind == SYMBOL_VARIABLE && sym->details) {
+    if ((!sym->symbol_type || is_type_undefined(sym->symbol_type)) && sym->details) {
                 Type* res = visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
                 if (!res || is_type_undefined(res)) return get_g_type_undefined();
             }
