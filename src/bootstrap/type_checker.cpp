@@ -2236,7 +2236,7 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     node->as.identifier.symbol = sym;
 
     /* Resolve on demand if needed */
-    if (!sym->symbol_type && sym->details) {
+    if ((!sym->symbol_type || is_type_undefined(sym->symbol_type)) && sym->details) {
         res = NULL;
         if (sym->kind == SYMBOL_FUNCTION) {
             res = visitFnSignature((ASTFnDeclNode*)sym->details);
@@ -2946,6 +2946,19 @@ Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
     if (decl && decl->type == NODE_VAR_DECL) {
         ASTVarDeclNode* vd = decl->as.var_decl;
         if (vd->initializer) {
+            /* --- NEW: Forced resolution of base placeholders --- */
+            if (vd->initializer->type == NODE_MEMBER_ACCESS) {
+                ASTMemberAccessNode* ma = vd->initializer->as.member_access;
+                if (ma->base && ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* base_sym = unit_.getSymbolTable().lookup(ma->base->as.identifier.name);
+                    if (base_sym && base_sym->symbol_type &&
+                        base_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
+                        /* Force resolution of the base placeholder */
+                        resolvePlaceholder(base_sym->symbol_type);
+                    }
+                }
+            }
+
             /* Visit the initializer as an anonymous aggregate.
                We bypass visitVarDecl to avoid recursive placeholder registration logic
                and directly extract the structure. */
@@ -3491,10 +3504,31 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* --- NEW: Pre-insert local variable with undefined type --- */
+    bool just_pre_inserted = false;
+    if (is_local) {
+        existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+        if (!existing_sym) {
+            Symbol local_sym = SymbolBuilder(unit_.getArena())
+                .withName(node->name)
+                .withModule(NULL)          /* always NULL for locals */
+                .ofType(SYMBOL_VARIABLE)
+                .withType(get_g_type_undefined())   /* temporary */
+                .atLocation(node->name_loc)
+                .definedBy(node)
+                .withFlags(SYMBOL_FLAG_LOCAL | (node->is_const ? SYMBOL_FLAG_CONST : 0))
+                .build();
+            unit_.getSymbolTable().insert(local_sym);
+            existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+            Z98_ASSERT(existing_sym != NULL);
+            just_pre_inserted = true;
+        }
+    }
+
     /* Avoid double resolution but ensure flags are set. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     placeholder = NULL;
-    if (existing_sym && existing_sym->symbol_type) {
+    if (existing_sym && existing_sym->symbol_type && !just_pre_inserted) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
             placeholder = existing_sym->symbol_type;
                 if (placeholder->is_resolving) {
@@ -3862,8 +3896,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     if (existing_sym) {
-        if (declared_type) {
-             existing_sym->symbol_type = declared_type;
+        if (declared_type || is_local) {
+             existing_sym->symbol_type = declared_type ? declared_type : get_g_type_undefined();
 
              /* If it's a type declaration, update the mangle kind to 'S' */
              if (node->is_const && (declared_type->kind == TYPE_TYPE || declared_type->kind == TYPE_MODULE)) {
