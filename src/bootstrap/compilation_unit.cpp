@@ -1120,6 +1120,9 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     }
     if (logger) logger->flush();
 
+    // Phase 0.7: Flatten transitive type aliases
+    flattenTransitiveAliases();
+
     // Now run semantic analysis on ALL modules
     bool all_success = true;
 
@@ -1767,6 +1770,35 @@ void CompilationUnit::precomputeMangledNames(Module* mod) {
                 plat_abort();
             }
 #endif
+        }
+    }
+}
+void CompilationUnit::flattenTransitiveAliases() {
+    bool changed = true;
+    int max_chain = 100;  /* safety cap, recommended */
+    DynamicArray<PendingResolution>& pending = getPendingResolutions();
+
+    while (changed && max_chain-- > 0) {
+        changed = false;
+        for (size_t i = 0; i < pending.length(); ++i) {
+            Type* placeholder = pending[i].placeholder;
+            if (placeholder->kind != TYPE_PLACEHOLDER) continue;
+
+            ASTNode* decl = pending[i].decl_node;
+            if (!decl || decl->type != NODE_VAR_DECL) continue;
+
+            ASTVarDeclNode* vd = decl->as.var_decl;
+            Symbol* sym = vd->symbol;
+            if (!sym) sym = getSymbolTable().lookup(vd->name);
+            if (!sym) continue;
+
+            TypeChecker checker(*this);
+            Type* resolved = checker.resolveTypeConstant(sym);
+            if (resolved && resolved->kind != TYPE_TYPE && resolved->kind != TYPE_PLACEHOLDER) {
+                /* Finalize the placeholder to the concrete type */
+                checker.finalizePlaceholder(placeholder, resolved);
+                changed = true;
+            }
         }
     }
 }
