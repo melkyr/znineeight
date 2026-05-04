@@ -13,6 +13,8 @@ public:
      */
     TypeChecker(CompilationUnit& unit);
 
+    void setPostCheckPhase(bool value) { is_post_check_phase_ = value; }
+
     void registerPlaceholders(ASTNode* root);
     void resolveGlobalDeclarations(ASTNode* root);
     void check(ASTNode* root);
@@ -130,7 +132,6 @@ private:
 
     Type* resolveNamedType(struct Module* defining_mod, const char* name, Symbol* sym);
     void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
-    Type* resolveTypeConstant(Symbol* sym);
     Type* resolveTypeAlias(Symbol* sym, int depth = 0);
     Type* handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, struct Module* target_mod, Symbol* sym, bool* out_is_type_access, Type** out_base_type);
     bool isLocalContext() const;
@@ -141,10 +142,12 @@ private:
     Type* createErrorUnionDataType(ArenaAllocator& arena, Type* error_union, SourceLocation loc);
     Type* getOrCreateErrorUnionDataType(Type* error_union, SourceLocation loc);
 public:
+    Type* resolveTypeConstant(Symbol* sym);
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
     void finalizePlaceholder(Type* placeholder, Type* resolved);
     Type* resolveNamedPlaceholder(Type* placeholder);
+    void forceResolveModule(Type* module_placeholder);
 private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
@@ -160,6 +163,7 @@ private:
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
     CompilationUnit& unit_;
+    bool is_post_check_phase_;
     ASTNode* module_root_block_;
     Type* current_fn_return_type_;
     const char* current_fn_name_;

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.2] - "Isophthalic dianhydride"
+
+### Added
+- **Canonical Module Identity**: Modules now use interned absolute paths for identity, resolving type visibility issues in large multi-module projects.
+- **Fixed-Point Placeholder Resolution**: Phase 0.5 now iterates until convergence (up to 10,000 passes) to handle deep transitive alias chains.
+- **Deep Alias Unwrapping**: Type constants are now deeply unwrapped during placeholder resolution to find concrete underlying types immediately.
+
+## [0.12.1] - "Isophthalic anhydride"
+
+### Added
+- **Aggregate Initializer Lifting**: Automatically decomposes struct/union/tuple literals in expression contexts into field assignments for C89 compatibility.
+- **Enhanced Tagged Union Coercion**: Support for returning naked tag literals from control-flow branches.
+
 ## [0.12.0] - "Isophthalic acid"
 
 ### Added

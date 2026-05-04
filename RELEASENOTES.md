@@ -1,3 +1,38 @@
+# Z98 0.12.2 “Isophthalic dianhydride” Release Notes
+
+We are proud to announce the release of Z98 version **0.12.2**, codenamed **“Isophthalic dianhydride”**.
+
+Continuing the "dryness" of our Isophthalic series, version 0.12.2 (Dianhydride) further stabilizes the cross-module resolution engine, enabling the compilation of extremely large, multi-module projects like the stage 1 Zig compiler.
+
+## 🏗️ Production-Grade Module Identity
+
+We have overhauled how the compiler tracks and identifies modules to ensure 100% reliable type deduplication across complex import graphs.
+
+### 🌐 Canonical Module Identity
+The `TypeRegistry` has transitioned from using raw memory pointers (`Module*`) to using **Canonical Module Paths**.
+- **The Issue**: In large projects, logical module identity could sometimes diverge from pointer identity due to how dependencies were loaded, leading to "disappearing" types or spurious redefinition errors.
+- **The Solution**: Every module now possesses a `canonical_path`—an absolute, normalized, and case-insensitive file path. This path serves as the unique key for type lookups, ensuring that `std.zig` is always `std.zig`, regardless of how many logical paths lead to it.
+
+## 🛠️ Robust Alias & Placeholder Resolution
+
+The resolution of transitive type aliases and mutually recursive structures has been significantly strengthened.
+
+### 🔄 Fixed-Point Placeholder Resolution
+The placeholder resolution phase (Phase 0.5) now utilizes a **Fixed-Point Iteration** strategy.
+- Instead of a fixed number of passes, the compiler now iterates until all possible placeholders are resolved or a safety cap (10,000 iterations) is reached.
+- This ensures that even the deepest chains of cross-module type aliases (e.g., `ModuleA.X -> ModuleB.Y -> ModuleC.Z`) are fully resolved before semantic analysis continues.
+
+### 🧬 Deep Alias Unwrapping
+When resolving type constants, the compiler now deeply unwraps `TYPE_TYPE` chains. This allows the `TypeChecker` to immediately see through alias layers and finalize placeholders with their ultimate concrete types, improving the reliability of structural equality checks.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Jules (AI-Agent)*
+
+---
+
 # Z98 0.12.1 “Isophthalic anhydride” Release Notes
 
 We are proud to announce the release of Z98 version **0.12.1**, codenamed **“Isophthalic anhydride”**.

@@ -158,7 +158,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       test_name_counters_(arena),
       test_name_counter_(0),
       validation_completed_(false),
-      c89_validation_passed_(false) {
+      c89_validation_passed_(false),
+      is_post_check_phase_(false) {
 
     current_module_ = interner_.intern("main");
 
@@ -178,6 +179,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     builtin_module_ = new (builtin_mem) Module(arena_);
     builtin_module_->name = interner_.intern("builtin");
     builtin_module_->filename = interner_.intern("<builtin>");
+    builtin_module_->canonical_path = builtin_module_->filename;
     builtin_module_->file_id = 0xFFFFFFFF;
     
     void* builtin_sym_mem = arena_.alloc(sizeof(SymbolTable));
@@ -257,6 +259,14 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     // Convert backslashes to forward slashes for cross-platform consistency
     for (char* p = abs_path; *p; ++p) if (*p == '\\') *p = '/';
     mod->stable_hash = fnv1a_32(abs_path);
+
+    // Compute canonical path (absolute, normalized, lowercased for case-insensitivity)
+    char canonical_buf[1024];
+    plat_strncpy(canonical_buf, abs_path, sizeof(canonical_buf));
+    for (char* p = canonical_buf; *p; ++p) {
+        if (*p >= 'A' && *p <= 'Z') *p = *p + ('a' - 'A');
+    }
+    mod->canonical_path = interner_.intern(canonical_buf);
 
     // Create per-module symbol table
     void* sym_mem = arena_.alloc(sizeof(SymbolTable));
@@ -504,7 +514,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
         if (t) {
             const char* name = interner_.intern(primitives[i]);
-            type_registry_.insert(builtin_module_, name, t);
+            type_registry_.insert(builtin_module_->canonical_path, name, t);
             Symbol sym = SymbolBuilder(arena_)
                 .withName(name)
                 .withModule(builtin_name)
@@ -1062,15 +1072,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     }
     if (logger) logger->flush();
 
-    // Phase 0.5: Resolve Named Placeholders (Pass 2)
+    // Phase 0.5: Resolve Named Placeholders (Pass 2) - Fixed-Point Iteration
     {
         TypeChecker checker(*this);
         DynamicArray<PendingResolution>& pending = getPendingResolutions();
 
         bool progress = true;
+        int max_iter = 10000;
         int iterations = 0;
-        const int MAX_ITERATIONS = 10;
-        while (progress && iterations < MAX_ITERATIONS) {
+        while (progress && iterations < max_iter) {
             progress = false;
             iterations++;
 #ifdef DEBUG
@@ -1091,17 +1101,51 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             }
         }
 
-#ifdef DEBUG
-        for (size_t i = 0; i < pending.length(); ++i) {
-            if (pending[i].placeholder->kind == TYPE_PLACEHOLDER) {
-                plat_printf_debug("CRITICAL: Unresolved placeholder '%s' after Phase 0.5\n", pending[i].placeholder->as.placeholder.name);
+        if (iterations >= max_iter && progress) {
+            plat_print_info("FATAL: Placeholder resolution loop did not converge. "
+                        "Unresolved placeholders:\n");
+            for (size_t i = 0; i < pending.length(); ++i) {
+                if (pending[i].placeholder->kind == TYPE_PLACEHOLDER) {
+                    const char* name = pending[i].placeholder->as.placeholder.name;
+                    char msg_buf[256];
+                    plat_snprintf(msg_buf, sizeof(msg_buf), "  - %s (declared in module %s)\n",
+                                name ? name : "?",
+                                pending[i].placeholder->as.placeholder.module
+                                    ? pending[i].placeholder->as.placeholder.module->name
+                                    : "?");
+                    plat_print_info(msg_buf);
+                }
             }
-            Z98_ASSERT(pending[i].placeholder->kind != TYPE_PLACEHOLDER &&
-                       "Unresolved placeholder after Phase 0.5");
+            fatalError("Unresolved placeholder cycle detected. Check for circular type dependencies.");
         }
-#endif
     }
     if (logger) logger->flush();
+
+    // Phase 0.7: Flatten transitive type aliases
+    flattenTransitiveAliases();
+
+    // Guard: Ensure cross-module symbols (pub/extern) are resolved before type checking
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (!m->symbols) continue;
+        const DynamicArray<Scope*>& scopes = m->symbols->getAllScopes();
+        if (scopes.length() == 0) continue;
+        Scope* global_scope = scopes[0];
+        for (size_t k = 0; k < global_scope->bucket_count; ++k) {
+            Scope::SymbolEntry* entry = global_scope->buckets[k];
+            while (entry) {
+                const Symbol& sym = entry->symbol;
+                if ((sym.flags & (SYMBOL_FLAG_PUB | SYMBOL_FLAG_EXTERN)) &&
+                    sym.symbol_type && sym.symbol_type->kind == TYPE_PLACEHOLDER) {
+                    char msg[512];
+                    plat_snprintf(msg, sizeof(msg), "Internal error: cross-module symbol '%s' was not resolved after global resolution", sym.name);
+                    error_handler_.report(ERR_INTERNAL_ERROR, sym.location, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), msg);
+                }
+                entry = entry->next;
+            }
+        }
+    }
+    if (error_handler_.hasErrors()) return false;
 
     // Now run semantic analysis on ALL modules
     bool all_success = true;
@@ -1180,6 +1224,9 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             precomputeMangledNames(modules_[i]);
         }
     }
+
+    // Set post-check phase flag for subsequent validation passes
+    setPostCheckPhase(true);
 
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
@@ -1750,6 +1797,35 @@ void CompilationUnit::precomputeMangledNames(Module* mod) {
                 plat_abort();
             }
 #endif
+        }
+    }
+}
+void CompilationUnit::flattenTransitiveAliases() {
+    bool changed = true;
+    int max_chain = 100;  /* safety cap, recommended */
+    DynamicArray<PendingResolution>& pending = getPendingResolutions();
+
+    while (changed && max_chain-- > 0) {
+        changed = false;
+        for (size_t i = 0; i < pending.length(); ++i) {
+            Type* placeholder = pending[i].placeholder;
+            if (placeholder->kind != TYPE_PLACEHOLDER) continue;
+
+            ASTNode* decl = pending[i].decl_node;
+            if (!decl || decl->type != NODE_VAR_DECL) continue;
+
+            ASTVarDeclNode* vd = decl->as.var_decl;
+            Symbol* sym = vd->symbol;
+            if (!sym) sym = getSymbolTable().lookup(vd->name);
+            if (!sym) continue;
+
+            TypeChecker checker(*this);
+            Type* resolved = checker.resolveTypeConstant(sym);
+            if (resolved && resolved->kind != TYPE_TYPE && resolved->kind != TYPE_PLACEHOLDER) {
+                /* Finalize the placeholder to the concrete type */
+                checker.finalizePlaceholder(placeholder, resolved);
+                changed = true;
+            }
         }
     }
 }
