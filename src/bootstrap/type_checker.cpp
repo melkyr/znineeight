@@ -163,7 +163,7 @@ struct TypeChecker::ResolvingSignatureGuard {
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
-    : unit_(unit_arg), is_post_check_phase_(false), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
+    : unit_(unit_arg), is_post_check_phase_(unit_arg.isPostCheckPhase()), module_root_block_(NULL), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
       current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0),
       in_ptr_indirection_depth_(0), in_defer_(false), is_resolving_signature_(false),
       expected_type_stack_(unit_arg.getArena()),
@@ -1313,7 +1313,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
             break;
         case BUILTIN_REJECTED:
-            /* Handled early in visitFunctionCall */
+            unit_.getCallSiteLookupTable().resolveEntry(entry_id, NULL, CALL_DIRECT);
             break;
         case FORWARD_REFERENCE:
             unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
@@ -2963,6 +2963,13 @@ void TypeChecker::forceResolveModule(Type* module_type) {
             }
         }
     }
+
+#ifdef DEBUG
+    if (iterations >= max_iter) {
+        plat_printf_debug("[PH] forceResolveModule: loop did not converge for module '%s'\n",
+                          mod->name);
+    }
+#endif
 
     /* One final check for the module placeholder itself if it's still a placeholder. */
     if (module_type->kind == TYPE_PLACEHOLDER) {
