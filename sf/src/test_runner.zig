@@ -1,6 +1,8 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
+const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
+const SourceManager = @import("source_manager.zig").SourceManager;
 const Lexer = @import("lexer.zig").Lexer;
 const lexerInit = @import("lexer.zig").lexerInit;
 const lexerNextToken = @import("lexer.zig").lexerNextToken;
@@ -123,6 +125,6 @@ pub fn assert_eq_str(actual: []const u8, expected: []const u8, msg: []const u8) 
     }
 }
 
-fn failAndPanic(msg: []const u8) noreturn {
+fn failAndPanic(msg: []const u8) void {
     @panic(msg);
 }

@@ -74,11 +74,26 @@ const pal = @import("pal.zig");
 
 fn getLevelName(level: u8) []const u8 {
     switch (level) {
-        0 => return "error",
-        1 => return "warning",
-        2 => return "info",
-        3 => return "note",
-        else => return "unknown",
+        0 => {
+            var s: []const u8 = "error";
+            return s;
+        },
+        1 => {
+            var s: []const u8 = "warning";
+            return s;
+        },
+        2 => {
+            var s: []const u8 = "info";
+            return s;
+        },
+        3 => {
+            var s: []const u8 = "note";
+            return s;
+        },
+        else => {
+            var s: []const u8 = "unknown";
+            return s;
+        },
     }
 }
 
@@ -195,7 +210,8 @@ pub fn diagnosticCollectorIntern(self: *DiagnosticCollector, msg: []const u8) u3
 pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, file_id: u32, span_start: u32, span_end: u32, message: []const u8) void {
     if (code == 9999) return;
     if (self.diagnostics.len >= self.max_diagnostics) {
-        var msg_id = interner_mod.stringInternerIntern(self.interner, "too many errors, stopping");
+        var overflow_msg: []const u8 = "too many errors, stopping";
+        var msg_id = interner_mod.stringInternerIntern(self.interner, overflow_msg);
         diagnosticArrayListAppend(self.diagnostics, Diagnostic{
             .level = @intCast(u8, 0),
             .code = @intCast(u16, 9999),
@@ -246,21 +262,26 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         var loc = sm_mod.sourceManagerGetLocation(self.source_manager, d.file_id, d.span_start);
         var fname = sm_mod.sourceManagerGetFileName(self.source_manager, d.file_id);
         writeStr(fname);
-        writeStr(":");
+        var col_s: []const u8 = ":";
+        writeStr(col_s);
         var line_buf: [16]u8 = undefined;
-        var line_len = formatU32(loc.line, &line_buf);
+        var line_len = formatU32(loc.line, line_buf[0..16]);
         writeStr(line_buf[0..@intCast(usize, line_len)]);
-        writeStr(":");
+        var col_s2: []const u8 = ":";
+        writeStr(col_s2);
         var col_buf: [16]u8 = undefined;
-        var col_len = formatU32(loc.col, &col_buf);
+        var col_len = formatU32(loc.col, col_buf[0..16]);
         writeStr(col_buf[0..@intCast(usize, col_len)]);
-        writeStr(": ");
+        var sep: []const u8 = ": ";
+        writeStr(sep);
         writeStr(getLevelName(d.level));
-        writeStr("[");
+        var lb: []const u8 = "[";
+        writeStr(lb);
         var code_buf: [8]u8 = undefined;
-        var code_len = formatU32(d.code, &code_buf);
+        var code_len = formatU32(d.code, code_buf[0..8]);
         writeStr(code_buf[0..@intCast(usize, code_len)]);
-        writeStr("]: ");
+        var rb: []const u8 = "]: ";
+        writeStr(rb);
         var entry = self.interner.entries.items[@intCast(usize, d.message_id)];
         writeStr(entry.text);
         var nl: []const u8 = "\n";

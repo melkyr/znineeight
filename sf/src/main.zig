@@ -13,6 +13,8 @@ const token_mod = @import("token.zig");
 const dump_mod = @import("dump.zig");
 const lexer_mod = @import("lexer.zig");
 const pal = @import("pal.zig");
+const parser_mod = @import("parser.zig");
+const ast_mod = @import("ast.zig");
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -70,14 +72,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         return;
     }
     if (cli.test_mode) {
-        var compiler_alloc = alloc_mod.initCompilerAlloc();
-        var perm_sand = compiler_alloc.permanent;
-        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-        var source_man = sm_mod.sourceManagerInit(&perm_sand);
-        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-        compiler_alloc.permanent = perm_sand;
-        token_mod.initKeywordTable(&perm_sand);
-        lexer_mod.lexerRunAllTests();
+        const msg: []const u8 = "error: use test_main.zig for test mode\n";
+        pal.stderr_write(msg);
+        pal.exit(1);
         return;
     }
     if (cli.input_file.len == 0) {
