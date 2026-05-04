@@ -46,3 +46,15 @@ The `TypeChecker` includes an `is_post_check_phase_` flag that is enabled for al
 
 ## 7. On-demand Signature Resolution Context
 The `resolveCallSite` function handles forward references to functions and variables by triggering on-demand signature or declaration resolution. To ensure these lookups are correctly isolated to the defining module, `resolveCallSite` switches the `current_module_` context to the target module before calling `visitFnSignature` or `visitVarDecl`. It utilizes the `ResolvingSignatureGuard` to prevent parameters and return types from being incorrectly tagged with the `SYMBOL_FLAG_LOCAL` flag during this on-demand resolution.
+
+## 8. Local Variable Pre-Insertion
+To prevent "use of undeclared identifier" errors for variables with inferred types, `visitVarDecl` employs a pre-insertion strategy for local variables.
+
+- **Problem**: Previously, for an inferred variable like `var x = (a + b);`, the compiler would resolve the initializer first. If the initializer resolution hit an error or returned `TYPE_UNDEFINED`, the function would return early without ever inserting `x` into the symbol table. Subsequent references to `x` would then fail with a confusing "undeclared identifier" error instead of the actual type error.
+- **Solution**: The `TypeChecker` now inserts the variable into the local symbol table **before** resolving the initializer.
+- **Mechanism**:
+  1. A new `Symbol` is built with name, `SYMBOL_FLAG_LOCAL`, and `TYPE_UNDEFINED`.
+  2. The symbol is inserted into the current scope.
+  3. The initializer is resolved.
+  4. The symbol's type is updated with the resolved type of the initializer.
+- **Safety**: This ensures that even if type inference fails, the identifier itself is known to the compiler, allowing for better error recovery and preventing cascading "undeclared" errors.
