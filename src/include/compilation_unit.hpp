@@ -202,6 +202,7 @@ public:
 
 private:
     void precomputeMangledNames(Module* mod);
+    void flattenTransitiveAliases();
 
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
