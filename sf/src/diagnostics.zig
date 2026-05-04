@@ -263,7 +263,8 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         writeStr("]: ");
         var entry = self.interner.entries.items[@intCast(usize, d.message_id)];
         writeStr(entry.text);
-        writeStr("\n");
+        var nl: []const u8 = "\n";
+        writeStr(nl);
         var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, d.file_id);
         var offsets = sm_mod.sourceManagerGetLineOffsets(self.source_manager, d.file_id);
         var line_idx = mem_mod.binary_search(offsets, d.span_start);
@@ -280,7 +281,8 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         if (l_start < l_end and l_end <= content.len) {
             var line_text = content[l_start..l_end];
             writeStr(line_text);
-            writeStr("\n");
+            var nl2: []const u8 = "\n";
+            writeStr(nl2);
             var loc_col: usize = @intCast(usize, loc.col);
             var cspan: usize = @intCast(usize, d.span_end - d.span_start);
             if (cspan == 0) cspan = 1;
@@ -301,7 +303,8 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
                 caret_len += 1;
             }
             writeStr(caret_buf[0..caret_len]);
-            writeStr("\n");
+            var nl3: []const u8 = "\n";
+            writeStr(nl3);
         }
         i += 1;
     }

@@ -288,6 +288,11 @@ u16 __bootstrap_u16_from_usize(usize x) {
     return (u16)x;
 }
 
+u16 __bootstrap_u16_from_u32(u32 x) {
+    if (x > 65535) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (u16)x;
+}
+
 usize __bootstrap_usize_from_i64(i64 x) {
     if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (usize)x;

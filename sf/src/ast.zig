@@ -8,6 +8,7 @@ pub const AstKind = enum(u8) {
     field_decl,
     param_decl,
     test_decl,
+    error_set_decl,
     int_literal,
     float_literal,
     string_literal,
@@ -29,13 +30,39 @@ pub const AstKind = enum(u8) {
     address_of,
     fn_call,
     builtin_call,
-    add, sub, mul, div, mod_op,
-    bit_and, bit_or, bit_xor, shl, shr,
-    bool_and, bool_or,
-    cmp_eq, cmp_ne, cmp_lt, cmp_le, cmp_gt, cmp_ge,
-    assign, add_assign, sub_assign, mul_assign, div_assign, mod_assign,
-    shl_assign, shr_assign, and_assign, xor_assign, or_assign,
-    negate, bool_not,
+    paren_expr,
+    add,
+    sub,
+    mul,
+    div,
+    mod_op,
+    bit_and,
+    bit_or,
+    bit_xor,
+    shl,
+    shr,
+    bool_and,
+    bool_or,
+    cmp_eq,
+    cmp_ne,
+    cmp_lt,
+    cmp_le,
+    cmp_gt,
+    cmp_ge,
+    assign,
+    add_assign,
+    sub_assign,
+    mul_assign,
+    div_assign,
+    mod_assign,
+    shl_assign,
+    shr_assign,
+    and_assign,
+    xor_assign,
+    or_assign,
+    negate,
+    bool_not,
+    bit_not,
     try_expr,
     catch_expr,
     orelse_expr,
@@ -53,6 +80,8 @@ pub const AstKind = enum(u8) {
     continue_stmt,
     defer_stmt,
     errdefer_stmt,
+    labeled_stmt,
+    expr_stmt,
     ptr_type,
     many_ptr_type,
     array_type,
@@ -60,25 +89,25 @@ pub const AstKind = enum(u8) {
     optional_type,
     error_union_type,
     fn_type,
-    error_set_decl,
     import_expr,
     module_root,
     payload_capture,
     range_exclusive,
     range_inclusive,
-    labeled_stmt,
 };
 
-pub const AstNode = packed struct {
-    kind: AstKind,
-    flags: u8,
-    span_start: u32,
-    span_end: u32,
-    child_0: u32,
-    child_1: u32,
-    child_2: u32,
-    payload: u32,
-};
+pub const AstNode = struct {
+    kind: AstKind,    // u8  — offset 0
+    flags: u8,        // u8  — offset 1 (bit0=is_const, bit1=is_pub, bit2=is_extern,
+                      //        bit3=is_export, bit4=has_capture, bit5=has_index_capture,
+                      //        bit6=is_inclusive, bit7=is_mutable)
+    span_len: u16,    // u16 — offset 2 (byte length; span_end = span_start + span_len)
+    span_start: u32,  // u32 — offset 4
+    child_0: u32,     // u32 — offset 8
+    child_1: u32,     // u32 — offset 12
+    child_2: u32,     // u32 — offset 16
+    payload: u32,     // u32 — offset 20
+}; // total: 24 bytes (32-bit layout)
 
 pub const FnProto = struct {
     name_id: u32,
@@ -87,26 +116,217 @@ pub const FnProto = struct {
     return_type_node: u32,
 };
 
-pub const AstStore = struct {
-    nodes: std.ArrayList(AstNode),
-    extra_children: std.ArrayList(u32),
-    identifiers: std.ArrayList(u32),
-    int_values: std.ArrayList(u64),
-    float_values: std.ArrayList(f64),
-    string_values: std.ArrayList(u32),
-    fn_protos: std.ArrayList(FnProto),
-    allocator: *Allocator,
+const Sand = @import("allocator.zig").Sand;
+const alloc_mod = @import("allocator.zig");
 
-    pub fn init(allocator: *Allocator) AstStore {}
-    pub fn addNode(self: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32) !u32 {}
-    pub fn addExtraChildren(self: *AstStore, children: []const u32) !u32 {}
-    pub fn getExtraChildren(self: *AstStore, payload: u32) []const u32 {}
-    pub fn addIntLiteral(self: *AstStore, value: u64) !u32 {}
-    pub fn addFloatLiteral(self: *AstStore, value: f64) !u32 {}
-    pub fn addIdentifier(self: *AstStore, name_id: u32) !u32 {}
+fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
+    if (len.* >= capacity.*) {
+        var new_cap = capacity.*;
+        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+        if (new_cap < len.* * 2) new_cap = len.* * 2;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]u32, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
+        }
+        items.* = new_items_p;
+        capacity.* = new_cap;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn astNodeArrayListAppendInner(items: *[*]AstNode, len: *usize, capacity: *usize, arena: *Sand, value: AstNode) void {
+    if (len.* >= capacity.*) {
+        var new_cap = capacity.*;
+        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+        if (new_cap < len.* * 2) new_cap = len.* * 2;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 24) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]AstNode, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
+        }
+        items.* = new_items_p;
+        capacity.* = new_cap;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn u64ArrayListAppendInner(items: *[*]u64, len: *usize, capacity: *usize, arena: *Sand, value: u64) void {
+    if (len.* >= capacity.*) {
+        var new_cap = capacity.*;
+        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+        if (new_cap < len.* * 2) new_cap = len.* * 2;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]u64, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
+        }
+        items.* = new_items_p;
+        capacity.* = new_cap;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn f64ArrayListAppendInner(items: *[*]f64, len: *usize, capacity: *usize, arena: *Sand, value: f64) void {
+    if (len.* >= capacity.*) {
+        var new_cap = capacity.*;
+        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+        if (new_cap < len.* * 2) new_cap = len.* * 2;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]f64, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
+        }
+        items.* = new_items_p;
+        capacity.* = new_cap;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn fnProtoArrayListAppendInner(items: *[*]FnProto, len: *usize, capacity: *usize, arena: *Sand, value: FnProto) void {
+    if (len.* >= capacity.*) {
+        var new_cap = capacity.*;
+        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+        if (new_cap < len.* * 2) new_cap = len.* * 2;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 12) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]FnProto, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
+        }
+        items.* = new_items_p;
+        capacity.* = new_cap;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+pub const AstStore = struct {
+    nodes: struct {
+        items: [*]AstNode,
+        len: usize,
+        capacity: usize,
+    },
+    extra_children: struct {
+        items: [*]u32,
+        len: usize,
+        capacity: usize,
+    },
+    identifiers: struct {
+        items: [*]u32,
+        len: usize,
+        capacity: usize,
+    },
+    int_values: struct {
+        items: [*]u64,
+        len: usize,
+        capacity: usize,
+    },
+    float_values: struct {
+        items: [*]f64,
+        len: usize,
+        capacity: usize,
+    },
+    string_values: struct {
+        items: [*]u32,
+        len: usize,
+        capacity: usize,
+    },
+    fn_protos: struct {
+        items: [*]FnProto,
+        len: usize,
+        capacity: usize,
+    },
+    allocator: *Sand,
 };
 
-pub fn nodeHasExtraChildren(kind: AstKind) bool {}
+// Payload field semantics per AstKind:
+//   int_literal       → int_values index
+//   float_literal     → float_values index
+//   string_literal     → string_values index (interned string ID)
+//   ident_expr         → identifiers index (interned string ID)
+//   fn_decl           → fn_protos index
+//   fn_call, block, struct_decl, enum_decl, union_decl, switch_expr,
+//     tuple_literal, struct_init → extra_children packed (start << 16 | count)
+//   builtin_call      → interned string ID of builtin name
+//   var_decl, field_decl, param_decl, field_access, enum_literal, error_literal → name ID
+//   labeled_stmt, break_stmt, continue_stmt → label name ID (0=unlabeled)
+//   if_capture, while_capture, for_stmt → capture name ID
+//   import_expr       → path string ID
 
-const std = @import("std");
-const Allocator = @import("allocator.zig").Allocator;
+pub fn astStoreInit(arena: *Sand) AstStore {
+    var null_node = AstNode{
+        .kind = AstKind.err, .flags = @intCast(u8, 0),
+        .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 0),
+        .child_0 = @intCast(u32, 0), .child_1 = @intCast(u32, 0),
+        .child_2 = @intCast(u32, 0),
+        .payload = @intCast(u32, 0),
+    };
+    var store = AstStore{
+        .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .identifiers = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .int_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .fn_protos = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .allocator = arena,
+    };
+    astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, arena, null_node);
+    return store;
+}
+
+pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
+    var span_len = @intCast(u16, span_end - span_start);
+    var node = AstNode{
+        .kind = kind, .flags = flags,
+        .span_start = span_start, .span_len = span_len,
+        .child_0 = c0, .child_1 = c1, .child_2 = c2,
+        .payload = payload,
+    };
+    astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, store.allocator, node);
+    return @intCast(u32, store.nodes.len - 1);
+}
+
+pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
+    var start = @intCast(u32, store.extra_children.len);
+    var i: usize = 0;
+    while (i < children.len) {
+        u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);
+        i += 1;
+    }
+    return (start << @intCast(u32, 16)) | @intCast(u32, children.len);
+}
+
+pub fn astStoreGetExtraChildren(store: *AstStore, payload: u32) []const u32 {
+    var start = @intCast(usize, payload >> 16);
+    var count = @intCast(usize, payload & @intCast(u32, 0xFFFF));
+    return store.extra_children.items[start .. start + count];
+}
+
+pub fn astStoreAddIntLiteral(store: *AstStore, value: u64, span_start: u32, span_end: u32) u32 {
+    var val_idx = @intCast(u32, store.int_values.len);
+    u64ArrayListAppendInner(&store.int_values.items, &store.int_values.len, &store.int_values.capacity, store.allocator, value);
+    return astStoreAddNode(store, AstKind.int_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);
+}
+
+pub fn astStoreAddFloatLiteral(store: *AstStore, value: f64, span_start: u32, span_end: u32) u32 {
+    var val_idx = @intCast(u32, store.float_values.len);
+    f64ArrayListAppendInner(&store.float_values.items, &store.float_values.len, &store.float_values.capacity, store.allocator, value);
+    return astStoreAddNode(store, AstKind.float_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);
+}
+
+pub fn astStoreAddStringLiteral(store: *AstStore, string_id: u32, span_start: u32, span_end: u32) u32 {
+    var sv_idx = @intCast(u32, store.string_values.len);
+    u32ArrayListAppendInner(&store.string_values.items, &store.string_values.len, &store.string_values.capacity, store.allocator, string_id);
+    return astStoreAddNode(store, AstKind.string_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sv_idx);
+}
+
+pub fn astStoreAddIdentifier(store: *AstStore, kind: AstKind, string_id: u32, span_start: u32, span_end: u32) u32 {
+    var id_idx = @intCast(u32, store.identifiers.len);
+    u32ArrayListAppendInner(&store.identifiers.items, &store.identifiers.len, &store.identifiers.capacity, store.allocator, string_id);
+    return astStoreAddNode(store, kind, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), id_idx);
+}
