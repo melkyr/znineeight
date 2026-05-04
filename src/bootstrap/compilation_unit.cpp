@@ -158,7 +158,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       test_name_counters_(arena),
       test_name_counter_(0),
       validation_completed_(false),
-      c89_validation_passed_(false) {
+      c89_validation_passed_(false),
+      is_post_check_phase_(false) {
 
     current_module_ = interner_.intern("main");
 
@@ -1123,6 +1124,29 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     // Phase 0.7: Flatten transitive type aliases
     flattenTransitiveAliases();
 
+    // Guard: Ensure cross-module symbols (pub/extern) are resolved before type checking
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (!m->symbols) continue;
+        const DynamicArray<Scope*>& scopes = m->symbols->getAllScopes();
+        if (scopes.length() == 0) continue;
+        Scope* global_scope = scopes[0];
+        for (size_t k = 0; k < global_scope->bucket_count; ++k) {
+            Scope::SymbolEntry* entry = global_scope->buckets[k];
+            while (entry) {
+                const Symbol& sym = entry->symbol;
+                if ((sym.flags & (SYMBOL_FLAG_PUB | SYMBOL_FLAG_EXTERN)) &&
+                    sym.symbol_type && sym.symbol_type->kind == TYPE_PLACEHOLDER) {
+                    char msg[512];
+                    plat_snprintf(msg, sizeof(msg), "Internal error: cross-module symbol '%s' was not resolved after global resolution", sym.name);
+                    error_handler_.report(ERR_INTERNAL_ERROR, sym.location, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), msg);
+                }
+                entry = entry->next;
+            }
+        }
+    }
+    if (error_handler_.hasErrors()) return false;
+
     // Now run semantic analysis on ALL modules
     bool all_success = true;
 
@@ -1200,6 +1224,9 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             precomputeMangledNames(modules_[i]);
         }
     }
+
+    // Set post-check phase flag for subsequent validation passes
+    setPostCheckPhase(true);
 
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
