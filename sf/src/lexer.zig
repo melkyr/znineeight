@@ -254,7 +254,8 @@ fn lexerScanString(self: *Lexer, start: usize) Token {
             if (sb_slice.len > 0) {
                 text = sb_slice;
             } else {
-                text = "";
+                var empty_str: []const u8 = "";
+                text = empty_str;
             }
             var id = interner_mod.stringInternerIntern(self.interner, text);
             return Token{

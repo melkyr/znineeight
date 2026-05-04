@@ -1,131 +1,138 @@
 const pal = @import("pal.zig");
-const Lexer = @import("lexer.zig").Lexer;
-const lexerNextToken = @import("lexer.zig").lexerNextToken;
+const lexer_mod = @import("lexer.zig");
+const Lexer = lexer_mod.Lexer;
 const TokenKind = @import("token.zig").TokenKind;
-const StringInterner = @import("string_interner.zig").StringInterner;
-const stringInternerGet = @import("string_interner.zig").stringInternerGet;
+const interner_mod = @import("string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
 
 pub fn dumpTokens(lex: *Lexer, interner: *StringInterner) void {
-    var buf32: [24]u8 = undefined;
+    var kind_buf: [24]u8 = undefined;
+    var fmt_buf: [24]u8 = undefined;
+    var sp: []const u8 = " ";
+    var nl: []const u8 = "\n";
+    var qq: []const u8 = " \"";
+    var q: []const u8 = "\"";
     while (true) {
-        var t = lexerNextToken(lex);
-        tokenKindToString(t.kind, buf32[0..]);
-        pal.stdout_write(buf32[0..]);
-        pal.stdout_write(" ");
-        pal.stdout_write(formatU32(t.span_start, buf32[0..], 24));
-        pal.stdout_write(" ");
-        pal.stdout_write(formatU32(@intCast(u32, t.span_len), buf32[0..], 24));
+        var t = lexer_mod.lexerNextToken(lex);
+        var kind_slice = tokenKindToString(t.kind, kind_buf[0..]);
+        pal.stdout_write(kind_slice);
+        pal.stdout_write(sp);
+        pal.stdout_write(formatU32(t.span_start, fmt_buf[0..], 24));
+        pal.stdout_write(sp);
+        pal.stdout_write(formatU32(@intCast(u32, t.span_len), fmt_buf[0..], 24));
         if (t.kind == TokenKind.integer_literal or t.kind == TokenKind.char_literal) {
-            pal.stdout_write(" ");
-            pal.stdout_write(formatU64(t.value.int_val, buf32[0..], 24));
+            pal.stdout_write(sp);
+            pal.stdout_write(formatU64(t.value.int_val, fmt_buf[0..], 24));
         } else if (t.kind == TokenKind.float_literal) {
-            pal.stdout_write(" ");
-            pal.stdout_write(formatF64(t.value.float_val, buf32[0..], 24));
+            pal.stdout_write(sp);
+            pal.stdout_write(formatF64(t.value.float_val, fmt_buf[0..], 24));
         } else if (t.kind == TokenKind.string_literal or t.kind == TokenKind.identifier or t.kind == TokenKind.builtin_identifier) {
-            pal.stdout_write(" \"");
-            pal.stdout_write(stringInternerGet(interner, t.value.string_id));
-            pal.stdout_write("\"");
+            pal.stdout_write(qq);
+            var s = interner_mod.stringInternerGet(interner, t.value.string_id);
+            pal.stdout_write(s);
+            pal.stdout_write(q);
         }
-        pal.stdout_write("\n");
+        pal.stdout_write(nl);
         if (t.kind == TokenKind.eof) break;
     }
 }
 
-fn tokenKindToString(kind: TokenKind, buf: []u8) void {
+fn tokenKindToString(kind: TokenKind, buf: []u8) []u8 {
     var idx: usize = 0;
     switch (kind) {
-        TokenKind.integer_literal => { copyStr(buf, &idx, "integer_literal"); },
-        TokenKind.float_literal => { copyStr(buf, &idx, "float_literal"); },
-        TokenKind.string_literal => { copyStr(buf, &idx, "string_literal"); },
-        TokenKind.char_literal => { copyStr(buf, &idx, "char_literal"); },
-        TokenKind.identifier => { copyStr(buf, &idx, "identifier"); },
-        TokenKind.builtin_identifier => { copyStr(buf, &idx, "builtin_identifier"); },
-        TokenKind.lparen => { copyStr(buf, &idx, "lparen"); },
-        TokenKind.rparen => { copyStr(buf, &idx, "rparen"); },
-        TokenKind.lbracket => { copyStr(buf, &idx, "lbracket"); },
-        TokenKind.rbracket => { copyStr(buf, &idx, "rbracket"); },
-        TokenKind.lbrace => { copyStr(buf, &idx, "lbrace"); },
-        TokenKind.rbrace => { copyStr(buf, &idx, "rbrace"); },
-        TokenKind.semicolon => { copyStr(buf, &idx, "semicolon"); },
-        TokenKind.colon => { copyStr(buf, &idx, "colon"); },
-        TokenKind.comma => { copyStr(buf, &idx, "comma"); },
-        TokenKind.dot => { copyStr(buf, &idx, "dot"); },
-        TokenKind.at_sign => { copyStr(buf, &idx, "at_sign"); },
-        TokenKind.underscore => { copyStr(buf, &idx, "underscore"); },
-        TokenKind.question_mark => { copyStr(buf, &idx, "question_mark"); },
-        TokenKind.bang => { copyStr(buf, &idx, "bang"); },
-        TokenKind.plus => { copyStr(buf, &idx, "plus"); },
-        TokenKind.minus => { copyStr(buf, &idx, "minus"); },
-        TokenKind.star => { copyStr(buf, &idx, "star"); },
-        TokenKind.slash => { copyStr(buf, &idx, "slash"); },
-        TokenKind.percent => { copyStr(buf, &idx, "percent"); },
-        TokenKind.ampersand => { copyStr(buf, &idx, "ampersand"); },
-        TokenKind.pipe => { copyStr(buf, &idx, "pipe"); },
-        TokenKind.caret => { copyStr(buf, &idx, "caret"); },
-        TokenKind.tilde => { copyStr(buf, &idx, "tilde"); },
-        TokenKind.shl => { copyStr(buf, &idx, "shl"); },
-        TokenKind.shr => { copyStr(buf, &idx, "shr"); },
-        TokenKind.eq_eq => { copyStr(buf, &idx, "eq_eq"); },
-        TokenKind.bang_eq => { copyStr(buf, &idx, "bang_eq"); },
-        TokenKind.less => { copyStr(buf, &idx, "less"); },
-        TokenKind.less_eq => { copyStr(buf, &idx, "less_eq"); },
-        TokenKind.greater => { copyStr(buf, &idx, "greater"); },
-        TokenKind.greater_eq => { copyStr(buf, &idx, "greater_eq"); },
-        TokenKind.eq => { copyStr(buf, &idx, "eq"); },
-        TokenKind.plus_eq => { copyStr(buf, &idx, "plus_eq"); },
-        TokenKind.minus_eq => { copyStr(buf, &idx, "minus_eq"); },
-        TokenKind.star_eq => { copyStr(buf, &idx, "star_eq"); },
-        TokenKind.slash_eq => { copyStr(buf, &idx, "slash_eq"); },
-        TokenKind.percent_eq => { copyStr(buf, &idx, "percent_eq"); },
-        TokenKind.ampersand_eq => { copyStr(buf, &idx, "ampersand_eq"); },
-        TokenKind.pipe_eq => { copyStr(buf, &idx, "pipe_eq"); },
-        TokenKind.caret_eq => { copyStr(buf, &idx, "caret_eq"); },
-        TokenKind.shl_eq => { copyStr(buf, &idx, "shl_eq"); },
-        TokenKind.shr_eq => { copyStr(buf, &idx, "shr_eq"); },
-        TokenKind.dot_dot => { copyStr(buf, &idx, "dot_dot"); },
-        TokenKind.dot_dot_dot => { copyStr(buf, &idx, "dot_dot_dot"); },
-        TokenKind.dot_lbrace => { copyStr(buf, &idx, "dot_lbrace"); },
-        TokenKind.dot_star => { copyStr(buf, &idx, "dot_star"); },
-        TokenKind.fat_arrow => { copyStr(buf, &idx, "fat_arrow"); },
-        TokenKind.kw_const => { copyStr(buf, &idx, "kw_const"); },
-        TokenKind.kw_var => { copyStr(buf, &idx, "kw_var"); },
-        TokenKind.kw_fn => { copyStr(buf, &idx, "kw_fn"); },
-        TokenKind.kw_pub => { copyStr(buf, &idx, "kw_pub"); },
-        TokenKind.kw_extern => { copyStr(buf, &idx, "kw_extern"); },
-        TokenKind.kw_export => { copyStr(buf, &idx, "kw_export"); },
-        TokenKind.kw_test => { copyStr(buf, &idx, "kw_test"); },
-        TokenKind.kw_struct => { copyStr(buf, &idx, "kw_struct"); },
-        TokenKind.kw_enum => { copyStr(buf, &idx, "kw_enum"); },
-        TokenKind.kw_union => { copyStr(buf, &idx, "kw_union"); },
-        TokenKind.kw_if => { copyStr(buf, &idx, "kw_if"); },
-        TokenKind.kw_else => { copyStr(buf, &idx, "kw_else"); },
-        TokenKind.kw_while => { copyStr(buf, &idx, "kw_while"); },
-        TokenKind.kw_for => { copyStr(buf, &idx, "kw_for"); },
-        TokenKind.kw_switch => { copyStr(buf, &idx, "kw_switch"); },
-        TokenKind.kw_return => { copyStr(buf, &idx, "kw_return"); },
-        TokenKind.kw_break => { copyStr(buf, &idx, "kw_break"); },
-        TokenKind.kw_continue => { copyStr(buf, &idx, "kw_continue"); },
-        TokenKind.kw_defer => { copyStr(buf, &idx, "kw_defer"); },
-        TokenKind.kw_errdefer => { copyStr(buf, &idx, "kw_errdefer"); },
-        TokenKind.kw_try => { copyStr(buf, &idx, "kw_try"); },
-        TokenKind.kw_catch => { copyStr(buf, &idx, "kw_catch"); },
-        TokenKind.kw_orelse => { copyStr(buf, &idx, "kw_orelse"); },
-        TokenKind.kw_error => { copyStr(buf, &idx, "kw_error"); },
-        TokenKind.kw_and => { copyStr(buf, &idx, "kw_and"); },
-        TokenKind.kw_or => { copyStr(buf, &idx, "kw_or"); },
-        TokenKind.kw_true => { copyStr(buf, &idx, "kw_true"); },
-        TokenKind.kw_false => { copyStr(buf, &idx, "kw_false"); },
-        TokenKind.kw_null => { copyStr(buf, &idx, "kw_null"); },
-        TokenKind.kw_undefined => { copyStr(buf, &idx, "kw_undefined"); },
-        TokenKind.kw_unreachable => { copyStr(buf, &idx, "kw_unreachable"); },
-        TokenKind.kw_void => { copyStr(buf, &idx, "kw_void"); },
-        TokenKind.kw_bool => { copyStr(buf, &idx, "kw_bool"); },
-        TokenKind.kw_noreturn => { copyStr(buf, &idx, "kw_noreturn"); },
-        TokenKind.kw_c_char => { copyStr(buf, &idx, "kw_c_char"); },
-        TokenKind.eof => { copyStr(buf, &idx, "eof"); },
-        TokenKind.err_token => { copyStr(buf, &idx, "err_token"); },
+        TokenKind.integer_literal => { var s: []const u8 = "integer_literal"; copyStr(buf, &idx, s); },
+        TokenKind.float_literal => { var s: []const u8 = "float_literal"; copyStr(buf, &idx, s); },
+        TokenKind.string_literal => { var s: []const u8 = "string_literal"; copyStr(buf, &idx, s); },
+        TokenKind.char_literal => { var s: []const u8 = "char_literal"; copyStr(buf, &idx, s); },
+        TokenKind.identifier => { var s: []const u8 = "identifier"; copyStr(buf, &idx, s); },
+        TokenKind.builtin_identifier => { var s: []const u8 = "builtin_identifier"; copyStr(buf, &idx, s); },
+        TokenKind.lparen => { var s: []const u8 = "lparen"; copyStr(buf, &idx, s); },
+        TokenKind.rparen => { var s: []const u8 = "rparen"; copyStr(buf, &idx, s); },
+        TokenKind.lbracket => { var s: []const u8 = "lbracket"; copyStr(buf, &idx, s); },
+        TokenKind.rbracket => { var s: []const u8 = "rbracket"; copyStr(buf, &idx, s); },
+        TokenKind.lbrace => { var s: []const u8 = "lbrace"; copyStr(buf, &idx, s); },
+        TokenKind.rbrace => { var s: []const u8 = "rbrace"; copyStr(buf, &idx, s); },
+        TokenKind.semicolon => { var s: []const u8 = "semicolon"; copyStr(buf, &idx, s); },
+        TokenKind.colon => { var s: []const u8 = "colon"; copyStr(buf, &idx, s); },
+        TokenKind.comma => { var s: []const u8 = "comma"; copyStr(buf, &idx, s); },
+        TokenKind.dot => { var s: []const u8 = "dot"; copyStr(buf, &idx, s); },
+        TokenKind.at_sign => { var s: []const u8 = "at_sign"; copyStr(buf, &idx, s); },
+        TokenKind.underscore => { var s: []const u8 = "underscore"; copyStr(buf, &idx, s); },
+        TokenKind.question_mark => { var s: []const u8 = "question_mark"; copyStr(buf, &idx, s); },
+        TokenKind.bang => { var s: []const u8 = "bang"; copyStr(buf, &idx, s); },
+        TokenKind.plus => { var s: []const u8 = "plus"; copyStr(buf, &idx, s); },
+        TokenKind.minus => { var s: []const u8 = "minus"; copyStr(buf, &idx, s); },
+        TokenKind.star => { var s: []const u8 = "star"; copyStr(buf, &idx, s); },
+        TokenKind.slash => { var s: []const u8 = "slash"; copyStr(buf, &idx, s); },
+        TokenKind.percent => { var s: []const u8 = "percent"; copyStr(buf, &idx, s); },
+        TokenKind.ampersand => { var s: []const u8 = "ampersand"; copyStr(buf, &idx, s); },
+        TokenKind.pipe => { var s: []const u8 = "pipe"; copyStr(buf, &idx, s); },
+        TokenKind.caret => { var s: []const u8 = "caret"; copyStr(buf, &idx, s); },
+        TokenKind.tilde => { var s: []const u8 = "tilde"; copyStr(buf, &idx, s); },
+        TokenKind.shl => { var s: []const u8 = "shl"; copyStr(buf, &idx, s); },
+        TokenKind.shr => { var s: []const u8 = "shr"; copyStr(buf, &idx, s); },
+        TokenKind.eq_eq => { var s: []const u8 = "eq_eq"; copyStr(buf, &idx, s); },
+        TokenKind.bang_eq => { var s: []const u8 = "bang_eq"; copyStr(buf, &idx, s); },
+        TokenKind.less => { var s: []const u8 = "less"; copyStr(buf, &idx, s); },
+        TokenKind.less_eq => { var s: []const u8 = "less_eq"; copyStr(buf, &idx, s); },
+        TokenKind.greater => { var s: []const u8 = "greater"; copyStr(buf, &idx, s); },
+        TokenKind.greater_eq => { var s: []const u8 = "greater_eq"; copyStr(buf, &idx, s); },
+        TokenKind.eq => { var s: []const u8 = "eq"; copyStr(buf, &idx, s); },
+        TokenKind.plus_eq => { var s: []const u8 = "plus_eq"; copyStr(buf, &idx, s); },
+        TokenKind.minus_eq => { var s: []const u8 = "minus_eq"; copyStr(buf, &idx, s); },
+        TokenKind.star_eq => { var s: []const u8 = "star_eq"; copyStr(buf, &idx, s); },
+        TokenKind.slash_eq => { var s: []const u8 = "slash_eq"; copyStr(buf, &idx, s); },
+        TokenKind.percent_eq => { var s: []const u8 = "percent_eq"; copyStr(buf, &idx, s); },
+        TokenKind.ampersand_eq => { var s: []const u8 = "ampersand_eq"; copyStr(buf, &idx, s); },
+        TokenKind.pipe_eq => { var s: []const u8 = "pipe_eq"; copyStr(buf, &idx, s); },
+        TokenKind.caret_eq => { var s: []const u8 = "caret_eq"; copyStr(buf, &idx, s); },
+        TokenKind.shl_eq => { var s: []const u8 = "shl_eq"; copyStr(buf, &idx, s); },
+        TokenKind.shr_eq => { var s: []const u8 = "shr_eq"; copyStr(buf, &idx, s); },
+        TokenKind.dot_dot => { var s: []const u8 = "dot_dot"; copyStr(buf, &idx, s); },
+        TokenKind.dot_dot_dot => { var s: []const u8 = "dot_dot_dot"; copyStr(buf, &idx, s); },
+        TokenKind.dot_lbrace => { var s: []const u8 = "dot_lbrace"; copyStr(buf, &idx, s); },
+        TokenKind.dot_star => { var s: []const u8 = "dot_star"; copyStr(buf, &idx, s); },
+        TokenKind.fat_arrow => { var s: []const u8 = "fat_arrow"; copyStr(buf, &idx, s); },
+        TokenKind.kw_const => { var s: []const u8 = "kw_const"; copyStr(buf, &idx, s); },
+        TokenKind.kw_var => { var s: []const u8 = "kw_var"; copyStr(buf, &idx, s); },
+        TokenKind.kw_fn => { var s: []const u8 = "kw_fn"; copyStr(buf, &idx, s); },
+        TokenKind.kw_pub => { var s: []const u8 = "kw_pub"; copyStr(buf, &idx, s); },
+        TokenKind.kw_extern => { var s: []const u8 = "kw_extern"; copyStr(buf, &idx, s); },
+        TokenKind.kw_export => { var s: []const u8 = "kw_export"; copyStr(buf, &idx, s); },
+        TokenKind.kw_test => { var s: []const u8 = "kw_test"; copyStr(buf, &idx, s); },
+        TokenKind.kw_struct => { var s: []const u8 = "kw_struct"; copyStr(buf, &idx, s); },
+        TokenKind.kw_enum => { var s: []const u8 = "kw_enum"; copyStr(buf, &idx, s); },
+        TokenKind.kw_union => { var s: []const u8 = "kw_union"; copyStr(buf, &idx, s); },
+        TokenKind.kw_if => { var s: []const u8 = "kw_if"; copyStr(buf, &idx, s); },
+        TokenKind.kw_else => { var s: []const u8 = "kw_else"; copyStr(buf, &idx, s); },
+        TokenKind.kw_while => { var s: []const u8 = "kw_while"; copyStr(buf, &idx, s); },
+        TokenKind.kw_for => { var s: []const u8 = "kw_for"; copyStr(buf, &idx, s); },
+        TokenKind.kw_switch => { var s: []const u8 = "kw_switch"; copyStr(buf, &idx, s); },
+        TokenKind.kw_return => { var s: []const u8 = "kw_return"; copyStr(buf, &idx, s); },
+        TokenKind.kw_break => { var s: []const u8 = "kw_break"; copyStr(buf, &idx, s); },
+        TokenKind.kw_continue => { var s: []const u8 = "kw_continue"; copyStr(buf, &idx, s); },
+        TokenKind.kw_defer => { var s: []const u8 = "kw_defer"; copyStr(buf, &idx, s); },
+        TokenKind.kw_errdefer => { var s: []const u8 = "kw_errdefer"; copyStr(buf, &idx, s); },
+        TokenKind.kw_try => { var s: []const u8 = "kw_try"; copyStr(buf, &idx, s); },
+        TokenKind.kw_catch => { var s: []const u8 = "kw_catch"; copyStr(buf, &idx, s); },
+        TokenKind.kw_orelse => { var s: []const u8 = "kw_orelse"; copyStr(buf, &idx, s); },
+        TokenKind.kw_error => { var s: []const u8 = "kw_error"; copyStr(buf, &idx, s); },
+        TokenKind.kw_and => { var s: []const u8 = "kw_and"; copyStr(buf, &idx, s); },
+        TokenKind.kw_or => { var s: []const u8 = "kw_or"; copyStr(buf, &idx, s); },
+        TokenKind.kw_true => { var s: []const u8 = "kw_true"; copyStr(buf, &idx, s); },
+        TokenKind.kw_false => { var s: []const u8 = "kw_false"; copyStr(buf, &idx, s); },
+        TokenKind.kw_null => { var s: []const u8 = "kw_null"; copyStr(buf, &idx, s); },
+        TokenKind.kw_undefined => { var s: []const u8 = "kw_undefined"; copyStr(buf, &idx, s); },
+        TokenKind.kw_unreachable => { var s: []const u8 = "kw_unreachable"; copyStr(buf, &idx, s); },
+        TokenKind.kw_void => { var s: []const u8 = "kw_void"; copyStr(buf, &idx, s); },
+        TokenKind.kw_bool => { var s: []const u8 = "kw_bool"; copyStr(buf, &idx, s); },
+        TokenKind.kw_noreturn => { var s: []const u8 = "kw_noreturn"; copyStr(buf, &idx, s); },
+        TokenKind.kw_c_char => { var s: []const u8 = "kw_c_char"; copyStr(buf, &idx, s); },
+        TokenKind.eof => { var s: []const u8 = "eof"; copyStr(buf, &idx, s); },
+        TokenKind.err_token => { var s: []const u8 = "err_token"; copyStr(buf, &idx, s); },
     }
     buf[idx] = 0;
+    return buf[0..idx];
 }
 
 fn copyStr(buf: []u8, idx: *usize, s: []const u8) void {
@@ -153,7 +160,7 @@ fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
         }
     }
     var start = idx + 1;
-    return buf[start..buf_len];
+    return buf[start..buf_len - 1];
 }
 
 fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
@@ -172,7 +179,7 @@ fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
         }
     }
     var start = idx + 1;
-    return buf[start..buf_len];
+    return buf[start..buf_len - 1];
 }
 
 fn extractDigit(v: f64) i32 {

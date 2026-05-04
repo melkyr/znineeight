@@ -357,3 +357,4 @@ bool plat_is_windows() {
     return false;
 #endif
 }
+void c_exit(int code) { exit(code); }

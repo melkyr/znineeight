@@ -51,7 +51,7 @@ fn assertEqU64(expected: u64, actual: u64, line: u32) void {
 
 fn assertEqString(expected: []const u8, actual_id: u32, line: u32) void {
     if (!mem_mod.mem_eql(expected, interner_mod.stringInternerGet(&interner, actual_id))) {
-        var fmt_buf: [12]u8 = undefined;
+        var fmt_buf: [24]u8 = undefined;
         const s_fail: []const u8 = "FAIL line ";
         pal.stderr_write(s_fail);
         pal.stderr_write(formatU32(line, fmt_buf[0..], 12));
@@ -81,7 +81,7 @@ fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
 
 fn assertEqTokenKind(tk: TokenKind, expected: TokenKind, line: u32) void {
     if (tk != expected) {
-        var fmt_buf: [12]u8 = undefined;
+        var fmt_buf: [24]u8 = undefined;
         const s_fail: []const u8 = "FAIL line ";
         pal.stderr_write(s_fail);
         pal.stderr_write(formatU32(line, fmt_buf[0..], 12));
@@ -178,6 +178,32 @@ pub fn runLexerUnitTests() void {
     testMultiTokenRecovery();
     initTestHarness();
     testUnrecognizedChars();
+    initTestHarness();
+    testSwitchMultiProng();
+    initTestHarness();
+    testSwitchCapture();
+    initTestHarness();
+    testTryExpr();
+    initTestHarness();
+    testErrorLiteral();
+    initTestHarness();
+    testNestedSwitch();
+    initTestHarness();
+    testIfExpr();
+    initTestHarness();
+    testBuiltinCast();
+    initTestHarness();
+    testSliceSyntax();
+    initTestHarness();
+    testOptionalCapture();
+    initTestHarness();
+    testDerefField();
+    initTestHarness();
+    testIntegrationMandelbrot();
+    initTestHarness();
+    testIntegrationGameOfLife();
+    initTestHarness();
+    testIntegrationMud();
 }
 
 fn testIntegerOverflow() void {
@@ -728,4 +754,247 @@ fn testUnrecognizedChars() void {
     assertEqTokenKind(nextKind(&l3), TokenKind.err_token, @intCast(u32, 0));
     assertEqTokenKind(nextKind(&l3), TokenKind.err_token, @intCast(u32, 0));
     assertEqTokenKind(nextKind(&l3), TokenKind.err_token, @intCast(u32, 0));
+}
+
+fn testSwitchMultiProng() void {
+    const s: []const u8 = "switch (x) { .A, .B, .C => {}, else => unreachable }";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_switch, @intCast(u32, 1300));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1301));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1302));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1303));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1304));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1305));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1306));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1307));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1308));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1309));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1310));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1311));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1312));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1313));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1314));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1315));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1316));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_else, @intCast(u32, 1317));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1318));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_unreachable, @intCast(u32, 1319));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1320));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1321));
+}
+
+fn testSwitchCapture() void {
+    const s: []const u8 = "switch (x) { .A => |v| v, else => unreachable }";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_switch, @intCast(u32, 1400));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1401));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1402));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1403));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1404));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1405));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1406));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1407));
+    assertEqTokenKind(nextKind(&l), TokenKind.pipe, @intCast(u32, 1408));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1409));
+    assertEqTokenKind(nextKind(&l), TokenKind.pipe, @intCast(u32, 1410));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1411));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1412));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_else, @intCast(u32, 1413));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1414));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_unreachable, @intCast(u32, 1415));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1416));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1417));
+}
+
+fn testTryExpr() void {
+    const s: []const u8 = "try foo(bar, baz)";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_try, @intCast(u32, 1420));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1421));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1422));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1423));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1424));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1425));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1426));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1427));
+}
+
+fn testErrorLiteral() void {
+    const s: []const u8 = "return error.InvalidQuote";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_return, @intCast(u32, 1430));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_error, @intCast(u32, 1431));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1432));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1433));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1434));
+}
+
+fn testNestedSwitch() void {
+    const s: []const u8 = "switch (a) { .X => switch (b) { .Y => {}, else => {} }, else => {} }";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_switch, @intCast(u32, 1440));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1441));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1442));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1443));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1444));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1445));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1446));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1447));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_switch, @intCast(u32, 1448));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1449));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1450));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1451));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1452));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1453));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1454));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1455));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1456));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1457));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1458));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_else, @intCast(u32, 1459));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1460));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1461));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1462));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1463));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1464));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_else, @intCast(u32, 1465));
+    assertEqTokenKind(nextKind(&l), TokenKind.fat_arrow, @intCast(u32, 1466));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1467));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1468));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1469));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1470));
+}
+
+fn testIfExpr() void {
+    const s: []const u8 = "if (cond) a else b";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_if, @intCast(u32, 1480));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1481));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1482));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1483));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1484));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_else, @intCast(u32, 1485));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1486));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1487));
+}
+
+fn testBuiltinCast() void {
+    const s: []const u8 = "@ptrCast([*]u8, ptr)";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.builtin_identifier, @intCast(u32, 1490));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1491));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbracket, @intCast(u32, 1492));
+    assertEqTokenKind(nextKind(&l), TokenKind.star, @intCast(u32, 1493));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbracket, @intCast(u32, 1494));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1495));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1496));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1497));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1498));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1499));
+}
+
+fn testSliceSyntax() void {
+    const s: []const u8 = "arr[0..len]";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1500));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbracket, @intCast(u32, 1501));
+    assertEqTokenKind(nextKind(&l), TokenKind.integer_literal, @intCast(u32, 1502));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot_dot, @intCast(u32, 1503));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1504));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbracket, @intCast(u32, 1505));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1506));
+}
+
+fn testOptionalCapture() void {
+    const s: []const u8 = "if (opt) |val| {}";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_if, @intCast(u32, 1510));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1511));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1512));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1513));
+    assertEqTokenKind(nextKind(&l), TokenKind.pipe, @intCast(u32, 1514));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1515));
+    assertEqTokenKind(nextKind(&l), TokenKind.pipe, @intCast(u32, 1516));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1517));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1518));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1519));
+}
+
+fn testDerefField() void {
+    const s: []const u8 = "curr_expr.*";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1520));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot_star, @intCast(u32, 1521));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1522));
+}
+
+fn testIntegrationMandelbrot() void {
+    const s: []const u8 = "const s: f64 = 3.5; var x = 2.0; var y = 1.0e-5;";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_const, @intCast(u32, 1600));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1601));
+    assertEqTokenKind(nextKind(&l), TokenKind.colon, @intCast(u32, 1602));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1603));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1604));
+    assertEqTokenKind(nextKind(&l), TokenKind.float_literal, @intCast(u32, 1605));
+    assertEqTokenKind(nextKind(&l), TokenKind.semicolon, @intCast(u32, 1606));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_var, @intCast(u32, 1607));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1608));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1609));
+    assertEqTokenKind(nextKind(&l), TokenKind.float_literal, @intCast(u32, 1610));
+    assertEqTokenKind(nextKind(&l), TokenKind.semicolon, @intCast(u32, 1611));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_var, @intCast(u32, 1612));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1613));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1614));
+    assertEqTokenKind(nextKind(&l), TokenKind.float_literal, @intCast(u32, 1615));
+    assertEqTokenKind(nextKind(&l), TokenKind.semicolon, @intCast(u32, 1616));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1617));
+}
+
+fn testIntegrationGameOfLife() void {
+    const s: []const u8 = "const Cell = union(enum) { Dead, Alive }; var c: Cell = .{ .Alive = {} };";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_const, @intCast(u32, 1620));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1621));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1622));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_union, @intCast(u32, 1623));
+    assertEqTokenKind(nextKind(&l), TokenKind.lparen, @intCast(u32, 1624));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_enum, @intCast(u32, 1625));
+    assertEqTokenKind(nextKind(&l), TokenKind.rparen, @intCast(u32, 1626));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1627));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1628));
+    assertEqTokenKind(nextKind(&l), TokenKind.comma, @intCast(u32, 1629));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1630));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1631));
+    assertEqTokenKind(nextKind(&l), TokenKind.semicolon, @intCast(u32, 1632));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_var, @intCast(u32, 1633));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1634));
+    assertEqTokenKind(nextKind(&l), TokenKind.colon, @intCast(u32, 1635));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1636));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1637));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot_lbrace, @intCast(u32, 1638));
+    assertEqTokenKind(nextKind(&l), TokenKind.dot, @intCast(u32, 1639));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1640));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1641));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbrace, @intCast(u32, 1642));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1643));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbrace, @intCast(u32, 1644));
+    assertEqTokenKind(nextKind(&l), TokenKind.semicolon, @intCast(u32, 1645));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1646));
+}
+
+fn testIntegrationMud() void {
+    const s: []const u8 = "const msg: []const u8 = \"Welcome\\r\\n\";";
+    var l = makeLexer(s);
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_const, @intCast(u32, 1650));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1651));
+    assertEqTokenKind(nextKind(&l), TokenKind.colon, @intCast(u32, 1652));
+    assertEqTokenKind(nextKind(&l), TokenKind.lbracket, @intCast(u32, 1653));
+    assertEqTokenKind(nextKind(&l), TokenKind.rbracket, @intCast(u32, 1654));
+    assertEqTokenKind(nextKind(&l), TokenKind.kw_const, @intCast(u32, 1655));
+    assertEqTokenKind(nextKind(&l), TokenKind.identifier, @intCast(u32, 1656));
+    assertEqTokenKind(nextKind(&l), TokenKind.eq, @intCast(u32, 1657));
+    assertEqTokenKind(nextKind(&l), TokenKind.string_literal, @intCast(u32, 1658));
+    assertEqTokenKind(nextKind(&l), TokenKind.semicolon, @intCast(u32, 1659));
+    assertEqTokenKind(nextKind(&l), TokenKind.eof, @intCast(u32, 1660));
 }

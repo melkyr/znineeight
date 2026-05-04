@@ -164,18 +164,22 @@ fn runCompiler(ctx: *CompilerContext) void {
 }
 
 fn phase_ImportResolution(ctx: *CompilerContext) void {
+    alloc_mod.sandReset(&ctx.alloc.scratch);
     _ = ctx;
 }
 
 fn phase_SymbolRegistration(ctx: *CompilerContext) void {
+    alloc_mod.sandReset(&ctx.alloc.scratch);
     _ = ctx;
 }
 
 fn phase_TypeResolution(ctx: *CompilerContext) void {
+    alloc_mod.sandReset(&ctx.alloc.scratch);
     _ = ctx;
 }
 
 fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
+    alloc_mod.sandReset(&ctx.alloc.scratch);
     _ = ctx;
 }
 

@@ -7,7 +7,7 @@ extern "c" fn fread(buf: [*]u8, size: u32, count: u32, file: *void) u32;
 extern "c" fn fclose(file: *void) i32;
 extern "c" fn fseek(file: *void, offset: i32, whence: i32) i32;
 extern "c" fn ftell(file: *void) i32;
-extern "c" fn exit_impl(code: i32) void;
+extern "c" fn c_exit(code: i32) void;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;
@@ -51,7 +51,7 @@ pub fn stderr_write(msg: []const u8) void {
 }
 
 pub fn exit(code: u8) void {
-    exit_impl(@intCast(i32, code));
+    c_exit(@intCast(i32, code));
     while (true) {}
 }
 

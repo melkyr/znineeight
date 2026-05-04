@@ -57,3 +57,38 @@ pub fn checkCombinedPeak(alloc: *CompilerAlloc) void {
         while (true) {}
     }
 }
+
+pub const TrackingAllocator = struct {
+    arena: *Sand,
+    total_allocated: u32,
+    peak_allocated: u32,
+    allocation_count: u32,
+};
+
+pub fn trackingAllocatorInit(arena: *Sand) TrackingAllocator {
+    return TrackingAllocator{
+        .arena = arena,
+        .total_allocated = @intCast(u32, 0),
+        .peak_allocated = @intCast(u32, 0),
+        .allocation_count = @intCast(u32, 0),
+    };
+}
+
+pub fn trackingAlloc(tracker: *TrackingAllocator, size: usize, alignment: usize) ![*]u8 {
+    var ptr = try sandAlloc(tracker.arena, size, alignment);
+    tracker.allocation_count += 1;
+    tracker.total_allocated += @intCast(u32, size);
+    if (tracker.total_allocated > tracker.peak_allocated) {
+        tracker.peak_allocated = tracker.total_allocated;
+    }
+    return ptr;
+}
+
+pub fn trackingReset(tracker: *TrackingAllocator) void {
+    sandReset(tracker.arena);
+    tracker.total_allocated = @intCast(u32, 0);
+}
+
+pub fn trackingPeak(tracker: *TrackingAllocator) u32 {
+    return tracker.peak_allocated;
+}
