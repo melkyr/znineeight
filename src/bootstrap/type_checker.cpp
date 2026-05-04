@@ -230,7 +230,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                             .withType(existing)
                             .atLocation(vd->name_loc)
                             .definedBy(vd)
-                            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0))
                             .build();
                         unit_.getSymbolTable().insert(new_sym);
                     }
@@ -278,7 +278,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                         .withType(placeholder)
                         .atLocation(vd->name_loc)
                         .definedBy(vd)
-                        .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                        .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0))
                         .build();
                     unit_.getSymbolTable().insert(new_sym);
                 }
@@ -293,16 +293,14 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                     is_module_access = true;
                 } else if (base && base->type == NODE_IDENTIFIER) {
                     Symbol* sym = unit_.getSymbolTable().lookup(base->as.identifier.name);
-                    if (sym && sym->kind == SYMBOL_MODULE) {
+                    if (sym && (sym->kind == SYMBOL_MODULE || 
+                                (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)))) {
                         is_module_access = true;
                     }
                 }
 
                 if (is_module_access) {
                     Module* current_mod = unit_.getModule(unit_.getCurrentModule());
-#ifdef Z98_ENABLE_DEBUG_LOGS
-                    plat_printf_debug("[PH] Found module member alias '%s' in module '%s'\n", vd->name, current_mod ? current_mod->name : "NULL");
-#endif
 
                     /* Only create placeholder if not already in the registry */
                     Type* existing = unit_.getTypeRegistry().find(current_mod ? current_mod->canonical_path : NULL, vd->name);
@@ -332,7 +330,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                         if (sym) {
                             sym->symbol_type = placeholder;
                             sym->kind = SYMBOL_VARIABLE;
-                            sym->flags |= (SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST);
+                            sym->flags |= (SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0));
                         } else {
                             Symbol new_sym = SymbolBuilder(unit_.getArena())
                                 .withName(vd->name)
@@ -341,7 +339,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                                 .withType(placeholder)
                                 .atLocation(vd->name_loc)
                                 .definedBy(vd)
-                                .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                                .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0))
                                 .build();
                             unit_.getSymbolTable().insert(new_sym);
                         }
@@ -378,7 +376,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                     if (sym) {
                         sym->symbol_type = placeholder;
                         sym->kind = SYMBOL_VARIABLE;
-                        sym->flags |= (SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST);
+                        sym->flags |= (SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0));
                     } else {
                         Symbol new_sym = SymbolBuilder(unit_.getArena())
                             .withName(vd->name)
@@ -387,7 +385,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                             .withType(placeholder)
                             .atLocation(vd->name_loc)
                             .definedBy(vd)
-                            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0))
                             .build();
                         unit_.getSymbolTable().insert(new_sym);
                     }
@@ -422,6 +420,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                         Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
                         if (sym) {
                             sym->symbol_type = placeholder;
+                            sym->flags |= (vd->is_pub ? SYMBOL_FLAG_PUB : 0);
                         } else {
                             Symbol new_sym = SymbolBuilder(unit_.getArena())
                                 .withName(vd->name)
@@ -430,7 +429,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                                 .withType(placeholder)
                                 .atLocation(vd->name_loc)
                                 .definedBy(vd)
-                                .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                                .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0))
                                 .build();
                             unit_.getSymbolTable().insert(new_sym);
                         }
@@ -2926,14 +2925,53 @@ void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
     }
 }
 
+void TypeChecker::forceResolveModule(Type* module_type) {
+    if (!module_type) return;
+
+    Module* mod = NULL;
+    if (module_type->kind == TYPE_PLACEHOLDER) {
+        /* Force the module placeholder itself to resolve to TYPE_MODULE first. */
+        resolvePlaceholder(module_type);
+        if (module_type->kind == TYPE_MODULE) {
+            mod = module_type->as.module.module_ptr;
+        } else {
+            /* Fallback to the module recorded in the placeholder if resolution failed or stalled. */
+            mod = module_type->as.placeholder.module;
+        }
+    } else if (module_type->kind == TYPE_MODULE) {
+        mod = module_type->as.module.module_ptr;
+    }
+    
+    if (!mod) return;
+
+    DynamicArray<PendingResolution>& all_pending = unit_.getPendingResolutions();
+    
+    bool progress = true;
+    int max_iter = 100; /* Local loop limit; 100 is usually enough for a single module's aliases. */
+    int iterations = 0;
+    
+    while (progress && iterations < max_iter) {
+        progress = false;
+        iterations++;
+        
+        for (size_t i = 0; i < all_pending.length(); ++i) {
+            Type* p = all_pending[i].placeholder;
+            if (p->kind == TYPE_PLACEHOLDER && p->as.placeholder.module == mod) {
+                TypeKind before = p->kind;
+                resolveNamedPlaceholder(p);
+                if (p->kind != before) progress = true;
+            }
+        }
+    }
+
+    /* One final check for the module placeholder itself if it's still a placeholder. */
+    if (module_type->kind == TYPE_PLACEHOLDER) {
+        resolvePlaceholder(module_type);
+    }
+}
+
 Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
     if (!placeholder || placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
-
-#ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[PH] resolveNamedPlaceholder '%s' in module '%s'\n",
-                     placeholder->as.placeholder.name,
-                     placeholder->as.placeholder.module ? placeholder->as.placeholder.module->name : "NULL");
-#endif
 
     if (placeholder->is_resolving) return placeholder;
 
@@ -2962,8 +3000,8 @@ Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
                     Symbol* base_sym = unit_.getSymbolTable().lookup(ma->base->as.identifier.name);
                     if (base_sym && base_sym->symbol_type &&
                         base_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-                        /* Force resolution of the base placeholder */
-                        resolvePlaceholder(base_sym->symbol_type);
+                        /* Force resolution of the base (module) placeholder */
+                        forceResolveModule(base_sym->symbol_type);
                     }
                 }
             }
@@ -3518,11 +3556,18 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (is_local) {
         existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
         if (!existing_sym) {
+            Type* pre_type = get_g_type_undefined();
+            if (node->type) {
+                /* Aggressively resolve the explicit type if possible. */
+                pre_type = unwrapType(node->type);
+                if (!pre_type) pre_type = get_g_type_undefined();
+            }
+
             Symbol local_sym = SymbolBuilder(unit_.getArena())
                 .withName(node->name)
                 .withModule(NULL)          /* always NULL for locals */
                 .ofType(SYMBOL_VARIABLE)
-                .withType(get_g_type_undefined())   /* temporary */
+                .withType(pre_type)
                 .atLocation(node->name_loc)
                 .definedBy(node)
                 .withFlags(SYMBOL_FLAG_LOCAL | (node->is_const ? SYMBOL_FLAG_CONST : 0))
@@ -3784,6 +3829,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                     #ifdef Z98_ENABLE_DEBUG_LOGS
                     plat_printf_debug("[TYPE] visitVarDecl '%s' EARLY RETURN: initializer is undefined and cannot defer\n", node->name);
                     #endif
+                    /* Even if we return early, the pre-inserted symbol (if any) remains with UNDEFINED type. */
                     return get_g_type_undefined();
                 }
             }
@@ -3980,6 +4026,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             if (!unit_.getSymbolTable().insert(var_symbol)) {
                 #ifdef Z98_ENABLE_DEBUG_LOGS
                 plat_printf_debug("[SYMBOL] FAILED TO INSERT LOCAL '%s' into scope\n", node->name);
+                #endif
+            } else {
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+                plat_printf_debug("[SYMBOL] Pre-inserted local '%s' into scope\n", node->name);
                 #endif
             }
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
@@ -5605,10 +5655,6 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
     }
 
     if (!resolved_type || is_type_undefined(resolved_type)) {
-#ifdef Z98_ENABLE_DEBUG_LOGS
-        const char* current_mod_name = unit_.getCurrentModule();
-        plat_printf_debug("[TYPE] visitTypeName failed for '%s' in module '%s'\n", node->name, current_mod_name ? current_mod_name : "NULL");
-#endif
         if (!resolved_type) {
             current = msg_buffer;
             remaining = sizeof(msg_buffer);
