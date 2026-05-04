@@ -3491,10 +3491,31 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* --- NEW: Pre-insert local variable with undefined type --- */
+    bool just_pre_inserted = false;
+    if (is_local) {
+        existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+        if (!existing_sym) {
+            Symbol local_sym = SymbolBuilder(unit_.getArena())
+                .withName(node->name)
+                .withModule(NULL)          /* always NULL for locals */
+                .ofType(SYMBOL_VARIABLE)
+                .withType(get_g_type_undefined())   /* temporary */
+                .atLocation(node->name_loc)
+                .definedBy(node)
+                .withFlags(SYMBOL_FLAG_LOCAL | (node->is_const ? SYMBOL_FLAG_CONST : 0))
+                .build();
+            unit_.getSymbolTable().insert(local_sym);
+            existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+            Z98_ASSERT(existing_sym != NULL);
+            just_pre_inserted = true;
+        }
+    }
+
     /* Avoid double resolution but ensure flags are set. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     placeholder = NULL;
-    if (existing_sym && existing_sym->symbol_type) {
+    if (existing_sym && existing_sym->symbol_type && !just_pre_inserted) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
             placeholder = existing_sym->symbol_type;
                 if (placeholder->is_resolving) {
@@ -3862,8 +3883,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     if (existing_sym) {
-        if (declared_type) {
-             existing_sym->symbol_type = declared_type;
+        if (declared_type || is_local) {
+             existing_sym->symbol_type = declared_type ? declared_type : get_g_type_undefined();
 
              /* If it's a type declaration, update the mangle kind to 'S' */
              if (node->is_const && (declared_type->kind == TYPE_TYPE || declared_type->kind == TYPE_MODULE)) {
@@ -5526,7 +5547,7 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         /* Look up in symbol table for type aliases (e.g., const Point = struct { ... }) */
         if (sym) {
             /* Resolve on demand if needed */
-            if (!sym->symbol_type && sym->kind == SYMBOL_VARIABLE && sym->details) {
+    if ((!sym->symbol_type || is_type_undefined(sym->symbol_type)) && sym->details) {
                 Type* res = visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
                 if (!res || is_type_undefined(res)) return get_g_type_undefined();
             }

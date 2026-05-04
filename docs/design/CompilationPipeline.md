@@ -27,6 +27,12 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
 - **Deep Unwrapping**: When resolving a placeholder that points to a `TYPE_TYPE` constant (e.g., `const A = B;`), the resolver now deeply unwraps the alias chain to find the concrete underlying type.
 - **Purpose**: Transition from placeholders to concrete (but potentially incomplete) type structures. This robust mechanism is critical for handling deep transitive alias chains across multiple modules.
 
+### Phase 1.3.1: Transitive Alias Flattening (Phase 0.7)
+- **Action**: A dedicated sub-pass that follows all aliases whose resolved type is itself a `TYPE_TYPE` (i.e., an alias to another alias) and unwraps them until they point to a concrete type.
+- **Fixed-Point Loop**: Uses a separate fixed-point loop with a safety cap (100 iterations) to ensure deeply nested chains are fully flattened.
+- **Mechanism**: Calls `resolveTypeConstant` on each pending resolution symbol and finalizes the placeholder to the resulting concrete type.
+- **Purpose**: Handles edge cases where the Phase 1.3 loop might not fully unwrap complex alias chains in a single pass.
+
 ### Phase 1.4: Name Collision Detection (Phase 1)
 - **Action**: Verifies that there are no duplicate symbol definitions within the same scope across all modules.
 
