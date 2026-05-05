@@ -31,11 +31,12 @@ namespace {
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorHandler* error_handler, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner, const char* module_name)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* ast_arena, ArenaAllocator* perm_arena, SymbolTable* symbol_table, ErrorHandler* error_handler, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner, const char* module_name)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
-      arena_(arena),
+      ast_arena_(ast_arena),
+      perm_arena_(perm_arena),
       symbol_table_(symbol_table),
       error_handler_(error_handler),
       catalogue_(catalogue),
@@ -45,7 +46,8 @@ Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolT
       module_name_(module_name),
       recursion_depth_(0)
 {
-    assert(arena_ != NULL && "ArenaAllocator cannot be null");
+    assert(ast_arena_ != NULL && "ast_arena cannot be null");
+    assert(perm_arena_ != NULL && "perm_arena cannot be null");
     assert(symbol_table_ != NULL && "SymbolTable cannot be null");
     assert(error_handler_ != NULL && "ErrorHandler cannot be null");
     // Initialize the EOF token.
@@ -112,7 +114,7 @@ void Parser::error(const char* msg) {
 }
 
 ASTNode* Parser::createNode(NodeType type) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
 #ifdef MEASURE_MEMORY
     MemoryTracker::ast_nodes++;
 #endif
@@ -128,7 +130,7 @@ ASTNode* Parser::createNode(NodeType type) {
 }
 
 ASTNode* Parser::createNodeAt(NodeType type, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
 #ifdef MEASURE_MEMORY
     MemoryTracker::ast_nodes++;
 #endif
@@ -291,7 +293,7 @@ ASTNode* Parser::parsePrimaryExpr() {
                     plat_i64_to_string(id_token.value.integer_literal.value, buf, sizeof(buf));
                     field_name = interner_->intern(buf);
                 }
-                ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+                ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)ast_arena_->alloc(sizeof(ASTMemberAccessNode));
                 if (!member_node) error("Out of memory");
                 plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
                 member_node->base = NULL;
@@ -388,16 +390,16 @@ ASTNode* Parser::parsePostfixExpression() {
     while (true) {
         if (match(TOKEN_LPAREN)) {
             // Function Call
-            ASTFunctionCallNode* call_node = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
+            ASTFunctionCallNode* call_node = (ASTFunctionCallNode*)ast_arena_->alloc(sizeof(ASTFunctionCallNode));
             if (!call_node) {
                 error("Out of memory");
             }
             call_node->callee = expr;
-            call_node->args = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            call_node->args = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
             if (!call_node->args) {
                 error("Out of memory");
             }
-            new (call_node->args) DynamicArray<ASTNode*>(*arena_);
+            new (call_node->args) DynamicArray<ASTNode*>(*ast_arena_);
 
             if (!match(TOKEN_RPAREN)) {
                 do {
@@ -414,7 +416,7 @@ ASTNode* Parser::parsePostfixExpression() {
             if (peek().type == TOKEN_RANGE ||
                 (peek().type != TOKEN_RBRACKET && peekNext().type == TOKEN_RANGE)) {
 
-                ASTArraySliceNode* slice_node = (ASTArraySliceNode*)arena_->alloc(sizeof(ASTArraySliceNode));
+                ASTArraySliceNode* slice_node = (ASTArraySliceNode*)ast_arena_->alloc(sizeof(ASTArraySliceNode));
                 if (!slice_node) {
                     error("Out of memory");
                 }
@@ -444,7 +446,7 @@ ASTNode* Parser::parsePostfixExpression() {
             }
             else {
                 // Regular array access [index]
-                ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)arena_->alloc(sizeof(ASTArrayAccessNode));
+                ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)ast_arena_->alloc(sizeof(ASTArrayAccessNode));
                 if (!access_node) {
                     error("Out of memory");
                 }
@@ -473,7 +475,7 @@ ASTNode* Parser::parsePostfixExpression() {
                 loc = name_token.location;
             }
 
-            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)ast_arena_->alloc(sizeof(ASTMemberAccessNode));
             if (!member_node) error("Out of memory");
             plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
             member_node->base = expr;
@@ -533,7 +535,7 @@ ASTNode* Parser::parseUnaryExpr() {
         recursion_depth_--;
         return node;
     }
-    DynamicArray<Token> operators(*arena_);
+    DynamicArray<Token> operators(*ast_arena_);
 
     while (peek().type == TOKEN_MINUS || peek().type == TOKEN_PLUS || peek().type == TOKEN_BANG || peek().type == TOKEN_TILDE ||
            peek().type == TOKEN_AMPERSAND) {
@@ -669,7 +671,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
 
             ASTNode* else_expr = parsePrecedenceExpr(precedence); // Right-associative
 
-            ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
+            ASTCatchExprNode* catch_node = (ASTCatchExprNode*)ast_arena_->alloc(sizeof(ASTCatchExprNode));
              if (!catch_node) {
                 error("Out of memory");
             }
@@ -683,7 +685,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         } else if (op_token.type == TOKEN_ORELSE) {
             ASTNode* else_expr = parsePrecedenceExpr(precedence); // Right-associative
 
-            ASTOrelseExprNode* orelse_node = (ASTOrelseExprNode*)arena_->alloc(sizeof(ASTOrelseExprNode));
+            ASTOrelseExprNode* orelse_node = (ASTOrelseExprNode*)ast_arena_->alloc(sizeof(ASTOrelseExprNode));
             if (!orelse_node) {
                 error("Out of memory");
             }
@@ -696,7 +698,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         } else if (op_token.type == TOKEN_PIPE_PIPE) {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
-            ASTErrorSetMergeNode* merge_data = (ASTErrorSetMergeNode*)arena_->alloc(sizeof(ASTErrorSetMergeNode));
+            ASTErrorSetMergeNode* merge_data = (ASTErrorSetMergeNode*)ast_arena_->alloc(sizeof(ASTErrorSetMergeNode));
             if (!merge_data) {
                 error("Out of memory");
             }
@@ -709,7 +711,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         } else if (op_token.type == TOKEN_RANGE || op_token.type == TOKEN_ELLIPSIS) {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
-            ASTRangeNode* range_data = (ASTRangeNode*)arena_->alloc(sizeof(ASTRangeNode));
+            ASTRangeNode* range_data = (ASTRangeNode*)ast_arena_->alloc(sizeof(ASTRangeNode));
             if (!range_data) error("Out of memory");
             range_data->start = left;
             range_data->end = right;
@@ -721,7 +723,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         } else {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
-            ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+            ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)ast_arena_->alloc(sizeof(ASTBinaryOpNode));
             if (!binary_op) {
                 error("Out of memory");
             }
@@ -769,7 +771,7 @@ ASTNode* Parser::parseAssignmentExpression() {
     if (match(TOKEN_EQUAL)) {
         ASTNode* right = parseAssignmentExpression();
 
-        ASTAssignmentNode* assign_node = (ASTAssignmentNode*)arena_->alloc(sizeof(ASTAssignmentNode));
+        ASTAssignmentNode* assign_node = (ASTAssignmentNode*)ast_arena_->alloc(sizeof(ASTAssignmentNode));
         if (!assign_node) {
             error("Out of memory");
         }
@@ -794,7 +796,7 @@ ASTNode* Parser::parseAssignmentExpression() {
             Zig0TokenType op = compound_ops[i];
             ASTNode* right = parseAssignmentExpression();
 
-            ASTCompoundAssignmentNode* comp_node = (ASTCompoundAssignmentNode*)arena_->alloc(sizeof(ASTCompoundAssignmentNode));
+            ASTCompoundAssignmentNode* comp_node = (ASTCompoundAssignmentNode*)ast_arena_->alloc(sizeof(ASTCompoundAssignmentNode));
             if (!comp_node) {
                 error("Out of memory");
             }
@@ -840,25 +842,25 @@ ASTNode* Parser::parseSwitch(ParseContext ctx) {
     DynamicArray<ASTSwitchStmtProngNode*>* stmt_prongs = NULL;
 
     if (ctx == CTX_EXPRESSION) {
-        ASTSwitchExprNode* switch_node = (ASTSwitchExprNode*)arena_->alloc(sizeof(ASTSwitchExprNode));
+        ASTSwitchExprNode* switch_node = (ASTSwitchExprNode*)ast_arena_->alloc(sizeof(ASTSwitchExprNode));
         if (!switch_node) error("Out of memory");
         plat_memset(switch_node, 0, sizeof(ASTSwitchExprNode));
         switch_node->expression = condition;
-        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+        void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
         if (!array_mem) error("Out of memory");
-        expr_prongs = new (array_mem) DynamicArray<ASTSwitchProngNode*>(*arena_);
+        expr_prongs = new (array_mem) DynamicArray<ASTSwitchProngNode*>(*ast_arena_);
         switch_node->prongs = expr_prongs;
 
         result_node = createNodeAt(NODE_SWITCH_EXPR, switch_token.location);
         result_node->as.switch_expr = switch_node;
     } else {
-        ASTSwitchStmtNode* switch_node = (ASTSwitchStmtNode*)arena_->alloc(sizeof(ASTSwitchStmtNode));
+        ASTSwitchStmtNode* switch_node = (ASTSwitchStmtNode*)ast_arena_->alloc(sizeof(ASTSwitchStmtNode));
         if (!switch_node) error("Out of memory");
         plat_memset(switch_node, 0, sizeof(ASTSwitchStmtNode));
         switch_node->expression = condition;
-        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
+        void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
         if (!array_mem) error("Out of memory");
-        stmt_prongs = new (array_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
+        stmt_prongs = new (array_mem) DynamicArray<ASTSwitchStmtProngNode*>(*ast_arena_);
         switch_node->prongs = stmt_prongs;
 
         result_node = createNodeAt(NODE_SWITCH_STMT, switch_token.location);
@@ -892,9 +894,9 @@ ASTNode* Parser::parseSwitch(ParseContext ctx) {
 }
 
 void* Parser::parseSwitchProng(ParseContext ctx) {
-    void* items_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    void* items_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!items_mem) error("Out of memory");
-    DynamicArray<ASTNode*>* items = new (items_mem) DynamicArray<ASTNode*>(*arena_);
+    DynamicArray<ASTNode*>* items = new (items_mem) DynamicArray<ASTNode*>(*ast_arena_);
     bool is_else = false;
 
     if (match(TOKEN_ELSE)) {
@@ -906,7 +908,7 @@ void* Parser::parseSwitchProng(ParseContext ctx) {
             if (peek().type == TOKEN_RANGE || peek().type == TOKEN_ELLIPSIS) {
                 Token range_token = advance();
                 ASTNode* end = parseExpression();
-                ASTRangeNode* range_data = (ASTRangeNode*)arena_->alloc(sizeof(ASTRangeNode));
+                ASTRangeNode* range_data = (ASTRangeNode*)ast_arena_->alloc(sizeof(ASTRangeNode));
                 if (!range_data) error("Out of memory");
                 range_data->start = item;
                 range_data->end = end;
@@ -938,7 +940,7 @@ void* Parser::parseSwitchProng(ParseContext ctx) {
     }
 
     if (ctx == CTX_EXPRESSION) {
-        ASTSwitchProngNode* prong = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+        ASTSwitchProngNode* prong = (ASTSwitchProngNode*)ast_arena_->alloc(sizeof(ASTSwitchProngNode));
         if (!prong) error("Out of memory");
         plat_memset(prong, 0, sizeof(ASTSwitchProngNode));
         prong->items = items;
@@ -948,7 +950,7 @@ void* Parser::parseSwitchProng(ParseContext ctx) {
         prong->body = body;
         return prong;
     } else {
-        ASTSwitchStmtProngNode* prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
+        ASTSwitchStmtProngNode* prong = (ASTSwitchStmtProngNode*)ast_arena_->alloc(sizeof(ASTSwitchStmtProngNode));
         if (!prong) error("Out of memory");
         plat_memset(prong, 0, sizeof(ASTSwitchStmtProngNode));
         prong->items = items;
@@ -986,12 +988,12 @@ ASTNode* Parser::parseSwitchExpression() {
 ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
     Token lbrace = expect(TOKEN_LBRACE, "Expected '{' to start struct initializer");
 
-    ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+    ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)ast_arena_->alloc(sizeof(ASTStructInitializerNode));
     if (!init_data) error("Out of memory");
     init_data->type_expr = type_expr;
-    init_data->fields = (DynamicArray<ASTNamedInitializer*>*)arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+    init_data->fields = (DynamicArray<ASTNamedInitializer*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
     if (!init_data->fields) error("Out of memory");
-    new (init_data->fields) DynamicArray<ASTNamedInitializer*>(*arena_);
+    new (init_data->fields) DynamicArray<ASTNamedInitializer*>(*ast_arena_);
 
     int index = 0;
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
@@ -1021,13 +1023,13 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
                 field_name_str = interner_->intern(buf);
             } else {
                 // Fallback if interner is missing (should not happen in production)
-                char* mem = (char*)arena_->alloc(plat_strlen(buf) + 1);
+                char* mem = (char*)ast_arena_->alloc(plat_strlen(buf) + 1);
                 plat_strcpy(mem, buf);
                 field_name_str = mem;
             }
         }
 
-        ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+        ASTNamedInitializer* named_init = (ASTNamedInitializer*)ast_arena_->alloc(sizeof(ASTNamedInitializer));
         if (!named_init) error("Out of memory");
         named_init->field_name = field_name_str;
         named_init->value = value;
@@ -1076,12 +1078,12 @@ ASTNode* Parser::parseAnonymousLiteral() {
 
     if (is_struct) {
         // Named fields -> anonymous struct initializer
-        ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+        ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)ast_arena_->alloc(sizeof(ASTStructInitializerNode));
         if (!init_data) error("Out of memory");
         init_data->type_expr = NULL;
-        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+        void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
         if (!array_mem) error("Out of memory");
-        init_data->fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*arena_);
+        init_data->fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*ast_arena_);
 
         while (peek().type != TOKEN_RBRACE && !is_at_end()) {
             expect(TOKEN_DOT, "Expected '.' before field name in anonymous struct initializer");
@@ -1091,7 +1093,7 @@ ASTNode* Parser::parseAnonymousLiteral() {
                 value = parseExpression();
             }
 
-            ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+            ASTNamedInitializer* named_init = (ASTNamedInitializer*)ast_arena_->alloc(sizeof(ASTNamedInitializer));
             if (!named_init) error("Out of memory");
             named_init->field_name = field_name_token.value.identifier;
             named_init->value = value;
@@ -1109,11 +1111,11 @@ ASTNode* Parser::parseAnonymousLiteral() {
         return node;
     } else {
         // Positional -> tuple literal
-        ASTTupleLiteralNode* tuple_data = (ASTTupleLiteralNode*)arena_->alloc(sizeof(ASTTupleLiteralNode));
+        ASTTupleLiteralNode* tuple_data = (ASTTupleLiteralNode*)ast_arena_->alloc(sizeof(ASTTupleLiteralNode));
         if (!tuple_data) error("Out of memory");
-        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
         if (!array_mem) error("Out of memory");
-        tuple_data->elements = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+        tuple_data->elements = new (array_mem) DynamicArray<ASTNode*>(*ast_arena_);
 
         while (peek().type != TOKEN_RBRACE && !is_at_end()) {
             tuple_data->elements->append(parseExpression());
@@ -1152,16 +1154,16 @@ ASTNode* Parser::parseEnumDeclaration() {
 
     expect(TOKEN_LBRACE, "Expected '{' to begin enum declaration");
 
-    ASTEnumDeclNode* enum_decl = (ASTEnumDeclNode*)arena_->alloc(sizeof(ASTEnumDeclNode));
+    ASTEnumDeclNode* enum_decl = (ASTEnumDeclNode*)ast_arena_->alloc(sizeof(ASTEnumDeclNode));
     if (!enum_decl) {
         error("Out of memory");
     }
     enum_decl->backing_type = backing_type;
-    enum_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    enum_decl->fields = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!enum_decl->fields) {
         error("Out of memory");
     }
-    new (enum_decl->fields) DynamicArray<ASTNode*>(*arena_);
+    new (enum_decl->fields) DynamicArray<ASTNode*>(*ast_arena_);
 
     // Handle members
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
@@ -1172,7 +1174,7 @@ ASTNode* Parser::parseEnumDeclaration() {
             initializer = parseExpression();
         }
 
-        ASTVarDeclNode* field_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+        ASTVarDeclNode* field_data = (ASTVarDeclNode*)ast_arena_->alloc(sizeof(ASTVarDeclNode));
         if (!field_data) {
             error("Out of memory");
         }
@@ -1238,15 +1240,15 @@ ASTNode* Parser::parseUnionDeclaration() {
 
     expect(TOKEN_LBRACE, "Expected '{' to begin union declaration");
 
-    ASTUnionDeclNode* union_decl = (ASTUnionDeclNode*)arena_->alloc(sizeof(ASTUnionDeclNode));
+    ASTUnionDeclNode* union_decl = (ASTUnionDeclNode*)ast_arena_->alloc(sizeof(ASTUnionDeclNode));
     if (!union_decl) {
         error("Out of memory");
     }
-    union_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    union_decl->fields = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!union_decl->fields) {
         error("Out of memory");
     }
-    new (union_decl->fields) DynamicArray<ASTNode*>(*arena_);
+    new (union_decl->fields) DynamicArray<ASTNode*>(*ast_arena_);
     union_decl->is_tagged = is_tagged;
     union_decl->tag_type_expr = tag_type_expr;
 
@@ -1277,7 +1279,7 @@ ASTNode* Parser::parseUnionDeclaration() {
             error("Default field values are not supported in bootstrap compiler");
         }
 
-        ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
+        ASTStructFieldNode* field_data = (ASTStructFieldNode*)ast_arena_->alloc(sizeof(ASTStructFieldNode));
         if (!field_data) {
             error("Out of memory");
         }
@@ -1327,11 +1329,11 @@ ASTNode* Parser::parseErrDeferStatement() {
 
 ASTNode* Parser::parse() {
     Token start_token = peek();
-    DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!statements) {
         error("Out of memory");
     }
-    new (statements) DynamicArray<ASTNode*>(*arena_);
+    new (statements) DynamicArray<ASTNode*>(*ast_arena_);
 
     while (!is_at_end()) {
         statements->append(parseTopLevelItem());
@@ -1354,9 +1356,9 @@ ASTNode* Parser::parseErrorSetDefinition() {
     DynamicArray<const char*>* tags = NULL;
 
     if (match(TOKEN_LBRACE)) {
-        void* tags_mem = arena_->alloc(sizeof(DynamicArray<const char*>));
+        void* tags_mem = ast_arena_->alloc(sizeof(DynamicArray<const char*>));
         if (!tags_mem) error("Out of memory");
-        tags = new (tags_mem) DynamicArray<const char*>(*arena_);
+        tags = new (tags_mem) DynamicArray<const char*>(*ast_arena_);
 
         while (!is_at_end() && peek().type != TOKEN_RBRACE) {
             Token tag_token = expect(TOKEN_IDENTIFIER, "Expected error tag identifier");
@@ -1370,7 +1372,7 @@ ASTNode* Parser::parseErrorSetDefinition() {
     // Add to catalogue. Name is initially NULL; might be updated by caller if assigned to a const.
     catalogue_->addErrorSet(NULL, tags, error_token.location);
 
-    ASTErrorSetDefinitionNode* es_node = (ASTErrorSetDefinitionNode*)arena_->alloc(sizeof(ASTErrorSetDefinitionNode));
+    ASTErrorSetDefinitionNode* es_node = (ASTErrorSetDefinitionNode*)ast_arena_->alloc(sizeof(ASTErrorSetDefinitionNode));
     if (!es_node) error("Out of memory");
     es_node->name = NULL;
     es_node->tags = tags;
@@ -1392,7 +1394,7 @@ ASTNode* Parser::parseImportStmt() {
     Token module_token = expect(TOKEN_STRING_LITERAL, "Expected module name string after '@import('");
     expect(TOKEN_RPAREN, "Expected ')' after module name");
 
-    ASTImportStmtNode* import_stmt = (ASTImportStmtNode*)arena_->alloc(sizeof(ASTImportStmtNode));
+    ASTImportStmtNode* import_stmt = (ASTImportStmtNode*)ast_arena_->alloc(sizeof(ASTImportStmtNode));
     if (!import_stmt) error("Out of memory");
     import_stmt->module_name = module_token.value.identifier;
 
@@ -1452,15 +1454,15 @@ ASTNode* Parser::parseStructDeclaration() {
     Token struct_token = expect(TOKEN_STRUCT, "Expected 'struct' keyword");
     expect(TOKEN_LBRACE, "Expected '{' to begin struct declaration");
 
-    ASTStructDeclNode* struct_decl = (ASTStructDeclNode*)arena_->alloc(sizeof(ASTStructDeclNode));
+    ASTStructDeclNode* struct_decl = (ASTStructDeclNode*)ast_arena_->alloc(sizeof(ASTStructDeclNode));
     if (!struct_decl) {
         error("Out of memory");
     }
-    struct_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    struct_decl->fields = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!struct_decl->fields) {
         error("Out of memory");
     }
-    new (struct_decl->fields) DynamicArray<ASTNode*>(*arena_);
+    new (struct_decl->fields) DynamicArray<ASTNode*>(*ast_arena_);
 
     // Handle fields
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
@@ -1489,7 +1491,7 @@ ASTNode* Parser::parseStructDeclaration() {
             error("Default field values are not supported in bootstrap compiler");
         }
 
-        ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
+        ASTStructFieldNode* field_data = (ASTStructFieldNode*)ast_arena_->alloc(sizeof(ASTStructFieldNode));
         if (!field_data) {
             error("Out of memory");
         }
@@ -1560,7 +1562,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
 
     expect(TOKEN_SEMICOLON, "Expected ';' after variable declaration");
 
-    ASTVarDeclNode* var_decl = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+    ASTVarDeclNode* var_decl = (ASTVarDeclNode*)ast_arena_->alloc(sizeof(ASTVarDeclNode));
     if (!var_decl) {
         error("Out of memory");
     }
@@ -1588,7 +1590,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
         plat_i64_to_string(type_node->type, tbuf, sizeof(tbuf));
     }
 
-    Symbol symbol = SymbolBuilder(*arena_)
+    Symbol symbol = SymbolBuilder(*perm_arena_)
         .withName(name_token.value.identifier)
         .withModule(symbol_table_->getCurrentScopeLevel() > 1 ? NULL : module_name_)
         .ofType(SYMBOL_VARIABLE)
@@ -1630,7 +1632,7 @@ ASTNode* Parser::parseForStatement(const char* label) {
 
     ASTNode* body = parseStatement();
 
-    ASTForStmtNode* for_stmt_node = (ASTForStmtNode*)arena_->alloc(sizeof(ASTForStmtNode));
+    ASTForStmtNode* for_stmt_node = (ASTForStmtNode*)ast_arena_->alloc(sizeof(ASTForStmtNode));
     if (!for_stmt_node) {
         error("Out of memory");
     }
@@ -1685,13 +1687,13 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
 
     // Create the function declaration node early to hold the parameters
-    ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
+    ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)ast_arena_->alloc(sizeof(ASTFnDeclNode));
     if (!fn_decl) {
         error("Out of memory");
     }
 
     // Create and insert the symbol for the function itself into the current scope.
-    Symbol fn_symbol = SymbolBuilder(*arena_)
+    Symbol fn_symbol = SymbolBuilder(*perm_arena_)
         .withName(name_token.value.identifier)
         .withModule(module_name_)
         .ofType(SYMBOL_FUNCTION)
@@ -1705,11 +1707,11 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
     symbol_table_->insert(fn_symbol);
     fn_decl->name = name_token.value.identifier;
     fn_decl->loc = name_token.location;
-    fn_decl->params = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    fn_decl->params = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!fn_decl->params) {
         error("Out of memory");
     }
-    new (fn_decl->params) DynamicArray<ASTNode*>(*arena_);
+    new (fn_decl->params) DynamicArray<ASTNode*>(*ast_arena_);
     fn_decl->return_type = NULL;
     fn_decl->body = NULL;
     fn_decl->is_pub = is_pub;
@@ -1864,28 +1866,28 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
         if (base_type == NULL) {
             return NULL; // Propagate the failure
         }
-        return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const, type_node->as.pointer_type.is_many, type_interner_);
+        return createPointerType(*perm_arena_, base_type, type_node->as.pointer_type.is_const, type_node->as.pointer_type.is_many, type_interner_);
     } else if (type_node->type == NODE_ARRAY_TYPE) {
         Type* element_type = resolveAndVerifyType(type_node->as.array_type.element_type);
         if (element_type == NULL) return NULL;
         if (type_node->as.array_type.size == NULL) {
-            return createSliceType(*arena_, element_type, type_node->as.array_type.is_const, type_interner_);
+            return createSliceType(*perm_arena_, element_type, type_node->as.array_type.is_const, type_interner_);
         }
     } else if (type_node->type == NODE_OPTIONAL_TYPE) {
         Type* payload_type = resolveAndVerifyType(type_node->as.optional_type->payload_type);
         if (payload_type == NULL) return NULL;
-        return createOptionalType(*arena_, payload_type, type_interner_);
+        return createOptionalType(*perm_arena_, payload_type, type_interner_);
     } else if (type_node->type == NODE_ERROR_UNION_TYPE) {
         Type* payload_type = resolveAndVerifyType(type_node->as.error_union_type->payload_type);
         if (payload_type == NULL) return NULL;
         /* error_set is harder to resolve here, let TypeChecker handle it if it's non-null.
            If it's NULL (inferred), we can create it. */
         if (type_node->as.error_union_type->error_set == NULL) {
-            return createErrorUnionType(*arena_, get_g_type_anyerror(), payload_type, type_interner_);
+            return createErrorUnionType(*perm_arena_, get_g_type_anyerror(), payload_type, type_interner_);
         }
     } else if (type_node->type == NODE_FUNCTION_TYPE) {
-        DynamicArray<Type*>* param_types = (DynamicArray<Type*>*)arena_->alloc(sizeof(DynamicArray<Type*>));
-        new (param_types) DynamicArray<Type*>(*arena_);
+        DynamicArray<Type*>* param_types = (DynamicArray<Type*>*)perm_arena_->alloc(sizeof(DynamicArray<Type*>));
+        new (param_types) DynamicArray<Type*>(*perm_arena_);
         if (type_node->as.function_type->params) {
             int param_count = (int)type_node->as.function_type->params->length();
             for (int i = 0; i < param_count; ++i) {
@@ -1896,7 +1898,7 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
         }
         Type* return_type = resolveAndVerifyType(type_node->as.function_type->return_type);
         if (!return_type) return NULL;
-        return createFunctionPointerType(*arena_, param_types, return_type, type_interner_);
+        return createFunctionPointerType(*perm_arena_, param_types, return_type, type_interner_);
     } else if (type_node->type == NODE_MEMBER_ACCESS) {
         Type* base = resolveAndVerifyType(type_node->as.member_access->base);
         if (base && base->kind == TYPE_MODULE) {
@@ -1993,11 +1995,11 @@ ASTNode* Parser::parseBlockStatement() {
     symbol_table_->enterScope();
     ScopeGuard guard(symbol_table_);
 
-    DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!statements) {
         error("Out of memory");
     }
-    new (statements) DynamicArray<ASTNode*>(*arena_); // Placement new
+    new (statements) DynamicArray<ASTNode*>(*ast_arena_); // Placement new
 
     while (!is_at_end() && peek().type != TOKEN_RBRACE) {
         ASTNode* stmt = parseStatement();
@@ -2057,7 +2059,7 @@ ASTNode* Parser::parseIfStatement() {
         else_block = parseStatement();
     }
 
-    ASTIfStmtNode* if_stmt_node = (ASTIfStmtNode*)arena_->alloc(sizeof(ASTIfStmtNode));
+    ASTIfStmtNode* if_stmt_node = (ASTIfStmtNode*)ast_arena_->alloc(sizeof(ASTIfStmtNode));
     if (!if_stmt_node) {
         error("Out of memory");
     }
@@ -2095,7 +2097,7 @@ ASTNode* Parser::parseIfExpression() {
     expect(TOKEN_ELSE, "If expressions must have an 'else' branch");
     ASTNode* else_expr = parseExpression();
 
-    ASTIfExprNode* if_expr_data = (ASTIfExprNode*)arena_->alloc(sizeof(ASTIfExprNode));
+    ASTIfExprNode* if_expr_data = (ASTIfExprNode*)ast_arena_->alloc(sizeof(ASTIfExprNode));
     if (!if_expr_data) error("Out of memory");
     if_expr_data->condition = condition;
     if_expr_data->then_expr = then_expr;
@@ -2190,7 +2192,7 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
 
     ASTNode* body = parseStatement();
 
-    ASTWhileStmtNode* while_stmt_node = (ASTWhileStmtNode*)arena_->alloc(sizeof(ASTWhileStmtNode));
+    ASTWhileStmtNode* while_stmt_node = (ASTWhileStmtNode*)ast_arena_->alloc(sizeof(ASTWhileStmtNode));
     if (!while_stmt_node) error("Out of memory");
     while_stmt_node->condition = condition;
     while_stmt_node->body = body;
@@ -2281,7 +2283,7 @@ ASTNode* Parser::parseType() {
         while (match(TOKEN_DOT)) {
             Token field_token = expect(TOKEN_IDENTIFIER, "Expected field name after '.' in type");
 
-            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)ast_arena_->alloc(sizeof(ASTMemberAccessNode));
             if (!member_node) error("Out of memory");
                 plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
             member_node->base = left;
@@ -2302,7 +2304,7 @@ ASTNode* Parser::parseType() {
             Token bang_token = advance();
             ASTNode* payload_type = parseType();
 
-            ASTErrorUnionTypeNode* eu_node = (ASTErrorUnionTypeNode*)arena_->alloc(sizeof(ASTErrorUnionTypeNode));
+            ASTErrorUnionTypeNode* eu_node = (ASTErrorUnionTypeNode*)ast_arena_->alloc(sizeof(ASTErrorUnionTypeNode));
             if (!eu_node) {
                 error("Out of memory");
             }
@@ -2317,7 +2319,7 @@ ASTNode* Parser::parseType() {
             Token pipe_token = advance();
             ASTNode* right = parseType();
 
-            ASTErrorSetMergeNode* merge_data = (ASTErrorSetMergeNode*)arena_->alloc(sizeof(ASTErrorSetMergeNode));
+            ASTErrorSetMergeNode* merge_data = (ASTErrorSetMergeNode*)ast_arena_->alloc(sizeof(ASTErrorSetMergeNode));
             if (!merge_data) {
                 error("Out of memory");
             }
@@ -2351,7 +2353,7 @@ ASTNode* Parser::parseErrorUnionType() {
     Token bang_token = advance(); // Consume '!'
     ASTNode* payload_type = parseType();
 
-    ASTErrorUnionTypeNode* eu_node = (ASTErrorUnionTypeNode*)arena_->alloc(sizeof(ASTErrorUnionTypeNode));
+    ASTErrorUnionTypeNode* eu_node = (ASTErrorUnionTypeNode*)ast_arena_->alloc(sizeof(ASTErrorUnionTypeNode));
     if (!eu_node) {
         error("Out of memory");
     }
@@ -2369,7 +2371,7 @@ ASTNode* Parser::parseOptionalType() {
     Token question_token = advance(); // Consume '?'
     ASTNode* payload_type = parseType();
 
-    ASTOptionalTypeNode* opt_node = (ASTOptionalTypeNode*)arena_->alloc(sizeof(ASTOptionalTypeNode));
+    ASTOptionalTypeNode* opt_node = (ASTOptionalTypeNode*)ast_arena_->alloc(sizeof(ASTOptionalTypeNode));
     if (!opt_node) {
         error("Out of memory");
     }
@@ -2423,9 +2425,9 @@ ASTNode* Parser::parseFunctionType() {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn'");
     expect(TOKEN_LPAREN, "Expected '(' after 'fn'");
 
-    DynamicArray<ASTNode*>* params = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* params = (DynamicArray<ASTNode*>*)ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!params) error("Out of memory");
-    new (params) DynamicArray<ASTNode*>(*arena_);
+    new (params) DynamicArray<ASTNode*>(*ast_arena_);
 
     if (peek().type != TOKEN_RPAREN) {
         while (true) {
@@ -2438,7 +2440,7 @@ ASTNode* Parser::parseFunctionType() {
 
     ASTNode* return_type = parseType();
 
-    ASTFunctionTypeNode* ft_node = (ASTFunctionTypeNode*)arena_->alloc(sizeof(ASTFunctionTypeNode));
+    ASTFunctionTypeNode* ft_node = (ASTFunctionTypeNode*)ast_arena_->alloc(sizeof(ASTFunctionTypeNode));
     if (!ft_node) error("Out of memory");
     ft_node->params = params;
     ft_node->return_type = return_type;
@@ -2458,7 +2460,7 @@ ASTNode* Parser::parsePtrCastExpr() {
     ASTNode* expr = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after @ptrCast expression");
 
-    ASTPtrCastNode* ptr_cast_data = (ASTPtrCastNode*)arena_->alloc(sizeof(ASTPtrCastNode));
+    ASTPtrCastNode* ptr_cast_data = (ASTPtrCastNode*)ast_arena_->alloc(sizeof(ASTPtrCastNode));
     if (!ptr_cast_data) error("Out of memory");
     ptr_cast_data->target_type = target_type;
     ptr_cast_data->expr = expr;
@@ -2478,7 +2480,7 @@ ASTNode* Parser::parseNumericCastExpr(NodeType type) {
     ASTNode* expr = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after built-in expression");
 
-    ASTNumericCastNode* cast_data = (ASTNumericCastNode*)arena_->alloc(sizeof(ASTNumericCastNode));
+    ASTNumericCastNode* cast_data = (ASTNumericCastNode*)ast_arena_->alloc(sizeof(ASTNumericCastNode));
     if (!cast_data) error("Out of memory");
     cast_data->target_type = target_type;
     cast_data->expr = expr;
@@ -2498,7 +2500,7 @@ ASTNode* Parser::parseAsExpr() {
     ASTNode* expr = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after @as expression");
 
-    ASTAsExprNode* as_data = (ASTAsExprNode*)arena_->alloc(sizeof(ASTAsExprNode));
+    ASTAsExprNode* as_data = (ASTAsExprNode*)ast_arena_->alloc(sizeof(ASTAsExprNode));
     if (!as_data) error("Out of memory");
     as_data->target_type = target_type;
     as_data->expr = expr;
@@ -2515,7 +2517,7 @@ ASTNode* Parser::parsePanicExpr() {
     ASTNode* expr = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after @panic expression");
 
-    ASTPanicNode* panic_data = (ASTPanicNode*)arena_->alloc(sizeof(ASTPanicNode));
+    ASTPanicNode* panic_data = (ASTPanicNode*)ast_arena_->alloc(sizeof(ASTPanicNode));
     if (!panic_data) error("Out of memory");
     panic_data->expr = expr;
 
@@ -2527,16 +2529,16 @@ ASTNode* Parser::parsePanicExpr() {
 ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
     expect(TOKEN_LPAREN, "Expected '(' after built-in");
 
-    ASTFunctionCallNode* call_data = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
+    ASTFunctionCallNode* call_data = (ASTFunctionCallNode*)ast_arena_->alloc(sizeof(ASTFunctionCallNode));
     if (!call_data) error("Out of memory");
 
     ASTNode* callee = createNodeAt(NODE_IDENTIFIER, loc);
     callee->as.identifier.name = name;
     call_data->callee = callee;
 
-    void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!array_mem) error("Out of memory");
-    call_data->args = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+    call_data->args = new (array_mem) DynamicArray<ASTNode*>(*ast_arena_);
 
     if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
         call_data->args->append(parseType());
@@ -2572,7 +2574,7 @@ ASTNode* Parser::parseOffsetOfExpr() {
 
     expect(TOKEN_RPAREN, "Expected ')' after '@offsetOf' arguments");
 
-    ASTOffsetOfNode* offset_data = (ASTOffsetOfNode*)arena_->alloc(sizeof(ASTOffsetOfNode));
+    ASTOffsetOfNode* offset_data = (ASTOffsetOfNode*)ast_arena_->alloc(sizeof(ASTOffsetOfNode));
     if (!offset_data) error("Out of memory");
 
     offset_data->type_expr = type_expr;
