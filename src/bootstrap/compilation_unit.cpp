@@ -954,6 +954,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     Parser* parser = createParser(file_id);
     ASTNode* ast = parser->parse();
+
+    // Per-module token release: tokens are only needed during parsing.
+    token_arena_.reset();
+    token_supplier_.reset();
+
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
@@ -1670,6 +1675,11 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
 
                 Parser* parser = createParser(imported_mod->file_id);
                 ASTNode* ast = parser->parse();
+
+                // Per-module token release: tokens are only needed during parsing.
+                token_arena_.reset();
+                token_supplier_.reset();
+
                 if (!ast) {
                     setCurrentModule(saved_module);
                     return false;
