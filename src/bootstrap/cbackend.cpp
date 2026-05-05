@@ -110,7 +110,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
     // Pass 1: Special types (slices, error unions, optionals)
     // These are emitted BEFORE structs to ensure they are available for recursive dependencies.
     // They will now correctly forward-declare any structs they depend on.
-    DynamicArray<Type*> visited_types(unit_.getArena());
+    DynamicArray<Type*> visited_types(unit_.getTransientArena());
     for (size_t i = 0; i < stmts->length(); ++i) {
         visited_types.clear();
         scanForSpecialTypes((*stmts)[i], emitter, SCAN_SLICES, visited_types);
@@ -886,7 +886,7 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
             if (type->as.function.params) {
                 DynamicArray<Type*>* params = type->as.function.params;
                 size_t count = params->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getTransientArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*params)[i];
                 }
@@ -900,7 +900,7 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
             if (type->as.function_pointer.param_types) {
                 DynamicArray<Type*>* params = type->as.function_pointer.param_types;
                 size_t count = params->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getTransientArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*params)[i];
                 }
@@ -918,7 +918,7 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
             if (type->as.struct_details.fields) {
                 DynamicArray<StructField>* fields = type->as.struct_details.fields;
                 size_t count = fields->length();
-                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                StructField* snapshot = (StructField*)unit_.getTransientArena().alloc(count * sizeof(StructField));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*fields)[i];
                 }
@@ -934,7 +934,7 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
             if (type->as.tagged_union.payload_fields) {
                 DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
                 size_t count = fields->length();
-                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                StructField* snapshot = (StructField*)unit_.getTransientArena().alloc(count * sizeof(StructField));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*fields)[i];
                 }
@@ -947,7 +947,7 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
             if (type->as.tuple.elements) {
                 DynamicArray<Type*>* elements = type->as.tuple.elements;
                 size_t count = elements->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getTransientArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*elements)[i];
                 }

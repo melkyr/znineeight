@@ -940,7 +940,9 @@ bool CompilationUnit::generateCode(const char* output_path) {
         plat_strcpy(dir, ".");
     }
 
-    return backend.generate(dir);
+    bool result = backend.generate(dir);
+    transient_arena_.reset();
+    return result;
 }
 
 bool CompilationUnit::performFullPipeline(u32 file_id) {
@@ -1330,6 +1332,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (all_success) {
         MetadataPreparationPass prep_pass(*this);
         prep_pass.run();
+        transient_arena_.reset();
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
