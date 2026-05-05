@@ -265,7 +265,7 @@ void MetadataPreparationPass::run() {
             }
         }
 
-        DynamicArray<Type*> sorted(unit_.getTransientArena());
+        DynamicArray<Type*> sorted(unit_.getArena());
         while (queue.length() > 0) {
             size_t u = queue[0];
             // Manual shift to remove first element
