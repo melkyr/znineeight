@@ -159,6 +159,25 @@ struct TypeChecker::ResolvingSignatureGuard {
     }
 };
 
+struct TypeChecker::ScratchResetGuard {
+    ArenaAllocator& arena;
+    int& depth;
+    ScratchResetGuard(ArenaAllocator& a, int& d) : arena(a), depth(d) {
+        ++depth;
+    }
+    ~ScratchResetGuard() {
+        if (--depth == 0) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
+            size_t used = arena.getOffset();
+            if (used > 0) {
+                plat_printf_debug("[SCRATCH] reset, peak bytes used: %lu\n", (unsigned long)used);
+            }
+#endif
+            arena.reset();
+        }
+    }
+};
+
 
 /* Helper to get the string representation of a binary operator token. */
 
@@ -3054,6 +3073,8 @@ Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
 Type* TypeChecker::resolveAllPlaceholders(Type* type) {
     if (!type) return NULL;
 
+    ScratchResetGuard guard(unit_.getScratchArena(), unit_.getScratchNestingDepth());
+
     if (type->kind == TYPE_PLACEHOLDER) {
         return resolvePlaceholder(type);
     }
@@ -3094,7 +3115,7 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
             if (type->as.function.params) {
                 DynamicArray<Type*>* params = type->as.function.params;
                 size_t count = params->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getScratchArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*params)[i];
                 }
@@ -3111,7 +3132,7 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
             if (type->as.function_pointer.param_types) {
                 DynamicArray<Type*>* params = type->as.function_pointer.param_types;
                 size_t count = params->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getScratchArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*params)[i];
                 }
@@ -3129,7 +3150,7 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
             if (type->as.struct_details.fields) {
                  DynamicArray<StructField>* fields = type->as.struct_details.fields;
                  size_t count = fields->length();
-                 StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                 StructField* snapshot = (StructField*)unit_.getScratchArena().alloc(count * sizeof(StructField));
                  for (size_t i = 0; i < count; ++i) {
                      snapshot[i] = (*fields)[i];
                  }
@@ -3145,7 +3166,7 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
             if (type->as.tagged_union.payload_fields) {
                  DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
                  size_t count = fields->length();
-                 StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                 StructField* snapshot = (StructField*)unit_.getScratchArena().alloc(count * sizeof(StructField));
                  for (size_t i = 0; i < count; ++i) {
                      snapshot[i] = (*fields)[i];
                  }
@@ -3161,7 +3182,7 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
             if (type->as.tuple.elements) {
                 DynamicArray<Type*>* elements = type->as.tuple.elements;
                 size_t count = elements->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getScratchArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*elements)[i];
                 }

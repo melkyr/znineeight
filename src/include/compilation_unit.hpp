@@ -79,6 +79,8 @@ struct TestNameEntry {
 
 class CompilationUnit {
 public:
+    static const size_t SCRATCH_ARENA_CAPACITY = 16 * 1024 * 1024;
+
     CompilationUnit(ArenaAllocator& arena, StringInterner& interner);
 
     u32 addSource(const char* filename, const char* source);
@@ -112,6 +114,9 @@ public:
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
     ArenaAllocator& getTransientArena();
+    ArenaAllocator& getScratchArena();
+
+    int& getScratchNestingDepth() { return scratch_nesting_depth_; }
 
     void resetTransientArena();
     void resetTokenArena();
@@ -210,6 +215,8 @@ private:
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
     ArenaAllocator transient_arena_;
+    ArenaAllocator scratch_arena_;
+    int scratch_nesting_depth_;
     TypeInterner type_interner_;
     TypeRegistry type_registry_;
     DynamicArray<PendingResolution> pending_resolutions_;
