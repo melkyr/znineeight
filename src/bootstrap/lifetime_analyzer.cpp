@@ -97,8 +97,8 @@ void LifetimeAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     plat_printf_debug("\n");
 #endif
     DynamicArray<PointerAssignment>* prev_assignments = current_assignments_;
-    void* mem = unit_.getArena().alloc(sizeof(DynamicArray<PointerAssignment>));
-    current_assignments_ = new (mem) DynamicArray<PointerAssignment>(unit_.getArena());
+    void* mem = unit_.getTransientArena().alloc(sizeof(DynamicArray<PointerAssignment>));
+    current_assignments_ = new (mem) DynamicArray<PointerAssignment>(unit_.getTransientArena());
 
     visit(node->body);
 
@@ -130,14 +130,14 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
             prefix = "Returning address of local variable '";
         }
 
-        char* msg_buffer = (char*)unit_.getArena().alloc(1024);
+        char* msg_buffer = (char*)unit_.getTransientArena().alloc(1024);
         char* current = msg_buffer;
         size_t remaining = 1024;
         safe_append(current, remaining, prefix);
         safe_append(current, remaining, var_name);
         safe_append(current, remaining, "' creates dangling pointer");
 
-        unit_.getErrorHandler().report(ERR_LIFETIME_VIOLATION, node->expression->loc, ErrorHandler::getMessage(ERR_LIFETIME_VIOLATION), unit_.getArena(), msg_buffer);
+        unit_.getErrorHandler().report(ERR_LIFETIME_VIOLATION, node->expression->loc, ErrorHandler::getMessage(ERR_LIFETIME_VIOLATION), unit_.getTransientArena(), msg_buffer);
     }
 }
 
@@ -424,7 +424,7 @@ const char* LifetimeAnalyzer::getPointerOrigin(ASTNode* expr) {
 
                 size_t base_len = plat_strlen(base_origin);
                 size_t field_len = plat_strlen(expr->as.member_access->field_name);
-                char* combined = (char*)unit_.getArena().alloc(base_len + field_len + 2);
+                char* combined = (char*)unit_.getTransientArena().alloc(base_len + field_len + 2);
                 plat_strcpy(combined, base_origin);
                 plat_strcat(combined, ".");
                 plat_strcat(combined, expr->as.member_access->field_name);

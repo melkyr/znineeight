@@ -308,7 +308,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     Z98_ASSERT(mod->mod_arena != NULL);
     void* mem = mod->mod_arena->alloc(sizeof(Parser));
     if (mem == NULL) fatalError("Out of memory allocating Parser");
-    return new (mem) Parser(token_stream.tokens, token_stream.count, mod->mod_arena, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, mod->mod_arena, &arena_, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
 }
 
 /**
@@ -1178,6 +1178,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
         NameCollisionDetector detector(*this);
         detector.check(m->ast_root);
         if (detector.hasCollisions()) all_success = false;
+        transient_arena_.reset();
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
@@ -1332,7 +1333,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
 #ifdef MEASURE_MEMORY
         tracker.begin_phase("AST Lifting");
 #endif
-        ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
+        ControlFlowLifter lifter(m->mod_arena, &arena_, &interner_, &error_handler_);
         lifter.setDebugMode(options_.debug_lifter);
         lifter.lift(m);
 #ifdef MEASURE_MEMORY

@@ -77,13 +77,13 @@ void NullPointerAnalyzer::analyze(ASTNode* root) {
 }
 
 void NullPointerAnalyzer::pushScope(bool copy_parent) {
-    void* mem = unit_.getArena().alloc(sizeof(StateMap));
+    void* mem = unit_.getTransientArena().alloc(sizeof(StateMap));
     StateMap* new_scope;
     if (copy_parent && current_scope_) {
-        new_scope = new (mem) StateMap(*current_scope_, unit_.getArena());
+        new_scope = new (mem) StateMap(*current_scope_, unit_.getTransientArena());
         new_scope->parent = current_scope_;
     } else {
-        new_scope = new (mem) StateMap(unit_.getArena(), current_scope_);
+        new_scope = new (mem) StateMap(unit_.getTransientArena(), current_scope_);
     }
     scopes_.append(new_scope);
     current_scope_ = new_scope;
