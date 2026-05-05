@@ -191,6 +191,7 @@ private:
     struct IndirectionGuard;
     struct ResolvingTypeGuard;
     struct ResolvingSignatureGuard;
+    struct ScratchResetGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
