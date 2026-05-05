@@ -28,7 +28,7 @@ void MetadataPreparationPass::run() {
             for (size_t k = 0; k < scope->buckets.length(); ++k) {
                 Scope::SymbolEntry* entry = scope->buckets[k];
                 /* Snapshot bucket to prevent iterator invalidation if resolution adds new symbols */
-                DynamicArray<Symbol*> snapshot(unit_.getArena());
+                DynamicArray<Symbol*> snapshot(unit_.getTransientArena());
                 Scope::SymbolEntry* curr = entry;
                 while (curr) {
                     snapshot.append(&curr->symbol);
@@ -57,7 +57,7 @@ void MetadataPreparationPass::run() {
             for (size_t k = 0; k < scope->buckets.length(); ++k) {
                 Scope::SymbolEntry* entry = scope->buckets[k];
                 /* Snapshot bucket to prevent iterator invalidation if metadata preparation adds new symbols */
-                DynamicArray<Symbol*> snapshot(unit_.getArena());
+                DynamicArray<Symbol*> snapshot(unit_.getTransientArena());
                 Scope::SymbolEntry* curr = entry;
                 while (curr) {
                     snapshot.append(&curr->symbol);
@@ -80,14 +80,14 @@ void MetadataPreparationPass::run() {
 
         mod->header_types.clear();
 
-        DynamicArray<Type*> visited(unit_.getArena());
+        DynamicArray<Type*> visited(unit_.getTransientArena());
         const DynamicArray<Scope*>& scopes = mod->symbols->getAllScopes();
 
         for (size_t j = 0; j < scopes.length(); ++j) {
             Scope* scope = scopes[j];
             for (size_t k = 0; k < scope->buckets.length(); ++k) {
                 Scope::SymbolEntry* entry = scope->buckets[k];
-                DynamicArray<Symbol*> snapshot(unit_.getArena());
+                DynamicArray<Symbol*> snapshot(unit_.getTransientArena());
                 Scope::SymbolEntry* curr = entry;
                 while (curr) {
                     snapshot.append(&curr->symbol);
@@ -133,18 +133,18 @@ void MetadataPreparationPass::run() {
         }
 #endif
 
-        DynamicArray<Type*> types(unit_.getArena());
+        DynamicArray<Type*> types(unit_.getTransientArena());
         for (size_t j = 0; j < mod->header_types.length(); ++j) {
             types.append(mod->header_types[j]);
         }
 
-        DynamicArray<size_t> indeg(unit_.getArena());
-        DynamicArray<DynamicArray<size_t>*> adj(unit_.getArena());
+        DynamicArray<size_t> indeg(unit_.getTransientArena());
+        DynamicArray<DynamicArray<size_t>*> adj(unit_.getTransientArena());
 
         for (size_t j = 0; j < types.length(); ++j) {
             indeg.append(0);
-            DynamicArray<size_t>* neighbors = (DynamicArray<size_t>*)unit_.getArena().alloc(sizeof(DynamicArray<size_t>));
-            new (neighbors) DynamicArray<size_t>(unit_.getArena());
+            DynamicArray<size_t>* neighbors = (DynamicArray<size_t>*)unit_.getTransientArena().alloc(sizeof(DynamicArray<size_t>));
+            new (neighbors) DynamicArray<size_t>(unit_.getTransientArena());
             adj.append(neighbors);
         }
 
@@ -153,7 +153,7 @@ void MetadataPreparationPass::run() {
 
             // Helper to add a value-dependency edge: k -> j (k is dependency, must come before j)
             // Note: We use a nested block for dependencies.
-            DynamicArray<Type*> deps(unit_.getArena());
+            DynamicArray<Type*> deps(unit_.getTransientArena());
             switch (t->kind) {
                 case TYPE_ARRAY:
                     deps.append(t->as.array.element_type);
@@ -258,7 +258,7 @@ void MetadataPreparationPass::run() {
         }
 
         // Kahn's algorithm
-        DynamicArray<size_t> queue(unit_.getArena());
+        DynamicArray<size_t> queue(unit_.getTransientArena());
         for (size_t j = 0; j < indeg.length(); ++j) {
             if (indeg[j] == 0) {
                 queue.append(j);
@@ -328,7 +328,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             if (type->as.struct_details.fields) {
                 DynamicArray<StructField>* fields = type->as.struct_details.fields;
                 size_t count = fields->length();
-                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                StructField* snapshot = (StructField*)unit_.getTransientArena().alloc(count * sizeof(StructField));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*fields)[i];
                 }
@@ -344,7 +344,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             if (type->as.tagged_union.payload_fields) {
                 DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
                 size_t count = fields->length();
-                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                StructField* snapshot = (StructField*)unit_.getTransientArena().alloc(count * sizeof(StructField));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*fields)[i];
                 }
@@ -366,7 +366,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             if (type->as.tuple.elements) {
                 DynamicArray<Type*>* elements = type->as.tuple.elements;
                 size_t count = elements->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getTransientArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*elements)[i];
                 }
@@ -398,7 +398,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
            In summary, any reachable header type is added to the module's header_types. */
         bool already_in = false;
         /* Take a snapshot to prevent iterator invalidation if mod->header_types is modified during recursion */
-        DynamicArray<Type*> header_snapshot(unit_.getArena());
+        DynamicArray<Type*> header_snapshot(unit_.getTransientArena());
         for (size_t i = 0; i < mod->header_types.length(); ++i) {
             header_snapshot.append(mod->header_types[i]);
         }
@@ -426,7 +426,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             if (type->as.function.params) {
                 DynamicArray<Type*>* params = type->as.function.params;
                 size_t count = params->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getTransientArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*params)[i];
                 }
@@ -440,7 +440,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             if (type->as.function_pointer.param_types) {
                 DynamicArray<Type*>* params = type->as.function_pointer.param_types;
                 size_t count = params->length();
-                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                Type** snapshot = (Type**)unit_.getTransientArena().alloc(count * sizeof(Type*));
                 for (size_t i = 0; i < count; ++i) {
                     snapshot[i] = (*params)[i];
                 }
