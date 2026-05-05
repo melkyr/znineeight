@@ -57,17 +57,25 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
     - `SignatureAnalyzer`: Validates function signatures for C89 compatibility.
     - `C89FeatureValidator`: Rejects non-C89 Zig features.
 
-### Phase 4: AST Lifting
-- **Action**: Transforms expression-form control flow (`if`, `switch`, `try`, etc.) into C89-compliant statement-form using temporary variables.
+### Phase 4: Per-Module Processing Loop
+- **Action**: Iterates through all modules in topological order and performs the remaining passes for each module individually.
+- **AST Release**: After each module is processed (including code generation), its specific AST arena (`mod_arena`) is reset.
+- **Memory Impact**: This ensures that peak memory usage is determined by the largest single module's AST, rather than the sum of all modules.
 
-### Phase 4.5: Metadata Preparation
-- **Action**: Dependency-orders type definitions in C headers to avoid "incomplete type" errors.
+#### Phase 4.1: AST Lifting
+- **Action**: Transforms expression-form control flow into statement-form. Now uses the per-module `mod_arena` for any newly created AST nodes.
 
-### Phase 5: Static Analysis
-- **Action**: Runs `LifetimeAnalyzer`, `NullPointerAnalyzer`, and `DoubleFreeAnalyzer` to detect memory safety issues.
+#### Phase 4.2: Static Analysis
+- **Action**: Runs `LifetimeAnalyzer`, `NullPointerAnalyzer`, and `DoubleFreeAnalyzer`.
 
-### Phase 6: Code Generation
-- **Action**: Emits the final `.c` and `.h` files for each module using the `CBackend`.
+#### Phase 4.3: Per-Module Metadata Preparation
+- **Action**: Transitively collects reachable types for the module's header and performs topological sorting of those types.
+
+#### Phase 4.4: Code Generation
+- **Action**: Emits the `.c` and `.h` files for the module.
+
+### Phase 5: Global Codegen Tasks
+- **Action**: Generates build scripts (`build_target.bat`, `Makefile`, etc.) and copies runtime files to the output directory.
 
 ## Architecture Principles
 

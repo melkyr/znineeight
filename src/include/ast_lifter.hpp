@@ -31,6 +31,12 @@ public:
     void lift(CompilationUnit* unit);
 
     /**
+     * @brief Entry point for per-module lifting.
+     * @param mod The module to transform.
+     */
+    void lift(Module* mod);
+
+    /**
      * @brief Enables or disables verbose debug logging.
      */
     void setDebugMode(bool enabled) { debug_mode_ = enabled; }

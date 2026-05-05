@@ -75,20 +75,29 @@ void ControlFlowLifter::lift(CompilationUnit* unit) {
     unit_ = unit;
     const DynamicArray<Module*>& modules = unit->getModules();
     for (size_t i = 0; i < modules.length(); ++i) {
-        Module* mod = modules[i];
-        if (!mod->ast_root) continue;
-
-        module_name_ = mod->name;
-        tmp_counter_ = 0;
-        depth_ = 0;
-        registered_temps_.clear();
-        processed_calls_.clear();
-
-        transformNode(&mod->ast_root, NULL);
-        validateLifting(mod);
+        lift(modules[i]);
     }
     unit_ = NULL;
     module_name_ = NULL;
+}
+
+void ControlFlowLifter::lift(Module* mod) {
+    if (!mod->ast_root) return;
+
+    module_name_ = mod->name;
+    tmp_counter_ = 0;
+    depth_ = 0;
+    registered_temps_.clear();
+    processed_calls_.clear();
+
+    // Use per-module arena for new nodes
+    ArenaAllocator* old_arena = arena_;
+    if (mod->mod_arena) arena_ = mod->mod_arena;
+
+    transformNode(&mod->ast_root, NULL);
+    validateLifting(mod);
+
+    arena_ = old_arena;
 }
 
 void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {

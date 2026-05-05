@@ -247,6 +247,9 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
+    // Initialize per-module arena for AST nodes
+    mod->mod_arena = new (arena_.alloc(sizeof(ArenaAllocator))) ArenaAllocator(2 * 1024 * 1024);
+
     // Compute stable hash for the module based on absolute canonical path
     char abs_path[1024];
     bool got_abs = plat_get_absolute_path(interned_filename, abs_path, sizeof(abs_path));
@@ -302,9 +305,10 @@ Parser* CompilationUnit::createParser(u32 file_id) {
         return NULL;
     }
 
-    void* mem = arena_.alloc(sizeof(Parser));
+    Z98_ASSERT(mod->mod_arena != NULL);
+    void* mem = mod->mod_arena->alloc(sizeof(Parser));
     if (mem == NULL) fatalError("Out of memory allocating Parser");
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, mod->mod_arena, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
 }
 
 /**
@@ -945,7 +949,7 @@ bool CompilationUnit::generateCode(const char* output_path) {
     return result;
 }
 
-bool CompilationUnit::performFullPipeline(u32 file_id) {
+bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
     Logger* logger = plat_get_logger();
 #ifdef MEASURE_MEMORY
     PhaseMemoryTracker tracker(*this);
@@ -1311,39 +1315,34 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
-    // Phase 4: AST Lifting
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("AST Lifting");
-#endif
-    if (all_success) {
-        ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
-        lifter.setDebugMode(options_.debug_lifter);
-        lifter.lift(this);
-    }
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (logger) logger->flush();
+    // Phase 4.5: Global Metadata Preparation
+    MetadataPreparationPass prep_pass(*this);
+    prep_pass.prepareGlobalMetadata();
 
-    // Phase 4.5: Metadata Preparation
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("Metadata Preparation");
-#endif
-    if (all_success) {
-        MetadataPreparationPass prep_pass(*this);
-        prep_pass.run();
-        transient_arena_.reset();
-    }
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (logger) logger->flush();
+    // Per-module processing loop
+    DynamicArray<const char*>& shared_type_cache = getEmittedTypesCache();
+    CBackend backend(*this);
 
-    // Phase 5: Static Analyzers
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
         setCurrentModule(m->name);
+
+        // Phase 4: AST Lifting
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("AST Lifting");
+#endif
+        ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
+        lifter.setDebugMode(options_.debug_lifter);
+        lifter.lift(m);
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
+
+        // Phase 5: Static Analyzers
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("Static Analyzers");
+#endif
         ASTNode* m_ast = m->ast_root;
 
         if (options_.enable_lifetime_analysis) {
@@ -1360,10 +1359,48 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             DoubleFreeAnalyzer analyzer(*this);
             analyzer.analyze(m_ast);
         }
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
 
+        // Phase 6: Per-module Metadata Preparation
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("Module Metadata Preparation");
+#endif
+        prep_pass.prepareModuleMetadata(m);
+        transient_arena_.reset();
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
+
+        // Phase 7: Code Generation
+        if (output_dir) {
+#ifdef MEASURE_MEMORY
+            tracker.begin_phase("Code Generation");
+#endif
+            backend.generateHeaderFile(m, output_dir, &shared_type_cache);
+            backend.generateSourceFile(m, output_dir, &shared_type_cache);
+#ifdef MEASURE_MEMORY
+            tracker.end_phase();
+#endif
+        }
+
+        // Release AST memory
+        if (m->mod_arena) {
+            m->mod_arena->reset();
+        }
+        m->ast_root = NULL;
         m->is_analyzed = true;
     }
-    if (logger) logger->flush();
+
+    if (output_dir) {
+        backend.generateBuildBat(output_dir);
+        backend.generateMSVCBuildBat(output_dir);
+        backend.generateOpenWatcomBuildBat(output_dir);
+        backend.generateMakefile(output_dir);
+        backend.generateSpecialTypesHeader(output_dir);
+        backend.copyRuntimeFiles(output_dir);
+    }
 
     // Task 163: Report unresolved call sites
     if (call_site_table_.getUnresolvedCount() > 0) {

@@ -150,9 +150,10 @@ public:
     /**
      * @brief Executes the full compilation pipeline for a single file.
      * @param file_id The ID of the source file to compile.
+     * @param output_dir Optional directory to emit generated C code.
      * @return True if the pipeline finished successfully (though it may have found errors).
      */
-    bool performFullPipeline(u32 file_id);
+    bool performFullPipeline(u32 file_id, const char* output_dir = NULL);
 
     /**
      * @brief Recursively resolves imports for the given module.
