@@ -11,6 +11,9 @@ const DiagnosticCollector = diag_mod.DiagnosticCollector;
 const StringInterner = @import("string_interner.zig").StringInterner;
 const U32ArrayList = @import("growable_array.zig").U32ArrayList;
 const u32ArrayListInit = @import("growable_array.zig").u32ArrayListInit;
+const AstKind = @import("ast.zig").AstKind;
+const ast_mod = @import("ast.zig");
+const string_interner_mod = @import("string_interner.zig");
 
 pub const ParseToken = struct {
     kind: TokenKind,
@@ -77,7 +80,7 @@ pub fn parserAdvance(self: *Parser) Token {
 pub fn parserExpect(self: *Parser, kind: TokenKind) ParserError!ParseToken {
     var tok = parserPeek(self);
     if (tok.kind != kind) {
-        var expect_msg: []const u8 = "expected token";
+        var expect_msg: []const u8 = "bad tok";
         parserAddError(self, tok, expect_msg);
         return error.UnexpectedToken;
     }
@@ -99,6 +102,209 @@ pub fn parserSynchronize(self: *Parser) void {
             k == TokenKind.kw_test or k == TokenKind.eof) return;
         self.pos += 1;
     }
+}
+
+pub fn parserParseExprPrec(self: *Parser, min_prec: Prec) ParserError!u32 {
+    var lhs = try parserParsePrimary(self);
+
+    while (true) {
+        var tok = parserPeek(self);
+        var has_info: u8 = 0;
+        var info: OpInfo = undefined;
+        if (getInfixInfo(tok.kind)) |val| {
+            info = val;
+            has_info = 1;
+        }
+        if (has_info == 0) break;
+        if (precToInt(info.prec) < precToInt(min_prec)) break;
+
+        _ = parserAdvance(self);
+
+        var next_min: Prec = undefined;
+        if (info.right_assoc) {
+            next_min = info.prec;
+        } else {
+            next_min = precFromInt(precToInt(info.prec) + 1);
+        }
+
+        var rhs: u32 = undefined;
+        if (tok.kind == TokenKind.kw_catch) {
+            return error.UnexpectedToken;
+        } else if (tok.kind == TokenKind.kw_orelse) {
+            return error.UnexpectedToken;
+        } else {
+            rhs = try parserParseExprPrec(self, next_min);
+        }
+
+        lhs = try parserAddBinary(self, tok, lhs, rhs);
+    }
+    return lhs;
+}
+
+fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u32 {
+    var kind: AstKind = undefined;
+    var found: u8 = 0;
+    switch (tok.kind) {
+        TokenKind.plus => { kind = AstKind.add; found = 1; },
+        TokenKind.minus => { kind = AstKind.sub; found = 1; },
+        TokenKind.star => { kind = AstKind.mul; found = 1; },
+        TokenKind.slash => { kind = AstKind.div; found = 1; },
+        TokenKind.percent => { kind = AstKind.mod_op; found = 1; },
+        TokenKind.ampersand => { kind = AstKind.bit_and; found = 1; },
+        TokenKind.pipe => { kind = AstKind.bit_or; found = 1; },
+        TokenKind.caret => { kind = AstKind.bit_xor; found = 1; },
+        TokenKind.shl => { kind = AstKind.shl; found = 1; },
+        TokenKind.shr => { kind = AstKind.shr; found = 1; },
+        TokenKind.kw_and => { kind = AstKind.bool_and; found = 1; },
+        TokenKind.kw_or => { kind = AstKind.bool_or; found = 1; },
+        TokenKind.eq_eq => { kind = AstKind.cmp_eq; found = 1; },
+        TokenKind.bang_eq => { kind = AstKind.cmp_ne; found = 1; },
+        TokenKind.less => { kind = AstKind.cmp_lt; found = 1; },
+        TokenKind.less_eq => { kind = AstKind.cmp_le; found = 1; },
+        TokenKind.greater => { kind = AstKind.cmp_gt; found = 1; },
+        TokenKind.greater_eq => { kind = AstKind.cmp_ge; found = 1; },
+        TokenKind.eq => { kind = AstKind.assign; found = 1; },
+        TokenKind.plus_eq => { kind = AstKind.add_assign; found = 1; },
+        TokenKind.minus_eq => { kind = AstKind.sub_assign; found = 1; },
+        TokenKind.star_eq => { kind = AstKind.mul_assign; found = 1; },
+        TokenKind.slash_eq => { kind = AstKind.div_assign; found = 1; },
+        TokenKind.percent_eq => { kind = AstKind.mod_assign; found = 1; },
+        TokenKind.shl_eq => { kind = AstKind.shl_assign; found = 1; },
+        TokenKind.shr_eq => { kind = AstKind.shr_assign; found = 1; },
+        TokenKind.ampersand_eq => { kind = AstKind.and_assign; found = 1; },
+        TokenKind.pipe_eq => { kind = AstKind.or_assign; found = 1; },
+        TokenKind.caret_eq => { kind = AstKind.xor_assign; found = 1; },
+        else => {},
+    }
+    if (found == 0) {
+        var add_msg: []const u8 = "bad op";
+        parserAddError(self, tok, add_msg);
+        return error.UnexpectedToken;
+    }
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, 0, 0);
+}
+
+pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.integer_literal) return parserParseIntLiteral(self);
+    if (tok.kind == TokenKind.float_literal) return parserParseFloatLiteral(self);
+    if (tok.kind == TokenKind.string_literal) return parserParseStringLiteral(self);
+    if (tok.kind == TokenKind.char_literal) return parserParseCharLiteral(self);
+    if (tok.kind == TokenKind.kw_true) return parserParseBoolLiteral(self);
+    if (tok.kind == TokenKind.kw_false) return parserParseBoolLiteral(self);
+    if (tok.kind == TokenKind.kw_null) return parserParseSingleToken(self, AstKind.null_literal);
+    if (tok.kind == TokenKind.kw_undefined) return parserParseSingleToken(self, AstKind.undefined_literal);
+    if (tok.kind == TokenKind.kw_unreachable) return parserParseSingleToken(self, AstKind.unreachable_expr);
+    if (tok.kind == TokenKind.identifier) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.builtin_identifier) return parserParseBuiltinCall(self);
+    if (tok.kind == TokenKind.kw_error) return parserParseErrorLiteral(self);
+    if (tok.kind == TokenKind.minus) return parserParsePrefixUnary(self, AstKind.negate);
+    if (tok.kind == TokenKind.bang) return parserParsePrefixUnary(self, AstKind.bool_not);
+    if (tok.kind == TokenKind.tilde) return parserParsePrefixUnary(self, AstKind.bit_not);
+    if (tok.kind == TokenKind.ampersand) return parserParsePrefixUnary(self, AstKind.address_of);
+    if (tok.kind == TokenKind.kw_try) return parserParseTryExpr(self);
+    if (tok.kind == TokenKind.lparen) return parserParseGroupedExpr(self);
+    if (tok.kind == TokenKind.dot_lbrace) return parserParseAnonymousLiteral(self);
+    if (tok.kind == TokenKind.dot) return parserParseEnumLiteral(self);
+    if (tok.kind == TokenKind.kw_if) return parserParseIfExpr(self);
+    if (tok.kind == TokenKind.kw_switch) return parserParseSwitchExpr(self);
+    var primary_msg: []const u8 = "bad expr";
+    parserAddError(self, tok, primary_msg);
+    return error.UnexpectedToken;
+}
+
+fn parserParseIntLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddIntLiteral(self.store, tok.value.int_val, tok.span_start, end);
+}
+
+fn parserParseFloatLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddFloatLiteral(self.store, tok.value.float_val, tok.span_start, end);
+}
+
+fn parserParseStringLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
+    var text = parserTokenText(self, pt);
+    var id = string_interner_mod.stringInternerIntern(self.interner, text);
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddStringLiteral(self.store, id, tok.span_start, end);
+}
+
+fn parserParseCharLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.char_literal, 0, tok.span_start, end, 0, 0, 0, 0);
+}
+
+fn parserParseBoolLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var val: u8 = 0;
+    if (tok.kind == TokenKind.kw_true) val = 1;
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.bool_literal, val, tok.span_start, end, 0, 0, 0, 0);
+}
+
+fn parserParseSingleToken(self: *Parser, kind: AstKind) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, 0, 0, 0, 0);
+}
+
+fn parserParseIdentExpr(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
+    var id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, id, tok.span_start, end);
+}
+
+fn parserParsePrefixUnary(self: *Parser, kind: AstKind) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var operand = try parserParseExprPrec(self, Prec.prefix);
+    var end = tok.span_start + @intCast(u32, tok.span_len);
+    _ = operand;
+    _ = end;
+    return error.UnexpectedToken;
+}
+
+fn parserParseGroupedExpr(self: *Parser) ParserError!u32 {
+    _ = parserAdvance(self);
+    var inner = try parserParseExprPrec(self, Prec.assignment);
+    _ = try parserExpect(self, TokenKind.rparen);
+    return inner;
+}
+
+fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
+}
+
+fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
+}
+
+fn parserParseTryExpr(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
+}
+
+fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
+}
+
+fn parserParseEnumLiteral(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
+}
+
+fn parserParseIfExpr(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
+}
+
+fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
+    return error.UnexpectedToken;
 }
 
 pub const Prec = enum(u8) {
