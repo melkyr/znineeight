@@ -228,6 +228,9 @@ void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
     }
 
     Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
+#ifdef DEBUG
+    plat_printf_debug("[NULL_ANALYZE] findInAnyScope '%s' -> %p\n", node->name, (void*)sym);
+#endif
     if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
         PointerState state = PS_UNINIT;
         if (node->initializer) {

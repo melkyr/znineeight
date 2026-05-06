@@ -1,119 +1,47 @@
-# Bug Deep Dive: Transitive Alias Blockades in Global Scope
+# Bug Deep Dive: Transitive Alias Blockades and Unsound Symbol Re-resolution
 
 ## 1. Bug Summary
-The Z98 bootstrap compiler (`zig0`) fails to compile global constant declarations that use module member access as their initializer, such as `const Foo = @import("a.zig").Foo;`. This happens because the C89 code generator incorrectly identifies these initializers as non-constant, triggering the `ERR_GLOBAL_VAR_NON_CONSTANT_INIT` error. This issue pervasive across the `sf/src/` codebase, preventing it from bootstrapping.
+The Z98 bootstrap compiler (`zig0`) suffers from two critical issues during multi-module compilation (Stage 1):
+1.  **Bug 1: Transitive Alias Blockades**: Global type aliases using member access (e.g., `const Foo = @import("a.zig").Foo;`) trigger `ERR_GLOBAL_VAR_NON_CONSTANT_INIT` because the emitter misidentifies them as variables and fails to recognize their initializers as constant.
+2.  **Bug 2: Unsound Symbol Re-resolution**: Post-typechecking passes (static analyzers) inconsistently re-resolve identifiers using `SymbolTable::findInAnyScope`, which is unsound after lexical scopes have been popped.
 
-## 2. Reproduction Analysis
-Using the minimal reproduction in `tests/integration/import_repro/`:
+## 2. Bug 1: Transitive Alias Blockades
 
-**a.zig**:
-```zig
-pub const Foo = struct { x: u32 };
-```
+### A. Root Cause: Metadata Loss in `TypeChecker::visitVarDecl`
+When the `TypeChecker` visits a global constant declaration that aliases a type from another module, it correctly resolves the underlying type (e.g., `TYPE_STRUCT`). However, `visitVarDecl` returns this **concrete type** instead of `TYPE_TYPE`.
 
-**b.zig**:
-```zig
-const Foo = @import("a.zig").Foo; // Error: global variable must have constant initializer
-```
+Consequently, the `NODE_VAR_DECL` node itself gets its `resolved_type` set to the concrete type. When the `C89Emitter` later visits this node, it sees a struct type and concludes it must emit a C variable declaration.
 
-### Tracing the failure:
-1.  The `Parser` identifies `@import("a.zig").Foo` as a `NODE_MEMBER_ACCESS` where the base is a `NODE_IMPORT_STMT`.
-2.  During semantic analysis (`Phase 0.5` and `Phase 2`), the `TypeChecker` correctly resolves this member access. It finds that `Foo` in `a.zig` is a type, so it sets the `resolved_type` of the `NODE_MEMBER_ACCESS` to `TYPE_TYPE` (and caches the actual struct type).
-3.  In the Code Generation phase, `C89Emitter::emitGlobalVarDecl` (src/bootstrap/codegen.cpp:425) is called for the declaration of `Foo`.
-4.  It performs two critical checks on the initializer:
-    -   `isTypeExpression(decl->initializer, ...)`: This is intended to skip type declarations so they don't emit C code.
-    -   `isConstantInitializer(decl->initializer)`: This ensures global variables have C-compatible constant initializers.
+### B. Root Cause: `isConstantInitializer` Limitations
+The emitter then attempts to validate the initializer (a `NODE_MEMBER_ACCESS` like `mod.Foo`). `isConstantInitializer` only returns `true` for member access if the base resolves to an `ENUM`. It does not recognize that member access resolving to a type or a module-level constant is also "constant" in the Z98 context.
 
-Both checks fail for `NODE_MEMBER_ACCESS`.
+### C. Analysis Verification
+Debug logs confirm:
+- `visitVarDecl 'Foo'` returns kind 24 (`TYPE_STRUCT`) instead of kind 30 (`TYPE_TYPE`).
+- `emitGlobalVarDecl` processes 'Foo' with kind 24.
+- `isConstantInitializer` is called for `NODE_MEMBER_ACCESS` (type 7) and returns `false`.
 
-## 3. Root Cause Identification
+### D. Proposed Fix
+1.  **Harden `visitVarDecl`**: If a global `const` declaration is a type alias (its initializer is a type expression or resolves to a type), ensure it returns `get_g_type_type()`.
+2.  **Update `isTypeExpression`**: Ensure it returns `true` for `NODE_MEMBER_ACCESS` if `resolved_type` is `TYPE_TYPE` or if it points to a `SYMBOL_TYPE`.
+3.  **Update `isConstantInitializer`**: Recognize `NODE_MEMBER_ACCESS` as constant if it resolves to `TYPE_TYPE` or `TYPE_MODULE`.
+4.  **Harden Emitter**: In `emitGlobalVarDecl` and `emitLocalVarDecl`, skip any declaration where `node->resolved_type` is `TYPE_TYPE` or `TYPE_MODULE`.
 
-### A. `isTypeExpression` Incompleteness
-Located in `src/bootstrap/ast_utils.cpp`:
-```cpp
-bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
-    if (!node) return false;
-    switch (node->type) {
-        case NODE_TYPE_NAME:
-        case NODE_POINTER_TYPE:
-        // ... (other type nodes)
-            return true;
-        case NODE_IDENTIFIER: {
-            // ... (checks for primitives and SYMBOL_TYPE)
-        }
-        default:
-            return false; // NODE_MEMBER_ACCESS falls through here!
-    }
-}
-```
-`isTypeExpression` does not account for `NODE_MEMBER_ACCESS`. Even if the member access resolves to a type (like `mod.Type`), it returns `false`. Consequently, `emitGlobalVarDecl` does not skip the type alias and proceeds to validate it as a variable initializer.
+## 3. Bug 2: Unsound Symbol Re-resolution
 
-### B. `isConstantInitializer` Limitations
-Located in `src/bootstrap/codegen.cpp`:
-```cpp
-case NODE_MEMBER_ACCESS: {
-    /* Enum member access is constant */
-    if (node->as.member_access->base->resolved_type) {
-        Type* t = node->as.member_access->base->resolved_type;
-        if (t->kind == TYPE_ENUM) {
-            return true;
-        }
-    }
-    return false;
-}
-```
-`isConstantInitializer` only returns `true` for `NODE_MEMBER_ACCESS` if it's an enum member. It doesn't recognize that a member access resolving to `TYPE_TYPE` (a type alias) or `TYPE_MODULE` (a module alias) is also "constant" in the context of Z98 global scope (where these aliases are handled as metadata).
+### A. Root Cause: Bypassing `is_post_check_phase_`
+The `TypeChecker::visitIdentifier` function correctly uses a `is_post_check_phase_` guard to avoid re-resolving symbols after the main check pass. However, static analyzers like `NullPointerAnalyzer`, `LifetimeAnalyzer`, and `DoubleFreeAnalyzer` call `SymbolTable::findInAnyScope` directly.
 
-## 4. Proposed Fix
+`findInAnyScope` searches a linear history of all scopes ever created. This is unsound because:
+1.  Identifiers (like loop variables `ei`) might exist multiple times in the history with different types or meanings.
+2.  Synthetic nodes created during the main pass (e.g., by `visitArraySlice`) might not have their `Symbol*` pointers wired up, forcing analyzers to fall back to name-based lookup.
+3.  Lookup might succeed for a "dead" symbol that should no longer be visible, leading to incorrect analysis or crashes.
 
-The fix involves updating these utility functions to correctly recognize module-qualified types and constants.
+### B. Analysis Verification
+Debug logs show analyzers frequently calling `findInAnyScope` for variables like `ei` and `hash` during the post-check loop. While currently these lookups often succeed by luck (finding the most recent scope entry), it violates the architectural invariant that semantic analysis should be complete before analyzers run.
 
-### Step 1: Update `isTypeExpression` in `src/bootstrap/ast_utils.cpp`
-Add a case for `NODE_MEMBER_ACCESS` that checks if it resolves to a type:
-```cpp
-case NODE_MEMBER_ACCESS: {
-    if (node->resolved_type && node->resolved_type->kind == TYPE_TYPE) {
-        return true;
-    }
-    // Fallback: check the symbol if it's already resolved
-    if (node->as.member_access && node->as.member_access->symbol) {
-        Symbol* sym = node->as.member_access->symbol;
-        return (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE);
-    }
-    return false;
-}
-```
-
-### Step 2: Update `isConstantInitializer` in `src/bootstrap/codegen.cpp`
-Expand `NODE_MEMBER_ACCESS` handling to include types and modules:
-```cpp
-case NODE_MEMBER_ACCESS: {
-    if (node->resolved_type) {
-        if (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE) {
-            return true;
-        }
-        // ... existing enum check ...
-    }
-    return false;
-}
-```
-
-### Step 3: Harden `emitGlobalVarDecl` in `src/bootstrap/codegen.cpp`
-Ensure that constant aliases to types are always skipped:
-```cpp
-if (decl->is_const) {
-    if (isTypeExpression(decl->initializer, unit_.getSymbolTable())) return;
-
-    // Also check if it resolved to TYPE_TYPE during semantic analysis
-    if (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_TYPE) {
-        return;
-    }
-}
-```
-
-## 5. Impact on Stage 1 Bootstrap
-By allowing global type aliases via member access, we unblock the compilation of `sf/src/pal.zig`, `sf/src/ast.zig`, and most other files in the Stage 1 compiler. These files rely heavily on the pattern:
-```zig
-const Sand = @import("allocator.zig").Sand;
-```
-Once the codegen correctly identifies these as type aliases (and thus skips emitting C variable declarations for them), the "global variable must have constant initializer" error will be resolved for these cases.
+### C. Proposed Fix
+1.  **Analyzer Audit**: Refactor all static analyzers to use `node->resolved_type` and `node->as.identifier.symbol` (if available) instead of direct symbol table lookups.
+2.  **Synthetic Node Wiring**: Ensure that `visitArraySlice` and other synthetic-node-generating functions correctly propagate `Symbol*` pointers and `resolved_type` to their children.
+3.  **Harden `findInAnyScope`**: Consider disabling this function entirely or wrapping it in a `Z98_ASSERT(!unit.isPostCheckPhase())` to enforce architectural discipline.
+4.  **Symbol Pointer Persistence**: Ensure that `node->as.identifier.symbol` is always populated during the main `visitIdentifier` pass so analyzers don't need to perform lookups.

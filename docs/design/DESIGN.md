@@ -1255,3 +1255,7 @@ Payload captures in `if` and `while` statements do not yet support pointers (e.g
 
 ### 18.4 MSVC 6.0 Memory Constraints
 The compiler is strictly limited to < 16MB of peak memory usage. While sufficient for the bootstrap task, extremely large single-file modules or deep recursive type cascades may trigger a fatal memory limit abort.
+
+### 18.5 Critical Resolution Bugs (Identified in Deep Dive)
+1. **Type Alias Metadata Loss**: `TypeChecker::visitVarDecl` incorrectly returns concrete types for global aliases, causing the emitter to produce invalid C variable declarations.
+2. **Unsound Symbol Re-resolution**: Static analyzers (`NullPointer`, `Lifetime`, `DoubleFree`) unsoundly call `SymbolTable::findInAnyScope` during the post-check phase, risking "undeclared identifier" errors for synthetic or scoped variables like `ei`.

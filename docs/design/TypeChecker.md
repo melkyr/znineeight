@@ -58,3 +58,8 @@ To prevent "use of undeclared identifier" errors for variables with inferred typ
   3. The initializer is resolved.
   4. The symbol's type is updated with the resolved type of the initializer.
 - **Safety**: This ensures that even if type inference fails, the identifier itself is known to the compiler, allowing for better error recovery and preventing cascading "undeclared" errors.
+
+## 9. Known Pitfalls in Cross-Module Alias Resolution (Bug 1)
+As of Milestone 11, a critical pitfall exists in `visitVarDecl` for global type aliases. When resolving `const Foo = mod.Foo;`, the function currently returns the concrete payload type (e.g., `TYPE_STRUCT`) instead of `TYPE_TYPE`.
+- **Consequence**: The declaration is tagged with a concrete type, leading the `C89Emitter` to attempt emitting a C variable instead of skipping it as a metadata-only type alias.
+- **Requirement**: `visitVarDecl` must strictly return `TYPE_TYPE` for all constant declarations that resolve to a type, regardless of whether they are aliases or direct declarations.

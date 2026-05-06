@@ -426,6 +426,11 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
+#ifdef DEBUG
+    plat_printf_debug("[CODEGEN] emitGlobalVarDecl '%s', node->resolved_type kind %d\n",
+                     decl->name, node->resolved_type ? (int)node->resolved_type->kind : -1);
+#endif
+
     /* Use flags from node, but allow override from is_public for now to avoid breaking tests */
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
@@ -2450,6 +2455,12 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
 bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
     if (!node) return true;
+
+#ifdef DEBUG
+    plat_printf_debug("[CODEGEN] isConstantInitializer node type %d, resolved_type kind %d\n",
+                     (int)node->type, node->resolved_type ? (int)node->resolved_type->kind : -1);
+#endif
+
     switch (node->type) {
         case NODE_INTEGER_LITERAL:
         case NODE_FLOAT_LITERAL:

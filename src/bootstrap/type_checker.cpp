@@ -4135,6 +4135,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+#ifdef DEBUG
+    plat_printf_debug("[TYPE] visitVarDecl '%s' RETURNING type kind %d, node->resolved_type kind %d\n",
+                     node->name, (int)declared_type->kind, parent ? (parent->resolved_type ? (int)parent->resolved_type->kind : -1) : -1);
+#endif
+
     return declared_type;
 }
 
@@ -4733,14 +4738,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     plat_printf_debug("[MEMBER] visiting base, cached_resolved_type=%p\n", (void*)node->base->resolved_type);
 #endif
     Type* field_type;
-#ifdef DEBUG
-    plat_printf_debug("[MEMBER] base_type kind=%d\n", (int)base_type->kind);
-#endif
     bool is_type_access = false;
 
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
 #ifdef DEBUG
+    plat_printf_debug("[MEMBER] base_type kind=%d\n", base_type ? (int)base_type->kind : -1);
     plat_printf_debug("[MEMBER] visiting base %p, cached=%p, result=%p, kind=%d\n", 
         (void*)node->base, (void*)node->base->resolved_type, (void*)base_type, base_type ? (int)base_type->kind : -1);
 #endif

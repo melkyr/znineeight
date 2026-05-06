@@ -146,6 +146,9 @@ void LifetimeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
         visit(node->initializer);
     }
     Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
+#ifdef DEBUG
+    plat_printf_debug("[LIFE_ANALYZE] findInAnyScope '%s' -> %p\n", node->name, (void*)sym);
+#endif
     if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
         if (node->initializer) {
 #ifdef Z98_ENABLE_DEBUG_LOGS

@@ -97,6 +97,13 @@ Detects double `arena_free` calls and memory leaks when using the `ArenaAllocato
 - **Precise Array Indexing**: The analyzer now distinguishes between distinct constant array indices (e.g., `arr[0]` vs `arr[1]`). Non-constant indices are collapsed to a generic `arr[]` for conservative tracking.
 - **Tuple Support**: Full support for tuple member access (e.g., `tup.0`) using the same composite name tracking logic as struct fields.
 
+## Architectural Hazards (Bug 2)
+As of Milestone 11, the `NullPointerAnalyzer`, `LifetimeAnalyzer`, and `DoubleFreeAnalyzer` incorrectly rely on `SymbolTable::findInAnyScope` for identifier lookup.
+
+- **The Issue**: During the post-check phase (Phase 3+), lexical scopes have been popped. `findInAnyScope` searches the flat history of all symbols ever created, which is unsound for scoped languages.
+- **Consequence**: Synthetic nodes (e.g., from `visitArraySlice`) or re-visited loop variables (like `ei`) may fail to resolve or resolve to incorrect historical symbols.
+- **Required Fix**: Analyzers must transition to using `node->resolved_type` and `node->as.identifier.symbol` which are populated during the primary `TypeChecker::visitIdentifier` pass (Phase 2).
+
 ## Pipeline Order
 The analyzers run in the following sequence after `TypeChecker`:
 1. `SignatureAnalyzer`
