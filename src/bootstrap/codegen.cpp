@@ -430,6 +430,9 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
     /* Skip type and module declarations (e.g. const T = struct { ... } or const std = @import("std")) */
+    if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return;
+    }
     if (decl->initializer) {
         if (decl->initializer->type == NODE_IMPORT_STMT ||
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
@@ -903,6 +906,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     const ASTVarDeclNode* decl = node->as.var_decl;
 
     /* Skip type and module declarations in local scope */
+    if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return;
+    }
     if (decl->initializer) {
         if (decl->initializer->type == NODE_IMPORT_STMT ||
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
