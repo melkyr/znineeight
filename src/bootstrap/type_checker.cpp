@@ -4135,6 +4135,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    // If this is a global const and its initializer is a type expression,
+    // mark the declaration node as TYPE_TYPE so the emitter knows it's a type alias.
+    if (!is_local && node->is_const && node->initializer &&
+        isTypeExpression(node->initializer, unit_.getSymbolTable())) {
+        if (parent) parent->resolved_type = get_g_type_type();
+        return get_g_type_type();
+    }
+
     return declared_type;
 }
 

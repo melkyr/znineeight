@@ -10,6 +10,8 @@
 class ArenaAllocator;
 struct Type;
 
+void setPostCheckPhase(bool v);
+
 enum SymbolType {
     SYMBOL_VARIABLE,
     SYMBOL_FUNCTION,

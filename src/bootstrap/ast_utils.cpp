@@ -31,13 +31,21 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
             return false;
         }
         case NODE_MEMBER_ACCESS: {
-            if (node->resolved_type && node->resolved_type->kind == TYPE_TYPE) return true;
-            if (node->as.member_access && node->as.member_access->symbol) {
-                Symbol* sym = node->as.member_access->symbol;
-                if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) return true;
-                if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
-                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE) return true;
-                }
+            const ASTMemberAccessNode* ma = node->as.member_access;
+            // 1. If the member points directly to a type symbol
+            if (ma && ma->symbol) {
+                Symbol* sym = ma->symbol;
+                if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE)
+                    return true;
+            }
+            // 2. If the whole expression resolved to an aggregate type
+            if (node->resolved_type) {
+                if (node->resolved_type->kind == TYPE_STRUCT  ||
+                    node->resolved_type->kind == TYPE_UNION   ||
+                    node->resolved_type->kind == TYPE_ENUM    ||
+                    node->resolved_type->kind == TYPE_TAGGED_UNION ||
+                    node->resolved_type->kind == TYPE_ERROR_SET)
+                    return true;
             }
             return false;
         }

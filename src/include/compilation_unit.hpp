@@ -136,7 +136,7 @@ public:
     void setOptions(const CompilationOptions& options);
 
     bool isPostCheckPhase() const { return is_post_check_phase_; }
-    void setPostCheckPhase(bool value) { is_post_check_phase_ = value; }
+    void setPostCheckPhase(bool value);
 
     void addIncludePath(const char* path);
     const DynamicArray<const char*>& getIncludePaths() const { return include_paths_; }
