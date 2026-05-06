@@ -1,4 +1,4 @@
-const b = @import("bfixed.zig");
+const b = @import("b.zig");
 pub fn main() void {
     b.useFoo();
 }
