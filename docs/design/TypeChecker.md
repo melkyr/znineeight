@@ -44,10 +44,17 @@ The `TypeChecker` includes an `is_post_check_phase_` flag that is enabled for al
 - **Hardenened Identifier Lookup**: When the flag is set, `visitIdentifier` skips the symbol table lookup and directly returns the pre-resolved type.
 - **Safety**: This mechanism prevents "undeclared identifier" errors in synthetic AST nodes (like those created during `visitArraySlice`) which may be visited after their lexical scope has been popped.
 
-## 7. On-demand Signature Resolution Context
+## 7. Type Alias Labeling for Emitter
+To resolve "Transitive Alias Blockades", `visitVarDecl` contains special logic for global constant type aliases (e.g., `const Foo = mod.Foo;`).
+
+- **Mechanism**: After the initializer is resolved, if `isTypeExpression` returns true for the initializer and it's a global constant, the `resolved_type` of the declaration node is overwritten with `TYPE_TYPE`.
+- **Purpose**: This explicitly tells the `C89Emitter` that the declaration is a type alias and should not result in any C code emission (global variable). The underlying concrete type remains stored in the `Symbol`'s `symbol_type` for all other compiler passes.
+- **Robust Predicate**: `isTypeExpression` was enhanced to recognize `NODE_MEMBER_ACCESS` that resolves to type symbols or aggregate types, ensuring that cross-module aliases like `const T = @import("a.zig").T` are correctly identified.
+
+## 8. On-demand Signature Resolution Context
 The `resolveCallSite` function handles forward references to functions and variables by triggering on-demand signature or declaration resolution. To ensure these lookups are correctly isolated to the defining module, `resolveCallSite` switches the `current_module_` context to the target module before calling `visitFnSignature` or `visitVarDecl`. It utilizes the `ResolvingSignatureGuard` to prevent parameters and return types from being incorrectly tagged with the `SYMBOL_FLAG_LOCAL` flag during this on-demand resolution.
 
-## 8. Local Variable Pre-Insertion
+## 9. Local Variable Pre-Insertion
 To prevent "use of undeclared identifier" errors for variables with inferred types, `visitVarDecl` employs a pre-insertion strategy for local variables.
 
 - **Problem**: Previously, for an inferred variable like `var x = (a + b);`, the compiler would resolve the initializer first. If the initializer resolution hit an error or returned `TYPE_UNDEFINED`, the function would return early without ever inserting `x` into the symbol table. Subsequent references to `x` would then fail with a confusing "undeclared identifier" error instead of the actual type error.

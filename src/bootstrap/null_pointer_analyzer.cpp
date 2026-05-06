@@ -227,7 +227,8 @@ void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
         visit(node->initializer);
     }
 
-    Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
+    Symbol* sym = node->symbol;
+    if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(node->name);
     if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
         PointerState state = PS_UNINIT;
         if (node->initializer) {
@@ -249,7 +250,8 @@ void NullPointerAnalyzer::visitAssignment(ASTAssignmentNode* node) {
 
         // Fallback to symbol table if TypeChecker hasn't run or resolved it
         if (!target_type) {
-            Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+            Symbol* sym = node->lvalue->as.identifier.symbol;
+            if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
             if (sym) target_type = sym->symbol_type;
         }
 
@@ -269,7 +271,8 @@ void NullPointerAnalyzer::visitCompoundAssignment(ASTCompoundAssignmentNode* nod
         const char* name = node->lvalue->as.identifier.name;
         Type* target_type = node->lvalue->resolved_type;
         if (!target_type) {
-            Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+            Symbol* sym = node->lvalue->as.identifier.symbol;
+            if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
             if (sym) target_type = sym->symbol_type;
         }
 

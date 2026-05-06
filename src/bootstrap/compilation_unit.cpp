@@ -500,6 +500,11 @@ void CompilationUnit::setOptions(const CompilationOptions& options) {
     options_ = options;
 }
 
+void CompilationUnit::setPostCheckPhase(bool value) {
+    is_post_check_phase_ = value;
+    ::setPostCheckPhase(value);
+}
+
 void CompilationUnit::addIncludePath(const char* path) {
     char norm[1024];
     plat_strncpy(norm, path, sizeof(norm) - 1);
