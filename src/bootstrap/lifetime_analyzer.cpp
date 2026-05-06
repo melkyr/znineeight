@@ -1,5 +1,6 @@
 #include "lifetime_analyzer.hpp"
 #include "ast.hpp"
+#include "ast_utils.hpp"
 #include "symbol_table.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
@@ -146,7 +147,6 @@ void LifetimeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
         visit(node->initializer);
     }
     Symbol* sym = node->symbol;
-    if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(node->name);
     if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
         if (node->initializer) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -164,7 +164,6 @@ void LifetimeAnalyzer::visitAssignment(ASTAssignmentNode* node) {
     if (node->lvalue->type == NODE_IDENTIFIER) {
         const char* name = node->lvalue->as.identifier.name;
         Symbol* sym = node->lvalue->as.identifier.symbol;
-        if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
         if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("[LifetimeAnalysis] Tracking Assignment to: ");
@@ -226,11 +225,7 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
         base_name[255] = '\0';
     }
 
-    Symbol* sym = NULL;
-    if (expr->type == NODE_IDENTIFIER) {
-        sym = expr->as.identifier.symbol;
-    }
-    if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(base_name);
+    Symbol* sym = getRootSymbol(expr);
     if (!sym) return false;
 
     bool dangerous = false;
@@ -260,8 +255,12 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
 }
 
 bool LifetimeAnalyzer::isSymbolLocalVariable(const char* name) {
-    Symbol* sym = NULL;
-    if (!unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
+    // This method is problematic because it only takes a name.
+    // In post-check phase, we should avoid scope lookups.
+    // Most callers should be using getRootSymbol(expr) instead.
+    if (unit_.isPostCheckPhase()) return false;
+
+    Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
     if (!sym) return false;
     // Parameters are technically in the local activation record, but they
     // are handled specifically in isDangerousLocalPointer.
@@ -311,9 +310,7 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
             }
 
             // Check if base_name is a local variable
-            Symbol* sym = NULL;
-            if (rvalue->type == NODE_IDENTIFIER) sym = rvalue->as.identifier.symbol;
-            if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(base_name);
+            Symbol* sym = getRootSymbol(rvalue);
 
             if (sym && (sym->flags & SYMBOL_FLAG_LOCAL)) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
@@ -386,7 +383,6 @@ const char* LifetimeAnalyzer::getPointerProvenance(ASTNode* expr) {
         // If not explicitly tracked, check if it's a pointer-like parameter.
         // Pointer parameters point to memory owned by the caller (external).
         Symbol* sym = expr->as.identifier.symbol;
-        if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
         if (sym && (sym->flags & SYMBOL_FLAG_PARAM)) {
             bool is_pointer_like = (sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE));
             if (is_pointer_like) return NULL; // External
