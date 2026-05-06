@@ -626,6 +626,33 @@ Type* TypeChecker::visit(ASTNode* node) {
                    node->resolved_type->kind == TYPE_ANONYMOUS_UNION) {
              /* Fall through to resolution to attempt matching context */
         } else if (!is_type_undefined(node->resolved_type)) {
+             /* [CRITICAL] If this is a type alias, we must return TYPE_TYPE even if cached.
+                The node->resolved_type currently stores the CONCRETE type for aliases. */
+             if (node->type == NODE_MEMBER_ACCESS || node->type == NODE_IDENTIFIER) {
+                  bool is_type = false;
+                  if (node->type == NODE_IDENTIFIER) {
+                       Symbol* s = node->as.identifier.symbol;
+                       if (!s) s = unit_.getSymbolTable().lookup(node->as.identifier.name);
+                       if (s && (s->kind == SYMBOL_TYPE || s->kind == SYMBOL_UNION_TYPE || 
+                                (s->symbol_type && s->symbol_type->kind == TYPE_TYPE))) {
+                           is_type = true;
+                       }
+                  } else if (node->type == NODE_MEMBER_ACCESS) {
+                       Symbol* s = node->as.member_access->symbol;
+                       if (s && (s->kind == SYMBOL_TYPE || s->kind == SYMBOL_UNION_TYPE)) {
+                           is_type = true;
+                       } else if (node->resolved_type && (node->resolved_type->kind == TYPE_STRUCT || 
+                                                        node->resolved_type->kind == TYPE_UNION || 
+                                                        node->resolved_type->kind == TYPE_TAGGED_UNION || 
+                                                        node->resolved_type->kind == TYPE_ENUM)) {
+                           /* It's a cached aggregate type. Check if it was accessed as a type. */
+                           if (s && s->kind == SYMBOL_VARIABLE && (s->flags & SYMBOL_FLAG_CONST)) {
+                               is_type = true;
+                           }
+                       }
+                  }
+                  if (is_type) return get_g_type_type();
+             }
              return node->resolved_type;
         }
     }
@@ -2214,6 +2241,9 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     }
 
     const char* name = node->as.identifier.name;
+#ifdef DEBUG
+    plat_printf_debug("[IDENT] visiting %s, cached_resolved_type=%p\n", name, (void*)node->resolved_type);
+#endif
     Type* prim;
     Symbol* sym;
     Type* res;
@@ -3036,6 +3066,10 @@ Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
                We bypass visitVarDecl to avoid recursive placeholder registration logic
                and directly extract the structure. */
             resolved = visit(vd->initializer);
+#ifdef DEBUG
+            plat_printf_debug("[PH_RESOLVE] vd=%s, init_type=%d, resolved_kind=%d\n", 
+                vd->name, (int)vd->initializer->type, resolved ? (int)resolved->kind : -1);
+#endif
             
             /* Unwrap TYPE_TYPE */
             if (resolved && resolved->kind == TYPE_TYPE) {
@@ -4695,11 +4729,21 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     DynamicArray<const char*>* tags;
     bool found;
     size_t i;
+#ifdef DEBUG
+    plat_printf_debug("[MEMBER] visiting base, cached_resolved_type=%p\n", (void*)node->base->resolved_type);
+#endif
     Type* field_type;
+#ifdef DEBUG
+    plat_printf_debug("[MEMBER] base_type kind=%d\n", (int)base_type->kind);
+#endif
     bool is_type_access = false;
 
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
+#ifdef DEBUG
+    plat_printf_debug("[MEMBER] visiting base %p, cached=%p, result=%p, kind=%d\n", 
+        (void*)node->base, (void*)node->base->resolved_type, (void*)base_type, base_type ? (int)base_type->kind : -1);
+#endif
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
 
     // Early static detection for identifiers that are type aliases
