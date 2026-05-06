@@ -47,6 +47,7 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
 - **Action**: The compiler visits every function body and performs full semantic analysis.
 - **Local Resolution**: Forward references within the *same* module are still handled via a simplified fallback in `resolveCallSite`, but cross-module symbols are guaranteed to be resolved.
 - **Post-Check Initialization**: After Phase 2 completes, the `is_post_check_phase_` flag is set globally on the `CompilationUnit`.
+- **Symbol Table Hardening**: Setting this flag also triggers a global `setPostCheckPhase(true)` call that affects all `SymbolTable` instances. This enables a `Z98_ASSERT` inside `findInAnyScope` to prevent unsound symbol re-resolution after lexical scopes have been discarded.
 
 ### Phase 2.5: Mangled Name Precomputation
 - **Action**: Computes stable C89-compliant mangled names for all public symbols.

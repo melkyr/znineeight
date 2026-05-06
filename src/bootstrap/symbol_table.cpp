@@ -3,6 +3,9 @@
 #include <new>
 #include "memory.hpp"
 
+static bool g_post_check_phase = false;
+
+void setPostCheckPhase(bool v) { g_post_check_phase = v; }
 
 // 32-bit FNV-1a hash function
 static u32 hash_string(const char* str) {
@@ -356,6 +359,7 @@ Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbo
 }
 
 Symbol* SymbolTable::findInAnyScope(const char* name, const char* preferred_module) {
+    Z98_ASSERT(!g_post_check_phase);
     Symbol* local_fallback = NULL;
 
     // Search all scopes ever created, from most recent to oldest.
