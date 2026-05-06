@@ -1,5 +1,6 @@
 #include "null_pointer_analyzer.hpp"
 #include "ast.hpp"
+#include "ast_utils.hpp"
 #include "symbol_table.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
@@ -228,7 +229,6 @@ void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
     }
 
     Symbol* sym = node->symbol;
-    if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(node->name);
     if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
         PointerState state = PS_UNINIT;
         if (node->initializer) {
@@ -248,10 +248,9 @@ void NullPointerAnalyzer::visitAssignment(ASTAssignmentNode* node) {
         // Use resolved_type from ASTNode if available (justifying its addition)
         Type* target_type = node->lvalue->resolved_type;
 
-        // Fallback to symbol table if TypeChecker hasn't run or resolved it
+        // Fallback to symbol pointer if TypeChecker has resolved it
         if (!target_type) {
             Symbol* sym = node->lvalue->as.identifier.symbol;
-            if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
             if (sym) target_type = sym->symbol_type;
         }
 
@@ -272,7 +271,6 @@ void NullPointerAnalyzer::visitCompoundAssignment(ASTCompoundAssignmentNode* nod
         Type* target_type = node->lvalue->resolved_type;
         if (!target_type) {
             Symbol* sym = node->lvalue->as.identifier.symbol;
-            if (!sym && !unit_.isPostCheckPhase()) sym = unit_.getSymbolTable().findInAnyScope(name);
             if (sym) target_type = sym->symbol_type;
         }
 

@@ -54,6 +54,30 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
     }
 }
 
+Symbol* getRootSymbol(ASTNode* expr) {
+    if (!expr) return NULL;
+
+    while (expr) {
+        if (expr->type == NODE_UNARY_OP &&
+            (expr->as.unary_op.op == TOKEN_AMPERSAND ||
+             expr->as.unary_op.op == TOKEN_STAR ||
+             expr->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+            expr = expr->as.unary_op.operand;
+        } else if (expr->type == NODE_MEMBER_ACCESS) {
+            expr = expr->as.member_access->base;
+        } else if (expr->type == NODE_PAREN_EXPR) {
+            expr = expr->as.paren_expr.expr;
+        } else {
+            break;
+        }
+    }
+
+    if (expr && expr->type == NODE_IDENTIFIER)
+        return expr->as.identifier.symbol;
+
+    return NULL;
+}
+
 void forEachChild(ASTNode* node, ChildVisitor& visitor) {
     if (!node) return;
 

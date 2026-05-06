@@ -359,7 +359,9 @@ Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbo
 }
 
 Symbol* SymbolTable::findInAnyScope(const char* name, const char* preferred_module) {
+#ifdef DEBUG
     Z98_ASSERT(!g_post_check_phase);
+#endif
     Symbol* local_fallback = NULL;
 
     // Search all scopes ever created, from most recent to oldest.
