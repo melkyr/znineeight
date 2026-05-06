@@ -52,7 +52,7 @@
 
 ### 6. Batch 44, 46, 55 (std.debug.print)
 - **Status**: **FAIL**
-- **Cause**: `std.debug.print second argument must be a tuple`. Older tests pass raw variables or incorrectly wrapped literals that no longer satisfy the strict type checker.
+- **Cause**: `found that these tests already use the .{val} syntax for std.debug.print, but they are failing because the bootstrap compiler explicitly returns TYPE_UNDEFINED when it encounters an anonymous literal in an anytype context (like std.debug.print arguments).
 
 ### 7. Batch 66 (Codegen/Slices)
 - **Status**: **FAIL**
