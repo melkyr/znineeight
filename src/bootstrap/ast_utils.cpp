@@ -23,7 +23,23 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
             }
             // Then check symbol table
             Symbol* sym = symbols.lookup(node->as.identifier.name);
-            return sym && sym->kind == SYMBOL_TYPE;
+            if (!sym) return false;
+            if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) return true;
+            if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
+                if (sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE) return true;
+            }
+            return false;
+        }
+        case NODE_MEMBER_ACCESS: {
+            if (node->resolved_type && node->resolved_type->kind == TYPE_TYPE) return true;
+            if (node->as.member_access && node->as.member_access->symbol) {
+                Symbol* sym = node->as.member_access->symbol;
+                if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) return true;
+                if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE) return true;
+                }
+            }
+            return false;
         }
         default:
             return false;
