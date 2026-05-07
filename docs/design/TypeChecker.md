@@ -65,3 +65,10 @@ To prevent "use of undeclared identifier" errors for variables with inferred typ
   3. The initializer is resolved.
   4. The symbol's type is updated with the resolved type of the initializer.
 - **Safety**: This ensures that even if type inference fails, the identifier itself is known to the compiler, allowing for better error recovery and preventing cascading "undeclared" errors.
+
+## 10. Forced Local Type Resolution
+To ensure all local variables have a concrete type before the post-check phase, `visitBlockStmt` (and the top-level block in `visitFnBody`) performs a second resolution pass on variables with `TYPE_UNDEFINED`.
+
+- **Mechanism**: After visiting all statements in a block, the checker iterates over the block's `VarDecl` nodes. If a variable's symbol still has `TYPE_UNDEFINED`, `visitVarDecl` is called again.
+- **Purpose**: This handles cases where an initializer's type could not be inferred in the first pass due to forward references or complex expressions that required multiple passes.
+- **Guarantee**: If a variable remains `TYPE_UNDEFINED` after this second pass, a "unable to infer type" error is reported immediately. This prevents undefined types from leaking into later analysis passes like the `LifetimeAnalyzer`.

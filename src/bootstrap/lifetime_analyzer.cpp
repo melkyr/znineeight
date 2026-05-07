@@ -194,6 +194,14 @@ void LifetimeAnalyzer::visitForStmt(ASTForStmtNode* node) {
     visit(node->body);
 }
 
+static bool isLocalVariable(Symbol* sym) {
+    if (!sym) return false;
+    // Parameters are technically in the local activation record, but they
+    // are handled specifically in isDangerousLocalPointer.
+    if (sym->flags & SYMBOL_FLAG_PARAM) return false;
+    return (sym->flags & SYMBOL_FLAG_LOCAL) != 0;
+}
+
 bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
     if (!expr) return false;
 
@@ -229,7 +237,7 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
     if (!sym) return false;
 
     bool dangerous = false;
-    if (sym->flags & SYMBOL_FLAG_LOCAL) {
+    if (isLocalVariable(sym)) {
         // Direct address-of a local variable or parameter is always dangerous.
         if (expr->type == NODE_UNARY_OP && expr->as.unary_op.op == TOKEN_AMPERSAND) {
             dangerous = true;
@@ -252,20 +260,6 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
     plat_printf_debug("\n");
 #endif
     return dangerous;
-}
-
-bool LifetimeAnalyzer::isSymbolLocalVariable(const char* name) {
-    // This method is problematic because it only takes a name.
-    // In post-check phase, we should avoid scope lookups.
-    // Most callers should be using getRootSymbol(expr) instead.
-    if (unit_.isPostCheckPhase()) return false;
-
-    Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
-    if (!sym) return false;
-    // Parameters are technically in the local activation record, but they
-    // are handled specifically in isDangerousLocalPointer.
-    if (sym->flags & SYMBOL_FLAG_PARAM) return false;
-    return (sym->flags & SYMBOL_FLAG_LOCAL) != 0;
 }
 
 void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, ASTNode* rvalue) {
@@ -312,7 +306,7 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
             // Check if base_name is a local variable
             Symbol* sym = getRootSymbol(rvalue);
 
-            if (sym && (sym->flags & SYMBOL_FLAG_LOCAL)) {
+            if (isLocalVariable(sym)) {
 #ifdef Z98_ENABLE_DEBUG_LOGS
                 plat_printf_debug("[LifetimeAnalysis] Base '");
                 plat_printf_debug(base_name);
