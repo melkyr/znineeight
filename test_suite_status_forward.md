@@ -4,11 +4,11 @@
 
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
-| Total Test Batches | 82 | 82 |
+| Total Test Batches | 81 | 81 |
 | Passed Batches | 73 | - |
-| Failed Batches | 9 | - |
+| Failed Batches | 8 | - |
 | Compilation Failed | 1 | - |
-| Total Pass Rate | 89.0% | - |
+| Total Pass Rate | 90.1% | - |
 
 *Note: Results obtained on Linux using a custom bash runner and `g++ -m32`.*
 
@@ -65,10 +65,10 @@
 | `func_ptr_return`| PASS | OK | OK | 0 | 0 |
 | `lzw` | PASS | OK | OK | 0 | 13 |
 | `mandelbrot` | PASS | OK | OK | 0 | 5 |
-| `lisp_interpreter_curr` | PASS | OK | OK | 12 | 14 |
+| `lisp_interpreter_curr` | FAIL | CRASH | - | - | - |
 | `game_of_life` | PASS | OK | OK | 0 | 4 |
 | `mud_server` | PASS | OK | RUNS | 0 | 18 |
-| `rogue_mud` | PASS | OK | RUNS | 0 | 78 |
+| `rogue_mud` | FAIL | ERROR | - | - | - |
 
 ---
 
