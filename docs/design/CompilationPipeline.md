@@ -46,7 +46,9 @@ The compilation process is orchestrated by `CompilationUnit::performFullPipeline
 ### Phase 2: Type Checking (Body Checking)
 - **Action**: The compiler visits every function body and performs full semantic analysis.
 - **Local Resolution**: Forward references within the *same* module are still handled via a simplified fallback in `resolveCallSite`, but cross-module symbols are guaranteed to be resolved.
-- **Post-Check Initialization**: After Phase 2 completes, the `is_post_check_phase_` flag is set globally on the `CompilationUnit`.
+- **Forced Resolution**: At the end of each `visitBlockStmt` (and `visitFnBody`), any local variables that still have `TYPE_UNDEFINED` are re-visited. If their type still cannot be inferred, a fatal "unable to infer type" error is reported. This ensures no undefined types leak into subsequent phases.
+- **Post-Check Assertion**: After all modules have completed Phase 2, a global debug-only assertion verifies that no `TYPE_UNDEFINED` symbols remain in any module's scopes.
+- **Post-Check Initialization**: After Phase 2 completes and the assertion passes, the `is_post_check_phase_` flag is set globally on the `CompilationUnit`.
 - **Symbol Table Hardening**: Setting this flag also triggers a global `setPostCheckPhase(true)` call that affects all `SymbolTable` instances. This enables a `Z98_ASSERT` inside `findInAnyScope` to prevent unsound symbol re-resolution after lexical scopes have been discarded.
 
 ### Phase 2.5: Mangled Name Precomputation

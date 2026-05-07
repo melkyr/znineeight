@@ -1248,6 +1248,30 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
         }
     }
 
+#ifdef DEBUG
+    // Post-check assertion: Ensure no TYPE_UNDEFINED remains in any scope
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* mod = modules_[i];
+        if (!mod->symbols) continue;
+        const DynamicArray<Scope*>& mod_scopes = mod->symbols->getAllScopes();
+        for (size_t j = 0; j < mod_scopes.length(); ++j) {
+            Scope* scope = mod_scopes[j];
+            for (size_t k = 0; k < scope->bucket_count; ++k) {
+                Scope::SymbolEntry* entry = scope->buckets[k];
+                while (entry) {
+                    const Symbol& sym = entry->symbol;
+                    if (sym.symbol_type && sym.symbol_type->kind == TYPE_UNDEFINED) {
+                        plat_printf("Undefined type for symbol '%s' in module '%s'\n",
+                                    sym.name, mod->name);
+                        plat_abort();
+                    }
+                    entry = entry->next;
+                }
+            }
+        }
+    }
+#endif
+
     // Set post-check phase flag for subsequent validation passes
     setPostCheckPhase(true);
 

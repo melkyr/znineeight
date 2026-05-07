@@ -2339,6 +2339,30 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
                 last_type = res;
             }
         }
+
+        /* Resolve any local variables that still have TYPE_UNDEFINED after the first pass. */
+        for (size_t k = 0; k < node->statements->length(); ++k) {
+            ASTNode* stmt = (*node->statements)[k];
+            if (stmt->type == NODE_VAR_DECL) {
+                ASTVarDeclNode* vd = stmt->as.var_decl;
+                Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+                if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_UNDEFINED) {
+                    if (sym->details != vd) {
+                        unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, vd->name_loc, "Symbol details mismatch for local variable");
+                        continue;
+                    }
+
+                    visitVarDecl(stmt, vd);
+
+                    sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+                    if (sym->symbol_type->kind == TYPE_UNDEFINED) {
+                        char msg[256];
+                        plat_snprintf(msg, sizeof(msg), "unable to infer type of variable '%s'", vd->name);
+                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, vd->name_loc, msg);
+                    }
+                }
+            }
+        }
     }
     unit_.getSymbolTable().exitScope();
 #ifdef DEBUG_SYMBOL
@@ -4403,6 +4427,30 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                         visit(stmt);
                     } else {
                         visit(stmt);
+                    }
+                }
+
+                /* Resolve any local variables that still have TYPE_UNDEFINED after the first pass. */
+                for (size_t k = 0; k < block.statements->length(); ++k) {
+                    ASTNode* stmt = (*block.statements)[k];
+                    if (stmt->type == NODE_VAR_DECL) {
+                        ASTVarDeclNode* vd = stmt->as.var_decl;
+                        Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+                        if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_UNDEFINED) {
+                            if (sym->details != vd) {
+                                unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, vd->name_loc, "Symbol details mismatch for local variable");
+                                continue;
+                            }
+
+                            visitVarDecl(stmt, vd);
+
+                            sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+                            if (sym->symbol_type->kind == TYPE_UNDEFINED) {
+                                char msg[256];
+                                plat_snprintf(msg, sizeof(msg), "unable to infer type of variable '%s'", vd->name);
+                                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, vd->name_loc, msg);
+                            }
+                        }
                     }
                 }
             }

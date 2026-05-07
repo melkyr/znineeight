@@ -36,7 +36,6 @@ private:
     void visitForStmt(ASTForStmtNode* node);
 
     bool isDangerousLocalPointer(ASTNode* expr);
-    bool isSymbolLocalVariable(const char* name);
     void trackLocalPointerAssignment(const char* pointer_name, ASTNode* rvalue);
     const char* extractVariableName(ASTNode* expr);
     const char* getPointerOrigin(ASTNode* expr);
