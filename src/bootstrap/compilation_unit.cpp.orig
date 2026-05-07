@@ -183,7 +183,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     builtin_module_->filename = interner_.intern("<builtin>");
     builtin_module_->canonical_path = builtin_module_->filename;
     builtin_module_->file_id = 0xFFFFFFFF;
-    
+
     void* builtin_sym_mem = arena_.alloc(sizeof(SymbolTable));
     if (builtin_sym_mem == NULL) fatalError("Out of memory allocating builtin SymbolTable");
     builtin_module_->symbols = new (builtin_sym_mem) SymbolTable(arena_);
@@ -1469,20 +1469,16 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             break;
         }
         case NODE_VAR_DECL:
-            collectImports(node->as.var_decl->type, module);
-            collectImports(node->as.var_decl->initializer, module);
+            collectImports(node->as.var_decl->type, module); collectImports(node->as.var_decl->type, module); collectImports(node->as.var_decl->initializer, module);
             break;
         case NODE_FN_DECL:
-            {
-                ASTFnDeclNode* fn = node->as.fn_decl;
-                if (fn->params) {
-                    for (size_t i = 0; i < fn->params->length(); ++i) {
-                        collectImports((*fn->params)[i], module);
-                    }
+            if (node->as.fn_decl->params) {
+                for (size_t i = 0; i < node->as.fn_decl->params->length(); ++i) {
+                    collectImports((*node->as.fn_decl->params)[i], module);
                 }
-                collectImports(fn->return_type, module);
-                collectImports(fn->body, module);
             }
+            collectImports(node->as.fn_decl->return_type, module);
+            collectImports(node->as.fn_decl->body, module);
             break;
         case NODE_IF_STMT:
             collectImports(node->as.if_stmt->condition, module);

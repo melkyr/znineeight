@@ -158,7 +158,7 @@ void C89Emitter::emitType(Type* type, const char* name) {
 
 void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node) {
     emitTypePrefix(type);
-    if (name && type->kind != TYPE_ANYTYPE) {
+    if (name && type && type->kind != TYPE_ANYTYPE) {
         if (last_char_ != '(' && last_char_ != ' ') {
             writeString(" ");
         }
@@ -430,6 +430,13 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
     /* Skip type and module declarations (e.g. const T = struct { ... } or const std = @import("std")) */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    if (node->resolved_type) {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s kind=%d\n", decl->name, (int)node->resolved_type->kind);
+    } else {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s (no type)\n", decl->name);
+    }
+    #endif
     if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
         return;
     }
@@ -906,6 +913,13 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     const ASTVarDeclNode* decl = node->as.var_decl;
 
     /* Skip type and module declarations in local scope */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    if (node->resolved_type) {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s kind=%d\n", decl->name, (int)node->resolved_type->kind);
+    } else {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s (no type)\n", decl->name);
+    }
+    #endif
     if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
         return;
     }
@@ -3541,6 +3555,12 @@ void C89Emitter::ensureSliceType(Type* type) {
     }
 
     /* Not emitted in this context, register it globally for central header emission */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] registerSliceType: %s\n", mangled_name);
+    #endif
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] registerSliceType: %s for module %s\n", mangled_name, module_name_ ? module_name_ : "NULL");
+    #endif
     unit_.registerSliceType(type);
     emitted_slices_.append(mangled_name);
 
@@ -4190,8 +4210,8 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
             }
         }
         
-        Module* mod = unit_.getModule(location);
-        const char* mangled = unit_.getNameMangler().mangle(k_char, mod, zig_name);
+        Module* mod = location ? unit_.getModule(location) : unit_.getModule(module_name_);
+        const char* mangled = unit_.getNameMangler().mangle(k_char, mod ? mod : unit_.getModule(module_name_), zig_name);
         plat_strcpy(final_buf, mangled);
     }
 

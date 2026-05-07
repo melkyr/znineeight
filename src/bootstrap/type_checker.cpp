@@ -4789,16 +4789,19 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     plat_printf_debug("[MEMBER] visiting base, cached_resolved_type=%p\n", (void*)node->base->resolved_type);
 #endif
     Type* field_type;
-#ifdef DEBUG
-    plat_printf_debug("[MEMBER] base_type kind=%d\n", (int)base_type->kind);
-#endif
     bool is_type_access = false;
 
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
 #ifdef DEBUG
-    plat_printf_debug("[MEMBER] visiting base %p, cached=%p, result=%p, kind=%d\n", 
-        (void*)node->base, (void*)node->base->resolved_type, (void*)base_type, base_type ? (int)base_type->kind : -1);
+    if (base_type) {
+        plat_printf_debug("[MEMBER] visiting base %p, cached=%p, result=%p, kind=%d, mod_ptr=%p\n",
+            (void*)node->base, (void*)node->base->resolved_type, (void*)base_type, (int)base_type->kind,
+            (base_type->kind == TYPE_MODULE) ? (void*)base_type->as.module.module_ptr : NULL);
+    } else {
+        plat_printf_debug("[MEMBER] visiting base %p, cached=%p, result=NULL\n",
+            (void*)node->base, (void*)node->base->resolved_type);
+    }
 #endif
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
 
@@ -5043,7 +5046,14 @@ after_module_handling:
     }
 
     /* Module member access. */
-    if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
+    if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE || base_type->kind == TYPE_PLACEHOLDER) {
+        if (base_type->kind == TYPE_PLACEHOLDER) {
+            base_type = resolvePlaceholder(base_type);
+        }
+        if (base_type->kind != TYPE_MODULE && base_type->kind != TYPE_ANYTYPE) {
+             goto after_module_handling;
+        }
+
         Module* target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL; const char* target_mod_path = target_mod ? target_mod->canonical_path : NULL;
 
         if (target_mod) {
