@@ -41,6 +41,20 @@
 - **Cause**: Cross-module type inference and call resolution failures. Symbols from imported modules are not being found or their types cannot be inferred.
 
 ### 4. Batch 44, 46, 55 (std.debug.print / try-catch)
+### Detailed Dive: The `std.debug.print` anytype Mismatch
+
+The failures in Batches 44, 46, and 55 regarding `std.debug.print` are rooted in a specific interaction between anonymous literals and `anytype` parameters in the bootstrap compiler:
+
+1. **Explicit Undefined for `anytype` Context**: In `TypeChecker::visitTupleLiteral`, if the expected type (the parameter type) is `anytype`, the compiler intentionally returns `TYPE_UNDEFINED`. This was likely added to prevent premature concrete typing of literals when passed to generic functions.
+2. **Special Handling in `visitFunctionCall`**: The compiler has a hardcoded check for `std.debug.print` calls. It attempts to validate the format string placeholders against the tuple argument's length.
+3. **The Mismatch**:
+   - `visit(tuple_arg)` is called with an expected type of `anytype` (the second parameter of `print`).
+   - `visitTupleLiteral` returns `TYPE_UNDEFINED` per rule #1.
+   - The validation logic then calculates `tuple_len`. Since the type is `TYPE_UNDEFINED` and not `TYPE_TUPLE`, `tuple_len` is set to 0.
+   - If the format string contains any placeholders (e.g., `"{}"`), the compiler sees `placeholder_count > 0` but `tuple_len == 0`, and reports a `ERR_TYPE_MISMATCH` ("Number of format placeholders does not match tuple length").
+
+**Conclusion**: This is a side effect of the more rigid `anytype` handling implemented in Milestone 11. To resolve this, the special handler for `std.debug.print` would need to force-resolve the anonymous literal into a concrete tuple regardless of the `anytype` expectation, or the tests would need to be updated to use concrete tuple types if supported.
+
 - **Status**: **FAIL**
 - **Cause**: `std.debug.print` fails because the bootstrap compiler returns `TYPE_UNDEFINED` for anonymous literals in `anytype` contexts. Integration tests for `try-catch` and `try-return` also show type mismatches.
 
