@@ -5,10 +5,10 @@
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
 | Total Test Batches | 82 | 82 |
-| Passed Batches | 70 | - |
-| Failed Batches | 11 | - |
+| Passed Batches | 73 | - |
+| Failed Batches | 9 | - |
 | Compilation Failed | 1 | - |
-| Total Pass Rate | 85.3% | - |
+| Total Pass Rate | 89.0% | - |
 
 *Note: Results obtained on Linux using a custom bash runner and `g++ -m32`.*
 
@@ -18,10 +18,10 @@
 
 - **Compiler Stability**: **VERIFIED**. `zig0` correctly identifies most memory safety violations.
 - **Lifetime Analyzer**: **STALLED**. Deep dive reveals expressions like `&x` fail to resolve symbols in the post-check phase, causing missed `ERR_LIFETIME_VIOLATION` errors.
-- **Symbol Table Soundness**: **REGRESSION**. Several batches (7, 12) trigger `Assertion failed: !g_post_check_phase`, indicating unsound lookups after scopes are discarded.
+- **Symbol Table Soundness**: **VERIFIED**. Recent hardening of `SymbolTable::findInAnyScope` ensures soundness during the post-check phase. Previous regressions in Batches 7 and 12 have been resolved.
 - **Standard Library**: **REGRESSION**. Strict tuple requirements for `std.debug.print` cause failures in older tests (Batches 44, 46, 55).
 - **Name Mangling**: **VERIFIED**. Deterministic cross-module symbol hashing is stable.
-- **Example Programs**: **VERIFIED**. `rogue_mud`, `mud_server`, `days_in_month`, `lisp_interpreter_curr`, and `mandelbrot` compile and execute correctly under `-m32` and C89 constraints.
+- **Example Programs**: **REGRESSION**. `rogue_mud` and `lisp_interpreter_curr` currently fail to compile with `zig0`. `mud_server`, `days_in_month`, `func_ptr_return`, and `mandelbrot` remain verified.
 
 ---
 
@@ -29,36 +29,27 @@
 
 ### 1. Batch 2 (AST/Parser)
 - **Status**: **COMPILATION FAILED**
-- **Cause**: Issues with the broad automated test runner script and complex test function return types.
+- **Cause**: Parser constructor mismatch in `test_parser_lifecycle.cpp` due to recent Phase B memory optimizations (splitting arena into ast_arena and perm_arena).
 
 ### 2. Batch 4 (Lifetime Analyzer)
 - **Status**: **FAIL**
 - **Test**: `test_lifetime_analyzer_test`
-- **Cause**: Missing `ERR_LIFETIME_VIOLATION`. Expressions of type `NODE_UNARY_OP` (address-of) do not have their symbols checked correctly in `isDangerousLocalPointer` during the post-check phase.
+- **Cause**: Missing `ERR_LIFETIME_VIOLATION`. System functions like `malloc` and `calloc` are undeclared in the test context, causing earlier failures.
 
-### 3. Batch 7, 7_debug, 12 (Symbol Table)
+### 3. Batch 31, 32 (Integration/Call Resolution)
 - **Status**: **FAIL**
-- **Cause**: `Assertion failed: !g_post_check_phase`. Tests are attempting to use `findInAnyScope` during the post-check phase, which is strictly forbidden to ensure soundness.
+- **Cause**: Cross-module type inference and call resolution failures. Symbols from imported modules are not being found or their types cannot be inferred.
 
-### 4. Batch 23 (CVariableAllocator)
+### 4. Batch 44, 46, 55 (std.debug.print / try-catch)
 - **Status**: **FAIL**
-- **Test**: `test_CVariableAllocator_Truncation`
-- **Cause**: The test expects identifiers to be truncated at 31 characters. However, the compiler now supports up to 63 characters.
-- **Result**: **TEST OUTDATED**.
+- **Cause**: `std.debug.print` fails because the bootstrap compiler returns `TYPE_UNDEFINED` for anonymous literals in `anytype` contexts. Integration tests for `try-catch` and `try-return` also show type mismatches.
 
-### 5. Batch 31, 32 (Integration/Call Resolution)
+### 5. Batch 66 (Codegen/Slices)
 - **Status**: **FAIL**
-- **Cause**: `Unresolved call ... Reason: Symbol not found`. Possible issues with module discovery or cross-module visibility in the Linux environment.
-
-### 6. Batch 44, 46, 55 (std.debug.print)
-- **Status**: **FAIL**
-- **Cause**: `found that these tests already use the .{val} syntax for std.debug.print, but they are failing because the bootstrap compiler explicitly returns TYPE_UNDEFINED when it encounters an anonymous literal in an anytype context (like std.debug.print arguments).
-
-### 7. Batch 66 (Codegen/Slices)
-- **Status**: **FAIL**
-- **Cause**: Missing slice definitions or typedefs in generated C code for nested pointer usage.
+- **Cause**: Missing slice definitions (`Slice_u8`, `Slice_i32`) in generated C code for nested pointer usage.
 
 ---
+
 
 ## Examples Status (32-bit)
 
