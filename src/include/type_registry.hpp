@@ -56,6 +56,11 @@ struct TypeRegistry {
     int get_count() const;
 
     /**
+     * @brief Collects all registered types into the provided array.
+     */
+    void getAllTypes(DynamicArray<struct Type*>& out) const;
+
+    /**
      * @brief Clears the registry (mainly for testing).
      */
     void clear();
