@@ -378,6 +378,9 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
     emitter.writeString("#endif\n\n");
 
     const DynamicArray<Type*>& slices = unit_.getGlobalSliceTypes();
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CBACKEND] generateSpecialTypesHeader: found %d slices\n", (int)slices.length());
+    #endif
     for (size_t i = 0; i < slices.length(); ++i) {
         Type* type = slices[i];
         Type* elem_type = type->as.slice.element_type;
