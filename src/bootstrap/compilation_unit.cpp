@@ -1241,6 +1241,18 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
         all_success = false;
     }
 
+    // Phase 2.0.2: Global Slice Registration
+    if (all_success) {
+        DynamicArray<Type*> all_types(arena_);
+        type_registry_.getAllTypes(all_types);
+        for (size_t i = 0; i < all_types.length(); ++i) {
+            Type* t = all_types[i];
+            if (t->kind == TYPE_SLICE) {
+                registerSliceType(t);
+            }
+        }
+    }
+
     // Phase 2.0.5: Precompute mangled names for all public symbols across all modules
     if (all_success) {
         for (size_t i = 0; i < modules_.length(); ++i) {
@@ -1612,6 +1624,11 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             break;
         case NODE_ENUM_DECL:
             collectImports(node->as.enum_decl->backing_type, module);
+            if (node->as.enum_decl->fields) {
+                for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
+                    collectImports((*node->as.enum_decl->fields)[i], module);
+                }
+            }
             break;
         case NODE_UNION_DECL:
             if (node->as.union_decl->fields) {
@@ -1619,6 +1636,7 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
                     collectImports((*node->as.union_decl->fields)[i], module);
                 }
             }
+            collectImports(node->as.union_decl->tag_type_expr, module);
             break;
         case NODE_POINTER_TYPE:
             collectImports(node->as.pointer_type.base, module);
@@ -1630,6 +1648,59 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
         case NODE_ERROR_UNION_TYPE:
             collectImports(node->as.error_union_type->payload_type, module);
             collectImports(node->as.error_union_type->error_set, module);
+            break;
+        case NODE_SWITCH_STMT: {
+            collectImports(node->as.switch_stmt->expression, module);
+            DynamicArray<ASTSwitchStmtProngNode*>* prongs = node->as.switch_stmt->prongs;
+            if (prongs) {
+                for (size_t i = 0; i < prongs->length(); ++i) {
+                    ASTSwitchStmtProngNode* prong = (*prongs)[i];
+                    for (size_t j = 0; j < prong->items->length(); ++j) {
+                        collectImports((*prong->items)[j], module);
+                    }
+                    collectImports(prong->body, module);
+                }
+            }
+            break;
+        }
+        case NODE_RANGE:
+            collectImports(node->as.range->start, module);
+            collectImports(node->as.range->end, module);
+            break;
+        case NODE_PTR_CAST:
+            collectImports(node->as.ptr_cast->target_type, module);
+            collectImports(node->as.ptr_cast->expr, module);
+            break;
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+            collectImports(node->as.numeric_cast->target_type, module);
+            collectImports(node->as.numeric_cast->expr, module);
+            break;
+        case NODE_OFFSET_OF:
+            collectImports(node->as.offset_of->type_expr, module);
+            break;
+        case NODE_AS_EXPR:
+            collectImports(node->as.as_expr->target_type, module);
+            collectImports(node->as.as_expr->expr, module);
+            break;
+        case NODE_PANIC:
+            collectImports(node->as.panic->expr, module);
+            break;
+        case NODE_ERROR_SET_MERGE:
+            collectImports(node->as.error_set_merge->left, module);
+            collectImports(node->as.error_set_merge->right, module);
+            break;
+        case NODE_FUNCTION_TYPE:
+            if (node->as.function_type->params) {
+                for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
+                    collectImports((*node->as.function_type->params)[i], module);
+                }
+            }
+            collectImports(node->as.function_type->return_type, module);
+            break;
+        case NODE_COMPTIME_BLOCK:
+            collectImports(node->as.comptime_block.expression, module);
             break;
         case NODE_OPTIONAL_TYPE:
             collectImports(node->as.optional_type->payload_type, module);
