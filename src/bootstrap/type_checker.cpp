@@ -1289,6 +1289,33 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             /* visit tuple_arg to resolve its type if it's a literal */
             Type* tuple_type = visit(tuple_arg);
 
+            /* Task: Force-resolve anonymous initializers for std.debug.print second argument. */
+            if (tuple_type && tuple_type->kind == TYPE_UNDEFINED) {
+                if (tuple_arg->type == NODE_TUPLE_LITERAL) {
+                    DynamicArray<ASTNode*>* elements = tuple_arg->as.tuple_literal->elements;
+                    DynamicArray<Type*>* elem_types = (DynamicArray<Type*>*)unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+                    new (elem_types) DynamicArray<Type*>(unit_.getArena());
+                    if (elements) {
+                        for (size_t i = 0; i < elements->length(); ++i) {
+                            elem_types->append(visit((*elements)[i]));
+                        }
+                    }
+                    tuple_type = createTupleType(unit_.getArena(), elem_types);
+                    tuple_arg->resolved_type = tuple_type;
+                } else if (tuple_arg->type == NODE_STRUCT_INITIALIZER) {
+                    DynamicArray<ASTNamedInitializer*>* fields = tuple_arg->as.struct_initializer->fields;
+                    DynamicArray<Type*>* elem_types = (DynamicArray<Type*>*)unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+                    new (elem_types) DynamicArray<Type*>(unit_.getArena());
+                    if (fields) {
+                        for (size_t i = 0; i < fields->length(); ++i) {
+                            elem_types->append(visit((*fields)[i]->value));
+                        }
+                    }
+                    tuple_type = createTupleType(unit_.getArena(), elem_types);
+                    tuple_arg->resolved_type = tuple_type;
+                }
+            }
+
             if (tuple_type && tuple_type->kind != TYPE_TUPLE && tuple_type->kind != TYPE_ANYTYPE) {
                 char t_str[64];
                 typeToString(tuple_type, t_str, sizeof(t_str));
@@ -4916,6 +4943,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* Auto-dereference for single level pointer. */
     if (base_type->kind == TYPE_POINTER) {
         base_type = base_type->as.pointer.base;
+        if (!base_type) {
+            #ifdef DEBUG
+            plat_printf_debug("[MEMBER] auto-deref of NULL pointer base\n");
+            #endif
+            return get_g_type_undefined();
+        }
     }
 
     if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
@@ -5103,8 +5136,14 @@ after_module_handling:
             node->field_name);
 #endif
         #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("  base_type->kind=%d\n", (int)base_type->kind);
+    if (base_type) {
+        plat_printf_debug("  base_type->kind=%d\n", (int)base_type->kind);
+    } else {
+        plat_printf_debug("  base_type is NULL (node %p, base %p)\n", (void*)node, (void*)node->base);
+    }
 #endif
+        if (!base_type) return get_g_type_undefined();
+
         if (base_type->kind == TYPE_MODULE) {
             #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("  module.name='%s' module_ptr=%p\n",
@@ -5660,7 +5699,9 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
                     reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, "Enum member initializer must be a constant integer.");
                     has_error = true;
                 }
-            } else {
+            
+
+} else {
                 reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, "Enum member initializer must be a constant integer.");
                 has_error = true;
             }
