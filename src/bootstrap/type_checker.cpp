@@ -2383,6 +2383,25 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
 
                     sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
                     if (sym->symbol_type->kind == TYPE_UNDEFINED) {
+                        // DEBUG: remove after resolving sand.zig issue
+                        if (vd->name && plat_strcmp(vd->name, "res") == 0 && sym->symbol_type->kind == TYPE_UNDEFINED) {
+                            ASTNode* init = vd->initializer;
+                            if (init && init->type == NODE_BINARY_OP) {
+                                ASTNode* left = init->as.binary_op->left;
+                                ASTNode* right = init->as.binary_op->right;
+                                plat_printf_debug(
+                                    "[CRITICAL] 'res' still undefined after re-eval in block.\n"
+                                    "  left type=%d resolved_type=%p kind=%d\n"
+                                    "  right type=%d resolved_type=%p kind=%d\n",
+                                    left->type, (void*)left->resolved_type,
+                                    left->resolved_type ? (int)left->resolved_type->kind : -1,
+                                    right->type, (void*)right->resolved_type,
+                                    right->resolved_type ? (int)right->resolved_type->kind : -1
+                                );
+                                abort();
+                            }
+                        }
+
                         char msg[256];
                         plat_snprintf(msg, sizeof(msg), "unable to infer type of variable '%s'", vd->name);
                         unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, vd->name_loc, msg);
@@ -3708,7 +3727,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             /* If this is a constant holding a type, we might still need to unwrap it if asked for it. */
             if (existing_sym->symbol_type->kind == TYPE_TYPE && node->is_const && node->initializer) {
                  /* Proceed to ensure initializer is checked */
-            } else {
+            } else if (existing_sym->symbol_type->kind != TYPE_UNDEFINED) {
                 return existing_sym->symbol_type;
             }
         }
@@ -3924,7 +3943,20 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 bool can_defer = (node->initializer->type == NODE_UNDEFINED_LITERAL ||
                                   node->initializer->type == NODE_STRUCT_INITIALIZER ||
                                   node->initializer->type == NODE_TUPLE_LITERAL ||
-                                  (node->initializer->type == NODE_MEMBER_ACCESS && node->initializer->as.member_access->base == NULL));
+                                  (node->initializer->type == NODE_MEMBER_ACCESS && node->initializer->as.member_access->base == NULL) ||
+                                  node->initializer->type == NODE_BINARY_OP ||
+                                  node->initializer->type == NODE_UNARY_OP ||
+                                  node->initializer->type == NODE_FUNCTION_CALL ||
+                                  node->initializer->type == NODE_PAREN_EXPR ||
+                                  node->initializer->type == NODE_PTR_CAST ||
+                                  node->initializer->type == NODE_INT_CAST ||
+                                  node->initializer->type == NODE_FLOAT_CAST ||
+                                  node->initializer->type == NODE_AS_EXPR ||
+                                  node->initializer->type == NODE_ARRAY_ACCESS ||
+                                  node->initializer->type == NODE_ARRAY_SLICE ||
+                                  node->initializer->type == NODE_TRY_EXPR ||
+                                  node->initializer->type == NODE_CATCH_EXPR ||
+                                  node->initializer->type == NODE_ORELSE_EXPR);
 
                 /* [Task Fix] Allow if/switch expressions to return TYPE_UNDEFINED initially
                    when a declared aggregate type is present. This enables coercion to guide them. */
@@ -4473,6 +4505,44 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 
                             sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
                             if (sym->symbol_type->kind == TYPE_UNDEFINED) {
+                                // DEBUG: remove after resolving sand.zig issue
+                                if (vd->name && plat_strcmp(vd->name, "res") == 0 && sym->symbol_type->kind == TYPE_UNDEFINED) {
+                                    ASTNode* init = vd->initializer;
+                                    if (init && init->type == NODE_BINARY_OP) {
+                                        ASTNode* left = init->as.binary_op->left;
+                                        ASTNode* right = init->as.binary_op->right;
+                                        plat_printf_debug(
+                                            "[CRITICAL] 'res' still undefined after re-eval.\n"
+                                            "  left type=%d resolved_type=%p kind=%d\n"
+                                            "  right type=%d resolved_type=%p kind=%d\n",
+                                            left->type, (void*)left->resolved_type,
+                                            left->resolved_type ? (int)left->resolved_type->kind : -1,
+                                            right->type, (void*)right->resolved_type,
+                                            right->resolved_type ? (int)right->resolved_type->kind : -1
+                                        );
+                                        abort();
+                                    }
+                                }
+
+                        // DEBUG: remove after resolving sand.zig issue
+                        if (vd->name && plat_strcmp(vd->name, "res") == 0 && sym->symbol_type->kind == TYPE_UNDEFINED) {
+                            ASTNode* init = vd->initializer;
+                            if (init && init->type == NODE_BINARY_OP) {
+                                ASTNode* left = init->as.binary_op->left;
+                                ASTNode* right = init->as.binary_op->right;
+                                plat_printf_debug(
+                                    "[CRITICAL] 'res' still undefined after re-eval.\n"
+                                    "  left type=%d resolved_type=%p kind=%d\n"
+                                    "  right type=%d resolved_type=%p kind=%d\n",
+                                    left->type, (void*)left->resolved_type,
+                                    left->resolved_type ? (int)left->resolved_type->kind : -1,
+                                    right->type, (void*)right->resolved_type,
+                                    right->resolved_type ? (int)right->resolved_type->kind : -1
+                                );
+                                abort();
+                            }
+                        }
+
                                 char msg[256];
                                 plat_snprintf(msg, sizeof(msg), "unable to infer type of variable '%s'", vd->name);
                                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, vd->name_loc, msg);
@@ -4806,6 +4876,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 }
 
 Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
+    if (!node->base) return get_g_type_undefined();
 
     Type* base_type;
     Module* target_mod;
@@ -4818,7 +4889,6 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     Type* field_type;
     bool is_type_access = false;
 
-    if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
 #ifdef DEBUG
     if (base_type) {
@@ -4955,6 +5025,9 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         base_type = resolvePlaceholder(base_type);
     }
 
+#ifdef DEBUG
+    Z98_ASSERT(base_type != NULL);
+#endif
     /* Slice built-in properties */
     if (base_type->kind == TYPE_SLICE) {
         Type* elem = base_type->as.slice.element_type;
@@ -5295,6 +5368,12 @@ after_module_handling:
     }
 
     field_type = findStructField(base_type, node->field_name);
+    if (field_type && plat_strcmp(node->field_name, "start") == 0) {
+        plat_printf_debug("[MEMBER] field 'start' type kind=%d, is_many=%d\n",
+            (int)field_type->kind,
+            (field_type->kind == TYPE_POINTER) ? (int)field_type->as.pointer.is_many : -1);
+    }
+
     if (!field_type) {
         if (isTaggedUnion(base_type)) {
             char msg_buffer[256];
@@ -6946,6 +7025,20 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Zig
     /* Check if pointer is complete */
     if (!isCompletePointerType(ptr_type)) {
         return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
+    }
+
+    if (op == TOKEN_PLUS && ptr_type->kind == TYPE_POINTER) {
+        plat_printf_debug("[PTR_ARITH] is_many=%d, base_kind=%d, int_kind=%d, loc=%d:%d\n",
+            (int)ptr_type->as.pointer.is_many,
+            (int)ptr_type->as.pointer.base->kind,
+            (int)int_type->kind,
+            loc.line, loc.column);
+    }
+
+    if (op == TOKEN_PLUS && ptr_type->as.pointer.base->kind == TYPE_U8) {
+#ifdef DEBUG
+        Z98_ASSERT(ptr_type->as.pointer.is_many);
+#endif
     }
 
     /* Zig only allows pointer arithmetic on many-item pointers */
