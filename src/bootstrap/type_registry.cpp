@@ -77,6 +77,16 @@ TypeRegistry::InsertStatus TypeRegistry::insert(const char* module_path, const c
     return OK;
 }
 
+void TypeRegistry::getAllTypes(DynamicArray<Type*>& out) const {
+    for (int i = 0; i < BUCKET_COUNT; ++i) {
+        Entry* entry = buckets[i];
+        while (entry) {
+            out.append(entry->type_ptr);
+            entry = entry->next;
+        }
+    }
+}
+
 int TypeRegistry::get_count() const {
     int count = 0;
     for (int i = 0; i < BUCKET_COUNT; ++i) {
