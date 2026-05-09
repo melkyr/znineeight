@@ -901,6 +901,12 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
     if (!left_type || !right_type) return get_g_type_undefined();
+    if (node->op == TOKEN_PLUS && (is_type_undefined(left_type) || is_type_undefined(right_type))) {
+        plat_printf_debug("[BINARY_UNDEF] line %d: left kind=%d, right kind=%d\n",
+            parent->loc.line,
+            left_type ? (int)left_type->kind : -1,
+            right_type ? (int)right_type->kind : -1);
+    }
     if (is_type_undefined(left_type) || is_type_undefined(right_type)) return get_g_type_undefined();
 
     /* Special handling for literals to support promotion in binary operations.
