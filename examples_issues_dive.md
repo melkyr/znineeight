@@ -43,5 +43,64 @@ The segfault was caused by a NULL pointer dereference when handling "naked" memb
 
 The transition to per-module `mod_arena` has made the compiler significantly more memory-efficient but has exposed "on-demand" resolution as a dangerous pattern.
 
+## 4. Deep dive after hardening
+
+### Current Status
+After applying the hardening fixes (NULL guards, re-evaluation of  locals, and expanded  list), the situation is as follows:
+
+- **lisp_interpreter_curr**: The segmentation fault in `visitMemberAccess` is RESOLVED. The compiler now successfully generates C code for the example.
+- **rogue_mud**: The "Undefined type for symbol 'res'" error persists, now manifesting as a controlled `abort()` from diagnostic instrumentation. 
+
+### Diagnostic Output (rogue_mud)
+The following logs were captured during the compilation of `rogue_mud`:
+
+```
+[MEMBER] field 'start' type kind=15, is_many=1
+[TYPE] visitVarDecl 'res' line=25 depth=2 module=sand
+[SYMBOL] INSERTED 'res' into scope level 2
+...
+[TYPE] visitVarDecl 'aligned_pos' is_local=1 current_fn_ret=0x55bd15f66e88 level=2
+[TYPE] visitVarDecl 'res' is_local=1 current_fn_ret=0x55bd15f66e88 level=2
+```
+
+**Key Findings**:
+1. `sand.start` is correctly resolved as a many-item pointer (`kind=15`, `is_many=1`).
+2. `res` is visited during the second pass, but it fails to resolve.
+3. `checkPointerArithmetic` is NEVER reached for the expression `sand.start + aligned_pos`, indicating that `visitBinaryOp` returns `TYPE_UNDEFINED` early because one of the operands is unresolved.
+
+### Next Steps
+- Investigate why `aligned_pos` or `sand.start` remains `TYPE_UNDEFINED` during the second pass of `sand_alloc`.
+- Verify the generated C code for `lisp_interpreter_curr` by linking and running a basic test.
+
+## 4. Deep dive after hardening
+
+### Current Status
+After applying the hardening fixes (NULL guards, re-evaluation of `TYPE_UNDEFINED` locals, and expanded `can_defer` list), the situation is as follows:
+
+- **lisp_interpreter_curr**: The segmentation fault in `visitMemberAccess` is RESOLVED. The compiler now successfully generates C code for the example.
+- **rogue_mud**: The "Undefined type for symbol 'res'" error persists, now manifesting as a controlled `abort()` from diagnostic instrumentation. 
+
+### Diagnostic Output (rogue_mud)
+The following logs were captured during the compilation of `rogue_mud`:
+
+```
+[MEMBER] field 'start' type kind=15, is_many=1
+[TYPE] visitVarDecl 'res' line=25 depth=2 module=sand
+[SYMBOL] INSERTED 'res' into scope level 2
+...
+[TYPE] visitVarDecl 'aligned_pos' is_local=1 current_fn_ret=0x55bd15f66e88 level=2
+[TYPE] visitVarDecl 'res' is_local=1 current_fn_ret=0x55bd15f66e88 level=2
+```
+
+**Key Findings**:
+1. `sand.start` is correctly resolved as a many-item pointer (`kind=15`, `is_many=1`).
+2. `res` is visited during the second pass, but it fails to resolve.
+3. `checkPointerArithmetic` is NEVER reached for the expression `sand.start + aligned_pos`, indicating that `visitBinaryOp` returns `TYPE_UNDEFINED` early because one of the operands is unresolved.
+
+### Next Steps
+- Investigate why `aligned_pos` or `sand.start` remains `TYPE_UNDEFINED` during the second pass of `sand_alloc`.
+- Verify the generated C code for `lisp_interpreter_curr` by linking and running a basic test.
+
+
 -   **Persistence**: Symbols and Types remain in the permanent arena, but any pointers they hold back to the AST (like `ASTNode* decl_node`) are only valid during the module's active processing window.
 -   **Synchronization**: The "Global Signature Resolution" pass (Phase 1.5) was intended to mitigate this by resolving all top-level signatures upfront. However, local variable inference (like `res` in `sand.zig`) still relies on AST-walking during Phase 2. If Phase 2 fails to complete resolution for a module, that module's metadata becomes permanently corrupted once its AST is freed.
