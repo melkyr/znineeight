@@ -43,7 +43,7 @@ public:
     Type* visitBlockStmt(ASTBlockStmtNode* node);
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
     Type* visitIfStmt(ASTIfStmtNode* node);
-    Type* visitIfExpr(ASTIfExprNode* node);
+    Type* visitIfExpr(ASTNode* parent, ASTIfExprNode* node);
     Type* visitWhileStmt(ASTWhileStmtNode* node);
     Type* visitBreakStmt(ASTNode* node);
     Type* visitContinueStmt(ASTNode* node);
