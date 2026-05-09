@@ -791,7 +791,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
 
     if (!node->operand) return get_g_type_undefined();
     /* In a unit_ test, the operand's type might already be resolved. */
-    operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
+    operand_type = resolveOrVisit(node->operand);
     if (!operand_type || is_type_undefined(operand_type)) return get_g_type_undefined();
 
     switch (node->op) {
@@ -897,8 +897,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     Type* result;
 
     if (!node->left || !node->right) return get_g_type_undefined();
-    left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
-    right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
+    left_type = resolveOrVisit(node->left);
+    right_type = resolveOrVisit(node->right);
 
     if (!left_type || !right_type) return get_g_type_undefined();
     if (node->op == TOKEN_PLUS && (is_type_undefined(left_type) || is_type_undefined(right_type))) {
@@ -1947,11 +1947,11 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     Type* index_type;
 
     if (!node->array) return get_g_type_undefined();
-    array_type = visit(node->array);
+    array_type = resolveOrVisit(node->array);
     if (!array_type || is_type_undefined(array_type)) return get_g_type_undefined();
 
     if (!node->index) return get_g_type_undefined();
-    index_type = visit(node->index);
+    index_type = resolveOrVisit(node->index);
     if (!index_type || is_type_undefined(index_type)) return get_g_type_undefined();
 
     /* Check that index is an integer type */
@@ -2058,7 +2058,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     plat_printf_debug("[TYPE] visitArraySlice start\n");
 #endif
 #endif
-    original_base_type = visit(node->array);
+    original_base_type = resolveOrVisit(node->array);
     if (!original_base_type || is_type_undefined(original_base_type)) return get_g_type_undefined();
 
     if (original_base_type->kind == TYPE_PLACEHOLDER) {
@@ -3712,6 +3712,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .build();
             unit_.getSymbolTable().insert(local_sym);
             existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+            node->symbol = existing_sym; // Root cause fix: link symbol immediately
             Z98_ASSERT(existing_sym != NULL);
             just_pre_inserted = true;
         }
@@ -4505,6 +4506,14 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                             if (sym->details != vd) {
                                 unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, vd->name_loc, "Symbol details mismatch for local variable");
                                 continue;
+                            }
+
+                            if (plat_strcmp(vd->name, "res") == 0) {
+                                Symbol* sand_sym = unit_.getSymbolTable().lookupInCurrentScope("sand");
+                                Symbol* aligned_pos_sym = unit_.getSymbolTable().lookupInCurrentScope("aligned_pos");
+                                plat_printf_debug("[RES_DEBUG] sand type kind=%d, aligned_pos type kind=%d\n",
+                                    sand_sym && sand_sym->symbol_type ? (int)sand_sym->symbol_type->kind : -1,
+                                    aligned_pos_sym && aligned_pos_sym->symbol_type ? (int)aligned_pos_sym->symbol_type->kind : -1);
                             }
 
                             visitVarDecl(stmt, vd);
@@ -5373,6 +5382,22 @@ after_module_handling:
         return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, "member access '.' only allowed on structs, unions, enums or pointers to structs/unions");
     }
 
+    if (base_type->kind == TYPE_STRUCT || base_type->kind == TYPE_UNION || base_type->kind == TYPE_TAGGED_UNION) {
+        if (plat_strcmp(node->field_name, "pos") == 0) {
+            DynamicArray<StructField>* fields = (base_type->kind == TYPE_TAGGED_UNION) ? base_type->as.tagged_union.payload_fields : base_type->as.struct_details.fields;
+            plat_printf_debug("[MEMBER_POS_DEBUG] struct name=%s, num_fields=%d, fields ptr=%p\n",
+                base_type->as.struct_details.name ? base_type->as.struct_details.name : "(anon)",
+                fields ? (int)fields->length() : -1,
+                (void*)fields);
+            if (fields) {
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    plat_printf_debug("  field[%d] name=%s, type kind=%d\n", (int)i,
+                        (*fields)[i].name ? (*fields)[i].name : "NULL",
+                        (*fields)[i].type ? (int)(*fields)[i].type->kind : -1);
+                }
+            }
+        }
+    }
     field_type = findStructField(base_type, node->field_name);
     if (field_type && plat_strcmp(node->field_name, "start") == 0) {
         plat_printf_debug("[MEMBER] field 'start' type kind=%d, is_many=%d\n",
@@ -6298,13 +6323,13 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
             /* Check for dereferencing a const pointer, e.g. *const u8 */
             if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
                 if (!node->as.unary_op.operand) return false;
-                Type* ptr_type = node->as.unary_op.operand->resolved_type ? node->as.unary_op.operand->resolved_type : visit(node->as.unary_op.operand);
+                Type* ptr_type = resolveOrVisit(node->as.unary_op.operand);
                 return (ptr_type && !is_type_undefined(ptr_type) && ptr_type->kind == TYPE_POINTER && ptr_type->as.pointer.is_const);
             }
             return false;
         case NODE_ARRAY_ACCESS: {
             if (!node->as.array_access->array) return false;
-            Type* array_type = node->as.array_access->array->resolved_type ? node->as.array_access->array->resolved_type : visit(node->as.array_access->array);
+            Type* array_type = resolveOrVisit(node->as.array_access->array);
             if (array_type && !is_type_undefined(array_type)) {
                 if (array_type->kind == TYPE_POINTER) {
                     return array_type->as.pointer.is_const;
@@ -6318,7 +6343,7 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
         }
         case NODE_MEMBER_ACCESS: {
             if (!node->as.member_access->base) return false;
-            Type* base_type = node->as.member_access->base->resolved_type ? node->as.member_access->base->resolved_type : visit(node->as.member_access->base);
+            Type* base_type = resolveOrVisit(node->as.member_access->base);
             if (base_type && !is_type_undefined(base_type)) {
                 if (base_type->kind == TYPE_OPTIONAL) {
                     if (plat_strcmp(node->as.member_access->field_name, "value") == 0) {
@@ -7644,7 +7669,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
 
         for (size_t i = 0; i < node->args->length(); ++i) {
             ASTNode* arg = (*node->args)[i];
-            Type* arg_type = visit(arg);
+            Type* arg_type = resolveOrVisit(arg);
             arg_types->append(arg_type);
 
             GenericParamInfo info;
@@ -8006,7 +8031,7 @@ Type* TypeChecker::visitAsExpr(ASTNode** node_slot, ASTAsExprNode* node) {
     if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
 
     if (!node->expr) return get_g_type_undefined();
-    src_type = visit(node->expr);
+    src_type = resolveOrVisit(node->expr);
     if (!src_type || is_type_undefined(src_type)) return get_g_type_undefined();
 
     /* Try to reuse existing cast nodes for common cases */
@@ -8092,7 +8117,7 @@ Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
     if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
 
     if (!node->expr) return get_g_type_undefined();
-    expr_type = visit(node->expr);
+    expr_type = resolveOrVisit(node->expr);
     if (!expr_type || is_type_undefined(expr_type)) return get_g_type_undefined();
 
     if (target_type && target_type->kind != TYPE_POINTER && target_type->kind != TYPE_FUNCTION_POINTER) {
@@ -8125,7 +8150,7 @@ Type* TypeChecker::visitIntToFloat(ASTNode* parent, ASTNumericCastNode* node) {
     }
 
     if (!node->expr) return get_g_type_undefined();
-    source_type = visit(node->expr);
+    source_type = resolveOrVisit(node->expr);
     if (!source_type || is_type_undefined(source_type)) return get_g_type_undefined();
 
     if (!isIntegerType(source_type)) {
@@ -8163,7 +8188,7 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
     }
 
     if (!node->expr) return get_g_type_undefined();
-    source_type = visit(node->expr);
+    source_type = resolveOrVisit(node->expr);
     if (!source_type || is_type_undefined(source_type)) return get_g_type_undefined();
 
     if (!isIntegerType(source_type)) {
@@ -8292,7 +8317,7 @@ Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
     }
 
     if (!node->expr) return get_g_type_undefined();
-    source_type = visit(node->expr);
+    source_type = resolveOrVisit(node->expr);
     if (!source_type || is_type_undefined(source_type)) return get_g_type_undefined();
 
     if (source_type->kind != TYPE_F32 && source_type->kind != TYPE_F64) {
@@ -8973,9 +8998,15 @@ ASTNode* TypeChecker::createUnaryOp(ASTNode* operand, Zig0TokenType op, Type* ty
     return node;
 }
 
+Type* TypeChecker::resolveOrVisit(ASTNode* node) {
+    if (node->resolved_type && !is_type_undefined(node->resolved_type))
+        return node->resolved_type;
+    return visit(node);
+}
+
 Type* TypeChecker::unwrapType(ASTNode* node) {
     if (!node) return NULL;
-    Type* t = visit(node);
+    Type* t = resolveOrVisit(node);
     if (!t || is_type_undefined(t)) return t;
 
     if (t->kind == TYPE_TYPE) {
