@@ -157,6 +157,9 @@ void C89Emitter::emitType(Type* type, const char* name) {
 }
 
 void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node) {
+    if (!type) {
+        plat_printf_debug("[CODEGEN] emitDeclarator: NULL type for name=%s\n", name ? name : "NULL");
+    }
     emitTypePrefix(type);
     if (name && type && type->kind != TYPE_ANYTYPE) {
         if (last_char_ != '(' && last_char_ != ' ') {
