@@ -143,6 +143,7 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
 }
 
 void LifetimeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
+    if (!node->symbol) return;
     if (node->initializer) {
         visit(node->initializer);
     }
