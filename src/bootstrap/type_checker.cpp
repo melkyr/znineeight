@@ -699,7 +699,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
         case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
-        case NODE_IF_EXPR:          resolved_type = visitIfExpr(node->as.if_expr); break;
+        case NODE_IF_EXPR:          resolved_type = visitIfExpr(node, node->as.if_expr); break;
         case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(node->as.while_stmt); break;
         case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(node); break;
         case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(node); break;
@@ -792,7 +792,12 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
     if (!node->operand) return get_g_type_undefined();
     /* In a unit_ test, the operand's type might already be resolved. */
     operand_type = resolveOrVisit(node->operand);
-    if (!operand_type || is_type_undefined(operand_type)) return get_g_type_undefined();
+    if (!operand_type || is_type_undefined(operand_type)) {
+        plat_printf_debug("[UNARY_UNDEF] %s:%d op=%s operand kind=%d\n",
+            unit_.getCurrentModule(), parent->loc.line, getTokenSpelling(node->op),
+            operand_type ? (int)operand_type->kind : -1);
+        return get_g_type_undefined();
+    }
 
     switch (node->op) {
         case TOKEN_STAR:
@@ -907,7 +912,13 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
             left_type ? (int)left_type->kind : -1,
             right_type ? (int)right_type->kind : -1);
     }
-    if (is_type_undefined(left_type) || is_type_undefined(right_type)) return get_g_type_undefined();
+    if (is_type_undefined(left_type) || is_type_undefined(right_type)) {
+        plat_printf_debug("[BINARY_UNDEF] %s:%d op=%s left kind=%d, right kind=%d\n",
+            unit_.getCurrentModule(), parent->loc.line, getTokenSpelling(node->op),
+            left_type ? (int)left_type->kind : -1,
+            right_type ? (int)right_type->kind : -1);
+        return get_g_type_undefined();
+    }
 
     /* Special handling for literals to support promotion in binary operations.
        We only use TYPE_INTEGER_LITERAL for mixed cases (literal + non-literal)
@@ -2305,6 +2316,10 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 
     sym = unit_.getSymbolTable().lookup(name);
 
+    if (sym && (plat_strcmp(name, "alignment") == 0 || plat_strcmp(name, "min_align") == 0 || plat_strcmp(name, "actual_align") == 0)) {
+        plat_printf_debug("[IDENT_RES] %s type kind=%d\n", name, sym->symbol_type ? (int)sym->symbol_type->kind : -1);
+    }
+
     if (!sym) {
         return reportAndReturnUndefined(node->loc, ERR_UNDEFINED_VARIABLE, NULL);
     }
@@ -2385,9 +2400,23 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
                         continue;
                     }
 
+                    if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
+                        plat_printf_debug("[VAR_REEVAL] %s start (block): sym->type kind=%d, init type=%d\n",
+                            vd->name,
+                            sym->symbol_type ? (int)sym->symbol_type->kind : -1,
+                            vd->initializer ? vd->initializer->resolved_type ? (int)vd->initializer->resolved_type->kind : -99 : -99);
+                    }
+
                     visitVarDecl(stmt, vd);
 
                     sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+
+                    if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
+                        plat_printf_debug("[VAR_REEVAL] %s after: sym->type kind=%d\n",
+                            vd->name,
+                            sym->symbol_type ? (int)sym->symbol_type->kind : -1);
+                    }
+
                     if (sym->symbol_type->kind == TYPE_UNDEFINED) {
                         // DEBUG: remove after resolving sand.zig issue
                         if (vd->name && plat_strcmp(vd->name, "res") == 0 && sym->symbol_type->kind == TYPE_UNDEFINED) {
@@ -2499,7 +2528,7 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
     return get_g_type_void();
 }
 
-Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
+Type* TypeChecker::visitIfExpr(ASTNode* parent, ASTIfExprNode* node) {
     Type* condition_type;
     if (!node->condition) return get_g_type_undefined();
     condition_type = visit(node->condition);
@@ -2555,6 +2584,13 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
     {
         ExpectedTypeGuard guard(*this, expected);
         else_type = visit(node->else_expr);
+    }
+
+    if (plat_strcmp(unit_.getCurrentModule(), "sand") == 0 && node->condition->loc.line == 19) {
+        plat_printf_debug("[IF_EXPR] sand:19 condition type kind=%d, then type kind=%d, else type kind=%d\n",
+            condition_type ? (int)condition_type->kind : -1,
+            then_type ? (int)then_type->kind : -1,
+            else_type ? (int)else_type->kind : -1);
     }
 
     /* Distribute Tagged Union Coercion BEFORE unification */
@@ -3965,16 +4001,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                                   node->initializer->type == NODE_CATCH_EXPR ||
                                   node->initializer->type == NODE_ORELSE_EXPR);
 
-                /* [Task Fix] Allow if/switch expressions to return TYPE_UNDEFINED initially
-                   when a declared aggregate type is present. This enables coercion to guide them. */
-                if (!can_defer && declared_type &&
-                    (node->initializer->type == NODE_IF_EXPR || node->initializer->type == NODE_SWITCH_EXPR)) {
-                    if (isTaggedUnion(declared_type) ||
-                        declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION ||
-                        declared_type->kind == TYPE_ARRAY || declared_type->kind == TYPE_TUPLE ||
-                        declared_type->kind == TYPE_ERROR_UNION || declared_type->kind == TYPE_OPTIONAL) {
-                        can_defer = true;
-                    }
+                /* [Task Fix] Allow if/switch expressions to return TYPE_UNDEFINED initially.
+                   They can often be resolved in a later pass once their branches are checked. */
+                if (!can_defer && (node->initializer->type == NODE_IF_EXPR || node->initializer->type == NODE_SWITCH_EXPR)) {
+                    can_defer = true;
                 }
 
                 if (!can_defer) {
@@ -4516,9 +4546,23 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                                     aligned_pos_sym && aligned_pos_sym->symbol_type ? (int)aligned_pos_sym->symbol_type->kind : -1);
                             }
 
+                            if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
+                                plat_printf_debug("[VAR_REEVAL] %s start (fn): sym->type kind=%d, init type=%d\n",
+                                    vd->name,
+                                    sym->symbol_type ? (int)sym->symbol_type->kind : -1,
+                                    vd->initializer ? vd->initializer->resolved_type ? (int)vd->initializer->resolved_type->kind : -99 : -99);
+                            }
+
                             visitVarDecl(stmt, vd);
 
                             sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
+
+                            if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
+                                plat_printf_debug("[VAR_REEVAL] %s after: sym->type kind=%d\n",
+                                    vd->name,
+                                    sym->symbol_type ? (int)sym->symbol_type->kind : -1);
+                            }
+
                             if (sym->symbol_type->kind == TYPE_UNDEFINED) {
                                 // DEBUG: remove after resolving sand.zig issue
                                 if (vd->name && plat_strcmp(vd->name, "res") == 0 && sym->symbol_type->kind == TYPE_UNDEFINED) {
@@ -5399,6 +5443,10 @@ after_module_handling:
         }
     }
     field_type = findStructField(base_type, node->field_name);
+    if (plat_strcmp(node->field_name, "pos") == 0) {
+        plat_printf_debug("[MEMBER] field 'pos' found: %p, type kind=%d\n",
+            (void*)field_type, field_type ? (int)field_type->kind : -1);
+    }
     if (field_type && plat_strcmp(node->field_name, "start") == 0) {
         plat_printf_debug("[MEMBER] field 'start' type kind=%d, is_many=%d\n",
             (int)field_type->kind,

@@ -48,7 +48,7 @@ The transition to per-module `mod_arena` has made the compiler significantly mor
 ### Current Status
 After applying the hardening fixes (NULL guards, re-evaluation of  locals, and expanded  list), the situation is as follows:
 
-- **lisp_interpreter_curr**: The segmentation fault in `visitMemberAccess` is RESOLVED. The compiler now successfully generates C code for the example.
+- **lisp_interpreter_curr**: The segmentation fault in `visitMemberAccess` and static analyzers is RESOLVED. The compiler now successfully generates C code for the example. This was fixed by zero-initializing all AST node allocations and adding null-guards in analyzer visitors.
 - **rogue_mud**: The "Undefined type for symbol 'res'" error persists, now manifesting as a controlled `abort()` from diagnostic instrumentation. 
 
 ### Diagnostic Output (rogue_mud)
@@ -85,3 +85,53 @@ To further isolate why `res` fails to resolve in `rogue_mud`, the following inst
 
 -   **Persistence**: Symbols and Types remain in the permanent arena, but any pointers they hold back to the AST (like `ASTNode* decl_node`) are only valid during the module's active processing window.
 -   **Synchronization**: The "Global Signature Resolution" pass (Phase 1.5) was intended to mitigate this by resolving all top-level signatures upfront. However, local variable inference (like `res` in `sand.zig`) still relies on AST-walking during Phase 2. If Phase 2 fails to complete resolution for a module, that module's metadata becomes permanently corrupted once its AST is freed.
+
+## 5. Findings from Phase 11.5 Deep Dive
+
+### rogue_mud: The `aligned_pos` Chain
+
+Diagnostic logs for `rogue_mud` show that `aligned_pos` has type kind 17 (`TYPE_UNDEFINED`) during the second pass of `visitFnBody`:
+`[RES_DEBUG] sand type kind=15, aligned_pos type kind=17`
+
+Tracing the dependencies:
+1. `res = sand.start + aligned_pos`
+2. `aligned_pos = (sand.pos + mask) & ~mask`
+3. `sand.pos` is a member access on the `sand` parameter.
+
+The logs show `[MEMBER_POS_DEBUG]` correctly identifies the `pos` field in the `Sand` struct with kind 11 (`TYPE_USIZE`). However, `aligned_pos` remains undefined. This is because `visitBinaryOp` for `aligned_pos` fails, and due to the systemic `TYPE_UNDEFINED` caching bug, it was never re-attempted correctly until the `resolveOrVisit` fix.
+
+Even with `resolveOrVisit`, if a dependency is in a different module that has already been reset, resolution will still fail. In this case, `sand` is a local parameter, so it should be resolvable. The remaining issue is likely that `aligned_pos` is not being marked for re-evaluation correctly or its initializer contains a node that still returns `TYPE_UNDEFINED` without triggering a retry.
+
+### lisp_interpreter_curr: Segfault and Uninitialized AST Nodes (RESOLVED)
+
+The segmentation fault in `lisp_interpreter_curr` was caused by uninitialized `node->symbol` pointers in AST nodes.
+
+**Root Cause**:
+- AST nodes are allocated from the `ast_arena_` using `ast_arena_->alloc(sizeof(ASTNode))`.
+- Previously, the `ArenaAllocator` did NOT zero-initialize memory.
+- Many AST nodes (like `NODE_VAR_DECL` or `NODE_IDENTIFIER`) have a `symbol` pointer field.
+- If type-checking failed or deferred, these pointers remained as garbage values.
+- Static analyzers like `LifetimeAnalyzer` checked `if (!node->symbol)`, which passed for garbage values, causing a crash upon dereference.
+
+**Resolution**:
+- **Arena zero-initialization**: The `ArenaAllocator::alloc` method was updated to `plat_memset` all allocated blocks to zero. This ensures all AST nodes and other internal structures are properly initialized.
+- **Analyzer Hardening**: Null-guards were added to analyzer visitors as a secondary safety measure.
+
+## 6. Final Resolution of Regression Issues
+
+### lisp_interpreter_curr (RESOLVED)
+- **Segfault**: Fixed. The root cause was garbage pointers in AST nodes (specifically `node->symbol`) because the `ArenaAllocator` didn't zero-initialize memory.
+- **Fix**: Updated `ArenaAllocator::alloc` to `plat_memset` all new blocks to zero.
+- **Status**: Compiler successfully generates C code for all modules in the lisp interpreter.
+
+### rogue_mud (IN PROGRESS - Instrumented)
+- **Undefined 'res'**: Still occurs, but the cause is now isolated to the `aligned_pos` dependency chain.
+- **Findings**:
+    - `actual_align` now resolves correctly to `usize` (kind 11) using improved `if` expression unification.
+    - `aligned_pos` remains `TYPE_UNDEFINED` because its initializer (a bitwise AND of an addition) fails to resolve in the available passes.
+    - Systematic `TYPE_UNDEFINED` caching has been eliminated via the `resolveOrVisit` helper, ensuring that future resolution attempts aren't blocked by stale failures.
+- **Status**: The compiler is now heavily instrumented with `[VAR_REEVAL]`, `[BINARY_UNDEF]`, and `[IF_EXPR]` diagnostics to facilitate the final logic fix in the next phase.
+
+### Compiler Hardening
+- **Pre-codegen Assertions**: Added strict checks in `CompilationUnit` to abort if any global/public symbol remains with a NULL, `TYPE_UNDEFINED`, or `TYPE_PLACEHOLDER` type before code generation. This prevents silent "missing code" failures.
+- **Symbol Table Consistency**: Improved `visitVarDecl` to link `node->symbol` immediately during local variable pre-insertion, ensuring analyzers always see a valid (though possibly incomplete) symbol.

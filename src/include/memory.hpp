@@ -160,7 +160,11 @@ public:
      * @return A pointer to the allocated memory, or NULL if the allocation fails.
      */
     void* alloc(size_t size) {
-        return alloc_aligned(size, 8);
+        void* ptr = alloc_aligned(size, 8);
+        if (ptr) {
+            plat_memset(ptr, 0, size);
+        }
+        return ptr;
     }
 
     /**
