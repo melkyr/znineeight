@@ -224,6 +224,7 @@ void NullPointerAnalyzer::visitBlock(ASTBlockStmtNode* node) {
 }
 
 void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
+    if (!node->symbol) return;
     if (node->initializer) {
         visit(node->initializer);
     }

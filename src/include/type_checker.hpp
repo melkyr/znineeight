@@ -43,7 +43,7 @@ public:
     Type* visitBlockStmt(ASTBlockStmtNode* node);
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
     Type* visitIfStmt(ASTIfStmtNode* node);
-    Type* visitIfExpr(ASTIfExprNode* node);
+    Type* visitIfExpr(ASTNode* parent, ASTIfExprNode* node);
     Type* visitWhileStmt(ASTWhileStmtNode* node);
     Type* visitBreakStmt(ASTNode* node);
     Type* visitContinueStmt(ASTNode* node);
@@ -137,6 +137,7 @@ private:
     bool isLocalContext() const;
     bool isTopLevelDeclaration(ASTVarDeclNode* node) const;
     Type* unwrapType(ASTNode* node);
+    Type* resolveOrVisit(ASTNode* node);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
     Type* createErrorUnionDataType(ArenaAllocator& arena, Type* error_union, SourceLocation loc);

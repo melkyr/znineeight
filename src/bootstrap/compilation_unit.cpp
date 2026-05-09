@@ -1261,7 +1261,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
     }
 
 #ifdef DEBUG
-    // Post-check assertion: Ensure no TYPE_UNDEFINED remains in any scope
+    // Post-check assertion: Ensure no concrete symbols remain without a valid type
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* mod = modules_[i];
         if (!mod->symbols) continue;
@@ -1272,8 +1272,18 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
                 Scope::SymbolEntry* entry = scope->buckets[k];
                 while (entry) {
                     const Symbol& sym = entry->symbol;
-                    if (sym.symbol_type && sym.symbol_type->kind == TYPE_UNDEFINED) {
+                    if (!sym.symbol_type) {
+                        plat_printf_debug("NULL type for symbol '%s' in module '%s'\n",
+                                    sym.name, mod->name);
+                        plat_abort();
+                    }
+                    if (sym.symbol_type->kind == TYPE_UNDEFINED) {
                         plat_printf_debug("Undefined type for symbol '%s' in module '%s'\n",
+                                    sym.name, mod->name);
+                        plat_abort();
+                    }
+                    if (sym.symbol_type->kind == TYPE_PLACEHOLDER) {
+                        plat_printf_debug("Unresolved placeholder type for symbol '%s' in module '%s'\n",
                                     sym.name, mod->name);
                         plat_abort();
                     }
