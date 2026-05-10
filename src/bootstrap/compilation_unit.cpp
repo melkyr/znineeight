@@ -1178,6 +1178,8 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
 #endif
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
+        plat_printf_debug("[PHASE2_ORDER] module=%s, ast_root=%p, is_analyzed=%d\n",
+            m->name, (void*)m->ast_root, m->is_analyzed);
         if (m->is_analyzed || !m->ast_root) continue;
         setCurrentModule(m->name);
         NameCollisionDetector detector(*this);
