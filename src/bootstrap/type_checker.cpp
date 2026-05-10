@@ -2287,6 +2287,11 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     const char* name = node->as.identifier.name;
 #ifdef DEBUG
     plat_printf_debug("[IDENT] visiting %s, cached_resolved_type=%p\n", name, (void*)node->resolved_type);
+    if (plat_strcmp(name, "mask") == 0) {
+        Symbol* s = unit_.getSymbolTable().lookup(name);
+        plat_printf_debug("[MASK_USED] sym=%p, sym type kind=%d\n",
+            (void*)s, s ? (s->symbol_type ? s->symbol_type->kind : -1) : -1);
+    }
 #endif
     Type* prim;
     Symbol* sym;
@@ -2400,6 +2405,10 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
                         continue;
                     }
 
+                    if (plat_strcmp(vd->name, "mask") == 0) {
+                        plat_printf_debug("[MASK_REEVAL] before re-eval: sym type kind=%d\n",
+                            sym->symbol_type ? sym->symbol_type->kind : -1);
+                    }
                     if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
                         plat_printf_debug("[VAR_REEVAL] %s start (block): sym->type kind=%d, init type=%d\n",
                             vd->name,
@@ -2411,6 +2420,10 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
 
                     sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
 
+                    if (plat_strcmp(vd->name, "mask") == 0) {
+                        plat_printf_debug("[MASK_REEVAL] after re-eval: sym type kind=%d\n",
+                            sym ? (sym->symbol_type ? sym->symbol_type->kind : -1) : -1);
+                    }
                     if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
                         plat_printf_debug("[VAR_REEVAL] %s after: sym->type kind=%d\n",
                             vd->name,
@@ -4546,6 +4559,10 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                                     aligned_pos_sym && aligned_pos_sym->symbol_type ? (int)aligned_pos_sym->symbol_type->kind : -1);
                             }
 
+                            if (plat_strcmp(vd->name, "mask") == 0) {
+                                plat_printf_debug("[MASK_REEVAL] before re-eval: sym type kind=%d\n",
+                                    sym->symbol_type ? sym->symbol_type->kind : -1);
+                            }
                             if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
                                 plat_printf_debug("[VAR_REEVAL] %s start (fn): sym->type kind=%d, init type=%d\n",
                                     vd->name,
@@ -4557,6 +4574,10 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 
                             sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
 
+                            if (plat_strcmp(vd->name, "mask") == 0) {
+                                plat_printf_debug("[MASK_REEVAL] after re-eval: sym type kind=%d\n",
+                                    sym ? (sym->symbol_type ? sym->symbol_type->kind : -1) : -1);
+                            }
                             if (plat_strcmp(vd->name, "actual_align") == 0 || plat_strcmp(vd->name, "mask") == 0 || plat_strcmp(vd->name, "aligned_pos") == 0 || plat_strcmp(vd->name, "res") == 0) {
                                 plat_printf_debug("[VAR_REEVAL] %s after: sym->type kind=%d\n",
                                     vd->name,
@@ -4948,7 +4969,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     Type* field_type;
     bool is_type_access = false;
 
-    base_type = visit(node->base);
+    base_type = resolveOrVisit(node->base);
 #ifdef DEBUG
     if (base_type) {
         plat_printf_debug("[MEMBER] visiting base %p, cached=%p, result=%p, kind=%d, mod_ptr=%p\n",
@@ -5446,6 +5467,9 @@ after_module_handling:
     if (plat_strcmp(node->field_name, "pos") == 0) {
         plat_printf_debug("[MEMBER] field 'pos' found: %p, type kind=%d\n",
             (void*)field_type, field_type ? (int)field_type->kind : -1);
+        plat_printf_debug("[MEMBER_POS_RESULT] line=%d col=%d field_type kind=%d\n",
+            node->base->loc.line, node->base->loc.column,
+            field_type ? (int)field_type->kind : -1);
     }
     if (field_type && plat_strcmp(node->field_name, "start") == 0) {
         plat_printf_debug("[MEMBER] field 'start' type kind=%d, is_many=%d\n",
