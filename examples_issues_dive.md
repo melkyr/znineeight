@@ -129,8 +129,11 @@ The segmentation fault in `lisp_interpreter_curr` was caused by uninitialized `n
 - **Findings**:
     - `actual_align` now resolves correctly to `usize` (kind 11) using improved `if` expression unification.
     - `aligned_pos` remains `TYPE_UNDEFINED` because its initializer (a bitwise AND of an addition) fails to resolve in the available passes.
-    - Systematic `TYPE_UNDEFINED` caching has been eliminated via the `resolveOrVisit` helper, ensuring that future resolution attempts aren't blocked by stale failures.
-- **Status**: The compiler is now heavily instrumented with `[VAR_REEVAL]`, `[BINARY_UNDEF]`, and `[IF_EXPR]` diagnostics to facilitate the final logic fix in the next phase.
+    - Systematic `TYPE_UNDEFINED` caching has been mitigated via the `resolveOrVisit` helper, which is now applied to `visitMemberAccess`, `visitBinaryOp`, `visitIfExpr`, `visitIfStmt`, `visitAssignment`, `visitCompoundAssignment`, `visitParenExpr`, and `visitVarDecl` initializers.
+    - **Composite Stalling**: Despite leaf resolution (confirmed by `[MEMBER_POS_RESULT]` showing `sand.pos` as `usize`), the composite expression `(sand.pos + mask)` remains `TYPE_UNDEFINED`.
+    - **Identifier Caching Suspect**: `TypeChecker::visitIdentifier` contains a shortcut during `is_post_check_phase_` that returns the cached `node->resolved_type` immediately. If this was set to `TYPE_UNDEFINED` earlier, it may be blocking re-resolution even if the symbol is now valid.
+    - **Re-evaluation Loop**: The loop in `visitFnBody` correctly triggers for `aligned_pos` and `res`, but they stall because their initializers contain sub-expressions (like the parenthesized addition) that are not yet transitioning to concrete types.
+- **Status**: The compiler is now heavily instrumented with `[VAR_REEVAL]`, `[RES_DEBUG]`, `[BINARY_UNDEF]`, `[IF_EXPR]`, and `[MEMBER_POS_RESULT]` diagnostics to facilitate the final logic fix.
 
 ### Compiler Hardening
 - **Pre-codegen Assertions**: Added strict checks in `CompilationUnit` to abort if any global/public symbol remains with a NULL, `TYPE_UNDEFINED`, or `TYPE_PLACEHOLDER` type before code generation. This prevents silent "missing code" failures.
