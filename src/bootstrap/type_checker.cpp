@@ -4155,6 +4155,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (existing_sym) {
         if (declared_type || is_local) {
              existing_sym->symbol_type = declared_type ? declared_type : get_g_type_undefined();
+             Z98_ASSERT(existing_sym->symbol_type != NULL);
 
              /* If it's a type declaration, update the mangle kind to 'S' */
              if (node->is_const && (declared_type->kind == TYPE_TYPE || declared_type->kind == TYPE_MODULE)) {

@@ -138,3 +138,35 @@ The segmentation fault in `lisp_interpreter_curr` was caused by uninitialized `n
 ### Compiler Hardening
 - **Pre-codegen Assertions**: Added strict checks in `CompilationUnit` to abort if any global/public symbol remains with a NULL, `TYPE_UNDEFINED`, or `TYPE_PLACEHOLDER` type before code generation. This prevents silent "missing code" failures.
 - **Symbol Table Consistency**: Improved `visitVarDecl` to link `node->symbol` immediately during local variable pre-insertion, ensuring analyzers always see a valid (though possibly incomplete) symbol.
+
+## 7. Deep Dive: NULL type for symbol 'res' (NEW)
+
+### Symptoms
+After hardening the compiler to handle `TYPE_UNDEFINED` and improving re-evaluation of local variables, a new failure emerged:
+`NULL type for symbol 'res' in module 'sand'`
+
+This is distinct from the previous `TYPE_UNDEFINED` errors. Instrumentation in `Scope::insert` revealed that symbols were being inserted into the symbol table with a `NULL` type.
+
+### Initial Instrumentation Findings
+Adding a `plat_abort()` in `Scope::insert` when `symbol.symbol_type == NULL` caught an immediate failure during the compilation of `rogue_mud`:
+
+`[SYMBOL_NULL] Inserting symbol 'sand_mod' with NULL type! module=main scope_level=1`
+
+This indicated that `@import` aliases (like `const sand_mod = @import("lib/sand.zig");`) were being registered without a valid type (neither `TYPE_MODULE` nor a `TYPE_PLACEHOLDER`).
+
+### Investigation Findings
+The investigation into the `sand_mod` NULL type error revealed a systemic issue in how symbols are initially registered and subsequently updated.
+
+1.  **Parser Prematurity**: `Parser::parseVarDecl` creates and inserts a `Symbol` for every variable declaration it encounters. However, for `@import` aliases (and often for constants holding types), the actual `Type` is not yet available during parsing. Consequently, the symbol was being inserted with a `NULL` type.
+2.  **`SymbolTable::insert` Rejection**: When `CompilationUnit::resolveImportsRecursive` later attempted to register the proper `TYPE_MODULE` for the import alias, it called `getSymbolTable().insert(mod_sym)`. However, `SymbolTable::insert` contains logic to prevent redeclarations, causing the update call to return `false` and do nothing, leaving the `NULL` type in place.
+3.  **`Scope::insert` Vulnerability**: The low-level `Scope::insert` method performed a wholesale struct replacement (`entry->symbol = symbol`). This meant any later "update" with an incomplete `Symbol` struct (e.g. from `ASTLifter` or a misplaced builder call) would permanently corrupt the symbol table entry, even if it was previously correct.
+
+### Resolution and Hardening
+The systemic issue was resolved by applying three layers of hardening to ensure symbol table integrity:
+
+1.  **`Scope::insert` Resilience**: The low-level insertion logic was updated to prevent accidental type corruption. If an existing symbol is being updated with a new `Symbol` struct that has a `NULL` type, the existing valid type is preserved.
+2.  **Explicit Import Updating**: `CompilationUnit::resolveImportsRecursive` now explicitly checks for existing symbols when registering module aliases. If found, it updates the type directly instead of relying on `insert()`.
+3.  **Parser Sanitization**: `Parser::parseVarDecl` was updated to initialize symbols with `TYPE_UNDEFINED` instead of `NULL` when the type is not yet known.
+
+### Future Work
+While the immediate "NULL type" corruption is blocked, a complete audit of `SymbolBuilder` usages is recommended to ensure all symbols are created with at least `TYPE_UNDEFINED`. This will prevent reliance on the `Scope::insert` safety net.
