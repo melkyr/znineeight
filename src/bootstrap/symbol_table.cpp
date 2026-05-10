@@ -1,6 +1,7 @@
 #include "symbol_table.hpp"
 #include "platform.hpp"
 #include <new>
+#include <stdio.h>
 #include "memory.hpp"
 
 static bool g_post_check_phase = false;
@@ -130,7 +131,15 @@ void Scope::insert(Symbol& symbol) {
         if (plat_strcmp(entry->symbol.name, symbol.name) == 0) {
             if (symbol.module_name == NULL || entry->symbol.module_name == NULL ||
                 plat_strcmp(entry->symbol.module_name, symbol.module_name) == 0) {
-                entry->symbol = symbol;
+                                /* HARDENING: Never overwrite a valid type with NULL. */
+                if (entry->symbol.symbol_type != NULL && symbol.symbol_type == NULL) {
+                    /* Keep old type, but update other metadata. */
+                    Type* saved_type = entry->symbol.symbol_type;
+                    entry->symbol = symbol;
+                    entry->symbol.symbol_type = saved_type;
+                } else {
+                    entry->symbol = symbol;
+                }
                 return;
             }
         }

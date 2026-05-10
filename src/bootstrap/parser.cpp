@@ -1584,6 +1584,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
 
     // Resolve the type and create the symbol for the symbol table.
     Type* symbol_type = resolveAndVerifyType(type_node);
+    if (!symbol_type) symbol_type = get_g_type_undefined();
 
     if (type_node && !symbol_type) {
         char tbuf[16];

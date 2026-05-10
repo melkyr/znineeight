@@ -1929,8 +1929,15 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
             .build();
 
-        if (!getSymbolTable().lookupInCurrentScope(import_alias)) {
+        Symbol* existing = getSymbolTable().lookupInCurrentScope(import_alias);
+        if (!existing) {
             getSymbolTable().insert(mod_sym);
+        } else {
+            /* Force update the type if it was NULL or UNDEFINED */
+            if (existing->symbol_type == NULL || existing->symbol_type->kind == TYPE_UNDEFINED) {
+                existing->symbol_type = mod_type;
+                existing->kind = SYMBOL_MODULE;
+            }
         }
     }
 
