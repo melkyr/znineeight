@@ -219,12 +219,31 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
         ASTNode* node = (*statements)[i];
         if (node->type == NODE_VAR_DECL) {
             ASTVarDeclNode* vd = node->as.var_decl;
+            plat_printf_debug("[PH_REG] Processing VarDecl '%s' is_pub=%d is_const=%d has_type=%d init_type=%d isTypeExpr=%d\n",
+                              vd->name, vd->is_pub, vd->is_const, vd->type != NULL, vd->initializer ? (int)vd->initializer->type : -1,
+                              vd->initializer ? isTypeExpression(vd->initializer, unit_.getSymbolTable()) : 0);
+
+            bool is_type_init = false;
+            if (vd->initializer) {
+                switch (vd->initializer->type) {
+                    case NODE_TYPE_NAME:
+                    case NODE_POINTER_TYPE:
+                    case NODE_ARRAY_TYPE:
+                    case NODE_OPTIONAL_TYPE:
+                    case NODE_ERROR_UNION_TYPE:
+                    case NODE_FUNCTION_TYPE:
+                    case NODE_STRUCT_DECL:
+                    case NODE_UNION_DECL:
+                    case NODE_ENUM_DECL:
+                    case NODE_ERROR_SET_DEFINITION:
+                    case NODE_ERROR_SET_MERGE:
+                        is_type_init = true; break;
+                    default: break;
+                }
+            }
+
             if (vd->is_const && vd->initializer &&
-                (vd->initializer->type == NODE_STRUCT_DECL ||
-                 vd->initializer->type == NODE_UNION_DECL ||
-                 vd->initializer->type == NODE_ENUM_DECL ||
-                 vd->initializer->type == NODE_ERROR_SET_DEFINITION ||
-                 vd->initializer->type == NODE_ERROR_SET_MERGE)) {
+                (is_type_init || isTypeExpression(vd->initializer, unit_.getSymbolTable()))) {
 
                 /* Check if already has a type or placeholder */
                 Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
