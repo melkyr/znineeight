@@ -102,6 +102,7 @@ public:
     void logFeatureLocation(const char* feature, SourceLocation loc);
     void injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type);
 private:
+    void registerAliasPlaceholderIfNeeded(ASTNode* node);
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);
