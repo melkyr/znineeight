@@ -8,6 +8,40 @@
 #include <new>
 
 
+// Returns true if the expression is known to produce a pointer/slice
+// to static memory (string literals, and switches where every branch
+// is a static string).
+static bool isStaticStringExpression(ASTNode* node) {
+    if (!node) return false;
+
+    switch (node->type) {
+        case NODE_STRING_LITERAL:
+            return true;
+
+        case NODE_PAREN_EXPR:
+            return isStaticStringExpression(node->as.paren_expr.expr);
+
+        case NODE_SWITCH_EXPR: {
+            const DynamicArray<ASTSwitchProngNode*>* prongs =
+                node->as.switch_expr->prongs;
+            if (!prongs || prongs->length() == 0) return false;
+            for (size_t i = 0; i < prongs->length(); ++i) {
+                ASTNode* body = (*prongs)[i]->body;
+                if (!isStaticStringExpression(body)) return false;
+            }
+            return true;   // all branches are static strings
+        }
+
+        case NODE_IF_EXPR:
+            return isStaticStringExpression(node->as.if_expr->then_expr) &&
+                   isStaticStringExpression(node->as.if_expr->else_expr);
+
+        default:
+            return false;
+    }
+}
+
+
 LifetimeAnalyzer::LifetimeAnalyzer(CompilationUnit& unit)
     : unit_(unit), current_assignments_(NULL) {}
 
@@ -46,6 +80,12 @@ void LifetimeAnalyzer::visit(ASTNode* node) {
             break;
         case NODE_FOR_STMT:
             visitForStmt(node->as.for_stmt);
+            break;
+        case NODE_SWITCH_STMT:
+            visitSwitchStmt(node->as.switch_stmt);
+            break;
+        case NODE_SWITCH_EXPR:
+            visitSwitchExpr(node->as.switch_expr);
             break;
         case NODE_EXPRESSION_STMT:
             visit(node->as.expression_stmt.expression);
@@ -195,6 +235,24 @@ void LifetimeAnalyzer::visitForStmt(ASTForStmtNode* node) {
     visit(node->body);
 }
 
+void LifetimeAnalyzer::visitSwitchStmt(ASTSwitchStmtNode* node) {
+    visit(node->expression);
+    if (node->prongs) {
+        for (size_t i = 0; i < node->prongs->length(); ++i) {
+            visit((*node->prongs)[i]->body);
+        }
+    }
+}
+
+void LifetimeAnalyzer::visitSwitchExpr(ASTSwitchExprNode* node) {
+    visit(node->expression);
+    if (node->prongs) {
+        for (size_t i = 0; i < node->prongs->length(); ++i) {
+            visit((*node->prongs)[i]->body);
+        }
+    }
+}
+
 static bool isLocalVariable(Symbol* sym) {
     if (!sym) return false;
     // Parameters are technically in the local activation record, but they
@@ -221,6 +279,11 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
     plat_printf_debug("\n");
 #endif
     if (!provenance) return false;
+
+    // Static strings are never dangling.
+    if (provenance && plat_strcmp(provenance, "<literal>") == 0) {
+        return false;
+    }
 
     char base_name[256];
     const char* dot = plat_strchr(provenance, '.');
@@ -340,6 +403,11 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
                 }
             }
         }
+    }
+
+    // NEW - static string sentinel
+    if (!points_to_name && isStaticStringExpression(rvalue)) {
+        points_to_name = "<literal>";
     }
 
     // Update existing assignment or append new one
