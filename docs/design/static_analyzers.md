@@ -34,6 +34,7 @@ In Z98, `SYMBOL_FLAG_LOCAL` is set for all symbols in a function's activation re
 - **Array Indexing**: Recognizes that `&arr[i]` points to the storage of `arr`.
 - **Slices**: Understands that slicing an array (`arr[0..5]`) results in a slice whose lifetime is tied to that array's storage.
 - **Composition**: Handles nested structures like `&outer.inner.field`.
+- **Static String Literals**: String literals and switch/if expressions that exclusively return string literals are identified as "Static" and are safe to return. This prevents false positives from compiler-generated temporaries used during expression lowering.
 
 #### Post-Check Safety
 Static analyzers must rely on pre-resolved AST metadata (specifically `node->symbol` and `node->resolved_type`) instead of querying the `SymbolTable` via `findInAnyScope`. This is enforced by a `Z98_ASSERT` in the symbol table that fires if a lookup is attempted during the post-check phase.
