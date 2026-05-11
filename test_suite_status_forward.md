@@ -17,45 +17,36 @@
 ## Progress Report (32-bit)
 
 - **Compiler Stability**: **IMPROVED**. `zig0` no longer crashes on `lisp_interpreter_curr` or `rogue_mud`. Systemic NULL-type corruption has been mitigated through hardening of `Scope::insert` and `TypeChecker`.
-- **Lifetime Analyzer**: **REGRESSION/HARDENING**. The analyzer correctly identifies a lifetime violation in `rogue_mud` (ui.zig:241). However, it still fails to detect certain cases in Batch 4.
+- **Lifetime Analyzer**: **STALLED/REGRESSION**. The analyzer correctly identifies a lifetime violation in `rogue_mud` (ui.zig:241). However, it fails to detect returning addresses of parameters or locals reassigned to parameters (Batch 4).
 - **Symbol Table Soundness**: **VERIFIED**. Recent hardening of `SymbolTable::findInAnyScope` ensures soundness during the post-check phase. Batches 7, 12, 23, and 31 are PASSING.
 - **Standard Library**: **STRICTER**. Stricter tuple requirements and type inference changes for `catch` blocks continue to cause failures in Batches 44, 46, and 55.
 - **Example Programs**: **IMPROVED**. `func_ptr_return`, `days_in_month`, `mandelbrot`, and `lisp_interpreter_curr` are verified PASSING. `rogue_mud` fails to compile due to a legitimate lifetime bug.
 
 ---
 
-## Failure Analysis (32-bit)
+## Deep Dive: Batch Failures & Regressions
 
-### 1. Batch 2 (AST/Parser)
-- **Status**: **COMPILATION FAILED**
-- **Cause**: Parser constructor mismatch in `test_parser_lifecycle.cpp` due to Phase B memory optimizations (splitting arena into ast_arena and perm_arena).
-- **Conclusion**: Expectations need update to match the new `Parser` signature.
+### 1. Batch 4 (Lifetime Analyzer)
+- **Status**: **FAIL** (Regression)
+- **Analysis**: The `LifetimeAnalyzer` has become too conservative regarding function parameters.
+- **Cause**: In `src/bootstrap/lifetime_analyzer.cpp`, the `isLocalVariable` helper explicitly returns `false` for any symbol with `SYMBOL_FLAG_PARAM`. While parameters live in the caller's stack, taking their address (`&p`) or reassigning a parameter to point to a local variable (`p = &local`) and then returning it creates a dangling pointer.
+- **Regression Reason**: Earlier versions of the analyzer (or tests) may have treated parameters as locals for address-of purposes, or the tracking logic for `current_assignments_` was bypassed.
 
-### 2. Batch 4 (Lifetime Analyzer)
-- **Status**: **FAIL**
-- **Test**: `test_lifetime_analyzer_test`
-- **Cause**: Missing `ERR_LIFETIME_VIOLATION`. The analyzer fails to detect returning addresses of locals in specific cases.
-- **Conclusion**: Compiler regression in `LifetimeAnalyzer`.
+### 2. Batch 57 (Nested Anonymous Codegen)
+- **Status**: **FAIL** (Side Effect / Expectation Mismatch)
+- **Analysis**: The generated C code is structurally correct and C89-compliant, but the deterministic naming counters for anonymous structs/unions have shifted.
+- **Cause**: Recent Phase B memory optimizations and transitive alias resolution changes have altered the order or count of anonymous symbols registered in the `NameMangler`. For example, `Codegen_AnonymousStruct_Nested` now produces `zS_2_anon_1` instead of the expected `zS_3_anon_1`.
+- **Conclusion**: This is not a functional regression, but a side effect of improvement that requires updating the test expectation strings.
 
 ### 3. Batch 18 & 67 (Name Mangling)
-- **Status**: **FAIL**
-- **Cause**: Mismatches in deterministic mangling counters (e.g., `zF_1_foo` vs `zF_2_foo`).
-- **Conclusion**: Side effect of changes in symbol registration order or transitive alias resolution. Expectations need update.
+- **Status**: **FAIL** (Side Effect)
+- **Analysis**: Similar to Batch 57, these batches fail due to mismatches in counter-based mangled names (e.g., `zF_1_foo` vs `zF_2_foo`).
+- **Conclusion**: The code generation is valid, but the internal symbol registration sequence has changed.
 
-### 4. Batch 32 (Integration/Runner)
-- **Status**: **FAIL**
-- **Cause**: Environmental failures in the test runner. `build_target.sh` is not found in the runner's execution context.
-- **Conclusion**: Infrastructure issue.
-
-### 5. Batch 44, 46, 55 (Type System)
-- **Status**: **FAIL**
-- **Cause**: Type inference failures for `catch` and stricter tuple length checks for `std.debug.print`.
-- **Conclusion**: Mix of regression and need for updated expectations for stricter type checking.
-
-### 6. Batch 57 (Nested Codegen)
-- **Status**: **FAIL**
-- **Cause**: Codegen mismatch for nested structs/unions.
-- **Conclusion**: Minor regression in `CBackend` for deeply nested anonymous aggregates.
+### 4. Batch 44, 46, 55 (Type System & std.debug.print)
+- **Status**: **FAIL** (Intentional Hardening / Stricter Rules)
+- **Analysis**: These batches fail due to a mix of type inference failures in `catch` blocks and stricter tuple length checks in `std.debug.print`.
+- **Conclusion**: The compiler is now more "Zig-like" in its strictness, but the test suite expectations haven't been updated to match these new rules.
 
 ---
 
