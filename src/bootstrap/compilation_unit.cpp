@@ -1106,12 +1106,22 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
             progress = false;
             iterations++;
 #ifdef DEBUG
-            plat_printf_debug("  Phase 0.5 Iteration %d...\n", iterations);
+            char iter_buf[64];
+            plat_snprintf(iter_buf, sizeof(iter_buf), "  Phase 0.5 Iteration %d...\n", iterations);
+            plat_print_info(iter_buf);
 #endif
             for (size_t i = 0; i < pending.length(); ++i) {
                 Type* placeholder = pending[i].placeholder;
                 if (placeholder->kind == TYPE_PLACEHOLDER) {
                     const char* p_name = placeholder->as.placeholder.name;
+
+                    if (placeholder && placeholder->as.placeholder.name) {
+                        ASTVarDeclNode* vd = pending[i].decl_node->as.var_decl;
+                        plat_print_info("[PH_RESOLVE] vd=");
+                        plat_print_info(placeholder->as.placeholder.name);
+                        plat_print_info("\n");
+                    }
+
                     Type* resolved = checker.resolveNamedPlaceholder(placeholder);
                     if (resolved && resolved->kind != TYPE_PLACEHOLDER) {
 #ifdef DEBUG
@@ -1275,18 +1285,24 @@ bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
                 while (entry) {
                     const Symbol& sym = entry->symbol;
                     if (!sym.symbol_type) {
-                        plat_printf_debug("NULL type for symbol '%s' in module '%s'\n",
+                        char err_buf[256];
+                        plat_snprintf(err_buf, sizeof(err_buf), "NULL type for symbol '%s' in module '%s'\n",
                                     sym.name, mod->name);
+                        plat_print_info(err_buf);
                         plat_abort();
                     }
                     if (sym.symbol_type->kind == TYPE_UNDEFINED) {
-                        plat_printf_debug("Undefined type for symbol '%s' in module '%s'\n",
+                        char err_buf[256];
+                        plat_snprintf(err_buf, sizeof(err_buf), "Undefined type for symbol '%s' in module '%s'\n",
                                     sym.name, mod->name);
+                        plat_print_info(err_buf);
                         plat_abort();
                     }
                     if (sym.symbol_type->kind == TYPE_PLACEHOLDER) {
-                        plat_printf_debug("Unresolved placeholder type for symbol '%s' in module '%s'\n",
+                        char err_buf[256];
+                        plat_snprintf(err_buf, sizeof(err_buf), "Unresolved placeholder type for symbol '%s' in module '%s'\n",
                                     sym.name, mod->name);
+                        plat_print_info(err_buf);
                         plat_abort();
                     }
                     entry = entry->next;
