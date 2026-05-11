@@ -474,6 +474,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                     }
                 }
             }
+            registerAliasPlaceholderIfNeeded(node);
         }
 
     }
@@ -908,6 +909,64 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             unit_.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, ErrorHandler::getMessage(ERR_INVALID_OPERATION), "Unsupported unary operator.");
             return get_g_type_undefined();
     }
+}
+
+void TypeChecker::registerAliasPlaceholderIfNeeded(ASTNode* node) {
+    ASTVarDeclNode* vd = node->as.var_decl;
+    if (!vd->is_pub || !vd->is_const || vd->type || !vd->initializer) return;
+    if (!isTypeExpression(vd->initializer, unit_.getSymbolTable())) return;
+
+    Module* mod = unit_.getModule(unit_.getCurrentModule());
+    const char* canonical = mod ? mod->canonical_path : NULL;
+    const char* name = vd->name;
+
+    // Avoid duplicate
+    if (unit_.getTypeRegistry().find(canonical, name)) {
+        plat_printf_debug("[ALIAS_PLACEHOLDER] already exists: %s\n", name);
+        return;
+    }
+
+    // Create placeholder
+    Type* placeholder = (Type*)unit_.getArena().alloc(sizeof(Type));
+    plat_memset(placeholder, 0, sizeof(Type));
+    placeholder->kind = TYPE_PLACEHOLDER;
+    placeholder->as.placeholder.name = name;
+    placeholder->as.placeholder.decl_node = node;
+    placeholder->as.placeholder.module = mod;
+    placeholder->owner_module = mod;
+    placeholder->is_resolving = false;
+    placeholder->c_name = unit_.getNameMangler().mangleTypeName(name, mod);
+
+    unit_.getTypeRegistry().insert(canonical, name, placeholder);
+
+    PendingResolution pending;
+    pending.placeholder = placeholder;
+    pending.decl_node = node;
+    unit_.getPendingResolutions().append(pending);
+
+    // Update symbol table
+    Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(name);
+    if (sym) {
+        sym->symbol_type = placeholder;
+        sym->kind = SYMBOL_VARIABLE;
+        sym->flags |= SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0);
+    } else {
+        Symbol new_sym = SymbolBuilder(unit_.getArena())
+            .withName(name)
+            .withModule(unit_.getCurrentModule())
+            .ofType(SYMBOL_VARIABLE)
+            .withType(placeholder)
+            .atLocation(vd->name_loc)
+            .definedBy(vd)
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0))
+            .build();
+        unit_.getSymbolTable().insert(new_sym);
+    }
+
+    char log_buf[256];
+    plat_snprintf(log_buf, sizeof(log_buf), "[ALIAS_PLACEHOLDER] registered: %s (init type=%d)\n",
+                     name, (int)vd->initializer->type);
+    plat_print_info(log_buf);
 }
 
 Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
@@ -4770,7 +4829,19 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
             field_type = resolvePlaceholder(field_type);
         }
 
-        if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
+        if (!field_type || is_type_undefined(field_type)) {
+            plat_printf_debug("[STRUCT_FIELD_UNDEF] struct=%s, field=%s, type_node=%d, field_type=%p",
+                             struct_name ? struct_name : "(anon)",
+                             field_data->name ? field_data->name : "(anon)",
+                             (int)field_data->type->type,
+                             field_type);
+            if (field_type) {
+                plat_printf_debug(" (kind=%d)\n", (int)field_type->kind);
+            } else {
+                plat_printf_debug(" (NULL)\n");
+            }
+            return get_g_type_undefined();
+        }
 
         bool is_recursive_indirection = false;
         for (size_t k = 0; k < resolving_types_stack_.length(); ++k) {
