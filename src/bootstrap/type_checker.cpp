@@ -219,9 +219,6 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
         ASTNode* node = (*statements)[i];
         if (node->type == NODE_VAR_DECL) {
             ASTVarDeclNode* vd = node->as.var_decl;
-            plat_printf_debug("[PH_REG] Processing VarDecl '%s' is_pub=%d is_const=%d has_type=%d init_type=%d isTypeExpr=%d\n",
-                              vd->name, vd->is_pub, vd->is_const, vd->type != NULL, vd->initializer ? (int)vd->initializer->type : -1,
-                              vd->initializer ? isTypeExpression(vd->initializer, unit_.getSymbolTable()) : 0);
 
             bool is_type_init = false;
             if (vd->initializer) {
@@ -308,6 +305,8 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
 
                 if (sym) {
                     sym->symbol_type = placeholder;
+                        sym->kind = SYMBOL_VARIABLE;
+                        sym->flags |= SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST | (vd->is_pub ? SYMBOL_FLAG_PUB : 0);
                 } else {
                     Symbol new_sym = SymbolBuilder(unit_.getArena())
                         .withName(vd->name)
@@ -913,7 +912,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
 
 void TypeChecker::registerAliasPlaceholderIfNeeded(ASTNode* node) {
     ASTVarDeclNode* vd = node->as.var_decl;
-    if (!vd->is_pub || !vd->is_const || vd->type || !vd->initializer) return;
+    if (!vd->is_const || vd->type || !vd->initializer) return;
     if (!isTypeExpression(vd->initializer, unit_.getSymbolTable())) return;
 
     Module* mod = unit_.getModule(unit_.getCurrentModule());
@@ -963,10 +962,6 @@ void TypeChecker::registerAliasPlaceholderIfNeeded(ASTNode* node) {
         unit_.getSymbolTable().insert(new_sym);
     }
 
-    char log_buf[256];
-    plat_snprintf(log_buf, sizeof(log_buf), "[ALIAS_PLACEHOLDER] registered: %s (init type=%d)\n",
-                     name, (int)vd->initializer->type);
-    plat_print_info(log_buf);
 }
 
 Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
@@ -4829,19 +4824,7 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
             field_type = resolvePlaceholder(field_type);
         }
 
-        if (!field_type || is_type_undefined(field_type)) {
-            plat_printf_debug("[STRUCT_FIELD_UNDEF] struct=%s, field=%s, type_node=%d, field_type=%p",
-                             struct_name ? struct_name : "(anon)",
-                             field_data->name ? field_data->name : "(anon)",
-                             (int)field_data->type->type,
-                             field_type);
-            if (field_type) {
-                plat_printf_debug(" (kind=%d)\n", (int)field_type->kind);
-            } else {
-                plat_printf_debug(" (NULL)\n");
-            }
-            return get_g_type_undefined();
-        }
+        if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
         bool is_recursive_indirection = false;
         for (size_t k = 0; k < resolving_types_stack_.length(); ++k) {
