@@ -170,3 +170,22 @@ The systemic issue was resolved by applying three layers of hardening to ensure 
 
 ### Future Work
 While the immediate "NULL type" corruption is blocked, a complete audit of `SymbolBuilder` usages is recommended to ensure all symbols are created with at least `TYPE_UNDEFINED`. This will prevent reliance on the `Scope::insert` safety net.
+
+## 8. Deep Dive: Global Error Poisoning (rogue_mud)
+
+### Symptoms
+After resolving the NULL type corruption, `rogue_mud` continued to fail with `TYPE_UNDEFINED` for `res` in `sand.zig`. Detailed instrumentation revealed that despite operands being correctly resolved to `usize`, arithmetic operations like `(sand.pos + mask)` were returning `TYPE_UNDEFINED` without any logged reason.
+
+### Investigation Findings
+The investigation revealed a "poisoning" effect caused by the global `hasErrors()` flag in the `ErrorHandler`.
+
+1.  **Early Error**: An error occurs early in the compilation of `main.zig` at line 285: `fn broadcastOneClient(sock: net_mod.PlatSocket, ...)`. Here, `net_mod` is an `@import` alias. Because it's a global constant holding a module, it might be resolving in a way that the member access `net_mod.PlatSocket` fails initially.
+2.  **Poisoned Flag**: Once this error is reported, `unit_.getErrorHandler().hasErrors()` becomes true.
+3.  **Arithmetic Stall**: Many arithmetic and comparison helpers in `TypeChecker` (like `checkBinaryOperation`, `checkPointerArithmetic`, and `checkArithmeticWithLiteralPromotion`) contain a shortcut: `if (unit_.getErrorHandler().hasErrors()) return get_g_type_undefined();`.
+4.  **Cascading Undefined**: This causes `actual_align` in `sand.zig` to fail its `<` comparison, remaining `TYPE_UNDEFINED`. This in turn causes `mask`, `aligned_pos`, and finally `res` to remain `TYPE_UNDEFINED`, leading to the `[CRITICAL]` diagnostic abort.
+
+### Resolution Strategy
+To fix this, the compiler must be more resilient to independent errors:
+-   **Localize Error Impact**: Arithmetic operations should only return `UNDEFINED` if their *own* operands are faulty, not just because an unrelated error occurred elsewhere in the codebase.
+-   **Improve Import Alias Resolution**: Ensure `@import` aliases are fully recognized as `TYPE_MODULE` during all phases of member access resolution.
+-   **Diagnostic Visibility**: Ensure that when a critical resolution failure occurs, all previously queued errors are printed so the "poison" source is visible.
