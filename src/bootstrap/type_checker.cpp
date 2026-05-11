@@ -964,6 +964,16 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
  * @return The resulting Type*, or NULL if the operation is invalid.
  */
 Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc) {
+    if (unit_.getErrorHandler().hasErrors()) {
+        static bool logged = false;
+        if (!logged) {
+            plat_printf_debug("[ERROR_POISON] checkBinaryOperation line %d op=%s returning UNDEFINED due to previous error\n",
+                loc.line, getTokenSpelling(op));
+            unit_.getErrorHandler().printErrors();
+            logged = true;
+        }
+        return get_g_type_undefined();
+    }
     if (is_type_undefined(left_type) || is_type_undefined(right_type)) return get_g_type_undefined();
 
     /* Try literal promotion first for all operators that support it.
@@ -2453,6 +2463,7 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
                                     right->type, (void*)right->resolved_type,
                                     right->resolved_type ? (int)right->resolved_type->kind : -1
                                 );
+                                unit_.getErrorHandler().printErrors();
                                 abort();
                             }
                         }
@@ -4608,6 +4619,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                                             right->type, (void*)right->resolved_type,
                                             right->resolved_type ? (int)right->resolved_type->kind : -1
                                         );
+                                        unit_.getErrorHandler().printErrors();
                                         abort();
                                     }
                                 }
@@ -4627,6 +4639,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                                     right->type, (void*)right->resolved_type,
                                     right->resolved_type ? (int)right->resolved_type->kind : -1
                                 );
+                                unit_.getErrorHandler().printErrors();
                                 abort();
                             }
                         }
@@ -7081,6 +7094,9 @@ bool TypeChecker::areSamePointerTypeIgnoringConst(Type* a, Type* b) {
  * - Subtraction between compatible pointers yields an isize.
  */
 Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc) {
+    if (unit_.getErrorHandler().hasErrors()) {
+        return get_g_type_undefined();
+    }
     bool left_is_ptr = (left_type->kind == TYPE_POINTER);
     bool right_is_ptr = (right_type->kind == TYPE_POINTER);
 
@@ -7178,6 +7194,9 @@ Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* ri
 }
 
 Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, Zig0TokenType op) {
+    if (unit_.getErrorHandler().hasErrors()) {
+        return NULL;
+    }
     bool is_arithmetic_op = (op == TOKEN_PLUS || op == TOKEN_PLUSPERCENT ||
                              op == TOKEN_MINUS || op == TOKEN_MINUSPERCENT ||
                              op == TOKEN_STAR || op == TOKEN_STARPERCENT ||
