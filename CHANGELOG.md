@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] - "2-Propanol"
+
 ### Added
 - **Hardened Cross-Module Type Alias Resolution**: Resolved "Transitive Alias Blockades" by enhancing `isTypeExpression` to correctly identify `NODE_MEMBER_ACCESS` originating from types or modules.
 - **Systemic Symbol Table Stability**: Hardened `Scope::insert` to prevent overwriting valid symbol metadata with uninitialized `NULL` values during module-level updates.
