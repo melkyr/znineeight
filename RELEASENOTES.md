@@ -1,12 +1,12 @@
-# Z98 0.12.3 “Isophthalic trichloride” Release Notes
+# Z98 0.13.0 “2-Propanol” Release Notes
 
-We are proud to announce the release of Z98 version **0.12.3**, codenamed **“Isophthalic trichloride”**.
+We are proud to announce the release of Z98 version **0.13.0**, codenamed **“2-Propanol”**.
 
-Version 0.12.3 represents the most stable and robust version of the Z98 bootstrap compiler to date. This release focuses on "Hardening" the core semantic engine and implementing critical memory optimizations, ensuring stable multi-module compilation for large-scale projects like the stage 1 Zig compiler.
+Version 0.13.0 represents the most stable and robust version of the Z98 bootstrap compiler to date. This release focuses on "Hardening" the core semantic engine and implementing critical memory optimizations, ensuring stable multi-module compilation for large-scale projects like the stage 1 Zig compiler.
 
 ## 🚀 Memory Optimization Excellence
 
-Version 0.12.3 brings several critical memory optimizations that further solidify Z98's ability to run on 16MB-64MB Pentium I/II hardware.
+Version 0.13.0 brings several critical memory optimizations that further solidify Z98's ability to run on 16MB-64MB Pentium I/II hardware.
 - **Token Arena Reset**: The token arena is now reset immediately after parsing all modules. This frees approximately **1MB** of memory that is no longer needed during semantic analysis.
 - **Shared Emitter Buffer**: We've refactored the `C89Emitter` to use a single shared buffer across all generated files. This eliminates the 128KB-per-file static overhead, saving up to **2.8MB** in large projects.
 - **AST Block Reuse**: The `ControlFlowLifter` now reuses existing block nodes instead of cloning them during expression-to-statement transformation, reducing peak memory usage by approximately **0.5MB**.
