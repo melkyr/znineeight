@@ -4,8 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.12.3] - "Isophthalic trichloride"
-
 ### Added
 - **Hardened Cross-Module Type Alias Resolution**: Resolved "Transitive Alias Blockades" by enhancing `isTypeExpression` to correctly identify `NODE_MEMBER_ACCESS` originating from types or modules.
 - **Systemic Symbol Table Stability**: Hardened `Scope::insert` to prevent overwriting valid symbol metadata with uninitialized `NULL` values during module-level updates.
@@ -13,17 +11,9 @@ All notable changes to this project will be documented in this file.
 - **Static Analyzer Robustness**: Decoupled `LifetimeAnalyzer` and `NullPointerAnalyzer` from scope-based lookups during post-check phases; they now utilize the `getRootSymbol` helper for provenance tracking.
 - **Memory Safety**: Added proactive NULL guards in `TypeChecker::visitMemberAccess` and static analyzers to prevent crashes during analysis of incomplete or erroneous modules.
 - **Developer Experience**: Added permanent trace logging for symbol resolution and type-checking phases to assist in diagnosing complex cross-module visibility issues.
-
-## [0.12.2] - "Isophthalic dianhydride"
-
-### Added
 - **Canonical Module Identity**: Modules now use interned absolute paths for identity, resolving type visibility issues in large multi-module projects.
 - **Fixed-Point Placeholder Resolution**: Phase 0.5 now iterates until convergence (up to 10,000 passes) to handle deep transitive alias chains.
 - **Deep Alias Unwrapping**: Type constants are now deeply unwrapped during placeholder resolution to find concrete underlying types immediately.
-
-## [0.12.1] - "Isophthalic anhydride"
-
-### Added
 - **Aggregate Initializer Lifting**: Automatically decomposes struct/union/tuple literals in expression contexts into field assignments for C89 compatibility.
 - **Enhanced Tagged Union Coercion**: Support for returning naked tag literals from control-flow branches.
 
