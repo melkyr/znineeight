@@ -330,3 +330,9 @@ pub fn astStoreAddIdentifier(store: *AstStore, kind: AstKind, string_id: u32, sp
     u32ArrayListAppendInner(&store.identifiers.items, &store.identifiers.len, &store.identifiers.capacity, store.allocator, string_id);
     return astStoreAddNode(store, kind, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), id_idx);
 }
+
+pub fn astStoreAddFnProto(store: *AstStore, proto: FnProto) u32 {
+    var idx = @intCast(u32, store.fn_protos.len);
+    fnProtoArrayListAppendInner(&store.fn_protos.items, &store.fn_protos.len, &store.fn_protos.capacity, store.allocator, proto);
+    return idx;
+}
