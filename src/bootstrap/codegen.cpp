@@ -448,8 +448,16 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
             return;
         }
-        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable(module_name_))) {
             return;
+        }
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            auto* ma = decl->initializer->as.member_access;
+            if (ma && ma->base &&
+                (ma->base->type == NODE_IDENTIFIER ||
+                 ma->base->type == NODE_IMPORT_STMT)) {
+                return;
+            }
         }
     }
 
@@ -931,8 +939,17 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
             return;
         }
-        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable(module_name_))) {
             return;
+        }
+        // Skip const X = mod.Y or const X = @import("m").Y pattern
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            auto* ma = decl->initializer->as.member_access;
+            if (ma && ma->base &&
+                (ma->base->type == NODE_IDENTIFIER ||
+                 ma->base->type == NODE_IMPORT_STMT)) {
+                return;
+            }
         }
     }
 

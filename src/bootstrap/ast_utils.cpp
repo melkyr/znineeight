@@ -40,7 +40,8 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
             if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
                 if (sym->symbol_type &&
                     (sym->symbol_type->kind == TYPE_TYPE ||
-                     sym->symbol_type->kind == TYPE_MODULE))
+                     sym->symbol_type->kind == TYPE_MODULE ||
+                     sym->symbol_type->kind == TYPE_FUNCTION))
                     return true;
             }
             return false;
