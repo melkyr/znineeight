@@ -284,6 +284,10 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
     if (provenance && plat_strcmp(provenance, "<literal>") == 0) {
         return false;
     }
+    // Function-allocated (arena/heap) pointers are safe to return.
+    if (provenance && plat_strcmp(provenance, "<call-result>") == 0) {
+        return false;
+    }
 
     char base_name[256];
     const char* dot = plat_strchr(provenance, '.');
@@ -297,11 +301,19 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
         base_name[255] = '\0';
     }
 
+    // Compiler-generated temporaries in the provenance chain are safe.
+    if (base_name && plat_strncmp(base_name, "__tmp_", 6) == 0) return false;
+
     Symbol* sym = getRootSymbol(expr);
     if (!sym) return false;
 
     bool dangerous = false;
     if (isLocalVariable(sym)) {
+        // Compiler-generated temporaries are always safe to return —
+        // they hold intermediate results from function calls, catches, etc.
+        if (sym->name && plat_strncmp(sym->name, "__tmp_", 6) == 0) {
+            return false;
+        }
         // Direct address-of a local variable or parameter is always dangerous.
         if (expr->type == NODE_UNARY_OP && expr->as.unary_op.op == TOKEN_AMPERSAND) {
             dangerous = true;
@@ -339,6 +351,13 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
     // 0. Explicitly handle NULL to clear assignments
     if (rvalue->type == NODE_NULL_LITERAL) {
         points_to_name = NULL;
+    } else
+    // 0b. Arena/heap pointers from functions wrapped in catch/orelse
+    if (rvalue->type == NODE_CATCH_EXPR || rvalue->type == NODE_ORELSE_EXPR) {
+        const char* inner_origin = getPointerOrigin(rvalue);
+        if (inner_origin && plat_strcmp(inner_origin, "<call-result>") == 0) {
+            points_to_name = "<call-result>";
+        }
     } else
     // 1. Resolve aliases: if rvalue is an identifier, check if it's already a tracked pointer
     if (rvalue->type == NODE_IDENTIFIER) {
@@ -518,6 +537,21 @@ const char* LifetimeAnalyzer::getPointerOrigin(ASTNode* expr) {
             }
             break;
         }
+
+        case NODE_CATCH_EXPR:
+            if (expr->as.catch_expr->payload) {
+                return getPointerOrigin(expr->as.catch_expr->payload);
+            }
+            break;
+
+        case NODE_ORELSE_EXPR:
+            if (expr->as.orelse_expr->payload) {
+                return getPointerOrigin(expr->as.orelse_expr->payload);
+            }
+            break;
+
+        case NODE_FUNCTION_CALL:
+            return "<call-result>";
 
         default:
             break;
