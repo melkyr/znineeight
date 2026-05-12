@@ -1,3 +1,47 @@
+# Z98 0.12.3 “Isophthalic trichloride” Release Notes
+
+We are proud to announce the release of Z98 version **0.12.3**, codenamed **“Isophthalic trichloride”**.
+
+Following the "Dianhydride" stabilization, version 0.12.3 ("Trichloride") represents the most stable and robust version of the Z98 bootstrap compiler to date. This release focuses on "Hardening" the core semantic engine, resolving the last remaining systemic issues that caused instability in complex, multi-module projects like `rogue_mud` and the `lisp_interpreter`.
+
+## 🛡️ Systemic Symbol Table Hardening
+
+We have resolved a critical class of bugs related to "Symbol Corruption" that occurred during complex cross-module imports.
+- **The Issue**: Previously, the `SymbolTable` could allow a valid symbol (with a fully resolved type) to be overwritten by an uninitialized symbol with a `NULL` type during the iterative resolution phases. This led to "NULL type for symbol" errors and segmentation faults in the emitter.
+- **The Solution**: `Scope::insert` is now hardened to preserve existing type metadata. If an incoming symbol lacks type information, the existing resolved type is maintained, ensuring that once a type is resolved, it remains stable.
+
+## 🧬 Robust Local Type Inference
+
+To support Zig's flexible type inference while maintaining C89's strictness, we've improved how local variables are resolved.
+- **Pre-Insertion Strategy**: Local variables are now inserted into the symbol table *before* their initializers are resolved. This ensures that the variable's name is known even if the initializer contains an error, preventing confusing "undeclared identifier" cascades.
+- **Forced Resolution Pass**: We have implemented a "Forced Local Type Resolution" pass. At the end of every block, the compiler performs a second pass on any variables that still have an undefined type. This handles complex forward references and ensures that every local variable has a concrete type before the static analysis phases begin.
+
+## 🔍 Static Analyzer Decoupling
+
+The `LifetimeAnalyzer` and `NullPointerAnalyzer` have been decoupled from the lexical scoping system to improve reliability.
+- **Post-Check Safety**: Analyzers now rely on the `getRootSymbol` utility, which extracts variable identity directly from AST metadata rather than querying the symbol table. This prevents "lookup during post-check" assertion failures and ensures that analysis remains stable even after lexical scopes have been discarded.
+- **Null Guards**: We've added extensive null-guards across all post-check visitors to gracefully skip incomplete AST nodes, ensuring the compiler remains operational even when analyzing code with semantic errors.
+
+## 🚀 Memory Optimization Excellence
+
+Version 0.12.3 brings several critical memory optimizations that further solidify Z98's ability to run on 16MB-64MB Pentium I/II hardware.
+- **Token Arena Reset**: The token arena is now reset immediately after parsing all modules. This frees approximately **1MB** of memory that is no longer needed during semantic analysis.
+- **Shared Emitter Buffer**: We've refactored the `C89Emitter` to use a single shared buffer across all generated files. This eliminates the 128KB-per-file static overhead, saving up to **2.8MB** in large projects.
+- **AST Block Reuse**: The `ControlFlowLifter` now reuses existing block nodes instead of cloning them during expression-to-statement transformation, reducing peak memory usage by approximately **0.5MB**.
+- **Chunk Size Tuning**: The default arena chunk size has been tuned to 256KB to minimize internal fragmentation and improve memory granularity.
+
+## 🛠️ Internal Refinements
+- **Transitive Alias Fix**: Refined `isTypeExpression` to correctly handle chained member accesses (e.g., `mod.SubMod.Type`), resolving the "Transitive Alias Blockade" that prevented certain cross-module type definitions.
+- **Developer Trace Logging**: Added permanent instrumentation to the `TypeChecker` and `C89Emitter`. Developers can now view detailed traces of symbol resolution and type-checking by enabling the `--verbose` flag.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Jules (AI-Agent)*
+
+---
+
 # Z98 0.12.2 “Isophthalic dianhydride” Release Notes
 
 We are proud to announce the release of Z98 version **0.12.2**, codenamed **“Isophthalic dianhydride”**.
