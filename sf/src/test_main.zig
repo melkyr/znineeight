@@ -6,6 +6,8 @@ const token_mod = @import("token.zig");
 const lexer_mod = @import("lexer.zig");
 const pal = @import("pal.zig");
 const ast_mod = @import("ast.zig");
+const ast_tests = @import("tests/ast_tests.zig");
+const parser_tests = @import("tests/parser_tests.zig");
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
@@ -21,9 +23,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     const m1: []const u8 = "\n";
     pal.stderr_write(m1);
 
-    const ast_tests = @import("tests/ast_tests.zig");
     ast_tests.runAstUnitTests();
-    const parser_tests = @import("tests/parser_tests.zig");
     parser_tests.runParserUnitTests();
     const m2: []const u8 = "All ast/parser tests passed.\n";
     pal.stderr_write(m2);

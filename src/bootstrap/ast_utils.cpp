@@ -17,6 +17,7 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
         case NODE_OPTIONAL_TYPE:
         case NODE_ERROR_SET_DEFINITION:
         case NODE_ERROR_SET_MERGE:
+        case NODE_IMPORT_STMT:
             return true;
 
         case NODE_IDENTIFIER: {

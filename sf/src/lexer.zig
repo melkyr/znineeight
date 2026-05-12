@@ -13,6 +13,7 @@ const U8ArrayList = ga_mod.U8ArrayList;
 const pal = @import("pal.zig");
 const interner_mod = @import("string_interner.zig");
 const sm_mod = @import("source_manager.zig");
+const lexer_tests = @import("tests/lexer_tests.zig");
 
 pub const Lexer = struct {
     source: []const u8,
@@ -164,7 +165,7 @@ fn lexerPeek(self: *Lexer) u8 {
 }
 
 fn lexerPeekN(self: *Lexer, n: usize) u8 {
-    var idx = self.pos + n;
+    var idx: usize = self.pos + n;
     if (idx >= self.source.len) return @intCast(u8, 0);
     return self.source[idx];
 }
@@ -224,7 +225,7 @@ fn lexerSkipWSC(self: *Lexer) void {
 }
 
 fn lexerMakeToken(self: *Lexer, kind: TokenKind, start: usize, value: TokenValue) Token {
-    var span_len = @intCast(u16, self.pos - start);
+    var span_len: u16 = @intCast(u16, self.pos - start);
     return Token{
         .kind = kind,
         .span_start = @intCast(u32, start),
@@ -646,7 +647,7 @@ fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
             idx -= 1;
         }
     }
-    var start = idx + 1;
+    var start: usize = idx + 1;
     return buf[start..buf_len];
 }
 
@@ -662,7 +663,6 @@ pub fn lexerRunAllTests() void {
     lexerTestIdentifierKeywords();
     lexerTestBuiltinIdentifier();
     lexerTestDiagnostics();
-    const lexer_tests = @import("tests/lexer_tests.zig");
     lexer_tests.runLexerUnitTests();
     const msg2: []const u8 = "All lexer tests passed.\n";
     pal.stderr_write(msg2);

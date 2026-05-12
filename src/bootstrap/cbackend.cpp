@@ -67,6 +67,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open .c file for writing");
         return false;
     }
+    unit_.setCurrentModule(module->name);
 
     emitter.emitPrologue();
 

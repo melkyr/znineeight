@@ -75,7 +75,7 @@ fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
             idx -= 1;
         }
     }
-    var start = idx + 1;
+    var start: usize = idx + 1;
     return buf[start..buf_len];
 }
 
@@ -105,7 +105,7 @@ fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
             idx -= 1;
         }
     }
-    var start = idx + 1;
+    var start: usize = idx + 1;
     return buf[start..buf_len];
 }
 

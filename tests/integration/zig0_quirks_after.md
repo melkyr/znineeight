@@ -278,3 +278,47 @@ table (unit_.getSymbolTable()):
 Module-specific names like `alloc_mod` are NOT in the global table — they
 live in each module's local scope. The fix requires passing the module-level
 symbol table to `isTypeExpression` from both call sites.
+
+### Fix D: Engineer's fix (dd040ae3)
+**File:** `ast_utils.cpp` — multiple changes
+**Change:** NULL symbol fallback + warning + expanded CONST_VARIABLE checks
+**Result:** Assertion crash fixed (replaced with warning). But `isTypeExpression`
+still returns false for `mod.X` patterns when called with global symbol table.
+Same 20+ "global variable must have constant initializer" errors persist.
+**FAIL** — root cause (wrong symbol table) not addressed.
+
+## Summary for Engineer
+
+The assertion crash is fixed (commit dd040ae3), but the deeper issue remains:
+
+```
+codegen.cpp:451  →  isTypeExpression(init, unit_.getSymbolTable())
+```
+
+`unit_.getSymbolTable()` returns the GLOBAL symbol table. Module-level
+declarations like `alloc_mod` (a `const` module import) are NOT in it.
+Two fixes needed:
+
+1. **codegen.cpp:451** — pass the DECLARING MODULE's symbol table:
+   `getModule(decl->module_name)->symbols->getTable()`
+
+2. **type_checker.cpp:916** — same fix for `registerAliasPlaceholderIfNeeded`
+
+## Root Cause (per the engineer)
+
+`isTypeExpression` is called with the GLOBAL symbol table
+(`unit_.getSymbolTable()`), but the per-module arena strategy (Phase A, commit
+`da46cef`) moved each module's symbol table into its OWN arena. Module-level
+names like `alloc_mod` no longer exist in the global table — they live in
+`mod->symbols` which is per-module arena-allocated.
+
+**Two call sites need per-module symbol tables:**
+
+| Call site | Module source | Fix |
+|-----------|--------------|-----|
+| `codegen.cpp:451` | `decl->module_name` | `unit_.getSymbolTable(decl->module_name)` |
+| `type_checker.cpp:916` | current module context | `unit_.getSymbolTable(unit_.getCurrentModule())` |
+
+`CompilationUnit::getSymbolTable(const char* module_name)` already exists
+(compilation_unit.hpp:90) and accepts an optional module name. When called
+with a module name, it should return that module's symbol table.
