@@ -32,21 +32,43 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
         }
         case NODE_MEMBER_ACCESS: {
             const ASTMemberAccessNode* ma = node->as.member_access;
-            // 1. If the member points directly to a type symbol
-            if (ma && ma->symbol) {
-                Symbol* sym = ma->symbol;
-                if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE)
+            if (!ma || !ma->base) return false;
+
+            // Recursively check if the base is a type expression.
+            // Handles chaining: Module.Type.Nested, (Type).Field, etc.
+            if (ma->base->type == NODE_IDENTIFIER) {
+                // Identifier base: look at its symbol.
+                Z98_ASSERT(ma->base->as.identifier.symbol != NULL);
+                Symbol* base_sym = ma->base->as.identifier.symbol;
+                if (base_sym->kind == SYMBOL_TYPE ||
+                    base_sym->kind == SYMBOL_UNION_TYPE ||
+                    base_sym->kind == SYMBOL_MODULE) {
                     return true;
+                }
+            } else if (ma->base->type == NODE_TYPE_NAME ||
+                       ma->base->type == NODE_POINTER_TYPE ||
+                       ma->base->type == NODE_ARRAY_TYPE ||
+                       ma->base->type == NODE_OPTIONAL_TYPE ||
+                       ma->base->type == NODE_ERROR_UNION_TYPE ||
+                       ma->base->type == NODE_STRUCT_DECL ||
+                       ma->base->type == NODE_ENUM_DECL ||
+                       ma->base->type == NODE_UNION_DECL) {
+                // Base is a direct type expression.
+                return true;
+            } else if (ma->base->type == NODE_PAREN_EXPR) {
+                // Parentheses: (Type).Field
+                return isTypeExpression(ma->base->as.paren_expr.expr, symbols);
+            } else if (ma->base->type == NODE_MEMBER_ACCESS) {
+                // Chained access: a.b.c
+                return isTypeExpression(ma->base, symbols);
+            } else if (ma->base->type == NODE_FUNCTION_CALL) {
+                // Example: makeFoo().Type – extremely rare, but handle by checking
+                // if the resolved type of the call is TYPE_TYPE.
+                Type* resolved = ma->base->resolved_type;
+                if (resolved && resolved->kind == TYPE_TYPE) return true;
             }
-            // 2. If the whole expression resolved to an aggregate type
-            if (node->resolved_type) {
-                if (node->resolved_type->kind == TYPE_STRUCT  ||
-                    node->resolved_type->kind == TYPE_UNION   ||
-                    node->resolved_type->kind == TYPE_ENUM    ||
-                    node->resolved_type->kind == TYPE_TAGGED_UNION ||
-                    node->resolved_type->kind == TYPE_ERROR_SET)
-                    return true;
-            }
+            // Otherwise (e.g., ma->base is an expression that yields a value),
+            // this is NOT a type expression.
             return false;
         }
         default:
