@@ -1,6 +1,8 @@
 #include "ast_utils.hpp"
 #include "symbol_table.hpp"
 #include "type_system.hpp"
+#include "logger.hpp"
+#include "platform.hpp"
 
 bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
     if (!node) return false;
@@ -16,61 +18,76 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
         case NODE_ERROR_SET_DEFINITION:
         case NODE_ERROR_SET_MERGE:
             return true;
+
         case NODE_IDENTIFIER: {
-            // Check builtin types first
-            if (resolvePrimitiveTypeName(node->as.identifier.name)) {
+            // built‑in types first
+            if (resolvePrimitiveTypeName(node->as.identifier.name))
                 return true;
-            }
-            // Then check symbol table
-            Symbol* sym = symbols.lookup(node->as.identifier.name);
+
+            // Use linked symbol if available (especially important for post-check phases)
+            Symbol* sym = node->as.identifier.symbol;
+            if (!sym) sym = symbols.lookup(node->as.identifier.name);
             if (!sym) return false;
-            if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) return true;
+
+            // Direct type / module references
+            if (sym->kind == SYMBOL_TYPE ||
+                sym->kind == SYMBOL_UNION_TYPE ||
+                sym->kind == SYMBOL_MODULE)
+                return true;
+
+            // const variables that hold a type or module
             if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
-                if (sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE) return true;
+                if (sym->symbol_type &&
+                    (sym->symbol_type->kind == TYPE_TYPE ||
+                     sym->symbol_type->kind == TYPE_MODULE))
+                    return true;
             }
             return false;
         }
+
         case NODE_MEMBER_ACCESS: {
             const ASTMemberAccessNode* ma = node->as.member_access;
             if (!ma || !ma->base) return false;
 
-            // Recursively check if the base is a type expression.
-            // Handles chaining: Module.Type.Nested, (Type).Field, etc.
-            if (ma->base->type == NODE_IDENTIFIER) {
-                // Identifier base: look at its symbol.
-                Z98_ASSERT(ma->base->as.identifier.symbol != NULL);
-                Symbol* base_sym = ma->base->as.identifier.symbol;
-                if (base_sym->kind == SYMBOL_TYPE ||
-                    base_sym->kind == SYMBOL_UNION_TYPE ||
-                    base_sym->kind == SYMBOL_MODULE) {
-                    return true;
+            if (ma->symbol == NULL) {
+                Logger* logger = plat_get_logger();
+                if (logger) {
+                    logger->logf(LOG_WARNING, "[AST_UTILS] Warning: NULL symbol in member access at %s:%d:%d\n",
+                                 ma->field_name, node->loc.line, node->loc.column);
                 }
-            } else if (ma->base->type == NODE_TYPE_NAME ||
-                       ma->base->type == NODE_POINTER_TYPE ||
-                       ma->base->type == NODE_ARRAY_TYPE ||
-                       ma->base->type == NODE_OPTIONAL_TYPE ||
-                       ma->base->type == NODE_ERROR_UNION_TYPE ||
-                       ma->base->type == NODE_STRUCT_DECL ||
-                       ma->base->type == NODE_ENUM_DECL ||
-                       ma->base->type == NODE_UNION_DECL) {
-                // Base is a direct type expression.
-                return true;
-            } else if (ma->base->type == NODE_PAREN_EXPR) {
-                // Parentheses: (Type).Field
-                return isTypeExpression(ma->base->as.paren_expr.expr, symbols);
-            } else if (ma->base->type == NODE_MEMBER_ACCESS) {
-                // Chained access: a.b.c
-                return isTypeExpression(ma->base, symbols);
-            } else if (ma->base->type == NODE_FUNCTION_CALL) {
-                // Example: makeFoo().Type – extremely rare, but handle by checking
-                // if the resolved type of the call is TYPE_TYPE.
-                Type* resolved = ma->base->resolved_type;
-                if (resolved && resolved->kind == TYPE_TYPE) return true;
             }
-            // Otherwise (e.g., ma->base is an expression that yields a value),
-            // this is NOT a type expression.
+
+            // @import("…").Field – treat as type if field is a type/module
+            if (ma->base->type == NODE_IMPORT_STMT) {
+                if (ma->symbol &&
+                    (ma->symbol->kind == SYMBOL_TYPE ||
+                     ma->symbol->kind == SYMBOL_UNION_TYPE ||
+                     ma->symbol->kind == SYMBOL_MODULE))
+                    return true;
+                return false;
+            }
+
+            // For all other bases: base itself must be a type expression
+            if (!isTypeExpression(ma->base, symbols))
+                return false;
+
+            // The field must be a type or module
+            if (ma->symbol &&
+                (ma->symbol->kind == SYMBOL_TYPE ||
+                 ma->symbol->kind == SYMBOL_UNION_TYPE ||
+                 ma->symbol->kind == SYMBOL_MODULE))
+                return true;
+
             return false;
         }
+
+        case NODE_PAREN_EXPR:
+            return isTypeExpression(node->as.paren_expr.expr, symbols);
+
+        case NODE_FUNCTION_CALL:
+            // Function calls are values, not types.
+            return false;
+
         default:
             return false;
     }
