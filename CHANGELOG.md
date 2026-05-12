@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.3] - "Isophthalic trichloride"
+
+### Added
+- **Hardened Cross-Module Type Alias Resolution**: Resolved "Transitive Alias Blockades" by enhancing `isTypeExpression` to correctly identify `NODE_MEMBER_ACCESS` originating from types or modules.
+- **Systemic Symbol Table Stability**: Hardened `Scope::insert` to prevent overwriting valid symbol metadata with uninitialized `NULL` values during module-level updates.
+- **Forced Local Type Resolution**: Implemented a mandatory second-pass resolution for local variables with inferred types (`TYPE_UNDEFINED`) at the end of block visitation.
+- **Static Analyzer Robustness**: Decoupled `LifetimeAnalyzer` and `NullPointerAnalyzer` from scope-based lookups during post-check phases; they now utilize the `getRootSymbol` helper for provenance tracking.
+- **Memory Safety**: Added proactive NULL guards in `TypeChecker::visitMemberAccess` and static analyzers to prevent crashes during analysis of incomplete or erroneous modules.
+- **Developer Experience**: Added permanent trace logging for symbol resolution and type-checking phases to assist in diagnosing complex cross-module visibility issues.
+
 ## [0.12.2] - "Isophthalic dianhydride"
 
 ### Added

@@ -90,3 +90,6 @@ zig0.new
 package.json
 sf/build/*
 out/*
+sf_out/*
+repro_out/*
+out_*/
