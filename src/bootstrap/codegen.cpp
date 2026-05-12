@@ -452,11 +452,17 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
             return;
         }
         if (decl->initializer->type == NODE_MEMBER_ACCESS) {
-            auto* ma = decl->initializer->as.member_access;
-            if (ma && ma->base &&
-                (ma->base->type == NODE_IDENTIFIER ||
-                 ma->base->type == NODE_IMPORT_STMT)) {
-                return;
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return;
+                    if (sym->kind == SYMBOL_MODULE) return;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return;
+                }
             }
         }
     }
@@ -944,11 +950,17 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
         }
         // Skip const X = mod.Y or const X = @import("m").Y pattern
         if (decl->initializer->type == NODE_MEMBER_ACCESS) {
-            auto* ma = decl->initializer->as.member_access;
-            if (ma && ma->base &&
-                (ma->base->type == NODE_IDENTIFIER ||
-                 ma->base->type == NODE_IMPORT_STMT)) {
-                return;
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return;
+                    if (sym->kind == SYMBOL_MODULE) return;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return;
+                }
             }
         }
     }
