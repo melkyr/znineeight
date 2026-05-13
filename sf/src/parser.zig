@@ -42,6 +42,7 @@ pub const Parser = struct {
     case_buf_capacity: usize,
     builtin_import_id: u32,
     catch_capture: u32,
+    expr_depth: u32,
 };
 
 pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Parser {
@@ -66,6 +67,7 @@ pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, i
         .case_buf_len = @intCast(usize, 0),
         .case_buf_capacity = @intCast(usize, 0),
         .catch_capture = @intCast(u32, 0),
+        .expr_depth = @intCast(u32, 0),
         .builtin_import_id = import_id,
     };
 }
@@ -122,6 +124,12 @@ pub fn parserSynchronize(self: *Parser) void {
 }
 
 pub fn parserParseExprPrec(self: *Parser, min_prec: Prec) ParserError!u32 {
+    self.expr_depth += 1;
+    if (self.expr_depth > 12) {
+        var msg: []const u8 = "max expression recursion depth exceeded";
+        @panic(msg);
+    }
+    defer self.expr_depth -= 1;
     var lhs = try parserParsePrimary(self);
     lhs = try parserParsePostfixChain(self, lhs);
 
@@ -517,9 +525,9 @@ fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
 fn parserParseTryExpr(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     var inner = try parserParseExprPrec(self, Prec.prefix);
-    var end = kw.span_start + @intCast(u32, kw.span_len);
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.try_expr, 0,
-        kw.span_start, end, inner, 0, 0, 0);
+        kw.span_start, end_pos, inner, 0, 0, 0);
 }
 
 fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
@@ -554,8 +562,8 @@ fn parserParseEnumLiteral(self: *Parser) ParserError!u32 {
     var name_tok = try parserExpect(self, TokenKind.identifier);
     var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
     var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
-    var end = name_tok.span_start + @intCast(u32, name_tok.span_len);
-    return ast_mod.astStoreAddIdentifier(self.store, AstKind.enum_literal, name_id, dot.span_start, end);
+    var end_pos: u32 = name_tok.span_start + @intCast(u32, name_tok.span_len);
+    return ast_mod.astStoreAddIdentifier(self.store, AstKind.enum_literal, name_id, dot.span_start, end_pos);
 }
 
 fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {

@@ -11,10 +11,11 @@ const pal = @import("../pal.zig");
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
-    ast_tests.runAstUnitTests();
+    parser_tests.runErrRecoveryTests();
     var m: []const u8 = "\n";
     pal.stderr_write(m);
-    parser_tests.runParserUnitTests();
-    var ok: []const u8 = "Parser tests passed.\n";
+    ast_tests.runAstUnitTests();
+    pal.stderr_write(m);
+    var ok: []const u8 = "Err recovery tests passed.\n";
     pal.stderr_write(ok);
 }

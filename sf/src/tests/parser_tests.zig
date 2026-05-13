@@ -10,6 +10,7 @@ const interner_mod = @import("../string_interner.zig");
 const sm_mod = @import("../source_manager.zig");
 const diag_mod = @import("../diagnostics.zig");
 const lexer_mod = @import("../lexer.zig");
+const AstStore = @import("../ast.zig").AstStore;
 
 fn assertEqU32(actual: u32, expected: u32) void {
     if (actual != expected) @panic("assertEqU32 failed");
@@ -815,4 +816,230 @@ fn testLabeledBlockExpr() void {
     var node_idx = parser_mod.parserParsePrimary(&p) catch unreachable;
     var node = store.nodes.items[node_idx];
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.labeled_stmt)));
+}
+pub fn runErrRecoveryTests() void {
+    testErrNoSemicolonBaseline();
+    testErrMissingSemicolon();
+    testErrMissingSemicolonInBlock();
+    testErrMultipleErrors();
+    testErrRecoveryKeepsValid();
+}
+
+fn countModuleErrs(store: *AstStore, root: u32) u32 {
+    var node = store.nodes.items[root];
+    var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+    var count: u32 = 0;
+    var i: usize = 0;
+    while (i < ec.len) {
+        var child = store.nodes.items[ec[i]];
+        if (@enumToInt(child.kind) == @enumToInt(AstKind.err)) count += 1;
+        i += 1;
+    }
+    return count;
+}
+
+fn testErrNoSemicolonBaseline() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var y_s: []const u8 = "y";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var yi = interner_mod.stringInternerIntern(&in_, y_s);
+    var tk: [11]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[2] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 10), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 42) } };
+    tk[4] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 12), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.kw_var, .span_start = @intCast(u32, 14), .span_len = @intCast(u16, 3), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[6] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 18), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = yi } };
+    tk[7] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 20), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[8] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 22), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 99) } };
+    tk[9] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 24), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[10] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 26), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "const x = 42; var y = 99;";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 0));
+}
+
+fn testErrMissingSemicolon() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var y_s: []const u8 = "y";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var yi = interner_mod.stringInternerIntern(&in_, y_s);
+    var tk: [10]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[2] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 10), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 42) } };
+    tk[4] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 13), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 19), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = yi } };
+    tk[6] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 21), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[7] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 23), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 99) } };
+    tk[8] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 25), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[9] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 26), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "const x = 42 const y = 99;";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testErrMissingSemicolonInBlock() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var tk: [10]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_fn, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 3), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[2] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 4), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 5), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[4] = Token{ .kind = TokenKind.lbrace, .span_start = @intCast(u32, 7), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 9), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[6] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 15), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[7] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 17), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[8] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 19), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 42) } };
+    tk[9] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 22), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "fn x() { const x = 42 }";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testErrNumberInFnName() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var tk: [7]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_fn, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 3), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 42) } };
+    tk[2] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 5), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[4] = Token{ .kind = TokenKind.lbrace, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.rbrace, .span_start = @intCast(u32, 9), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[6] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 11), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "fn 42() {}";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testErrEmptyProngBody() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var tk: [9]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_switch, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 6), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 7), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[2] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[3] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 9), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[4] = Token{ .kind = TokenKind.lbrace, .span_start = @intCast(u32, 11), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 13), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 1) } };
+    tk[6] = Token{ .kind = TokenKind.fat_arrow, .span_start = @intCast(u32, 15), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[7] = Token{ .kind = TokenKind.rbrace, .span_start = @intCast(u32, 18), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[8] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 20), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "switch (x) { 1 => }";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testErrMultipleErrors() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var y_s: []const u8 = "y";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var yi = interner_mod.stringInternerIntern(&in_, y_s);
+    var tk: [8]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[2] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 10), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[4] = Token{ .kind = TokenKind.kw_var, .span_start = @intCast(u32, 12), .span_len = @intCast(u16, 3), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 16), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = yi } };
+    tk[6] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 18), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[7] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 20), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "const x = ; var y = ;";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 2));
+}
+fn testErrRecoveryKeepsValid() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var bad_s: []const u8 = "bad";
+    var ok_s: []const u8 = "ok";
+    var bi = interner_mod.stringInternerIntern(&in_, bad_s);
+    var oi = interner_mod.stringInternerIntern(&in_, ok_s);
+    var tk: [11]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 3), .value = TokenValue{ .string_id = bi } };
+    tk[2] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 10), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.at_sign, .span_start = @intCast(u32, 12), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[4] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 13), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 15), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[6] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 21), .span_len = @intCast(u16, 2), .value = TokenValue{ .string_id = oi } };
+    tk[7] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 24), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[8] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 26), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 42) } };
+    tk[9] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 28), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[10] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 29), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "const bad = @; const ok = 42;";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testErrRecoveryExpr() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var bad_s: []const u8 = "bad";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var bi = interner_mod.stringInternerIntern(&in_, bad_s);
+    var tk: [10]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.kw_const, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 5), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[2] = Token{ .kind = TokenKind.eq, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 10), .span_len = @intCast(u16, 3), .value = TokenValue{ .string_id = bi } };
+    tk[4] = Token{ .kind = TokenKind.plus, .span_start = @intCast(u32, 14), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.at_sign, .span_start = @intCast(u32, 16), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[6] = Token{ .kind = TokenKind.plus, .span_start = @intCast(u32, 18), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[7] = Token{ .kind = TokenKind.integer_literal, .span_start = @intCast(u32, 20), .span_len = @intCast(u16, 2), .value = TokenValue{ .int_val = @intCast(u64, 42) } };
+    tk[8] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 22), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[9] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 24), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "const x = bad + @ + 42;";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
 }

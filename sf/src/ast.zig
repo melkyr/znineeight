@@ -366,6 +366,7 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
     while (sp > 0) {
         sp -= 1;
         var node_idx = stack[sp];
+        if (node_idx == 0) continue;
         var node = store.nodes.items[node_idx];
         callback(store, node_idx);
         if (nodeHasExtraChildren(node.kind) and node.payload != 0) {
@@ -381,4 +382,16 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
         if (node.child_1 != 0) { stack[sp] = node.child_1; sp += 1; }
         if (node.child_0 != 0) { stack[sp] = node.child_0; sp += 1; }
     }
+}
+
+pub fn astStoreComputeMemory(store: *AstStore) u64 {
+    var total: u64 = 0;
+    total += @intCast(u64, store.nodes.len) * @sizeOf(AstNode);
+    total += @intCast(u64, store.extra_children.len) * @sizeOf(u32);
+    total += @intCast(u64, store.identifiers.len) * @sizeOf(u32);
+    total += @intCast(u64, store.int_values.len) * @sizeOf(u64);
+    total += @intCast(u64, store.float_values.len) * @sizeOf(f64);
+    total += @intCast(u64, store.string_values.len) * @sizeOf(u32);
+    total += @intCast(u64, store.fn_protos.len) * @sizeOf(FnProto);
+    return total;
 }

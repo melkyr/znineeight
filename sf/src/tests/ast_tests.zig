@@ -31,6 +31,10 @@ pub fn runAstUnitTests() void {
     testNodeHasExtraChildren();
     testVisitPreOrder();
     testVisitOrder();
+    testValidityValid();
+    testValidityBadChild();
+    testValidityBadPayload();
+    testAstMemoryBudget();
     //testVisitCombined();
     //testVisitDeep();
     //testVisitLargeExtra();
@@ -212,4 +216,79 @@ fn testVisitOrder() void {
     assertEqU32(g_visit_tracker[1], child_a);
     assertEqU32(g_visit_tracker[2], child_b);
     assertEqU32(g_visit_tracker[3], child_c);
+}
+
+var g_validate_ok: bool = true;
+
+fn validateNode(store: *AstStore, node_idx: u32) void {
+    if (!g_validate_ok) return;
+    if (@intCast(usize, node_idx) >= store.nodes.len) { g_validate_ok = false; return; }
+    var node = store.nodes.items[node_idx];
+    if (node.child_0 != 0 and @intCast(usize, node.child_0) >= store.nodes.len) { g_validate_ok = false; return; }
+    if (node.child_1 != 0 and @intCast(usize, node.child_1) >= store.nodes.len) { g_validate_ok = false; return; }
+    if (node.child_2 != 0 and @intCast(usize, node.child_2) >= store.nodes.len) { g_validate_ok = false; return; }
+    if (!ast_mod.nodeHasExtraChildren(node.kind) and node.payload != 0) {
+        if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
+            if (@intCast(usize, node.payload) >= store.int_values.len) { g_validate_ok = false; return; }
+        } else if (node.kind == AstKind.float_literal) {
+            if (@intCast(usize, node.payload) >= store.float_values.len) { g_validate_ok = false; return; }
+        }
+    }
+}
+
+fn astStoreValidate(store: *AstStore, root: u32) bool {
+    if (root == 0) return false;
+    if (@intCast(usize, root) >= store.nodes.len) return false;
+    g_validate_ok = true;
+    ast_mod.visitPreOrder(store, root, validateNode);
+    return g_validate_ok;
+}
+
+fn testValidityValid() void {
+    var buf: [65536]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..65536]);
+    var store = ast_mod.astStoreInit(&sand);
+    var a = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 10), @intCast(u32, 0), @intCast(u32, 2));
+    var b = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 20), @intCast(u32, 2), @intCast(u32, 4));
+    var children: [2]u32 = undefined;
+    children[0] = a;
+    children[1] = b;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, children[0..2]);
+    var block = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0),
+        @intCast(u32, 0), @intCast(u32, 4),
+        @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), payload);
+    assertTrue(astStoreValidate(&store, block));
+}
+
+fn testValidityBadChild() void {
+    var buf: [65536]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..65536]);
+    var store = ast_mod.astStoreInit(&sand);
+    var bad = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0),
+        @intCast(u32, 0), @intCast(u32, 2),
+        @intCast(u32, 999), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    assertTrue(!astStoreValidate(&store, bad));
+}
+
+fn testValidityBadPayload() void {
+    var buf: [65536]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..65536]);
+    var store = ast_mod.astStoreInit(&sand);
+    var bad = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0),
+        @intCast(u32, 0), @intCast(u32, 2),
+        @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 999));
+    assertTrue(!astStoreValidate(&store, bad));
+}
+
+fn testAstMemoryBudget() void {
+    var buf: [65536]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..65536]);
+    var store = ast_mod.astStoreInit(&sand);
+    var a = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 42), @intCast(u32, 0), @intCast(u32, 2));
+    var b = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 99), @intCast(u32, 3), @intCast(u32, 5));
+    _ = a; _ = b;
+    var mem = ast_mod.astStoreComputeMemory(&store);
+    var node_mem = @sizeOf(AstNode);
+    assertTrue(mem > @intCast(u64, node_mem));
+    assertTrue(mem < @intCast(u64, 65536));
 }
