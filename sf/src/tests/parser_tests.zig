@@ -818,6 +818,7 @@ fn testLabeledBlockExpr() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.labeled_stmt)));
 }
 pub fn runErrRecoveryTests() void {
+    testParseExprPrecDepth();
     testErrNoSemicolonBaseline();
     testErrMissingSemicolon();
     testErrMissingSemicolonInBlock();
@@ -1042,4 +1043,43 @@ fn testErrRecoveryExpr() void {
     var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testParseExprPrecDepth() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    var store = ast_mod.astStoreInit(&a);
+    var x_s: []const u8 = "x";
+    var xi = interner_mod.stringInternerIntern(&in_, x_s);
+    var tk: [25]Token = undefined;
+    tk[0] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[1] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 1), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[2] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 2), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[3] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 3), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[4] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 4), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[5] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 5), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[6] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 6), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[7] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 7), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[8] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 8), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[9] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 9), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[10] = Token{ .kind = TokenKind.lparen, .span_start = @intCast(u32, 10), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[11] = Token{ .kind = TokenKind.identifier, .span_start = @intCast(u32, 11), .span_len = @intCast(u16, 1), .value = TokenValue{ .string_id = xi } };
+    tk[12] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 12), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[13] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 13), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[14] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 14), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[15] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 15), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[16] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 16), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[17] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 17), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[18] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 18), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[19] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 19), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[20] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 20), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[21] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 21), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[22] = Token{ .kind = TokenKind.rparen, .span_start = @intCast(u32, 22), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[23] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 23), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    tk[24] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 24), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
+    var src_s: []const u8 = "(((((((((((x)))))))))));";
+    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
+    _ = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
 }
