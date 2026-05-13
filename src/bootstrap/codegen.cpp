@@ -984,11 +984,12 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
 #endif
         }
+    } else if (decl->name) {
+        c_name = decl->name;
     } else {
         if (debug_trace_) {
             #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no symbol and non-temp name: %s\n",
-                             decl->name ? decl->name : "NULL");
+    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no name\n");
 #endif
         }
         return;

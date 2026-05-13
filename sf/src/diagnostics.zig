@@ -282,7 +282,7 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         writeStr(code_buf[0..@intCast(usize, code_len)]);
         var rb: []const u8 = "]: ";
         writeStr(rb);
-        var entry = self.interner.entries.items[@intCast(usize, d.message_id)];
+        var entry = self.interner.entries_items[@intCast(usize, d.message_id)];
         writeStr(entry.text);
         var nl: []const u8 = "\n";
         writeStr(nl);
