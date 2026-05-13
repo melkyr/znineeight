@@ -21,6 +21,7 @@ pub const AstKind = enum(u8) {
     error_literal,
     tuple_literal,
     struct_init,
+    array_init,
     field_init,
     ident_expr,
     field_access,
@@ -254,8 +255,10 @@ pub const AstStore = struct {
 //   builtin_call      → interned string ID of builtin name
 //   var_decl, field_decl, param_decl, field_access, enum_literal, error_literal → name ID
 //   labeled_stmt, break_stmt, continue_stmt → label name ID (0=unlabeled)
+//   struct_init → extra_children (field_init nodes), child_0=base expr (0=anonymous)
 //   if_capture, while_capture, for_stmt → capture name ID
 //   import_expr       → path string ID
+//   array_init        → child_0=type_node, payload=extra_children (value exprs)
 
 pub fn astStoreInit(arena: *Sand) AstStore {
     var null_node = AstNode{
