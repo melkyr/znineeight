@@ -216,7 +216,13 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_null) return parserParseSingleToken(self, AstKind.null_literal);
     if (tok.kind == TokenKind.kw_undefined) return parserParseSingleToken(self, AstKind.undefined_literal);
     if (tok.kind == TokenKind.kw_unreachable) return parserParseSingleToken(self, AstKind.unreachable_expr);
-    if (tok.kind == TokenKind.identifier) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.underscore) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.identifier) {
+        if (parserPeekN(self, 1).kind == TokenKind.colon and parserPeekN(self, 2).kind == TokenKind.lbrace) {
+            return parserParseLabeledBlockExpr(self);
+        }
+        return parserParseIdentExpr(self);
+    }
     if (tok.kind == TokenKind.builtin_identifier) return parserParseBuiltinCall(self);
     if (tok.kind == TokenKind.kw_error) return parserParseErrorLiteral(self);
     if (tok.kind == TokenKind.minus) return parserParsePrefixUnary(self, AstKind.negate);
@@ -233,6 +239,9 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
+    if (tok.kind == TokenKind.kw_return) return parserParseReturnExpr(self);
+    if (tok.kind == TokenKind.kw_break) return parserParseBreakExpr(self);
+    if (tok.kind == TokenKind.kw_continue) return parserParseContinueExpr(self);
     if (tok.kind == TokenKind.lbrace) return parserParseBlock(self);
     var primary_msg: []const u8 = "bad expr";
     parserAddError(self, tok, primary_msg);
@@ -668,7 +677,12 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
     var capture_name: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
         _ = parserAdvance(self);
-        var name_tok = try parserExpect(self, TokenKind.identifier);
+        var name_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            name_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            name_tok = try parserExpect(self, TokenKind.identifier);
+        }
         _ = try parserExpect(self, TokenKind.pipe);
         var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
         capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
@@ -1026,6 +1040,19 @@ fn parserParseLabeledStmt(self: *Parser) ParserError!u32 {
         inner, 0, 0, 0);
 }
 
+fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
+    var label_tok = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.colon);
+    var body = try parserParseBlock(self);
+    var end_pos: u32 = label_tok.span_start;
+    if (self.pos > 0) {
+        var last = self.tokens_ptr[self.pos - 1];
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.labeled_stmt, 0,
+        label_tok.span_start, end_pos, body, 0, 0, 0);
+}
+
 fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool) ParserError!u32 {
     var kw = parserAdvance(self);
     var name_tok = try parserExpect(self, TokenKind.identifier);
@@ -1103,6 +1130,8 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     if (parserPeek(self).kind == TokenKind.colon) {
         _ = parserAdvance(self);
         ret_type_node = try parserParseType(self);
+    } else if (parserPeek(self).kind != TokenKind.semicolon and parserPeek(self).kind != TokenKind.lbrace) {
+        ret_type_node = try parserParseType(self);
     }
 
     var body_node: u32 = 0;
@@ -1146,7 +1175,7 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     if (parserPeek(self).kind == TokenKind.lbrace) {
         then_body = try parserParseBlock(self);
     } else {
-        then_body = try parserParseStatement(self);
+        then_body = try parserParseExprPrec(self, Prec.assignment);
     }
 
     var else_node: u32 = 0;
@@ -1157,7 +1186,7 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
         } else if (parserPeek(self).kind == TokenKind.lbrace) {
             else_node = try parserParseBlock(self);
         } else {
-            else_node = try parserParseStatement(self);
+            else_node = try parserParseExprPrec(self, Prec.assignment);
         }
     }
     var end_pos: u32 = kw.span_start;
@@ -1178,9 +1207,13 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
     var capture_name: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
         _ = parserAdvance(self);
-        var cap_tok = try parserExpect(self, TokenKind.identifier);
-        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
-            ParseToken{ .kind = cap_tok.kind, .span_start = cap_tok.span_start, .span_len = cap_tok.span_len }));
+        var cap_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            cap_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            cap_tok = try parserExpect(self, TokenKind.identifier);
+        }
+        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, cap_tok));
         _ = try parserExpect(self, TokenKind.pipe);
     }
 
@@ -1206,15 +1239,25 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
     var pattern = try parserParseExprPrec(self, Prec.none);
+    if (parserPeek(self).kind == TokenKind.dot_dot) {
+        _ = parserAdvance(self);
+        var end_node = try parserParseExprPrec(self, Prec.none);
+        pattern = ast_mod.astStoreAddNode(self.store, AstKind.range_exclusive, 0,
+            0, 0, pattern, end_node, 0, 0);
+    }
     _ = try parserExpect(self, TokenKind.rparen);
 
     var capture_name: u32 = 0;
     var index_name: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
         _ = parserAdvance(self);
-        var cap_tok = try parserExpect(self, TokenKind.identifier);
-        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
-            ParseToken{ .kind = cap_tok.kind, .span_start = cap_tok.span_start, .span_len = cap_tok.span_len }));
+        var cap_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            cap_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            cap_tok = try parserExpect(self, TokenKind.identifier);
+        }
+        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, cap_tok));
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
             var idx_tok = try parserExpect(self, TokenKind.identifier);
@@ -1237,18 +1280,21 @@ fn parserParseSwitchStmt(self: *Parser) ParserError!u32 {
     var inner = try parserParseSwitchExpr(self);
     return ast_mod.astStoreAddNode(self.store, AstKind.expr_stmt, 0, 0, 0, inner, 0, 0, 0);
 }
-fn parserParseReturnStmt(self: *Parser) ParserError!u32 {
+fn parserParseReturnExpr(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     var expr: u32 = 0;
     if (parserPeek(self).kind != TokenKind.semicolon) {
         expr = try parserParseExprPrec(self, Prec.none);
     }
-    var semi = try parserExpect(self, TokenKind.semicolon);
-    var end_pos = semi.span_start + @intCast(u32, semi.span_len);
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    if (self.pos > 0) {
+        var last = self.tokens_ptr[self.pos - 1];
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
     return ast_mod.astStoreAddNode(self.store, AstKind.return_stmt, 0,
         kw.span_start, end_pos, expr, 0, 0, 0);
 }
-fn parserParseBreakStmt(self: *Parser) ParserError!u32 {
+fn parserParseBreakExpr(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     var label_id: u32 = 0;
     if (parserPeek(self).kind == TokenKind.colon) {
@@ -1257,12 +1303,15 @@ fn parserParseBreakStmt(self: *Parser) ParserError!u32 {
         var pt = ParseToken{ .kind = label_tok.kind, .span_start = label_tok.span_start, .span_len = label_tok.span_len };
         label_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
     }
-    var semi = try parserExpect(self, TokenKind.semicolon);
-    var end_pos = semi.span_start + @intCast(u32, semi.span_len);
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    if (self.pos > 0) {
+        var last = self.tokens_ptr[self.pos - 1];
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
     return ast_mod.astStoreAddNode(self.store, AstKind.break_stmt, 0,
         kw.span_start, end_pos, 0, 0, 0, label_id);
 }
-fn parserParseContinueStmt(self: *Parser) ParserError!u32 {
+fn parserParseContinueExpr(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     var label_id: u32 = 0;
     if (parserPeek(self).kind == TokenKind.colon) {
@@ -1271,10 +1320,28 @@ fn parserParseContinueStmt(self: *Parser) ParserError!u32 {
         var pt = ParseToken{ .kind = label_tok.kind, .span_start = label_tok.span_start, .span_len = label_tok.span_len };
         label_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
     }
-    var semi = try parserExpect(self, TokenKind.semicolon);
-    var end_pos = semi.span_start + @intCast(u32, semi.span_len);
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    if (self.pos > 0) {
+        var last = self.tokens_ptr[self.pos - 1];
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
     return ast_mod.astStoreAddNode(self.store, AstKind.continue_stmt, 0,
         kw.span_start, end_pos, 0, 0, 0, label_id);
+}
+fn parserParseReturnStmt(self: *Parser) ParserError!u32 {
+    var node = try parserParseReturnExpr(self);
+    _ = try parserExpect(self, TokenKind.semicolon);
+    return node;
+}
+fn parserParseBreakStmt(self: *Parser) ParserError!u32 {
+    var node = try parserParseBreakExpr(self);
+    _ = try parserExpect(self, TokenKind.semicolon);
+    return node;
+}
+fn parserParseContinueStmt(self: *Parser) ParserError!u32 {
+    var node = try parserParseContinueExpr(self);
+    _ = try parserExpect(self, TokenKind.semicolon);
+    return node;
 }
 fn parserParseDeferStmt(self: *Parser, kind: AstKind) ParserError!u32 {
     var kw = parserAdvance(self);
@@ -1350,9 +1417,9 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
     if (fields_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
     }
-    var end = rbrace.span_start + @intCast(u32, rbrace.span_len);
+    var end_pos: u32 = rbrace.span_start + @intCast(u32, rbrace.span_len);
     return ast_mod.astStoreAddNode(self.store, kind, is_tagged,
-        tok.span_start, end, name_id, 0, 0, payload);
+        tok.span_start, end_pos, name_id, 0, 0, payload);
 }
 fn parserParseBlock(self: *Parser) ParserError!u32 {
     var lbrace = try parserExpect(self, TokenKind.lbrace);

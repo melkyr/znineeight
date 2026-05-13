@@ -10,7 +10,8 @@ const DiagnosticCollector = diag_mod.DiagnosticCollector;
 const nm_mod = @import("name_mangler.zig");
 const NameMangler = nm_mod.NameMangler;
 const token_mod = @import("token.zig");
-const dump_mod = @import("dump.zig");
+const Token = token_mod.Token;
+const TokenKind = token_mod.TokenKind;
 const lexer_mod = @import("lexer.zig");
 const pal = @import("pal.zig");
 const parser_mod = @import("parser.zig");
@@ -31,8 +32,6 @@ pub const ErrorFormat = enum(u8) {
 pub const CompilerCli = struct {
     input_file: []const u8,
     output_dir: []const u8,
-    dump_tokens: bool,
-    dump_ast: bool,
     dump_types: bool,
     dump_lir: bool,
     max_mem: u32,
@@ -79,25 +78,6 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     }
     if (cli.input_file.len == 0) {
         printUsage();
-        return;
-    }
-    if (cli.dump_tokens) {
-        var compiler_alloc = alloc_mod.initCompilerAlloc();
-        var perm_sand = compiler_alloc.permanent;
-        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-        var source_man = sm_mod.sourceManagerInit(&perm_sand);
-        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-        compiler_alloc.permanent = perm_sand;
-        token_mod.initKeywordTable(&perm_sand);
-        var source = pal.readFile(cli.input_file, &perm_sand) orelse {
-            const msg: []const u8 = "error: could not read input file\n";
-            pal.stderr_write(msg);
-            pal.exit(1);
-            return;
-        };
-        var module_sand = compiler_alloc.module;
-        var lex = lexer_mod.lexerInit(source, 0, &interner, &diag, &module_sand);
-        dump_mod.dumpTokens(&lex, &interner);
         return;
     }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
@@ -194,8 +174,6 @@ fn parseArgs() CompilerCli {
     var cli = CompilerCli{
         .input_file = empty_str,
         .output_dir = dot_str,
-        .dump_tokens = false,
-        .dump_ast = false,
         .dump_types = false,
         .dump_lir = false,
         .max_mem = @intCast(u32, 16 * 1024 * 1024),
@@ -212,8 +190,6 @@ fn parseArgs() CompilerCli {
     };
     var argc = pal.argCount();
     var i: i32 = 1;
-    const s_dump_tokens: []const u8 = "--dump-tokens";
-    const s_dump_ast: []const u8 = "--dump-ast";
     const s_dump_types: []const u8 = "--dump-types";
     const s_dump_lir: []const u8 = "--dump-lir";
     const s_max_mem: []const u8 = "--max-mem";
@@ -240,11 +216,7 @@ fn parseArgs() CompilerCli {
         var arg_ptr = pal.argGet(i);
         var arg = cstrToSlice(arg_ptr);
         if (arg.len > 0 and arg[0] == '-') {
-            if (matchFlag(arg, s_dump_tokens) or matchFlag(arg, s_t)) {
-                cli.dump_tokens = true;
-            } else if (matchFlag(arg, s_dump_ast) or matchFlag(arg, s_a)) {
-                cli.dump_ast = true;
-            } else if (matchFlag(arg, s_dump_types) or matchFlag(arg, s_y)) {
+            if (matchFlag(arg, s_dump_types) or matchFlag(arg, s_y)) {
                 cli.dump_types = true;
             } else if (matchFlag(arg, s_dump_lir) or matchFlag(arg, s_l)) {
                 cli.dump_lir = true;

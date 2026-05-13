@@ -339,3 +339,46 @@ pub fn astStoreAddFnProto(store: *AstStore, proto: FnProto) u32 {
     fnProtoArrayListAppendInner(&store.fn_protos.items, &store.fn_protos.len, &store.fn_protos.capacity, store.allocator, proto);
     return idx;
 }
+
+pub fn nodeHasExtraChildren(kind: AstKind) bool {
+    switch (kind) {
+        AstKind.fn_call => { return true; },
+        AstKind.block => { return true; },
+        AstKind.struct_decl => { return true; },
+        AstKind.enum_decl => { return true; },
+        AstKind.union_decl => { return true; },
+        AstKind.switch_expr => { return true; },
+        AstKind.tuple_literal => { return true; },
+        AstKind.struct_init => { return true; },
+        AstKind.array_init => { return true; },
+        AstKind.module_root => { return true; },
+        AstKind.switch_prong => { return true; },
+        AstKind.error_set_decl => { return true; },
+        else => { return false; },
+    }
+}
+
+pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) void) void {
+    var stack: [512]u32 = undefined;
+    var sp: usize = 0;
+    stack[sp] = root;
+    sp += 1;
+    while (sp > 0) {
+        sp -= 1;
+        var node_idx = stack[sp];
+        var node = store.nodes.items[node_idx];
+        callback(store, node_idx);
+        if (nodeHasExtraChildren(node.kind) and node.payload != 0) {
+            var ec = astStoreGetExtraChildren(store, node.payload);
+            var ei: usize = 0;
+            while (ei < ec.len) {
+                stack[sp] = ec[ec.len - 1 - ei];
+                sp += 1;
+                ei += 1;
+            }
+        }
+        if (node.child_2 != 0) { stack[sp] = node.child_2; sp += 1; }
+        if (node.child_1 != 0) { stack[sp] = node.child_1; sp += 1; }
+        if (node.child_0 != 0) { stack[sp] = node.child_0; sp += 1; }
+    }
+}
