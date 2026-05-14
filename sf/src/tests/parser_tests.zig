@@ -824,6 +824,7 @@ pub fn runErrRecoveryTests() void {
     testErrMissingSemicolonInBlock();
     testErrMultipleErrors();
     testErrRecoveryKeepsValid();
+    testErrRecoveryExpr();
 }
 
 fn countModuleErrs(store: *AstStore, root: u32) u32 {

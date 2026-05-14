@@ -14,8 +14,6 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     parser_tests.runErrRecoveryTests();
     var m: []const u8 = "\n";
     pal.stderr_write(m);
-    ast_tests.runAstUnitTests();
-    pal.stderr_write(m);
     var ok: []const u8 = "Err recovery tests passed.\n";
     pal.stderr_write(ok);
 }

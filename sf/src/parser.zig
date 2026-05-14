@@ -1019,6 +1019,7 @@ pub fn parserParseModuleRoot(self: *Parser) ParserError!u32 {
             parserSynchronize(self);
             decl_buf[decl_count] = err;
             decl_count += 1;
+            while (parserPeek(self).kind == TokenKind.semicolon) _ = parserAdvance(self);
             continue;
         };
         decl_buf[decl_count] = decl;
