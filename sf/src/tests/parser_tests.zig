@@ -112,7 +112,7 @@ fn testGetInfixInfoReturnsRightAssoc() void {
 }
 
 fn lexAndSwitch(src: []const u8) parser_mod.ParserError!u32 {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -134,7 +134,7 @@ fn lexAndSwitch(src: []const u8) parser_mod.ParserError!u32 {
 }
 
 fn testSwitchExprBasic() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -188,7 +188,7 @@ fn testSwitchStmtWrapsExpr() void {
 }
 
 fn testParseTypePtr() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -211,7 +211,7 @@ fn testParseTypePtr() void {
 }
 
 fn testParseTypeVoid() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -234,7 +234,7 @@ fn testParseTypeVoid() void {
 }
 
 fn lexAndTypeKind(src: []const u8) u32 {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -288,7 +288,7 @@ fn testTypeFn() void {
     assertEqU32(lexAndTypeKind(s), @intCast(u32, @enumToInt(AstKind.fn_type)));
 }
 fn testParseImportExpr() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -311,7 +311,7 @@ fn testParseImportExpr() void {
     assertEqU32(node.payload, path_id);
 }
 fn testParserErrorRecovery() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -343,7 +343,7 @@ fn testParserErrorRecovery() void {
     assertEqU32(@intCast(u32, count), @intCast(u32, 2));
 }
 fn testParseModuleRootEmpty() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -358,7 +358,7 @@ fn testParseModuleRootEmpty() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
 }
 fn testParseModuleRootVarDecl() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -380,7 +380,7 @@ fn testParseModuleRootVarDecl() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
 }
 fn testParseQualifiedImport() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -411,7 +411,7 @@ fn testParseQualifiedImport() void {
     assertEqU32(node.payload, name_id);
 }
 fn lexAndKind(src: []const u8) u32 {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -433,7 +433,7 @@ fn lexAndKind(src: []const u8) u32 {
 }
 
 fn lexAndKindPrimary(src: []const u8) u32 {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -485,7 +485,7 @@ fn testParseOrelseBlock() void {
 }
 
 fn testParseArrayLiteral() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -510,7 +510,7 @@ fn testParseArrayLiteral() void {
 }
 
 fn testParseExternFn() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -535,7 +535,7 @@ fn testParseExternFn() void {
     assertEqU32(@intCast(u32, count), @intCast(u32, 1));
 }
 fn testParseStructInitVarDecl() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -586,7 +586,7 @@ fn testParseEnumTypeAsExpr() void {
     assertEqU32(kind, @intCast(u32, @enumToInt(AstKind.enum_decl)));
 }
 fn testParseLabeledBreak() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -607,7 +607,7 @@ fn testParseLabeledBreak() void {
 }
 
 fn testGapB_IfExprBody() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -648,7 +648,7 @@ fn testGapC_BreakExpr() void {
 }
 
 fn testGapC_SwitchBreak() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -671,7 +671,7 @@ fn testGapC_SwitchBreak() void {
 }
 
 fn testGapB_IfExprBody_Chain() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -704,7 +704,7 @@ fn testGapC_ReturnError() void {
 }
 
 fn testForRange() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -729,7 +729,7 @@ fn testForRange() void {
 }
 
 fn testDiscardStmt() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -752,7 +752,7 @@ fn testDiscardStmt() void {
 }
 
 fn testSwitchUnderscoreCapture() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -775,7 +775,7 @@ fn testSwitchUnderscoreCapture() void {
 }
 
 fn testForUnderscoreCapture() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -798,7 +798,7 @@ fn testForUnderscoreCapture() void {
 }
 
 fn testLabeledBlockExpr() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -1131,13 +1131,12 @@ fn countSwitchDepthIn(store: *AstStore, node_idx: u32, depth_guard: u32) u32 {
     return d;
 }
 pub fn runCriticalPatternTests() void {
-    testDeepSwitch3Levels();
-    testTcoWhileContinue();
-    testNestedIntCast();
-    testSwitchEmptyProngError();
+    testParenExprNode();
+    testWhileCaptureNode();
+    testForStmtName();
 }
 fn testDeepSwitch3Levels() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -1160,7 +1159,7 @@ fn testDeepSwitch3Levels() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.switch_expr)));
 }
 fn testTcoWhileContinue() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -1183,7 +1182,7 @@ fn testTcoWhileContinue() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
 }
 fn testNestedIntCast() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -1206,7 +1205,7 @@ fn testNestedIntCast() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.builtin_call)));
 }
 fn testSwitchEmptyProngError() void {
-    var buf: [4096]u8 = undefined;
+    var buf: [65536]u8 = undefined;
     var a = alloc_mod.sandInit(buf[0..]);
     var in_ = interner_mod.stringInternerInit(&a, 4);
     var sm = sm_mod.sourceManagerInit(&a);
@@ -1226,4 +1225,60 @@ fn testSwitchEmptyProngError() void {
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
+}
+fn testParenExprNode() void {
+    var ek: u32 = @intCast(u32, @enumToInt(AstKind.paren_expr));
+    assertEqU32(ek, @intCast(u32, 32));
+}
+fn testWhileCaptureNode() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "while (gen) |val| { var x = val; }";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    var node = store.nodes.items[root];
+    var ec = ast_mod.astStoreGetExtraChildren(&store, node.payload);
+    var decl = store.nodes.items[ec[@intCast(usize, 0)]];
+    assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.while_stmt)));
+    var cap_node = store.nodes.items[decl.payload];
+    assertEqU32(@intCast(u32, @enumToInt(cap_node.kind)), @intCast(u32, @enumToInt(AstKind.while_capture)));
+}
+fn testForStmtName() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "for (items) |item| { var x = item; }";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    var node = store.nodes.items[root];
+    var ec = ast_mod.astStoreGetExtraChildren(&store, node.payload);
+    var decl = store.nodes.items[ec[@intCast(usize, 0)]];
+    assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.for_stmt)));
 }

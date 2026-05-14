@@ -469,10 +469,12 @@ fn parserParsePrefixUnary(self: *Parser, kind: AstKind) ParserError!u32 {
 }
 
 fn parserParseGroupedExpr(self: *Parser) ParserError!u32 {
-    _ = parserAdvance(self);
+    var lparen = parserAdvance(self);
     var inner = try parserParseExprPrec(self, Prec.assignment);
-    _ = try parserExpect(self, TokenKind.rparen);
-    return inner;
+    var rparen = try parserExpect(self, TokenKind.rparen);
+    return ast_mod.astStoreAddNode(self.store, AstKind.paren_expr, 0,
+        lparen.span_start, rparen.span_start + @intCast(u32, rparen.span_len),
+        inner, 0, 0, 0);
 }
 
 fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
@@ -1218,6 +1220,7 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.rparen);
 
     var capture_name: u32 = 0;
+    var cap_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
         _ = parserAdvance(self);
         var cap_tok: ParseToken = undefined;
@@ -1227,6 +1230,8 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
             cap_tok = try parserExpect(self, TokenKind.identifier);
         }
         capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, cap_tok));
+        cap_node = ast_mod.astStoreAddNode(self.store, AstKind.while_capture, 0,
+            cap_tok.span_start, cap_tok.span_start + @intCast(u32, cap_tok.span_len), 0, 0, 0, capture_name);
         _ = try parserExpect(self, TokenKind.pipe);
     }
 
@@ -1245,7 +1250,7 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
         end_pos = last.span_start + @intCast(u32, last.span_len);
     } else end_pos = kw.span_start;
     return ast_mod.astStoreAddNode(self.store, AstKind.while_stmt, 0,
-        kw.span_start, end_pos, cond, body, continue_expr, capture_name);
+        kw.span_start, end_pos, cond, body, continue_expr, cap_node);
 }
 
 fn parserParseForStmt(self: *Parser) ParserError!u32 {
