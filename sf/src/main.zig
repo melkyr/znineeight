@@ -16,6 +16,9 @@ const lexer_mod = @import("lexer.zig");
 const pal = @import("pal.zig");
 const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
+const mr_mod = @import("module_registry.zig");
+const ModuleRegistry = mr_mod.ModuleRegistry;
+const import_resolver = @import("import_resolver.zig");
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -54,6 +57,7 @@ pub const CompilerContext = struct {
     diag: *DiagnosticCollector,
     source_man: *SourceManager,
     name_mangler: *NameMangler,
+    module_reg: *ModuleRegistry,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -90,6 +94,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     compiler_alloc.permanent = perm_sand;
     token_mod.initKeywordTable(&perm_sand);
     var name_mangler = nm_mod.nameManglerInit();
+    var mr = mr_mod.moduleRegistryInit(&perm_sand, &interner, &diag);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -97,6 +102,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .diag = &diag,
         .source_man = &source_man,
         .name_mangler = &name_mangler,
+        .module_reg = &mr,
     };
     runCompiler(&ctx);
 }
@@ -134,15 +140,31 @@ fn runCompiler(ctx: *CompilerContext) void {
     if (ctx.cli.warnings_as_errors and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
         pal.exit(1);
     }
-    _ = ctx.cli.track_memory;
-    _ = ctx.alloc.permanent.peak;
-    _ = ctx.alloc.module.peak;
-    _ = ctx.alloc.scratch.peak;
+    if (ctx.cli.track_memory) {
+        var perm_kb = ctx.alloc.permanent.peak / @intCast(usize, 1024);
+        var mod_kb = ctx.alloc.module.peak / @intCast(usize, 1024);
+        var scr_kb = ctx.alloc.scratch.peak / @intCast(usize, 1024);
+        var total = perm_kb + mod_kb + scr_kb;
+        var msg1: []const u8 = "track-memory: perm=";
+        pal.stderr_write(msg1);
+        writeU32(perm_kb);
+        var msg2: []const u8 = "K mod=";
+        pal.stderr_write(msg2);
+        writeU32(mod_kb);
+        var msg3: []const u8 = "K scr=";
+        pal.stderr_write(msg3);
+        writeU32(scr_kb);
+        var msg4: []const u8 = "K total=";
+        pal.stderr_write(msg4);
+        writeU32(total);
+        var msg5: []const u8 = "K\n";
+        pal.stderr_write(msg5);
+    }
 }
 
 fn phase_ImportResolution(ctx: *CompilerContext) void {
     alloc_mod.sandReset(&ctx.alloc.scratch);
-    _ = ctx;
+    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch);
 }
 
 fn phase_SymbolRegistration(ctx: *CompilerContext) void {
@@ -340,6 +362,25 @@ fn parseErrorFormat(ptr: [*]const u8) ErrorFormat {
     if (matchFlag(s, s_json)) return ErrorFormat.json;
     if (matchFlag(s, s_sarif)) return ErrorFormat.sarif;
     return ErrorFormat.human;
+}
+
+fn writeU32(val: usize) void {
+    var buf: [16]u8 = undefined;
+    var i: usize = 16;
+    var v = val;
+    if (v == 0) {
+        buf[15] = 48;
+        var s = buf[15..16];
+        pal.stderr_write(s);
+        return;
+    }
+    while (v > 0 and i > 0) {
+        i -= 1;
+        buf[i] = @intCast(u8, @intCast(u32, 48 + @intCast(u32, v % 10)));
+        v = v / 10;
+    }
+    var s = buf[i..16];
+    pal.stderr_write(s);
 }
 
 fn printUsage() void {

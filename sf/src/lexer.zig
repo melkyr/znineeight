@@ -648,7 +648,7 @@ fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
         }
     }
     var start: usize = idx + 1;
-    return buf[start..buf_len];
+    return buf[start..buf_len - 1];
 }
 
 pub fn lexerRunAllTests() void {

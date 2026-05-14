@@ -39,14 +39,15 @@ pub const CompilerAlloc = struct {
     max_mem: u32,
 };
 
+var perm_arena_buf: [1048576]u8 = undefined;
+var mod_arena_buf: [1572864]u8 = undefined;
+var scr_arena_buf: [1572864]u8 = undefined;
+
 pub fn initCompilerAlloc() CompilerAlloc {
-    var perm_buf: [1024 * 1024]u8 = undefined;
-    var mod_buf: [512 * 1024]u8 = undefined;
-    var scr_buf: [256 * 1024]u8 = undefined;
     return CompilerAlloc{
-        .permanent = sandInit(perm_buf[0..]),
-        .module = sandInit(mod_buf[0..]),
-        .scratch = sandInit(scr_buf[0..]),
+        .permanent = sandInit(perm_arena_buf[0..]),
+        .module = sandInit(mod_arena_buf[0..]),
+        .scratch = sandInit(scr_arena_buf[0..]),
         .max_mem = @intCast(u32, 16 * 1024 * 1024),
     };
 }

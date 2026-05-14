@@ -76,7 +76,7 @@ fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
         }
     }
     var start: usize = idx + 1;
-    return buf[start..buf_len];
+    return buf[start..buf_len - 1];
 }
 
 fn assertEqTokenKind(tk: TokenKind, expected: TokenKind, line: u32) void {
@@ -106,7 +106,7 @@ fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
         }
     }
     var start: usize = idx + 1;
-    return buf[start..buf_len];
+    return buf[start..buf_len - 1];
 }
 
 fn nextKind(l: *Lexer) TokenKind {

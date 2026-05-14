@@ -1,6 +1,7 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
+const diag_mod = @import("diagnostics.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
 const interner_mod = @import("string_interner.zig");
 const pal_mod = @import("pal.zig");
@@ -237,6 +238,7 @@ pub const ModuleRegistry = struct {
     alloc: *Sand,
     next_id: u32,
     path_to_id: U32ToU32Map,
+    import_queue: ImportQueue,
 };
 
 fn importEdgesEnsureCapacity(items: *[*]u32, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
@@ -270,6 +272,7 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .alloc = alloc,
         .next_id = @intCast(u32, 0),
         .path_to_id = u32ToU32MapInit(alloc),
+        .import_queue = importQueueInit(alloc, diag),
     };
 }
 
@@ -311,5 +314,170 @@ pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer
     var resolved_path_id = moduleResolverResolve(&self.resolver, path_s, path_s, scratch) orelse return null;
     var mod_id = moduleRegistryGetOrCreateModule(self, resolved_path_id);
     moduleRegistryAddImport(self, importer_id, mod_id);
+    importQueueEnqueue(&self.import_queue, mod_id);
     return mod_id;
+}
+
+pub const ImportQueue = struct {
+    pending_items: [*]u32,
+    pending_len: usize,
+    pending_cap: usize,
+    pending_alloc: *Sand,
+    diag: *DiagnosticCollector,
+};
+
+fn importQueuePendingEnsureCapacity(items: *[*]u32, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
+    if (new_cap <= cap.*) return;
+    var nc = new_cap;
+    if (nc < cap.* * 2) nc = cap.* * 2;
+    if (nc < 8) nc = 8;
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * nc, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]u32, raw);
+    for (items.*[0..len.*]) |item, i| { new_items[i] = item; }
+    items.* = new_items;
+    cap.* = nc;
+}
+
+fn importQueuePendingAppend(items: *[*]u32, len: *usize, cap: *usize, alloc: *Sand, value: u32) void {
+    importQueuePendingEnsureCapacity(items, len, cap, alloc, len.* + 1);
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn importQueuePendingPop(items: *[*]u32, len: *usize) ?u32 {
+    if (len.* == @intCast(usize, 0)) return null;
+    len.* -= 1;
+    return items.*[len.*];
+}
+
+pub fn importQueueInit(alloc: *Sand, diag: *DiagnosticCollector) ImportQueue {
+    var q = ImportQueue{
+        .pending_items = undefined,
+        .pending_len = @intCast(usize, 0),
+        .pending_cap = @intCast(usize, 0),
+        .pending_alloc = alloc,
+        .diag = diag,
+    };
+    return q;
+}
+
+pub fn importQueueEnqueue(self: *ImportQueue, module_id: u32) void {
+    var i: usize = 0;
+    while (i < self.pending_len) {
+        if (self.pending_items[i] == module_id) return;
+        i += 1;
+    }
+    importQueuePendingAppend(&self.pending_items, &self.pending_len, &self.pending_cap, self.pending_alloc, module_id);
+}
+
+pub fn importQueueDequeue(self: *ImportQueue) ?u32 {
+    return importQueuePendingPop(&self.pending_items, &self.pending_len);
+}
+
+pub fn moduleRegistrySortModules(reg: *ModuleRegistry) void {
+    var mod_count = reg.modules.len;
+    var in_degree: [256]u32 = undefined;
+    var i: usize = 0;
+    while (i < mod_count) { in_degree[i] = 0; i += 1; }
+    i = 0;
+    while (i < mod_count) {
+        var entry = reg.modules.items[i];
+        if (entry.state != ModuleState.failed) {
+            in_degree[i] = entry.import_count;
+        }
+        i += 1;
+    }
+    i = 0;
+    var worklist_items: [256]u32 = undefined;
+    var worklist_len: usize = 0;
+    while (i < mod_count) {
+        if (in_degree[i] == 0 and reg.modules.items[i].state != ModuleState.failed) {
+            worklist_items[worklist_len] = @intCast(u32, i);
+            worklist_len += 1;
+        }
+        i += 1;
+    }
+    var si: usize = 0;
+    while (si < worklist_len) {
+        var sj: usize = si + 1;
+        while (sj < worklist_len) {
+            if (worklist_items[si] > worklist_items[sj]) {
+                var tmp = worklist_items[si];
+                worklist_items[si] = worklist_items[sj];
+                worklist_items[sj] = tmp;
+            }
+            sj += 1;
+        }
+        si += 1;
+    }
+    var sorted_count: u32 = 0;
+    while (worklist_len > 0) {
+        worklist_len -= 1;
+        var id = worklist_items[worklist_len];
+        var id_idx = @intCast(usize, id);
+        if (reg.modules.items[id_idx].state == ModuleState.failed) continue;
+        var entry = reg.modules.items[id_idx];
+        entry.state = ModuleState.resolved;
+        reg.modules.items[id_idx] = entry;
+        sorted_count += 1;
+        var ii: usize = 0;
+        while (ii < mod_count) {
+            var imp_entry = reg.modules.items[ii];
+            if (imp_entry.state != ModuleState.failed) {
+                var start = @intCast(usize, imp_entry.imports_start);
+                var end = start + @intCast(usize, imp_entry.import_count);
+                var j: usize = start;
+                while (j < end) {
+                    if (reg.import_edges_items[j] == id) {
+                        if (in_degree[ii] > 0) in_degree[ii] -= 1;
+                        if (in_degree[ii] == 0) {
+                            worklist_items[worklist_len] = @intCast(u32, ii);
+                            worklist_len += 1;
+                        }
+                    }
+                    j += 1;
+                }
+            }
+            ii += 1;
+        }
+    }
+    if (sorted_count < @intCast(u32, mod_count)) {
+        var ci: usize = 0;
+        while (ci < mod_count) {
+            var entry = reg.modules.items[ci];
+            if (entry.state != ModuleState.failed and in_degree[ci] > 0) {
+                var msg: []const u8 = "circular import detected";
+                diag_mod.diagnosticCollectorAdd(reg.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+                entry.state = ModuleState.failed;
+                reg.modules.items[ci] = entry;
+            }
+            ci += 1;
+        }
+    }
+    moduleRegistryVerifyOrder(reg);
+}
+
+pub fn moduleRegistryVerifyOrder(reg: *ModuleRegistry) void {
+    var mod_count = reg.modules.len;
+    var vi: usize = 0;
+    while (vi < mod_count) {
+        var entry = reg.modules.items[vi];
+        if (entry.state == ModuleState.resolved) {
+            var start = @intCast(usize, entry.imports_start);
+            var end = start + @intCast(usize, entry.import_count);
+            var vj: usize = start;
+            while (vj < end) {
+                var imp_id = reg.import_edges_items[vj];
+                var imp = reg.modules.items[@intCast(usize, imp_id)];
+                if (imp.state != ModuleState.resolved and imp.state != ModuleState.failed) {
+                    var msg: []const u8 = "topological sort violation: import not resolved";
+                    diag_mod.diagnosticCollectorAdd(reg.diag, @intCast(u8, 0),
+                        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_4000_INVALID_CONTROL_FLOW)),
+                        @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+                }
+                vj += 1;
+            }
+        }
+        vi += 1;
+    }
 }
