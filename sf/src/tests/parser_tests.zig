@@ -1,6 +1,7 @@
 const TokenKind = @import("../token.zig").TokenKind;
 const Token = @import("../token.zig").Token;
 const TokenValue = @import("../token.zig").TokenValue;
+const token_mod = @import("../token.zig");
 const AstNode = @import("../ast.zig").AstNode;
 const parser_mod = @import("../parser.zig");
 const ast_mod = @import("../ast.zig");
@@ -1083,4 +1084,146 @@ fn testParseExprPrecDepth() void {
     var src_s: []const u8 = "(((((((((((x)))))))))));";
     var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
     _ = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
+}
+
+fn countSwitchDepth(store: *AstStore, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var node = store.nodes.items[node_idx];
+    var d: u32 = @intCast(u32, 0);
+    if (@enumToInt(node.kind) == @enumToInt(AstKind.switch_expr)) d = @intCast(u32, 1);
+    var best: u32 = @intCast(u32, 0);
+    if (node.child_0 != 0) { var r = countSwitchDepthIn(store, node.child_0, @intCast(u32, 0)); if (r > best) best = r; }
+    if (node.child_1 != 0) { var r = countSwitchDepthIn(store, node.child_1, @intCast(u32, 0)); if (r > best) best = r; }
+    if (node.child_2 != 0) { var r = countSwitchDepthIn(store, node.child_2, @intCast(u32, 0)); if (r > best) best = r; }
+    if (node.payload != 0) {
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var j: usize = 0;
+        while (j < ec.len and j < @intCast(usize, 20)) {
+            var r = countSwitchDepthIn(store, ec[j], @intCast(u32, 0));
+            if (r > best) best = r;
+            j += 1;
+        }
+    }
+    d += best;
+    return d;
+}
+fn countSwitchDepthIn(store: *AstStore, node_idx: u32, depth_guard: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    if (depth_guard > @intCast(u32, 10)) return @intCast(u32, 0);
+    var node = store.nodes.items[node_idx];
+    var d: u32 = @intCast(u32, 0);
+    if (@enumToInt(node.kind) == @enumToInt(AstKind.switch_expr)) d = @intCast(u32, 1);
+    var best: u32 = @intCast(u32, 0);
+    var d2: u32 = depth_guard + @intCast(u32, 1);
+    if (node.child_0 != 0) { var r = countSwitchDepthIn(store, node.child_0, d2); if (r > best) best = r; }
+    if (node.child_1 != 0) { var r = countSwitchDepthIn(store, node.child_1, d2); if (r > best) best = r; }
+    if (node.child_2 != 0) { var r = countSwitchDepthIn(store, node.child_2, d2); if (r > best) best = r; }
+    if (node.payload != 0) {
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var j: usize = 0;
+        while (j < ec.len and j < @intCast(usize, 20)) {
+            var r = countSwitchDepthIn(store, ec[j], d2);
+            if (r > best) best = r;
+            j += 1;
+        }
+    }
+    d += best;
+    return d;
+}
+pub fn runCriticalPatternTests() void {
+    testDeepSwitch3Levels();
+    testTcoWhileContinue();
+    testNestedIntCast();
+    testSwitchEmptyProngError();
+}
+fn testDeepSwitch3Levels() void {
+    var buf: [4096]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "switch (x) { .x => switch (x) { .x => switch (x) { else => x } } }";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
+    var node = store.nodes.items[root];
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.switch_expr)));
+}
+fn testTcoWhileContinue() void {
+    var buf: [4096]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "while (true) { switch (x) { .x => continue; } }";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    var node = store.nodes.items[root];
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
+}
+fn testNestedIntCast() void {
+    var buf: [4096]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "@intCast (u32, x + y);";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
+    var node = store.nodes.items[root];
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.builtin_call)));
+}
+fn testSwitchEmptyProngError() void {
+    var buf: [4096]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "switch (x) { .x => }";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    assertEqU32(countModuleErrs(&store, root), @intCast(u32, 1));
 }

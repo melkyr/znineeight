@@ -118,7 +118,11 @@ pub fn parserSynchronize(self: *Parser) void {
         var k = self.tokens_ptr[self.pos].kind;
         if (k == TokenKind.semicolon or k == TokenKind.rbrace or k == TokenKind.kw_fn or
             k == TokenKind.kw_const or k == TokenKind.kw_var or k == TokenKind.kw_pub or
-            k == TokenKind.kw_test or k == TokenKind.eof) return;
+            k == TokenKind.kw_test) {
+            self.pos += 1;
+            return;
+        }
+        if (k == TokenKind.eof) return;
         self.pos += 1;
     }
 }
