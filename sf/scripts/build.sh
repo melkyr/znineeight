@@ -18,7 +18,7 @@ WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "Compiling Z98 to C89..."
-(cd "$ROOT_DIR" && "$ZIG0" -o "$WORK_DIR/output.c" sf/src/main.zig) > /dev/null
+(cd "$ROOT_DIR" && "$ZIG0" --header-priority-include -o "$WORK_DIR/output.c" sf/src/main.zig) > /dev/null
 
 echo "Compiling C89 to binary..."
 mkdir -p "$BUILD_DIR"

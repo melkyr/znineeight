@@ -5,6 +5,7 @@ const diag_mod = @import("diagnostics.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
 const interner_mod = @import("string_interner.zig");
 const pal_mod = @import("pal.zig");
+const hash_mod = @import("util/hash.zig");
 
 pub const ModuleState = enum(u8) {
     pending,
@@ -151,81 +152,6 @@ pub fn moduleResolverResolve(self: *ModuleResolver, importer_path: []const u8, t
     return null;
 }
 
-const U32ToU32Map = struct {
-    keys: [*]u32,
-    values: [*]u32,
-    occupied: [*]u8,
-    capacity: usize,
-    count: usize,
-    alloc: *Sand,
-};
-
-fn u32ToU32MapInit(alloc: *Sand) U32ToU32Map {
-    return U32ToU32Map{
-        .keys = undefined, .values = undefined, .occupied = undefined,
-        .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .alloc = alloc,
-    };
-}
-
-fn u32ToU32MapGet(self: *U32ToU32Map, key: u32) ?u32 {
-    if (self.capacity == @intCast(usize, 0)) return null;
-    var mask = self.capacity - @intCast(usize, 1);
-    var i = @intCast(usize, key) & mask;
-    while (self.occupied[i] != @intCast(u8, 0)) {
-        if (self.keys[i] == key) return self.values[i];
-        i = (i + @intCast(usize, 1)) & mask;
-    }
-    return null;
-}
-
-fn u32ToU32MapGrow(self: *U32ToU32Map) void {
-    var old_cap = self.capacity;
-    var old_keys = self.keys;
-    var old_values = self.values;
-    var old_occupied = self.occupied;
-    var new_cap = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
-    var raw_keys = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_vals = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_occ = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
-    self.keys = @ptrCast([*]u32, raw_keys);
-    self.values = @ptrCast([*]u32, raw_vals);
-    self.occupied = @ptrCast([*]u8, raw_occ);
-    self.capacity = new_cap;
-    self.count = @intCast(usize, 0);
-    var zi: usize = 0;
-    while (zi < new_cap) { self.occupied[zi] = @intCast(u8, 0); zi += 1; }
-    var ri: usize = 0;
-    while (ri < old_cap) {
-        if (old_occupied[ri] != @intCast(u8, 0)) {
-            var k = old_keys[ri];
-            var v = old_values[ri];
-            var mask2 = new_cap - @intCast(usize, 1);
-            var idx = @intCast(usize, k) & mask2;
-            while (self.occupied[idx] != @intCast(u8, 0)) { idx = (idx + @intCast(usize, 1)) & mask2; }
-            self.keys[idx] = k;
-            self.values[idx] = v;
-            self.occupied[idx] = @intCast(u8, 1);
-            self.count += 1;
-        }
-        ri += 1;
-    }
-}
-
-fn u32ToU32MapPut(self: *U32ToU32Map, key: u32, value: u32) void {
-    if (self.count * @intCast(usize, 4) >= self.capacity * @intCast(usize, 3)) { u32ToU32MapGrow(self); }
-    if (self.capacity == @intCast(usize, 0)) { u32ToU32MapGrow(self); }
-    var mask = self.capacity - @intCast(usize, 1);
-    var i = @intCast(usize, key) & mask;
-    while (self.occupied[i] != @intCast(u8, 0)) {
-        if (self.keys[i] == key) { self.values[i] = value; return; }
-        i = (i + @intCast(usize, 1)) & mask;
-    }
-    self.keys[i] = key;
-    self.values[i] = value;
-    self.occupied[i] = @intCast(u8, 1);
-    self.count += 1;
-}
-
 pub const ModuleRegistry = struct {
     modules: ModuleEntryArrayList,
     import_edges_items: [*]u32,
@@ -237,7 +163,7 @@ pub const ModuleRegistry = struct {
     diag: *DiagnosticCollector,
     alloc: *Sand,
     next_id: u32,
-    path_to_id: U32ToU32Map,
+    path_to_id: hash_mod.U32ToU32Map,
     import_queue: ImportQueue,
 };
 
@@ -271,7 +197,7 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .diag = diag,
         .alloc = alloc,
         .next_id = @intCast(u32, 0),
-        .path_to_id = u32ToU32MapInit(alloc),
+        .path_to_id = hash_mod.u32ToU32MapInit(alloc),
         .import_queue = importQueueInit(alloc, diag),
     };
 }
@@ -294,10 +220,10 @@ pub fn moduleRegistryAddModule(self: *ModuleRegistry, path_id: u32) u32 {
 }
 
 pub fn moduleRegistryGetOrCreateModule(self: *ModuleRegistry, path_id: u32) u32 {
-    var existing = u32ToU32MapGet(&self.path_to_id, path_id);
+    var existing = hash_mod.u32ToU32MapGet(&self.path_to_id, path_id);
     if (existing) |id| return id;
     var new_id = moduleRegistryAddModule(self, path_id);
-    u32ToU32MapPut(&self.path_to_id, path_id, new_id);
+    hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, new_id);
     return new_id;
 }
 
