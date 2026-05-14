@@ -18,6 +18,7 @@ const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
 const dump_tokens = @import("dump_tokens.zig");
 const dump_ast = @import("dump_ast.zig");
+const fmt = @import("util/format.zig");
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -177,7 +178,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         var peak_msg: []const u8 = "Peak memory: ";
         pal.stdout_write(peak_msg);
         var buf: [32]u8 = undefined;
-        var s = formatU32(peak, buf[0..], 32);
+        var s = fmt.formatU32(peak, buf[0..], 32);
         pal.stdout_write(s);
         var nl2: []const u8 = " bytes\n";
         pal.stdout_write(nl2);
@@ -384,25 +385,6 @@ fn runCompiler(source: []const u8, ctx: *CompilerContext) void {
     _ = source;
     _ = ctx;
     _ = arena;
-}
-
-fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
-    var idx: usize = buf_len - 1;
-    var v = val;
-    buf[idx] = 0;
-    idx -= 1;
-    if (v == 0) {
-        buf[idx] = '0';
-        idx -= 1;
-    } else {
-        while (v > 0) {
-            buf[idx] = @intCast(u8, @intCast(u32, '0') + v % 10);
-            v = v / 10;
-            idx -= 1;
-        }
-    }
-    var start2 = idx + 1;
-    return buf[start2 .. buf_len - 1];
 }
 
 fn phase_ImportResolution(ctx: *CompilerContext) void {

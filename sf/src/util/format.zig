@@ -1,4 +1,4 @@
-fn copyStr(buf: []u8, idx: *usize, s: []const u8) void {
+pub fn copyStr(buf: []u8, idx: *usize, s: []const u8) void {
     var i: usize = 0;
     while (i < s.len) {
         buf[idx.*] = s[i];
@@ -7,7 +7,7 @@ fn copyStr(buf: []u8, idx: *usize, s: []const u8) void {
     }
 }
 
-fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
+pub fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
     var idx: usize = buf_len - 1;
     var v = val;
     buf[idx] = 0;
@@ -26,7 +26,7 @@ fn formatU32(val: u32, buf: []u8, buf_len: usize) []u8 {
     return buf[start..buf_len - 1];
 }
 
-fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
+pub fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
     var idx: usize = buf_len - 1;
     var v = val;
     buf[idx] = 0;
@@ -45,7 +45,7 @@ fn formatU64(val: u64, buf: []u8, buf_len: usize) []u8 {
     return buf[start..buf_len - 1];
 }
 
-fn extractDigit(v: f64) i32 {
+pub fn extractDigit(v: f64) i32 {
     if (v >= 9.0) return 9;
     if (v >= 8.0) return 8;
     if (v >= 7.0) return 7;
@@ -58,7 +58,7 @@ fn extractDigit(v: f64) i32 {
     return 0;
 }
 
-fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
+pub fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
     var is_neg: u8 = 0;
     var v = val;
     if (v < 0) {
