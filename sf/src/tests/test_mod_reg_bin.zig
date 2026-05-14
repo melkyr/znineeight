@@ -91,6 +91,31 @@ pub fn main() void {
     if (mr4.modules.items[@intCast(usize, s1)].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s1_orig\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
     if (mr4.modules.items[@intCast(usize, s2)].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s2_orig\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
 
+    var da = mr_mod.moduleRegistryInit(&a, &interner, &diag);
+    var db = mr_mod.moduleRegistryInit(&a, &interner, &diag);
+    var d0a = mr_mod.moduleRegistryAddModule(&da, 100); var d0b = mr_mod.moduleRegistryAddModule(&db, 100);
+    var d1a = mr_mod.moduleRegistryAddModule(&da, 200); var d1b = mr_mod.moduleRegistryAddModule(&db, 200);
+    var d2a = mr_mod.moduleRegistryAddModule(&da, 300); var d2b = mr_mod.moduleRegistryAddModule(&db, 300);
+    if (d0a != d0b or d1a != d1b or d2a != d2b) { var s: []const u8 = "FAIL det_id\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (da.modules.items[@intCast(usize, d0a)].path_id != db.modules.items[@intCast(usize, d0b)].path_id) { var s: []const u8 = "FAIL det_path\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (da.modules.items[@intCast(usize, d1a)].path_id != db.modules.items[@intCast(usize, d1b)].path_id) { var s: []const u8 = "FAIL det_path2\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+
+    var sc_a = mr_mod.moduleRegistryInit(&a, &interner, &diag);
+    var sc_b = mr_mod.moduleRegistryInit(&a, &interner, &diag);
+    _ = mr_mod.moduleRegistryAddModule(&sc_a, 10); _ = mr_mod.moduleRegistryAddModule(&sc_b, 10);
+    _ = mr_mod.moduleRegistryAddModule(&sc_a, 20); _ = mr_mod.moduleRegistryAddModule(&sc_b, 20);
+    _ = mr_mod.moduleRegistryAddModule(&sc_a, 30); _ = mr_mod.moduleRegistryAddModule(&sc_b, 30);
+    mr_mod.moduleRegistryAddImport(&sc_a, 1, 0); mr_mod.moduleRegistryAddImport(&sc_b, 1, 0);
+    mr_mod.moduleRegistryAddImport(&sc_a, 2, 1); mr_mod.moduleRegistryAddImport(&sc_b, 2, 1);
+    mr_mod.moduleRegistrySortModules(&sc_a);
+    mr_mod.moduleRegistrySortModules(&sc_b);
+    var si: usize = 0;
+    while (si < @intCast(usize, 3)) {
+        if (sc_a.modules.items[si].state != sc_b.modules.items[si].state) { var s: []const u8 = "FAIL det_sort\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+        if (sc_a.modules.items[si].id != sc_b.modules.items[si].id) { var s: []const u8 = "FAIL det_sort_id\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+        si += 1;
+    }
+
     var s: []const u8 = "ModuleRegistry tests passed.\n";
     pal_mod.stdout_write(s);
 }

@@ -182,6 +182,10 @@ pub fn main() void {
 
     testCrossModuleVisibility(&reg, &interner, &a);
 
+    testSymbolRegistrationDeterminism(&interner, &a, &diag);
+
+    testMemoryGate50Modules(&interner, &a, &diag);
+
     var msg: []const u8 = "Symbol registration tests passed.\n";
     pal.stdout_write(msg);
 }
@@ -496,4 +500,165 @@ fn testCrossModuleVisibility(reg: *mr_mod.ModuleRegistry, interner: *interner_mo
 
     var cvmsg: []const u8 = "Cross-module visibility test passed.\n";
     pal.stdout_write(cvmsg);
+}
+
+fn testSymbolRegistrationDeterminism(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {
+    var dbuf: [32768]u8 = undefined;
+    var da = alloc_mod.sandInit(dbuf[0..]);
+
+    var d_name: []const u8 = "alpha";
+    var d_str: []const u8 = "beta";
+    var d_path: []const u8 = "gamma";
+    var d_name_id = interner_mod.stringInternerIntern(interner, d_name);
+    var d_intern_id = interner_mod.stringInternerIntern(interner, d_str);
+    var d_path_id = interner_mod.stringInternerIntern(interner, d_path);
+
+    var s1 = ast_mod.astStoreInit(&da);
+    var v1 = ast_mod.astStoreAddNode(&s1, AstKind.var_decl, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, d_name_id);
+    var i1 = ast_mod.astStoreAddNode(&s1, AstKind.import_expr, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, d_intern_id);
+    var c1: [2]u32 = undefined; c1[0] = v1; c1[1] = i1;
+    var p1 = ast_mod.astStoreAddExtraChildren(&s1, c1[0..]);
+    var root1 = ast_mod.astStoreAddNode(&s1, AstKind.module_root, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, p1);
+
+    var reg_a = mr_mod.moduleRegistryInit(&da, interner, diag);
+    var mr_mod_a = mr_mod.moduleRegistryAddModule(&reg_a, d_path_id);
+    var entry_a = reg_a.modules.items[@intCast(usize, mr_mod_a)];
+    entry_a.state = mr_mod.ModuleState.resolved;
+    entry_a.ast_root = root1;
+    reg_a.modules.items[@intCast(usize, mr_mod_a)] = entry_a;
+
+    var reg_b = mr_mod.moduleRegistryInit(&da, interner, diag);
+    var mr_mod_b = mr_mod.moduleRegistryAddModule(&reg_b, d_path_id);
+    var entry_b = reg_b.modules.items[@intCast(usize, mr_mod_b)];
+    entry_b.state = mr_mod.ModuleState.resolved;
+    entry_b.ast_root = root1;
+    reg_b.modules.items[@intCast(usize, mr_mod_b)] = entry_b;
+
+    var t1 = type_mod.typeRegistryInit(&da, interner);
+    type_mod.typeRegistryRegisterPrimitives(&t1);
+    var t2 = type_mod.typeRegistryInit(&da, interner);
+    type_mod.typeRegistryRegisterPrimitives(&t2);
+    var g1 = sym_reg.depGraphInit(&da);
+    var g2 = sym_reg.depGraphInit(&da);
+    var st1 = sym_mod.symbolRegistryInit(&da);
+    var st2 = sym_mod.symbolRegistryInit(&da);
+
+    sym_reg.registerModuleSymbols(&reg_a, &st1, &t1, &s1, mr_mod_a, &g1);
+    sym_reg.registerModuleSymbols(&reg_b, &st2, &t2, &s1, mr_mod_b, &g2);
+
+    var tbl1 = sym_mod.symbolRegistryGetTable(&st1, mr_mod_a);
+    var tbl2 = sym_mod.symbolRegistryGetTable(&st2, mr_mod_b);
+    if (tbl1.len != tbl2.len) {
+        var emsg: []const u8 = "FAIL det_sym: len\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var di: usize = 0;
+    while (di < tbl1.len) {
+        if (tbl1.items[di].name_id != tbl2.items[di].name_id) {
+            var emsg: []const u8 = "FAIL det_sym: name\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+        if (tbl1.items[di].kind != tbl2.items[di].kind) {
+            var emsg: []const u8 = "FAIL det_sym: kind\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+        if (tbl1.items[di].flags != tbl2.items[di].flags) {
+            var emsg: []const u8 = "FAIL det_sym: flags\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+        di += 1;
+    }
+    var dmsg: []const u8 = "Symbol registration determinism test passed.\n";
+    pal.stdout_write(dmsg);
+}
+
+fn testMemoryGate50Modules(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {
+    var mbuf: [262144]u8 = undefined;
+    var msand = alloc_mod.sandInit(mbuf[0..]);
+
+    var reg = mr_mod.moduleRegistryInit(&msand, interner, diag);
+    var mi: u32 = 0;
+    while (mi < 50) {
+        _ = mr_mod.moduleRegistryAddModule(&reg, @intCast(u32, mi + 1000));
+        mi += 1;
+    }
+
+    // Linear chain: module N imports N-1
+    mi = 1;
+    while (mi < 50) {
+        mr_mod.moduleRegistryAddImport(&reg, mi, mi - 1);
+        mi += 1;
+    }
+
+    mr_mod.moduleRegistrySortModules(&reg);
+
+    // Verify linear order: modules[0].id == 0, ..., modules[49].id == 49
+    mi = 0;
+    while (mi < 50) {
+        if (reg.modules.items[@intCast(usize, mi)].id != mi) {
+            var emsg: []const u8 = "FAIL mg: sort order\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+        mi += 1;
+    }
+
+    // Register symbols for all 50
+    var sym_table = sym_mod.symbolRegistryInit(&msand);
+    var type_reg = type_mod.typeRegistryInit(&msand, interner);
+    type_mod.typeRegistryRegisterPrimitives(&type_reg);
+    var g = sym_reg.depGraphInit(&msand);
+
+    mi = 0;
+    while (mi < 50) {
+        var store = ast_mod.astStoreInit(&msand);
+        var dname: []const u8 = "x";
+        var name_id = interner_mod.stringInternerIntern(interner, dname);
+        var vn = ast_mod.astStoreAddNode(&store, AstKind.var_decl, 0,
+            @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, name_id);
+        var ch: [1]u32 = undefined; ch[0] = vn;
+        var cp = ast_mod.astStoreAddExtraChildren(&store, ch[0..]);
+        var root = ast_mod.astStoreAddNode(&store, AstKind.module_root, 0,
+            @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, cp);
+        var entry = reg.modules.items[@intCast(usize, mi)];
+        entry.ast_root = root;
+        reg.modules.items[@intCast(usize, mi)] = entry;
+        sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store, mi, &g);
+        mi += 1;
+    }
+
+    var peak = msand.peak;
+    if (peak > @intCast(usize, 16 * 1024 * 1024)) {
+        var emsg: []const u8 = "FAIL mg: peak > 16MB\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    // Determinism: second run with separate registry
+    var mbuf2: [262144]u8 = undefined;
+    var msand2 = alloc_mod.sandInit(mbuf2[0..]);
+    var reg2 = mr_mod.moduleRegistryInit(&msand2, interner, diag);
+    mi = 0;
+    while (mi < 50) {
+        _ = mr_mod.moduleRegistryAddModule(&reg2, @intCast(u32, mi + 1000));
+        mi += 1;
+    }
+    mi = 1;
+    while (mi < 50) {
+        mr_mod.moduleRegistryAddImport(&reg2, mi, mi - 1);
+        mi += 1;
+    }
+    mr_mod.moduleRegistrySortModules(&reg2);
+    mi = 0;
+    while (mi < 50) {
+        if (reg2.modules.items[@intCast(usize, mi)].id != mi) {
+            var emsg: []const u8 = "FAIL mg2: sort order\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+        mi += 1;
+    }
+
+    var mmsg: []const u8 = "Memory gate 50-module test passed (< 16 MB)\n";
+    pal.stdout_write(mmsg);
 }
