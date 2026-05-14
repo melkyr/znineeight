@@ -64,6 +64,33 @@ pub fn main() void {
     if (mr2.modules.items[0].state != mr_mod.ModuleState.failed) { var s: []const u8 = "FAIL c0_cycle\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
     if (mr2.modules.items[1].state != mr_mod.ModuleState.failed) { var s: []const u8 = "FAIL c1_cycle\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
 
+    var mr3 = mr_mod.moduleRegistryInit(&a, &interner, &diag);
+    var x0 = mr_mod.moduleRegistryAddModule(&mr3, 100);
+    var x1 = mr_mod.moduleRegistryAddModule(&mr3, 200);
+    var x2 = mr_mod.moduleRegistryAddModule(&mr3, 300);
+    mr_mod.moduleRegistryAddImport(&mr3, 0, 1);
+    mr_mod.moduleRegistryAddImport(&mr3, 1, 2);
+    mr_mod.moduleRegistryAddImport(&mr3, 2, 0);
+    mr_mod.moduleRegistrySortModules(&mr3);
+    _ = x0; _ = x1; _ = x2;
+    if (mr3.modules.items[0].state != mr_mod.ModuleState.failed) { var s: []const u8 = "FAIL i0_state\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr3.modules.items[1].state != mr_mod.ModuleState.failed) { var s: []const u8 = "FAIL i1_state\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr3.modules.items[2].state != mr_mod.ModuleState.failed) { var s: []const u8 = "FAIL i2_state\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+
+    var mr4 = mr_mod.moduleRegistryInit(&a, &interner, &diag);
+    var s0 = mr_mod.moduleRegistryAddModule(&mr4, 1000);
+    var s1 = mr_mod.moduleRegistryAddModule(&mr4, 2000);
+    var s2 = mr_mod.moduleRegistryAddModule(&mr4, 3000);
+    mr_mod.moduleRegistryAddImport(&mr4, 1, 0);
+    mr_mod.moduleRegistryAddImport(&mr4, 2, 1);
+    mr_mod.moduleRegistrySortModules(&mr4);
+    if (mr4.modules.items[0].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s0_state\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr4.modules.items[1].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s1_state\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr4.modules.items[2].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s2_state\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr4.modules.items[@intCast(usize, s0)].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s0_orig\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr4.modules.items[@intCast(usize, s1)].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s1_orig\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+    if (mr4.modules.items[@intCast(usize, s2)].state != mr_mod.ModuleState.resolved) { var s: []const u8 = "FAIL s2_orig\n"; pal_mod.stdout_write(s); pal_mod.exit(1); }
+
     var s: []const u8 = "ModuleRegistry tests passed.\n";
     pal_mod.stdout_write(s);
 }

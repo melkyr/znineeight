@@ -180,6 +180,8 @@ pub fn main() void {
 
     testImportModule(&reg, &interner, &a, &sym_table);
 
+    testCrossModuleVisibility(&reg, &interner, &a);
+
     var msg: []const u8 = "Symbol registration tests passed.\n";
     pal.stdout_write(msg);
 }
@@ -361,4 +363,137 @@ fn testImportModule(reg: *mr_mod.ModuleRegistry, interner: *interner_mod.StringI
     }
     var imsg: []const u8 = "Import module test passed.\n";
     pal.stdout_write(imsg);
+}
+
+fn testCrossModuleVisibility(reg: *mr_mod.ModuleRegistry, interner: *interner_mod.StringInterner, sand: *Sand) void {
+    var dbg: []const u8 = "XMOD: start\n";
+    pal.stdout_write(dbg);
+    var vbuf: [32768]u8 = undefined;
+    var va = alloc_mod.sandInit(vbuf[0..]);
+
+    // Module A: "lib" — pub const exposed = 1; const hidden = 2;
+    var lib_path: []const u8 = "lib.zig";
+    var lib_path_id = interner_mod.stringInternerIntern(interner, lib_path);
+    var lib_id = mr_mod.moduleRegistryGetOrCreateModule(reg, lib_path_id);
+
+    var alib = ast_mod.astStoreInit(&va);
+    var exposed_str: []const u8 = "exposed";
+    var hidden_str: []const u8 = "hidden";
+    var exposed_id = interner_mod.stringInternerIntern(interner, exposed_str);
+    var hidden_id = interner_mod.stringInternerIntern(interner, hidden_str);
+
+    var exposed_var = ast_mod.astStoreAddNode(&alib, AstKind.var_decl, @intCast(u8, 2),
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, exposed_id);
+    var hidden_var = ast_mod.astStoreAddNode(&alib, AstKind.var_decl, @intCast(u8, 0),
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, hidden_id);
+    var lib_children: [2]u32 = undefined;
+    lib_children[0] = exposed_var;
+    lib_children[1] = hidden_var;
+    var lib_root_payload = ast_mod.astStoreAddExtraChildren(&alib, lib_children[0..]);
+    var lib_root = ast_mod.astStoreAddNode(&alib, AstKind.module_root, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, lib_root_payload);
+
+    var lib_entry = reg.modules.items[@intCast(usize, lib_id)];
+    lib_entry.state = mr_mod.ModuleState.resolved;
+    lib_entry.ast_root = lib_root;
+    reg.modules.items[@intCast(usize, lib_id)] = lib_entry;
+
+    // Module B: "main" — imports lib.zig
+    var main_path: []const u8 = "main.zig";
+    var main_path_id = interner_mod.stringInternerIntern(interner, main_path);
+    var main_id = mr_mod.moduleRegistryGetOrCreateModule(reg, main_path_id);
+
+    var bstore = ast_mod.astStoreInit(&va);
+    var import_node = ast_mod.astStoreAddNode(&bstore, AstKind.import_expr, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, lib_path_id);
+    var main_str: []const u8 = "main";
+    var main_name_id = interner_mod.stringInternerIntern(interner, main_str);
+    var var_node = ast_mod.astStoreAddNode(&bstore, AstKind.var_decl, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, import_node, 0, main_name_id);
+    var main_children: [1]u32 = undefined;
+    main_children[0] = var_node;
+    var main_root_payload = ast_mod.astStoreAddExtraChildren(&bstore, main_children[0..]);
+    var main_root = ast_mod.astStoreAddNode(&bstore, AstKind.module_root, 0,
+        @intCast(u32, 0), @intCast(u32, 0), 0, 0, 0, main_root_payload);
+
+    var main_entry = reg.modules.items[@intCast(usize, main_id)];
+    main_entry.state = mr_mod.ModuleState.resolved;
+    main_entry.ast_root = main_root;
+    reg.modules.items[@intCast(usize, main_id)] = main_entry;
+
+    // Register symbols
+    var sym_table3 = sym_mod.symbolRegistryInit(&va);
+    var vtype_reg = type_mod.typeRegistryInit(&va, interner);
+    type_mod.typeRegistryRegisterPrimitives(&vtype_reg);
+    var vdep = sym_reg.depGraphInit(&va);
+
+    sym_reg.registerModuleSymbols(reg, &sym_table3, &vtype_reg, &alib, lib_id, &vdep);
+    sym_reg.registerModuleSymbols(reg, &sym_table3, &vtype_reg, &bstore, main_id, &vdep);
+
+    // Verify lib's symbols
+    var lib_table = sym_mod.symbolRegistryGetTable(&sym_table3, lib_id);
+    var exp_lookup = sym_mod.symbolTableLookup(lib_table, exposed_id);
+    if (exp_lookup) |exp_sym| {
+        if (!sym_mod.symbolIsPublic(exp_sym)) {
+            var emsg: []const u8 = "FAIL cross_vis: exposed not public\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+    } else {
+        var emsg: []const u8 = "FAIL cross_vis: exposed not found\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var hid_lookup = sym_mod.symbolTableLookup(lib_table, hidden_id);
+    if (hid_lookup) |hid_sym| {
+        if (sym_mod.symbolIsPublic(hid_sym)) {
+            var emsg: []const u8 = "FAIL cross_vis: hidden flagged public\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+    } else {
+        var emsg: []const u8 = "FAIL cross_vis: hidden not found\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    // Verify main's import symbol
+    var main_table = sym_mod.symbolRegistryGetTable(&sym_table3, main_id);
+    var main_lookup = sym_mod.symbolTableLookup(main_table, main_name_id);
+    if (main_lookup) |main_sym| {
+        if (main_sym.kind != sym_mod.SymbolKind.module) {
+            var emsg: []const u8 = "FAIL cross_vis: main import not module\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+        if (main_sym.module_id != lib_id) {
+            var emsg: []const u8 = "FAIL cross_vis: main import wrong module_id\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+    } else {
+        var emsg: []const u8 = "FAIL cross_vis: main import not found\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    // Cross-module qualified lookup
+    var qual_lookup = sym_mod.symbolRegistryQualifiedLookup(&sym_table3, lib_id, exposed_id);
+    if (qual_lookup) |qual_sym| {
+        if (!sym_mod.symbolIsPublic(qual_sym)) {
+            var emsg: []const u8 = "FAIL cross_vis: qual exposed not public\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+    } else {
+        var emsg: []const u8 = "FAIL cross_vis: qual exposed not found\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var qual_hidden = sym_mod.symbolRegistryQualifiedLookup(&sym_table3, lib_id, hidden_id);
+    if (qual_hidden) |qh_sym| {
+        if (sym_mod.symbolIsPublic(qh_sym)) {
+            var emsg: []const u8 = "FAIL cross_vis: qual hidden flagged public\n";
+            pal.stdout_write(emsg); pal.exit(1);
+        }
+    } else {
+        var emsg: []const u8 = "FAIL cross_vis: qual hidden not found\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var cvmsg: []const u8 = "Cross-module visibility test passed.\n";
+    pal.stdout_write(cvmsg);
 }
