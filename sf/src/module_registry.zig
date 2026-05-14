@@ -100,7 +100,7 @@ pub const ModuleResolver = struct {
 };
 
 fn joinPath(dir: []const u8, rel: []const u8, scratch: *Sand) ?[]u8 {
-    var total = dir.len + @intCast(usize, 1) + rel.len;
+    var total: usize = dir.len + @intCast(usize, 1) + rel.len;
     var raw = alloc_mod.sandAlloc(scratch, total, @intCast(usize, 1)) catch return null;
     var buf = @ptrCast([*]u8, raw);
     var i: usize = 0;
