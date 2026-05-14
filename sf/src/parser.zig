@@ -16,6 +16,8 @@ const AstKind = @import("ast.zig").AstKind;
 const FnProto = @import("ast.zig").FnProto;
 const ast_mod = @import("ast.zig");
 const string_interner_mod = @import("string_interner.zig");
+const mr_mod = @import("module_registry.zig");
+const ModuleRegistry = mr_mod.ModuleRegistry;
 
 pub const ParseToken = struct {
     kind: TokenKind,
@@ -43,6 +45,8 @@ pub const Parser = struct {
     builtin_import_id: u32,
     catch_capture: u32,
     expr_depth: u32,
+    module_reg: ?*ModuleRegistry,
+    current_module_id: u32,
 };
 
 pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Parser {
@@ -69,12 +73,19 @@ pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, i
         .catch_capture = @intCast(u32, 0),
         .expr_depth = @intCast(u32, 0),
         .builtin_import_id = import_id,
+        .module_reg = null,
+        .current_module_id = @intCast(u32, 0),
     };
+}
+
+pub fn parserSetModuleContext(self: *Parser, reg: *ModuleRegistry, mod_id: u32) void {
+    self.module_reg = reg;
+    self.current_module_id = mod_id;
 }
 
 pub fn parserTokenText(self: *Parser, tok: ParseToken) []const u8 {
     var start = @intCast(usize, tok.span_start);
-    var end = start + @intCast(usize, tok.span_len);
+    var end: usize = start + @intCast(usize, tok.span_len);
     return self.source_ptr[start..end];
 }
 
@@ -513,6 +524,15 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     if (rparen.kind != TokenKind.rparen) return error.UnexpectedToken;
     var end_pos = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
+    if (self.module_reg) |reg| {
+        var scratch: [64]u8 = undefined;
+        var scratch_sand = alloc_mod.sandInit(scratch[0..]);
+        var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, &scratch_sand);
+        if (resolved) |mod_id| {
+            self.current_module_id = mod_id;
+            _ = mod_id;
+        }
+    }
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
         bi_tok.span_start, end_pos, 0, 0, 0, path_id);
 }

@@ -283,7 +283,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
 }
 
 pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
-    var span_len = @intCast(u16, span_end - span_start);
+    var span_len: u16 = @intCast(u16, span_end - span_start);
     var node = AstNode{
         .kind = kind, .flags = flags,
         .span_start = span_start, .span_len = span_len,

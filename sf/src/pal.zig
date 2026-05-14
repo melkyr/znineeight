@@ -42,6 +42,20 @@ pub fn readFile(path: []const u8, alloc: *Sand) ?[]u8 {
     return buf[0..sz];
 }
 
+pub fn fileExists(path: []const u8) bool {
+    var c_path: [512]u8 = undefined;
+    var i: usize = 0;
+    while (i < path.len and i < 511) {
+        c_path[i] = path[i];
+        i += 1;
+    }
+    if (i >= 511) return false;
+    c_path[i] = 0;
+    var f = fopen(&c_path[0], MODE_READ) orelse return false;
+    _ = fclose(f);
+    return true;
+}
+
 pub fn stdout_write(msg: []const u8) void {
     _ = write(1, msg.ptr, @intCast(i32, msg.len));
 }
