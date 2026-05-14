@@ -237,3 +237,16 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
     nameCachePut(self, key, tid);
     return tid;
 }
+
+pub fn isValueDependency(kind: TypeKind) bool {
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.enum_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.optional_type) return true;
+    if (kind == TypeKind.error_union_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.unresolved_name) return true;
+    return false;
+}

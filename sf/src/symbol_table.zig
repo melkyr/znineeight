@@ -111,3 +111,12 @@ pub fn symbolRegistryGetTable(self: *SymbolRegistry, module_id: u32) *SymbolTabl
     }
     return &self.tables_items[idx];
 }
+
+pub fn symbolIsPublic(sym: *Symbol) bool {
+    return (sym.flags & @intCast(u16, 2)) != 0;
+}
+
+pub fn symbolRegistryQualifiedLookup(reg: *SymbolRegistry, mod_id: u32, name_id: u32) ?*Symbol {
+    var table = symbolRegistryGetTable(reg, mod_id);
+    return symbolTableLookup(table, name_id);
+}
