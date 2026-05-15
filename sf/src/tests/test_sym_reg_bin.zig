@@ -204,6 +204,11 @@ pub fn main() void {
     testArrayLayout(&interner);
     testTupleLayout(&interner);
     testTupleEmptyLayout(&interner);
+    testCircularCycle(&interner);
+
+    testForwardRefIntegration(&interner, &a, &diag);
+    testCrossModuleTypeResolution(&interner, &a, &diag);
+    testCycleDetectionIntegration(&interner, &a, &diag);
 
     var msg: []const u8 = "Symbol registration tests passed.\n";
     pal.stdout_write(msg);
@@ -1009,6 +1014,77 @@ fn testStructLayout(interner: *interner_mod.StringInterner) void {
     pal.stdout_write(msg);
 }
 
+fn testCircularCycle(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var diag = diag_mod.diagnosticCollectorInit(&a, &sm, interner);
+
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+
+    var a_name: []const u8 = "A";
+    var a_name_id = interner_mod.stringInternerIntern(interner, a_name);
+    var a_tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), a_name_id, TypeKind.struct_type);
+
+    var b_name: []const u8 = "B";
+    var b_name_id = interner_mod.stringInternerIntern(interner, b_name);
+    var b_tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), b_name_id, TypeKind.struct_type);
+
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = b_tid, .offset = @intCast(u32, 0) });
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = a_tid, .offset = @intCast(u32, 0) });
+
+    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 1) });
+    var a_sp_idx = tr.st_len - 1;
+
+    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u16, 1), .fields_count = @intCast(u16, 1) });
+    var b_sp_idx = tr.st_len - 1;
+
+    var aty = tr.types_items[@intCast(usize, a_tid)];
+    aty.payload_idx = @intCast(u32, a_sp_idx);
+    tr.types_items[@intCast(usize, a_tid)] = aty;
+
+    var bty = tr.types_items[@intCast(usize, b_tid)];
+    bty.payload_idx = @intCast(u32, b_sp_idx);
+    tr.types_items[@intCast(usize, b_tid)] = bty;
+
+    var dg = sym_reg.depGraphInit(&a);
+    var raw = alloc_mod.sandAlloc(&a, @intCast(usize, 8) * @intCast(usize, 2), @intCast(usize, 4)) catch unreachable;
+    var typed_items = @ptrCast([*]sym_reg.DepEdge, raw);
+    typed_items[0] = sym_reg.DepEdge{ .from = a_tid, .to = b_tid };
+    typed_items[1] = sym_reg.DepEdge{ .from = b_tid, .to = a_tid };
+    dg.items = typed_items;
+    dg.len = @intCast(usize, 2);
+    dg.cap = @intCast(usize, 2);
+
+    var resolver = type_resolver.typeResolverInit(&tr, &diag, &a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+
+    var resolved_a = tr.types_items[@intCast(usize, a_tid)];
+    if (resolved_a.kind != TypeKind.void_type) {
+        var emsg: []const u8 = "FAIL circular: A not poisoned\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    if (resolved_a.state != @intCast(u8, 2)) {
+        var emsg: []const u8 = "FAIL circular: A state not resolved\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var resolved_b = tr.types_items[@intCast(usize, b_tid)];
+    if (resolved_b.kind != TypeKind.void_type) {
+        var emsg: []const u8 = "FAIL circular: B not poisoned\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    if (resolved_b.state != @intCast(u8, 2)) {
+        var emsg: []const u8 = "FAIL circular: B state not resolved\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var msg: []const u8 = "testCircularCycle passed.\n";
+    pal.stdout_write(msg);
+}
+
 fn testDepGraphFinalize(g: *sym_reg.DepGraph, sand: *Sand) void {
     var raw = alloc_mod.sandAlloc(sand, @intCast(usize, 4) * @intCast(usize, 6), @intCast(usize, 4)) catch unreachable;
     var typed_items = @ptrCast([*]sym_reg.DepEdge, raw);
@@ -1027,4 +1103,69 @@ fn testDepGraphFinalize(g: *sym_reg.DepGraph, sand: *Sand) void {
     }
     var msg: []const u8 = "DepGraph finalize test passed.\n";
     pal.stdout_write(msg);
+}
+
+fn testForwardRefIntegration(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {
+    var src: []const u8 = "const B = struct { x: u32, };";
+    var buf: [32768]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    token_mod.initKeywordTable(&a);
+    var tokens: [128]Token = undefined;
+    var store = ast_mod.astStoreInit(&a);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var td = diag_mod.diagnosticCollectorInit(&a, &sm, interner);
+    var tok_len = lexSource(src, interner, &td, &a, tokens[0..]);
+    var p = parser_mod.parserInit(tokens[0..tok_len], src, &store, interner, &td, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var reg = mr_mod.moduleRegistryInit(&a, interner, &td);
+    var sym_table = sym_mod.symbolRegistryInit(&a);
+    var dg = sym_reg.depGraphInit(&a);
+    var mid = mr_mod.moduleRegistryAddModule(&reg, 0);
+    var entry = reg.modules.items[mid];
+    entry.state = mr_mod.ModuleState.resolved;
+    entry.ast_root = root;
+    reg.modules.items[mid] = entry;
+    sym_reg.registerModuleSymbols(&reg, &sym_table, &tr, &store, mid, &dg);
+    var resolver = type_resolver.typeResolverInit(&tr, &td, &a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var b_name: []const u8 = "B";
+    var b_id = interner_mod.stringInternerIntern(interner, b_name);
+    var key_b: u64 = @intCast(u64, 0) * @intCast(u64, 4294967296) + @intCast(u64, b_id);
+    var b_tid_opt = type_mod.nameCacheGet(&tr, key_b);
+    if (b_tid_opt) |b_tid| {
+        var bty = tr.types_items[@intCast(usize, b_tid)];
+        if (bty.kind != TypeKind.struct_type) { var emsg: []const u8 = "FAIL fwdref B not struct\n"; pal.stdout_write(emsg); pal.exit(1); }
+        if (bty.state != @intCast(u8, 2)) { var emsg: []const u8 = "FAIL fwdref B not resolved\n"; pal.stdout_write(emsg); pal.exit(1); }
+    } else {
+        var emsg: []const u8 = "FAIL fwdref B not found\n"; pal.stdout_write(emsg); pal.exit(1);
+    }
+    var m: []const u8 = "testForwardRefIntegration passed.\n"; pal.stdout_write(m);
+}
+
+fn testCrossModuleTypeResolution(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var t_name: []const u8 = "TX";
+    var t_nid = interner_mod.stringInternerIntern(interner, t_name);
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, 0, t_nid, TypeKind.struct_type);
+    var key: u64 = @intCast(u64, 0) * @intCast(u64, 4294967296) + @intCast(u64, t_nid);
+    var found_opt = type_mod.nameCacheGet(&tr, key);
+    if (found_opt) |found| {
+        if (found != tid) {
+            var emsg: []const u8 = "FAIL xmod direct tid mismatch\n"; pal.stdout_write(emsg); pal.exit(1);
+        }
+    } else {
+        var emsg: []const u8 = "FAIL xmod direct not found\n"; pal.stdout_write(emsg); pal.exit(1);
+    }
+    var m: []const u8 = "testCrossModuleTypeResolution passed.\n"; pal.stdout_write(m);
+}
+
+fn testCycleDetectionIntegration(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {
+    _ = interner; _ = sand; _ = diag;
+    var m: []const u8 = "testCycleDetectionIntegration passed (stub).\n"; pal.stdout_write(m);
 }

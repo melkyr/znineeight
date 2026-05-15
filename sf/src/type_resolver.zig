@@ -7,6 +7,9 @@ const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
 const diag_mod = @import("diagnostics.zig");
 const sym_reg = @import("symbol_registrator.zig");
 const DepEdge = sym_reg.DepEdge;
+const AstStore = @import("ast.zig").AstStore;
+const AstKind = @import("ast.zig").AstKind;
+const type_mod = @import("type_registry.zig");
 
 pub const TypeResolver = struct {
     registry: *TypeRegistry,
@@ -99,6 +102,7 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         }
         ty.size = alignUp(offset, max_align);
         ty.alignment = max_align;
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
         self.registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.enum_type) {
         var ep = self.registry.en_items[@intCast(usize, ty.payload_idx)];
@@ -265,13 +269,91 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
     }
 
     var ci: usize = 0;
-    while (ci < type_count) {
-        if (self.in_degree_items[ci] > 0) {
+    while (ci < type_count) : (ci += 1) {
+        var ty = self.registry.types_items[ci];
+        if (ty.state != @intCast(u8, 2) and self.in_degree_items[ci] > 0) {
             var msg: []const u8 = "circular type dependency (infinite size)";
             diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
-                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), @intCast(u32, 0),
+                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), ty.module_id,
                 @intCast(u32, 0), @intCast(u32, 0), msg);
+            ty.kind = TypeKind.void_type;
+            ty.size = @intCast(u32, 0);
+            ty.alignment = @intCast(u32, 1);
+            ty.state = @intCast(u8, 2);
+            self.registry.types_items[ci] = ty;
         }
-        ci += 1;
     }
+}
+
+pub fn typeResolverResolveTypeExpr(self: *TypeResolver, store: *AstStore, depth: u32, node_idx: u32, module_id: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    if (depth > @intCast(u32, 12)) return @intCast(u32, 0);
+
+    var idx = @intCast(usize, node_idx);
+    var node = store.nodes.items[idx];
+    var kind = node.kind;
+    var is_const: u8 = 0;
+    if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) is_const = @intCast(u8, 1);
+    var ic_bool = is_const != @intCast(u8, 0);
+
+    if (kind == AstKind.ident_expr) {
+        var name_id = store.identifiers.items[@intCast(usize, node.payload)];
+        var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+        var existing: ?u32 = type_mod.nameCacheGet(self.registry, key);
+        if (existing) |tid| return tid;
+        return type_mod.typeRegistryRegisterNamedType(self.registry, module_id, name_id, TypeKind.unresolved_name);
+    }
+
+    if (kind == AstKind.ptr_type) {
+        var base = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_0, module_id);
+        if (base == @intCast(u32, 0)) return @intCast(u32, 0);
+        return type_mod.typeRegistryGetOrCreatePtr(self.registry, base, ic_bool);
+    }
+
+    if (kind == AstKind.many_ptr_type) {
+        var base = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_0, module_id);
+        if (base == @intCast(u32, 0)) return @intCast(u32, 0);
+        return type_mod.typeRegistryGetOrCreateManyPtr(self.registry, base, ic_bool);
+    }
+
+    if (kind == AstKind.slice_type) {
+        var base = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_0, module_id);
+        if (base == @intCast(u32, 0)) return @intCast(u32, 0);
+        return type_mod.typeRegistryGetOrCreateSlice(self.registry, base, ic_bool);
+    }
+
+    if (kind == AstKind.optional_type) {
+        var pay = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_0, module_id);
+        if (pay == @intCast(u32, 0)) return @intCast(u32, 0);
+        return type_mod.typeRegistryGetOrCreateOptional(self.registry, pay);
+    }
+
+    if (kind == AstKind.error_union_type) {
+        var pay = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_0, module_id);
+        if (pay == @intCast(u32, 0)) return @intCast(u32, 0);
+        var es = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_1, module_id);
+        return type_mod.typeRegistryGetOrCreateErrorUnion(self.registry, pay, es);
+    }
+
+    if (kind == AstKind.array_type) {
+        var elem = typeResolverResolveTypeExpr(self, store, depth + @intCast(u32, 1), node.child_0, module_id);
+        if (elem == @intCast(u32, 0)) return @intCast(u32, 0);
+        var arr_len: u32 = 0;
+        if (node.child_1 != @intCast(u32, 0)) {
+            var sz_idx = @intCast(usize, node.child_1);
+            var sz_node = store.nodes.items[sz_idx];
+            if (sz_node.kind == AstKind.int_literal) {
+                arr_len = @intCast(u32, store.int_values.items[@intCast(usize, sz_node.payload)]);
+            }
+        }
+        if (arr_len == @intCast(u32, 0)) return @intCast(u32, 0);
+        return type_mod.typeRegistryGetOrCreateArray(self.registry, elem, arr_len);
+    }
+
+    if (kind == AstKind.error_set_decl) return @intCast(u32, 1);
+    if (kind == AstKind.struct_decl) return @intCast(u32, 1);
+    if (kind == AstKind.enum_decl) return @intCast(u32, 1);
+    if (kind == AstKind.union_decl) return @intCast(u32, 1);
+
+    return @intCast(u32, 0);
 }

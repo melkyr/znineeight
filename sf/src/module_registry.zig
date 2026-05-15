@@ -117,7 +117,8 @@ fn moduleDirPath(path: []const u8) []const u8 {
         i -= 1;
         if (path[i] == '/') return path[0..i];
     }
-    return "";
+    var empty_str: []const u8 = "";
+    return empty_str;
 }
 
 pub fn moduleResolverInit(alloc: *Sand, interner: *StringInterner, diag: *DiagnosticCollector) ModuleResolver {

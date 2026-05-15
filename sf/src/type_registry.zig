@@ -1,6 +1,7 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
+const interner_mod = @import("string_interner.zig");
 const hash_mod = @import("util/hash.zig");
 
 pub const TypeId = u32;
@@ -439,7 +440,33 @@ pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
     registerPrimitive(self, TypeKind.undefined_type, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.integer_literal_type, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.type_type, @intCast(u32, 0), @intCast(u32, 0));
+    var pn: []const u8 = "void"; registerPrimitiveName(self, @intCast(u32, 1), pn);
+    pn = "bool"; registerPrimitiveName(self, @intCast(u32, 2), pn);
+    pn = "i8"; registerPrimitiveName(self, @intCast(u32, 4), pn);
+    pn = "i16"; registerPrimitiveName(self, @intCast(u32, 5), pn);
+    pn = "i32"; registerPrimitiveName(self, @intCast(u32, 6), pn);
+    pn = "i64"; registerPrimitiveName(self, @intCast(u32, 7), pn);
+    pn = "u8"; registerPrimitiveName(self, @intCast(u32, 8), pn);
+    pn = "u16"; registerPrimitiveName(self, @intCast(u32, 9), pn);
+    pn = "u32"; registerPrimitiveName(self, @intCast(u32, 10), pn);
+    pn = "u64"; registerPrimitiveName(self, @intCast(u32, 11), pn);
+    pn = "isize"; registerPrimitiveName(self, @intCast(u32, 12), pn);
+    pn = "usize"; registerPrimitiveName(self, @intCast(u32, 13), pn);
+    pn = "c_char"; registerPrimitiveName(self, @intCast(u32, 14), pn);
+    pn = "f32"; registerPrimitiveName(self, @intCast(u32, 15), pn);
+    pn = "f64"; registerPrimitiveName(self, @intCast(u32, 16), pn);
+    pn = "null"; registerPrimitiveName(self, @intCast(u32, 17), pn);
+    pn = "undefined"; registerPrimitiveName(self, @intCast(u32, 18), pn);
+    pn = "type"; registerPrimitiveName(self, @intCast(u32, 20), pn);
     self.next_type_id = @intCast(u32, self.types_len);
+}
+
+fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {
+    var nid = interner_mod.stringInternerIntern(self.interner, name);
+    var ty = self.types_items[@intCast(usize, tid)];
+    ty.name_id = nid;
+    self.types_items[@intCast(usize, tid)] = ty;
+    nameCachePut(self, @intCast(u64, nid), tid);
 }
 
 pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_id: u32, kind: TypeKind) u32 {
