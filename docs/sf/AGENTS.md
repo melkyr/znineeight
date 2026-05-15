@@ -312,5 +312,49 @@ If new info contradicts existing memory, use `memory_update` (not `memory_forget
 
 ---
 
+## 9. Build System
+
+### 9.1 Output Directory Isolation (CRITICAL)
+
+zig0 generates `.c` and `.h` files in the output directory. **Different build targets MUST use separate output directories.** Mixing stale `.c`/`.h` files from different builds causes C89 type mismatch errors (e.g., `unknown type name 'Slice_*'`). Always delete `.c`/`.h` before each zig0 invocation.
+
+### 9.2 Build Scripts
+
+Two pre-made scripts isolate output per target:
+
+| Script | Target | Output |
+|--------|--------|--------|
+| `sf/scripts/build_release.sh` | `sf/src/main.zig` → zig1 binary | `sf/build/out_release/` |
+| `sf/scripts/build_test.sh` | Test binaries (`test_*_bin.zig`) | `sf/build/out_test_<name>/` (one per test) |
+
+**Usage:**
+```bash
+# Release
+bash sf/scripts/build_release.sh
+
+# All tests (semantic, module_reg, sym_reg)
+bash sf/scripts/build_test.sh
+```
+
+### 9.3 Manual Build Commands
+
+When building manually, NEVER reuse the same output directory:
+```bash
+# Release (isolated)
+OUT=sf/build/out_release
+rm -rf $OUT && mkdir -p $OUT
+./sf/build/zig0 --header-priority-include -o $OUT/zig1.c sf/src/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude $OUT/*.c -o $OUT/zig1
+
+# Test (isolated per binary)
+OUT=sf/build/out_test_foo
+rm -rf $OUT && mkdir -p $OUT
+./sf/build/zig0 --header-priority-include -o $OUT/foo.c sf/src/tests/test_foo_bin.zig
+gcc -m32 ... $OUT/*.c -o $OUT/foo
+$OUT/foo
+```
+
+---
+
 **End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```
