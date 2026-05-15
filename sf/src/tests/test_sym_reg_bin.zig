@@ -15,6 +15,7 @@ const sym_mod = @import("../symbol_table.zig");
 const sym_reg = @import("../symbol_registrator.zig");
 const type_mod = @import("../type_registry.zig");
 const TypeKind = type_mod.TypeKind;
+const type_resolver = @import("../type_resolver.zig");
 const pal = @import("../pal.zig");
 
 fn lexSource(content: []const u8, interner: *interner_mod.StringInterner, diag: *diag_mod.DiagnosticCollector, sand: *Sand, tokens: []Token) usize {
@@ -172,6 +173,7 @@ pub fn main() void {
     }
 
     testRegisterNamedTypeAndDepGraph(&type_reg, &interner, &dep_graph, &a);
+    testDepGraphFinalize(&dep_graph, &a);
 
     testDuplicateSymbol();
 
@@ -186,7 +188,205 @@ pub fn main() void {
 
     testMemoryGate50Modules(&interner, &a, &diag);
 
+    testArrayStateDeferred(&interner, &a);
+    testArrayStatePrimitive(&type_reg);
+    testEUStateDeferred(&interner, &a);
+    testEUStatePrimitive(&type_reg);
+    testPtrPayloadSize();
+    testSlicePayloadSize();
+
+    testStructLayout(&interner);
+    testEnumLayout(&interner);
+    testUnionLayout(&interner);
+    testTaggedUnionLayout(&interner);
+    testOptionalLayout(&interner);
+    testErrorUnionLayout(&interner);
+    testArrayLayout(&interner);
+    testTupleLayout(&interner);
+    testTupleEmptyLayout(&interner);
+
     var msg: []const u8 = "Symbol registration tests passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn check(state_val: u8, align_val: u32, size_val: u32, tid: u32, tr: *type_mod.TypeRegistry, label: []const u8) void {
+    var resolved = tr.types_items[@intCast(usize, tid)];
+    var ok = true;
+    if (resolved.state != state_val) ok = false;
+    if (resolved.alignment != align_val) ok = false;
+    if (resolved.size != size_val) ok = false;
+    if (!ok) {
+        pal.stdout_write(label);
+        pal.exit(1);
+    }
+}
+
+fn testEnumLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var s: []const u8 = "MyEnum";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    type_mod.enAppend(&tr, type_mod.EnumPayload{ .members_start = @intCast(u16, 0), .members_count = @intCast(u16, 0), .backing_type = type_mod.TYPE_U16 });
+    var en_payload_idx = tr.en_len - 1;
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.enum_type);
+    var ety = tr.types_items[@intCast(usize, tid)];
+    ety.payload_idx = @intCast(u32, en_payload_idx);
+    tr.types_items[@intCast(usize, tid)] = ety;
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testEnumLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 2), @intCast(u32, 2), tid, &tr, fail);
+    var msg: []const u8 = "testEnumLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testUnionLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U32, .offset = @intCast(u32, 0) });
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U64, .offset = @intCast(u32, 0) });
+    type_mod.unAppend(&tr, type_mod.UnionPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 2), .tag_type = @intCast(u32, 0) });
+    var un_payload_idx = tr.un_len - 1;
+    var s: []const u8 = "MyUnion";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.union_type);
+    var uty = tr.types_items[@intCast(usize, tid)];
+    uty.payload_idx = @intCast(u32, un_payload_idx);
+    tr.types_items[@intCast(usize, tid)] = uty;
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testUnionLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 8), @intCast(u32, 8), tid, &tr, fail);
+    var msg: []const u8 = "testUnionLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testTaggedUnionLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U32, .offset = @intCast(u32, 0) });
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U8, .offset = @intCast(u32, 0) });
+    type_mod.tuAppend(&tr, type_mod.TaggedUnionPayload{ .tag_type = type_mod.TYPE_U8, .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 2) });
+    var tu_payload_idx = tr.tu_len - 1;
+    var s: []const u8 = "MyTaggedUnion";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.tagged_union_type);
+    var tuty = tr.types_items[@intCast(usize, tid)];
+    tuty.payload_idx = @intCast(u32, tu_payload_idx);
+    tr.types_items[@intCast(usize, tid)] = tuty;
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testTaggedUnionLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 4), @intCast(u32, 8), tid, &tr, fail);
+    var msg: []const u8 = "testTaggedUnionLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testOptionalLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var opt_id = type_mod.typeRegistryGetOrCreateOptional(&tr, type_mod.TYPE_U32);
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testOptionalLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 4), @intCast(u32, 8), opt_id, &tr, fail);
+    var msg: []const u8 = "testOptionalLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testErrorUnionLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var eu_id = type_mod.typeRegistryGetOrCreateErrorUnion(&tr, type_mod.TYPE_U64, @intCast(u32, 0));
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testErrorUnionLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 8), @intCast(u32, 16), eu_id, &tr, fail);
+    var msg: []const u8 = "testErrorUnionLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testArrayLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var arr_id = type_mod.typeRegistryGetOrCreateArray(&tr, type_mod.TYPE_U32, @intCast(u32, 10));
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testArrayLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 4), @intCast(u32, 40), arr_id, &tr, fail);
+    var msg: []const u8 = "testArrayLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testTupleLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    type_mod.xtAppend(&tr, type_mod.TYPE_U32);
+    type_mod.xtAppend(&tr, type_mod.TYPE_U8);
+    type_mod.tupAppend(&tr, type_mod.TuplePayload{ .elems_start = @intCast(u16, 0), .elems_count = @intCast(u16, 2) });
+    var tup_payload_idx = tr.tup_len - 1;
+    var s: []const u8 = "MyTuple";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.tuple_type);
+    var tty = tr.types_items[@intCast(usize, tid)];
+    tty.payload_idx = @intCast(u32, tup_payload_idx);
+    tr.types_items[@intCast(usize, tid)] = tty;
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testTupleLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 4), @intCast(u32, 8), tid, &tr, fail);
+    var msg: []const u8 = "testTupleLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testTupleEmptyLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    type_mod.tupAppend(&tr, type_mod.TuplePayload{ .elems_start = @intCast(u16, 0), .elems_count = @intCast(u16, 0) });
+    var tup_payload_idx = tr.tup_len - 1;
+    var s: []const u8 = "EmptyTuple";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.tuple_type);
+    var tty = tr.types_items[@intCast(usize, tid)];
+    tty.payload_idx = @intCast(u32, tup_payload_idx);
+    tr.types_items[@intCast(usize, tid)] = tty;
+    var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+    var fail: []const u8 = "FAIL testTupleEmptyLayout\n";
+    check(@intCast(u8, 2), @intCast(u32, 1), @intCast(u32, 1), tid, &tr, fail);
+    var msg: []const u8 = "testTupleEmptyLayout passed.\n";
     pal.stdout_write(msg);
 }
 
@@ -661,4 +861,170 @@ fn testMemoryGate50Modules(interner: *interner_mod.StringInterner, sand: *Sand, 
 
     var mmsg: []const u8 = "Memory gate 50-module test passed (< 16 MB)\n";
     pal.stdout_write(mmsg);
+}
+
+fn testArrayStateDeferred(interner: *interner_mod.StringInterner, arena: *Sand) void {
+    var buf: [8192]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var s: []const u8 = "MyType";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var unresolved = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.struct_type);
+    var arr_tid = type_mod.typeRegistryGetOrCreateArray(&tr, unresolved, @intCast(u32, 5));
+    var st = type_mod.typeRegistryGetTypeState(&tr, arr_tid);
+    if (st != @intCast(u8, 0)) {
+        var emsg: []const u8 = "FAIL: array state not deferred\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var arr_tid2 = type_mod.typeRegistryGetOrCreateArray(&tr, unresolved, @intCast(u32, 5));
+    _ = arr_tid2;
+    var msg: []const u8 = "testArrayStateDeferred passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testArrayStatePrimitive(tr: *type_mod.TypeRegistry) void {
+    var arr_tid = type_mod.typeRegistryGetOrCreateArray(tr, type_mod.TYPE_U32, @intCast(u32, 4));
+    var st = type_mod.typeRegistryGetTypeState(tr, arr_tid);
+    if (st != @intCast(u8, 2)) {
+        var emsg: []const u8 = "FAIL: array state not resolved\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var arr_tid2 = type_mod.typeRegistryGetOrCreateArray(tr, type_mod.TYPE_U32, @intCast(u32, 4));
+    if (arr_tid != arr_tid2) {
+        var emsg: []const u8 = "FAIL: array dedup failed\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testArrayStatePrimitive passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testEUStateDeferred(interner: *interner_mod.StringInterner, arena: *Sand) void {
+    var buf: [8192]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+    var s: []const u8 = "MyType";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var unresolved = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.struct_type);
+    var eu_tid = type_mod.typeRegistryGetOrCreateErrorUnion(&tr, unresolved, type_mod.TYPE_U32);
+    var st = type_mod.typeRegistryGetTypeState(&tr, eu_tid);
+    if (st != @intCast(u8, 0)) {
+        var emsg: []const u8 = "FAIL: error_union state not deferred\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testEUStateDeferred passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testEUStatePrimitive(tr: *type_mod.TypeRegistry) void {
+    var eu_tid = type_mod.typeRegistryGetOrCreateErrorUnion(tr, type_mod.TYPE_U32, type_mod.TYPE_U32);
+    var st = type_mod.typeRegistryGetTypeState(tr, eu_tid);
+    if (st != @intCast(u8, 2)) {
+        var emsg: []const u8 = "FAIL: error_union state not resolved\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testEUStatePrimitive passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testPtrPayloadSize() void {
+    if (@sizeOf(type_mod.PtrPayload) != @intCast(usize, 4)) {
+        var emsg: []const u8 = "FAIL: PtrPayload size wrong\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testPtrPayloadSize passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testSlicePayloadSize() void {
+    if (@sizeOf(type_mod.SlicePayload) != @intCast(usize, 4)) {
+        var emsg: []const u8 = "FAIL: SlicePayload size wrong\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testSlicePayloadSize passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testStructLayout(interner: *interner_mod.StringInterner) void {
+    var buf: [16384]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var diag = diag_mod.diagnosticCollectorInit(&a, &sm, interner);
+
+    var tr = type_mod.typeRegistryInit(&a, interner);
+    type_mod.typeRegistryRegisterPrimitives(&tr);
+
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U32, .offset = @intCast(u32, 0) });
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U8, .offset = @intCast(u32, 0) });
+    type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_I64, .offset = @intCast(u32, 0) });
+
+    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 3) });
+    var st_payload_idx = tr.st_len - 1;
+
+    var s: []const u8 = "MyStruct";
+    var nid = interner_mod.stringInternerIntern(interner, s);
+    var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.struct_type);
+
+    var sty = tr.types_items[@intCast(usize, tid)];
+    sty.payload_idx = @intCast(u32, st_payload_idx);
+    tr.types_items[@intCast(usize, tid)] = sty;
+
+    var resolver = type_resolver.typeResolverInit(&tr, &diag, &a);
+    var dg = sym_reg.depGraphInit(&a);
+    type_resolver.typeResolverBuild(&resolver, &dg);
+    type_resolver.typeResolverResolve(&resolver);
+
+    var resolved = tr.types_items[@intCast(usize, tid)];
+    if (resolved.state != @intCast(u8, 2)) {
+        var emsg: []const u8 = "FAIL struct layout: state not resolved\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    if (resolved.alignment != @intCast(u32, 8)) {
+        var emsg: []const u8 = "FAIL struct layout: wrong alignment\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    if (resolved.size != @intCast(u32, 16)) {
+        var emsg: []const u8 = "FAIL struct layout: wrong size\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var f0 = tr.fe_items[0];
+    if (f0.offset != @intCast(u32, 0)) {
+        var emsg: []const u8 = "FAIL struct layout: field 0 offset\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var f1 = tr.fe_items[1];
+    if (f1.offset != @intCast(u32, 4)) {
+        var emsg: []const u8 = "FAIL struct layout: field 1 offset\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var f2 = tr.fe_items[2];
+    if (f2.offset != @intCast(u32, 8)) {
+        var emsg: []const u8 = "FAIL struct layout: field 2 offset\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var msg: []const u8 = "testStructLayout passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testDepGraphFinalize(g: *sym_reg.DepGraph, sand: *Sand) void {
+    var raw = alloc_mod.sandAlloc(sand, @intCast(usize, 4) * @intCast(usize, 6), @intCast(usize, 4)) catch unreachable;
+    var typed_items = @ptrCast([*]sym_reg.DepEdge, raw);
+    typed_items[0] = sym_reg.DepEdge{ .from = @intCast(u32, 0), .to = @intCast(u32, 2) };
+    typed_items[1] = sym_reg.DepEdge{ .from = @intCast(u32, 1), .to = @intCast(u32, 2) };
+    typed_items[2] = sym_reg.DepEdge{ .from = @intCast(u32, 2), .to = @intCast(u32, 0) };
+    g.items = typed_items;
+    g.len = @intCast(usize, 3);
+    g.cap = @intCast(usize, 6);
+    sym_reg.depGraphFinalize(g, @intCast(u32, 2));
+    var in0 = g.in_degree_items[@intCast(usize, 0)];
+    var in2 = g.in_degree_items[@intCast(usize, 2)];
+    if (in0 != @intCast(u32, 1) or in2 != @intCast(u32, 2)) {
+        var emsg: []const u8 = "FAIL DepGraph in_degree\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "DepGraph finalize test passed.\n";
+    pal.stdout_write(msg);
 }

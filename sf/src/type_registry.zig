@@ -1,6 +1,7 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
+const hash_mod = @import("util/hash.zig");
 
 pub const TypeId = u32;
 
@@ -56,9 +57,9 @@ pub const Type = struct {
     payload_idx: u32,
 };
 
-pub const PtrPayload = struct { base: TypeId, is_const: bool };
+pub const PtrPayload = struct { base: TypeId };
 pub const ArrayPayload = struct { elem: TypeId, length: u32 };
-pub const SlicePayload = struct { elem: TypeId, is_const: bool };
+pub const SlicePayload = struct { elem: TypeId };
 pub const OptionalPayload = struct { payload: TypeId };
 pub const EUPayload = struct { payload: TypeId, error_set: TypeId };
 pub const ErrorSetPayload = struct { tags_start: u16, tags_count: u16 };
@@ -100,17 +101,13 @@ pub const TypeRegistry = struct {
     xt_items: [*]TypeId, xt_len: usize, xt_cap: usize,
     xn_items: [*]u32, xn_len: usize, xn_cap: usize,
 
-    pc_keys: [*]u64, pc_values: [*]u32, pc_occupied: [*]u8, pc_capacity: usize, pc_count: usize,
-    mpc_keys: [*]u64, mpc_values: [*]u32, mpc_occupied: [*]u8, mpc_capacity: usize, mpc_count: usize,
-    slc_keys: [*]u64, slc_values: [*]u32, slc_occupied: [*]u8, slc_capacity: usize, slc_count: usize,
-    optc_keys: [*]u32, optc_values: [*]u32, optc_occupied: [*]u8, optc_capacity: usize, optc_count: usize,
-    arrc_keys: [*]u64, arrc_values: [*]u32, arrc_occupied: [*]u8, arrc_capacity: usize, arrc_count: usize,
+    ptr_cache: hash_mod.U64ToU32Map,
+    many_ptr_cache: hash_mod.U64ToU32Map,
+    slice_cache: hash_mod.U64ToU32Map,
+    optional_cache: hash_mod.U32ToU32Map,
+    array_cache: hash_mod.U64ToU32Map,
 
-    name_keys: [*]u64,
-    name_values: [*]u32,
-    name_occupied: [*]u8,
-    name_capacity: usize,
-    name_count: usize,
+    name_cache: hash_mod.U64ToU32Map,
 };
 
 fn arrayGrow(items_out: *[*]u8, len_ptr: *usize, cap_ptr: *usize, alloc: *Sand, elem_size: usize) void {
@@ -177,46 +174,46 @@ fn fnAppend(self: *TypeRegistry, v: FnPayload) void {
     payloadEnsure(@ptrCast(*[*]u8, &self.fn_items), &self.fn_len, &self.fn_cap, self.types_alloc, @sizeOf(FnPayload), self.fn_len + 1);
     self.fn_items[self.fn_len] = v; self.fn_len += 1;
 }
-fn stAppend(self: *TypeRegistry, v: StructPayload) void {
+pub fn stAppend(self: *TypeRegistry, v: StructPayload) void {
     payloadEnsure(@ptrCast(*[*]u8, &self.st_items), &self.st_len, &self.st_cap, self.types_alloc, @sizeOf(StructPayload), self.st_len + 1);
     self.st_items[self.st_len] = v; self.st_len += 1;
 }
-fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.en_items), &self.en_len, &self.en_cap, self.types_alloc, @sizeOf(EnumPayload), self.en_len + 1);
-    self.en_items[self.en_len] = v; self.en_len += 1;
-}
-fn unAppend(self: *TypeRegistry, v: UnionPayload) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.un_items), &self.un_len, &self.un_cap, self.types_alloc, @sizeOf(UnionPayload), self.un_len + 1);
-    self.un_items[self.un_len] = v; self.un_len += 1;
-}
-fn tuAppend(self: *TypeRegistry, v: TaggedUnionPayload) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.tu_items), &self.tu_len, &self.tu_cap, self.types_alloc, @sizeOf(TaggedUnionPayload), self.tu_len + 1);
-    self.tu_items[self.tu_len] = v; self.tu_len += 1;
-}
-fn tupAppend(self: *TypeRegistry, v: TuplePayload) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.tup_items), &self.tup_len, &self.tup_cap, self.types_alloc, @sizeOf(TuplePayload), self.tup_len + 1);
-    self.tup_items[self.tup_len] = v; self.tup_len += 1;
-}
-fn unrAppend(self: *TypeRegistry, v: UnresolvedPayload) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.unr_items), &self.unr_len, &self.unr_cap, self.types_alloc, @sizeOf(UnresolvedPayload), self.unr_len + 1);
-    self.unr_items[self.unr_len] = v; self.unr_len += 1;
-}
-fn feAppend(self: *TypeRegistry, v: FieldEntry) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.fe_items), &self.fe_len, &self.fe_cap, self.types_alloc, @sizeOf(FieldEntry), self.fe_len + 1);
-    self.fe_items[self.fe_len] = v; self.fe_len += 1;
-}
-fn emAppend(self: *TypeRegistry, v: EnumMember) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.em_items), &self.em_len, &self.em_cap, self.types_alloc, @sizeOf(EnumMember), self.em_len + 1);
-    self.em_items[self.em_len] = v; self.em_len += 1;
-}
-fn xtAppend(self: *TypeRegistry, v: TypeId) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.xt_items), &self.xt_len, &self.xt_cap, self.types_alloc, @intCast(usize, 4), self.xt_len + 1);
-    self.xt_items[self.xt_len] = v; self.xt_len += 1;
-}
-fn xnAppend(self: *TypeRegistry, v: u32) void {
-    payloadEnsure(@ptrCast(*[*]u8, &self.xn_items), &self.xn_len, &self.xn_cap, self.types_alloc, @intCast(usize, 4), self.xn_len + 1);
-    self.xn_items[self.xn_len] = v; self.xn_len += 1;
-}
+pub fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.en_items), &self.en_len, &self.en_cap, self.types_alloc, @sizeOf(EnumPayload), self.en_len + 1);
+     self.en_items[self.en_len] = v; self.en_len += 1;
+ }
+ pub fn unAppend(self: *TypeRegistry, v: UnionPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.un_items), &self.un_len, &self.un_cap, self.types_alloc, @sizeOf(UnionPayload), self.un_len + 1);
+     self.un_items[self.un_len] = v; self.un_len += 1;
+ }
+ pub fn tuAppend(self: *TypeRegistry, v: TaggedUnionPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.tu_items), &self.tu_len, &self.tu_cap, self.types_alloc, @sizeOf(TaggedUnionPayload), self.tu_len + 1);
+     self.tu_items[self.tu_len] = v; self.tu_len += 1;
+ }
+ pub fn tupAppend(self: *TypeRegistry, v: TuplePayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.tup_items), &self.tup_len, &self.tup_cap, self.types_alloc, @sizeOf(TuplePayload), self.tup_len + 1);
+     self.tup_items[self.tup_len] = v; self.tup_len += 1;
+ }
+ fn unrAppend(self: *TypeRegistry, v: UnresolvedPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.unr_items), &self.unr_len, &self.unr_cap, self.types_alloc, @sizeOf(UnresolvedPayload), self.unr_len + 1);
+     self.unr_items[self.unr_len] = v; self.unr_len += 1;
+ }
+ pub fn feAppend(self: *TypeRegistry, v: FieldEntry) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.fe_items), &self.fe_len, &self.fe_cap, self.types_alloc, @sizeOf(FieldEntry), self.fe_len + 1);
+     self.fe_items[self.fe_len] = v; self.fe_len += 1;
+ }
+ pub fn emAppend(self: *TypeRegistry, v: EnumMember) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.em_items), &self.em_len, &self.em_cap, self.types_alloc, @sizeOf(EnumMember), self.em_len + 1);
+     self.em_items[self.em_len] = v; self.em_len += 1;
+ }
+ pub fn xtAppend(self: *TypeRegistry, v: TypeId) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.xt_items), &self.xt_len, &self.xt_cap, self.types_alloc, @intCast(usize, 4), self.xt_len + 1);
+     self.xt_items[self.xt_len] = v; self.xt_len += 1;
+ }
+ pub fn xnAppend(self: *TypeRegistry, v: u32) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.xn_items), &self.xn_len, &self.xn_cap, self.types_alloc, @intCast(usize, 4), self.xn_len + 1);
+     self.xn_items[self.xn_len] = v; self.xn_len += 1;
+ }
 
 fn registerPrimitive(self: *TypeRegistry, kind: TypeKind, size: u32, alignment: u32) u32 {
     return typeRegistryAppend(self, Type{
@@ -233,7 +230,7 @@ fn registerPrimitive(self: *TypeRegistry, kind: TypeKind, size: u32, alignment: 
     });
 }
 
-fn alignUp(v: u32, a: u32) u32 {
+pub fn alignUp(v: u32, a: u32) u32 {
     return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
 }
 
@@ -241,16 +238,6 @@ fn initArray(items: *[*]u8, len: *usize, cap: *usize) void {
     items.* = undefined;
     len.* = @intCast(usize, 0);
     cap.* = @intCast(usize, 0);
-}
-
-fn initCache64(keys: *[*]u64, values: *[*]u32, occupied: *[*]u8, capacity: *usize, count: *usize) void {
-    keys.* = undefined; values.* = undefined; occupied.* = undefined;
-    capacity.* = @intCast(usize, 0); count.* = @intCast(usize, 0);
-}
-
-fn initCache32(keys: *[*]u32, values: *[*]u32, occupied: *[*]u8, capacity: *usize, count: *usize) void {
-    keys.* = undefined; values.* = undefined; occupied.* = undefined;
-    capacity.* = @intCast(usize, 0); count.* = @intCast(usize, 0);
 }
 
 pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
@@ -274,202 +261,29 @@ pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
         .em_items = undefined, .em_len = @intCast(usize, 0), .em_cap = @intCast(usize, 0),
         .xt_items = undefined, .xt_len = @intCast(usize, 0), .xt_cap = @intCast(usize, 0),
         .xn_items = undefined, .xn_len = @intCast(usize, 0), .xn_cap = @intCast(usize, 0),
-        .pc_keys = undefined, .pc_values = undefined, .pc_occupied = undefined, .pc_capacity = @intCast(usize, 0), .pc_count = @intCast(usize, 0),
-        .mpc_keys = undefined, .mpc_values = undefined, .mpc_occupied = undefined, .mpc_capacity = @intCast(usize, 0), .mpc_count = @intCast(usize, 0),
-        .slc_keys = undefined, .slc_values = undefined, .slc_occupied = undefined, .slc_capacity = @intCast(usize, 0), .slc_count = @intCast(usize, 0),
-        .optc_keys = undefined, .optc_values = undefined, .optc_occupied = undefined, .optc_capacity = @intCast(usize, 0), .optc_count = @intCast(usize, 0),
-        .arrc_keys = undefined, .arrc_values = undefined, .arrc_occupied = undefined, .arrc_capacity = @intCast(usize, 0), .arrc_count = @intCast(usize, 0),
-        .name_keys = undefined,
-        .name_values = undefined,
-        .name_occupied = undefined,
-        .name_capacity = @intCast(usize, 0),
-        .name_count = @intCast(usize, 0),
+        .ptr_cache = hash_mod.u64ToU32MapInit(alloc),
+        .many_ptr_cache = hash_mod.u64ToU32MapInit(alloc),
+        .slice_cache = hash_mod.u64ToU32MapInit(alloc),
+        .optional_cache = hash_mod.u32ToU32MapInit(alloc),
+        .array_cache = hash_mod.u64ToU32MapInit(alloc),
+        .name_cache = hash_mod.u64ToU32MapInit(alloc),
     };
     return reg;
 }
 
-fn nameCacheGrow(self: *TypeRegistry) void {
-    var old_cap = self.name_capacity;
-    var old_keys = self.name_keys;
-    var old_values = self.name_values;
-    var old_occupied = self.name_occupied;
-    var new_cap = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
-    var raw_keys = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_vals = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_occ = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
-    self.name_keys = @ptrCast([*]u64, raw_keys);
-    self.name_values = @ptrCast([*]u32, raw_vals);
-    self.name_occupied = @ptrCast([*]u8, raw_occ);
-    self.name_capacity = new_cap;
-    self.name_count = @intCast(usize, 0);
-    var zi: usize = 0;
-    while (zi < new_cap) { self.name_occupied[zi] = @intCast(u8, 0); zi += 1; }
-    var ri: usize = 0;
-    while (ri < old_cap) {
-        if (old_occupied[ri] != @intCast(u8, 0)) {
-            var k = old_keys[ri];
-            var v = old_values[ri];
-            var mask2 = new_cap - @intCast(usize, 1);
-            var idx = @intCast(usize, @intCast(u32, k & @intCast(u64, 0xFFFFFFFF))) & mask2;
-            while (self.name_occupied[idx] != @intCast(u8, 0)) { idx = (idx + @intCast(usize, 1)) & mask2; }
-            self.name_keys[idx] = k;
-            self.name_values[idx] = v;
-            self.name_occupied[idx] = @intCast(u8, 1);
-            self.name_count += 1;
-        }
-        ri += 1;
-    }
-}
-
 pub fn nameCacheGet(self: *TypeRegistry, key: u64) ?u32 {
-    if (self.name_capacity == @intCast(usize, 0)) return null;
-    var mask = self.name_capacity - @intCast(usize, 1);
-    var i = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
-    while (self.name_occupied[i] != @intCast(u8, 0)) {
-        if (self.name_keys[i] == key) return self.name_values[i];
-        i = (i + @intCast(usize, 1)) & mask;
-    }
-    return null;
+    return hash_mod.u64ToU32MapGet(&self.name_cache, key);
 }
 
 fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {
-    if (self.name_count * @intCast(usize, 4) >= self.name_capacity * @intCast(usize, 3)) { nameCacheGrow(self); }
-    if (self.name_capacity == @intCast(usize, 0)) { nameCacheGrow(self); }
-    var mask = self.name_capacity - @intCast(usize, 1);
-    var i = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
-    while (self.name_occupied[i] != @intCast(u8, 0)) {
-        if (self.name_keys[i] == key) { self.name_values[i] = value; return; }
-        i = (i + @intCast(usize, 1)) & mask;
-    }
-    self.name_keys[i] = key;
-    self.name_values[i] = value;
-    self.name_occupied[i] = @intCast(u8, 1);
-    self.name_count += 1;
-}
-
-fn cacheGetU64(keys: [*]u64, values: [*]u32, occupied: [*]u8, capacity: usize, key: u64) ?u32 {
-    if (capacity == @intCast(usize, 0)) return null;
-    var mask = capacity - @intCast(usize, 1);
-    var idx = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
-    while (occupied[idx] != @intCast(u8, 0)) {
-        if (keys[idx] == key) return values[idx];
-        idx = (idx + @intCast(usize, 1)) & mask;
-    }
-    return null;
-}
-
-fn cacheGrowU64(self: *TypeRegistry, keys: *[*]u64, values: *[*]u32, occupied: *[*]u8, capacity: *usize, count: *usize) void {
-    var old_cap = capacity.*;
-    var old_keys = keys.*;
-    var old_values = values.*;
-    var old_occupied = occupied.*;
-    var new_cap = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
-    var raw_keys = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_vals = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_occ = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
-    keys.* = @ptrCast([*]u64, raw_keys);
-    values.* = @ptrCast([*]u32, raw_vals);
-    occupied.* = @ptrCast([*]u8, raw_occ);
-    capacity.* = new_cap;
-    count.* = @intCast(usize, 0);
-    var zi: usize = 0;
-    while (zi < new_cap) { occupied.*[zi] = @intCast(u8, 0); zi += 1; }
-    var ri: usize = 0;
-    while (ri < old_cap) {
-        if (old_occupied[ri] != @intCast(u8, 0)) {
-            var k = old_keys[ri];
-            var v = old_values[ri];
-            var mask2 = new_cap - @intCast(usize, 1);
-            var idx = @intCast(usize, @intCast(u32, k & @intCast(u64, 0xFFFFFFFF))) & mask2;
-            while (occupied.*[idx] != @intCast(u8, 0)) { idx = (idx + @intCast(usize, 1)) & mask2; }
-            keys.*[idx] = k;
-            values.*[idx] = v;
-            occupied.*[idx] = @intCast(u8, 1);
-            count.* += 1;
-        }
-        ri += 1;
-    }
-}
-
-fn cachePutU64(self: *TypeRegistry, keys: *[*]u64, values: *[*]u32, occupied: *[*]u8, capacity: *usize, count: *usize, key: u64, value: u32) void {
-    if (count.* * @intCast(usize, 4) >= capacity.* * @intCast(usize, 3)) { cacheGrowU64(self, keys, values, occupied, capacity, count); }
-    if (capacity.* == @intCast(usize, 0)) { cacheGrowU64(self, keys, values, occupied, capacity, count); }
-    var mask = capacity.* - @intCast(usize, 1);
-    var idx = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
-    while (occupied.*[idx] != @intCast(u8, 0)) {
-        if (keys.*[idx] == key) { values.*[idx] = value; return; }
-        idx = (idx + @intCast(usize, 1)) & mask;
-    }
-    keys.*[idx] = key;
-    values.*[idx] = value;
-    occupied.*[idx] = @intCast(u8, 1);
-    count.* += 1;
-}
-
-fn cacheGetU32(keys: [*]u32, values: [*]u32, occupied: [*]u8, capacity: usize, key: u32) ?u32 {
-    if (capacity == @intCast(usize, 0)) return null;
-    var mask = capacity - @intCast(usize, 1);
-    var idx = @intCast(usize, key) & mask;
-    while (occupied[idx] != @intCast(u8, 0)) {
-        if (keys[idx] == key) return values[idx];
-        idx = (idx + @intCast(usize, 1)) & mask;
-    }
-    return null;
-}
-
-fn cacheGrowU32(self: *TypeRegistry, keys: *[*]u32, values: *[*]u32, occupied: *[*]u8, capacity: *usize, count: *usize) void {
-    var old_cap = capacity.*;
-    var old_keys = keys.*;
-    var old_values = values.*;
-    var old_occupied = occupied.*;
-    var new_cap = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
-    var raw_keys = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_vals = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_occ = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
-    keys.* = @ptrCast([*]u32, raw_keys);
-    values.* = @ptrCast([*]u32, raw_vals);
-    occupied.* = @ptrCast([*]u8, raw_occ);
-    capacity.* = new_cap;
-    count.* = @intCast(usize, 0);
-    var zi: usize = 0;
-    while (zi < new_cap) { occupied.*[zi] = @intCast(u8, 0); zi += 1; }
-    var ri: usize = 0;
-    while (ri < old_cap) {
-        if (old_occupied[ri] != @intCast(u8, 0)) {
-            var k = old_keys[ri];
-            var v = old_values[ri];
-            var mask2 = new_cap - @intCast(usize, 1);
-            var idx = @intCast(usize, k) & mask2;
-            while (occupied.*[idx] != @intCast(u8, 0)) { idx = (idx + @intCast(usize, 1)) & mask2; }
-            keys.*[idx] = k;
-            values.*[idx] = v;
-            occupied.*[idx] = @intCast(u8, 1);
-            count.* += 1;
-        }
-        ri += 1;
-    }
-}
-
-fn cachePutU32(self: *TypeRegistry, keys: *[*]u32, values: *[*]u32, occupied: *[*]u8, capacity: *usize, count: *usize, key: u32, value: u32) void {
-    if (count.* * @intCast(usize, 4) >= capacity.* * @intCast(usize, 3)) { cacheGrowU32(self, keys, values, occupied, capacity, count); }
-    if (capacity.* == @intCast(usize, 0)) { cacheGrowU32(self, keys, values, occupied, capacity, count); }
-    var mask = capacity.* - @intCast(usize, 1);
-    var idx = @intCast(usize, key) & mask;
-    while (occupied.*[idx] != @intCast(u8, 0)) {
-        if (keys.*[idx] == key) { values.*[idx] = value; return; }
-        idx = (idx + @intCast(usize, 1)) & mask;
-    }
-    keys.*[idx] = key;
-    values.*[idx] = value;
-    occupied.*[idx] = @intCast(u8, 1);
-    count.* += 1;
+    hash_mod.u64ToU32MapPut(&self.name_cache, key, value);
 }
 
 pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
     var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
     var key: u64 = (@intCast(u64, base) << @intCast(u64, 1)) | ic;
-    if (cacheGetU64(self.pc_keys, self.pc_values, self.pc_occupied, self.pc_capacity, key)) |existing| return existing;
-    ptrAppend(self, PtrPayload{ .base = base, .is_const = is_const });
+    if (hash_mod.u64ToU32MapGet(&self.ptr_cache, key)) |existing| return existing;
+    ptrAppend(self, PtrPayload{ .base = base });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.ptr_type, .state = @intCast(u8, 2),
         .flags = @intCast(u8, if (is_const) 1 else 0), ._pad = @intCast(u8, 0),
@@ -477,15 +291,15 @@ pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: b
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.ptr_len - @intCast(usize, 1)),
     });
-    cachePutU64(self, &self.pc_keys, &self.pc_values, &self.pc_occupied, &self.pc_capacity, &self.pc_count, key, tid);
+    hash_mod.u64ToU32MapPut(&self.ptr_cache, key, tid);
     return tid;
 }
 
 pub fn typeRegistryGetOrCreateManyPtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
     var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
     var key: u64 = (@intCast(u64, base) << @intCast(u64, 1)) | ic;
-    if (cacheGetU64(self.mpc_keys, self.mpc_values, self.mpc_occupied, self.mpc_capacity, key)) |existing| return existing;
-    ptrAppend(self, PtrPayload{ .base = base, .is_const = is_const });
+    if (hash_mod.u64ToU32MapGet(&self.many_ptr_cache, key)) |existing| return existing;
+    ptrAppend(self, PtrPayload{ .base = base });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.many_ptr_type, .state = @intCast(u8, 2),
         .flags = @intCast(u8, if (is_const) 1 else 0), ._pad = @intCast(u8, 0),
@@ -493,15 +307,15 @@ pub fn typeRegistryGetOrCreateManyPtr(self: *TypeRegistry, base: TypeId, is_cons
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.ptr_len - @intCast(usize, 1)),
     });
-    cachePutU64(self, &self.mpc_keys, &self.mpc_values, &self.mpc_occupied, &self.mpc_capacity, &self.mpc_count, key, tid);
+    hash_mod.u64ToU32MapPut(&self.many_ptr_cache, key, tid);
     return tid;
 }
 
 pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const: bool) u32 {
     var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
     var key: u64 = (@intCast(u64, elem) << @intCast(u64, 1)) | ic;
-    if (cacheGetU64(self.slc_keys, self.slc_values, self.slc_occupied, self.slc_capacity, key)) |existing| return existing;
-    sliceAppend(self, SlicePayload{ .elem = elem, .is_const = is_const });
+    if (hash_mod.u64ToU32MapGet(&self.slice_cache, key)) |existing| return existing;
+    sliceAppend(self, SlicePayload{ .elem = elem });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.slice_type, .state = @intCast(u8, 2),
         .flags = @intCast(u8, if (is_const) 1 else 0), ._pad = @intCast(u8, 0),
@@ -509,12 +323,12 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.slice_len - @intCast(usize, 1)),
     });
-    cachePutU64(self, &self.slc_keys, &self.slc_values, &self.slc_occupied, &self.slc_capacity, &self.slc_count, key, tid);
+    hash_mod.u64ToU32MapPut(&self.slice_cache, key, tid);
     return tid;
 }
 
 pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32 {
-    if (cacheGetU32(self.optc_keys, self.optc_values, self.optc_occupied, self.optc_capacity, payload)) |existing| return existing;
+    if (hash_mod.u32ToU32MapGet(&self.optional_cache, payload)) |existing| return existing;
     var pay_type = self.types_items[payload];
     var opt_size: u32 = 0;
     var opt_align: u32 = 0;
@@ -533,15 +347,28 @@ pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.opt_len - @intCast(usize, 1)),
     });
-    if (opt_state == @intCast(u8, 2)) cachePutU32(self, &self.optc_keys, &self.optc_values, &self.optc_occupied, &self.optc_capacity, &self.optc_count, payload, tid);
+    if (opt_state == @intCast(u8, 2)) hash_mod.u32ToU32MapPut(&self.optional_cache, payload, tid);
     return tid;
 }
 
 pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, error_set: TypeId) u32 {
+    var pay_type = self.types_items[payload];
+    var eu_size: u32 = 0;
+    var eu_align: u32 = 0;
+    var eu_state: u8 = 0;
+    if (pay_type.state == @intCast(u8, 2)) {
+        var union_size = if (pay_type.size > @intCast(u32, 4)) pay_type.size else @intCast(u32, 4);
+        var union_align = if (pay_type.alignment > @intCast(u32, 4)) pay_type.alignment else @intCast(u32, 4);
+        var total = alignUp(union_size, union_align);
+        total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
+        eu_size = alignUp(total, union_align);
+        eu_align = union_align;
+        eu_state = @intCast(u8, 2);
+    }
     euAppend(self, EUPayload{ .payload = payload, .error_set = error_set });
     return typeRegistryAppend(self, Type{
-        .kind = TypeKind.error_union_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
-        .size = @intCast(u32, 8), .alignment = @intCast(u32, 4),
+        .kind = TypeKind.error_union_type, .state = eu_state, .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .size = eu_size, .alignment = eu_align,
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.eu_len - @intCast(usize, 1)),
     });
@@ -549,22 +376,24 @@ pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, e
 
 pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u32) u32 {
     var key = (@intCast(u64, elem) << @intCast(u64, 32)) | @intCast(u64, length);
-    if (cacheGetU64(self.arrc_keys, self.arrc_values, self.arrc_occupied, self.arrc_capacity, key)) |existing| return existing;
+    if (hash_mod.u64ToU32MapGet(&self.array_cache, key)) |existing| return existing;
     arrayAppend(self, ArrayPayload{ .elem = elem, .length = length });
     var elem_ty = self.types_items[elem];
     var arr_size: u32 = 0;
     var arr_align: u32 = 0;
+    var arr_state: u8 = 0;
     if (elem_ty.state == @intCast(u8, 2)) {
         arr_size = elem_ty.size * length;
         arr_align = elem_ty.alignment;
+        arr_state = @intCast(u8, 2);
     }
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.array_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.array_type, .state = arr_state, .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
         .size = arr_size, .alignment = arr_align,
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.array_len - @intCast(usize, 1)),
     });
-    if (elem_ty.state == @intCast(u8, 2)) cachePutU64(self, &self.arrc_keys, &self.arrc_values, &self.arrc_occupied, &self.arrc_capacity, &self.arrc_count, key, tid);
+    if (elem_ty.state == @intCast(u8, 2)) hash_mod.u64ToU32MapPut(&self.array_cache, key, tid);
     return tid;
 }
 
@@ -644,4 +473,81 @@ pub fn isValueDependency(kind: TypeKind) bool {
     if (kind == TypeKind.tuple_type) return true;
     if (kind == TypeKind.unresolved_name) return true;
     return false;
+}
+
+pub fn typeRegistryGetTypeState(self: *TypeRegistry, tid: u32) u8 {
+    return self.types_items[tid].state;
+}
+
+pub fn typeRegistryIsNumeric(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    if (kind == TypeKind.i8_type) return true;
+    if (kind == TypeKind.i16_type) return true;
+    if (kind == TypeKind.i32_type) return true;
+    if (kind == TypeKind.i64_type) return true;
+    if (kind == TypeKind.u8_type) return true;
+    if (kind == TypeKind.u16_type) return true;
+    if (kind == TypeKind.u32_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.isize_type) return true;
+    if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.f32_type) return true;
+    if (kind == TypeKind.f64_type) return true;
+    if (kind == TypeKind.integer_literal_type) return true;
+    return false;
+}
+
+pub fn typeRegistryIsInteger(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    if (kind == TypeKind.i8_type) return true;
+    if (kind == TypeKind.i16_type) return true;
+    if (kind == TypeKind.i32_type) return true;
+    if (kind == TypeKind.i64_type) return true;
+    if (kind == TypeKind.u8_type) return true;
+    if (kind == TypeKind.u16_type) return true;
+    if (kind == TypeKind.u32_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.isize_type) return true;
+    if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.integer_literal_type) return true;
+    return false;
+}
+
+pub fn typeRegistryIsUnsigned(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    if (kind == TypeKind.u8_type) return true;
+    if (kind == TypeKind.u16_type) return true;
+    if (kind == TypeKind.u32_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.usize_type) return true;
+    return false;
+}
+
+pub fn typeRegistryIsPointer(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    return kind == TypeKind.ptr_type or kind == TypeKind.many_ptr_type;
+}
+
+pub fn typeRegistryIsSlice(self: *TypeRegistry, tid: u32) bool {
+    return self.types_items[tid].kind == TypeKind.slice_type;
+}
+
+pub fn typeRegistryGetPointeeType(self: *TypeRegistry, tid: u32) ?u32 {
+    var ty = self.types_items[tid];
+    if (ty.kind != TypeKind.ptr_type and ty.kind != TypeKind.many_ptr_type) return null;
+    return self.ptr_items[ty.payload_idx].base;
+}
+
+pub fn typeRegistryGetSliceElem(self: *TypeRegistry, tid: u32) ?u32 {
+    var ty = self.types_items[tid];
+    if (ty.kind != TypeKind.slice_type) return null;
+    return self.slice_items[ty.payload_idx].elem;
+}
+
+pub fn typeRegistryGetStructFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {
+    var ty = self.types_items[tid];
+    var sp = self.st_items[ty.payload_idx];
+    var fstart: usize = @intCast(usize, sp.fields_start);
+    var fcount: usize = @intCast(usize, sp.fields_count);
+    out.* = self.fe_items[fstart .. fstart + fcount];
 }

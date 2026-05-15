@@ -54,6 +54,7 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 5. **Test Compliance**: Ensure code passes unit tests, differential tests, and memory gates.
 6. **Documentation Updates**: Update `docs/sf/` if implementation details necessitate changes (e.g., clarifications, edge cases).
 7. **Clarification Requests**: When encountering ambiguity, ask explicitly rather than assuming.
+8. **No Scope Creep**: Execute only the task requested. Do not batch-implement adjacent tasks without approval. "Plan the next 3 tasks" is plan-only — execution requires explicit user confirmation per task.
 
 ### 1.2 Development Environment
 
@@ -78,6 +79,7 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 | No method syntax | Use free functions (`fn foo(self: *T, ...)`) . |
 | `std.debug.print` requires tuple | Always use `.{}` syntax for arguments. |
 | Global aggregate constants | Use `pub var` and initialize in a dedicated `init()` function. |
+| Slice bounds with inline cast+math | Pre-compute into local `var` vars; zig0 cannot resolve `@intCast` + `+` inside `[a..b]`. |
 
 ### 1.4 Memory Budget Enforcement
 

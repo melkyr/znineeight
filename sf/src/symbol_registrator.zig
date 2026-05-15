@@ -17,6 +17,8 @@ pub const DepGraph = struct {
     len: usize,
     cap: usize,
     alloc: *Sand,
+    in_degree_items: [*]u32,
+    in_degree_cap: usize,
 };
 
 pub fn depGraphInit(alloc: *Sand) DepGraph {
@@ -25,12 +27,14 @@ pub fn depGraphInit(alloc: *Sand) DepGraph {
         .len = @intCast(usize, 0),
         .cap = @intCast(usize, 0),
         .alloc = alloc,
+        .in_degree_items = undefined,
+        .in_degree_cap = @intCast(usize, 0),
     };
 }
 
 fn depGraphEnsureCapacity(self: *DepGraph) void {
     if (self.len < self.cap) return;
-    var nc = if (self.cap < 8) @intCast(usize, 8) else self.cap * 2;
+    var nc: usize = if (self.cap < 8) @intCast(usize, 8) else self.cap * 2;
     var raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 8) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]DepEdge, raw);
     for (self.items[0..self.len]) |item, i| { new_items[i] = item; }
@@ -42,6 +46,22 @@ pub fn depGraphAddEdge(self: *DepGraph, from: u32, to: u32) void {
     depGraphEnsureCapacity(self);
     self.items[self.len] = DepEdge{ .from = from, .to = to };
     self.len += 1;
+}
+
+pub fn depGraphFinalize(self: *DepGraph, max_type_id: u32) void {
+    var count = @intCast(usize, max_type_id + @intCast(u32, 1));
+    if (count > self.in_degree_cap) {
+        var raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * count, @intCast(usize, 4)) catch unreachable;
+        self.in_degree_items = @ptrCast([*]u32, raw);
+        self.in_degree_cap = count;
+    }
+    var i: usize = 0;
+    while (i < count) { self.in_degree_items[i] = @intCast(u32, 0); i += 1; }
+    i = 0;
+    while (i < self.len) {
+        self.in_degree_items[self.items[i].to] += 1;
+        i += 1;
+    }
 }
 
 fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) void {

@@ -1,6 +1,7 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const TypeRegistry = @import("type_registry.zig").TypeRegistry;
+const TypeKind = @import("type_registry.zig").TypeKind;
 const TypeId = @import("type_registry.zig").TypeId;
 const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
 const diag_mod = @import("diagnostics.zig");
@@ -68,6 +69,126 @@ fn inDegreeEnsureCapacity(self: *TypeResolver, capacity: usize) void {
     self.in_degree_cap = nc;
 }
 
+fn alignUp(v: u32, a: u32) u32 {
+    return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
+}
+
+fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
+    var idx = @intCast(usize, tid);
+    var ty = self.registry.types_items[idx];
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
+        var fstart: usize = @intCast(usize, sp.fields_start);
+        var fcount: usize = @intCast(usize, sp.fields_count);
+        var offset: u32 = 0;
+        var max_align: u32 = 1;
+        var fi: usize = 0;
+        while (fi < fcount) : (fi += 1) {
+            var fe = self.registry.fe_items[fstart + fi];
+            var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind == TypeKind.void_type) {
+                fe.offset = offset;
+                self.registry.fe_items[fstart + fi] = fe;
+                continue;
+            }
+            offset = alignUp(offset, ft.alignment);
+            fe.offset = offset;
+            self.registry.fe_items[fstart + fi] = fe;
+            offset += ft.size;
+            if (ft.alignment > max_align) max_align = ft.alignment;
+        }
+        ty.size = alignUp(offset, max_align);
+        ty.alignment = max_align;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.enum_type) {
+        var ep = self.registry.en_items[@intCast(usize, ty.payload_idx)];
+        var bt = self.registry.types_items[@intCast(usize, ep.backing_type)];
+        ty.size = bt.size;
+        ty.alignment = bt.alignment;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.union_type) {
+        var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+        var fstart: usize = @intCast(usize, up.fields_start);
+        var fcount: usize = @intCast(usize, up.fields_count);
+        var max_sz: u32 = 0;
+        var max_align: u32 = 1;
+        var fi: usize = 0;
+        while (fi < fcount) : (fi += 1) {
+            var fe = self.registry.fe_items[fstart + fi];
+            var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind == TypeKind.void_type) continue;
+            if (ft.size > max_sz) max_sz = ft.size;
+            if (ft.alignment > max_align) max_align = ft.alignment;
+        }
+        ty.size = alignUp(max_sz, max_align);
+        ty.alignment = max_align;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+        var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];
+        var fstart: usize = @intCast(usize, tp.fields_start);
+        var fcount: usize = @intCast(usize, tp.fields_count);
+        var max_ps: u32 = 0;
+        var max_pa: u32 = 1;
+        var fi: usize = 0;
+        while (fi < fcount) : (fi += 1) {
+            var fe = self.registry.fe_items[fstart + fi];
+            var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind == TypeKind.void_type) continue;
+            if (ft.size > max_ps) max_ps = ft.size;
+            if (ft.alignment > max_pa) max_pa = ft.alignment;
+        }
+        var overall_align = if (tag_ty.alignment > max_pa) tag_ty.alignment else max_pa;
+        var total = tag_ty.size;
+        total = alignUp(total, max_pa);
+        total += alignUp(max_ps, max_pa);
+        ty.size = alignUp(total, overall_align);
+        ty.alignment = overall_align;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.optional_type) {
+        var op = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
+        var pt = self.registry.types_items[@intCast(usize, op.payload)];
+        var pay_align = if (pt.alignment > @intCast(u32, 4)) pt.alignment else @intCast(u32, 4);
+        ty.size = alignUp(alignUp(pt.size, @intCast(u32, 4)) + @intCast(u32, 4), pay_align);
+        ty.alignment = pay_align;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var ep = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
+        var pt = self.registry.types_items[@intCast(usize, ep.payload)];
+        var union_sz = if (pt.size > @intCast(u32, 4)) pt.size else @intCast(u32, 4);
+        var union_align = if (pt.alignment > @intCast(u32, 4)) pt.alignment else @intCast(u32, 4);
+        var total = alignUp(union_sz, union_align);
+        total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
+        ty.size = alignUp(total, union_align);
+        ty.alignment = union_align;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.array_type) {
+        var ap = self.registry.array_items[@intCast(usize, ty.payload_idx)];
+        var et = self.registry.types_items[@intCast(usize, ap.elem)];
+        ty.size = et.size * ap.length;
+        ty.alignment = et.alignment;
+        self.registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tp = self.registry.tup_items[@intCast(usize, ty.payload_idx)];
+        var estr: usize = @intCast(usize, tp.elems_start);
+        var ecount: usize = @intCast(usize, tp.elems_count);
+        var offset: u32 = 0;
+        var max_align: u32 = 1;
+        var ei: usize = 0;
+        while (ei < ecount) : (ei += 1) {
+            var elem_tid = self.registry.xt_items[estr + ei];
+            var et = self.registry.types_items[@intCast(usize, elem_tid)];
+            offset = alignUp(offset, et.alignment);
+            offset += et.size;
+            if (et.alignment > max_align) max_align = et.alignment;
+        }
+        ty.size = alignUp(offset, max_align);
+        ty.alignment = max_align;
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
+        self.registry.types_items[idx] = ty;
+    }
+}
+
 pub fn typeResolverInit(registry: *TypeRegistry, diag: *DiagnosticCollector, alloc: *Sand) TypeResolver {
     return TypeResolver{
         .registry = registry,
@@ -122,6 +243,7 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
     while (self.worklist_len > 0) {
         var tid_val = worklistPop(self);
         if (tid_val) |tid| {
+            typeResolverResolveLayout(self, tid);
             self.registry.types_items[@intCast(usize, tid)].state = @intCast(u8, 2);
             var ei: usize = 0;
             while (ei < self.depend_len) {
