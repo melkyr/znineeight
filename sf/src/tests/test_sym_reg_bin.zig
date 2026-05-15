@@ -17,6 +17,8 @@ const type_mod = @import("../type_registry.zig");
 const TypeKind = type_mod.TypeKind;
 const type_resolver = @import("../type_resolver.zig");
 const pal = @import("../pal.zig");
+const rtt_mod = @import("../resolved_type_table.zig");
+const sa_mod = @import("../semantic_analyzer.zig");
 
 fn lexSource(content: []const u8, interner: *interner_mod.StringInterner, diag: *diag_mod.DiagnosticCollector, sand: *Sand, tokens: []Token) usize {
     var lex = lexer_mod.lexerInit(content, @intCast(u32, 0), interner, diag, sand);
@@ -209,6 +211,12 @@ pub fn main() void {
     testForwardRefIntegration(&interner, &a, &diag);
     testCrossModuleTypeResolution(&interner, &a, &diag);
     testCycleDetectionIntegration(&interner, &a, &diag);
+
+    testResolvedTypeTableSetGet(&a);
+    testResolvedTypeTableOverwrite(&a);
+    testResolvedTypeTableNotFound(&a);
+
+    testSemanticAnalyzerInit(&a);
 
     var msg: []const u8 = "Symbol registration tests passed.\n";
     pal.stdout_write(msg);
@@ -1163,6 +1171,75 @@ fn testCrossModuleTypeResolution(interner: *interner_mod.StringInterner, sand: *
         var emsg: []const u8 = "FAIL xmod direct not found\n"; pal.stdout_write(emsg); pal.exit(1);
     }
     var m: []const u8 = "testCrossModuleTypeResolution passed.\n"; pal.stdout_write(m);
+}
+
+fn testSemanticAnalyzerInit(arena: *Sand) void {
+    var rtt = rtt_mod.resolvedTypeTableInit(arena);
+    var tr = type_mod.typeRegistryInit(arena, undefined);
+    var st = sym_mod.symbolRegistryInit(arena);
+    var store = ast_mod.astStoreInit(arena);
+    var diag_storage: diag_mod.DiagnosticCollector = undefined;
+    var sa = sa_mod.semanticAnalyzerInit(arena, &rtt, &diag_storage, &tr, &st, &store, @intCast(u32, 0));
+    if (sa.type_table == null) { var emsg: []const u8 = "FAIL sa: type_table null\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (sa.diag == null) { var emsg: []const u8 = "FAIL sa: diag null\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (sa.registry == null) { var emsg: []const u8 = "FAIL sa: registry null\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (sa.symbols == null) { var emsg: []const u8 = "FAIL sa: symbols null\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (sa.store == null) { var emsg: []const u8 = "FAIL sa: store null\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (sa.module_id != @intCast(u32, 0)) { var emsg: []const u8 = "FAIL sa: module_id != 0\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (sa.expected_type_stack_len != @intCast(usize, 0)) { var emsg: []const u8 = "FAIL sa: stack not empty\n"; pal.stdout_write(emsg); pal.exit(1); }
+    var msg: []const u8 = "testSemanticAnalyzerInit passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testResolvedTypeTableSetGet(arena: *Sand) void {
+    var rtt = rtt_mod.resolvedTypeTableInit(arena);
+    rtt_mod.resolvedTypeTableSet(&rtt, @intCast(u32, 1), @intCast(u32, 10));
+    rtt_mod.resolvedTypeTableSet(&rtt, @intCast(u32, 3), @intCast(u32, 30));
+    rtt_mod.resolvedTypeTableSet(&rtt, @intCast(u32, 5), @intCast(u32, 50));
+
+    var opt1 = rtt_mod.resolvedTypeTableGet(&rtt, @intCast(u32, 1));
+    if (opt1) |v| {
+        if (v != @intCast(u32, 10)) { var emsg: []const u8 = "FAIL rtt set-get node 1\n"; pal.stdout_write(emsg); pal.exit(1); }
+    } else {
+        var emsg: []const u8 = "FAIL rtt set-get node 1 missing\n"; pal.stdout_write(emsg); pal.exit(1);
+    }
+    var opt3 = rtt_mod.resolvedTypeTableGet(&rtt, @intCast(u32, 3));
+    if (opt3) |v| {
+        if (v != @intCast(u32, 30)) { var emsg: []const u8 = "FAIL rtt set-get node 3\n"; pal.stdout_write(emsg); pal.exit(1); }
+    } else {
+        var emsg: []const u8 = "FAIL rtt set-get node 3 missing\n"; pal.stdout_write(emsg); pal.exit(1);
+    }
+    var opt5 = rtt_mod.resolvedTypeTableGet(&rtt, @intCast(u32, 5));
+    if (opt5) |v| {
+        if (v != @intCast(u32, 50)) { var emsg: []const u8 = "FAIL rtt set-get node 5\n"; pal.stdout_write(emsg); pal.exit(1); }
+    } else {
+        var emsg: []const u8 = "FAIL rtt set-get node 5 missing\n"; pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testResolvedTypeTableSetGet passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testResolvedTypeTableOverwrite(arena: *Sand) void {
+    var rtt = rtt_mod.resolvedTypeTableInit(arena);
+    rtt_mod.resolvedTypeTableSet(&rtt, @intCast(u32, 7), @intCast(u32, 5));
+    rtt_mod.resolvedTypeTableSet(&rtt, @intCast(u32, 7), @intCast(u32, 9));
+    var opt7 = rtt_mod.resolvedTypeTableGet(&rtt, @intCast(u32, 7));
+    if (opt7) |v| {
+        if (v != @intCast(u32, 9)) { var emsg: []const u8 = "FAIL rtt overwrite\n"; pal.stdout_write(emsg); pal.exit(1); }
+    } else {
+        var emsg: []const u8 = "FAIL rtt overwrite missing\n"; pal.stdout_write(emsg); pal.exit(1);
+    }
+    var msg: []const u8 = "testResolvedTypeTableOverwrite passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testResolvedTypeTableNotFound(arena: *Sand) void {
+    var rtt = rtt_mod.resolvedTypeTableInit(arena);
+    rtt_mod.resolvedTypeTableSet(&rtt, @intCast(u32, 1), @intCast(u32, 10));
+    var opt2 = rtt_mod.resolvedTypeTableGet(&rtt, @intCast(u32, 2));
+    if (opt2 != null) { var emsg: []const u8 = "FAIL rtt not-found\n"; pal.stdout_write(emsg); pal.exit(1); }
+    var msg: []const u8 = "testResolvedTypeTableNotFound passed.\n";
+    pal.stdout_write(msg);
 }
 
 fn testCycleDetectionIntegration(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {

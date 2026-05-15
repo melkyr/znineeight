@@ -25,6 +25,7 @@ pub const TYPE_F64:       TypeId = 16;
 pub const TYPE_NULL:      TypeId = 17;
 pub const TYPE_UNDEFINED: TypeId = 18;
 pub const TYPE_INT_LIT:   TypeId = 19;
+pub const TYPE_TYPE:      TypeId = 20;
 pub const FIRST_USER_TYPE: TypeId = 20;
 
 pub const TypeKind = enum(u8) {
