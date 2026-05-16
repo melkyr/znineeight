@@ -13,8 +13,8 @@ Semantic analysis at this stage will be limited to what is necessary to support 
 -   **Header Type Topological Sorting:** Ordering types within a module's header based on value dependencies to satisfy C89 definition-before-use requirements.
 -   **Type checking:** Verifying that operations are performed on compatible types in topological order.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
--   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name.
--   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly. Identifier lookup includes a fallback to all active scopes to ensure local symbols in nested blocks are correctly resolved.
+-   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name. This is enforced using `isLocalContext()` and `isTopLevelDeclaration()` checks.
+-   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly. Identifier lookup includes a fallback to all active scopes to ensure local symbols in nested blocks are correctly resolved. The `is_resolving_signature_` flag ensures that parameters resolved during cross-module signature lookups are correctly attributed.
 -   **Recursion depth control:** Preventing stack overflow during AST traversal.
 
 ## 2. Type Representation
@@ -480,6 +480,9 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 12. **Stable In-place Mutation**: The `finalizePlaceholder` mechanism ensures that placeholders are correctly mutated into their resolved types even when the mutation happens in-place (e.g., when `createStructType` is passed a placeholder). It also handles the unification of multiple placeholder objects that might have been created for the same named type across different module contexts.
 13. **Placeholder Name Restoration**: When a placeholder is finalized, the resolved type may be anonymous (e.g., a struct defined inline). To prevent the generated C code from using `/* anonymous */` for named types, the `finalizePlaceholder` function explicitly restores the original name and ensures that the `c_name` is correctly mangled if it was missing.
 14. **Iterator Stability (Snapshotting Pattern)**: To prevent assertion failures or memory corruption when recursive type resolution mutates `DynamicArray` objects (like function parameters or struct fields) while they are being iterated, the compiler employs a snapshotting pattern. Before entering a loop that might trigger recursive resolution, a temporary array of the elements is allocated from the arena, and the loop iterates over this stable snapshot.
+15. **Context-Aware Symbol Resolution**: To correctly distinguish between global and local symbols during multi-pass and cross-module resolution, the `TypeChecker` employs several technical guards:
+    - **`is_resolving_signature_`**: A flag (managed via `ResolvingSignatureGuard`) that identifies when the compiler is resolving a function signature. This prevents parameters and return types from being incorrectly tagged as local variables if the resolution is triggered from within a different function's body.
+    - **`isTopLevelDeclaration`**: A structural check that verifies if a `VarDecl` node is a direct child of the module's root block. This ensures that top-level constants and variables are always treated as global symbols, even when re-visited during Pass 2.
 
 - **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
 - **Range Validation**: Ranges used in `switch` cases are subject to the following rules:
@@ -1908,3 +1911,17 @@ The compiler supports implicit coercion of tags into tagged unions if the target
 - **Error Handling**:
     - If the tag is not found in the union: `ERR_UNDEFINED_ENUM_MEMBER`.
     - If the tag requires a non-void payload: `ERR_TYPE_MISMATCH`.
+
+## 27. Cross-Module Resolution and Context Switching
+
+To ensure robust cross-module symbol resolution, the compiler implements on-demand resolution with explicit module context switching.
+
+### 27.1 resolveCallSite Context Switching
+When the `TypeChecker` encounters a function call to a symbol that has not been fully resolved yet (e.g., a forward reference to a function in another module), it triggers on-demand resolution via `resolveCallSite`.
+
+1.  **Context Preservation**: The current module context is saved before switching.
+2.  **Context Switch**: The `CompilationUnit`'s current module is switched to the module where the target symbol is defined.
+3.  **Guarded Resolution**: The signature is resolved using `ResolvingSignatureGuard`, which sets the `is_resolving_signature_` flag to prevent parameters from being incorrectly marked as local symbols.
+4.  **Context Restoration**: The original module context is restored immediately after resolution.
+
+This mechanism ensures that type lookups within the function signature (e.g., for parameter types) are correctly scoped to the callee's module, allowing it to see its own imports and local types.

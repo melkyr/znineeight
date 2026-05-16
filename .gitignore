@@ -84,3 +84,12 @@ examples/**/Makefile
 temp_*.c
 temp_*.h
 .opencode/*
+node_modules/*
+bun.lock
+zig0.new
+package.json
+sf/build/*
+out/*
+sf_out/*
+repro_out/*
+out_*/

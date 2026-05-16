@@ -1,5 +1,6 @@
 #include "null_pointer_analyzer.hpp"
 #include "ast.hpp"
+#include "ast_utils.hpp"
 #include "symbol_table.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
@@ -77,13 +78,13 @@ void NullPointerAnalyzer::analyze(ASTNode* root) {
 }
 
 void NullPointerAnalyzer::pushScope(bool copy_parent) {
-    void* mem = unit_.getArena().alloc(sizeof(StateMap));
+    void* mem = unit_.getTransientArena().alloc(sizeof(StateMap));
     StateMap* new_scope;
     if (copy_parent && current_scope_) {
-        new_scope = new (mem) StateMap(*current_scope_, unit_.getArena());
+        new_scope = new (mem) StateMap(*current_scope_, unit_.getTransientArena());
         new_scope->parent = current_scope_;
     } else {
-        new_scope = new (mem) StateMap(unit_.getArena(), current_scope_);
+        new_scope = new (mem) StateMap(unit_.getTransientArena(), current_scope_);
     }
     scopes_.append(new_scope);
     current_scope_ = new_scope;
@@ -223,11 +224,12 @@ void NullPointerAnalyzer::visitBlock(ASTBlockStmtNode* node) {
 }
 
 void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
+    if (!node->symbol) return;
     if (node->initializer) {
         visit(node->initializer);
     }
 
-    Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
+    Symbol* sym = node->symbol;
     if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
         PointerState state = PS_UNINIT;
         if (node->initializer) {
@@ -247,9 +249,9 @@ void NullPointerAnalyzer::visitAssignment(ASTAssignmentNode* node) {
         // Use resolved_type from ASTNode if available (justifying its addition)
         Type* target_type = node->lvalue->resolved_type;
 
-        // Fallback to symbol table if TypeChecker hasn't run or resolved it
+        // Fallback to symbol pointer if TypeChecker has resolved it
         if (!target_type) {
-            Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+            Symbol* sym = node->lvalue->as.identifier.symbol;
             if (sym) target_type = sym->symbol_type;
         }
 
@@ -269,7 +271,7 @@ void NullPointerAnalyzer::visitCompoundAssignment(ASTCompoundAssignmentNode* nod
         const char* name = node->lvalue->as.identifier.name;
         Type* target_type = node->lvalue->resolved_type;
         if (!target_type) {
-            Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+            Symbol* sym = node->lvalue->as.identifier.symbol;
             if (sym) target_type = sym->symbol_type;
         }
 

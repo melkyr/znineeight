@@ -708,6 +708,7 @@ private:
     const char* module_name_;
     const char* current_fn_name_;
     bool is_main_function_;
+    Symbol* argv_symbol_;
     char last_char_;
     int for_loop_counter_;
     SourceLocation current_loc_;

@@ -79,6 +79,8 @@ struct TestNameEntry {
 
 class CompilationUnit {
 public:
+    static const size_t SCRATCH_ARENA_CAPACITY = 16 * 1024 * 1024;
+
     CompilationUnit(ArenaAllocator& arena, StringInterner& interner);
 
     u32 addSource(const char* filename, const char* source);
@@ -112,6 +114,9 @@ public:
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
     ArenaAllocator& getTransientArena();
+    ArenaAllocator& getScratchArena();
+
+    int& getScratchNestingDepth() { return scratch_nesting_depth_; }
 
     void resetTransientArena();
     void resetTokenArena();
@@ -130,6 +135,9 @@ public:
     const CompilationOptions& getOptions() const;
     void setOptions(const CompilationOptions& options);
 
+    bool isPostCheckPhase() const { return is_post_check_phase_; }
+    void setPostCheckPhase(bool value);
+
     void addIncludePath(const char* path);
     const DynamicArray<const char*>& getIncludePaths() const { return include_paths_; }
 
@@ -142,9 +150,10 @@ public:
     /**
      * @brief Executes the full compilation pipeline for a single file.
      * @param file_id The ID of the source file to compile.
+     * @param output_dir Optional directory to emit generated C code.
      * @return True if the pipeline finished successfully (though it may have found errors).
      */
-    bool performFullPipeline(u32 file_id);
+    bool performFullPipeline(u32 file_id, const char* output_dir = NULL);
 
     /**
      * @brief Recursively resolves imports for the given module.
@@ -202,10 +211,13 @@ public:
 
 private:
     void precomputeMangledNames(Module* mod);
+    void flattenTransitiveAliases();
 
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
     ArenaAllocator transient_arena_;
+    ArenaAllocator scratch_arena_;
+    int scratch_nesting_depth_;
     TypeInterner type_interner_;
     TypeRegistry type_registry_;
     DynamicArray<PendingResolution> pending_resolutions_;
@@ -242,6 +254,7 @@ private:
     int test_name_counter_;
     bool validation_completed_;
     bool c89_validation_passed_;
+    bool is_post_check_phase_;
 };
 
 #endif // COMPILATION_UNIT_HPP

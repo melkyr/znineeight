@@ -1,44 +1,47 @@
-# Z98 0.12.1 “Isophthalic anhydride” Release Notes
+# Z98 0.13.0 “2-Propanol” Release Notes
 
-We are proud to announce the release of Z98 version **0.12.1**, codenamed **“Isophthalic anhydride”**.
+We are proud to announce the release of Z98 version **0.13.0**, codenamed **“2-Propanol”**.
 
-As an anhydride is the dehydrated form of an acid, this patch release represents a "drier," more refined version of our previous "Isophthalic acid" release. Version 0.12.1 focuses on hardening the `zig0` bootstrap compiler by resolving critical C89 compatibility edge cases and improving the robustness of our type system and code generation.
+Version 0.13.0 represents the most stable and robust version of the Z98 bootstrap compiler to date. This release focuses on "Hardening" the core semantic engine and implementing critical memory optimizations, ensuring stable multi-module compilation for large-scale projects like the stage 1 Zig compiler.
 
-## 🏗️ Hardening C89 Compatibility
+## 🚀 Memory Optimization Excellence
 
-The primary focus of this release is ensuring that Z98 remains the most compatible Zig-to-C89 compiler for legacy environments like MSVC 6.0 and OpenWatcom.
+Version 0.13.0 brings several critical memory optimizations that further solidify Z98's ability to run on 16MB-64MB Pentium I/II hardware.
+- **Token Arena Reset**: The token arena is now reset immediately after parsing all modules. This frees approximately **1MB** of memory that is no longer needed during semantic analysis.
+- **Shared Emitter Buffer**: We've refactored the `C89Emitter` to use a single shared buffer across all generated files. This eliminates the 128KB-per-file static overhead, saving up to **2.8MB** in large projects.
+- **AST Block Reuse**: The `ControlFlowLifter` now reuses existing block nodes instead of cloning them during expression-to-statement transformation, reducing peak memory usage by approximately **0.5MB**.
+- **Chunk Size Tuning**: The default arena chunk size has been tuned to 256KB to minimize internal fragmentation and improve memory granularity.
+
+## 🛡️ Systemic Symbol Table Hardening
+
+We have resolved a critical class of bugs related to "Symbol Corruption" that occurred during complex cross-module imports.
+- **Preserved Type Metadata**: `Scope::insert` is now hardened to preserve existing type metadata. If an incoming symbol lacks type information, the existing resolved type is maintained, ensuring that once a type is resolved, it remains stable.
+- **Pre-Insertion Strategy**: Local variables are now inserted into the symbol table *before* their initializers are resolved. This ensures the variable's name is known even if the initializer contains an error, preventing confusing "undeclared identifier" cascades.
+- **Forced Resolution Pass**: At the end of every block, the compiler performs a second pass on any variables that still have an undefined type, ensuring every local variable has a concrete type before static analysis.
+
+## 🏗️ Production-Grade Module Identity
+
+We have overhauled how the compiler tracks and identifies modules to ensure 100% reliable type deduplication across complex import graphs.
+- **Canonical Module Identity**: The `TypeRegistry` now uses **Canonical Module Paths** (absolute, normalized, and case-insensitive) as unique keys for type lookups, ensuring that `std.zig` is always `std.zig`, regardless of how it was imported.
+
+## 🛠️ Robust Alias & Placeholder Resolution
+
+The resolution of transitive type aliases and mutually recursive structures has been significantly strengthened.
+- **Fixed-Point Placeholder Resolution**: Phase 0.5 now utilizes a **Fixed-Point Iteration** strategy, iterating until convergence to handle even the deepest chains of cross-module type aliases.
+- **Deep Alias Unwrapping**: The compiler now deeply unwraps `TYPE_TYPE` chains during type constant resolution, allowing the `TypeChecker` to see through alias layers immediately.
+
+## 📦 Hardening C89 Compatibility
 
 ### 📦 Aggregate Initializer Lifting
-We have addressed a significant C89 compatibility gap regarding aggregate initializers (structs, unions, and tuples) in expression contexts.
-- **The Issue**: Previously, passing a struct literal directly to a function (e.g., `func(.{ .x = 1 })`) would sometimes emit invalid C99 compound literals or braced initializers in an expression context, which legacy compilers reject with `error C2059: syntax error : '{'`.
-- **The Solution**: The `ControlFlowLifter` now automatically identifies aggregate literals in non-constant expression contexts and "lifts" them into uniquely named temporary variables. These variables are then decomposed into field-by-field assignments, ensuring 100% ANSI C89 compliance.
+The `ControlFlowLifter` now automatically identifies aggregate literals (structs, unions, tuples) in non-constant expression contexts and "lifts" them into uniquely named temporary variables. These are then decomposed into field-by-field assignments, ensuring 100% ANSI C89 compliance.
 
 ### 🏷️ Enhanced Tagged Union Coercion
-Z98 now supports distributed coercion for tagged unions within control-flow expressions.
-- You can now return "naked" tag literals (e.g., `.Alive`) from different branches of an `if` or `switch` expression, provided the expected result type is a tagged union.
-- The `TypeChecker` now proactively unifies branch types by coercing literals into their full tagged union representations before final validation, simplifying the implementation of complex state machines.
+Z98 now supports distributed coercion for tagged unions within control-flow expressions. You can return "naked" tag literals (e.g., `.Alive`) from branches of an `if` or `switch`, provided the expected result type is a tagged union.
 
-## 🛠️ Internal Compiler Improvements
+## 🔍 Static Analyzer Decoupling
 
-### 🧬 Standardized Identifier Mangling
-We have refined our internal mangling strategy to better support compiler-generated symbols.
-- Identifiers starting with `__` (reserved for internal use) are now bypassed by the module-prefixing and keyword-mangling logic.
-- This ensures that internal runtime helpers and compiler-generated temporaries maintain consistent names across translation units, resolving several "undeclared identifier" issues in complex multi-module builds.
-
-### 🌐 Cross-Module Type Visibility
-Following an investigation into cross-module resolution failures, we have improved how the compiler handles qualified member access for types and modules.
-- The `TypeChecker` now more robustly unwraps meta-types and resolves placeholders when accessing union tags and type aliases across module boundaries (e.g., `Module.Union.Tag`).
-- Structural equality checks have been enhanced to account for nominal type identity in cross-module contexts, preventing spurious "type mismatch" errors.
-
-## 🔌 Platform & Runtime
-- **Standardized Print IO**: Unified all `plat_print_*` functions to route through the global `Logger` instance, improving consistency across 32-bit targets.
-- **`@intToPtr` Support**: Added support for the `@intToPtr` builtin to assist with low-level memory mapping and driver development.
-
-## 📂 New Documentation
-- **[Z98 Bootstrap Manual](docs/reference/z98_bootstrap_manual.md)**: A new comprehensive guide detailing idiomatic patterns, subset constraints, and the PAL API, with extensive examples from the `rogue_mud` and `lisp_interpreter_curr` projects.
-
-## 📜 100% Test Stability
-The Z98 test suite continues to pass at 100% stability across all **82 batches**. This release includes new integration tests (Batches 9b and 61) specifically targeting the new lifting and coercion logic.
+The `LifetimeAnalyzer` and `NullPointerAnalyzer` have been decoupled from the lexical scoping system to improve reliability.
+- **Post-Check Safety**: Analyzers now rely on the `getRootSymbol` utility, which extracts variable identity directly from AST metadata, ensuring stability even after lexical scopes are discarded.
 
 ## 👥 Contributors
 Z98 is made possible by the dedicated work of its contributors.

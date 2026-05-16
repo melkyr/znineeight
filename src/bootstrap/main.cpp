@@ -17,8 +17,8 @@ static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
 /**
  * @brief Executes the full compilation pipeline for a single file.
  */
-RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
-    bool pipeline_success = unit.performFullPipeline(file_id);
+RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id, const char* output_dir = NULL) {
+    bool pipeline_success = unit.performFullPipeline(file_id, output_dir);
 
     if (unit.getErrorHandler().hasErrors()) {
         unit.getErrorHandler().printErrors();
@@ -233,10 +233,32 @@ int main(int argc, char* argv[]) {
             success = (ast != NULL);
             unit.finalizeParsing();
         } else {
-            success = runCompilationPipeline(unit, file_id);
-            if (success && output_file) {
-                success = unit.generateCode(output_file);
+            const char* output_dir = NULL;
+            if (output_file) {
+                // Extract directory from output_file
+                static char dir[1024];
+                const char* last_slash = plat_strrchr(output_file, '/');
+                const char* last_backslash = plat_strrchr(output_file, '\\');
+                const char* last_sep = NULL;
+
+                if (last_slash && last_backslash) {
+                    last_sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+                } else {
+                    last_sep = last_slash ? last_slash : last_backslash;
+                }
+
+                if (last_sep) {
+                    size_t len = last_sep - output_file;
+                    if (len >= sizeof(dir)) len = sizeof(dir) - 1;
+                    plat_strncpy(dir, output_file, len);
+                    dir[len] = '\0';
+                    output_dir = dir;
+                } else {
+                    output_dir = ".";
+                }
             }
+
+            success = runCompilationPipeline(unit, file_id, output_dir);
             unit.finalizeParsing();
         }
 

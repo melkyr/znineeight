@@ -51,6 +51,7 @@ C89 requires all variable declarations at the absolute top of a `{}` block.
 ### 5.2 Helper Specialization
 - **Slice Helpers**: `__make_slice_T` functions are emitted as `static inline` in a global `zig_special_types.h` to ensure they are available to all modules without collision.
 - **Print Lowering**: `std.debug.print` is never a real function call in generated C. It is a compiler intrinsic that the emitter decomposes into multiple `__bootstrap_print_*` calls.
+- **Argc/Argv Support**: The compiler recognizes a specific `main` signature `pub fn main(argc: i32, argv: [*]*const u8)` and correctly lowers it to the standard C `int main(int argc, char* argv[])` entry point, ensuring parameters are accessible within Zig.
 
 ### 5.3 Deterministic Mangling
 In "Test Mode", the emitter uses `z<Kind>_<Counter>_<Name>` to ensure integration tests remain stable even if file paths or internal hashes change.

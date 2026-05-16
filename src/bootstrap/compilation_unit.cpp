@@ -123,8 +123,10 @@ static void fatalError(const char* message) {
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
-      token_arena_(1024 * 1024 * 16), // 64MB cap for tokens
-      transient_arena_(1024 * 1024 * 16), // 64MB cap for transient
+      token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
+      transient_arena_(1024 * 1024 * 16), // 16MB cap for transient
+      scratch_arena_(SCRATCH_ARENA_CAPACITY),
+      scratch_nesting_depth_(0),
       type_interner_(arena),
       type_registry_(arena),
       pending_resolutions_(arena),
@@ -158,7 +160,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       test_name_counters_(arena),
       test_name_counter_(0),
       validation_completed_(false),
-      c89_validation_passed_(false) {
+      c89_validation_passed_(false),
+      is_post_check_phase_(false) {
 
     current_module_ = interner_.intern("main");
 
@@ -178,6 +181,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     builtin_module_ = new (builtin_mem) Module(arena_);
     builtin_module_->name = interner_.intern("builtin");
     builtin_module_->filename = interner_.intern("<builtin>");
+    builtin_module_->canonical_path = builtin_module_->filename;
     builtin_module_->file_id = 0xFFFFFFFF;
     
     void* builtin_sym_mem = arena_.alloc(sizeof(SymbolTable));
@@ -243,6 +247,9 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
+    // Initialize per-module arena for AST nodes
+    mod->mod_arena = new (arena_.alloc(sizeof(ArenaAllocator))) ArenaAllocator(2 * 1024 * 1024);
+
     // Compute stable hash for the module based on absolute canonical path
     char abs_path[1024];
     bool got_abs = plat_get_absolute_path(interned_filename, abs_path, sizeof(abs_path));
@@ -257,6 +264,14 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     // Convert backslashes to forward slashes for cross-platform consistency
     for (char* p = abs_path; *p; ++p) if (*p == '\\') *p = '/';
     mod->stable_hash = fnv1a_32(abs_path);
+
+    // Compute canonical path (absolute, normalized, lowercased for case-insensitivity)
+    char canonical_buf[1024];
+    plat_strncpy(canonical_buf, abs_path, sizeof(canonical_buf));
+    for (char* p = canonical_buf; *p; ++p) {
+        if (*p >= 'A' && *p <= 'Z') *p = *p + ('a' - 'A');
+    }
+    mod->canonical_path = interner_.intern(canonical_buf);
 
     // Create per-module symbol table
     void* sym_mem = arena_.alloc(sizeof(SymbolTable));
@@ -290,9 +305,10 @@ Parser* CompilationUnit::createParser(u32 file_id) {
         return NULL;
     }
 
-    void* mem = arena_.alloc(sizeof(Parser));
+    Z98_ASSERT(mod->mod_arena != NULL);
+    void* mem = mod->mod_arena->alloc(sizeof(Parser));
     if (mem == NULL) fatalError("Out of memory allocating Parser");
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, mod->mod_arena, &arena_, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
 }
 
 /**
@@ -408,6 +424,10 @@ ArenaAllocator& CompilationUnit::getTransientArena() {
     return transient_arena_;
 }
 
+ArenaAllocator& CompilationUnit::getScratchArena() {
+    return scratch_arena_;
+}
+
 void CompilationUnit::resetTransientArena() {
     transient_arena_.reset();
 }
@@ -480,6 +500,11 @@ void CompilationUnit::setOptions(const CompilationOptions& options) {
     options_ = options;
 }
 
+void CompilationUnit::setPostCheckPhase(bool value) {
+    is_post_check_phase_ = value;
+    ::setPostCheckPhase(value);
+}
+
 void CompilationUnit::addIncludePath(const char* path) {
     char norm[1024];
     plat_strncpy(norm, path, sizeof(norm) - 1);
@@ -504,7 +529,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
         if (t) {
             const char* name = interner_.intern(primitives[i]);
-            type_registry_.insert(builtin_module_, name, t);
+            type_registry_.insert(builtin_module_->canonical_path, name, t);
             Symbol sym = SymbolBuilder(arena_)
                 .withName(name)
                 .withModule(builtin_name)
@@ -924,10 +949,12 @@ bool CompilationUnit::generateCode(const char* output_path) {
         plat_strcpy(dir, ".");
     }
 
-    return backend.generate(dir);
+    bool result = backend.generate(dir);
+    transient_arena_.reset();
+    return result;
 }
 
-bool CompilationUnit::performFullPipeline(u32 file_id) {
+bool CompilationUnit::performFullPipeline(u32 file_id, const char* output_dir) {
     Logger* logger = plat_get_logger();
 #ifdef MEASURE_MEMORY
     PhaseMemoryTracker tracker(*this);
@@ -938,6 +965,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     Parser* parser = createParser(file_id);
     ASTNode* ast = parser->parse();
+
+    // Per-module token release: tokens are only needed during parsing.
+    token_arena_.reset();
+    token_supplier_.reset();
+
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
@@ -1062,15 +1094,80 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     }
     if (logger) logger->flush();
 
-    // Phase 0.5: Resolve Named Placeholders (Pass 2)
+    // Phase 0.5: Resolve Named Placeholders (Pass 2) - Fixed-Point Iteration
     {
         TypeChecker checker(*this);
         DynamicArray<PendingResolution>& pending = getPendingResolutions();
-        for (size_t i = 0; i < pending.length(); ++i) {
-            checker.resolveNamedPlaceholder(pending[i].placeholder);
+
+        bool progress = true;
+        int max_iter = 10000;
+        int iterations = 0;
+        while (progress && iterations < max_iter) {
+            progress = false;
+            iterations++;
+#ifdef DEBUG
+            plat_printf_debug("  Phase 0.5 Iteration %d...\n", iterations);
+#endif
+            for (size_t i = 0; i < pending.length(); ++i) {
+                Type* placeholder = pending[i].placeholder;
+                if (placeholder->kind == TYPE_PLACEHOLDER) {
+                    const char* p_name = placeholder->as.placeholder.name;
+                    Type* resolved = checker.resolveNamedPlaceholder(placeholder);
+                    if (resolved && resolved->kind != TYPE_PLACEHOLDER) {
+#ifdef DEBUG
+                        plat_printf_debug("    Resolved placeholder '%s' in iteration %d to kind %d\n", p_name, iterations, (int)resolved->kind);
+#endif
+                        progress = true;
+                    }
+                }
+            }
+        }
+
+        if (iterations >= max_iter && progress) {
+            plat_print_info("FATAL: Placeholder resolution loop did not converge. "
+                        "Unresolved placeholders:\n");
+            for (size_t i = 0; i < pending.length(); ++i) {
+                if (pending[i].placeholder->kind == TYPE_PLACEHOLDER) {
+                    const char* name = pending[i].placeholder->as.placeholder.name;
+                    char msg_buf[256];
+                    plat_snprintf(msg_buf, sizeof(msg_buf), "  - %s (declared in module %s)\n",
+                                name ? name : "?",
+                                pending[i].placeholder->as.placeholder.module
+                                    ? pending[i].placeholder->as.placeholder.module->name
+                                    : "?");
+                    plat_print_info(msg_buf);
+                }
+            }
+            fatalError("Unresolved placeholder cycle detected. Check for circular type dependencies.");
         }
     }
     if (logger) logger->flush();
+
+    // Phase 0.7: Flatten transitive type aliases
+    flattenTransitiveAliases();
+
+    // Guard: Ensure cross-module symbols (pub/extern) are resolved before type checking
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (!m->symbols) continue;
+        const DynamicArray<Scope*>& scopes = m->symbols->getAllScopes();
+        if (scopes.length() == 0) continue;
+        Scope* global_scope = scopes[0];
+        for (size_t k = 0; k < global_scope->bucket_count; ++k) {
+            Scope::SymbolEntry* entry = global_scope->buckets[k];
+            while (entry) {
+                const Symbol& sym = entry->symbol;
+                if ((sym.flags & (SYMBOL_FLAG_PUB | SYMBOL_FLAG_EXTERN)) &&
+                    sym.symbol_type && sym.symbol_type->kind == TYPE_PLACEHOLDER) {
+                    char msg[512];
+                    plat_snprintf(msg, sizeof(msg), "Internal error: cross-module symbol '%s' was not resolved after global resolution", sym.name);
+                    error_handler_.report(ERR_INTERNAL_ERROR, sym.location, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), msg);
+                }
+                entry = entry->next;
+            }
+        }
+    }
+    if (error_handler_.hasErrors()) return false;
 
     // Now run semantic analysis on ALL modules
     bool all_success = true;
@@ -1081,17 +1178,42 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
+        plat_printf_debug("[PHASE2_ORDER] module=%s, ast_root=%p, is_analyzed=%d\n",
+            m->name, (void*)m->ast_root, m->is_analyzed);
         if (m->is_analyzed || !m->ast_root) continue;
         setCurrentModule(m->name);
         NameCollisionDetector detector(*this);
         detector.check(m->ast_root);
         if (detector.hasCollisions()) all_success = false;
+        transient_arena_.reset();
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
     if (logger) logger->flush();
     if (!all_success) return false;
+
+    // Phase 1.5: Global Signature Resolution
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Global Signature Resolution");
+#endif
+#ifdef DEBUG
+    plat_printf_debug("  Starting Phase 1.5 Global Signature Resolution...\n");
+#endif
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+#ifdef DEBUG
+        plat_printf_debug("    Resolving signatures for module '%s'...\n", m->name);
+#endif
+        setCurrentModule(m->name);
+        TypeChecker checker(*this);
+        checker.resolveGlobalDeclarations(m->ast_root);
+    }
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
+    if (logger) logger->flush();
 
     // Phase 2: Type Checking
 #ifdef MEASURE_MEMORY
@@ -1121,12 +1243,62 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         all_success = false;
     }
 
+    // Phase 2.0.2: Global Slice Registration
+    if (all_success) {
+        DynamicArray<Type*> all_types(arena_);
+        type_registry_.getAllTypes(all_types);
+        for (size_t i = 0; i < all_types.length(); ++i) {
+            Type* t = all_types[i];
+            if (t->kind == TYPE_SLICE) {
+                registerSliceType(t);
+            }
+        }
+    }
+
     // Phase 2.0.5: Precompute mangled names for all public symbols across all modules
     if (all_success) {
         for (size_t i = 0; i < modules_.length(); ++i) {
             precomputeMangledNames(modules_[i]);
         }
     }
+
+#ifdef DEBUG
+    // Post-check assertion: Ensure no concrete symbols remain without a valid type
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* mod = modules_[i];
+        if (!mod->symbols) continue;
+        const DynamicArray<Scope*>& mod_scopes = mod->symbols->getAllScopes();
+        if (mod_scopes.length() == 0) continue;
+        Scope* scope = mod_scopes[0]; // ONLY CHECK GLOBAL SCOPE
+        {
+            for (size_t k = 0; k < scope->bucket_count; ++k) {
+                Scope::SymbolEntry* entry = scope->buckets[k];
+                while (entry) {
+                    const Symbol& sym = entry->symbol;
+                    if (!sym.symbol_type) {
+                        plat_printf_debug("NULL type for symbol '%s' in module '%s'\n",
+                                    sym.name, mod->name);
+                        plat_abort();
+                    }
+                    if (sym.symbol_type->kind == TYPE_UNDEFINED) {
+                        plat_printf_debug("Undefined type for symbol '%s' in module '%s'\n",
+                                    sym.name, mod->name);
+                        plat_abort();
+                    }
+                    if (sym.symbol_type->kind == TYPE_PLACEHOLDER) {
+                        plat_printf_debug("Unresolved placeholder type for symbol '%s' in module '%s'\n",
+                                    sym.name, mod->name);
+                        plat_abort();
+                    }
+                    entry = entry->next;
+                }
+            }
+        }
+    }
+#endif
+
+    // Set post-check phase flag for subsequent validation passes
+    setPostCheckPhase(true);
 
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
@@ -1198,38 +1370,34 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
-    // Phase 4: AST Lifting
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("AST Lifting");
-#endif
-    if (all_success) {
-        ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
-        lifter.setDebugMode(options_.debug_lifter);
-        lifter.lift(this);
-    }
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (logger) logger->flush();
+    // Phase 4.5: Global Metadata Preparation
+    MetadataPreparationPass prep_pass(*this);
+    prep_pass.prepareGlobalMetadata();
 
-    // Phase 4.5: Metadata Preparation
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("Metadata Preparation");
-#endif
-    if (all_success) {
-        MetadataPreparationPass prep_pass(*this);
-        prep_pass.run();
-    }
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (logger) logger->flush();
+    // Per-module processing loop
+    DynamicArray<const char*>& shared_type_cache = getEmittedTypesCache();
+    CBackend backend(*this);
 
-    // Phase 5: Static Analyzers
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
         setCurrentModule(m->name);
+
+        // Phase 4: AST Lifting
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("AST Lifting");
+#endif
+        ControlFlowLifter lifter(m->mod_arena, &arena_, &interner_, &error_handler_);
+        lifter.setDebugMode(options_.debug_lifter);
+        lifter.lift(m);
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
+
+        // Phase 5: Static Analyzers
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("Static Analyzers");
+#endif
         ASTNode* m_ast = m->ast_root;
 
         if (options_.enable_lifetime_analysis) {
@@ -1246,10 +1414,48 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             DoubleFreeAnalyzer analyzer(*this);
             analyzer.analyze(m_ast);
         }
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
 
+        // Phase 6: Per-module Metadata Preparation
+#ifdef MEASURE_MEMORY
+        tracker.begin_phase("Module Metadata Preparation");
+#endif
+        prep_pass.prepareModuleMetadata(m);
+        transient_arena_.reset();
+#ifdef MEASURE_MEMORY
+        tracker.end_phase();
+#endif
+
+        // Phase 7: Code Generation
+        if (output_dir) {
+#ifdef MEASURE_MEMORY
+            tracker.begin_phase("Code Generation");
+#endif
+            backend.generateHeaderFile(m, output_dir, &shared_type_cache);
+            backend.generateSourceFile(m, output_dir, &shared_type_cache);
+#ifdef MEASURE_MEMORY
+            tracker.end_phase();
+#endif
+        }
+
+        // Release AST memory
+        if (m->mod_arena) {
+            m->mod_arena->reset();
+        }
+        m->ast_root = NULL;
         m->is_analyzed = true;
     }
-    if (logger) logger->flush();
+
+    if (output_dir) {
+        backend.generateBuildBat(output_dir);
+        backend.generateMSVCBuildBat(output_dir);
+        backend.generateOpenWatcomBuildBat(output_dir);
+        backend.generateMakefile(output_dir);
+        backend.generateSpecialTypesHeader(output_dir);
+        backend.copyRuntimeFiles(output_dir);
+    }
 
     // Task 163: Report unresolved call sites
     if (call_site_table_.getUnresolvedCount() > 0) {
@@ -1288,10 +1494,20 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             break;
         }
         case NODE_VAR_DECL:
+            collectImports(node->as.var_decl->type, module);
             collectImports(node->as.var_decl->initializer, module);
             break;
         case NODE_FN_DECL:
-            collectImports(node->as.fn_decl->body, module);
+            {
+                ASTFnDeclNode* fn = node->as.fn_decl;
+                if (fn->params) {
+                    for (size_t i = 0; i < fn->params->length(); ++i) {
+                        collectImports((*fn->params)[i], module);
+                    }
+                }
+                collectImports(fn->return_type, module);
+                collectImports(fn->body, module);
+            }
             break;
         case NODE_IF_STMT:
             collectImports(node->as.if_stmt->condition, module);
@@ -1406,6 +1622,102 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
         case NODE_ERRDEFER_STMT:
             collectImports(node->as.errdefer_stmt.statement, module);
             break;
+        case NODE_PARAM_DECL:
+            collectImports(node->as.param_decl.type, module);
+            break;
+        case NODE_STRUCT_DECL:
+            if (node->as.struct_decl->fields) {
+                for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
+                    collectImports((*node->as.struct_decl->fields)[i], module);
+                }
+            }
+            break;
+        case NODE_STRUCT_FIELD:
+            collectImports(node->as.struct_field->type, module);
+            break;
+        case NODE_ENUM_DECL:
+            collectImports(node->as.enum_decl->backing_type, module);
+            if (node->as.enum_decl->fields) {
+                for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
+                    collectImports((*node->as.enum_decl->fields)[i], module);
+                }
+            }
+            break;
+        case NODE_UNION_DECL:
+            if (node->as.union_decl->fields) {
+                for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
+                    collectImports((*node->as.union_decl->fields)[i], module);
+                }
+            }
+            collectImports(node->as.union_decl->tag_type_expr, module);
+            break;
+        case NODE_POINTER_TYPE:
+            collectImports(node->as.pointer_type.base, module);
+            break;
+        case NODE_ARRAY_TYPE:
+            collectImports(node->as.array_type.element_type, module); collectImports(node->as.array_type.size, module);
+
+            break;
+        case NODE_ERROR_UNION_TYPE:
+            collectImports(node->as.error_union_type->payload_type, module);
+            collectImports(node->as.error_union_type->error_set, module);
+            break;
+        case NODE_SWITCH_STMT: {
+            collectImports(node->as.switch_stmt->expression, module);
+            DynamicArray<ASTSwitchStmtProngNode*>* prongs = node->as.switch_stmt->prongs;
+            if (prongs) {
+                for (size_t i = 0; i < prongs->length(); ++i) {
+                    ASTSwitchStmtProngNode* prong = (*prongs)[i];
+                    for (size_t j = 0; j < prong->items->length(); ++j) {
+                        collectImports((*prong->items)[j], module);
+                    }
+                    collectImports(prong->body, module);
+                }
+            }
+            break;
+        }
+        case NODE_RANGE:
+            collectImports(node->as.range->start, module);
+            collectImports(node->as.range->end, module);
+            break;
+        case NODE_PTR_CAST:
+            collectImports(node->as.ptr_cast->target_type, module);
+            collectImports(node->as.ptr_cast->expr, module);
+            break;
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+            collectImports(node->as.numeric_cast->target_type, module);
+            collectImports(node->as.numeric_cast->expr, module);
+            break;
+        case NODE_OFFSET_OF:
+            collectImports(node->as.offset_of->type_expr, module);
+            break;
+        case NODE_AS_EXPR:
+            collectImports(node->as.as_expr->target_type, module);
+            collectImports(node->as.as_expr->expr, module);
+            break;
+        case NODE_PANIC:
+            collectImports(node->as.panic->expr, module);
+            break;
+        case NODE_ERROR_SET_MERGE:
+            collectImports(node->as.error_set_merge->left, module);
+            collectImports(node->as.error_set_merge->right, module);
+            break;
+        case NODE_FUNCTION_TYPE:
+            if (node->as.function_type->params) {
+                for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
+                    collectImports((*node->as.function_type->params)[i], module);
+                }
+            }
+            collectImports(node->as.function_type->return_type, module);
+            break;
+        case NODE_COMPTIME_BLOCK:
+            collectImports(node->as.comptime_block.expression, module);
+            break;
+        case NODE_OPTIONAL_TYPE:
+            collectImports(node->as.optional_type->payload_type, module);
+            break;
         default:
             break;
     }
@@ -1417,6 +1729,7 @@ bool CompilationUnit::resolveImports(Module* module) {
 }
 
 bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack) {
+    Z98_ASSERT(current_module_ == module->name);
     stack.append(module->filename);
 
 #ifdef DEBUG_VISIBILITY
@@ -1556,17 +1869,33 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             }
 
             if (imported_mod && !imported_mod->ast_root) {
+                Z98_ASSERT(imported_mod->name != NULL);
+                // Maintain correct current_module_ during parsing and import collection.
+                // This is required for symbol table registration, not for type resolution.
+                setCurrentModule(imported_mod->name);
+
                 Parser* parser = createParser(imported_mod->file_id);
                 ASTNode* ast = parser->parse();
-                if (!ast) return false;
+
+                // Per-module token release: tokens are only needed during parsing.
+                token_arena_.reset();
+                token_supplier_.reset();
+
+                if (!ast) {
+                    setCurrentModule(saved_module);
+                    return false;
+                }
 
                 imported_mod->ast_root = ast;
 
                 collectImports(ast, imported_mod);
 
                 if (!resolveImportsRecursive(imported_mod, stack)) {
+                    setCurrentModule(saved_module);
                     return false;
                 }
+
+                setCurrentModule(saved_module);
             }
         }
 
@@ -1601,11 +1930,19 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
             .build();
 
-        if (!getSymbolTable().lookupInCurrentScope(import_alias)) {
+        Symbol* existing = getSymbolTable().lookupInCurrentScope(import_alias);
+        if (!existing) {
             getSymbolTable().insert(mod_sym);
+        } else {
+            /* Force update the type if it was NULL or UNDEFINED */
+            if (existing->symbol_type == NULL || existing->symbol_type->kind == TYPE_UNDEFINED) {
+                existing->symbol_type = mod_type;
+                existing->kind = SYMBOL_MODULE;
+            }
         }
     }
 
+    Z98_ASSERT(current_module_ == module->name);
     setCurrentModule(saved_module);
     stack.pop_back();
     return true;
@@ -1624,6 +1961,9 @@ void CompilationUnit::registerSliceType(Type* type) {
             return;
         }
     }
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[COMP_UNIT] global_slice_types_.append ptr=%p mangled=%s\n", (void*)type, mangled);
+    #endif
     global_slice_types_.append(type);
 }
 
@@ -1674,6 +2014,44 @@ void CompilationUnit::precomputeMangledNames(Module* mod) {
             // For types, also update Type::c_name
             if (sym.kind == SYMBOL_TYPE && sym.symbol_type) {
                 sym.symbol_type->c_name = sym.mangled_name;
+            }
+
+#ifdef DEBUG
+            // Bug 5: After precomputation, all public symbols must have a mangled name
+            if (!sym.mangled_name) {
+                plat_printf_debug("[ASSERT] Symbol '%s' in module '%s' has NULL mangled_name after precompute\n",
+                                 sym.name, mod->name);
+                plat_abort();
+            }
+#endif
+        }
+    }
+}
+void CompilationUnit::flattenTransitiveAliases() {
+    bool changed = true;
+    int max_chain = 100;  /* safety cap, recommended */
+    DynamicArray<PendingResolution>& pending = getPendingResolutions();
+
+    while (changed && max_chain-- > 0) {
+        changed = false;
+        for (size_t i = 0; i < pending.length(); ++i) {
+            Type* placeholder = pending[i].placeholder;
+            if (placeholder->kind != TYPE_PLACEHOLDER) continue;
+
+            ASTNode* decl = pending[i].decl_node;
+            if (!decl || decl->type != NODE_VAR_DECL) continue;
+
+            ASTVarDeclNode* vd = decl->as.var_decl;
+            Symbol* sym = vd->symbol;
+            if (!sym) sym = getSymbolTable().lookup(vd->name);
+            if (!sym) continue;
+
+            TypeChecker checker(*this);
+            Type* resolved = checker.resolveTypeConstant(sym);
+            if (resolved && resolved->kind != TYPE_TYPE && resolved->kind != TYPE_PLACEHOLDER) {
+                /* Finalize the placeholder to the concrete type */
+                checker.finalizePlaceholder(placeholder, resolved);
+                changed = true;
             }
         }
     }

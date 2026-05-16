@@ -28,6 +28,7 @@ The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of gener
 - **Recursive Types**: Support for mutually recursive structs and unions via a robust placeholder resolution mechanism.
 - **Control Flow**: Full support for `defer`, `errdefer`, labeled loops, `break`/`continue` with scope unwinding, and braceless `if`/`while`/`for`/`defer` statements.
 - **Switch Features**: Support for range-based prongs (e.g., `1...10 => ...`) and divergent prongs (`return`, `unreachable`).
+- **Command-Line Arguments**: Full `argc`/`argv` support via idiomatic `main` signature: `pub fn main(argc: i32, argv: [*]*const u8) void`.
 - **Built-in Lowering**: Compiler-assisted lowering for `std.debug.print` and safe narrowing casts.
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
 - **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
@@ -106,6 +107,19 @@ The Z98 compiler (`zig0`) supports several command-line options to control the b
 -   `--no-logs`: Suppresses all non-essential console output (INFO and DEBUG levels). Fatal errors and reported compilation errors/warnings are still displayed on stderr.
 -   `--verbose` or `-v`: Enables DEBUG-level logging on the console. By default, DEBUG logs are only sent to the log file (if enabled).
 -   `--header-priority-include`: Forces the compiler to emit module `#include` directives before type definitions in generated `.h` files. This resolves "field has incomplete type" errors when special types (Optional, Slice, etc.) have payloads from imported modules.
+
+#### Compiler Logging and Debugging
+The Z98 compiler provides several ways to obtain internal logs during compilation:
+
+1.  **Console Logging**: Use `--verbose` or `-v` to enable `DEBUG`-level output directly to the console.
+    ```bash
+    ./zig0 main.zig -v
+    ```
+2.  **File Logging**: Use `--log-file=<path>` to redirect all logs (including `INFO` and `DEBUG`) to a specific file.
+    ```bash
+    ./zig0 main.zig --log-file=compiler.log
+    ```
+3.  **Quiet Mode**: Use `--no-logs` to suppress all non-essential output, showing only compilation errors and warnings.
 
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.

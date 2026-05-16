@@ -65,6 +65,13 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor);
 ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena);
 
 /**
+ * @brief Extracts the root symbol from an expression, unwrapping common wrappers.
+ * @param expr The expression to analyze.
+ * @return The symbol of the root identifier, or NULL if not found.
+ */
+Symbol* getRootSymbol(ASTNode* expr);
+
+/**
  * @brief Checks if a node type is an expression-form control-flow construct.
  */
 inline bool isControlFlowExpr(NodeType type) {

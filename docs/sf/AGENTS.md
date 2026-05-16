@@ -54,6 +54,7 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 5. **Test Compliance**: Ensure code passes unit tests, differential tests, and memory gates.
 6. **Documentation Updates**: Update `docs/sf/` if implementation details necessitate changes (e.g., clarifications, edge cases).
 7. **Clarification Requests**: When encountering ambiguity, ask explicitly rather than assuming.
+8. **No Scope Creep**: Execute only the task requested. Do not batch-implement adjacent tasks without approval. "Plan the next 3 tasks" is plan-only — execution requires explicit user confirmation per task.
 
 ### 1.2 Development Environment
 
@@ -78,6 +79,8 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 | No method syntax | Use free functions (`fn foo(self: *T, ...)`) . |
 | `std.debug.print` requires tuple | Always use `.{}` syntax for arguments. |
 | Global aggregate constants | Use `pub var` and initialize in a dedicated `init()` function. |
+| Slice bounds with inline cast+math | Pre-compute into local `var` vars; zig0 cannot resolve `@intCast` + `+` inside `[a..b]`. |
+| `continue` inside `while : (expr)` with fn return values in condition | Replace `continue` with `if-else {}` chain; zig0 C89 goto miscompiles when combined with function return values used in same block. Use empty `{}` blocks as no-ops instead of `continue`. |
 
 ### 1.4 Memory Budget Enforcement
 
@@ -275,5 +278,84 @@ All code submissions must include:
 
 ---
 
-**End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation.
+---
+
+## 8. Session Memory Persistence
+
+Every session **must** persist key learnings using the memory plugin (`@knikolov/opencode-plugin-simple-memory`) at session start and end.
+
+### 8.1 Session Start
+
+`memory_recall()` — load all prior context before answering any question.
+
+### 8.2 Session End
+
+Before closing, run `memory_remember` for:
+
+| Type | Scope | What to store |
+|------|-------|---------------|
+| `decision` | `project` | Architecture/design choices (with file refs) |
+| `learning` | `project` | Codebase discoveries, Z98 constraint workarounds |
+| `preference` | `project` | User preferences or patterns learned |
+| `blocker` | `project` | Known issues or unfinished work |
+| `context` | `project` | Current task status, what was done, what's next |
+| `pattern` | `project` | Recurring implementation patterns |
+
+**Rule**: Store one memory per logical fact. Keep content single-line, detailed, with file references.
+
+### 8.3 Memory Update
+
+If new info contradicts existing memory, use `memory_update` (not `memory_forget` + `memory_remember`).
+
+### 8.4 Memory List
+
+`memory_list()` to discover all stored scopes and types in use.
+
+---
+
+## 9. Build System
+
+### 9.1 Output Directory Isolation (CRITICAL)
+
+zig0 generates `.c` and `.h` files in the output directory. **Different build targets MUST use separate output directories.** Mixing stale `.c`/`.h` files from different builds causes C89 type mismatch errors (e.g., `unknown type name 'Slice_*'`). Always delete `.c`/`.h` before each zig0 invocation.
+
+### 9.2 Build Scripts
+
+Two pre-made scripts isolate output per target:
+
+| Script | Target | Output |
+|--------|--------|--------|
+| `sf/scripts/build_release.sh` | `sf/src/main.zig` → zig1 binary | `sf/build/out_release/` |
+| `sf/scripts/build_test.sh` | Test binaries (`test_*_bin.zig`) | `sf/build/out_test_<name>/` (one per test) |
+
+**Usage:**
+```bash
+# Release
+bash sf/scripts/build_release.sh
+
+# All tests (semantic, module_reg, sym_reg)
+bash sf/scripts/build_test.sh
+```
+
+### 9.3 Manual Build Commands
+
+When building manually, NEVER reuse the same output directory:
+```bash
+# Release (isolated)
+OUT=sf/build/out_release
+rm -rf $OUT && mkdir -p $OUT
+./sf/build/zig0 --header-priority-include -o $OUT/zig1.c sf/src/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude $OUT/*.c -o $OUT/zig1
+
+# Test (isolated per binary)
+OUT=sf/build/out_test_foo
+rm -rf $OUT && mkdir -p $OUT
+./sf/build/zig0 --header-priority-include -o $OUT/foo.c sf/src/tests/test_foo_bin.zig
+gcc -m32 ... $OUT/*.c -o $OUT/foo
+$OUT/foo
+```
+
+---
+
+**End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```

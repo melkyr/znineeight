@@ -49,7 +49,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -68,7 +68,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -89,7 +89,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -111,7 +111,6 @@ void C89Emitter::dedent() {
         indent_level_--;
     }
 }
-
 void C89Emitter::writeIndent() {
     for (int i = 0; i < indent_level_; ++i) {
         write("    ", 4);
@@ -158,8 +157,11 @@ void C89Emitter::emitType(Type* type, const char* name) {
 }
 
 void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node) {
+    if (!type) {
+        plat_printf_debug("[CODEGEN] emitDeclarator: NULL type for name=%s\n", name ? name : "NULL");
+    }
     emitTypePrefix(type);
-    if (name && type->kind != TYPE_ANYTYPE) {
+    if (name && type && type->kind != TYPE_ANYTYPE) {
         if (last_char_ != '(' && last_char_ != ' ') {
             writeString(" ");
         }
@@ -431,13 +433,37 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
     /* Skip type and module declarations (e.g. const T = struct { ... } or const std = @import("std")) */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    if (node->resolved_type) {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s kind=%d\n", decl->name, (int)node->resolved_type->kind);
+    } else {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s (no type)\n", decl->name);
+    }
+    #endif
+    if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return;
+    }
     if (decl->initializer) {
         if (decl->initializer->type == NODE_IMPORT_STMT ||
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
             return;
         }
-        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable(module_name_))) {
             return;
+        }
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return;
+                    if (sym->kind == SYMBOL_MODULE) return;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return;
+                }
+            }
         }
     }
 
@@ -904,13 +930,38 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     const ASTVarDeclNode* decl = node->as.var_decl;
 
     /* Skip type and module declarations in local scope */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    if (node->resolved_type) {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s kind=%d\n", decl->name, (int)node->resolved_type->kind);
+    } else {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s (no type)\n", decl->name);
+    }
+    #endif
+    if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return;
+    }
     if (decl->initializer) {
         if (decl->initializer->type == NODE_IMPORT_STMT ||
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
             return;
         }
-        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable(module_name_))) {
             return;
+        }
+        // Skip const X = mod.Y or const X = @import("m").Y pattern
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return;
+                    if (sym->kind == SYMBOL_MODULE) return;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return;
+                }
+            }
         }
     }
 
@@ -933,11 +984,12 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
 #endif
         }
+    } else if (decl->name) {
+        c_name = decl->name;
     } else {
         if (debug_trace_) {
             #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no symbol and non-temp name: %s\n",
-                             decl->name ? decl->name : "NULL");
+    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no name\n");
 #endif
         }
         return;
@@ -1095,19 +1147,24 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
-        writeString("int main(");
-        if (!node->params || node->params->length() == 0) {
-            writeString(KW_VOID);
+        Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
+        if (sym && (sym->flags & SYMBOL_FLAG_MAIN_C89_ARGS)) {
+            writeString("int main(int argc, char* argv[]);");
         } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+            writeString("int main(");
+            if (!node->params || node->params->length() == 0) {
+                writeString(KW_VOID);
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
                 }
             }
+            writeString(");");
         }
-        writeString(");");
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_char") == 0 ||
@@ -1270,6 +1327,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     emitted_decls_.clear();
     current_fn_name_ = node->name;
     is_main_function_ = false;
+    argv_symbol_ = NULL;
 
     writeIndent();
 
@@ -1284,21 +1342,35 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
-        writeString("int main(");
-        if (!node->params || node->params->length() == 0) {
-            writeString(KW_VOID);
-        } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                ASTParamDeclNode& param = param_node->as.param_decl;
-                const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
-                emitDeclarator(param.type->resolved_type, param_name);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+        if (sym && (sym->flags & SYMBOL_FLAG_MAIN_C89_ARGS)) {
+            writeString("int main(int argc, char* argv[])");
+            /* Force name allocation for argc and argv in the scope */
+            if (node->params && node->params->length() == 2) {
+                ASTNode* p0 = (*node->params)[0];
+                ASTNode* p1 = (*node->params)[1];
+                if (p0->as.param_decl.symbol) var_alloc_.force_allocate(p0->as.param_decl.symbol, "argc");
+                if (p1->as.param_decl.symbol) {
+                    var_alloc_.force_allocate(p1->as.param_decl.symbol, "argv");
+                    argv_symbol_ = p1->as.param_decl.symbol;
                 }
             }
+        } else {
+            writeString("int main(");
+            if (!node->params || node->params->length() == 0) {
+                writeString(KW_VOID);
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    ASTParamDeclNode& param = param_node->as.param_decl;
+                    const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
+                    emitDeclarator(param.type->resolved_type, param_name);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
+                }
+            }
+            writeString(")");
         }
-        writeString(")");
         is_main_function_ = true;
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
@@ -1578,6 +1650,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitReturn(&node->as.return_stmt);
             break;
         case NODE_UNREACHABLE:
+        case NODE_PANIC:
             writeIndent();
             emitExpression(node);
             endStmt();
@@ -1641,6 +1714,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
         case NODE_INT_TO_FLOAT:
+        case NODE_AS_EXPR:
         case NODE_RANGE:
         case NODE_PAREN_EXPR:
         case NODE_ASYNC_EXPR:
@@ -2698,6 +2772,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_UNREACHABLE:
             writeString("__bootstrap_panic((const char*)(\"reached unreachable\"), (const char*)(__FILE__), __LINE__)");
             break;
+        case NODE_PANIC:
+            writeString("__bootstrap_panic((const char*)(");
+            emitExpression(node->as.panic->expr);
+            writeString("), (const char*)(__FILE__), __LINE__)");
+            break;
         case NODE_IDENTIFIER:
             if (node->resolved_type && node->resolved_type->kind == TYPE_VOID) {
                 writeString("0");
@@ -2721,6 +2800,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 #endif
                     }
 
+                    if (sym == argv_symbol_) {
+                        writeString("(unsigned char const**)");
+                    }
                     writeString(c_name);
                 } else if (sym->mangled_name) {
                     writeString(sym->mangled_name);
@@ -2788,8 +2870,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 writeString("(");
                 if (call->args && call->args->length() > 0) {
                     bool is_panic = (plat_strcmp(target_name, "__bootstrap_panic") == 0);
+                    bool is_write = (plat_strcmp(target_name, "__bootstrap_write") == 0);
 
-                    /* First argument for print/write/panic is always the string to be cast */
+                    /* First argument for print/write/panic is always the string to be cast.
+                       Zig u8 pointers map to unsigned char*, so we cast to const char* to avoid warnings. */
                     writeString("(const char*)(");
                     emitExpression((*call->args)[0]);
                     writeString(")");
@@ -3504,6 +3588,12 @@ void C89Emitter::ensureSliceType(Type* type) {
     }
 
     /* Not emitted in this context, register it globally for central header emission */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] registerSliceType: %s\n", mangled_name);
+    #endif
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] registerSliceType: %s for module %s\n", mangled_name, module_name_ ? module_name_ : "NULL");
+    #endif
     unit_.registerSliceType(type);
     emitted_slices_.append(mangled_name);
 
@@ -4080,7 +4170,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         /* Truncate if needed, then return directly (no prefix, no uniquification) */
         char buf[256];
         plat_strcpy(buf, zig_name);
-        if (plat_strlen(buf) > 31) buf[31] = '\0';
+        if (plat_strlen(buf) > 63) buf[63] = '\0';
         return unit_.getStringInterner().intern(buf);
     }
 
@@ -4153,8 +4243,8 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
             }
         }
         
-        Module* mod = unit_.getModule(location);
-        const char* mangled = unit_.getNameMangler().mangle(k_char, mod, zig_name);
+        Module* mod = location ? unit_.getModule(location) : unit_.getModule(module_name_);
+        const char* mangled = unit_.getNameMangler().mangle(k_char, mod ? mod : unit_.getModule(module_name_), zig_name);
         plat_strcpy(final_buf, mangled);
     }
 
