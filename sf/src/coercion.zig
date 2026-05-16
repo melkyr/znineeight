@@ -1,0 +1,18 @@
+pub const CoercionKind = enum(u8) {
+    none,
+    wrap_optional,
+    wrap_error_success,
+    wrap_error_err,
+    unwrap_optional,
+    array_to_slice,
+    array_to_many_ptr,
+    slice_to_many_ptr,
+    string_to_slice,
+    string_to_many_ptr,
+    string_to_ptr,
+    ptr_to_optional_ptr,
+    const_qualify,
+    int_widen,
+    float_widen,
+    int_literal_coerce,
+};

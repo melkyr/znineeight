@@ -587,3 +587,71 @@ pub fn typeRegistryGetStructFields(self: *TypeRegistry, tid: u32, out: *[]FieldE
     var fcount: usize = @intCast(usize, sp.fields_count);
     out.* = self.fe_items[fstart .. fstart + fcount];
 }
+
+pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: TypeId) bool {
+    if (source == target) return true;
+    var src = self.types_items[@intCast(usize, source)];
+    var tgt = self.types_items[@intCast(usize, target)];
+    if (src.kind == TypeKind.integer_literal_type and typeRegistryIsNumeric(self, target)) return true;
+    if (src.kind == TypeKind.null_type) {
+        if (typeRegistryIsPointer(self, target)) return true;
+        if (tgt.kind == TypeKind.optional_type) return true;
+        if (tgt.kind == TypeKind.fn_type) return true;
+    }
+    if (tgt.kind == TypeKind.optional_type) {
+        var opt: OptionalPayload = self.opt_items[@intCast(usize, tgt.payload_idx)];
+        if (typeRegistryIsAssignable(self, source, opt.payload)) return true;
+        if (src.kind == TypeKind.null_type) return true;
+    }
+    if (tgt.kind == TypeKind.error_union_type) {
+        var eu: EUPayload = self.eu_items[@intCast(usize, tgt.payload_idx)];
+        if (typeRegistryIsAssignable(self, source, eu.payload)) return true;
+    }
+    if (src.kind == TypeKind.error_set_type and tgt.kind == TypeKind.error_union_type) return true;
+    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.ptr_type) {
+        var tgt_pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        var src_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+        if (tgt_pp.base == TYPE_VOID) return true;
+        if (src_pp.base == TYPE_VOID) return true;
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            if (src_pp.base == tgt_pp.base) return true;
+        }
+    }
+    if (tgt.kind == TypeKind.slice_type and src.kind == TypeKind.slice_type) {
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            var s_sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
+            var t_sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+            if (s_sl.elem == t_sl.elem) return true;
+        }
+    }
+    if (tgt.kind == TypeKind.many_ptr_type and src.kind == TypeKind.many_ptr_type) {
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            var s_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+            var t_pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+            if (s_pp.base == t_pp.base) return true;
+        }
+    }
+    if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.slice_type) {
+        var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
+        var sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+        if (arr.elem == sl.elem) return true;
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and arr.elem == sl.elem) return true;
+    }
+    if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.many_ptr_type) {
+        var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
+        var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        if (arr.elem == pp.base) return true;
+    }
+    if (src.kind == TypeKind.slice_type and tgt.kind == TypeKind.many_ptr_type) {
+        var sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
+        var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        if (sl.elem == pp.base) return true;
+    }
+    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.optional_type) {
+        var opt = self.opt_items[@intCast(usize, tgt.payload_idx)];
+        var opt_ty = self.types_items[@intCast(usize, opt.payload)];
+        if (opt_ty.kind == TypeKind.ptr_type) return typeRegistryIsAssignable(self, source, opt.payload);
+    }
+    if ((source == TYPE_U8 and target == TYPE_C_CHAR) or (source == TYPE_C_CHAR and target == TYPE_U8)) return true;
+    return false;
+}

@@ -16,6 +16,7 @@ const sym_mod = @import("../symbol_table.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const rtt_mod = @import("../resolved_type_table.zig");
 const sa_mod = @import("../semantic_analyzer.zig");
+const coercion_mod = @import("../coercion.zig");
 const pal = @import("../pal.zig");
 
 var diag_arena_buf: [4096]u8 = undefined;
@@ -685,6 +686,88 @@ fn testSwitchExprMixed() void {
     ok(emsg);
 }
 
+fn testAssignSameType() void {
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&type_db, 4);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var okv = type_mod.typeRegistryIsAssignable(&typereg, type_mod.TYPE_U32, type_mod.TYPE_U32);
+    if (!okv) { var fmsg: []const u8 = "testAssignSameType expected true"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignSameType";
+    ok(emsg);
+}
+
+fn testAssignIntLitToNumeric() void {
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&type_db, 4);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var okv = type_mod.typeRegistryIsAssignable(&typereg, type_mod.TYPE_INT_LIT, type_mod.TYPE_U32);
+    if (!okv) { var fmsg: []const u8 = "testAssignIntLitToNumeric expected true"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignIntLitToNumeric";
+    ok(emsg);
+}
+
+fn testAssignNullToOptional() void {
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&type_db, 4);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var opt_tid = type_mod.typeRegistryGetOrCreateOptional(&typereg, type_mod.TYPE_U32);
+    var okv = type_mod.typeRegistryIsAssignable(&typereg, type_mod.TYPE_NULL, opt_tid);
+    if (!okv) { var fmsg: []const u8 = "testAssignNullToOptional expected true"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignNullToOptional";
+    ok(emsg);
+}
+
+fn testAssignOptionalWrap() void {
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&type_db, 4);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var opt_tid = type_mod.typeRegistryGetOrCreateOptional(&typereg, type_mod.TYPE_U32);
+    var okv = type_mod.typeRegistryIsAssignable(&typereg, type_mod.TYPE_U32, opt_tid);
+    if (!okv) { var fmsg: []const u8 = "testAssignOptionalWrap expected true"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignOptionalWrap";
+    ok(emsg);
+}
+
+fn testAssignConstAdd() void {
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&type_db, 4);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var ptr_u32 = type_mod.typeRegistryGetOrCreatePtr(&typereg, type_mod.TYPE_U32, false);
+    var ptr_const_u32 = type_mod.typeRegistryGetOrCreatePtr(&typereg, type_mod.TYPE_U32, false);
+    var cty = typereg.types_items[@intCast(usize, ptr_const_u32)];
+    cty.flags = cty.flags | @intCast(u8, 1);
+    typereg.types_items[@intCast(usize, ptr_const_u32)] = cty;
+    var okv = type_mod.typeRegistryIsAssignable(&typereg, ptr_u32, ptr_const_u32);
+    if (!okv) { var fmsg: []const u8 = "testAssignConstAdd expected true"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignConstAdd";
+    ok(emsg);
+}
+
+fn testAssignMismatch() void {
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&type_db, 4);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var okv = type_mod.typeRegistryIsAssignable(&typereg, type_mod.TYPE_BOOL, type_mod.TYPE_U32);
+    if (okv) { var fmsg: []const u8 = "testAssignMismatch expected false"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignMismatch";
+    ok(emsg);
+}
+
+fn testCoercionKindValues() void {
+    var ck = coercion_mod.CoercionKind;
+    _ = ck.wrap_optional;
+    _ = ck.const_qualify;
+    _ = ck.int_literal_coerce;
+    var emsg: []const u8 = "testCoercionKindValues";
+    ok(emsg);
+}
+
 fn testArithSameType() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
     var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
@@ -843,6 +926,7 @@ pub fn main() void {
     testNegateNumeric();
     testBitNotInteger();
     testOptionalNullCmp();
+    testCoercionKindValues();
     testArithSameType();
     testArithLiteralPromo();
     testFnCallArith();
@@ -854,6 +938,12 @@ pub fn main() void {
     testIfExprNoElse();
     testSwitchExprSameType();
     testSwitchExprMixed();
+    testAssignSameType();
+    testAssignIntLitToNumeric();
+    testAssignNullToOptional();
+    testAssignOptionalWrap();
+    testAssignConstAdd();
+    testAssignMismatch();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }
