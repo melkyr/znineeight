@@ -350,6 +350,341 @@ fn testResolveFieldNotFound() void {
     ok("testResolveFieldNotFound");
 }
 
+fn testBitwiseSameType() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var un: []const u8 = "u32";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var lhs = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var rhs = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var and_idx = ast_mod.astStoreAddNode(&store, AstKind.bit_and, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lhs, rhs, @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, and_idx);
+    if (tid != type_mod.TYPE_U32) { var fmsg: []const u8 = "testBitwiseSameType expected TYPE_U32"; fail(fmsg); return; }
+    var bmsg: []const u8 = "testBitwiseSameType";
+    ok(bmsg);
+}
+
+fn testComparisonSameType() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var un: []const u8 = "u64";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var lhs = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var rhs = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var cmp_idx = ast_mod.astStoreAddNode(&store, AstKind.cmp_eq, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lhs, rhs, @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, cmp_idx);
+    if (tid != type_mod.TYPE_BOOL) { var fmsg: []const u8 = "testComparisonSameType expected TYPE_BOOL"; fail(fmsg); return; }
+    var csmsg: []const u8 = "testComparisonSameType";
+    ok(csmsg);
+}
+
+fn testLogicalBool() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var lhs = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var rhs = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var and_idx = ast_mod.astStoreAddNode(&store, AstKind.bool_and, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lhs, rhs, @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, and_idx);
+    if (tid != type_mod.TYPE_BOOL) { var fmsg: []const u8 = "testLogicalBool expected TYPE_BOOL"; fail(fmsg); return; }
+    var lbmsg: []const u8 = "testLogicalBool";
+    ok(lbmsg);
+}
+
+fn testNegateNumeric() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var un: []const u8 = "i32";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var inner = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var neg_idx = ast_mod.astStoreAddNode(&store, AstKind.negate, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), inner, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, neg_idx);
+    if (tid != type_mod.TYPE_I32) { var fmsg: []const u8 = "testNegateNumeric expected TYPE_I32"; fail(fmsg); return; }
+    var nnmsg: []const u8 = "testNegateNumeric";
+    ok(nnmsg);
+}
+
+fn testBitNotInteger() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var un: []const u8 = "u16";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var inner = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var not_idx = ast_mod.astStoreAddNode(&store, AstKind.bit_not, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), inner, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, not_idx);
+    if (tid != type_mod.TYPE_U16) { var fmsg: []const u8 = "testBitNotInteger expected TYPE_U16"; fail(fmsg); return; }
+    var bnmsg: []const u8 = "testBitNotInteger";
+    ok(bnmsg);
+}
+
+fn testOptionalNullCmp() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var lit_idx = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var un: []const u8 = "u32";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var ident_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var cmp_idx = ast_mod.astStoreAddNode(&store, AstKind.cmp_lt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lit_idx, ident_idx, @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, cmp_idx);
+    if (tid != type_mod.TYPE_BOOL) { var fmsg: []const u8 = "testOptionalNullCmp expected TYPE_BOOL"; fail(fmsg); return; }
+    var ocmsg: []const u8 = "testOptionalNullCmp";
+    ok(ocmsg);
+}
+
+fn testTryExprSuccess() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var eu_tid = type_mod.typeRegistryGetOrCreateErrorUnion(&typereg, type_mod.TYPE_U32, @intCast(u32, 0));
+    _ = eu_tid;
+    var un: []const u8 = "my_fn";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
+    var sym = sym_mod.Symbol{
+        .name_id = unid,
+        .type_id = eu_tid,
+        .kind = sym_mod.SymbolKind.global,
+        .flags = @intCast(u16, 0),
+        .decl_node = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0),
+        .scope_level = @intCast(u32, 0),
+    };
+    _ = sym_mod.symbolTableInsert(table, sym);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ident_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var try_idx = ast_mod.astStoreAddNode(&store, AstKind.try_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident_idx, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, try_idx);
+    if (tid != type_mod.TYPE_U32) { var fmsg: []const u8 = "testTryExprSuccess expected TYPE_U32"; fail(fmsg); return; }
+    var tmsg: []const u8 = "testTryExprSuccess";
+    ok(tmsg);
+}
+
+fn testTryExprNotErrorUnion() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var un: []const u8 = "my_int";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
+    var sym = sym_mod.Symbol{
+        .name_id = unid,
+        .type_id = type_mod.TYPE_U32,
+        .kind = sym_mod.SymbolKind.global,
+        .flags = @intCast(u16, 0),
+        .decl_node = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0),
+        .scope_level = @intCast(u32, 0),
+    };
+    _ = sym_mod.symbolTableInsert(table, sym);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ident_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var try_idx = ast_mod.astStoreAddNode(&store, AstKind.try_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident_idx, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, try_idx);
+    if (tid != type_mod.TYPE_VOID) { var fmsg: []const u8 = "testTryExprNotErrorUnion expected TYPE_VOID"; fail(fmsg); return; }
+    var tmsg: []const u8 = "testTryExprNotErrorUnion";
+    ok(tmsg);
+}
+
+fn testIfExprSameType() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var then_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var else_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, else_body, @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, if_idx);
+    if (tid != type_mod.TYPE_INT_LIT) { var fmsg: []const u8 = "testIfExprSameType expected TYPE_INT_LIT"; fail(fmsg); return; }
+    var emsg: []const u8 = "testIfExprSameType";
+    ok(emsg);
+}
+
+fn testIfExprMismatch() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var then_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var else_body = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, else_body, @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, if_idx);
+    if (tid != type_mod.TYPE_VOID) { var fmsg: []const u8 = "testIfExprMismatch expected TYPE_VOID"; fail(fmsg); return; }
+    var emsg: []const u8 = "testIfExprMismatch";
+    ok(emsg);
+}
+
+fn testIfExprNoElse() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var then_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, if_idx);
+    if (tid != type_mod.TYPE_INT_LIT) { var fmsg: []const u8 = "testIfExprNoElse expected TYPE_INT_LIT"; fail(fmsg); return; }
+    var emsg: []const u8 = "testIfExprNoElse";
+    ok(emsg);
+}
+
+fn testSwitchExprSameType() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var body1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var body2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong1 = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body1, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_buf: [2]u32 = undefined;
+    prong_buf[0] = prong1;
+    prong_buf[1] = prong1;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..2]);
+    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, sw_idx);
+    if (tid != type_mod.TYPE_INT_LIT) { var fmsg: []const u8 = "testSwitchExprSameType expected TYPE_INT_LIT"; fail(fmsg); return; }
+    var emsg: []const u8 = "testSwitchExprSameType";
+    ok(emsg);
+}
+
+fn testSwitchExprMixed() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var body_a = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var body_b = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_a = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body_a, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_b = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body_b, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_buf: [2]u32 = undefined;
+    prong_buf[0] = prong_a;
+    prong_buf[1] = prong_b;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..2]);
+    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, sw_idx);
+    if (tid != type_mod.TYPE_VOID) { var fmsg: []const u8 = "testSwitchExprMixed expected TYPE_VOID"; fail(fmsg); return; }
+    var emsg: []const u8 = "testSwitchExprMixed";
+    ok(emsg);
+}
+
 fn testArithSameType() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
     var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
@@ -404,6 +739,93 @@ fn testArithLiteralPromo() void {
     ok("testArithLiteralPromo");
 }
 
+fn testFnCallArith() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var fn_start: u16 = @intCast(u16, typereg.xt_len);
+    type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
+    type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
+    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), fn_start, @intCast(u16, 2), type_mod.TYPE_I32);
+    var un: []const u8 = "add";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
+    var sym = sym_mod.Symbol{
+        .name_id = unid, .type_id = fn_tid, .kind = sym_mod.SymbolKind.function,
+        .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0),
+    };
+    _ = sym_mod.symbolTableInsert(table, sym);
+    var callee_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var arg0 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var arg1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var args_buf: [2]u32 = undefined;
+    args_buf[0] = arg0;
+    args_buf[1] = arg1;
+    var args_payload = ast_mod.astStoreAddExtraChildren(&store, args_buf[0..2]);
+    var call_idx = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_idx, @intCast(u32, 0), @intCast(u32, 0), args_payload);
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, call_idx);
+    if (tid != type_mod.TYPE_I32) {
+        var fmsg: []const u8 = "testFnCallArith expected TYPE_I32";
+        fail(fmsg);
+        return;
+    }
+    var okmsg: []const u8 = "testFnCallArith";
+    ok(okmsg);
+}
+
+fn testFnCallWrongArgCount() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var fn_start: u16 = @intCast(u16, typereg.xt_len);
+    type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
+    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_I32);
+    var un: []const u8 = "add";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
+    var sym = sym_mod.Symbol{
+        .name_id = unid, .type_id = fn_tid, .kind = sym_mod.SymbolKind.function,
+        .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0),
+    };
+    _ = sym_mod.symbolTableInsert(table, sym);
+    var callee_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var arg0 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var arg1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var args_buf: [2]u32 = undefined;
+    args_buf[0] = arg0;
+    args_buf[1] = arg1;
+    var args_payload = ast_mod.astStoreAddExtraChildren(&store, args_buf[0..2]);
+    var call_idx = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_idx, @intCast(u32, 0), @intCast(u32, 0), args_payload);
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, call_idx);
+    if (tid != type_mod.TYPE_I32) {
+        var fmsg: []const u8 = "testFnCallWrongArgCount expected TYPE_I32";
+        fail(fmsg);
+        return;
+    }
+    var okmsg: []const u8 = "testFnCallWrongArgCount";
+    ok(okmsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -415,8 +837,23 @@ pub fn main() void {
     testResolveStructField();
     testResolveModuleField();
     testResolveFieldNotFound();
+    testBitwiseSameType();
+    testComparisonSameType();
+    testLogicalBool();
+    testNegateNumeric();
+    testBitNotInteger();
+    testOptionalNullCmp();
     testArithSameType();
     testArithLiteralPromo();
+    testFnCallArith();
+    testFnCallWrongArgCount();
+    testTryExprSuccess();
+    testTryExprNotErrorUnion();
+    testIfExprSameType();
+    testIfExprMismatch();
+    testIfExprNoElse();
+    testSwitchExprSameType();
+    testSwitchExprMixed();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }

@@ -11,6 +11,7 @@ const rtt_mod = @import("resolved_type_table.zig");
 const type_mod = @import("type_registry.zig");
 const diag_mod = @import("diagnostics.zig");
 const sym_mod = @import("symbol_table.zig");
+const ast_mod = @import("ast.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -149,6 +150,158 @@ fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_
     return lhs;
 }
 
+fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+    var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    if (lhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsInteger(self.registry, rhs)) return rhs;
+    if (rhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsInteger(self.registry, lhs)) return lhs;
+    if (lhs != rhs or !type_mod.typeRegistryIsInteger(self.registry, lhs)) return type_mod.TYPE_VOID;
+    return lhs;
+}
+
+fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+    var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    if (lhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, rhs)) return type_mod.TYPE_BOOL;
+    if (rhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, lhs)) return type_mod.TYPE_BOOL;
+    var lhs_num = type_mod.typeRegistryIsNumeric(self.registry, lhs);
+    if (lhs_num and lhs == rhs) return type_mod.TYPE_BOOL;
+    if (op_kind == AstKind.cmp_eq or op_kind == AstKind.cmp_ne) {
+        if (type_mod.typeRegistryIsOptional(self.registry, lhs) and rhs == type_mod.TYPE_NULL) return type_mod.TYPE_BOOL;
+        if (type_mod.typeRegistryIsOptional(self.registry, rhs) and lhs == type_mod.TYPE_NULL) return type_mod.TYPE_BOOL;
+        if (type_mod.typeRegistryIsErrorSet(self.registry, lhs) and type_mod.typeRegistryIsErrorSet(self.registry, rhs)) return type_mod.TYPE_BOOL;
+    }
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveLogical(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+    var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    if (lhs == type_mod.TYPE_BOOL and rhs == type_mod.TYPE_BOOL) return type_mod.TYPE_BOOL;
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveNegate(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var inner = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (inner == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    if (inner == type_mod.TYPE_INT_LIT) return type_mod.TYPE_INT_LIT;
+    if (type_mod.typeRegistryIsNumeric(self.registry, inner)) return inner;
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var inner = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (inner == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    if (inner == type_mod.TYPE_INT_LIT) return type_mod.TYPE_INT_LIT;
+    if (type_mod.typeRegistryIsInteger(self.registry, inner)) return inner;
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var callee_type = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (callee_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    var callee_ty = self.registry.types_items[@intCast(usize, callee_type)];
+    if (callee_ty.kind != type_mod.TypeKind.fn_type) {
+        var fmsg: []const u8 = "expression is not callable";
+        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 0),
+            @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fmsg);
+        return type_mod.TYPE_VOID;
+    }
+    var fnp = self.registry.fn_items[@intCast(usize, callee_ty.payload_idx)];
+    var pcount: usize = @intCast(usize, fnp.params_count);
+    var pstart: usize = @intCast(usize, fnp.params_start);
+    var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+    if (args.len != pcount) {
+        var amsg: []const u8 = "wrong number of arguments";
+        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 0),
+            @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), amsg);
+        return fnp.return_type;
+    }
+    var ai: usize = 0;
+    while (ai < args.len) : (ai += 1) {
+        var param_type = self.registry.xt_items[pstart + ai];
+        var arg_type = semanticAnalyzerResolveExpr(self, args[ai]);
+        if (arg_type != param_type and arg_type != type_mod.TYPE_INT_LIT) {
+            _ = ai;
+        }
+    }
+    return fnp.return_type;
+}
+
+fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var inner = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+    var ty = self.registry.types_items[@intCast(usize, inner)];
+    if (ty.kind != type_mod.TypeKind.error_union_type) {
+        var tmsg: []const u8 = "try requires error union type";
+        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 0),
+            @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), tmsg);
+        return type_mod.TYPE_VOID;
+    }
+    var eu = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
+    return eu.payload;
+}
+
+fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+    if (node.child_2 == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+    if (then_type == else_type) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_NORETURN) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_NORETURN) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, else_type)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.payload == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+    if (prongs.len == @intCast(usize, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    var unified: u32 = @intCast(u32, 0);
+    var has_else: u8 = 0;
+    var i: usize = 0;
+
+    while (i < prongs.len) : (i += 1) {
+        var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
+        if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
+        var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+        if (i == @intCast(usize, 0)) { unified = bt; }
+        else if (bt == type_mod.TYPE_NORETURN) {}
+        else if (bt == unified) {}
+        else {
+            var unum: u32 = @intCast(u32, 0);
+            if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
+            if (unified == type_mod.TYPE_INT_LIT and unum != @intCast(u32, 0)) { unified = bt; }
+            else { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+        }
+    }
+
+    if (has_else == @intCast(u8, 0)) {
+        var wmsg: []const u8 = "switch may not be exhaustive";
+        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1),
+            @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3004_SWITCH_NOT_EXHAUSTIVE)),
+            self.module_id, @intCast(u32, 0), @intCast(u32, 0), wmsg);
+    }
+    if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_VOID;
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
+    return unified;
+}
+
 pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var result: u32;
     result = @intCast(u32, 0);
@@ -189,25 +342,25 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.address_of) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.fn_call) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveFnCall(self, node_idx);
     } else if (node.kind == AstKind.builtin_call) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.bool_not) {
         result = type_mod.TYPE_BOOL;
     } else if (node.kind == AstKind.negate) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveNegate(self, node_idx);
     } else if (node.kind == AstKind.bit_not) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveBitNot(self, node_idx);
     } else if (node.kind == AstKind.try_expr) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveTryExpr(self, node_idx);
     } else if (node.kind == AstKind.catch_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.orelse_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.if_expr) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveIfExpr(self, node_idx);
     } else if (node.kind == AstKind.switch_expr) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveSwitchExpr(self, node_idx);
     } else if (node.kind == AstKind.tuple_literal) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.struct_init) {
@@ -235,11 +388,15 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveArithmetic(self, node_idx, node.kind);
     } else if (node.kind == AstKind.bit_and or node.kind == AstKind.bit_or or
                node.kind == AstKind.bit_xor or node.kind == AstKind.shl or
-               node.kind == AstKind.shr or node.kind == AstKind.bool_and or
-               node.kind == AstKind.bool_or or node.kind == AstKind.cmp_eq or
-               node.kind == AstKind.cmp_ne or node.kind == AstKind.cmp_lt or
-               node.kind == AstKind.cmp_le or node.kind == AstKind.cmp_gt or
-               node.kind == AstKind.cmp_ge or node.kind == AstKind.assign or
+               node.kind == AstKind.shr) {
+        result = semanticAnalyzerResolveBitwise(self, node_idx);
+    } else if (node.kind == AstKind.bool_and or node.kind == AstKind.bool_or) {
+        result = semanticAnalyzerResolveLogical(self, node_idx);
+    } else if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne or
+               node.kind == AstKind.cmp_lt or node.kind == AstKind.cmp_le or
+               node.kind == AstKind.cmp_gt or node.kind == AstKind.cmp_ge) {
+        result = semanticAnalyzerResolveComparison(self, node_idx, node.kind);
+    } else if (node.kind == AstKind.assign or
                node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
                node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
                node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or

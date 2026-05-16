@@ -572,6 +572,14 @@ pub fn typeRegistryGetSliceElem(self: *TypeRegistry, tid: u32) ?u32 {
     return self.slice_items[ty.payload_idx].elem;
 }
 
+pub fn typeRegistryIsOptional(self: *TypeRegistry, tid: u32) bool {
+    return self.types_items[tid].kind == TypeKind.optional_type;
+}
+
+pub fn typeRegistryIsErrorSet(self: *TypeRegistry, tid: u32) bool {
+    return self.types_items[tid].kind == TypeKind.error_set_type;
+}
+
 pub fn typeRegistryGetStructFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {
     var ty = self.types_items[tid];
     var sp = self.st_items[ty.payload_idx];
