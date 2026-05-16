@@ -52,7 +52,8 @@ fn testResolveIntLiteral() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, 0);
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, idx);
     if (tid != type_mod.TYPE_INT_LIT) {
@@ -74,7 +75,8 @@ fn testResolveBoolLiteral() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, 0);
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, idx);
     if (tid != type_mod.TYPE_BOOL) {
@@ -96,7 +98,8 @@ fn testResolvePtrType() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, 0);
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.ptr_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, idx);
     if (tid != type_mod.TYPE_TYPE) {
@@ -118,7 +121,8 @@ fn testResolveIdentTypeAlias() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var tn: []const u8 = "MyType";
     var nid = interner_mod.stringInternerIntern(&interner, tn);
     var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
@@ -153,7 +157,8 @@ fn testResolveIdentPrimitive() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var pn: []const u8 = "u32";
     var nid = interner_mod.stringInternerIntern(&interner, pn);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
@@ -177,7 +182,8 @@ fn testResolveIdentNotFound() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var pn: []const u8 = "no_such_type_171";
     var nid = interner_mod.stringInternerIntern(&interner, pn);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
@@ -223,7 +229,8 @@ fn testResolveStructField() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
 
     var sym = sym_mod.Symbol{
         .name_id = snid, .type_id = stid, .kind = sym_mod.SymbolKind.type_alias,
@@ -267,7 +274,8 @@ fn testResolveModuleField() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
 
     var mn: []const u8 = "mymod";
     var mnid = interner_mod.stringInternerIntern(&interner, mn);
@@ -316,7 +324,7 @@ fn testResolveFieldNotFound() void {
 
     var sp = type_mod.StructPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 1) };
     type_mod.stAppend(&typereg, sp);
-    var pidx = @intCast(u32, typereg.st_len - 1);
+    var pidx: u32 = @intCast(u32, typereg.st_len - @intCast(usize, 1));
 
     var sn: []const u8 = "S";
     var snid = interner_mod.stringInternerIntern(&interner, sn);
@@ -328,7 +336,8 @@ fn testResolveFieldNotFound() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
 
     var sym = sym_mod.Symbol{
         .name_id = snid, .type_id = stid, .kind = sym_mod.SymbolKind.type_alias,
@@ -363,7 +372,8 @@ fn testBitwiseSameType() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var un: []const u8 = "u32";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var lhs = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
@@ -387,7 +397,8 @@ fn testComparisonSameType() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var un: []const u8 = "u64";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var lhs = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
@@ -411,7 +422,8 @@ fn testLogicalBool() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var lhs = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var rhs = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var and_idx = ast_mod.astStoreAddNode(&store, AstKind.bool_and, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lhs, rhs, @intCast(u32, 0), @intCast(u32, 0));
@@ -433,7 +445,8 @@ fn testNegateNumeric() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var un: []const u8 = "i32";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var inner = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
@@ -456,7 +469,8 @@ fn testBitNotInteger() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var un: []const u8 = "u16";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var inner = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
@@ -479,7 +493,8 @@ fn testOptionalNullCmp() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var lit_idx = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var un: []const u8 = "u32";
     var unid = interner_mod.stringInternerIntern(&interner, un);
@@ -518,7 +533,8 @@ fn testTryExprSuccess() void {
     };
     _ = sym_mod.symbolTableInsert(table, sym);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var ident_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
     var try_idx = ast_mod.astStoreAddNode(&store, AstKind.try_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident_idx, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, try_idx);
@@ -552,7 +568,8 @@ fn testTryExprNotErrorUnion() void {
     };
     _ = sym_mod.symbolTableInsert(table, sym);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var ident_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
     var try_idx = ast_mod.astStoreAddNode(&store, AstKind.try_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident_idx, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, try_idx);
@@ -573,7 +590,8 @@ fn testIfExprSameType() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var then_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var else_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -596,7 +614,8 @@ fn testIfExprMismatch() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var then_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var else_body = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -619,7 +638,8 @@ fn testIfExprNoElse() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var then_body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, @intCast(u32, 0), @intCast(u32, 0));
@@ -641,7 +661,8 @@ fn testSwitchExprSameType() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -669,7 +690,8 @@ fn testSwitchExprMixed() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body_a = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body_b = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -780,7 +802,8 @@ fn testArithSameType() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
 
     var lhs = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var rhs = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -806,7 +829,8 @@ fn testArithLiteralPromo() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
 
     var un: []const u8 = "u32";
     var unid = interner_mod.stringInternerIntern(&interner, un);
@@ -834,7 +858,8 @@ fn testFnCallArith() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var fn_start: u16 = @intCast(u16, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
@@ -878,7 +903,8 @@ fn testFnCallWrongArgCount() void {
     var store = ast_mod.astStoreInit(&arena);
     var symreg = sym_mod.symbolRegistryInit(&arena);
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0));
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var fn_start: u16 = @intCast(u16, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
     var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_I32);
@@ -909,6 +935,133 @@ fn testFnCallWrongArgCount() void {
     ok(okmsg);
 }
 
+fn testCoercionTableSetGet() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var tab = coercion_mod.coercionTableInit(&arena);
+    coercion_mod.coercionTableAdd(&tab, @intCast(u32, 42), coercion_mod.CoercionKind.int_literal_coerce, type_mod.TYPE_U32);
+    var entry = coercion_mod.coercionTableGet(&tab, @intCast(u32, 42));
+    if (entry) |e| {
+        if (e.kind != coercion_mod.CoercionKind.int_literal_coerce) { var fmsg: []const u8 = "testCoercionTableSetGet wrong kind"; fail(fmsg); return; }
+    } else {
+        var fmsg: []const u8 = "testCoercionTableSetGet expected entry"; fail(fmsg); return;
+    }
+    var emsg: []const u8 = "testCoercionTableSetGet";
+    ok(emsg);
+}
+
+fn testClassifyOptionalWrap() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var typereg = type_mod.typeRegistryInit(&arena, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var opt_tid = type_mod.typeRegistryGetOrCreateOptional(&typereg, type_mod.TYPE_U32);
+    var ck = coercion_mod.classifyCoercion(&typereg, type_mod.TYPE_U32, opt_tid);
+    if (ck != coercion_mod.CoercionKind.wrap_optional) { var fmsg: []const u8 = "testClassifyOptionalWrap expected wrap_optional"; fail(fmsg); return; }
+    var emsg: []const u8 = "testClassifyOptionalWrap";
+    ok(emsg);
+}
+
+fn testClassifyArrayToSlice() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var typereg = type_mod.typeRegistryInit(&arena, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var arr_tid = type_mod.typeRegistryGetOrCreateArray(&typereg, type_mod.TYPE_U32, @intCast(u32, 8));
+    var sl_tid = type_mod.typeRegistryGetOrCreateSlice(&typereg, type_mod.TYPE_U32, false);
+    var ck = coercion_mod.classifyCoercion(&typereg, arr_tid, sl_tid);
+    if (ck != coercion_mod.CoercionKind.array_to_slice) { var fmsg: []const u8 = "testClassifyArrayToSlice expected array_to_slice"; fail(fmsg); return; }
+    var emsg: []const u8 = "testClassifyArrayToSlice";
+    ok(emsg);
+}
+
+fn testClassifyLitCoerce() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var typereg = type_mod.typeRegistryInit(&arena, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var ck = coercion_mod.classifyCoercion(&typereg, type_mod.TYPE_INT_LIT, type_mod.TYPE_U32);
+    if (ck != coercion_mod.CoercionKind.int_literal_coerce) { var fmsg: []const u8 = "testClassifyLitCoerce expected int_literal_coerce"; fail(fmsg); return; }
+    var emsg: []const u8 = "testClassifyLitCoerce";
+    ok(emsg);
+}
+
+fn testClassifyIntWiden() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var typereg = type_mod.typeRegistryInit(&arena, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var ck = coercion_mod.classifyCoercion(&typereg, type_mod.TYPE_U8, type_mod.TYPE_U32);
+    if (ck != coercion_mod.CoercionKind.int_widen) { var fmsg: []const u8 = "testClassifyIntWiden expected int_widen"; fail(fmsg); return; }
+    var emsg: []const u8 = "testClassifyIntWiden";
+    ok(emsg);
+}
+
+fn testClassifyFloatWiden() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var typereg = type_mod.typeRegistryInit(&arena, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var ck = coercion_mod.classifyCoercion(&typereg, type_mod.TYPE_F32, type_mod.TYPE_F64);
+    if (ck != coercion_mod.CoercionKind.float_widen) { var fmsg: []const u8 = "testClassifyFloatWiden expected float_widen"; fail(fmsg); return; }
+    var emsg: []const u8 = "testClassifyFloatWiden";
+    ok(emsg);
+}
+
+fn testAssignWidenDown() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var typereg = type_mod.typeRegistryInit(&arena, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var okdown = type_mod.typeRegistryIsAssignable(&typereg, type_mod.TYPE_I32, type_mod.TYPE_I8);
+    if (okdown) { var fmsg: []const u8 = "testAssignWidenDown expected false"; fail(fmsg); return; }
+    var emsg: []const u8 = "testAssignWidenDown";
+    ok(emsg);
+}
+
+fn testFnCallCoercion() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
+    var fn_start: u16 = @intCast(u16, typereg.xt_len);
+    type_mod.xtAppend(&typereg, type_mod.TYPE_U32);
+    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_U32);
+    var un: []const u8 = "f";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
+    var sym = sym_mod.Symbol{
+        .name_id = unid, .type_id = fn_tid, .kind = sym_mod.SymbolKind.function,
+        .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0),
+    };
+    _ = sym_mod.symbolTableInsert(table, sym);
+    var callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var lit = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var args_buf: [1]u32 = undefined;
+    args_buf[0] = lit;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, args_buf[0..1]);
+    var call_idx = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, call_idx);
+    if (tid != type_mod.TYPE_U32) { var fmsg: []const u8 = "testFnCallCoercion expected TYPE_U32"; fail(fmsg); return; }
+    var ck = coercion_mod.coercionTableGet(&ct, lit);
+    if (ck) |c| {
+        if (c.kind != coercion_mod.CoercionKind.int_literal_coerce) { var fmsg: []const u8 = "testFnCallCoercion expected int_literal_coerce"; fail(fmsg); return; }
+    } else {
+        var fmsg: []const u8 = "testFnCallCoercion expected coercion recorded"; fail(fmsg); return;
+    }
+    var emsg: []const u8 = "testFnCallCoercion";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -927,6 +1080,7 @@ pub fn main() void {
     testBitNotInteger();
     testOptionalNullCmp();
     testCoercionKindValues();
+    testFnCallCoercion();
     testArithSameType();
     testArithLiteralPromo();
     testFnCallArith();
@@ -944,6 +1098,13 @@ pub fn main() void {
     testAssignOptionalWrap();
     testAssignConstAdd();
     testAssignMismatch();
+    testCoercionTableSetGet();
+    testClassifyOptionalWrap();
+    testClassifyArrayToSlice();
+    testClassifyLitCoerce();
+    testClassifyIntWiden();
+    testClassifyFloatWiden();
+    testAssignWidenDown();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }

@@ -593,6 +593,10 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     var src = self.types_items[@intCast(usize, source)];
     var tgt = self.types_items[@intCast(usize, target)];
     if (src.kind == TypeKind.integer_literal_type and typeRegistryIsNumeric(self, target)) return true;
+    if (typeRegistryIsInteger(self, source) and typeRegistryIsInteger(self, target) and source != TYPE_INT_LIT) {
+        if (typeRegistryIsUnsigned(self, source) == typeRegistryIsUnsigned(self, target) and src.size < tgt.size) return true;
+    }
+    if (source == TYPE_F32 and target == TYPE_F64) return true;
     if (src.kind == TypeKind.null_type) {
         if (typeRegistryIsPointer(self, target)) return true;
         if (tgt.kind == TypeKind.optional_type) return true;

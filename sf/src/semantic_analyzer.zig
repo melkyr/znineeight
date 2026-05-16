@@ -12,6 +12,7 @@ const type_mod = @import("type_registry.zig");
 const diag_mod = @import("diagnostics.zig");
 const sym_mod = @import("symbol_table.zig");
 const ast_mod = @import("ast.zig");
+const coercion_mod = @import("coercion.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -26,9 +27,10 @@ pub const SemanticAnalyzer = struct {
     expected_type_stack_alloc: *Sand,
     current_fn_return: TypeId,
     current_fn_name: u32,
+    coercion_table: *coercion_mod.CoercionTable,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable) SemanticAnalyzer {
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -42,6 +44,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .expected_type_stack_alloc = alloc,
         .current_fn_return = @intCast(u32, 0),
         .current_fn_name = @intCast(u32, 0),
+        .coercion_table = coercion_tab,
     };
 }
 
@@ -229,8 +232,13 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     while (ai < args.len) : (ai += 1) {
         var param_type = self.registry.xt_items[pstart + ai];
         var arg_type = semanticAnalyzerResolveExpr(self, args[ai]);
-        if (arg_type != param_type and arg_type != type_mod.TYPE_INT_LIT) {
-            _ = ai;
+        if (arg_type != param_type) {
+            if (type_mod.typeRegistryIsAssignable(self.registry, arg_type, param_type)) {
+                var ck = coercion_mod.classifyCoercion(self.registry, arg_type, param_type);
+                if (ck != coercion_mod.CoercionKind.none) {
+                    coercion_mod.coercionTableAdd(self.coercion_table, args[ai], ck, param_type);
+                }
+            }
         }
     }
     return fnp.return_type;
@@ -259,8 +267,8 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (then_type == else_type) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     if (then_type == type_mod.TYPE_NORETURN) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
     if (else_type == type_mod.TYPE_NORETURN) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
-    if (then_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, else_type)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
-    if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, else_type)) { coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, coercion_mod.CoercionKind.int_literal_coerce, else_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { coercion_mod.coercionTableAdd(self.coercion_table, node.child_2, coercion_mod.CoercionKind.int_literal_coerce, then_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     if (then_type == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
     if (else_type == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
