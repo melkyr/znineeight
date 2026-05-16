@@ -80,6 +80,7 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 | `std.debug.print` requires tuple | Always use `.{}` syntax for arguments. |
 | Global aggregate constants | Use `pub var` and initialize in a dedicated `init()` function. |
 | Slice bounds with inline cast+math | Pre-compute into local `var` vars; zig0 cannot resolve `@intCast` + `+` inside `[a..b]`. |
+| `continue` inside `while : (expr)` with fn return values in condition | Replace `continue` with `if-else {}` chain; zig0 C89 goto miscompiles when combined with function return values used in same block. Use empty `{}` blocks as no-ops instead of `continue`. |
 
 ### 1.4 Memory Budget Enforcement
 

@@ -92,13 +92,13 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
             if (ft.kind == TypeKind.void_type) {
                 fe.offset = offset;
                 self.registry.fe_items[fstart + fi] = fe;
-                continue;
+            } else {
+                offset = alignUp(offset, ft.alignment);
+                fe.offset = offset;
+                self.registry.fe_items[fstart + fi] = fe;
+                offset += ft.size;
+                if (ft.alignment > max_align) max_align = ft.alignment;
             }
-            offset = alignUp(offset, ft.alignment);
-            fe.offset = offset;
-            self.registry.fe_items[fstart + fi] = fe;
-            offset += ft.size;
-            if (ft.alignment > max_align) max_align = ft.alignment;
         }
         ty.size = alignUp(offset, max_align);
         ty.alignment = max_align;
@@ -120,13 +120,10 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         while (fi < fcount) : (fi += 1) {
             var fe = self.registry.fe_items[fstart + fi];
             var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
-            if (ft.kind == TypeKind.void_type) continue;
-            if (ft.size > max_sz) max_sz = ft.size;
-            if (ft.alignment > max_align) max_align = ft.alignment;
-        }
-        ty.size = alignUp(max_sz, max_align);
-        ty.alignment = max_align;
-        self.registry.types_items[idx] = ty;
+            if (ft.kind != TypeKind.void_type) {
+                if (ft.size > max_sz) max_sz = ft.size;
+                if (ft.alignment > max_align) max_align = ft.alignment;
+            }
     } else if (ty.kind == TypeKind.tagged_union_type) {
         var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
         var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];
@@ -138,9 +135,10 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         while (fi < fcount) : (fi += 1) {
             var fe = self.registry.fe_items[fstart + fi];
             var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
-            if (ft.kind == TypeKind.void_type) continue;
-            if (ft.size > max_ps) max_ps = ft.size;
-            if (ft.alignment > max_pa) max_pa = ft.alignment;
+            if (ft.kind != TypeKind.void_type) {
+                if (ft.size > max_ps) max_ps = ft.size;
+                if (ft.alignment > max_pa) max_pa = ft.alignment;
+            }
         }
         var overall_align = if (tag_ty.alignment > max_pa) tag_ty.alignment else max_pa;
         var total = tag_ty.size;
