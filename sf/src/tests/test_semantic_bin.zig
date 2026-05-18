@@ -17,6 +17,7 @@ const SymbolRegistry = sym_mod.SymbolRegistry;
 const rtt_mod = @import("../resolved_type_table.zig");
 const sa_mod = @import("../semantic_analyzer.zig");
 const coercion_mod = @import("../coercion.zig");
+const ce_mod = @import("../comptime_eval.zig");
 const pal = @import("../pal.zig");
 
 var diag_arena_buf: [4096]u8 = undefined;
@@ -1062,6 +1063,74 @@ fn testFnCallCoercion() void {
     ok(emsg);
 }
 
+fn testComptimeIntLit() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var idx = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 42), @intCast(u32, 0), @intCast(u32, 0));
+    var result = ce_mod.comptimeEvalEvaluate(&ce, idx);
+    if (result) |v| {
+        if (v != @intCast(u64, 42)) { var fmsg: []const u8 = "testComptimeIntLit expected 42"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testComptimeIntLit expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeIntLit";
+    ok(emsg);
+}
+
+fn testComptimeBoolTrue() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var idx = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var result = ce_mod.comptimeEvalEvaluate(&ce, idx);
+    if (result) |v| {
+        if (v != @intCast(u64, 1)) { var fmsg: []const u8 = "testComptimeBoolTrue expected 1"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testComptimeBoolTrue expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeBoolTrue";
+    ok(emsg);
+}
+
+fn testComptimeAdd() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var lhs = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
+    var rhs = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 4), @intCast(u32, 0), @intCast(u32, 0));
+    var add_idx = ast_mod.astStoreAddNode(&store, AstKind.add, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lhs, rhs, @intCast(u32, 0), @intCast(u32, 0));
+    var result = ce_mod.comptimeEvalEvaluate(&ce, add_idx);
+    if (result) |v| {
+        if (v != @intCast(u64, 7)) { var fmsg: []const u8 = "testComptimeAdd expected 7"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testComptimeAdd expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeAdd";
+    ok(emsg);
+}
+
+fn testComptimeNotEvaluable() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var idx = ast_mod.astStoreAddNode(&store, AstKind.string_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var result = ce_mod.comptimeEvalEvaluate(&ce, idx);
+    if (result) |v| { _ = v; var fmsg: []const u8 = "testComptimeNotEvaluable expected null"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeNotEvaluable";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -1105,6 +1174,10 @@ pub fn main() void {
     testClassifyIntWiden();
     testClassifyFloatWiden();
     testAssignWidenDown();
+    testComptimeIntLit();
+    testComptimeBoolTrue();
+    testComptimeAdd();
+    testComptimeNotEvaluable();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }
