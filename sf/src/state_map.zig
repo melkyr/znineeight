@@ -103,3 +103,7 @@ pub fn stateMapMergeStates(parent: *StateMap, branch_a: *StateMap, branch_b: *St
         }
     }
 }
+
+pub fn stateMapGetEntries(self: *StateMap) []StateEntry {
+    return self.entries_items[0..self.entries_len];
+}

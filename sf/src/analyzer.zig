@@ -37,6 +37,15 @@ pub const Provenance = enum(u8) {
     heap = 5,
 };
 
+pub const AllocState = enum(u8) {
+    untracked = 0,
+    allocated = 1,
+    freed = 2,
+    returned_val = 3,
+    transferred = 4,
+    unknown = 5,
+};
+
 fn resolveOrigin(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     if (expr_idx == @intCast(u32, 0)) return null;
     var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
@@ -66,12 +75,151 @@ pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
     if (kind == AstKind.fn_call) return @intCast(u8, @enumToInt(Provenance.heap));
+    if (kind == AstKind.field_access) {
+        var base_id = resolveOrigin(ctx, node.child_0);
+        if (base_id) |bid| {
+            var result = smap_mod.stateMapGet(state, bid);
+            if (result) |v| return v;
+        }
+        return @intCast(u8, @enumToInt(Provenance.unknown));
+    }
+    if (kind == AstKind.slice_expr) {
+        var base_id = resolveOrigin(ctx, node.child_0);
+        if (base_id) |bid| {
+            var result = smap_mod.stateMapGet(state, bid);
+            if (result) |v| return v;
+        }
+        return @intCast(u8, @enumToInt(Provenance.unknown));
+    }
     if (kind == AstKind.ident_expr) {
         var result = smap_mod.stateMapGet(state, node.payload);
         if (result) |v| return v;
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
     return @intCast(u8, @enumToInt(Provenance.unknown));
+}
+
+pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32, ret_node_idx: u32) void {
+    var prov = classifyProvenance(ctx, state, expr_idx);
+    var rnode = ctx.store.nodes.items[@intCast(usize, ret_node_idx)];
+    var start = rnode.span_start;
+    var end = rnode.span_start + @intCast(u32, rnode.span_len);
+    var expr_node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    var pl = @intCast(u8, @enumToInt(Provenance.local));
+    var ppa = @intCast(u8, @enumToInt(Provenance.param_addr));
+    if (prov == pl) {
+        if (expr_node.kind == AstKind.address_of) {
+            var msg: []const u8 = "returning address of local variable";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+            return;
+        }
+        if (expr_node.kind == AstKind.slice_expr) {
+            var msg: []const u8 = "returning slice of local array";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+            return;
+        }
+        var msg: []const u8 = "returning pointer to local via variable";
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), @intCast(u32, 0), start, end, msg);
+        return;
+    }
+    if (prov == ppa) {
+        var msg: []const u8 = "returning address of function parameter";
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), @intCast(u32, 0), start, end, msg);
+        return;
+    }
+}
+
+pub fn isAllocCall(ctx: *AnalyzerContext, expr_idx: u32) bool {
+    if (expr_idx == @intCast(u32, 0)) return false;
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    if (node.kind == AstKind.try_expr) return isAllocCall(ctx, node.child_0);
+    if (node.kind != AstKind.fn_call) return false;
+    var callee = ctx.store.nodes.items[@intCast(usize, node.child_0)];
+    if (callee.kind != AstKind.ident_expr) return false;
+    var name_id = callee.payload;
+    var sand_nid = interner_mod.stringInternerIntern(ctx.interner, "sandAlloc");
+    if (name_id == sand_nid) return true;
+    var sand2_nid = interner_mod.stringInternerIntern(ctx.interner, "sand_alloc");
+    if (name_id == sand2_nid) return true;
+    var arena_nid = interner_mod.stringInternerIntern(ctx.interner, "arena_alloc");
+    if (name_id == arena_nid) return true;
+    return false;
+}
+
+pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
+    if (expr_idx == @intCast(u32, 0)) return null;
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    if (node.kind != AstKind.fn_call) return null;
+    var callee = ctx.store.nodes.items[@intCast(usize, node.child_0)];
+    if (callee.kind != AstKind.ident_expr) return null;
+    var name_id = callee.payload;
+    var arena_free_nid = interner_mod.stringInternerIntern(ctx.interner, "arena_free");
+    var sand_free_nid = interner_mod.stringInternerIntern(ctx.interner, "sandFree");
+    if (name_id != arena_free_nid and name_id != sand_free_nid) return null;
+    var args = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+    if (args.len < @intCast(usize, 2)) return null;
+    var ptr_arg = ctx.store.nodes.items[@intCast(usize, args[1])];
+    if (ptr_arg.kind == AstKind.ident_expr) return ptr_arg.payload;
+    return null;
+}
+
+pub fn compositeNameId(interner: *StringInterner, base_id: u32, field_id: u32) u32 {
+    var base_str = interner_mod.stringInternerGet(interner, base_id);
+    var field_str = interner_mod.stringInternerGet(interner, field_id);
+    var buf: [128]u8 = undefined;
+    var pos: usize = 0;
+    var i: usize = 0;
+    while (i < base_str.len and pos < @intCast(usize, 127)) {
+        buf[pos] = base_str[i];
+        pos += 1;
+        i += 1;
+    }
+    if (pos < @intCast(usize, 127)) {
+        buf[pos] = @intCast(u8, '.');
+        pos += 1;
+    }
+    i = 0;
+    while (i < field_str.len and pos < @intCast(usize, 127)) {
+        buf[pos] = field_str[i];
+        pos += 1;
+        i += 1;
+    }
+    return interner_mod.stringInternerIntern(interner, buf[0..pos]);
+}
+
+pub fn handleAllocCall(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, init_idx: u32) void {
+    if (!isAllocCall(ctx, init_idx)) return;
+    smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
+}
+
+pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void {
+    var name_id = isFreeCall(ctx, expr_idx) orelse return;
+    if (name_id == @intCast(u32, 0)) return;
+    var current = smap_mod.stateMapGet(state, name_id);
+    if (current) |c| {
+        if (c == @enumToInt(AllocState.allocated)) {
+            smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
+            return;
+        }
+        if (c == @enumToInt(AllocState.freed)) {
+            var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+            var msg: []const u8 = "double free of pointer";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+            return;
+        }
+        smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
+    }
+}
+
+pub fn checkLeaksOnScopeExit(ctx: *AnalyzerContext, state: *StateMap) void {
+    var entries = smap_mod.stateMapGetEntries(state);
+    var ei: usize = 0;
+    while (ei < entries.len) : (ei += 1) {
+        if (entries[ei].state == @enumToInt(AllocState.allocated)) {
+            var lmsg: []const u8 = "memory leak: pointer not freed";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), lmsg);
+        }
+    }
 }
 
 pub const NullGuard = struct {
@@ -344,6 +492,7 @@ pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_
         visit_fn(ctx, state, children[i]);
     }
     executeDeferQueue(ctx, state, saved_depth, @intCast(u8, 0), visit_fn);
+    checkLeaksOnScopeExit(ctx, state);
     ctx.current_depth = saved_depth;
 }
 
@@ -385,6 +534,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
         walkBlock(ctx, body_state, node.child_0, on_stmt);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+    } else if (kind == AstKind.return_stmt) {
+        if (node.child_0 != @intCast(u32, 0)) checkReturnProvenance(ctx, state, node.child_0, node_idx);
+        on_stmt(ctx, state, node_idx);
     } else if (kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) {
         var dk: u8 = @intCast(u8, 0);
         if (kind == AstKind.errdefer_stmt) dk = @intCast(u8, 1);

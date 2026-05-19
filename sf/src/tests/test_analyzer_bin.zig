@@ -619,6 +619,395 @@ fn testClassifyIdent() void {
     helpers.ok("testClassifyIdent");
 }
 
+fn testReturnAddrLocal() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ns: []const u8 = "x";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.checkReturnProvenance(&ac, &st, addr_node, ret_node);
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testReturnAddrLocal: expected error\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_test_ral: []const u8 = "testReturnAddrLocal";
+    helpers.ok(ok_test_ral);
+}
+
+fn testReturnAddrParam() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.checkReturnProvenance(&ac, &st, addr_node, ret_node);
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testReturnAddrParam: expected error\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok1: []const u8 = "testReturnAddrParam";
+    helpers.ok(ok1);
+}
+
+fn testReturnPtrViaLocal() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ns: []const u8 = "x";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var pn: []const u8 = "p";
+    var pid = interner_mod.stringInternerIntern(&interner, pn);
+    var p_id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), pid);
+    smap_mod.stateMapSet(&st, pid, @enumToInt(az_mod.Provenance.local));
+    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), p_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    _ = addr_node;
+    az_mod.checkReturnProvenance(&ac, &st, p_id_node, ret_node);
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testReturnPtrViaLocal: expected warning\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok2: []const u8 = "testReturnPtrViaLocal";
+    helpers.ok(ok2);
+}
+
+fn testReturnSliceLocal() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ns: []const u8 = "arr";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    var arr_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var slice_node = ast_mod.astStoreAddNode(&store, AstKind.slice_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), arr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.Provenance.local));
+    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), slice_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.checkReturnProvenance(&ac, &st, slice_node, ret_node);
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testReturnSliceLocal: expected warning\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var okrsl: []const u8 = "testReturnSliceLocal";
+    helpers.ok(okrsl);
+}
+
+fn testAllocStateEnumValues() void {
+    if (@enumToInt(az_mod.AllocState.untracked) != @intCast(u8, 0)) { var msg: []const u8 = "testAllocStateEnumValues: untracked should be 0\n"; pal.stdout_write(msg); pal.exit(1); }
+    if (@enumToInt(az_mod.AllocState.allocated) != @intCast(u8, 1)) { var msg: []const u8 = "testAllocStateEnumValues: allocated should be 1\n"; pal.stdout_write(msg); pal.exit(1); }
+    if (@enumToInt(az_mod.AllocState.freed) != @intCast(u8, 2)) { var msg: []const u8 = "testAllocStateEnumValues: freed should be 2\n"; pal.stdout_write(msg); pal.exit(1); }
+    if (@enumToInt(az_mod.AllocState.returned_val) != @intCast(u8, 3)) { var msg: []const u8 = "testAllocStateEnumValues: returned_val should be 3\n"; pal.stdout_write(msg); pal.exit(1); }
+    if (@enumToInt(az_mod.AllocState.transferred) != @intCast(u8, 4)) { var msg: []const u8 = "testAllocStateEnumValues: transferred should be 4\n"; pal.stdout_write(msg); pal.exit(1); }
+    if (@enumToInt(az_mod.AllocState.unknown) != @intCast(u8, 5)) { var msg: []const u8 = "testAllocStateEnumValues: unknown should be 5\n"; pal.stdout_write(msg); pal.exit(1); }
+    var okaev: []const u8 = "testAllocStateEnumValues";
+    helpers.ok(okaev);
+}
+
+fn testIsAllocCall() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var sa: []const u8 = "sandAlloc";
+    var sand_nid = interner_mod.stringInternerIntern(&interner, sa);
+    var callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sand_nid);
+    var alloc_call = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    if (!az_mod.isAllocCall(&ac, alloc_call)) {
+        var msg: []const u8 = "testIsAllocCall: expected true for sandAlloc call\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+    var try_alloc = ast_mod.astStoreAddNode(&store, AstKind.try_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), alloc_call, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    if (!az_mod.isAllocCall(&ac, try_alloc)) {
+        var msg: []const u8 = "testIsAllocCall: expected true for try sandAlloc\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+    var ofs: []const u8 = "otherFunc";
+    var other_nid = interner_mod.stringInternerIntern(&interner, ofs);
+    var other_callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), other_nid);
+    var other_call = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), other_callee, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    if (az_mod.isAllocCall(&ac, other_call)) {
+        var msg: []const u8 = "testIsAllocCall: expected false for otherFunc\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+    var zero_expr: u32 = 0;
+    if (az_mod.isAllocCall(&ac, zero_expr)) {
+        var msg: []const u8 = "testIsAllocCall: expected false for zero expr\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testIsAllocCall";
+    helpers.ok(ok_msg);
+}
+
+fn testIsFreeCall() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    var free_s: []const u8 = "arena_free";
+    var free_nid = interner_mod.stringInternerIntern(&interner, free_s);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), free_nid);
+    var ptr_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var arg0_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 99));
+    var arg_buf: [2]u32 = undefined;
+    arg_buf[0] = arg0_node;
+    arg_buf[1] = ptr_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    var result = az_mod.isFreeCall(&ac, call_node);
+    if (result) |v| {
+        if (v != nid) {
+            var msg: []const u8 = "testIsFreeCall: expected nid\n";
+            pal.stdout_write(msg); pal.exit(1);
+        }
+    } else {
+        var msg: []const u8 = "testIsFreeCall: expected non-null\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+
+    var other_s: []const u8 = "otherFunc";
+    var other_nid = interner_mod.stringInternerIntern(&interner, other_s);
+    var other_callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), other_nid);
+    var other_payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var other_call = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), other_callee, @intCast(u32, 0), @intCast(u32, 0), other_payload);
+    var result2 = az_mod.isFreeCall(&ac, other_call);
+    if (result2) |v| {
+        _ = v;
+        var msg: []const u8 = "testIsFreeCall: expected null for non-free\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+
+    var result3 = az_mod.isFreeCall(&ac, @intCast(u32, 0));
+    if (result3) |v| {
+        _ = v;
+        var msg: []const u8 = "testIsFreeCall: expected null for zero\n";
+        pal.stdout_write(msg); pal.exit(1);
+    }
+
+    var ok2: []const u8 = "testIsFreeCall";
+    helpers.ok(ok2);
+}
+
+fn testHandleAllocCall() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var sa: []const u8 = "sandAlloc";
+    var sa_id = interner_mod.stringInternerIntern(&interner, sa);
+    var sa_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sa_id);
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), sa_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    az_mod.handleAllocCall(&ac, &st, nid, call_node);
+    var opt = smap_mod.stateMapGet(&st, nid);
+    if (opt) |v| {
+        if (v != @enumToInt(az_mod.AllocState.allocated)) {
+            var fmsg: []const u8 = "testHandleAllocCall: expected allocated\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testHandleAllocCall: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testHandleAllocCall";
+    helpers.ok(ok_msg);
+}
+
+fn testHandleFreeCall() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps2: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps2);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var af: []const u8 = "arena_free";
+    var af_id = interner_mod.stringInternerIntern(&interner, af);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var arg_buf: [2]u32 = undefined;
+    arg_buf[0] = @intCast(u32, 0);
+    arg_buf[1] = pid_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.handleFreeCall(&ac, &st, call_node);
+    var opt = smap_mod.stateMapGet(&st, nid);
+    if (opt) |v| {
+        if (v != @enumToInt(az_mod.AllocState.freed)) {
+            var fmsg: []const u8 = "testHandleFreeCall: expected freed\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testHandleFreeCall: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testHandleFreeCall";
+    helpers.ok(ok_msg);
+}
+
+fn testHandleDoubleFree() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps3: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps3);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.freed));
+    var af: []const u8 = "arena_free";
+    var af_id = interner_mod.stringInternerIntern(&interner, af);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var arg_buf: [2]u32 = undefined;
+    arg_buf[0] = @intCast(u32, 0);
+    arg_buf[1] = pid_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.handleFreeCall(&ac, &st, call_node);
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testHandleDoubleFree: expected error\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testHandleDoubleFree";
+    helpers.ok(ok_msg);
+}
+
+fn testScopeLeakDetected() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&st, @intCast(u32, 42), @enumToInt(az_mod.AllocState.allocated));
+    smap_mod.stateMapSet(&st, @intCast(u32, 43), @enumToInt(az_mod.AllocState.freed));
+    az_mod.checkLeaksOnScopeExit(&ac, &st);
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testScopeLeakDetected: expected warning\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testScopeLeakDetected";
+    helpers.ok(ok_msg);
+}
+
+fn testScopeNoLeakAfterFree() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&st, @intCast(u32, 42), @enumToInt(az_mod.AllocState.freed));
+    az_mod.checkLeaksOnScopeExit(&ac, &st);
+    if (diag.warning_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testScopeNoLeakAfterFree: expected no warning\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testScopeNoLeakAfterFree";
+    helpers.ok(ok_msg);
+}
+
+fn testCompositeNameId() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var cont: []const u8 = "container";
+    var cont_id = interner_mod.stringInternerIntern(&interner, cont);
+    var ptrs: []const u8 = "ptr";
+    var ptr_id = interner_mod.stringInternerIntern(&interner, ptrs);
+    var composite = az_mod.compositeNameId(&interner, cont_id, ptr_id);
+    var expected: []const u8 = "container.ptr";
+    var expected_id = interner_mod.stringInternerIntern(&interner, expected);
+    if (composite != expected_id) {
+        var fmsg: []const u8 = "testCompositeNameId: composite ID mismatch\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg2: []const u8 = "testCompositeNameId";
+    helpers.ok(ok_msg2);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testSignatureVoidParam();
@@ -643,6 +1032,19 @@ pub fn main() void {
     testClassifyAddrParam();
     testClassifyFnCall();
     testClassifyIdent();
+    testReturnAddrLocal();
+    testReturnAddrParam();
+    testReturnPtrViaLocal();
+    testReturnSliceLocal();
+    testAllocStateEnumValues();
+    testIsAllocCall();
+    testIsFreeCall();
+    testHandleAllocCall();
+    testHandleFreeCall();
+    testHandleDoubleFree();
+    testScopeLeakDetected();
+    testScopeNoLeakAfterFree();
+    testCompositeNameId();
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }
