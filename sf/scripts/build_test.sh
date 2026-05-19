@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Build and run test binaries from sf/src/tests/
 # Uses isolated output directories to prevent stale .c/.h contamination.
-set -e
-
 SCRIPT_DIR="$(dirname "$0")"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 ZIG0="$ROOT_DIR/build/zig0"
@@ -12,6 +10,9 @@ if [ ! -f "$ZIG0" ]; then
     echo "=== [test] Building zig0 ==="
     g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o "$ZIG0"
 fi
+
+PASS=0
+FAIL=0
 
 # Test entry points and their output dirs (ISOLATED per binary)
 build_and_run() {
@@ -23,30 +24,39 @@ build_and_run() {
     rm -rf "$out_dir"
     mkdir -p "$out_dir"
 
-    "$ZIG0" --header-priority-include -o "$out_dir/${name}.c" "$src"
+    if ! "$ZIG0" --header-priority-include -o "$out_dir/${name}.c" "$src"; then
+        echo "  FAIL (zig0): $name"
+        FAIL=$((FAIL + 1))
+        return
+    fi
 
-    gcc -m32 -std=c89 \
+    local c_files=$(find "$out_dir" -maxdepth 1 -name '*.c' | sort)
+    if ! gcc -m32 -std=c89 \
         -Wno-long-long \
         -Wno-pointer-sign \
         -Wno-implicit-function-declaration \
         -Iinclude \
-        "$out_dir"/*.c \
-        -o "$out_dir/$name"
+        $c_files \
+        -o "$out_dir/$name"; then
+        echo "  FAIL (gcc): $name"
+        FAIL=$((FAIL + 1))
+        return
+    fi
 
-    "$out_dir/$name"
-    echo ""
+    if ! "$out_dir/$name"; then
+        echo "  FAIL (run): $name"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    echo "  PASS: $name"
+    PASS=$((PASS + 1))
 }
 
-# Semantic analysis tests
 build_and_run "test_semantic_bin"
-
-# Analyzer tests (signature + null pointer)
 build_and_run "test_analyzer_bin"
-
-# Module registry tests
 build_and_run "test_mod_reg_bin"
-
-# Symbol registration tests
 build_and_run "test_sym_reg_bin"
+build_and_run "test_analyzer_integration_bin"
 
-echo "=== [test] All passed ==="
+echo "=== [test] Results: $PASS passed, $FAIL failed ==="

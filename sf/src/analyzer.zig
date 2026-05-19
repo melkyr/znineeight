@@ -137,11 +137,14 @@ pub fn isAllocCall(ctx: *AnalyzerContext, expr_idx: u32) bool {
     var callee = ctx.store.nodes.items[@intCast(usize, node.child_0)];
     if (callee.kind != AstKind.ident_expr) return false;
     var name_id = callee.payload;
-    var sand_nid = interner_mod.stringInternerIntern(ctx.interner, "sandAlloc");
+    var s_sandAlloc: []const u8 = "sandAlloc";
+    var sand_nid = interner_mod.stringInternerIntern(ctx.interner, s_sandAlloc);
     if (name_id == sand_nid) return true;
-    var sand2_nid = interner_mod.stringInternerIntern(ctx.interner, "sand_alloc");
+    var s_sand_alloc: []const u8 = "sand_alloc";
+    var sand2_nid = interner_mod.stringInternerIntern(ctx.interner, s_sand_alloc);
     if (name_id == sand2_nid) return true;
-    var arena_nid = interner_mod.stringInternerIntern(ctx.interner, "arena_alloc");
+    var s_arena_alloc: []const u8 = "arena_alloc";
+    var arena_nid = interner_mod.stringInternerIntern(ctx.interner, s_arena_alloc);
     if (name_id == arena_nid) return true;
     return false;
 }
@@ -153,8 +156,10 @@ pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     var callee = ctx.store.nodes.items[@intCast(usize, node.child_0)];
     if (callee.kind != AstKind.ident_expr) return null;
     var name_id = callee.payload;
-    var arena_free_nid = interner_mod.stringInternerIntern(ctx.interner, "arena_free");
-    var sand_free_nid = interner_mod.stringInternerIntern(ctx.interner, "sandFree");
+    var s_arena_free: []const u8 = "arena_free";
+    var arena_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_arena_free);
+    var s_sand_free: []const u8 = "sandFree";
+    var sand_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_sand_free);
     if (name_id != arena_free_nid and name_id != sand_free_nid) return null;
     var args = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
     if (args.len < @intCast(usize, 2)) return null;
@@ -278,7 +283,9 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
             if (c == @enumToInt(AllocState.allocated)) {
                 smap_mod.stateMapSet(state, arg_node.payload, @enumToInt(AllocState.transferred));
                 var tmsg: []const u8 = "ownership transferred to function";
-                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 2), @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), tmsg);
+                var warn_lvl: u8 = @intCast(u8, 2);
+                if (ctx.warn_all != @intCast(u8, 0)) warn_lvl = @intCast(u8, 1);
+                diag_mod.diagnosticCollectorAdd(ctx.diag, warn_lvl, @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), tmsg);
             }
         }
     }
@@ -303,6 +310,10 @@ pub const AnalyzerContext = struct {
     defer_queue_alloc: *Sand,
     current_depth: u32,
     null_analysis_mode: u8,
+    skip_null_check: u8,
+    skip_lifetime_check: u8,
+    skip_doublefree_check: u8,
+    warn_all: u8,
 };
 
 pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
@@ -362,7 +373,8 @@ pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_retur
                 }
             }
         }
-        var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, "anytype");
+        var s_anytype: []const u8 = "anytype";
+        var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, s_anytype);
         if (name_id == anytype_nid) {
             var amsg: []const u8 = "anytype not supported in Z98";
             diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
@@ -618,5 +630,102 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         analyzeExpr(ctx, state, node.child_0);
     } else {
         on_stmt(ctx, state, node_idx);
+    }
+}
+
+fn onNullStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    _ = ctx; _ = state; _ = node_idx;
+}
+
+fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.var_decl) {
+        if (node.child_1 != @intCast(u32, 0)) {
+            var prov = classifyProvenance(ctx, state, node.child_1);
+            smap_mod.stateMapSet(state, node.payload, prov);
+        } else {
+            smap_mod.stateMapSet(state, node.payload, @intCast(u8, @enumToInt(Provenance.unknown)));
+        }
+    }
+    if (node.kind == AstKind.assign) {
+        var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var prov = classifyProvenance(ctx, state, node.child_1);
+            smap_mod.stateMapSet(state, lhs_node.payload, prov);
+        }
+    }
+}
+
+fn onDoubleFreeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.var_decl) {
+        handleAllocCall(ctx, state, node.payload, node.child_1);
+    }
+    if (node.kind == AstKind.assign) {
+        handleAllocAssign(ctx, state, node_idx);
+    }
+    if (node.kind == AstKind.fn_call) {
+        handleOwnershipPass(ctx, state, node_idx);
+    }
+}
+
+pub fn runSignatureAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32) void {
+    analyzeSignature(ctx, fn_decl_idx);
+}
+
+pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
+    var state = smap_mod.stateMapInit(ctx.alloc);
+    ctx.null_analysis_mode = @intCast(u8, 1);
+    walkBlock(ctx, &state, fn_body_idx, onNullStmt);
+    ctx.null_analysis_mode = @intCast(u8, 0);
+}
+
+pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
+    var state = smap_mod.stateMapInit(ctx.alloc);
+    var decl = ctx.store.nodes.items[@intCast(usize, fn_decl_idx)];
+    if (decl.payload != @intCast(u32, 0)) {
+        var proto = ctx.store.fn_protos.items[@intCast(usize, decl.payload)];
+        var pp: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+        var params = ast_mod.astStoreGetExtraChildren(ctx.store, pp);
+        var pi: usize = 0;
+        while (pi < params.len) : (pi += 1) {
+            var pn = ctx.store.nodes.items[@intCast(usize, params[pi])];
+            if (pn.kind == AstKind.param_decl) {
+                smap_mod.stateMapSet(&state, pn.payload, @intCast(u8, @enumToInt(Provenance.param)));
+            }
+        }
+    }
+    walkBlock(ctx, &state, fn_body_idx, onLifetimeStmt);
+}
+
+pub fn runDoubleFreeAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
+    var state = smap_mod.stateMapInit(ctx.alloc);
+    walkBlock(ctx, &state, fn_body_idx, onDoubleFreeStmt);
+}
+
+pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
+    var root = ctx.store.nodes.items[@intCast(usize, module_root_idx)];
+    if (root.kind != AstKind.module_root) return;
+    var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+    var di: usize = 0;
+    while (di < decls.len) : (di += 1) {
+        var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
+        if (decl.kind != AstKind.fn_decl) continue;
+        if (decl.child_1 == @intCast(u32, 0)) continue;
+        ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, decl.payload)].name_id;
+        runSignatureAnalyzer(ctx, decls[di]);
+        alloc_mod.sandReset(ctx.alloc);
+        if (ctx.skip_null_check == @intCast(u8, 0)) {
+            runNullAnalyzer(ctx, decl.child_1);
+            alloc_mod.sandReset(ctx.alloc);
+        }
+        if (ctx.skip_lifetime_check == @intCast(u8, 0)) {
+            runLifetimeAnalyzer(ctx, decls[di], decl.child_1);
+            alloc_mod.sandReset(ctx.alloc);
+        }
+        if (ctx.skip_doublefree_check == @intCast(u8, 0)) {
+            runDoubleFreeAnalyzer(ctx, decl.child_1);
+            alloc_mod.sandReset(ctx.alloc);
+        }
     }
 }

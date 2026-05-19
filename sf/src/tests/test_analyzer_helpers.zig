@@ -35,6 +35,10 @@ pub fn initCtx(ac: *AnalyzerContext, store: *AstStore, typereg: *TypeRegistry, i
         .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = arena,
         .current_depth = @intCast(u32, 0),
         .null_analysis_mode = @intCast(u8, 0),
+        .skip_null_check = @intCast(u8, 0),
+        .skip_lifetime_check = @intCast(u8, 0),
+        .skip_doublefree_check = @intCast(u8, 0),
+        .warn_all = @intCast(u8, 0),
     };
 }
 

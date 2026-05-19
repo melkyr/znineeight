@@ -46,6 +46,11 @@ pub const CompilerCli = struct {
     test_mode: bool,
     sanity_test_mode: bool,
     track_memory: bool,
+    no_null_check: bool,
+    no_lifetime_check: bool,
+    no_leak_check: bool,
+    warn_all: bool,
+    warn_error: bool,
     include_dirs: [16][]const u8,
     include_count: u32,
 };
@@ -137,7 +142,7 @@ fn runCompiler(ctx: *CompilerContext) void {
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     diag_mod.diagnosticCollectorPrintAll(ctx.diag);
-    if (ctx.cli.warnings_as_errors and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
+    if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
         pal.exit(1);
     }
     if (ctx.cli.track_memory) {
@@ -207,6 +212,11 @@ fn parseArgs() CompilerCli {
         .test_mode = false,
         .sanity_test_mode = false,
         .track_memory = false,
+        .no_null_check = false,
+        .no_lifetime_check = false,
+        .no_leak_check = false,
+        .warn_all = false,
+        .warn_error = false,
         .include_count = @intCast(u32, 0),
         .include_dirs = undefined,
     };
@@ -224,6 +234,11 @@ fn parseArgs() CompilerCli {
     const s_color: []const u8 = "--color";
     const s_error_format: []const u8 = "--error-format";
     const s_track_memory: []const u8 = "--track-memory";
+    const s_no_null: []const u8 = "--no-null-check";
+    const s_no_lifetime: []const u8 = "--no-lifetime-check";
+    const s_no_leak: []const u8 = "--no-leak-check";
+    const s_warn_all: []const u8 = "--warn-all";
+    const s_warn_error: []const u8 = "--warn-error";
     const s_include: []const u8 = "-I";
     const s_t: []const u8 = "-t";
     const s_a: []const u8 = "-a";
@@ -277,6 +292,17 @@ fn parseArgs() CompilerCli {
                 }
             } else if (matchFlag(arg, s_track_memory)) {
                 cli.track_memory = true;
+            } else if (matchFlag(arg, s_no_null)) {
+                cli.no_null_check = true;
+            } else if (matchFlag(arg, s_no_lifetime)) {
+                cli.no_lifetime_check = true;
+            } else if (matchFlag(arg, s_no_leak)) {
+                cli.no_leak_check = true;
+            } else if (matchFlag(arg, s_warn_all)) {
+                cli.warn_all = true;
+            } else if (matchFlag(arg, s_warn_error)) {
+                cli.warnings_as_errors = true;
+                cli.warn_error = true;
             } else if (matchFlag(arg, s_include)) {
                 i += 1;
                 if (i < argc and cli.include_count < 16) {

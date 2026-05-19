@@ -1271,6 +1271,37 @@ fn testDeferFree() void {
     helpers.ok(ok_msg);
 }
 
+fn testRunAllAnalyzers() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ret_buf: [1]u32 = undefined;
+    ret_buf[0] = ret_node;
+    var block_payload = ast_mod.astStoreAddExtraChildren(&store, ret_buf[0..1]);
+    var body_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), block_payload);
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, 0), .params_count = @intCast(u16, 0), .return_type_node = @intCast(u32, 0) };
+    var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body_node, @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    var decl_buf: [1]u32 = undefined;
+    decl_buf[0] = fn_node;
+    var mr_payload = ast_mod.astStoreAddExtraChildren(&store, decl_buf[0..1]);
+    var mr_node = ast_mod.astStoreAddNode(&store, AstKind.module_root, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), mr_payload);
+    az_mod.runAllAnalyzers(&ac, mr_node);
+    if (diag.error_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testRunAllAnalyzers: expected 0 errors\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testRunAllAnalyzers";
+    helpers.ok(ok_msg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testSignatureVoidParam();
@@ -1316,6 +1347,7 @@ pub fn main() void {
     testFreeUntracked();
     testOwnershipNoTransfer();
     testDoubleFreeNested();
+    testRunAllAnalyzers();
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

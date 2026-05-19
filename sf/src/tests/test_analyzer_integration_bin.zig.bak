@@ -1,0 +1,127 @@
+const alloc_mod = @import("../allocator.zig");
+const Sand = alloc_mod.Sand;
+const interner_mod = @import("../string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
+const Token = @import("../token.zig").Token;
+const TokenKind = @import("../token.zig").TokenKind;
+const token_mod = @import("../token.zig");
+const lexer_mod = @import("../lexer.zig");
+const parser_mod = @import("../parser.zig");
+const ast_mod = @import("../ast.zig");
+const AstStore = ast_mod.AstStore;
+const pal = @import("../pal.zig");
+const az_mod = @import("../analyzer.zig");
+const AnalyzerContext = az_mod.AnalyzerContext;
+const sym_mod = @import("../symbol_table.zig");
+const SymbolTable = sym_mod.SymbolTable;
+const diag_mod = @import("../diagnostics.zig");
+const DiagnosticCollector = diag_mod.DiagnosticCollector;
+
+var perm_buf: [2097152]u8 = undefined;
+var scratch_buf: [262144]u8 = undefined;
+
+fn tokenArrayAppend(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, value: Token) void {
+    if (len.* >= cap.*) {
+        var nc = cap.*;
+        if (nc < @intCast(usize, 8)) nc = @intCast(usize, 8);
+        if (nc < len.* * 2) nc = len.* * 2;
+        var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 24) * nc, @intCast(usize, 4)) catch unreachable;
+        var new_items = @ptrCast([*]Token, raw);
+        var i: usize = 0;
+        while (i < len.*) : (i += 1) { new_items[i] = items.*[i]; }
+        items.* = new_items;
+        cap.* = nc;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn testFile(path: []const u8, name: []const u8) void {
+    var perm = alloc_mod.sandInit(perm_buf[0..]);
+    var scratch = alloc_mod.sandInit(scratch_buf[0..]);
+
+    token_mod.initKeywordTable(&perm);
+
+    var interner = interner_mod.stringInternerInit(&perm, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&perm, undefined, &interner);
+
+    var content = pal.readFile(path, &scratch) orelse {
+        var emsg: []const u8 = "FAIL: could not read file: ";
+        pal.stderr_write(emsg);
+        pal.stderr_write(path);
+        var nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(1);
+        return;
+    };
+
+    var tok_items: [*]Token = undefined;
+    var tok_len: usize = 0;
+    var tok_cap: usize = 0;
+    var lex = lexer_mod.lexerInit(content, @intCast(u32, 0), &interner, &diag, &scratch);
+    while (true) {
+        var t = lexer_mod.lexerNextToken(&lex);
+        tokenArrayAppend(&tok_items, &tok_len, &tok_cap, &scratch, t);
+        if (t.kind == TokenKind.eof) break;
+    }
+
+    var store = ast_mod.astStoreInit(&perm);
+    var debug_msg: []const u8 = "  starting parser\n";
+    pal.stderr_write(debug_msg);
+    var p = parser_mod.parserInit(tok_items[0..tok_len], content, &store, &interner, &diag, &perm);
+    var debug2: []const u8 = "  parser init done, parsing\n";
+    pal.stderr_write(debug2);
+    var ast_root = parser_mod.parserParseModuleRoot(&p) catch {
+        var emsg: []const u8 = "FAIL: parse error: ";
+        pal.stderr_write(emsg);
+        pal.stderr_write(path);
+        var nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(1);
+        return;
+    };
+
+    alloc_mod.sandReset(&scratch);
+
+    var sym_table = sym_mod.symbolTableInit(&scratch);
+    var ac = AnalyzerContext{
+        .store = &store, .registry = undefined, .interner = &interner,
+        .diag = &diag, .symbols = &sym_table, .alloc = &scratch,
+        .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &scratch,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+        .skip_null_check = @intCast(u8, 0),
+        .skip_lifetime_check = @intCast(u8, 0),
+        .skip_doublefree_check = @intCast(u8, 0),
+        .warn_all = @intCast(u8, 0),
+    };
+    az_mod.runAllAnalyzers(&ac, ast_root);
+
+    if (diag_mod.diagnosticCollectorHasErrors(&diag)) {
+        var emsg2: []const u8 = "FAIL: analyzer errors in ";
+        pal.stderr_write(emsg2);
+        pal.stderr_write(path);
+        var nl2: []const u8 = "\n";
+        pal.stderr_write(nl2);
+        diag_mod.diagnosticCollectorPrintAll(&diag);
+        pal.exit(1);
+        return;
+    }
+
+    var okmsg: []const u8 = "  ok ";
+    pal.stderr_write(okmsg);
+    pal.stderr_write(name);
+    var nl3: []const u8 = "\n";
+    pal.stderr_write(nl3);
+}
+
+pub fn main() void {
+    pal.initArgs(@intCast(i32, 0), undefined);
+    var p: []const u8 = "/tmp/mud_full.zig";
+    var n: []const u8 = "mud_full";
+    testFile(p, n);
+    var msg: []const u8 = "Integration test passed.\n";
+    pal.stdout_write(msg);
+}
