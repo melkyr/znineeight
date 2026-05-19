@@ -58,6 +58,10 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     var key = @intCast(u64, name_id);
     var tid = type_mod.nameCacheGet(self.registry, key);
     if (tid) |t| return t;
+    var umsg: []const u8 = "undefined symbol";
+    diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)),
+        self.module_id, @intCast(u32, 0), @intCast(u32, 0), umsg);
     return type_mod.TYPE_VOID;
 }
 

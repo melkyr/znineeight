@@ -8,7 +8,7 @@ const type_mod = @import("type_registry.zig");
 const diag_mod = @import("diagnostics.zig");
 const rtt_mod = @import("resolved_type_table.zig");
 
-pub fn constraintCheckerCheckReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, node_idx: u32, return_expr_type: u32, current_fn_return: u32) void {
+pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, node_idx: u32, return_expr_type: u32, current_fn_return: u32) void {
     var node = store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind != AstKind.return_stmt) return;
     if (node.child_0 == @intCast(u32, 0)) {
@@ -27,7 +27,7 @@ pub fn constraintCheckerCheckReturnType(store: *AstStore, reg: *TypeRegistry, di
     }
 }
 
-pub fn constraintCheckerCheckSwitchExhaustiveness(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, rtt: *ResolvedTypeTable, node_idx: u32) void {
+pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, rtt: *ResolvedTypeTable, node_idx: u32) void {
     var node = store.nodes.items[@intCast(usize, node_idx)];
     if (node.child_0 == @intCast(u32, 0)) return;
     var cond_tid = rtt_mod.resolvedTypeTableGet(rtt, node.child_0);

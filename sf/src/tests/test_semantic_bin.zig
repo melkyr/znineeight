@@ -18,8 +18,9 @@ const rtt_mod = @import("../resolved_type_table.zig");
 const sa_mod = @import("../semantic_analyzer.zig");
 const coercion_mod = @import("../coercion.zig");
 const ce_mod = @import("../comptime_eval.zig");
-const pd_mod = @import("../print_decomposition.zig");
 const cc_mod = @import("../constraint_checker.zig");
+const smap_mod = @import("../state_map.zig");
+const pd_mod = @import("../print_decomposition.zig");
 const pal = @import("../pal.zig");
 
 var diag_arena_buf: [4096]u8 = undefined;
@@ -1238,7 +1239,7 @@ fn testSwitchExhaustiveness() void {
     pr_buf[0] = prong;
     var ec = ast_mod.astStoreAddExtraChildren(&store, pr_buf[0..1]);
     var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond_idx, @intCast(u32, 0), @intCast(u32, 0), ec);
-    cc_mod.constraintCheckerCheckSwitchExhaustiveness(&store, &typereg, &diag, &rtt, sw_idx);
+    cc_mod.checkSwitchExhaust(&store, &typereg, &diag, &rtt, sw_idx);
     var err_count = diag_mod.diagnosticCollectorErrorCount(&diag);
     if (err_count == @intCast(u32, 0)) { var fmsg: []const u8 = "testSwitchExhaustiveness expected error count > 0"; fail(fmsg); return; }
     var emsg: []const u8 = "testSwitchExhaustiveness";
@@ -1257,7 +1258,7 @@ fn testReturnTypeMatch() void {
     var store = ast_mod.astStoreInit(&arena);
     var dummy = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ret_idx = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), dummy, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    cc_mod.constraintCheckerCheckReturnType(&store, &typereg, &diag, ret_idx, type_mod.TYPE_INT_LIT, type_mod.TYPE_U32);
+    cc_mod.checkReturnType(&store, &typereg, &diag, ret_idx, type_mod.TYPE_INT_LIT, type_mod.TYPE_U32);
     if (diag_mod.diagnosticCollectorHasErrors(&diag)) { var fmsg: []const u8 = "testReturnTypeMatch expected no error"; fail(fmsg); return; }
     var emsg: []const u8 = "testReturnTypeMatch";
     ok(emsg);
@@ -1275,7 +1276,7 @@ fn testReturnTypeMismatch() void {
     var store = ast_mod.astStoreInit(&arena);
     var dummy = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ret_idx = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), dummy, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    cc_mod.constraintCheckerCheckReturnType(&store, &typereg, &diag, ret_idx, type_mod.TYPE_BOOL, type_mod.TYPE_U32);
+    cc_mod.checkReturnType(&store, &typereg, &diag, ret_idx, type_mod.TYPE_BOOL, type_mod.TYPE_U32);
     if (!diag_mod.diagnosticCollectorHasErrors(&diag)) { var fmsg: []const u8 = "testReturnTypeMismatch expected error"; fail(fmsg); return; }
     var emsg: []const u8 = "testReturnTypeMismatch";
     ok(emsg);
@@ -1366,6 +1367,148 @@ fn testPrintDecompMismatch() void {
     ok(emsg);
 }
 
+fn testUndefinedSymbolDiag() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
+    var un: []const u8 = "unknown_name";
+    var unid = interner_mod.stringInternerIntern(&interner, un);
+    var idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, idx);
+    var ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
+    if (tid != type_mod.TYPE_VOID or ecount == @intCast(u32, 0)) { var fmsg: []const u8 = "testUndefinedSymbolDiag expected VOID+diag"; fail(fmsg); return; }
+    var emsg: []const u8 = "testUndefinedSymbolDiag";
+    ok(emsg);
+}
+
+fn testFnCallNotCallable() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var ct = coercion_mod.coercionTableInit(&arena);
+    var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
+    var callee = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var call_idx = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, call_idx);
+    var ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
+    if (tid != type_mod.TYPE_VOID or ecount == @intCast(u32, 0)) { var fmsg: []const u8 = "testFnCallNotCallable expected VOID+diag"; fail(fmsg); return; }
+    var emsg: []const u8 = "testFnCallNotCallable";
+    ok(emsg);
+}
+
+fn testReturnTypeBareReturn() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var return_idx = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    cc_mod.checkReturnType(&store, &typereg, &diag, return_idx, type_mod.TYPE_VOID, type_mod.TYPE_U32);
+    var ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
+    if (ecount == @intCast(u32, 0)) { var fmsg: []const u8 = "testReturnTypeBareReturn expected diag"; fail(fmsg); return; }
+    var emsg: []const u8 = "testReturnTypeBareReturn";
+    ok(emsg);
+}
+
+fn testSwitchExhaustivenessInteger() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_buf: [1]u32 = undefined;
+    prong_buf[0] = prong;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..1]);
+    var sw = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
+    rtt_mod.resolvedTypeTableSet(&rtt, cond, type_mod.TYPE_U32);
+    var old_ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
+    cc_mod.checkSwitchExhaust(&store, &typereg, &diag, &rtt, sw);
+    var ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
+    if (ecount != old_ecount) { var fmsg: []const u8 = "testSwitchExhaustivenessInteger expected no diag"; fail(fmsg); return; }
+    var emsg: []const u8 = "testSwitchExhaustivenessInteger";
+    ok(emsg);
+}
+
+fn testStateMapSetGet() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var sm = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&sm, @intCast(u32, 42), @intCast(u8, 3));
+    var val = smap_mod.stateMapGet(&sm, @intCast(u32, 42));
+    if (val) |v| {
+        if (v != @intCast(u8, 3)) { var fmsg: []const u8 = "testStateMapSetGet expected 3"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testStateMapSetGet expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testStateMapSetGet";
+    ok(emsg);
+}
+
+fn testStateMapForkIsolation() void {
+    var parent_buf: [2048]u8 = undefined;
+    var child_buf: [512]u8 = undefined;
+    var arena = alloc_mod.sandInit(parent_buf[0..]);
+    var scratch = alloc_mod.sandInit(child_buf[0..]);
+    var sm = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&sm, @intCast(u32, 10), @intCast(u8, 5));
+    var child = smap_mod.stateMapFork(&sm, &scratch);
+    smap_mod.stateMapSet(child, @intCast(u32, 10), @intCast(u8, 7));
+    var p_val = smap_mod.stateMapGet(&sm, @intCast(u32, 10));
+    var c_val = smap_mod.stateMapGet(child, @intCast(u32, 10));
+    if (p_val) |v| {
+        if (v != @intCast(u8, 5)) { var fmsg: []const u8 = "testStateMapForkIsolation parent expected 5"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testStateMapForkIsolation parent expected value"; fail(fmsg); return; }
+    if (c_val) |v| {
+        if (v != @intCast(u8, 7)) { var fmsg: []const u8 = "testStateMapForkIsolation child expected 7"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testStateMapForkIsolation child expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testStateMapForkIsolation";
+    ok(emsg);
+}
+
+fn testStateMapParentFallback() void {
+    var pbuf: [2048]u8 = undefined;
+    var cbuf: [512]u8 = undefined;
+    var arena = alloc_mod.sandInit(pbuf[0..]);
+    var scratch = alloc_mod.sandInit(cbuf[0..]);
+    var sm = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&sm, @intCast(u32, 20), @intCast(u8, 9));
+    var child = smap_mod.stateMapFork(&sm, &scratch);
+    var val = smap_mod.stateMapGet(child, @intCast(u32, 20));
+    if (val) |v| {
+        if (v != @intCast(u8, 9)) { var fmsg: []const u8 = "testStateMapParentFallback expected 9"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testStateMapParentFallback expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testStateMapParentFallback";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -1421,6 +1564,13 @@ pub fn main() void {
     testReturnTypeMismatch();
     testBreakInsideLoop();
     testBreakOutsideLoop();
+    testUndefinedSymbolDiag();
+    testFnCallNotCallable();
+    testReturnTypeBareReturn();
+    testSwitchExhaustivenessInteger();
+    testStateMapSetGet();
+    testStateMapForkIsolation();
+    testStateMapParentFallback();
     testPrintDecompValid();
     testPrintDecompMismatch();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
