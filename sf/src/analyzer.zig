@@ -25,6 +25,11 @@ pub const PtrState = enum(u8) {
     maybe,
 };
 
+pub const NullGuard = struct {
+    name_id: u32,
+    is_not_null: u8,
+};
+
 pub const AnalyzerContext = struct {
     store: *AstStore,
     registry: *TypeRegistry,
@@ -127,35 +132,62 @@ pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
     return @enumToInt(PtrState.maybe);
 }
 
-pub fn applyNullGuardRefinement(store: *AstStore, cond_idx: u32, then_state: *StateMap, else_state: *StateMap) void {
-    if (cond_idx == @intCast(u32, 0)) return;
+fn isNullExpr(store: *AstStore, idx: u32) u8 {
+    if (idx == @intCast(u32, 0)) return @intCast(u8, 0);
+    var node = store.nodes.items[@intCast(usize, idx)];
+    if (node.kind == AstKind.null_literal) return @intCast(u8, 1);
+    if (node.kind == AstKind.int_literal) {
+        var val = store.int_values.items[@intCast(usize, node.payload)];
+        if (val == @intCast(u64, 0)) return @intCast(u8, 1);
+    }
+    return @intCast(u8, 0);
+}
+
+fn isIdentExpr(store: *AstStore, idx: u32) ?u32 {
+    if (idx == @intCast(u32, 0)) return null;
+    var node = store.nodes.items[@intCast(usize, idx)];
+    if (node.kind == AstKind.ident_expr) return node.payload;
+    return null;
+}
+
+pub fn detectNullGuard(store: *AstStore, cond_idx: u32) ?NullGuard {
+    if (cond_idx == @intCast(u32, 0)) return null;
     var cond = store.nodes.items[@intCast(usize, cond_idx)];
     var ck = cond.kind;
     if (ck == AstKind.cmp_ne) {
-        var lhs = store.nodes.items[@intCast(usize, cond.child_0)];
-        var rhs = store.nodes.items[@intCast(usize, cond.child_1)];
-        if (lhs.kind == AstKind.ident_expr and rhs.kind == AstKind.null_literal) {
-            smap_mod.stateMapSet(then_state, lhs.payload, @enumToInt(PtrState.safe));
-            smap_mod.stateMapSet(else_state, lhs.payload, @enumToInt(PtrState.is_null));
-            return;
-        }
-        if (rhs.kind == AstKind.ident_expr and lhs.kind == AstKind.null_literal) {
-            smap_mod.stateMapSet(then_state, rhs.payload, @enumToInt(PtrState.safe));
-            smap_mod.stateMapSet(else_state, rhs.payload, @enumToInt(PtrState.is_null));
-            return;
-        }
-    } else if (ck == AstKind.cmp_eq) {
-        var lhs = store.nodes.items[@intCast(usize, cond.child_0)];
-        var rhs = store.nodes.items[@intCast(usize, cond.child_1)];
-        if (lhs.kind == AstKind.ident_expr and rhs.kind == AstKind.null_literal) {
-            smap_mod.stateMapSet(then_state, lhs.payload, @enumToInt(PtrState.is_null));
-            smap_mod.stateMapSet(else_state, lhs.payload, @enumToInt(PtrState.safe));
-            return;
-        }
-        if (rhs.kind == AstKind.ident_expr and lhs.kind == AstKind.null_literal) {
-            smap_mod.stateMapSet(then_state, rhs.payload, @enumToInt(PtrState.is_null));
-            smap_mod.stateMapSet(else_state, rhs.payload, @enumToInt(PtrState.safe));
-            return;
+        var n0 = isNullExpr(store, cond.child_0);
+        if (n0 != 0) { var id1 = isIdentExpr(store, cond.child_1); if (id1) |nid| return NullGuard{ .name_id = nid, .is_not_null = @intCast(u8, 1) }; }
+        var n1 = isNullExpr(store, cond.child_1);
+        if (n1 != 0) { var id0 = isIdentExpr(store, cond.child_0); if (id0) |nid| return NullGuard{ .name_id = nid, .is_not_null = @intCast(u8, 1) }; }
+        return null;
+    }
+    if (ck == AstKind.cmp_eq) {
+        var n0 = isNullExpr(store, cond.child_0);
+        if (n0 != 0) { var id1 = isIdentExpr(store, cond.child_1); if (id1) |nid| return NullGuard{ .name_id = nid, .is_not_null = @intCast(u8, 0) }; }
+        var n1 = isNullExpr(store, cond.child_1);
+        if (n1 != 0) { var id0 = isIdentExpr(store, cond.child_0); if (id0) |nid| return NullGuard{ .name_id = nid, .is_not_null = @intCast(u8, 0) }; }
+        return null;
+    }
+    if (ck == AstKind.ident_expr) {
+        return NullGuard{ .name_id = cond.payload, .is_not_null = @intCast(u8, 1) };
+    }
+    if (ck == AstKind.bool_not) {
+        var inner = detectNullGuard(store, cond.child_0);
+        if (inner) |g| return NullGuard{ .name_id = g.name_id, .is_not_null = @intCast(u8, 1 - g.is_not_null) };
+        return null;
+    }
+    return null;
+}
+
+pub fn applyNullGuardRefinement(store: *AstStore, cond_idx: u32, then_state: *StateMap, else_state: *StateMap) void {
+    var guard = detectNullGuard(store, cond_idx);
+    if (guard) |g| {
+        if (g.is_not_null != 0) {
+            smap_mod.stateMapSet(then_state, g.name_id, @enumToInt(PtrState.safe));
+            smap_mod.stateMapSet(else_state, g.name_id, @enumToInt(PtrState.is_null));
+        } else {
+            smap_mod.stateMapSet(then_state, g.name_id, @enumToInt(PtrState.is_null));
+            smap_mod.stateMapSet(else_state, g.name_id, @enumToInt(PtrState.safe));
         }
     }
 }

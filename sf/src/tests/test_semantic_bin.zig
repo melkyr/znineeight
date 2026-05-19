@@ -2142,6 +2142,153 @@ fn testNullAssignNull() void {
     ok(emsg);
 }
 
+fn testNullGuardCmpNe() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var store = ast_mod.astStoreInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var cmp = ast_mod.astStoreAddNode(&store, AstKind.cmp_ne, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+    var parent = smap_mod.stateMapInit(&arena);
+    var then_state = smap_mod.stateMapFork(&parent, &arena);
+    var else_state = smap_mod.stateMapFork(&parent, &arena);
+    az_mod.applyNullGuardRefinement(&store, cmp, then_state, else_state);
+    var t_opt = smap_mod.stateMapGet(then_state, nid);
+    if (t_opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.safe)) {
+            var fmsg: []const u8 = "testNullGuardCmpNe: then expected safe\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardCmpNe: then name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var e_opt = smap_mod.stateMapGet(else_state, nid);
+    if (e_opt) |v2| {
+        if (v2 != @enumToInt(az_mod.PtrState.is_null)) {
+            var fmsg: []const u8 = "testNullGuardCmpNe: else expected is_null\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardCmpNe: else name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullGuardCmpNe";
+    ok(emsg);
+}
+
+fn testNullGuardCmpEq() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var store = ast_mod.astStoreInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var cmp = ast_mod.astStoreAddNode(&store, AstKind.cmp_eq, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+    var parent = smap_mod.stateMapInit(&arena);
+    var then_state = smap_mod.stateMapFork(&parent, &arena);
+    var else_state = smap_mod.stateMapFork(&parent, &arena);
+    az_mod.applyNullGuardRefinement(&store, cmp, then_state, else_state);
+    var t_opt = smap_mod.stateMapGet(then_state, nid);
+    if (t_opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.is_null)) {
+            var fmsg: []const u8 = "testNullGuardCmpEq: then expected is_null\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardCmpEq: then name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var e_opt = smap_mod.stateMapGet(else_state, nid);
+    if (e_opt) |v2| {
+        if (v2 != @enumToInt(az_mod.PtrState.safe)) {
+            var fmsg: []const u8 = "testNullGuardCmpEq: else expected safe\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardCmpEq: else name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullGuardCmpEq";
+    ok(emsg);
+}
+
+fn testNullGuardBoolNot() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var store = ast_mod.astStoreInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var eq_node = ast_mod.astStoreAddNode(&store, AstKind.cmp_eq, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+    var not_node = ast_mod.astStoreAddNode(&store, AstKind.bool_not, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), eq_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var parent = smap_mod.stateMapInit(&arena);
+    var then_state = smap_mod.stateMapFork(&parent, &arena);
+    var else_state = smap_mod.stateMapFork(&parent, &arena);
+    az_mod.applyNullGuardRefinement(&store, not_node, then_state, else_state);
+    var t_opt = smap_mod.stateMapGet(then_state, nid);
+    if (t_opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.safe)) {
+            var fmsg: []const u8 = "testNullGuardBoolNot: then expected safe\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardBoolNot: then name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var e_opt = smap_mod.stateMapGet(else_state, nid);
+    if (e_opt) |v2| {
+        if (v2 != @enumToInt(az_mod.PtrState.is_null)) {
+            var fmsg: []const u8 = "testNullGuardBoolNot: else expected is_null\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardBoolNot: else name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullGuardBoolNot";
+    ok(emsg);
+}
+
+fn testNullGuardIdentExpr() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var store = ast_mod.astStoreInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var parent = smap_mod.stateMapInit(&arena);
+    var then_state = smap_mod.stateMapFork(&parent, &arena);
+    var else_state = smap_mod.stateMapFork(&parent, &arena);
+    az_mod.applyNullGuardRefinement(&store, id_node, then_state, else_state);
+    var t_opt = smap_mod.stateMapGet(then_state, nid);
+    if (t_opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.safe)) {
+            var fmsg: []const u8 = "testNullGuardIdentExpr: then expected safe\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardIdentExpr: then name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var e_opt = smap_mod.stateMapGet(else_state, nid);
+    if (e_opt) |v2| {
+        if (v2 != @enumToInt(az_mod.PtrState.is_null)) {
+            var fmsg: []const u8 = "testNullGuardIdentExpr: else expected is_null\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullGuardIdentExpr: else name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullGuardIdentExpr";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -2227,6 +2374,10 @@ pub fn main() void {
     testNullVarDeclNull();
     testNullVarDeclNoInit();
     testNullAssignNull();
+    testNullGuardCmpNe();
+    testNullGuardCmpEq();
+    testNullGuardBoolNot();
+    testNullGuardIdentExpr();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }
