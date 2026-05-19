@@ -124,6 +124,11 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
                 if (ft.size > max_sz) max_sz = ft.size;
                 if (ft.alignment > max_align) max_align = ft.alignment;
             }
+        }
+        ty.size = alignUp(max_sz, max_align);
+        ty.alignment = max_align;
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
+        self.registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.tagged_union_type) {
         var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
         var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];

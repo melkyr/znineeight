@@ -19,6 +19,7 @@ const type_resolver = @import("../type_resolver.zig");
 const pal = @import("../pal.zig");
 const rtt_mod = @import("../resolved_type_table.zig");
 const sa_mod = @import("../semantic_analyzer.zig");
+const coer_mod = @import("../coercion.zig");
 
 fn lexSource(content: []const u8, interner: *interner_mod.StringInterner, diag: *diag_mod.DiagnosticCollector, sand: *Sand, tokens: []Token) usize {
     var lex = lexer_mod.lexerInit(content, @intCast(u32, 0), interner, diag, sand);
@@ -1179,7 +1180,8 @@ fn testSemanticAnalyzerInit(arena: *Sand) void {
     var st = sym_mod.symbolRegistryInit(arena);
     var store = ast_mod.astStoreInit(arena);
     var diag_storage: diag_mod.DiagnosticCollector = undefined;
-    var sa = sa_mod.semanticAnalyzerInit(arena, &rtt, &diag_storage, &tr, &st, &store, @intCast(u32, 0));
+    var cov = coer_mod.coercionTableInit(arena);
+    var sa = sa_mod.semanticAnalyzerInit(arena, &rtt, &diag_storage, &tr, &st, &store, @intCast(u32, 0), &cov);
     if (sa.type_table == null) { var emsg: []const u8 = "FAIL sa: type_table null\n"; pal.stdout_write(emsg); pal.exit(1); }
     if (sa.diag == null) { var emsg: []const u8 = "FAIL sa: diag null\n"; pal.stdout_write(emsg); pal.exit(1); }
     if (sa.registry == null) { var emsg: []const u8 = "FAIL sa: registry null\n"; pal.stdout_write(emsg); pal.exit(1); }

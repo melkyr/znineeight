@@ -1598,6 +1598,7 @@ fn testBranchIfMerge() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     smap_mod.stateMapSet(&st, @intCast(u32, 42), @intCast(u8, 5));
     var cond = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 0));
@@ -1630,6 +1631,7 @@ fn testBranchIfDiverges() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     smap_mod.stateMapSet(&st, @intCast(u32, 42), @intCast(u8, 5));
     var cond = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 0));
@@ -1662,6 +1664,7 @@ fn testWalkBlockCounts() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var s1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var s2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1693,6 +1696,7 @@ fn testWalkBlockBraceless() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var single = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     az_mod.walkBlock(&ac, &st, single, walkTestVisit);
@@ -1727,6 +1731,7 @@ fn testForLoopAnalysis() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var for_idx = ast_mod.astStoreAddNode(&store, AstKind.for_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1762,6 +1767,7 @@ fn testDeferPushedNotWalked() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1788,6 +1794,7 @@ fn testDeferExecutedAtExit() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1819,6 +1826,7 @@ fn testErrdeferNotExecuted() void {
         .defer_queue_cap = @intCast(usize, 0),
         .defer_queue_alloc = &sand,
         .current_depth = @intCast(u32, 1),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var entry = az_mod.DeferEntry{ .kind = @intCast(u8, 1), .stmt_idx = body, .scope_depth = @intCast(u32, 1) };
@@ -1845,6 +1853,7 @@ fn testSignatureVoidParam() void {
         .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
         .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_VOID);
     var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1873,6 +1882,7 @@ fn testSignatureLargeReturn() void {
         .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
         .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
         .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
     };
     var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_U8);
     var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, 0), .params_count = @intCast(u16, 0), .return_type_node = type_node };
@@ -1880,6 +1890,255 @@ fn testSignatureLargeReturn() void {
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
     var emsg: []const u8 = "testSignatureLargeReturn";
+    ok(emsg);
+}
+
+fn testSignatureIncompleteType() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var fs: []const u8 = "Foo";
+    var fnid = interner_mod.stringInternerIntern(&interner, fs);
+    var ftid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), fnid, type_mod.TypeKind.struct_type);
+    _ = ftid;
+    var store = ast_mod.astStoreInit(&arena);
+    var diag = diag_mod.diagnosticCollectorInit(&arena, undefined, &interner);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = &diag, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fnid);
+    var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var param_buf: [1]u32 = undefined;
+    param_buf[0] = param_node;
+    var param_payload = ast_mod.astStoreAddExtraChildren(&store, param_buf[0..1]);
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, param_payload >> @intCast(u32, 16)), .params_count = @intCast(u16, 1), .return_type_node = @intCast(u32, 0) };
+    var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    az_mod.analyzeSignature(&ac, fn_node);
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureIncompleteType expected diagnostic\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testSignatureIncompleteType";
+    ok(emsg);
+}
+
+fn testSignatureAnyType() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var diag = diag_mod.diagnosticCollectorInit(&arena, undefined, &interner);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = &diag, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    var as: []const u8 = "anytype";
+    var anid = interner_mod.stringInternerIntern(&interner, as);
+    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), anid);
+    az_mod.validateSignatureType(&ac, type_node, @intCast(u32, 0));
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureAnyType expected diagnostic\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testSignatureAnyType";
+    ok(emsg);
+}
+
+fn testClassifyNullExpr() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    var result = az_mod.classifyExpr(&ac, &st, node);
+    if (result != @enumToInt(az_mod.PtrState.is_null)) {
+        var fmsg: []const u8 = "testClassifyNullExpr: expected is_null\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testClassifyNullExpr";
+    ok(emsg);
+}
+
+fn testClassifyAddrOf() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    var result = az_mod.classifyExpr(&ac, &st, node);
+    if (result != @enumToInt(az_mod.PtrState.safe)) {
+        var fmsg: []const u8 = "testClassifyAddrOf: expected safe\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testClassifyAddrOf";
+    ok(emsg);
+}
+
+fn testClassifyIdentFromState() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&st, @intCast(u32, 42), @enumToInt(az_mod.PtrState.safe));
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 42));
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    var result = az_mod.classifyExpr(&ac, &st, id_node);
+    if (result != @enumToInt(az_mod.PtrState.safe)) {
+        var fmsg: []const u8 = "testClassifyIdentFromState: expected safe\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testClassifyIdentFromState";
+    ok(emsg);
+}
+
+fn testNullVarDeclNull() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var st = smap_mod.stateMapInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var vd_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), null_node, @intCast(u32, 0), nid);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    az_mod.handleNullVarDecl(&ac, &st, vd_node);
+    var opt = smap_mod.stateMapGet(&st, nid);
+    if (opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.is_null)) {
+            var fmsg: []const u8 = "testNullVarDeclNull: expected is_null\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullVarDeclNull: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullVarDeclNull";
+    ok(emsg);
+}
+
+fn testNullVarDeclNoInit() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var vd_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    az_mod.handleNullVarDecl(&ac, &st, vd_node);
+    var opt = smap_mod.stateMapGet(&st, nid);
+    if (opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.uninit)) {
+            var fmsg: []const u8 = "testNullVarDeclNoInit: expected uninit\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullVarDeclNoInit: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullVarDeclNoInit";
+    ok(emsg);
+}
+
+fn testNullAssignNull() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ns: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+    };
+    az_mod.handleNullAssign(&ac, &st, as_node);
+    var opt = smap_mod.stateMapGet(&st, nid);
+    if (opt) |v| {
+        if (v != @enumToInt(az_mod.PtrState.is_null)) {
+            var fmsg: []const u8 = "testNullAssignNull: expected is_null\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testNullAssignNull: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var emsg: []const u8 = "testNullAssignNull";
     ok(emsg);
 }
 
@@ -1960,6 +2219,14 @@ pub fn main() void {
     testErrdeferNotExecuted();
     testSignatureVoidParam();
     testSignatureLargeReturn();
+    testSignatureIncompleteType();
+    testSignatureAnyType();
+    testClassifyNullExpr();
+    testClassifyAddrOf();
+    testClassifyIdentFromState();
+    testNullVarDeclNull();
+    testNullVarDeclNoInit();
+    testNullAssignNull();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }

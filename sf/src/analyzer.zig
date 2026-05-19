@@ -9,11 +9,20 @@ const alloc_mod = @import("allocator.zig");
 const StateMap = @import("state_map.zig").StateMap;
 const smap_mod = @import("state_map.zig");
 const type_mod = @import("type_registry.zig");
+const diag_mod = @import("diagnostics.zig");
+const interner_mod = @import("string_interner.zig");
 
 pub const DeferEntry = struct {
     kind: u8,
     stmt_idx: u32,
     scope_depth: u32,
+};
+
+pub const PtrState = enum(u8) {
+    uninit,
+    is_null,
+    safe,
+    maybe,
 };
 
 pub const AnalyzerContext = struct {
@@ -28,6 +37,7 @@ pub const AnalyzerContext = struct {
     defer_queue_cap: usize,
     defer_queue_alloc: *Sand,
     current_depth: u32,
+    null_analysis_mode: u8,
 };
 
 pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
@@ -68,15 +78,108 @@ pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_retur
         var tid = type_mod.nameCacheGet(ctx.registry, key);
         if (tid) |ttid| {
             var ty = ctx.registry.types_items[@intCast(usize, ttid)];
+            if (ty.kind == type_mod.TypeKind.unresolved_name or
+                ((ty.kind == type_mod.TypeKind.struct_type or
+                  ty.kind == type_mod.TypeKind.union_type or
+                  ty.kind == type_mod.TypeKind.tagged_union_type or
+                  ty.kind == type_mod.TypeKind.enum_type) and ty.state != @intCast(u8, 2))) {
+                var imsg: []const u8 = "incomplete type in function signature";
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), imsg);
+            }
             if (ty.kind == type_mod.TypeKind.void_type and is_return == @intCast(u32, 0)) {
                 var vmsg: []const u8 = "void not allowed as parameter type";
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2010_VOID_PARAMETER)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), vmsg);
             }
             if (is_return != @intCast(u32, 0)) {
                 if (ty.size > @intCast(u32, 64)) {
                     var wmsg: []const u8 = "return type exceeds 64 bytes; may cause issues on MSVC 6.0";
+                    diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_7010_LARGE_RETURN)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), wmsg);
                 }
             }
         }
+        var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, "anytype");
+        if (name_id == anytype_nid) {
+            var amsg: []const u8 = "anytype not supported in Z98";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
+        }
+    }
+}
+
+pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
+    if (expr_idx == @intCast(u32, 0)) return @enumToInt(PtrState.uninit);
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    var kind = node.kind;
+    if (kind == AstKind.null_literal) return @enumToInt(PtrState.is_null);
+    if (kind == AstKind.address_of) return @enumToInt(PtrState.safe);
+    if (kind == AstKind.try_expr) return @enumToInt(PtrState.safe);
+    if (kind == AstKind.fn_call) return @enumToInt(PtrState.maybe);
+    if (kind == AstKind.orelse_expr) return @enumToInt(PtrState.safe);
+    if (kind == AstKind.catch_expr) return @enumToInt(PtrState.safe);
+    if (kind == AstKind.int_literal) {
+        var val = ctx.store.int_values.items[@intCast(usize, node.payload)];
+        if (val == @intCast(u64, 0)) return @enumToInt(PtrState.is_null);
+        return @enumToInt(PtrState.safe);
+    }
+    if (kind == AstKind.ident_expr) {
+        var result = smap_mod.stateMapGet(state, node.payload);
+        if (result) |v| return v;
+    }
+    return @enumToInt(PtrState.maybe);
+}
+
+pub fn applyNullGuardRefinement(store: *AstStore, cond_idx: u32, then_state: *StateMap, else_state: *StateMap) void {
+    if (cond_idx == @intCast(u32, 0)) return;
+    var cond = store.nodes.items[@intCast(usize, cond_idx)];
+    var ck = cond.kind;
+    if (ck == AstKind.cmp_ne) {
+        var lhs = store.nodes.items[@intCast(usize, cond.child_0)];
+        var rhs = store.nodes.items[@intCast(usize, cond.child_1)];
+        if (lhs.kind == AstKind.ident_expr and rhs.kind == AstKind.null_literal) {
+            smap_mod.stateMapSet(then_state, lhs.payload, @enumToInt(PtrState.safe));
+            smap_mod.stateMapSet(else_state, lhs.payload, @enumToInt(PtrState.is_null));
+            return;
+        }
+        if (rhs.kind == AstKind.ident_expr and lhs.kind == AstKind.null_literal) {
+            smap_mod.stateMapSet(then_state, rhs.payload, @enumToInt(PtrState.safe));
+            smap_mod.stateMapSet(else_state, rhs.payload, @enumToInt(PtrState.is_null));
+            return;
+        }
+    } else if (ck == AstKind.cmp_eq) {
+        var lhs = store.nodes.items[@intCast(usize, cond.child_0)];
+        var rhs = store.nodes.items[@intCast(usize, cond.child_1)];
+        if (lhs.kind == AstKind.ident_expr and rhs.kind == AstKind.null_literal) {
+            smap_mod.stateMapSet(then_state, lhs.payload, @enumToInt(PtrState.is_null));
+            smap_mod.stateMapSet(else_state, lhs.payload, @enumToInt(PtrState.safe));
+            return;
+        }
+        if (rhs.kind == AstKind.ident_expr and lhs.kind == AstKind.null_literal) {
+            smap_mod.stateMapSet(then_state, rhs.payload, @enumToInt(PtrState.is_null));
+            smap_mod.stateMapSet(else_state, rhs.payload, @enumToInt(PtrState.safe));
+            return;
+        }
+    }
+}
+
+pub fn handleNullVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var name_id = node.payload;
+    var init_idx = node.child_1;
+    if (init_idx != @intCast(u32, 0)) {
+        var st = classifyExpr(ctx, state, init_idx);
+        smap_mod.stateMapSet(state, name_id, st);
+    } else {
+        smap_mod.stateMapSet(state, name_id, @enumToInt(PtrState.uninit));
+    }
+}
+
+pub fn handleNullAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var rhs = node.child_1;
+    var rhs_state = classifyExpr(ctx, state, rhs);
+    var lhs_idx = node.child_0;
+    var lhs_node = ctx.store.nodes.items[@intCast(usize, lhs_idx)];
+    if (lhs_node.kind == AstKind.ident_expr) {
+        smap_mod.stateMapSet(state, lhs_node.payload, rhs_state);
     }
 }
 
@@ -116,14 +219,23 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     if (node_idx == @intCast(u32, 0)) return;
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     var kind = node.kind;
-    if (kind == AstKind.if_stmt) {
+    if (kind == AstKind.if_stmt or kind == AstKind.if_capture) {
         var then_state = smap_mod.stateMapFork(state, ctx.alloc);
         var else_state = smap_mod.stateMapFork(state, ctx.alloc);
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            applyNullGuardRefinement(ctx.store, node.child_0, then_state, else_state);
+            if (kind == AstKind.if_capture) {
+                smap_mod.stateMapSet(then_state, node.payload, @enumToInt(PtrState.safe));
+            }
+        }
         walkBlock(ctx, then_state, node.child_1, on_stmt);
         if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, on_stmt);
         smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
-    } else if (kind == AstKind.while_stmt) {
+    } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
+        if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.while_capture) {
+            smap_mod.stateMapSet(body_state, node.payload, @enumToInt(PtrState.safe));
+        }
         walkBlock(ctx, body_state, node.child_1, on_stmt);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.switch_expr) {
@@ -145,6 +257,12 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         deferQueueEnsureCapacity(ctx, ctx.defer_queue_len + @intCast(usize, 1));
         ctx.defer_queue_items[ctx.defer_queue_len] = DeferEntry{ .kind = dk, .stmt_idx = node_idx, .scope_depth = ctx.current_depth };
         ctx.defer_queue_len += 1;
+    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.var_decl) {
+        handleNullVarDecl(ctx, state, node_idx);
+        on_stmt(ctx, state, node_idx);
+    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.assign) {
+        handleNullAssign(ctx, state, node_idx);
+        on_stmt(ctx, state, node_idx);
     } else {
         on_stmt(ctx, state, node_idx);
     }
