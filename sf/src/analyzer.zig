@@ -11,6 +11,9 @@ const smap_mod = @import("state_map.zig");
 const type_mod = @import("type_registry.zig");
 const diag_mod = @import("diagnostics.zig");
 const interner_mod = @import("string_interner.zig");
+const SymbolTable = @import("symbol_table.zig").SymbolTable;
+const SymbolKind = @import("symbol_table.zig").SymbolKind;
+const sym_mod = @import("symbol_table.zig");
 
 pub const DeferEntry = struct {
     kind: u8,
@@ -25,6 +28,52 @@ pub const PtrState = enum(u8) {
     maybe,
 };
 
+pub const Provenance = enum(u8) {
+    unknown = 0,
+    local = 1,
+    param = 2,
+    param_addr = 3,
+    global = 4,
+    heap = 5,
+};
+
+fn resolveOrigin(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
+    if (expr_idx == @intCast(u32, 0)) return null;
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    var kind = node.kind;
+    if (kind == AstKind.ident_expr) return node.payload;
+    if (kind == AstKind.field_access) return resolveOrigin(ctx, node.child_0);
+    if (kind == AstKind.index_access) return resolveOrigin(ctx, node.child_0);
+    if (kind == AstKind.deref) return null;
+    if (kind == AstKind.slice_expr) return resolveOrigin(ctx, node.child_0);
+    return null;
+}
+
+pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
+    if (expr_idx == @intCast(u32, 0)) return @intCast(u8, @enumToInt(Provenance.unknown));
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    var kind = node.kind;
+    if (kind == AstKind.address_of) {
+        var found_name_id = resolveOrigin(ctx, node.child_0);
+        if (found_name_id) |name_id| {
+            var sym = sym_mod.symbolTableLookup(ctx.symbols, name_id);
+            if (sym) |s| {
+                if (s.kind == SymbolKind.local) return @intCast(u8, @enumToInt(Provenance.local));
+                if (s.kind == SymbolKind.param) return @intCast(u8, @enumToInt(Provenance.param_addr));
+                if (s.kind == SymbolKind.global) return @intCast(u8, @enumToInt(Provenance.global));
+            }
+        }
+        return @intCast(u8, @enumToInt(Provenance.unknown));
+    }
+    if (kind == AstKind.fn_call) return @intCast(u8, @enumToInt(Provenance.heap));
+    if (kind == AstKind.ident_expr) {
+        var result = smap_mod.stateMapGet(state, node.payload);
+        if (result) |v| return v;
+        return @intCast(u8, @enumToInt(Provenance.unknown));
+    }
+    return @intCast(u8, @enumToInt(Provenance.unknown));
+}
+
 pub const NullGuard = struct {
     name_id: u32,
     is_not_null: u8,
@@ -35,6 +84,7 @@ pub const AnalyzerContext = struct {
     registry: *TypeRegistry,
     interner: *StringInterner,
     diag: *DiagnosticCollector,
+    symbols: *SymbolTable,
     alloc: *Sand,
     current_fn_name: u32,
     defer_queue_items: [*]DeferEntry,

@@ -12,6 +12,8 @@ const DiagnosticCollector = diag_mod.DiagnosticCollector;
 const az_mod = @import("../analyzer.zig");
 const AnalyzerContext = az_mod.AnalyzerContext;
 const smap_mod = @import("../state_map.zig");
+const sym_mod = @import("../symbol_table.zig");
+const SymbolTable = sym_mod.SymbolTable;
 const pal = @import("../pal.zig");
 const helpers = @import("test_analyzer_helpers.zig");
 
@@ -23,7 +25,8 @@ fn testSignatureVoidParam() void {
     var diag: DiagnosticCollector = undefined;
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_VOID);
     var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var param_buf: [1]u32 = undefined;
@@ -44,7 +47,8 @@ fn testSignatureLargeReturn() void {
     var diag: DiagnosticCollector = undefined;
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_U8);
     var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, 0), .params_count = @intCast(u16, 0), .return_type_node = type_node };
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
@@ -65,7 +69,8 @@ fn testSignatureIncompleteType() void {
     var ftid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), fnid, type_mod.TypeKind.struct_type);
     _ = ftid;
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fnid);
     var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var param_buf: [1]u32 = undefined;
@@ -90,7 +95,8 @@ fn testSignatureAnyType() void {
     var diag: DiagnosticCollector = undefined;
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var as: []const u8 = "anytype";
     var anid = interner_mod.stringInternerIntern(&interner, as);
     var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), anid);
@@ -112,7 +118,8 @@ fn testClassifyNullExpr() void {
     var node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var st = smap_mod.stateMapInit(&arena);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var result = az_mod.classifyExpr(&ac, &st, node);
     if (result != @enumToInt(az_mod.PtrState.is_null)) {
         var fmsg: []const u8 = "testClassifyNullExpr: expected is_null\n";
@@ -131,7 +138,8 @@ fn testClassifyAddrOf() void {
     var node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var st = smap_mod.stateMapInit(&arena);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var result = az_mod.classifyExpr(&ac, &st, node);
     if (result != @enumToInt(az_mod.PtrState.safe)) {
         var fmsg: []const u8 = "testClassifyAddrOf: expected safe\n";
@@ -151,7 +159,8 @@ fn testClassifyIdentFromState() void {
     smap_mod.stateMapSet(&st, @intCast(u32, 42), @enumToInt(az_mod.PtrState.safe));
     var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 42));
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var result = az_mod.classifyExpr(&ac, &st, id_node);
     if (result != @enumToInt(az_mod.PtrState.safe)) {
         var fmsg: []const u8 = "testClassifyIdentFromState: expected safe\n";
@@ -173,7 +182,8 @@ fn testNullVarDeclNull() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var vd_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), null_node, @intCast(u32, 0), nid);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     az_mod.handleNullVarDecl(&ac, &st, vd_node);
     var opt = smap_mod.stateMapGet(&st, nid);
     if (opt) |v| {
@@ -200,7 +210,8 @@ fn testNullVarDeclNoInit() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var vd_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     az_mod.handleNullVarDecl(&ac, &st, vd_node);
     var opt = smap_mod.stateMapGet(&st, nid);
     if (opt) |v| {
@@ -229,7 +240,8 @@ fn testNullAssignNull() void {
     var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
     var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     az_mod.handleNullAssign(&ac, &st, as_node);
     var opt = smap_mod.stateMapGet(&st, nid);
     if (opt) |v| {
@@ -411,7 +423,8 @@ fn testDerefIsNull() void {
     var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 10), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 99));
     var deref_node = ast_mod.astStoreAddNode(&store, AstKind.deref, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ac: AnalyzerContext = undefined;
-    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena);
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     az_mod.analyzeExpr(&ac, &st, deref_node);
     if (diag.error_count == @intCast(usize, 0)) {
         var fmsg: []const u8 = "testDerefIsNull: expected error\n";
@@ -511,6 +524,101 @@ fn testBranchMergeDiff() void {
     helpers.ok("testBranchMergeDiff");
 }
 
+fn testClassifyAddrLocal() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ns: []const u8 = "x";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var result = az_mod.classifyProvenance(&ac, &st, addr_node);
+    var pl: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.local));
+    if (result != pl) {
+        var fmsg: []const u8 = "testClassifyAddrLocal: expected local\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testClassifyAddrLocal");
+}
+
+fn testClassifyAddrParam() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ns: []const u8 = "param";
+    var nid = interner_mod.stringInternerIntern(&interner, ns);
+    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var result = az_mod.classifyProvenance(&ac, &st, addr_node);
+    var pa: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.param_addr));
+    if (result != pa) {
+        var fmsg: []const u8 = "testClassifyAddrParam: expected param_addr\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testClassifyAddrParam");
+}
+
+fn testClassifyFnCall() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var result = az_mod.classifyProvenance(&ac, &st, fn_node);
+    var hp: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.heap));
+    if (result != hp) {
+        var fmsg: []const u8 = "testClassifyFnCall: expected heap\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testClassifyFnCall");
+}
+
+fn testClassifyIdent() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var st = smap_mod.stateMapInit(&arena);
+    smap_mod.stateMapSet(&st, @intCast(u32, 77), @intCast(u8, @enumToInt(az_mod.Provenance.param)));
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 77));
+    var result = az_mod.classifyProvenance(&ac, &st, id_node);
+    var pm: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.param));
+    if (result != pm) {
+        var fmsg: []const u8 = "testClassifyIdent: expected param\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testClassifyIdent");
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testSignatureVoidParam();
@@ -531,6 +639,10 @@ pub fn main() void {
     testIfCaptureRefinement();
     testWhileCaptureRefinement();
     testBranchMergeDiff();
+    testClassifyAddrLocal();
+    testClassifyAddrParam();
+    testClassifyFnCall();
+    testClassifyIdent();
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

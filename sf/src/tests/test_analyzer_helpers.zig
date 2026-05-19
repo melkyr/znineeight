@@ -10,6 +10,8 @@ const diag_mod = @import("../diagnostics.zig");
 const DiagnosticCollector = diag_mod.DiagnosticCollector;
 const az_mod = @import("../analyzer.zig");
 const AnalyzerContext = az_mod.AnalyzerContext;
+const sym_mod = @import("../symbol_table.zig");
+const SymbolTable = sym_mod.SymbolTable;
 const pal = @import("../pal.zig");
 
 var type_db_buf: [65536]u8 = undefined;
@@ -25,10 +27,10 @@ pub fn initTest(arena: *Sand, interner: *StringInterner, typereg: *TypeRegistry,
     diag.* = diag_mod.diagnosticCollectorInit(arena, undefined, interner);
 }
 
-pub fn initCtx(ac: *AnalyzerContext, store: *AstStore, typereg: *TypeRegistry, interner: *StringInterner, diag: *DiagnosticCollector, arena: *Sand) void {
+pub fn initCtx(ac: *AnalyzerContext, store: *AstStore, typereg: *TypeRegistry, interner: *StringInterner, diag: *DiagnosticCollector, arena: *Sand, symbols: *SymbolTable) void {
     ac.* = AnalyzerContext{
         .store = store, .registry = typereg, .interner = interner,
-        .diag = diag, .alloc = arena, .current_fn_name = @intCast(u32, 0),
+        .diag = diag, .symbols = symbols, .alloc = arena, .current_fn_name = @intCast(u32, 0),
         .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
         .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = arena,
         .current_depth = @intCast(u32, 0),
