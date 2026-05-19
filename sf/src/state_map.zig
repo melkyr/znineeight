@@ -60,7 +60,7 @@ pub fn stateMapSet(self: *StateMap, name_id: u32, state: u8) void {
 }
 
 pub fn stateMapFork(self: *StateMap, scratch: *Sand) *StateMap {
-    var raw = alloc_mod.sandAlloc(scratch, @intCast(usize, 20), @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(scratch, @intCast(usize, @sizeOf(StateMap)), @intCast(usize, 4)) catch unreachable;
     var child = @ptrCast(*StateMap, raw);
     child.entries_items = undefined;
     child.entries_len = @intCast(usize, 0);
@@ -68,4 +68,38 @@ pub fn stateMapFork(self: *StateMap, scratch: *Sand) *StateMap {
     child.entries_alloc = scratch;
     child.parent = self;
     return child;
+}
+
+pub fn stateMapMergeStates(parent: *StateMap, branch_a: *StateMap, branch_b: *StateMap, unknown_state: u8) void {
+    var i: usize = 0;
+    while (i < branch_a.entries_len) : (i += 1) {
+        var entry = branch_a.entries_items[i];
+        var bs = stateMapGet(branch_b, entry.name_id);
+        if (bs) |b_state| {
+            if (b_state != entry.state) {
+                stateMapSet(parent, entry.name_id, unknown_state);
+            } else {
+                stateMapSet(parent, entry.name_id, entry.state);
+            }
+        } else {
+            var ps = stateMapGet(parent, entry.name_id);
+            if (ps) |ps_val| {
+                if (ps_val != entry.state) {
+                    stateMapSet(parent, entry.name_id, unknown_state);
+                }
+            }
+        }
+    }
+    var j: usize = 0;
+    while (j < branch_b.entries_len) : (j += 1) {
+        var entry = branch_b.entries_items[j];
+        if (stateMapGet(branch_a, entry.name_id) == null) {
+            var ps = stateMapGet(parent, entry.name_id);
+            if (ps) |ps_val| {
+                if (ps_val != entry.state) {
+                    stateMapSet(parent, entry.name_id, unknown_state);
+                }
+            }
+        }
+    }
 }

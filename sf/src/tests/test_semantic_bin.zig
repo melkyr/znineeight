@@ -20,6 +20,7 @@ const coercion_mod = @import("../coercion.zig");
 const ce_mod = @import("../comptime_eval.zig");
 const cc_mod = @import("../constraint_checker.zig");
 const smap_mod = @import("../state_map.zig");
+const az_mod = @import("../analyzer.zig");
 const pd_mod = @import("../print_decomposition.zig");
 const pal = @import("../pal.zig");
 
@@ -1509,6 +1510,379 @@ fn testStateMapParentFallback() void {
     ok(emsg);
 }
 
+fn testMergeStatesSame() void {
+    var buf: [256]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..]);
+    var p = smap_mod.stateMapInit(&sand);
+    smap_mod.stateMapSet(&p, @intCast(u32, 10), @intCast(u8, 5));
+    var a = smap_mod.stateMapFork(&p, &sand);
+    smap_mod.stateMapSet(a, @intCast(u32, 10), @intCast(u8, 5));
+    var b = smap_mod.stateMapFork(&p, &sand);
+    smap_mod.stateMapSet(b, @intCast(u32, 10), @intCast(u8, 5));
+    smap_mod.stateMapMergeStates(&p, a, b, @intCast(u8, 99));
+    var v = smap_mod.stateMapGet(&p, @intCast(u32, 10));
+    if (v) |val| {
+        if (val != @intCast(u8, 5)) { var fmsg: []const u8 = "testMergeStatesSame expected 5"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testMergeStatesSame expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testMergeStatesSame";
+    ok(emsg);
+}
+
+fn testMergeStatesDiff() void {
+    var buf: [256]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..]);
+    var p = smap_mod.stateMapInit(&sand);
+    var a = smap_mod.stateMapFork(&p, &sand);
+    smap_mod.stateMapSet(a, @intCast(u32, 10), @intCast(u8, 5));
+    var b = smap_mod.stateMapFork(&p, &sand);
+    smap_mod.stateMapSet(b, @intCast(u32, 10), @intCast(u8, 7));
+    smap_mod.stateMapMergeStates(&p, a, b, @intCast(u8, 99));
+    var v = smap_mod.stateMapGet(&p, @intCast(u32, 10));
+    if (v) |val| {
+        if (val != @intCast(u8, 99)) { var fmsg: []const u8 = "testMergeStatesDiff expected 99"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testMergeStatesDiff expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testMergeStatesDiff";
+    ok(emsg);
+}
+
+fn testMergeStatesOneSided() void {
+    var buf: [256]u8 = undefined;
+    var sand = alloc_mod.sandInit(buf[0..]);
+    var p = smap_mod.stateMapInit(&sand);
+    smap_mod.stateMapSet(&p, @intCast(u32, 10), @intCast(u8, 8));
+    var a = smap_mod.stateMapFork(&p, &sand);
+    smap_mod.stateMapSet(a, @intCast(u32, 10), @intCast(u8, 5));
+    var b = smap_mod.stateMapFork(&p, &sand);
+    smap_mod.stateMapMergeStates(&p, a, b, @intCast(u8, 99));
+    var v = smap_mod.stateMapGet(&p, @intCast(u32, 10));
+    if (v) |val| {
+        if (val != @intCast(u8, 99)) { var fmsg: []const u8 = "testMergeStatesOneSided expected 99"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testMergeStatesOneSided expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testMergeStatesOneSided";
+    ok(emsg);
+}
+
+var g_walk_count: u32 = 0;
+
+fn walkTestVisit(ctx: *az_mod.AnalyzerContext, state: *smap_mod.StateMap, node_idx: u32) void {
+    _ = ctx;
+    _ = state;
+    _ = node_idx;
+    g_walk_count += 1;
+}
+
+fn branchVisitSet(ctx: *az_mod.AnalyzerContext, state: *smap_mod.StateMap, node_idx: u32) void {
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.int_literal) {
+        smap_mod.stateMapSet(state, @intCast(u32, 42), @intCast(u8, 3));
+    } else {
+        smap_mod.stateMapSet(state, @intCast(u32, 42), @intCast(u8, 7));
+    }
+    g_walk_count += 1;
+}
+
+fn testBranchIfMerge() void {
+    g_walk_count = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    smap_mod.stateMapSet(&st, @intCast(u32, 42), @intCast(u8, 5));
+    var cond = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 0));
+    var then_body = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
+    var else_body = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
+    var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, else_body, @intCast(u32, 0));
+    az_mod.visitStatement(&ac, &st, if_idx, branchVisitSet);
+    var result = smap_mod.stateMapGet(&st, @intCast(u32, 42));
+    if (result) |v| {
+        if (v != @intCast(u8, 3)) { var fmsg: []const u8 = "testBranchIfMerge expected 3"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testBranchIfMerge expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testBranchIfMerge";
+    ok(emsg);
+}
+
+fn testBranchIfDiverges() void {
+    g_walk_count = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    smap_mod.stateMapSet(&st, @intCast(u32, 42), @intCast(u8, 5));
+    var cond = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 0));
+    var then_body = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
+    var else_body = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, else_body, @intCast(u32, 0));
+    az_mod.visitStatement(&ac, &st, if_idx, branchVisitSet);
+    var result = smap_mod.stateMapGet(&st, @intCast(u32, 42));
+    if (result) |v| {
+        if (v != @intCast(u8, 99)) { var fmsg: []const u8 = "testBranchIfDiverges expected 99"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testBranchIfDiverges expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testBranchIfDiverges";
+    ok(emsg);
+}
+
+fn testWalkBlockCounts() void {
+    g_walk_count = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var s1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var s2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var s3 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var stmt_buf: [3]u32 = undefined;
+    stmt_buf[0] = s1; stmt_buf[1] = s2; stmt_buf[2] = s3;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, stmt_buf[0..3]);
+    var block_idx = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ec);
+    az_mod.walkBlock(&ac, &st, block_idx, walkTestVisit);
+    if (g_walk_count != @intCast(u32, 3)) { var fmsg: []const u8 = "testWalkBlockCounts expected 3"; fail(fmsg); return; }
+    var emsg: []const u8 = "testWalkBlockCounts";
+    ok(emsg);
+}
+
+fn testWalkBlockBraceless() void {
+    g_walk_count = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var single = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.walkBlock(&ac, &st, single, walkTestVisit);
+    if (g_walk_count != @intCast(u32, 1)) { var fmsg: []const u8 = "testWalkBlockBraceless expected 1"; fail(fmsg); return; }
+    var emsg: []const u8 = "testWalkBlockBraceless";
+    ok(emsg);
+}
+
+var g_visit_count: u32 = 0;
+
+fn countVisitCb(ctx: *az_mod.AnalyzerContext, state: *smap_mod.StateMap, node_idx: u32) void {
+    _ = ctx;
+    _ = state;
+    _ = node_idx;
+    g_visit_count += 1;
+}
+
+fn testForLoopAnalysis() void {
+    g_visit_count = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var for_idx = ast_mod.astStoreAddNode(&store, AstKind.for_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.visitStatement(&ac, &st, for_idx, countVisitCb);
+    if (g_visit_count != @intCast(u32, 1)) { var fmsg: []const u8 = "testForLoopAnalysis expected 1 visit"; fail(fmsg); return; }
+    var emsg: []const u8 = "testForLoopAnalysis";
+    ok(emsg);
+}
+
+var g_defer_test: u32 = 0;
+
+fn deferVisitCb(ctx: *az_mod.AnalyzerContext, state: *smap_mod.StateMap, node_idx: u32) void {
+    _ = ctx;
+    _ = state;
+    _ = node_idx;
+    g_defer_test += 1;
+}
+
+fn testDeferPushedNotWalked() void {
+    g_defer_test = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.visitStatement(&ac, &st, defer_node, deferVisitCb);
+    if (g_defer_test != @intCast(u32, 0)) { var fmsg: []const u8 = "testDeferPushedNotWalked expected 0 visits"; fail(fmsg); return; }
+    var emsg: []const u8 = "testDeferPushedNotWalked";
+    ok(emsg);
+}
+
+fn testDeferExecutedAtExit() void {
+    g_defer_test = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var stmt_buf: [1]u32 = undefined;
+    stmt_buf[0] = defer_node;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, stmt_buf[0..1]);
+    var block_idx = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ec);
+    az_mod.walkBlock(&ac, &st, block_idx, deferVisitCb);
+    if (g_defer_test != @intCast(u32, 1)) { var fmsg: []const u8 = "testDeferExecutedAtExit expected 1 visit"; fail(fmsg); return; }
+    var emsg: []const u8 = "testDeferExecutedAtExit";
+    ok(emsg);
+}
+
+fn testErrdeferNotExecuted() void {
+    g_defer_test = 0;
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var st = smap_mod.stateMapInit(&arena);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = undefined, .alloc = &sand, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined,
+        .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0),
+        .defer_queue_alloc = &sand,
+        .current_depth = @intCast(u32, 1),
+    };
+    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var entry = az_mod.DeferEntry{ .kind = @intCast(u8, 1), .stmt_idx = body, .scope_depth = @intCast(u32, 1) };
+    az_mod.deferQueueEnsureCapacity(&ac, @intCast(usize, 1));
+    ac.defer_queue_items[0] = entry;
+    ac.defer_queue_len = @intCast(usize, 1);
+    az_mod.executeDeferQueue(&ac, &st, @intCast(u32, 0), @intCast(u8, 0), deferVisitCb);
+    if (g_defer_test != @intCast(u32, 0)) { var fmsg: []const u8 = "testErrdeferNotExecuted expected 0 visits"; fail(fmsg); return; }
+    var emsg: []const u8 = "testErrdeferNotExecuted";
+    ok(emsg);
+}
+
+fn testSignatureVoidParam() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var diag = diag_mod.diagnosticCollectorInit(&arena, undefined, &interner);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = &diag, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_VOID);
+    var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var param_buf: [1]u32 = undefined;
+    param_buf[0] = param_node;
+    var param_payload = ast_mod.astStoreAddExtraChildren(&store, param_buf[0..1]);
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, param_payload >> @intCast(u32, 16)), .params_count = @intCast(u16, 1), .return_type_node = @intCast(u32, 0) };
+    var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    az_mod.analyzeSignature(&ac, fn_node);
+    var emsg: []const u8 = "testSignatureVoidParam";
+    ok(emsg);
+}
+
+fn testSignatureLargeReturn() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var diag = diag_mod.diagnosticCollectorInit(&arena, undefined, &interner);
+    var ac = az_mod.AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = &diag, .alloc = &arena, .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &arena,
+        .current_depth = @intCast(u32, 0),
+    };
+    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_U8);
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, 0), .params_count = @intCast(u16, 0), .return_type_node = type_node };
+    var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    az_mod.analyzeSignature(&ac, fn_node);
+    var emsg: []const u8 = "testSignatureLargeReturn";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -1571,8 +1945,21 @@ pub fn main() void {
     testStateMapSetGet();
     testStateMapForkIsolation();
     testStateMapParentFallback();
+    testMergeStatesSame();
+    testMergeStatesDiff();
+    testMergeStatesOneSided();
+    testBranchIfMerge();
+    testBranchIfDiverges();
     testPrintDecompValid();
     testPrintDecompMismatch();
+    testWalkBlockCounts();
+    testWalkBlockBraceless();
+    testForLoopAnalysis();
+    testDeferPushedNotWalked();
+    testDeferExecutedAtExit();
+    testErrdeferNotExecuted();
+    testSignatureVoidParam();
+    testSignatureLargeReturn();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }
