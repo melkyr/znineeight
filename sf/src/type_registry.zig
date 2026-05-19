@@ -659,3 +659,18 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     if ((source == TYPE_U8 and target == TYPE_C_CHAR) or (source == TYPE_C_CHAR and target == TYPE_U8)) return true;
     return false;
 }
+
+pub fn canLiteralFitInType(value: i64, target: u32) bool {
+    if (target == TYPE_I8) return value >= @intCast(i64, -128) and value <= @intCast(i64, 127);
+    if (target == TYPE_I16) return value >= @intCast(i64, -32768) and value <= @intCast(i64, 32767);
+    if (target == TYPE_I32) return value >= @intCast(i64, -2147483647) - @intCast(i64, 1) and value <= @intCast(i64, 2147483647);
+    if (target == TYPE_I64) return true;
+    if (target == TYPE_U8) return value >= @intCast(i64, 0) and value <= @intCast(i64, 255);
+    if (target == TYPE_U16) return value >= @intCast(i64, 0) and value <= @intCast(i64, 65535);
+    if (target == TYPE_U32) return value >= @intCast(i64, 0) and value <= @intCast(i64, 4294967295);
+    if (target == TYPE_U64) return value >= @intCast(i64, 0);
+    if (target == TYPE_ISIZE) return value >= @intCast(i64, -2147483647) - @intCast(i64, 1) and value <= @intCast(i64, 2147483647);
+    if (target == TYPE_USIZE) return value >= @intCast(i64, 0) and value <= @intCast(i64, 4294967295);
+    if (target == TYPE_F32 or target == TYPE_F64) return true;
+    return false;
+}

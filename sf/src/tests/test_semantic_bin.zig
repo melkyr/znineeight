@@ -18,6 +18,8 @@ const rtt_mod = @import("../resolved_type_table.zig");
 const sa_mod = @import("../semantic_analyzer.zig");
 const coercion_mod = @import("../coercion.zig");
 const ce_mod = @import("../comptime_eval.zig");
+const pd_mod = @import("../print_decomposition.zig");
+const cc_mod = @import("../constraint_checker.zig");
 const pal = @import("../pal.zig");
 
 var diag_arena_buf: [4096]u8 = undefined;
@@ -1131,6 +1133,239 @@ fn testComptimeNotEvaluable() void {
     ok(emsg);
 }
 
+fn testComptimeSizeOfU32() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var sz: []const u8 = "@sizeOf";
+    var sz_id = interner_mod.stringInternerIntern(&interner, sz);
+    var un: []const u8 = "u32";
+    var un_id = interner_mod.stringInternerIntern(&interner, un);
+    var ident = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), un_id);
+    var bc = ast_mod.astStoreAddNode(&store, AstKind.builtin_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident, @intCast(u32, 0), @intCast(u32, 0), sz_id);
+    var result = ce_mod.comptimeEvalEvaluate(&ce, bc);
+    if (result) |v| {
+        if (v != @intCast(u64, 4)) { var fmsg: []const u8 = "testComptimeSizeOfU32 expected 4"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testComptimeSizeOfU32 expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeSizeOfU32";
+    ok(emsg);
+}
+
+fn testComptimeAlignOfI8() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var sz: []const u8 = "@alignOf";
+    var sz_id = interner_mod.stringInternerIntern(&interner, sz);
+    var un: []const u8 = "i8";
+    var un_id = interner_mod.stringInternerIntern(&interner, un);
+    var ident = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), un_id);
+    var bc = ast_mod.astStoreAddNode(&store, AstKind.builtin_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident, @intCast(u32, 0), @intCast(u32, 0), sz_id);
+    var result = ce_mod.comptimeEvalEvaluate(&ce, bc);
+    if (result) |v| {
+        if (v != @intCast(u64, 1)) { var fmsg: []const u8 = "testComptimeAlignOfI8 expected 1"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testComptimeAlignOfI8 expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeAlignOfI8";
+    ok(emsg);
+}
+
+fn testComptimeSizeOfVoid() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var sz: []const u8 = "@sizeOf";
+    var sz_id = interner_mod.stringInternerIntern(&interner, sz);
+    var un: []const u8 = "void";
+    var un_id = interner_mod.stringInternerIntern(&interner, un);
+    var ident = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), un_id);
+    var bc = ast_mod.astStoreAddNode(&store, AstKind.builtin_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident, @intCast(u32, 0), @intCast(u32, 0), sz_id);
+    var result = ce_mod.comptimeEvalEvaluate(&ce, bc);
+    if (result) |v| {
+        if (v != @intCast(u64, 0)) { var fmsg: []const u8 = "testComptimeSizeOfVoid expected 0"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testComptimeSizeOfVoid expected value"; fail(fmsg); return; }
+    var emsg: []const u8 = "testComptimeSizeOfVoid";
+    ok(emsg);
+}
+
+fn testSwitchExhaustiveness() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
+    var em_buf: [3]type_mod.EnumMember = undefined;
+    em_buf[0] = type_mod.EnumMember{ .name_id = @intCast(u32, 100), .value = @intCast(i64, 0) };
+    em_buf[1] = type_mod.EnumMember{ .name_id = @intCast(u32, 101), .value = @intCast(i64, 1) };
+    em_buf[2] = type_mod.EnumMember{ .name_id = @intCast(u32, 102), .value = @intCast(i64, 2) };
+    var em_start = typereg.em_len;
+    var emi: usize = 0;
+    while (emi < 3) : (emi += 1) { type_mod.emAppend(&typereg, em_buf[emi]); }
+    type_mod.enAppend(&typereg, type_mod.EnumPayload{ .members_start = @intCast(u16, em_start), .members_count = @intCast(u16, 3), .backing_type = @intCast(u32, 0) });
+    var en_tid: u32 = @intCast(u32, typereg.en_len - @intCast(usize, 1));
+    var sn: []const u8 = "E";
+    var snid = interner_mod.stringInternerIntern(&interner, sn);
+    var named_tid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), snid, type_mod.TypeKind.enum_type);
+    var named_ty = typereg.types_items[@intCast(usize, named_tid)];
+    named_ty.payload_idx = en_tid;
+    named_ty.size = @intCast(u32, 4);
+    named_ty.alignment = @intCast(u32, 4);
+    named_ty.state = @intCast(u8, 2);
+    typereg.types_items[@intCast(usize, named_tid)] = named_ty;
+    var cond_idx = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    rtt_mod.resolvedTypeTableSet(&rtt, cond_idx, named_tid);
+    var check_tid = rtt_mod.resolvedTypeTableGet(&rtt, cond_idx);
+    if (check_tid) |ct| { _ = ct; } else { var fmsg: []const u8 = "testSwitchExhaustiveness RTT missing"; fail(fmsg); return; }
+    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var pr_buf: [1]u32 = undefined;
+    pr_buf[0] = prong;
+    var ec = ast_mod.astStoreAddExtraChildren(&store, pr_buf[0..1]);
+    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond_idx, @intCast(u32, 0), @intCast(u32, 0), ec);
+    cc_mod.constraintCheckerCheckSwitchExhaustiveness(&store, &typereg, &diag, &rtt, sw_idx);
+    var err_count = diag_mod.diagnosticCollectorErrorCount(&diag);
+    if (err_count == @intCast(u32, 0)) { var fmsg: []const u8 = "testSwitchExhaustiveness expected error count > 0"; fail(fmsg); return; }
+    var emsg: []const u8 = "testSwitchExhaustiveness";
+    ok(emsg);
+}
+
+fn testReturnTypeMatch() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var dummy = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ret_idx = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), dummy, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    cc_mod.constraintCheckerCheckReturnType(&store, &typereg, &diag, ret_idx, type_mod.TYPE_INT_LIT, type_mod.TYPE_U32);
+    if (diag_mod.diagnosticCollectorHasErrors(&diag)) { var fmsg: []const u8 = "testReturnTypeMatch expected no error"; fail(fmsg); return; }
+    var emsg: []const u8 = "testReturnTypeMatch";
+    ok(emsg);
+}
+
+fn testReturnTypeMismatch() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&arena);
+    var dummy = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ret_idx = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), dummy, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    cc_mod.constraintCheckerCheckReturnType(&store, &typereg, &diag, ret_idx, type_mod.TYPE_BOOL, type_mod.TYPE_U32);
+    if (!diag_mod.diagnosticCollectorHasErrors(&diag)) { var fmsg: []const u8 = "testReturnTypeMismatch expected error"; fail(fmsg); return; }
+    var emsg: []const u8 = "testReturnTypeMismatch";
+    ok(emsg);
+}
+
+fn testBreakInsideLoop() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var store = ast_mod.astStoreInit(&arena);
+    var brk = ast_mod.astStoreAddNode(&store, AstKind.break_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var blk = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), brk, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var cond = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var whl = ast_mod.astStoreAddNode(&store, AstKind.while_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, blk, @intCast(u32, 0), @intCast(u32, 0));
+    cc_mod.constraintCheckerCheckBreakContinue(&store, &diag, whl);
+    if (diag.error_count != @intCast(u32, 0)) { var fmsg: []const u8 = "testBreakInsideLoop expected 0 errors"; fail(fmsg); return; }
+    var emsg: []const u8 = "testBreakInsideLoop";
+    ok(emsg);
+}
+
+fn testBreakOutsideLoop() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var store = ast_mod.astStoreInit(&arena);
+    var brk = ast_mod.astStoreAddNode(&store, AstKind.break_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    cc_mod.constraintCheckerCheckBreakContinue(&store, &diag, brk);
+    if (diag.error_count == @intCast(u32, 0)) { var fmsg: []const u8 = "testBreakOutsideLoop expected error count > 0"; fail(fmsg); return; }
+    var emsg: []const u8 = "testBreakOutsideLoop";
+    ok(emsg);
+}
+
+fn testPrintDecompValid() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var store = ast_mod.astStoreInit(&arena);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var fmsg: []const u8 = "a={}b={}";
+    var fid = interner_mod.stringInternerIntern(&interner, fmsg);
+    var fmt = ast_mod.astStoreAddNode(&store, AstKind.string_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fid);
+    var v1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var v2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var fb: [2]u32 = undefined;
+    fb[0] = v1; fb[1] = v2;
+    var tec = ast_mod.astStoreAddExtraChildren(&store, fb[0..2]);
+    var tup = ast_mod.astStoreAddNode(&store, AstKind.tuple_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), tec);
+    var ab: [2]u32 = undefined;
+    ab[0] = fmt; ab[1] = tup;
+    var aec = ast_mod.astStoreAddExtraChildren(&store, ab[0..2]);
+    var fc = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), aec);
+    var entry = pd_mod.printDecompParseAndValidate(&store, &interner, &diag, fc);
+    if (entry) |e| {
+        if (e.spec_count != @intCast(u8, 2)) { var fmsg: []const u8 = "testPrintDecompValid expected 2 specifiers"; fail(fmsg); return; }
+    } else { var fmsg: []const u8 = "testPrintDecompValid expected entry"; fail(fmsg); return; }
+    var emsg: []const u8 = "testPrintDecompValid";
+    ok(emsg);
+}
+
+fn testPrintDecompMismatch() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var interner = interner_mod.stringInternerInit(&arena, 4);
+    var store = ast_mod.astStoreInit(&arena);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var fmsg2: []const u8 = "a={}";
+    var fid2 = interner_mod.stringInternerIntern(&interner, fmsg2);
+    var fmt2 = ast_mod.astStoreAddNode(&store, AstKind.string_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fid2);
+    var vv1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var vv2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var fb2: [2]u32 = undefined;
+    fb2[0] = vv1; fb2[1] = vv2;
+    var tec2 = ast_mod.astStoreAddExtraChildren(&store, fb2[0..2]);
+    var tup2 = ast_mod.astStoreAddNode(&store, AstKind.tuple_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), tec2);
+    var ab2: [2]u32 = undefined;
+    ab2[0] = fmt2; ab2[1] = tup2;
+    var aec2 = ast_mod.astStoreAddExtraChildren(&store, ab2[0..2]);
+    var fc2 = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), aec2);
+    var entry2 = pd_mod.printDecompParseAndValidate(&store, &interner, &diag, fc2);
+    if (entry2) |e| { _ = e; var fmsg: []const u8 = "testPrintDecompMismatch expected null"; fail(fmsg); return; } else {}
+    var emsg: []const u8 = "testPrintDecompMismatch";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -1178,6 +1413,16 @@ pub fn main() void {
     testComptimeBoolTrue();
     testComptimeAdd();
     testComptimeNotEvaluable();
+    testComptimeSizeOfU32();
+    testComptimeAlignOfI8();
+    testComptimeSizeOfVoid();
+    testSwitchExhaustiveness();
+    testReturnTypeMatch();
+    testReturnTypeMismatch();
+    testBreakInsideLoop();
+    testBreakOutsideLoop();
+    testPrintDecompValid();
+    testPrintDecompMismatch();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }
