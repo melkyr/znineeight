@@ -1008,6 +1008,269 @@ fn testCompositeNameId() void {
     helpers.ok(ok_msg2);
 }
 
+fn testFreeUntracked() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var pn: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, pn);
+    var af: []const u8 = "arena_free";
+    var af_id = interner_mod.stringInternerIntern(&interner, af);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var arg_buf: [2]u32 = undefined;
+    arg_buf[0] = @intCast(u32, 0);
+    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    arg_buf[1] = pid_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.handleFreeCall(&ac, &st, free_node);
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testFreeUntracked: expected WARN_6006 for untracked pointer (spec gap)\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testFreeUntracked";
+    helpers.ok(ok_msg);
+}
+
+fn testOwnershipNoTransfer() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var pn: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, pn);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var pr_name: []const u8 = "std.debug.print";
+    var pr_id = interner_mod.stringInternerIntern(&interner, pr_name);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), pr_id);
+    var arg_buf: [2]u32 = undefined;
+    arg_buf[0] = @intCast(u32, 0);
+    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    arg_buf[1] = pid_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.handleOwnershipPass(&ac, &st, call_node);
+    var result = smap_mod.stateMapGet(&st, nid);
+    if (result) |v| {
+        if (v != @enumToInt(az_mod.AllocState.transferred)) {
+            var fmsg: []const u8 = "testOwnershipNoTransfer: expected transferred\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    }
+    var ok_msg: []const u8 = "testOwnershipNoTransfer";
+    helpers.ok(ok_msg);
+}
+
+fn testDoubleFreeNested() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var pn: []const u8 = "q";
+    var nid = interner_mod.stringInternerIntern(&interner, pn);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.freed));
+    var af: []const u8 = "arena_free";
+    var af_id = interner_mod.stringInternerIntern(&interner, af);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var arg_buf: [2]u32 = undefined;
+    arg_buf[0] = @intCast(u32, 0);
+    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    arg_buf[1] = pid_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
+    var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.handleFreeCall(&ac, &st, free_node);
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testDoubleFreeNested: expected error\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testDoubleFreeNested";
+    helpers.ok(ok_msg);
+}
+
+fn testAllocAssignLeak() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var sa: []const u8 = "sandAlloc";
+    var sa_id = interner_mod.stringInternerIntern(&interner, sa);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sa_id);
+    var arg_buf2: [2]u32 = undefined;
+    arg_buf2[0] = @intCast(u32, 0);
+    arg_buf2[1] = @intCast(u32, 0);
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf2[0..2]);
+    var alloc_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, alloc_node, @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.handleAllocAssign(&ac, &st, as_node);
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testAllocAssignLeak: expected warning\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testAllocAssignLeak";
+    helpers.ok(ok_msg);
+}
+
+fn testAllocAssignNull() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.handleAllocAssign(&ac, &st, as_node);
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testAllocAssignNull: expected warning\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testAllocAssignNull";
+    helpers.ok(ok_msg);
+}
+
+fn testOwnershipReturn() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    az_mod.handleOwnershipReturn(&ac, &st, id_node);
+    var result = smap_mod.stateMapGet(&st, nid);
+    if (result) |v| {
+        if (v != @enumToInt(az_mod.AllocState.returned_val)) {
+            var fmsg: []const u8 = "testOwnershipReturn: expected returned_val\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testOwnershipReturn: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testOwnershipReturn";
+    helpers.ok(ok_msg);
+}
+
+fn testOwnershipPassArg() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var ptr_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var arg_buf: [1]u32 = undefined;
+    arg_buf[0] = ptr_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..1]);
+    var callee_id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_id_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.handleOwnershipPass(&ac, &st, call_node);
+    var result = smap_mod.stateMapGet(&st, nid);
+    if (result) |v| {
+        if (v != @enumToInt(az_mod.AllocState.transferred)) {
+            var fmsg: []const u8 = "testOwnershipPassArg: expected transferred\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testOwnershipPassArg: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testOwnershipPassArg";
+    helpers.ok(ok_msg);
+}
+
+fn testDeferFree() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var st = smap_mod.stateMapInit(&arena);
+    var ps: []const u8 = "p";
+    var nid = interner_mod.stringInternerIntern(&interner, ps);
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
+    var af: []const u8 = "arena_free";
+    var af_id = interner_mod.stringInternerIntern(&interner, af);
+    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var argb: [2]u32 = undefined;
+    argb[0] = @intCast(u32, 0);
+    argb[1] = pid_node;
+    var payload = ast_mod.astStoreAddExtraChildren(&store, argb[0..2]);
+    var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
+    az_mod.deferQueueEnsureCapacity(&ac, @intCast(usize, 1));
+    ac.defer_queue_items[0] = az_mod.DeferEntry{ .kind = @intCast(u8, 0), .stmt_idx = free_node, .scope_depth = @intCast(u32, 0) };
+    ac.defer_queue_len = @intCast(usize, 1);
+    az_mod.handleFreeCall(&ac, &st, free_node);
+    var result = smap_mod.stateMapGet(&st, nid);
+    if (result) |v| {
+        if (v != @enumToInt(az_mod.AllocState.freed)) {
+            var fmsg: []const u8 = "testDeferFree: expected freed\n";
+            pal.stdout_write(fmsg); pal.exit(1);
+        }
+    } else {
+        var fmsg: []const u8 = "testDeferFree: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    var ok_msg: []const u8 = "testDeferFree";
+    helpers.ok(ok_msg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testSignatureVoidParam();
@@ -1044,7 +1307,15 @@ pub fn main() void {
     testHandleDoubleFree();
     testScopeLeakDetected();
     testScopeNoLeakAfterFree();
+    testAllocAssignLeak();
+    testAllocAssignNull();
+    testOwnershipReturn();
+    testOwnershipPassArg();
+    testDeferFree();
     testCompositeNameId();
+    testFreeUntracked();
+    testOwnershipNoTransfer();
+    testDoubleFreeNested();
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

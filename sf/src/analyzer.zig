@@ -196,18 +196,21 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
     var name_id = isFreeCall(ctx, expr_idx) orelse return;
     if (name_id == @intCast(u32, 0)) return;
     var current = smap_mod.stateMapGet(state, name_id);
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
             smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
             return;
         }
         if (c == @enumToInt(AllocState.freed)) {
-            var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
-            var msg: []const u8 = "double free of pointer";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+            var dmsg: []const u8 = "double free of pointer";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
             return;
         }
         smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
+    } else {
+        var umsg: []const u8 = "freeing untracked pointer";
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
     }
 }
 
@@ -218,6 +221,65 @@ pub fn checkLeaksOnScopeExit(ctx: *AnalyzerContext, state: *StateMap) void {
         if (entries[ei].state == @enumToInt(AllocState.allocated)) {
             var lmsg: []const u8 = "memory leak: pointer not freed";
             diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), lmsg);
+        }
+    }
+}
+
+pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var lhs_idx = node.child_0;
+    var rhs_idx = node.child_1;
+    var lhs_node = ctx.store.nodes.items[@intCast(usize, lhs_idx)];
+    if (lhs_node.kind != AstKind.ident_expr) return;
+    var current = smap_mod.stateMapGet(state, lhs_node.payload);
+    if (current) |c| {
+        if (c == @enumToInt(AllocState.allocated)) {
+            var lmsg: []const u8 = "memory leak: pointer overwritten before free";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), lmsg);
+        }
+    }
+    if (isAllocCall(ctx, rhs_idx)) {
+        smap_mod.stateMapSet(state, lhs_node.payload, @enumToInt(AllocState.allocated));
+        return;
+    }
+    if (rhs_idx != @intCast(u32, 0)) {
+        var rhs_node = ctx.store.nodes.items[@intCast(usize, rhs_idx)];
+        if (rhs_node.kind == AstKind.null_literal) {
+            smap_mod.stateMapSet(state, lhs_node.payload, @enumToInt(AllocState.untracked));
+            return;
+        }
+    }
+    smap_mod.stateMapSet(state, lhs_node.payload, @enumToInt(AllocState.unknown));
+}
+
+pub fn handleOwnershipReturn(ctx: *AnalyzerContext, state: *StateMap, ret_expr_idx: u32) void {
+    if (ret_expr_idx == @intCast(u32, 0)) return;
+    var node = ctx.store.nodes.items[@intCast(usize, ret_expr_idx)];
+    if (node.kind != AstKind.ident_expr) return;
+    var current = smap_mod.stateMapGet(state, node.payload);
+    if (current) |c| {
+        if (c == @enumToInt(AllocState.allocated)) {
+            smap_mod.stateMapSet(state, node.payload, @enumToInt(AllocState.returned_val));
+        }
+    }
+}
+
+pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx: u32) void {
+    if (fn_call_idx == @intCast(u32, 0)) return;
+    var node = ctx.store.nodes.items[@intCast(usize, fn_call_idx)];
+    if (node.kind != AstKind.fn_call) return;
+    var args = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+    var ai: usize = 0;
+    while (ai < args.len) : (ai += 1) {
+        var arg_node = ctx.store.nodes.items[@intCast(usize, args[ai])];
+        if (arg_node.kind != AstKind.ident_expr) continue;
+        var current = smap_mod.stateMapGet(state, arg_node.payload);
+        if (current) |c| {
+            if (c == @enumToInt(AllocState.allocated)) {
+                smap_mod.stateMapSet(state, arg_node.payload, @enumToInt(AllocState.transferred));
+                var tmsg: []const u8 = "ownership transferred to function";
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 2), @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), tmsg);
+            }
         }
     }
 }
@@ -535,7 +597,10 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         walkBlock(ctx, body_state, node.child_0, on_stmt);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.return_stmt) {
-        if (node.child_0 != @intCast(u32, 0)) checkReturnProvenance(ctx, state, node.child_0, node_idx);
+        if (node.child_0 != @intCast(u32, 0)) {
+            checkReturnProvenance(ctx, state, node.child_0, node_idx);
+            handleOwnershipReturn(ctx, state, node.child_0);
+        }
         on_stmt(ctx, state, node_idx);
     } else if (kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) {
         var dk: u8 = @intCast(u8, 0);
