@@ -32,6 +32,10 @@ pub fn sandReset(sand: *Sand) void {
     sand.pos = @intCast(usize, 0);
 }
 
+pub fn sandResetPeak(sand: *Sand) void {
+    sand.peak = sand.pos;
+}
+
 pub const CompilerAlloc = struct {
     permanent: Sand,
     module: Sand,
@@ -43,12 +47,15 @@ var perm_arena_buf: [1048576]u8 = undefined;
 var mod_arena_buf: [1572864]u8 = undefined;
 var scr_arena_buf: [1572864]u8 = undefined;
 
+pub const DEV_MAX_MEM: usize = 8 * 1024 * 1024;
+pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
+
 pub fn initCompilerAlloc() CompilerAlloc {
     return CompilerAlloc{
         .permanent = sandInit(perm_arena_buf[0..]),
         .module = sandInit(mod_arena_buf[0..]),
         .scratch = sandInit(scr_arena_buf[0..]),
-        .max_mem = @intCast(u32, 16 * 1024 * 1024),
+        .max_mem = @intCast(u32, DEV_MAX_MEM),
     };
 }
 
@@ -93,3 +100,17 @@ pub fn trackingReset(tracker: *TrackingAllocator) void {
 pub fn trackingPeak(tracker: *TrackingAllocator) u32 {
     return tracker.peak_allocated;
 }
+
+pub fn trackingAllocatorReport(tracker: *TrackingAllocator) TrackingAllocatorReport {
+    return TrackingAllocatorReport{
+        .peak = tracker.peak_allocated,
+        .total = tracker.total_allocated,
+        .count = tracker.allocation_count,
+    };
+}
+
+pub const TrackingAllocatorReport = struct {
+    peak: u32,
+    total: u32,
+    count: u32,
+};

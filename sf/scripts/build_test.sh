@@ -58,5 +58,6 @@ build_and_run "test_analyzer_bin"
 build_and_run "test_mod_reg_bin"
 build_and_run "test_sym_reg_bin"
 build_and_run "test_analyzer_integration_bin"
+build_and_run "test_memory_budget_bin"
 
 echo "=== [test] Results: $PASS passed, $FAIL failed ==="

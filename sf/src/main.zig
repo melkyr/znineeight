@@ -19,6 +19,8 @@ const ast_mod = @import("ast.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
 const import_resolver = @import("import_resolver.zig");
+const az_mod = @import("analyzer.zig");
+const sym_mod = @import("symbol_table.zig");
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -133,6 +135,12 @@ fn runCompiler(ctx: *CompilerContext) void {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
+    phase_StaticAnalyzers(ctx);
+    alloc_mod.checkCombinedPeak(ctx.alloc);
+    if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        pal.exit(2);
+    }
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
@@ -146,10 +154,10 @@ fn runCompiler(ctx: *CompilerContext) void {
         pal.exit(1);
     }
     if (ctx.cli.track_memory) {
-        var perm_kb = ctx.alloc.permanent.peak / @intCast(usize, 1024);
-        var mod_kb = ctx.alloc.module.peak / @intCast(usize, 1024);
-        var scr_kb = ctx.alloc.scratch.peak / @intCast(usize, 1024);
-        var total = perm_kb + mod_kb + scr_kb;
+        var perm_kb: u32 = @intCast(u32, ctx.alloc.permanent.peak / @intCast(usize, 1024));
+        var mod_kb: u32 = @intCast(u32, ctx.alloc.module.peak / @intCast(usize, 1024));
+        var scr_kb: u32 = @intCast(u32, ctx.alloc.scratch.peak / @intCast(usize, 1024));
+        var total: u32 = perm_kb + mod_kb + scr_kb;
         var msg1: []const u8 = "track-memory: perm=";
         pal.stderr_write(msg1);
         writeU32(perm_kb);
@@ -187,6 +195,20 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
     _ = ctx;
 }
 
+fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
+    alloc_mod.sandReset(&ctx.alloc.scratch);
+    alloc_mod.sandResetPeak(&ctx.alloc.scratch);
+    if (ctx.cli.no_null_check != true or ctx.cli.no_lifetime_check != true or ctx.cli.no_leak_check != true) {
+        var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+        var mi: usize = 0;
+        while (mi < mods.len) : (mi += 1) {
+            if (mods[mi].ast_root != @intCast(u32, 0)) {
+                _ = mods[mi].ast_root;
+            }
+        }
+    }
+}
+
 fn phase_LIRLowering(ctx: *CompilerContext) void {
     _ = ctx;
 }
@@ -203,7 +225,7 @@ fn parseArgs() CompilerCli {
         .output_dir = dot_str,
         .dump_types = false,
         .dump_lir = false,
-        .max_mem = @intCast(u32, 16 * 1024 * 1024),
+        .max_mem = @intCast(u32, alloc_mod.DEV_MAX_MEM),
         .max_errors = @intCast(u32, 256),
         .color = ColorMode.auto,
         .error_format = ErrorFormat.human,

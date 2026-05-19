@@ -703,6 +703,8 @@ pub fn runDoubleFreeAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
     walkBlock(ctx, &state, fn_body_idx, onDoubleFreeStmt);
 }
 
+pub const PER_FUNC_BUDGET: usize = 512 * 1024;
+
 pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
     var root = ctx.store.nodes.items[@intCast(usize, module_root_idx)];
     if (root.kind != AstKind.module_root) return;
@@ -712,6 +714,7 @@ pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
         var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
         if (decl.kind != AstKind.fn_decl) continue;
         if (decl.child_1 == @intCast(u32, 0)) continue;
+        alloc_mod.sandResetPeak(ctx.alloc);
         ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, decl.payload)].name_id;
         runSignatureAnalyzer(ctx, decls[di]);
         alloc_mod.sandReset(ctx.alloc);
@@ -726,6 +729,11 @@ pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
         if (ctx.skip_doublefree_check == @intCast(u8, 0)) {
             runDoubleFreeAnalyzer(ctx, decl.child_1);
             alloc_mod.sandReset(ctx.alloc);
+        }
+        if (ctx.alloc.peak > PER_FUNC_BUDGET) {
+
+            var bmsg: []const u8 = "per-function analyzer budget exceeded";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_7002_ANALYZER_BUDGET_EXCEEDED)), @intCast(u32, 0), decl.span_start, decl.span_start + @intCast(u32, decl.span_len), bmsg);
         }
     }
 }

@@ -220,6 +220,10 @@ pub fn moduleRegistryAddModule(self: *ModuleRegistry, path_id: u32) u32 {
     return id;
 }
 
+pub fn moduleRegistryGetModules(self: *ModuleRegistry) []ModuleEntry {
+    return self.modules.items[0..self.modules.len];
+}
+
 pub fn moduleRegistryGetOrCreateModule(self: *ModuleRegistry, path_id: u32) u32 {
     var existing = hash_mod.u32ToU32MapGet(&self.path_to_id, path_id);
     if (existing) |id| return id;
