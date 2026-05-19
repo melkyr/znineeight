@@ -40,6 +40,9 @@ build_and_run() {
 # Semantic analysis tests
 build_and_run "test_semantic_bin"
 
+# Analyzer tests (signature + null pointer)
+build_and_run "test_analyzer_bin"
+
 # Module registry tests
 build_and_run "test_mod_reg_bin"
 

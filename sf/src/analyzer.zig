@@ -110,6 +110,56 @@ pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_retur
     }
 }
 
+pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void {
+    if (expr_idx == @intCast(u32, 0)) return;
+    var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
+    var kind = node.kind;
+    if (kind == AstKind.deref) {
+        var st = classifyExpr(ctx, state, node.child_0);
+        var start = node.span_start;
+        var end = node.span_start + @intCast(u32, node.span_len);
+        if (st == @enumToInt(PtrState.is_null)) {
+            var msg: []const u8 = "definite null pointer dereference";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2004_DEFINITE_NULL_DEREF)), @intCast(u32, 0), start, end, msg);
+        } else if (st == @enumToInt(PtrState.uninit)) {
+            var msg: []const u8 = "dereference of uninitialized pointer";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6001_UNINIT_DEREF)), @intCast(u32, 0), start, end, msg);
+        } else if (st == @enumToInt(PtrState.maybe)) {
+            var msg: []const u8 = "potential null pointer dereference";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6002_POTENTIAL_NULL_DEREF)), @intCast(u32, 0), start, end, msg);
+        }
+        return;
+    }
+    if (kind == AstKind.index_access) {
+        analyzeExpr(ctx, state, node.child_0);
+        return;
+    }
+    if (kind == AstKind.field_access) {
+        analyzeExpr(ctx, state, node.child_0);
+        return;
+    }
+    if (kind == AstKind.fn_call) {
+        var args = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+        var ai: usize = 0;
+        while (ai < args.len) : (ai += 1) {
+            analyzeExpr(ctx, state, args[ai]);
+        }
+        return;
+    }
+    if (kind == AstKind.assign) {
+        analyzeExpr(ctx, state, node.child_1);
+        var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var new_st = classifyExpr(ctx, state, node.child_1);
+            smap_mod.stateMapSet(state, lhs_node.payload, new_st);
+        }
+        return;
+    }
+    if (node.child_0 != @intCast(u32, 0)) analyzeExpr(ctx, state, node.child_0);
+    if (node.child_1 != @intCast(u32, 0)) analyzeExpr(ctx, state, node.child_1);
+    if (node.child_2 != @intCast(u32, 0)) analyzeExpr(ctx, state, node.child_2);
+}
+
 pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
     if (expr_idx == @intCast(u32, 0)) return @enumToInt(PtrState.uninit);
     var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
@@ -252,6 +302,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     var kind = node.kind;
     if (kind == AstKind.if_stmt or kind == AstKind.if_capture) {
+        analyzeExpr(ctx, state, node.child_0);
         var then_state = smap_mod.stateMapFork(state, ctx.alloc);
         var else_state = smap_mod.stateMapFork(state, ctx.alloc);
         if (ctx.null_analysis_mode != @intCast(u8, 0)) {
@@ -264,6 +315,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, on_stmt);
         smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
     } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
+        analyzeExpr(ctx, state, node.child_0);
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
         if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.while_capture) {
             smap_mod.stateMapSet(body_state, node.payload, @enumToInt(PtrState.safe));
@@ -295,6 +347,8 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.assign) {
         handleNullAssign(ctx, state, node_idx);
         on_stmt(ctx, state, node_idx);
+    } else if (kind == AstKind.expr_stmt) {
+        analyzeExpr(ctx, state, node.child_0);
     } else {
         on_stmt(ctx, state, node_idx);
     }
