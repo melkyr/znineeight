@@ -685,6 +685,63 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = exit_bb;
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
         }
+    } else if (node.kind == AstKind.return_stmt) {
+        expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
+        if (node.child_0 != 0) {
+            var val = lowerExpr(self, node.child_0);
+            emitInst(self, LirInst{ .ret = val });
+        } else {
+            emitInst(self, LirInst{ .ret_void = {} });
+        }
+        self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated = @intCast(u8, 1);
+    } else if (node.kind == AstKind.break_stmt) {
+        if (self.loop_stack.len == @intCast(usize, 0)) { return; }
+        var label_id = node.payload;
+        var exit_target: u32 = @intCast(u32, 0);
+        var exit_scope: u32 = @intCast(u32, 0);
+        if (label_id == @intCast(u32, 0)) {
+            var li = self.loop_stack.items[self.loop_stack.len - @intCast(usize, 1)];
+            exit_target = li.exit_bb;
+            exit_scope = li.scope_depth;
+        } else {
+            var si: usize = self.loop_stack.len;
+            while (si > @intCast(usize, 0)) : (si -= @intCast(usize, 1)) {
+                var li = self.loop_stack.items[si - @intCast(usize, 1)];
+                if (li.label_id == label_id) {
+                    exit_target = li.exit_bb;
+                    exit_scope = li.scope_depth;
+                    break;
+                }
+            }
+            if (exit_target == @intCast(u32, 0)) { return; }
+        }
+        expandDefers(self, exit_scope, @intCast(u8, 0));
+        emitInst(self, LirInst{ .jump = exit_target });
+        self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated = @intCast(u8, 1);
+    } else if (node.kind == AstKind.continue_stmt) {
+        if (self.loop_stack.len == @intCast(usize, 0)) { return; }
+        var label_id = node.payload;
+        var header_target: u32 = @intCast(u32, 0);
+        var cont_scope: u32 = @intCast(u32, 0);
+        if (label_id == @intCast(u32, 0)) {
+            var li = self.loop_stack.items[self.loop_stack.len - @intCast(usize, 1)];
+            header_target = li.header_bb;
+            cont_scope = li.scope_depth;
+        } else {
+            var si: usize = self.loop_stack.len;
+            while (si > @intCast(usize, 0)) : (si -= @intCast(usize, 1)) {
+                var li = self.loop_stack.items[si - @intCast(usize, 1)];
+                if (li.label_id == label_id) {
+                    header_target = li.header_bb;
+                    cont_scope = li.scope_depth;
+                    break;
+                }
+            }
+            if (header_target == @intCast(u32, 0)) { return; }
+        }
+        expandDefers(self, cont_scope, @intCast(u8, 0));
+        emitInst(self, LirInst{ .jump = header_target });
+        self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated = @intCast(u8, 1);
     } else {
         _ = self;
     }
