@@ -232,6 +232,17 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
     return tid;
 }
 
+pub fn createBlock(self: *LirLowerer) u32 {
+    var id = self.func.blocks.len;
+    var bb = BasicBlock{
+        .id = @intCast(u32, id),
+        .insts = lir_mod.lirInstArrayListInit(self.alloc),
+        .is_terminated = @intCast(u8, 0),
+    };
+    lir_mod.basicBlockArrayListAppend(&self.func.blocks, bb);
+    return @intCast(u32, id);
+}
+
 pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
@@ -463,25 +474,220 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
         return result;
     } else if (node.kind == AstKind.builtin_call) {
         return @intCast(u32, 0);
+    } else if (node.kind == AstKind.if_expr) {
+        var cond_temp = lowerExpr(self, node.child_0);
+        var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var then_bb = createBlock(self);
+        var else_bb = createBlock(self);
+        var join_bb = createBlock(self);
+        emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = else_bb } });
+        self.current_bb = then_bb;
+        var then_val = lowerExpr(self, node.child_1);
+        emitInst(self, LirInst{ .assign = .{ .dst = result, .src = then_val } });
+        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            emitInst(self, LirInst{ .jump = join_bb });
+        }
+        self.current_bb = else_bb;
+        var else_val = lowerExpr(self, node.child_2);
+        emitInst(self, LirInst{ .assign = .{ .dst = result, .src = else_val } });
+        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            emitInst(self, LirInst{ .jump = join_bb });
+        }
+        self.current_bb = join_bb;
+        return result;
+    } else if (node.kind == AstKind.switch_expr) {
+        return @intCast(u32, 0);
     } else {
         return @intCast(u32, 0);
     }
 }
 
-pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
-    _ = self;
-    _ = node_idx;
+fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
+    var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.block) {
+        var ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
+        var i: usize = 0;
+        while (i < ec.len) : (i += 1) {
+            lowerStmt(self, ec[i]);
+        }
+    } else {
+        _ = lowerExpr(self, node_idx);
+    }
 }
 
-pub fn createBlock(self: *LirLowerer) u32 {
-    var id = self.func.blocks.len;
-    var bb = BasicBlock{
-        .id = @intCast(u32, id),
-        .insts = lir_mod.lirInstArrayListInit(self.alloc),
-        .is_terminated = @intCast(u8, 0),
-    };
-    lir_mod.basicBlockArrayListAppend(&self.func.blocks, bb);
-    return @intCast(u32, id);
+pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
+    var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var store = self.ctx.store;
+    if (node.kind == AstKind.block) {
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var i: usize = 0;
+        while (i < ec.len) : (i += 1) {
+            lowerStmt(self, ec[i]);
+        }
+    } else if (node.kind == AstKind.if_stmt) {
+        var cond_temp = lowerExpr(self, node.child_0);
+        var then_bb = createBlock(self);
+        var else_bb: u32 = 0;
+        var join_bb = createBlock(self);
+        if (node.child_2 != 0) {
+            else_bb = createBlock(self);
+        }
+        var fallthrough = if (else_bb != 0) else_bb else join_bb;
+        emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = fallthrough } });
+        self.current_bb = then_bb;
+        lowerStmtBody(self, node.child_1);
+        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            emitInst(self, LirInst{ .jump = join_bb });
+        }
+        if (else_bb != 0) {
+            self.current_bb = else_bb;
+            lowerStmtBody(self, node.child_2);
+            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+                emitInst(self, LirInst{ .jump = join_bb });
+            }
+        }
+        self.current_bb = join_bb;
+    } else if (node.kind == AstKind.while_stmt) {
+        var cond_bb = createBlock(self);
+        var body_bb = createBlock(self);
+        var exit_bb = createBlock(self);
+        var loop_info = LoopInfo{
+            .header_bb = cond_bb,
+            .exit_bb = exit_bb,
+            .scope_depth = @intCast(u32, 0),
+            .label_id = @intCast(u32, 0),
+        };
+        loopInfoArrayListAppend(&self.loop_stack, loop_info);
+        emitInst(self, LirInst{ .jump = cond_bb });
+        self.current_bb = cond_bb;
+        var cond_temp = lowerExpr(self, node.child_0);
+        emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+        self.current_bb = body_bb;
+        lowerStmtBody(self, node.child_1);
+        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            emitInst(self, LirInst{ .jump = cond_bb });
+        }
+        self.current_bb = exit_bb;
+        self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+    } else if (node.kind == AstKind.for_stmt) {
+        var pattern = store.nodes.items[@intCast(usize, node.child_0)];
+        if (node.child_2 != @intCast(u32, 0)) {
+            var slice_temp = lowerExpr(self, node.child_0);
+            var ptr_temp = nextTemp(self, type_mod.TYPE_U32);
+            var len_temp = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .load_field = .{ .base = slice_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
+            emitInst(self, LirInst{ .load_field = .{ .base = slice_temp, .field_id = @intCast(u32, 1), .result = len_temp } });
+            var idx_temp = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
+            var cond_bb = createBlock(self);
+            var body_bb = createBlock(self);
+            var exit_bb = createBlock(self);
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = @intCast(u32, 0), .label_id = @intCast(u32, 0) };
+            loopInfoArrayListAppend(&self.loop_stack, loop_info);
+            emitInst(self, LirInst{ .jump = cond_bb });
+            self.current_bb = cond_bb;
+            var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
+            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+            self.current_bb = body_bb;
+            var item_temp = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .load_index = .{ .base = ptr_temp, .index = idx_temp, .result = item_temp } });
+            lowerStmtBody(self, node.child_1);
+            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+                var nxt_idx = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = @intCast(u32, 1), .result = nxt_idx } });
+                idx_temp = nxt_idx;
+                emitInst(self, LirInst{ .jump = cond_bb });
+            }
+            self.current_bb = exit_bb;
+            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+    } else if (node.kind == AstKind.switch_expr) {
+        var cond_temp = lowerExpr(self, node.child_0);
+        var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var switch_bb = self.current_bb;
+        var prong_start = @intCast(u32, self.func.blocks.len);
+        var pi: usize = 0;
+        while (pi < prong_ec.len) : (pi += 1) { _ = createBlock(self); }
+        var else_bb = createBlock(self);
+        var exit_bb = createBlock(self);
+        var cases_start = @intCast(u32, self.func.switch_cases.len);
+        pi = 0;
+        while (pi < prong_ec.len) : (pi += 1) {
+            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) { continue; }
+            var prong_bb_id = prong_start + @intCast(u32, pi);
+            var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
+            var ci: usize = 0;
+            while (ci < case_ec.len) : (ci += 1) {
+                var case_node = store.nodes.items[@intCast(usize, case_ec[ci])];
+                var case_val: i64 = 0;
+                if (case_node.kind == AstKind.int_literal) {
+                    case_val = @intCast(i64, store.int_values.items[@intCast(usize, case_node.payload)]);
+                } else if (case_node.kind == AstKind.enum_literal) {
+                    case_val = @intCast(i64, store.identifiers.items[@intCast(usize, case_node.payload)]);
+                } else {
+                    continue;
+                }
+                lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
+                    lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
+            }
+        }
+        var cases_count = @intCast(u32, self.func.switch_cases.len) - cases_start;
+        var else_target = else_bb;
+        pi = 0;
+        while (pi < prong_ec.len) : (pi += 1) {
+            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) {
+                else_target = prong_start + @intCast(u32, pi);
+                break;
+            }
+        }
+        self.current_bb = switch_bb;
+        emitInst(self, LirInst{ .switch_br = .{ .cond = cond_temp, .cases_start = cases_start, .cases_count = cases_count, .else_bb = else_target } });
+        if (else_target == else_bb) {
+            self.current_bb = else_bb;
+            emitInst(self, LirInst{ .nop = {} });
+            self.func.blocks.items[@intCast(usize, else_bb)].is_terminated = @intCast(u8, 1);
+        }
+        pi = 0;
+        while (pi < prong_ec.len) : (pi += 1) {
+            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+            var prong_bb_id = prong_start + @intCast(u32, pi);
+            self.current_bb = prong_bb_id;
+            lowerStmtBody(self, prong_node.child_0);
+            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+                emitInst(self, LirInst{ .jump = exit_bb });
+            }
+        }
+        self.current_bb = exit_bb;
+    } else {
+            var start_temp = lowerExpr(self, pattern.child_0);
+            var end_temp = lowerExpr(self, pattern.child_1);
+            var cond_bb = createBlock(self);
+            var body_bb = createBlock(self);
+            var exit_bb = createBlock(self);
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = @intCast(u32, 0), .label_id = @intCast(u32, 0) };
+            loopInfoArrayListAppend(&self.loop_stack, loop_info);
+            emitInst(self, LirInst{ .jump = cond_bb });
+            self.current_bb = cond_bb;
+            var cmp_op = if (pattern.kind == AstKind.range_inclusive) BIN_LE else BIN_LT;
+            var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = cmp_op, .lhs = start_temp, .rhs = end_temp, .result = cmp_temp } });
+            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+            self.current_bb = body_bb;
+            lowerStmtBody(self, node.child_1);
+            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+                var nxt = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = @intCast(u32, 1), .result = nxt } });
+                start_temp = nxt;
+                emitInst(self, LirInst{ .jump = cond_bb });
+            }
+            self.current_bb = exit_bb;
+            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        }
+    } else {
+        _ = self;
+    }
 }
 
 pub fn expandDefers(self: *LirLowerer, target_depth: u32, is_error_path: u8) void {
