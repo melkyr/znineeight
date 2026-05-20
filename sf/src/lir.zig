@@ -3,7 +3,7 @@ const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 
 pub const SwitchCase = struct {
-    value: i64,
+    value: u64,
     target_bb: u32,
 };
 
