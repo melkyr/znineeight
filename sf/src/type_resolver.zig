@@ -18,6 +18,8 @@ pub const TypeResolver = struct {
     depend_cap: usize,
     in_degree_items: [*]u32,
     in_degree_cap: usize,
+    sorted_items: [*]u32,
+    sorted_len: usize,
     worklist_items: [*]u32,
     worklist_len: usize,
     worklist_cap: usize,
@@ -204,6 +206,8 @@ pub fn typeResolverInit(registry: *TypeRegistry, diag: *DiagnosticCollector, all
         .depend_cap = @intCast(usize, 0),
         .in_degree_items = undefined,
         .in_degree_cap = @intCast(usize, 0),
+        .sorted_items = undefined,
+        .sorted_len = @intCast(usize, 0),
         .worklist_items = undefined,
         .worklist_len = @intCast(usize, 0),
         .worklist_cap = @intCast(usize, 0),
@@ -220,6 +224,8 @@ pub fn typeResolverBuild(self: *TypeResolver, g: *sym_reg.DepGraph) void {
     }
     var type_count = self.registry.types_len;
     inDegreeEnsureCapacity(self, type_count);
+    var raw_sorted = alloc_mod.sandAlloc(self.alloc, type_count * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    self.sorted_items = @ptrCast([*]u32, raw_sorted);
     var zi: usize = 0;
     while (zi < type_count) {
         self.in_degree_items[zi] = @intCast(u32, 0);
@@ -250,6 +256,8 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
     while (self.worklist_len > 0) {
         var tid_val = worklistPop(self);
         if (tid_val) |tid| {
+            self.sorted_items[self.sorted_len] = tid;
+            self.sorted_len += @intCast(usize, 1);
             typeResolverResolveLayout(self, tid);
             self.registry.types_items[@intCast(usize, tid)].state = @intCast(u8, 2);
             var ei: usize = 0;
@@ -359,4 +367,8 @@ pub fn typeResolverResolveTypeExpr(self: *TypeResolver, store: *AstStore, depth:
     if (kind == AstKind.union_decl) return @intCast(u32, 1);
 
     return @intCast(u32, 0);
+}
+
+pub fn typeResolverGetSorted(self: *TypeResolver) []u32 {
+    return self.sorted_items[0..self.sorted_len];
 }
