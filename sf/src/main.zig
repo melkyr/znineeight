@@ -43,6 +43,7 @@ pub const CompilerCli = struct {
     output_dir: []const u8,
     dump_types: bool,
     dump_lir: bool,
+    dump_c89: bool,
     max_mem: u32,
     max_errors: u32,
     color: ColorMode,
@@ -224,6 +225,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
 }
 
 fn phase_C89Emission(ctx: *CompilerContext) void {
+    if (!ctx.cli.dump_c89) return;
     var mangler: c89_mod.NameMangler = undefined;
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch);
     var emitter: c89_mod.C89Emitter = undefined;
@@ -269,6 +271,7 @@ fn parseArgs() CompilerCli {
         .output_dir = dot_str,
         .dump_types = false,
         .dump_lir = false,
+        .dump_c89 = false,
         .max_mem = @intCast(u32, alloc_mod.DEV_MAX_MEM),
         .max_errors = @intCast(u32, 256),
         .color = ColorMode.auto,
@@ -290,6 +293,7 @@ fn parseArgs() CompilerCli {
     var i: i32 = 1;
     const s_dump_types: []const u8 = "--dump-types";
     const s_dump_lir: []const u8 = "--dump-lir";
+    const s_dump_c89: []const u8 = "--dump-c89";
     const s_max_mem: []const u8 = "--max-mem";
     const s_max_errors: []const u8 = "--max-errors";
     const s_output_dir: []const u8 = "--output-dir";
@@ -323,6 +327,8 @@ fn parseArgs() CompilerCli {
                 cli.dump_types = true;
             } else if (matchFlag(arg, s_dump_lir) or matchFlag(arg, s_l)) {
                 cli.dump_lir = true;
+            } else if (matchFlag(arg, s_dump_c89)) {
+                cli.dump_c89 = true;
             } else if (matchFlag(arg, s_max_mem) or matchFlag(arg, s_m)) {
                 i += 1;
                 if (i < argc) {
