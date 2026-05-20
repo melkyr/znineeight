@@ -781,6 +781,36 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     { var s: []const u8 = "__bootstrap_checked_cast_u32"; return s; }
 }
 
+fn getPrintFnName(reg: *TypeRegistry, tid: u32) []const u8 {
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "__bootstrap_print_u32"; return s; }
+    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "__bootstrap_print_i64"; return s; }
+    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "__bootstrap_print_u64"; return s; }
+    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "__bootstrap_print_f64"; return s; }
+    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "__bootstrap_print_bool"; return s; }
+    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "__bootstrap_print_char"; return s; }
+    if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "__bootstrap_print_str"; return s; }
+    { var s: []const u8 = "__bootstrap_print_i32"; return s; }
+}
+
+fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
+    var s: []const u8 = "\"";
+    bufferedWriterWrite(writer, s);
+    var i: usize = @intCast(usize, 0);
+    while (i < str.len) : (i += @intCast(usize, 1)) {
+        var c = str[i];
+        if (c == @intCast(u8, 10)) { var esc: []const u8 = "\\n"; bufferedWriterWrite(writer, esc); }
+        else if (c == @intCast(u8, 9)) { var esc: []const u8 = "\\t"; bufferedWriterWrite(writer, esc); }
+        else if (c == @intCast(u8, 13)) { var esc: []const u8 = "\\r"; bufferedWriterWrite(writer, esc); }
+        else if (c == @intCast(u8, 92)) { var esc: []const u8 = "\\\\"; bufferedWriterWrite(writer, esc); }
+        else if (c == @intCast(u8, 34)) { var esc: []const u8 = "\\\""; bufferedWriterWrite(writer, esc); }
+        else if (c >= @intCast(u8, 32)) { bufferedWriterWriteByte(writer, c); }
+        else { var esc: []const u8 = "."; bufferedWriterWrite(writer, esc); }
+    }
+    var se: []const u8 = "\"";
+    bufferedWriterWrite(writer, se);
+}
+
 fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     switch (inst) {
         .nop => {},
@@ -1221,6 +1251,54 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
                 var s3: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, s3);
             }
+        },
+        .make_slice => |s| {
+            var dst = mangleTempName(emitter.interner, s.result);
+            var ptr = mangleTempName(emitter.interner, s.ptr);
+            var len = mangleTempName(emitter.interner, s.len);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var l1: []const u8 = ".ptr = ";
+            bufferedWriterWrite(&emitter.writer, l1);
+            bufferedWriterWrite(&emitter.writer, ptr);
+            var semi1: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, semi1);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var l2: []const u8 = ".len = ";
+            bufferedWriterWrite(&emitter.writer, l2);
+            bufferedWriterWrite(&emitter.writer, len);
+            var semi2: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, semi2);
+        },
+        .print_str => |p| {
+            var str = interner_mod.stringInternerGet(emitter.interner, p.string_id);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var s1: []const u8 = "__bootstrap_print(";
+            bufferedWriterWrite(&emitter.writer, s1);
+            emitCStringLiteral(&emitter.writer, str);
+            var s2: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+        },
+        .print_val => |p| {
+            var val = mangleTempName(emitter.interner, p.value);
+            var fn_name = getPrintFnName(emitter.registry, p.type_id);
+            var ty = emitter.registry.types_items[@intCast(usize, p.type_id)];
+            var is_slice: u8 = if (ty.kind == TypeKind.slice_type) @intCast(u8, 1) else @intCast(u8, 0);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, fn_name);
+            var lp: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, val);
+            if (is_slice != @intCast(u8, 0)) {
+                var dot1: []const u8 = ".ptr, ";
+                bufferedWriterWrite(&emitter.writer, dot1);
+                bufferedWriterWrite(&emitter.writer, val);
+                var dot2: []const u8 = ".len";
+                bufferedWriterWrite(&emitter.writer, dot2);
+            }
+            var rp: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, rp);
         },
         else => {},
     }
