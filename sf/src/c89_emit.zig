@@ -768,6 +768,19 @@ fn getUnOpStr(op: u8) []const u8 {
     else { var s: []const u8 = "~"; return s; }
 }
 
+fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "__bootstrap_checked_cast_i8"; return s; }
+    if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "__bootstrap_checked_cast_i16"; return s; }
+    if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "__bootstrap_checked_cast_i32"; return s; }
+    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "__bootstrap_checked_cast_i64"; return s; }
+    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "__bootstrap_checked_cast_u8"; return s; }
+    if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "__bootstrap_checked_cast_u16"; return s; }
+    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "__bootstrap_checked_cast_u32"; return s; }
+    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "__bootstrap_checked_cast_u64"; return s; }
+    { var s: []const u8 = "__bootstrap_checked_cast_u32"; return s; }
+}
+
 fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     switch (inst) {
         .nop => {},
@@ -1122,6 +1135,92 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             }
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
+        },
+        .switch_br => |s| {
+            var s1: []const u8 = "switch (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            var cond = mangleTempName(emitter.interner, s.cond);
+            bufferedWriterWrite(&emitter.writer, cond);
+            var s2: []const u8 = ") {\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+            emitter.indent += @intCast(u32, 1);
+            var i: u32 = s.cases_start;
+            var end = s.cases_start + s.cases_count;
+            while (i < end) : (i += @intCast(u32, 1)) {
+                var c = emitter.switch_cases.items[@intCast(usize, i)];
+                var case_kw: []const u8 = "case ";
+                bufferedWriterWrite(&emitter.writer, case_kw);
+                var val_buf: [20]u8 = undefined;
+                var val_len = itoa_mod.itoa(@intCast(u32, c.value), val_buf[0..]);
+                var val_start = @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1) - val_len);
+                var val_str = val_buf[val_start .. @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1))];
+                bufferedWriterWrite(&emitter.writer, val_str);
+                var gotoa: []const u8 = ": goto z_bb_";
+                bufferedWriterWrite(&emitter.writer, gotoa);
+                var bb_buf: [10]u8 = undefined;
+                var bb_len = itoa_mod.itoa(c.target_bb, bb_buf[0..]);
+                var bb_start = @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1) - bb_len);
+                var bb_str = bb_buf[bb_start .. @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1))];
+                bufferedWriterWrite(&emitter.writer, bb_str);
+                var semi: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi);
+            }
+            var default_kw: []const u8 = "default: goto z_bb_";
+            bufferedWriterWrite(&emitter.writer, default_kw);
+            var def_buf: [10]u8 = undefined;
+            var def_len = itoa_mod.itoa(s.else_bb, def_buf[0..]);
+            var def_start = @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1) - def_len);
+            var def_str = def_buf[def_start .. @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1))];
+            bufferedWriterWrite(&emitter.writer, def_str);
+            var semi2: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, semi2);
+            emitter.indent -= @intCast(u32, 1);
+            var close: []const u8 = "}\n";
+            bufferedWriterWrite(&emitter.writer, close);
+        },
+        .wrap_optional => |w| {
+            var dst = mangleTempName(emitter.interner, w.result);
+            var src = mangleTempName(emitter.interner, w.value);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var l1: []const u8 = ".has_value = 1;\n";
+            bufferedWriterWrite(&emitter.writer, l1);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var l2: []const u8 = ".value = ";
+            bufferedWriterWrite(&emitter.writer, l2);
+            bufferedWriterWrite(&emitter.writer, src);
+            var semi: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, semi);
+        },
+        .int_cast => |c| {
+            var dst = mangleTempName(emitter.interner, c.result);
+            var src = mangleTempName(emitter.interner, c.value);
+            var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
+            if (c.is_checked != @intCast(u8, 0)) {
+                var fn_name = getCheckedCastFnName(emitter.registry, c.target);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var s1: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s1);
+                bufferedWriterWrite(&emitter.writer, fn_name);
+                var s2: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, s2);
+                bufferedWriterWrite(&emitter.writer, src);
+                var s3: []const u8 = ");\n";
+                bufferedWriterWrite(&emitter.writer, s3);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var s1: []const u8 = " = (";
+                bufferedWriterWrite(&emitter.writer, s1);
+                bufferedWriterWrite(&emitter.writer, ctype);
+                var s2: []const u8 = ")";
+                bufferedWriterWrite(&emitter.writer, s2);
+                bufferedWriterWrite(&emitter.writer, src);
+                var s3: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, s3);
+            }
         },
         else => {},
     }
