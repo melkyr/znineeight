@@ -21,6 +21,10 @@ const ModuleRegistry = mr_mod.ModuleRegistry;
 const import_resolver = @import("import_resolver.zig");
 const az_mod = @import("analyzer.zig");
 const sym_mod = @import("symbol_table.zig");
+const type_mod = @import("type_registry.zig");
+const TypeRegistry = type_mod.TypeRegistry;
+const c89_mod = @import("c89_emit.zig");
+const LirFunction = @import("lir.zig").LirFunction;
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -65,6 +69,7 @@ pub const CompilerContext = struct {
     source_man: *SourceManager,
     name_mangler: *NameMangler,
     module_reg: *ModuleRegistry,
+    typereg: *TypeRegistry,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -102,6 +107,10 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     token_mod.initKeywordTable(&perm_sand);
     var name_mangler = nm_mod.nameManglerInit();
     var mr = mr_mod.moduleRegistryInit(&perm_sand, &interner, &diag);
+    var type_db_buf: [131072]u8 = undefined;
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -110,6 +119,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .source_man = &source_man,
         .name_mangler = &name_mangler,
         .module_reg = &mr,
+        .typereg = &typereg,
     };
     runCompiler(&ctx);
 }
@@ -214,7 +224,41 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
 }
 
 fn phase_C89Emission(ctx: *CompilerContext) void {
-    _ = ctx;
+    var mangler: c89_mod.NameMangler = undefined;
+    mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch);
+    var emitter: c89_mod.C89Emitter = undefined;
+    emitter = c89_mod.c89EmitterInit(
+        ctx.typereg,
+        ctx.interner,
+        &mangler,
+        ctx.diag,
+        undefined,
+        undefined,
+        &ctx.alloc.scratch,
+    );
+    var empty_fns: [0]*LirFunction = undefined;
+    var fns: []*LirFunction = empty_fns[0..];
+    var module_name: []const u8 = "output";
+    c89_mod.emitModule(&emitter, module_name, fns, @intCast(u32, 0));
+    c89_mod.bufferedWriterFlush(&emitter.writer);
+
+    var target_name: []const u8 = "target";
+    var target_exe: []const u8 = "target.exe";
+
+    var swriter: c89_mod.BufferedWriter = undefined;
+    swriter = c89_mod.bufferedWriterInit();
+    c89_mod.emitBuildTargetSh(&swriter, target_name);
+    c89_mod.bufferedWriterFlush(&swriter);
+
+    var bwriter: c89_mod.BufferedWriter = undefined;
+    bwriter = c89_mod.bufferedWriterInit();
+    c89_mod.emitBuildTargetBat(&bwriter, target_exe);
+    c89_mod.bufferedWriterFlush(&bwriter);
+
+    var owriter: c89_mod.BufferedWriter = undefined;
+    owriter = c89_mod.bufferedWriterInit();
+    c89_mod.emitBuildOwcBat(&owriter, target_exe);
+    c89_mod.bufferedWriterFlush(&owriter);
 }
 
 fn parseArgs() CompilerCli {
