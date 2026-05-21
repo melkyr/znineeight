@@ -288,6 +288,8 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
                     if (decl.kind == AstKind.fn_decl) {
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
+                        lowerer.module_id = mods[mi].id;
+                        lowerer.module_reg = ctx.module_reg;
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
                     }

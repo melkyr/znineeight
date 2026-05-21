@@ -1230,6 +1230,25 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
+        .call_direct => |c| {
+            var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 1), c.module_id);
+            var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, fn_name);
+            var sp: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, sp);
+            var ai: u32 = @intCast(u32, 0);
+            while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
+                if (ai > @intCast(u32, 0)) {
+                    var sc: []const u8 = ", ";
+                    bufferedWriterWrite(&emitter.writer, sc);
+                }
+                var arg = mangleTempName(emitter.interner, c.args_start + ai);
+                bufferedWriterWrite(&emitter.writer, arg);
+            }
+            var s2: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+        },
         .switch_br => |s| {
             var s1: []const u8 = "switch (";
             bufferedWriterWrite(&emitter.writer, s1);

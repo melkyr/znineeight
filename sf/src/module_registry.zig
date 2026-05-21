@@ -246,6 +246,7 @@ pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer
     var mod_id = moduleRegistryGetOrCreateModule(self, resolved_path_id);
     moduleRegistryAddImport(self, importer_id, mod_id);
     importQueueEnqueue(&self.import_queue, mod_id);
+    _ = hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, mod_id);
     return mod_id;
 }
 

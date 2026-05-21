@@ -22,6 +22,9 @@ const coercion_mod = @import("coercion.zig");
 const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
+const ModuleRegistry = @import("module_registry.zig").ModuleRegistry;
+const sym_mod = @import("symbol_table.zig");
+const Symbol = @import("symbol_table.zig").Symbol;
 
 const BIN_ADD  = @intCast(u8, 0);
 const BIN_SUB  = @intCast(u8, 1);
@@ -201,6 +204,8 @@ pub const LirLowerer = struct {
     hoisted_temps: TempDeclArrayList,
     alloc: *Sand,
     scope_depth: u32,
+    module_id: u32,
+    module_reg: *ModuleRegistry,
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
@@ -215,6 +220,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .hoisted_temps = lir_mod.tempDeclArrayListInit(alloc),
         .alloc = alloc,
         .scope_depth = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0),
+        .module_reg = undefined,
     };
 }
 
@@ -246,7 +253,7 @@ pub fn createBlock(self: *LirLowerer) u32 {
 fn lowerPrintCall(self: *LirLowerer, ec: []const u32) u32 {
     var store = self.ctx.store;
     var fmt_node = store.nodes.items[@intCast(usize, ec[0])];
-    var string_id = store.identifiers.items[@intCast(usize, fmt_node.payload)];
+    var string_id = fmt_node.payload;
     emitInst(self, LirInst{ .print_str = .{ .string_id = string_id } });
     var tuple_node = store.nodes.items[@intCast(usize, ec[1])];
     var tuple_ec = ast_mod.astStoreGetExtraChildren(store, tuple_node.payload);
@@ -450,13 +457,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .load_index = .{ .base = base_temp, .index = idx_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.ident_expr) {
-        var name_id = store.identifiers.items[@intCast(usize, node.payload)];
+        var name_id = node.payload;
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.field_access) {
         var base_temp = lowerExpr(self, node.child_0);
-        var field_name_id = store.identifiers.items[@intCast(usize, node.payload)];
+        var field_name_id = node.payload;
         var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         var tid = nextTemp(self, type_mod.TYPE_U32);
         if (resolved) |type_id| {
@@ -482,6 +489,40 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var second = store.nodes.items[@intCast(usize, ec[1])];
             if (first.kind == AstKind.string_literal and second.kind == AstKind.tuple_literal) {
                 return lowerPrintCall(self, ec);
+            }
+        }
+        var callee_node = store.nodes.items[@intCast(usize, node.child_0)];
+        if (callee_node.kind == AstKind.field_access) {
+            var base_node = store.nodes.items[@intCast(usize, callee_node.child_0)];
+            if (base_node.kind == AstKind.ident_expr) {
+                var base_name_id = base_node.payload;
+                var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name_id);
+                if (sym) |sm| {
+                    if (sm.kind != @intCast(u8, 0) and sm.module_id != @intCast(u32, 0) and sm.module_id != self.module_id) {
+                        var target_mod_id = sm.module_id;
+                        var field_name_id = callee_node.payload;
+                        var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod_id, field_name_id);
+                        if (field_sym) |fs| {
+                            if (fs.kind == @intCast(u8, 3)) {
+                                var args_start = self.temp_counter;
+                                var i: usize = 0;
+                                while (i < ec.len) : (i += 1) {
+                                    _ = lowerExpr(self, ec[i]);
+                                }
+                                var args_count = self.temp_counter - args_start;
+                                var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+                                emitInst(self, LirInst{ .call_direct = .{
+                                    .name_id = fs.name_id,
+                                    .module_id = target_mod_id,
+                                    .args_start = args_start,
+                                    .args_count = args_count,
+                                    .result = result,
+                                } });
+                                return result;
+                            }
+                        }
+                    }
+                }
             }
         }
         var callee_temp = lowerExpr(self, node.child_0);
@@ -729,7 +770,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
-                    case_val = @intCast(u64, store.identifiers.items[@intCast(usize, case_node.payload)]);
+                    case_val = @intCast(u64, case_node.payload);
                 } else {
                     continue;
                 }
@@ -855,7 +896,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated = @intCast(u8, 1);
         }
     } else {
-        _ = self;
+        _ = lowerExpr(self, node_idx);
     }
 }
 
