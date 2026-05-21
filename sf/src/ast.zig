@@ -144,6 +144,17 @@ fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena:
         capacity.* = new_cap;
     }
     items.*[len.*] = value;
+    var wp: u32 = @intCast(u32, @ptrToInt(items.*));
+    var wmsg: []const u8 = "W:";
+    pal.stderr_write(wmsg);
+    dbgPrintU32(wp);
+    var wm2: []const u8 = ":";
+    pal.stderr_write(wm2);
+    dbgPrintU32(@intCast(u32, len.*));
+    pal.stderr_write(wm2);
+    dbgPrintU32(value);
+    var wnl: []const u8 = "\n";
+    pal.stderr_write(wnl);
     len.* += 1;
 }
 
@@ -293,6 +304,14 @@ pub fn astStoreInit(arena: *Sand) AstStore {
 }
 
 pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
+    var snap0: u32 = @intCast(u32, 0);
+    var snap1: u32 = @intCast(u32, 0);
+    var snap2: u32 = @intCast(u32, 0);
+    var ec_len_before: u32 = @intCast(u32, store.extra_children.len);
+    var ec_items_before: [*]u32 = store.extra_children.items;
+    if (ec_len_before > @intCast(u32, 0)) { snap0 = ec_items_before[@intCast(usize, 0)]; }
+    if (ec_len_before > @intCast(u32, 1)) { snap1 = ec_items_before[@intCast(usize, 1)]; }
+    if (ec_len_before > @intCast(u32, 2)) { snap2 = ec_items_before[@intCast(usize, 2)]; }
     var span_len: u16 = @intCast(u16, span_end - span_start);
     var node = AstNode{
         .kind = kind, .flags = flags,
@@ -301,6 +320,11 @@ pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u
         .payload = payload,
     };
     astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, store.allocator, node);
+    if (store.extra_children.len == @intCast(usize, ec_len_before)) {
+        if (ec_len_before > @intCast(u32, 0)) { if (store.extra_children.items[@intCast(usize, 0)] != snap0) { var pmsg: []const u8 = "CORRUPTO\n"; pal.stderr_write(pmsg); @panic("EC0 corrupted"); } }
+        if (ec_len_before > @intCast(u32, 1)) { if (store.extra_children.items[@intCast(usize, 1)] != snap1) { var pmsg: []const u8 = "CORRUPTO\n"; pal.stderr_write(pmsg); @panic("EC1 corrupted"); } }
+        if (ec_len_before > @intCast(u32, 2)) { if (store.extra_children.items[@intCast(usize, 2)] != snap2) { var pmsg: []const u8 = "CORRUPTO\n"; pal.stderr_write(pmsg); @panic("EC2 corrupted"); } }
+    }
     return @intCast(u32, store.nodes.len - 1);
 }
 
@@ -330,6 +354,11 @@ pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
     dbgPrintU32(ptr_val);
     var spo: []const u8 = "\n";
     pal.stderr_write(spo);
+    var lmsg: []const u8 = "L:";
+    pal.stderr_write(lmsg);
+    dbgPrintU32(@intCast(u32, store.extra_children.len));
+    var lnl: []const u8 = "\n";
+    pal.stderr_write(lnl);
     var i: usize = 0;
     while (i < children.len) {
         u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);

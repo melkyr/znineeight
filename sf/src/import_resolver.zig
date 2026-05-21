@@ -39,9 +39,40 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
         tokenArrayAppend(&tok_items, &tok_len, &tok_cap, scratch, t);
         if (t.kind == TokenKind.eof) break;
     }
-    var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, module_arena);
+    var p_arena_buf: [4096]u8 = undefined;
+    var p_arena = alloc_mod.sandInit(p_arena_buf[0..]);
+    var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, &p_arena);
     parser_mod.parserSetModuleContext(&p, reg, mod_id);
+    var b0: u32 = @intCast(u32, 0); var b1: u32 = @intCast(u32, 0); var b2: u32 = @intCast(u32, 0); var b3: u32 = @intCast(u32, 0); var b4: u32 = @intCast(u32, 0); var b5: u32 = @intCast(u32, 0);
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { b0 = shared_store.extra_children.items[@intCast(usize, 0)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { b1 = shared_store.extra_children.items[@intCast(usize, 1)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 2)) { b2 = shared_store.extra_children.items[@intCast(usize, 2)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 3)) { b3 = shared_store.extra_children.items[@intCast(usize, 3)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 4)) { b4 = shared_store.extra_children.items[@intCast(usize, 4)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 5)) { b5 = shared_store.extra_children.items[@intCast(usize, 5)]; }
     var ast_root = parser_mod.parserParseModuleRoot(&p) catch return null;
+    var d0: u32 = @intCast(u32, 0); var d1: u32 = @intCast(u32, 0); var d2: u32 = @intCast(u32, 0); var d3: u32 = @intCast(u32, 0); var d4: u32 = @intCast(u32, 0); var d5: u32 = @intCast(u32, 0);
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { d0 = shared_store.extra_children.items[@intCast(usize, 0)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { d1 = shared_store.extra_children.items[@intCast(usize, 1)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 2)) { d2 = shared_store.extra_children.items[@intCast(usize, 2)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 3)) { d3 = shared_store.extra_children.items[@intCast(usize, 3)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 4)) { d4 = shared_store.extra_children.items[@intCast(usize, 4)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 5)) { d5 = shared_store.extra_children.items[@intCast(usize, 5)]; }
+    var sm: []const u8 = "S"; pal_mod.stderr_write(sm);
+    var sr1: u32 = b0; var sr2: u32 = b1; var sr3: u32 = b2; var sr4: u32 = b3; var sr5: u32 = b4; var sr6: u32 = b5;
+    _ = sr1; _ = sr2; _ = sr3; _ = sr4; _ = sr5; _ = sr6;
+    var sm2: []const u8 = " "; pal_mod.stderr_write(sm2);
+    var se1: u32 = d0; var se2: u32 = d1; var se3: u32 = d2; var se4: u32 = d3; var se5: u32 = d4; var se6: u32 = d5;
+    _ = se1; _ = se2; _ = se3; _ = se4; _ = se5; _ = se6;
+    if (b0 != d0 or b1 != d1 or b2 != d2 or b3 != d3 or b4 != d4 or b5 != d5) {
+        var cp: []const u8 = "C"; pal_mod.stderr_write(cp);
+        var cb1: [20]u8 = undefined; var cl1 = itoa_mod.itoa(b0, cb1[0..]); var cs1: usize = @intCast(usize, 19) - @intCast(usize, cl1); pal_mod.stderr_write(cb1[cs1..@intCast(usize, 19)]); var csp1: []const u8 = "/"; pal_mod.stderr_write(csp1);
+        var cd1: [20]u8 = undefined; var cl2 = itoa_mod.itoa(d0, cd1[0..]); var cs2: usize = @intCast(usize, 19) - @intCast(usize, cl2); pal_mod.stderr_write(cd1[cs2..@intCast(usize, 19)]); var csp2: []const u8 = " "; pal_mod.stderr_write(csp2);
+        var cb4: [20]u8 = undefined; var cl4 = itoa_mod.itoa(b1, cb4[0..]); var cs4: usize = @intCast(usize, 19) - @intCast(usize, cl4); pal_mod.stderr_write(cb4[cs4..@intCast(usize, 19)]); pal_mod.stderr_write(csp1);
+        var cd4: [20]u8 = undefined; var cl5 = itoa_mod.itoa(d1, cd4[0..]); var cs5: usize = @intCast(usize, 19) - @intCast(usize, cl5); pal_mod.stderr_write(cd4[cs5..@intCast(usize, 19)]); pal_mod.stderr_write(csp2);
+        var cb7: [20]u8 = undefined; var cl7 = itoa_mod.itoa(b2, cb7[0..]); var cs7: usize = @intCast(usize, 19) - @intCast(usize, cl7); pal_mod.stderr_write(cb7[cs7..@intCast(usize, 19)]); pal_mod.stderr_write(csp1);
+        var cd7: [20]u8 = undefined; var cl8 = itoa_mod.itoa(d2, cd7[0..]); var cs8: usize = @intCast(usize, 19) - @intCast(usize, cl8); pal_mod.stderr_write(cd7[cs8..@intCast(usize, 19)]);
+    }
     return ast_root;
 }
 
@@ -129,6 +160,30 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             }
         } else {
             break;
+        }
+    }
+    var vmi: usize = @intCast(usize, 0);
+    while (vmi < reg.modules.len) : (vmi += @intCast(usize, 1)) {
+        var ve = reg.modules.items[vmi];
+        if (ve.ast_root != @intCast(u32, 0)) {
+            var vr = shared_store.nodes.items[@intCast(usize, ve.ast_root)];
+            if (vr.kind == AstKind.module_root) {
+                var vchk: []const u8 = "V"; pal_mod.stderr_write(vchk);
+                var vdecls = ast_mod.astStoreGetExtraChildren(shared_store, vr.payload);
+                var vdi: usize = @intCast(usize, 0);
+                while (vdi < vdecls.len) : (vdi += @intCast(usize, 1)) {
+                    var vn = shared_store.nodes.items[@intCast(usize, vdecls[vdi])];
+                    var vk: u32 = @intCast(u32, @enumToInt(vn.kind));
+                    var vbuf: [20]u8 = undefined;
+                    var vlen = itoa_mod.itoa(vk, vbuf[0..]);
+                    var vs: usize = @intCast(usize, 19) - @intCast(usize, vlen);
+                    pal_mod.stderr_write(vbuf[vs..@intCast(usize, 19)]);
+                    var vsp: []const u8 = " ";
+                    pal_mod.stderr_write(vsp);
+                }
+                var vnl: []const u8 = "\n";
+                pal_mod.stderr_write(vnl);
+            }
         }
     }
     var nmsg: []const u8 = "nodes="; pal_mod.stderr_write(nmsg);
