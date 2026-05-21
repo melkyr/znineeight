@@ -236,6 +236,25 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
     while (mi < mods.len) : (mi += 1) {
         symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
     }
+    var smods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    if (smods.len > @intCast(usize, 0) and smods[0].ast_root != @intCast(u32, 0)) {
+        var sr = ctx.store.nodes.items[@intCast(usize, smods[0].ast_root)];
+        if (sr.kind == AstKind.module_root) {
+            var sdl = ast_mod.astStoreGetExtraChildren(ctx.store, sr.payload);
+            var sdi: usize = @intCast(usize, 0);
+            var sl: []const u8 = "S0"; pal.stderr_write(sl);
+            while (sdi < sdl.len) : (sdi += @intCast(usize, 1)) {
+                var sd = ctx.store.nodes.items[@intCast(usize, sdl[sdi])];
+                var sk: u32 = @intCast(u32, @enumToInt(sd.kind));
+                var sb: [20]u8 = undefined;
+                var slen = itoa_mod.itoa(sk, sb[0..]);
+                var sst: usize = @intCast(usize, 19) - @intCast(usize, slen);
+                pal.stderr_write(sb[sst..@intCast(usize, 19)]);
+                var ssp: []const u8 = " "; pal.stderr_write(ssp);
+            }
+            var sn: []const u8 = "\n"; pal.stderr_write(sn);
+        }
+    }
 }
 
 fn phase_TypeResolution(ctx: *CompilerContext) void {
@@ -250,6 +269,24 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
+    if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
+        var tr2 = ctx.store.nodes.items[@intCast(usize, mods[0].ast_root)];
+        if (tr2.kind == AstKind.module_root) {
+            var tdl = ast_mod.astStoreGetExtraChildren(ctx.store, tr2.payload);
+            var tdi: usize = @intCast(usize, 0);
+            var tl: []const u8 = "T0"; pal.stderr_write(tl);
+            while (tdi < tdl.len) : (tdi += @intCast(usize, 1)) {
+                var td = ctx.store.nodes.items[@intCast(usize, tdl[tdi])];
+                var tk: u32 = @intCast(u32, @enumToInt(td.kind));
+                var tb: [20]u8 = undefined;
+                var tlen = itoa_mod.itoa(tk, tb[0..]);
+                var tst: usize = @intCast(usize, 19) - @intCast(usize, tlen);
+                pal.stderr_write(tb[tst..@intCast(usize, 19)]);
+                var tsp: []const u8 = " "; pal.stderr_write(tsp);
+            }
+            var tn: []const u8 = "\n"; pal.stderr_write(tn);
+        }
+    }
 }
 
 fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
@@ -274,6 +311,17 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "L\n"; pal.stderr_write(p_msg);
+    var lnmsg: []const u8 = "nodes="; pal.stderr_write(lnmsg);
+    var ln_buf: [20]u8 = undefined;
+    var ln_len = itoa_mod.itoa(@intCast(u32, ctx.store.nodes.len), ln_buf[0..]);
+    var ln_start: usize = @intCast(usize, 19) - @intCast(usize, ln_len);
+    pal.stderr_write(ln_buf[ln_start..@intCast(usize, 19)]);
+    var lemsg: []const u8 = " extra="; pal.stderr_write(lemsg);
+    var le_buf: [20]u8 = undefined;
+    var le_len = itoa_mod.itoa(@intCast(u32, ctx.store.extra_children.len), le_buf[0..]);
+    var le_start: usize = @intCast(usize, 19) - @intCast(usize, le_len);
+    pal.stderr_write(le_buf[le_start..@intCast(usize, 19)]);
+    var lnl: []const u8 = "\n"; pal.stderr_write(lnl);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     ctx.lir_fns.len = @intCast(usize, 0);
     var sem_ctx = SemanticContext{
@@ -288,7 +336,17 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
         var mm: []const u8 = "M"; pal.stderr_write(mm);
+        var mi_buf: [20]u8 = undefined;
+        var mi_len = itoa_mod.itoa(@intCast(u32, mi), mi_buf[0..]);
+        var mi2_start: usize = @intCast(usize, 19) - @intCast(usize, mi_len);
+        pal.stderr_write(mi_buf[mi2_start..@intCast(usize, 19)]);
+        var msep: []const u8 = ":"; pal.stderr_write(msep);
         if (mods[mi].ast_root != @intCast(u32, 0)) {
+            var ar_buf: [20]u8 = undefined;
+            var ar_len = itoa_mod.itoa(mods[mi].ast_root, ar_buf[0..]);
+            var ar_start: usize = @intCast(usize, 19) - @intCast(usize, ar_len);
+            pal.stderr_write(ar_buf[ar_start..@intCast(usize, 19)]);
+            pal.stderr_write(msep);
             var root = ctx.store.nodes.items[@intCast(usize, mods[mi].ast_root)];
             if (root.kind == AstKind.module_root) {
                 var mr: []const u8 = "R"; pal.stderr_write(mr);
@@ -298,8 +356,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                 var dcount_len = itoa_mod.itoa(decl_len, dcount_buf[0..]);
                 var dstart: usize = @intCast(usize, 19) - @intCast(usize, dcount_len);
                 pal.stderr_write(dcount_buf[dstart..@intCast(usize, 19)]);
-                var dbreak: []const u8 = "|";
-                pal.stderr_write(dbreak);
+                pal.stderr_write(msep);
                 var di: usize = @intCast(usize, 0);
                 while (di < decls.len) : (di += @intCast(usize, 1)) {
                     var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -318,16 +375,28 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
                     } else {
-                        var k: u32 = @intCast(u32, @enumToInt(decl.kind));
-                        var buf: [20]u8 = undefined;
-                        var itoa_len = itoa_mod.itoa(k, buf[0..]);
-                        var num_start: usize = @intCast(usize, 19) - @intCast(usize, itoa_len);
-                        pal.stderr_write(buf[num_start..@intCast(usize, 19)]);
-                        var sp: []const u8 = " ";
-                        pal.stderr_write(sp);
-                    }
-                }
+        }
+    }
+    var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
+        var ar = ctx.store.nodes.items[@intCast(usize, amods[0].ast_root)];
+        if (ar.kind == AstKind.module_root) {
+            var adl = ast_mod.astStoreGetExtraChildren(ctx.store, ar.payload);
+            var adi: usize = @intCast(usize, 0);
+            var al: []const u8 = "A0"; pal.stderr_write(al);
+            while (adi < adl.len) : (adi += @intCast(usize, 1)) {
+                var ad = ctx.store.nodes.items[@intCast(usize, adl[adi])];
+                var ak: u32 = @intCast(u32, @enumToInt(ad.kind));
+                var ab: [20]u8 = undefined;
+                var alen = itoa_mod.itoa(ak, ab[0..]);
+                var ast: usize = @intCast(usize, 19) - @intCast(usize, alen);
+                pal.stderr_write(ab[ast..@intCast(usize, 19)]);
+                var asp: []const u8 = " "; pal.stderr_write(asp);
             }
+            var an: []const u8 = "\n"; pal.stderr_write(an);
+        }
+    }
+}
         }
     }
 }

@@ -8,6 +8,8 @@ const lexer_mod = @import("lexer.zig");
 const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
+const itoa_mod = @import("util/itoa.zig");
+const AstKind = @import("ast.zig").AstKind;
 
 fn tokenArrayEnsureCapacity(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
     if (new_cap <= cap.*) return;
@@ -72,6 +74,48 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             entry.state = mr_mod.ModuleState.parsed;
             reg.modules.items[mod_id] = entry;
 
+            var root = shared_store.nodes.items[@intCast(usize, ast_root)];
+            if (root.kind == AstKind.module_root) {
+                var pct: []const u8 = "P"; pal_mod.stderr_write(pct);
+                var mi_buf: [20]u8 = undefined;
+                var mi_len = itoa_mod.itoa(mod_id, mi_buf[0..]);
+                var mi_start: usize = @intCast(usize, 19) - @intCast(usize, mi_len);
+                pal_mod.stderr_write(mi_buf[mi_start..@intCast(usize, 19)]);
+                var pcl: []const u8 = ":"; pal_mod.stderr_write(pcl);
+                var ar_buf: [20]u8 = undefined;
+                var ar_len = itoa_mod.itoa(ast_root, ar_buf[0..]);
+                var ar_start: usize = @intCast(usize, 19) - @intCast(usize, ar_len);
+                pal_mod.stderr_write(ar_buf[ar_start..@intCast(usize, 19)]);
+                pal_mod.stderr_write(pcl);
+                var pay_buf: [20]u8 = undefined;
+                var pay_len = itoa_mod.itoa(root.payload, pay_buf[0..]);
+                var pay_start: usize = @intCast(usize, 19) - @intCast(usize, pay_len);
+                pal_mod.stderr_write(pay_buf[pay_start..@intCast(usize, 19)]);
+                pal_mod.stderr_write(pcl);
+                var decls = ast_mod.astStoreGetExtraChildren(shared_store, root.payload);
+                var dc_buf: [20]u8 = undefined;
+                var dc_len = itoa_mod.itoa(@intCast(u32, decls.len), dc_buf[0..]);
+                var dc_start: usize = @intCast(usize, 19) - @intCast(usize, dc_len);
+                pal_mod.stderr_write(dc_buf[dc_start..@intCast(usize, 19)]);
+                var bar: []const u8 = "|"; pal_mod.stderr_write(bar);
+                var di2: usize = @intCast(usize, 0);
+                while (di2 < decls.len) : (di2 += @intCast(usize, 1)) {
+                    var ii_buf: [20]u8 = undefined;
+                    var ii_len = itoa_mod.itoa(decls[di2], ii_buf[0..]);
+                    var ii_start: usize = @intCast(usize, 19) - @intCast(usize, ii_len);
+                    pal_mod.stderr_write(ii_buf[ii_start..@intCast(usize, 19)]);
+                    var ss: []const u8 = "="; pal_mod.stderr_write(ss);
+                    var dcl = shared_store.nodes.items[@intCast(usize, decls[di2])];
+                    var dk: u32 = @intCast(u32, @enumToInt(dcl.kind));
+                    var dk_buf: [20]u8 = undefined;
+                    var dk_len = itoa_mod.itoa(dk, dk_buf[0..]);
+                    var dk_start: usize = @intCast(usize, 19) - @intCast(usize, dk_len);
+                    pal_mod.stderr_write(dk_buf[dk_start..@intCast(usize, 19)]);
+                    var spc: []const u8 = " "; pal_mod.stderr_write(spc);
+                }
+                var nl: []const u8 = "\n"; pal_mod.stderr_write(nl);
+            }
+
             var start = @intCast(usize, entry.imports_start);
             var end = start + @intCast(usize, entry.import_count);
             var i: usize = start;
@@ -87,4 +131,15 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             break;
         }
     }
+    var nmsg: []const u8 = "nodes="; pal_mod.stderr_write(nmsg);
+    var n_buf: [20]u8 = undefined;
+    var n_len = itoa_mod.itoa(@intCast(u32, shared_store.nodes.len), n_buf[0..]);
+    var n_start: usize = @intCast(usize, 19) - @intCast(usize, n_len);
+    pal_mod.stderr_write(n_buf[n_start..@intCast(usize, 19)]);
+    var emsg: []const u8 = " extra="; pal_mod.stderr_write(emsg);
+    var e_buf: [20]u8 = undefined;
+    var e_len = itoa_mod.itoa(@intCast(u32, shared_store.extra_children.len), e_buf[0..]);
+    var e_start: usize = @intCast(usize, 19) - @intCast(usize, e_len);
+    pal_mod.stderr_write(e_buf[e_start..@intCast(usize, 19)]);
+    var nl2: []const u8 = "\n"; pal_mod.stderr_write(nl2);
 }

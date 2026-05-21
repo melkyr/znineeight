@@ -17,6 +17,7 @@ const FnProto = @import("ast.zig").FnProto;
 const ast_mod = @import("ast.zig");
 const string_interner_mod = @import("string_interner.zig");
 const pal = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
 
@@ -492,6 +493,7 @@ fn parserParseGroupedExpr(self: *Parser) ParserError!u32 {
 fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
     if (tok.value.string_id == self.builtin_import_id) {
+        self.child_buf_len = 0;
         return parserParseImportExpr(self, tok);
     }
     var id = tok.value.string_id;
@@ -1185,6 +1187,15 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
 
     var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
         ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len }));
+    var pmsg: []const u8 = "P:";
+    pal.stderr_write(pmsg);
+    var pa_buf: [20]u8 = undefined;
+    var pa_val: u32 = @intCast(u32, self.child_buf_len);
+    var pa_len = itoa_mod.itoa(pa_val, pa_buf[0..]);
+    var pa_start: usize = @intCast(usize, 19) - @intCast(usize, pa_len);
+    pal.stderr_write(pa_buf[pa_start .. @intCast(usize, 19)]);
+    var pnl: []const u8 = "\n";
+    pal.stderr_write(pnl);
     var param_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
     var proto: FnProto = FnProto{ .name_id = name_id, .params_start = @intCast(u16, param_payload >> 16), .params_count = @intCast(u16, self.child_buf_len), .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);

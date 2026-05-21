@@ -9,6 +9,8 @@ const AstStore = @import("ast.zig").AstStore;
 const type_mod = @import("type_registry.zig");
 const TypeKind = type_mod.TypeKind;
 const hash_mod = @import("util/hash.zig");
+const pal_mod = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 pub const DepEdge = struct { from: u32, to: u32 };
 
@@ -252,6 +254,30 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
     var root = store.nodes.items[@intCast(usize, entry.ast_root)];
     if (root.kind != AstKind.module_root) return;
     var decls = ast_mod.astStoreGetExtraChildren(store, root.payload);
+    if (module_id == @intCast(u32, 0)) {
+        var dg: []const u8 = "RS"; pal_mod.stderr_write(dg);
+        var pb: [20]u8 = undefined;
+        var pl = itoa_mod.itoa(root.payload, pb[0..]);
+        var ps: usize = @intCast(usize, 19) - @intCast(usize, pl);
+        pal_mod.stderr_write(pb[ps..@intCast(usize, 19)]);
+        var sc: []const u8 = ":"; pal_mod.stderr_write(sc);
+        var i2: usize = 0;
+        while (i2 < decls.len) : (i2 += 1) {
+            var ii_buf: [20]u8 = undefined;
+            var ii_len = itoa_mod.itoa(decls[i2], ii_buf[0..]);
+            var ii_start: usize = @intCast(usize, 19) - @intCast(usize, ii_len);
+            pal_mod.stderr_write(ii_buf[ii_start..@intCast(usize, 19)]);
+            var ss: []const u8 = "="; pal_mod.stderr_write(ss);
+            var dc = store.nodes.items[@intCast(usize, decls[i2])];
+            var dk: u32 = @intCast(u32, @enumToInt(dc.kind));
+            var db: [20]u8 = undefined;
+            var dl = itoa_mod.itoa(dk, db[0..]);
+            var ds: usize = @intCast(usize, 19) - @intCast(usize, dl);
+            pal_mod.stderr_write(db[ds..@intCast(usize, 19)]);
+            var dsp: []const u8 = " "; pal_mod.stderr_write(dsp);
+        }
+        var dn: []const u8 = "\n"; pal_mod.stderr_write(dn);
+    }
     var i: usize = 0;
     while (i < decls.len) {
         registerDecl(sym_reg, type_reg, store, module_id, decls[i], g, reg);

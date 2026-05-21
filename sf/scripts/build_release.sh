@@ -19,7 +19,7 @@ echo "=== [release] zig0 → C89 ==="
 "$ROOT_DIR/build/zig0" --header-priority-include -o "$OUT_DIR/zig1.c" sf/src/main.zig
 
 echo "=== [release] gcc -m32 ==="
-gcc -m32 -std=c89 -Wall \
+gcc -m32 -std=c89 -O0 -Wall -fsanitize=address \
     -Wno-long-long \
     -Wno-pointer-sign \
     -Wno-implicit-function-declaration \
