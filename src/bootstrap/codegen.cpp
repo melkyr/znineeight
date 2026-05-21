@@ -406,16 +406,23 @@ void C89Emitter::emitBaseType(Type* type) {
             }
             break;
         case TYPE_ENUM:
-            writeKeyword(KW_ENUM);
-            if (!type->c_name && type->as.enum_details.name) {
-                type->c_name = unit_.getNameMangler().mangleType(type);
-            }
-            if (type->c_name) {
-                writeString(type->c_name);
+        {
+            Type* bt = type->as.enum_details.backing_type;
+            if (bt && bt->kind != TYPE_I32) {
+                emitBaseType(bt);
             } else {
-                writeString("/* anonymous */");
+                writeKeyword(KW_ENUM);
+                if (!type->c_name && type->as.enum_details.name) {
+                    type->c_name = unit_.getNameMangler().mangleType(type);
+                }
+                if (type->c_name) {
+                    writeString(type->c_name);
+                } else {
+                    writeString("/* anonymous */");
+                }
             }
             break;
+        }
         case TYPE_ANYTYPE:
             writeString("...");
             break;
@@ -3919,6 +3926,44 @@ void C89Emitter::emitTypeDefinition(Type* type) {
     }
 
     if (type->kind == TYPE_ENUM) {
+        Type* bt = type->as.enum_details.backing_type;
+        if (bt && bt->kind != TYPE_I32) {
+            const char* enum_name = mangled;
+            emitted_enums_.append(enum_name);
+
+            writeIndent();
+            writeString("typedef ");
+            emitBaseType(bt);
+            writeString(" ");
+            writeString(enum_name);
+            writeString(";\n\n");
+
+            DynamicArray<EnumMember>* members = type->as.enum_details.members;
+            if (members) {
+                for (size_t i = 0; i < members->length(); ++i) {
+                    writeString("#define ");
+                    writeString(enum_name);
+                    writeString("_");
+                    writeString((*members)[i].name);
+                    writeString(" ");
+                    char buf[32];
+                    plat_i64_to_string((*members)[i].value, buf, sizeof(buf));
+                    writeString(buf);
+                    writeLine();
+                }
+                writeLine();
+            }
+
+            if (prefix) {
+                writeString("#endif /* ");
+                writeString(prefix);
+                writeString(mangled);
+                writeString(" */\n\n");
+            }
+            depth--;
+            return;
+        }
+
         const char* enum_name = mangled;
         emitted_enums_.append(enum_name);
 
