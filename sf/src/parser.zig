@@ -16,6 +16,7 @@ const AstKind = @import("ast.zig").AstKind;
 const FnProto = @import("ast.zig").FnProto;
 const ast_mod = @import("ast.zig");
 const string_interner_mod = @import("string_interner.zig");
+const pal = @import("pal.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
 
@@ -1089,6 +1090,7 @@ fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
 }
 
 fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool) ParserError!u32 {
+    var vmsg: []const u8 = "V"; pal.stderr_write(vmsg);
     var kw = parserAdvance(self);
     var name_tok = try parserExpect(self, TokenKind.identifier);
     var flags: u8 = 0;
@@ -1109,6 +1111,7 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
     var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
         ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len }));
     var end_pos: u32 = semi.span_start + @intCast(u32, semi.span_len);
+    var vok: []const u8 = "v"; pal.stderr_write(vok);
     return ast_mod.astStoreAddNode(self.store, AstKind.var_decl, flags,
         kw.span_start, end_pos, type_node, init_node, 0, name_id);
 }
@@ -1138,6 +1141,7 @@ fn parserParseExternDecl(self: *Parser, is_pub: bool) ParserError!u32 {
     return error.UnexpectedToken;
 }
 fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool) ParserError!u32 {
+    var fmsg: []const u8 = "Fv"; pal.stderr_write(fmsg);
     var kw = parserAdvance(self);
     var flags: u8 = 0;
     if (is_pub) flags = flags | @intCast(u8, 0x02);
@@ -1185,6 +1189,7 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     var proto: FnProto = FnProto{ .name_id = name_id, .params_start = @intCast(u16, param_payload >> 16), .params_count = @intCast(u16, self.child_buf_len), .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
     self.child_buf_len = 0;
+    var fok: []const u8 = "Fk"; pal.stderr_write(fok);
     return ast_mod.astStoreAddNode(self.store, AstKind.fn_decl, flags, kw.span_start, end_pos, body_node, 0, 0, proto_idx);
 }
 

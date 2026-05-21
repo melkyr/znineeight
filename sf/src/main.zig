@@ -16,6 +16,7 @@ const lexer_mod = @import("lexer.zig");
 const pal = @import("pal.zig");
 const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
+const itoa_mod = @import("util/itoa.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
 const import_resolver = @import("import_resolver.zig");
@@ -292,9 +293,23 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
             if (root.kind == AstKind.module_root) {
                 var mr: []const u8 = "R"; pal.stderr_write(mr);
                 var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+                var decl_len: u32 = @intCast(u32, decls.len);
+                var dcount_buf: [20]u8 = undefined;
+                var dcount_len = itoa_mod.itoa(decl_len, dcount_buf[0..]);
+                var dstart: usize = @intCast(usize, 19) - @intCast(usize, dcount_len);
+                pal.stderr_write(dcount_buf[dstart..@intCast(usize, 19)]);
+                var dbreak: []const u8 = "|";
+                pal.stderr_write(dbreak);
                 var di: usize = @intCast(usize, 0);
                 while (di < decls.len) : (di += @intCast(usize, 1)) {
                     var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
+                    var raw_k: u32 = @intCast(u32, @enumToInt(decl.kind));
+                    var rbuf: [20]u8 = undefined;
+                    var rlen = itoa_mod.itoa(raw_k, rbuf[0..]);
+                    var rstart: usize = @intCast(usize, 19) - @intCast(usize, rlen);
+                    pal.stderr_write(rbuf[rstart..@intCast(usize, 19)]);
+                    var sp2: []const u8 = " ";
+                    pal.stderr_write(sp2);
                     if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.stderr_write(mf);
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
@@ -303,7 +318,13 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
                     } else {
-                        var md: []const u8 = "."; pal.stderr_write(md);
+                        var k: u32 = @intCast(u32, @enumToInt(decl.kind));
+                        var buf: [20]u8 = undefined;
+                        var itoa_len = itoa_mod.itoa(k, buf[0..]);
+                        var num_start: usize = @intCast(usize, 19) - @intCast(usize, itoa_len);
+                        pal.stderr_write(buf[num_start..@intCast(usize, 19)]);
+                        var sp: []const u8 = " ";
+                        pal.stderr_write(sp);
                     }
                 }
             }
