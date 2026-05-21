@@ -715,7 +715,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction, module_
     emitter.indent += @intCast(u32, 1);
 }
 
-fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: *LirFunction, module_id: u32) void {
+fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction, module_id: u32) void {
     var ret_c = getCTypeName(emitter.registry, emitter.mangler, lir_fn.return_type);
     bufferedWriterWrite(&emitter.writer, ret_c);
     var sp: []const u8 = " ";
@@ -744,7 +744,7 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: *LirFunction, module_id
     bufferedWriterWrite(&emitter.writer, rp);
 }
 
-fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []*LirFunction, module_id: u32) void {
+fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, module_id: u32) void {
     var s1: []const u8 = "/* Module: ";
     bufferedWriterWrite(&emitter.writer, s1);
     bufferedWriterWrite(&emitter.writer, name);
@@ -765,15 +765,15 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
     bufferedWriterWrite(&emitter.writer, s);
 }
 
-pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []*LirFunction, module_id: u32) void {
+pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, module_id: u32) void {
     emitModuleHeader(emitter, name, fns, module_id);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         var func = fns[i];
         if (func.is_extern == @intCast(u8, 0)) {
-            emitFunctionSignature(emitter, func, module_id);
-            emitHoistedDecls(emitter, func);
-            emitFunctionBody(emitter, func);
+            emitFunctionSignature(emitter, &func, module_id);
+            emitHoistedDecls(emitter, &func);
+            emitFunctionBody(emitter, &func);
         }
     }
     emitModuleFooter(emitter);

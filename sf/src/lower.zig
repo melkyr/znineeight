@@ -980,7 +980,8 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     var func_raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
     var func_ptr = @ptrCast(*LirFunction, func_raw);
     func_ptr.name_id = proto.name_id;
-    func_ptr.return_type = type_mod.TYPE_VOID;
+    var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
+    func_ptr.return_type = if (rt) |tid| tid else type_mod.TYPE_VOID;
     func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);
     func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
     func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);

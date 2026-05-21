@@ -24,6 +24,20 @@ const sym_mod = @import("symbol_table.zig");
 const type_mod = @import("type_registry.zig");
 const TypeRegistry = type_mod.TypeRegistry;
 const c89_mod = @import("c89_emit.zig");
+const lower_mod = @import("lower.zig");
+const SemanticContext = lower_mod.SemanticContext;
+const LirLowerer = lower_mod.LirLowerer;
+const lir_mod = @import("lir.zig");
+const LirFunctionArrayList = lir_mod.LirFunctionArrayList;
+const resolved_type_table = @import("resolved_type_table.zig");
+const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
+const coercion_mod = @import("coercion.zig");
+const CoercionTable = coercion_mod.CoercionTable;
+const type_resolver = @import("type_resolver.zig");
+const symbol_registrator = @import("symbol_registrator.zig");
+const SymbolRegistry = sym_mod.SymbolRegistry;
+const AstKind = ast_mod.AstKind;
+const AstStore = ast_mod.AstStore;
 const LirFunction = @import("lir.zig").LirFunction;
 
 pub const ColorMode = enum(u8) {
@@ -71,6 +85,11 @@ pub const CompilerContext = struct {
     name_mangler: *NameMangler,
     module_reg: *ModuleRegistry,
     typereg: *TypeRegistry,
+    store: *AstStore,
+    symbol_reg: *SymbolRegistry,
+    resolved_types: *ResolvedTypeTable,
+    coercion_table: *CoercionTable,
+    lir_fns: LirFunctionArrayList,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -112,6 +131,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var type_db = alloc_mod.sandInit(type_db_buf[0..]);
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var store = ast_mod.astStoreInit(&perm_sand);
+    var symbol_reg = sym_mod.symbolRegistryInit(&perm_sand);
+    var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
+    var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
+    var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -121,6 +145,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .name_mangler = &name_mangler,
         .module_reg = &mr,
         .typereg = &typereg,
+        .store = &store,
+        .symbol_reg = &symbol_reg,
+        .resolved_types = &resolved_types,
+        .coercion_table = &coercion_table,
+        .lir_fns = lir_fns,
     };
     runCompiler(&ctx);
 }
@@ -193,12 +222,25 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
 
 fn phase_SymbolRegistration(ctx: *CompilerContext) void {
     alloc_mod.sandReset(&ctx.alloc.scratch);
-    _ = ctx;
+    var dep_graph = symbol_registrator.depGraphInit(&ctx.alloc.scratch);
+    var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
+    }
 }
 
 fn phase_TypeResolution(ctx: *CompilerContext) void {
     alloc_mod.sandReset(&ctx.alloc.scratch);
-    _ = ctx;
+    var dep_graph = symbol_registrator.depGraphInit(&ctx.alloc.scratch);
+    var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
+    }
+    var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
+    type_resolver.typeResolverBuild(&tr, &dep_graph);
+    type_resolver.typeResolverResolve(&tr);
 }
 
 fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
@@ -221,7 +263,35 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
 }
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {
-    _ = ctx;
+    alloc_mod.sandReset(&ctx.alloc.scratch);
+    ctx.lir_fns.len = @intCast(usize, 0);
+    var sem_ctx = SemanticContext{
+        .store = ctx.store,
+        .registry = ctx.typereg,
+        .symbol_tables = ctx.symbol_reg,
+        .resolved_types = ctx.resolved_types,
+        .coercions = ctx.coercion_table,
+        .diag = ctx.diag,
+    };
+    var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        if (mods[mi].ast_root != @intCast(u32, 0)) {
+            var root = ctx.store.nodes.items[@intCast(usize, mods[mi].ast_root)];
+            if (root.kind == AstKind.module_root) {
+                var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+                var di: usize = @intCast(usize, 0);
+                while (di < decls.len) : (di += @intCast(usize, 1)) {
+                    var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
+                    if (decl.kind == AstKind.fn_decl) {
+                        var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
+                        var lf = lower_mod.lowerFn(&lowerer, decls[di]);
+                        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn phase_C89Emission(ctx: *CompilerContext) void {
@@ -238,9 +308,19 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         undefined,
         &ctx.alloc.scratch,
     );
-    var empty_fns: [0]*LirFunction = undefined;
-    var fns: []*LirFunction = empty_fns[0..];
+    var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
     var module_name: []const u8 = "output";
+
+    var cwriter: c89_mod.BufferedWriter = undefined;
+    cwriter = c89_mod.bufferedWriterInit();
+    c89_mod.emitZigCompatH(&cwriter);
+    c89_mod.bufferedWriterFlush(&cwriter);
+
+    var swriter2: c89_mod.BufferedWriter = undefined;
+    swriter2 = c89_mod.bufferedWriterInit();
+    c89_mod.emitZigRuntimeC(&swriter2);
+    c89_mod.bufferedWriterFlush(&swriter2);
+
     c89_mod.emitModule(&emitter, module_name, fns, @intCast(u32, 0));
     c89_mod.bufferedWriterFlush(&emitter.writer);
 
