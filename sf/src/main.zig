@@ -131,7 +131,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var type_db = alloc_mod.sandInit(type_db_buf[0..]);
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
-    var store = ast_mod.astStoreInit(&perm_sand);
+    var store = ast_mod.astStoreInit(&compiler_alloc.module);
     var symbol_reg = sym_mod.symbolRegistryInit(&perm_sand);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
@@ -217,7 +217,10 @@ fn runCompiler(ctx: *CompilerContext) void {
 
 fn phase_ImportResolution(ctx: *CompilerContext) void {
     alloc_mod.sandReset(&ctx.alloc.scratch);
-    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch);
+    var path_id = interner_mod.stringInternerIntern(ctx.interner, ctx.cli.input_file);
+    var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
+    mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
+    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
 }
 
 fn phase_SymbolRegistration(ctx: *CompilerContext) void {

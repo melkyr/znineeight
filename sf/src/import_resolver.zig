@@ -27,7 +27,7 @@ fn tokenArrayAppend(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, va
     len.* += 1;
 }
 
-fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand) ?u32 {
+fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) ?u32 {
     var tok_items: [*]Token = undefined;
     var tok_len: usize = 0;
     var tok_cap: usize = 0;
@@ -37,14 +37,13 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
         tokenArrayAppend(&tok_items, &tok_len, &tok_cap, scratch, t);
         if (t.kind == TokenKind.eof) break;
     }
-    var store = ast_mod.astStoreInit(module_arena);
-    var p = parser_mod.parserInit(tok_items[0..tok_len], content, &store, reg.interner, reg.diag, module_arena);
+    var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, module_arena);
     parser_mod.parserSetModuleContext(&p, reg, mod_id);
     var ast_root = parser_mod.parserParseModuleRoot(&p) catch return null;
     return ast_root;
 }
 
-pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *Sand, scratch: *Sand) void {
+pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) void {
     while (true) {
         var mod_id_opt = mr_mod.importQueueDequeue(&reg.import_queue);
         if (mod_id_opt) |mod_id| {
@@ -63,7 +62,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
                 continue;
             };
 
-            var ast_root = moduleRegistryParseModule(reg, mod_id, content, module_arena, scratch) orelse {
+            var ast_root = moduleRegistryParseModule(reg, mod_id, content, module_arena, scratch, shared_store) orelse {
                 entry.state = mr_mod.ModuleState.failed;
                 reg.modules.items[mod_id] = entry;
                 continue;
