@@ -785,7 +785,13 @@ fn mangleTempName(interner: *StringInterner, temp_id: u32) []const u8 {
     buf[1] = @intCast(u8, 'T');
     buf[2] = @intCast(u8, '_');
     var len = itoa_mod.itoa(temp_id, buf[3..]);
-    var end: usize = @intCast(usize, 3) + @intCast(usize, len);
+    var dig_start: usize = @intCast(usize, 19) - @intCast(usize, len);
+    var di: usize = @intCast(usize, 3);
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, len)) : (i += @intCast(usize, 1)) {
+        buf[di + i] = buf[dig_start + i];
+    }
+    var end: usize = di + @intCast(usize, len);
     var mid = interner_mod.stringInternerIntern(interner, buf[0..end]);
     return interner_mod.stringInternerGet(interner, mid);
 }
