@@ -118,39 +118,20 @@ pub const FnProto = struct {
 };
 
 const Sand = @import("allocator.zig").Sand;
-const pal = @import("pal.zig");
 const alloc_mod = @import("allocator.zig");
-const itoa_mod = @import("util/itoa.zig");
-
-var ec_static_buf: [256]u32 = undefined;
-
-fn dbgPrintU32(val: u32) void {
-    var buf: [20]u8 = undefined;
-    var len = itoa_mod.itoa(val, buf[0..]);
-    var sbase: usize = @intCast(usize, 19) - @intCast(usize, len);
-    var send: usize = @intCast(usize, 19);
-    pal.stderr_write(buf[sbase .. send]);
-}
 
 fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
     if (len.* >= capacity.*) {
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
-        var item_size: usize = @intCast(usize, 4);
-        if (alloc_mod.sandReallocInPlace(arena, @ptrCast([*]u8, items.*), capacity.* * item_size, new_cap * item_size, @intCast(usize, 4))) |ext_ptr| {
-            items.* = @ptrCast([*]u32, ext_ptr);
-            capacity.* = new_cap;
-        } else {
-            var rf: []const u8 = "R!"; pal.stderr_write(rf);
-            var raw = alloc_mod.sandAlloc(arena, item_size * new_cap, @intCast(usize, 4)) catch unreachable;
-            var new_items_p = @ptrCast([*]u32, raw);
-            for (items.*[0..len.*]) |item, i| {
-                new_items_p[i] = item;
-            }
-            items.* = new_items_p;
-            capacity.* = new_cap;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]u32, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
         }
+        items.* = new_items_p;
+        capacity.* = new_cap;
     }
     items.*[len.*] = value;
     len.* += 1;
@@ -161,20 +142,13 @@ fn astNodeArrayListAppendInner(items: *[*]AstNode, len: *usize, capacity: *usize
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
-        var item_size: usize = @sizeOf(AstNode);
-        if (alloc_mod.sandReallocInPlace(arena, @ptrCast([*]u8, items.*), capacity.* * item_size, new_cap * item_size, @intCast(usize, 4))) |ext_ptr| {
-            items.* = @ptrCast([*]AstNode, ext_ptr);
-            capacity.* = new_cap;
-        } else {
-            var rf: []const u8 = "R!"; pal.stderr_write(rf);
-            var raw = alloc_mod.sandAlloc(arena, item_size * new_cap, @intCast(usize, 4)) catch unreachable;
-            var new_items_p = @ptrCast([*]AstNode, raw);
-            for (items.*[0..len.*]) |item, i| {
-                new_items_p[i] = item;
-            }
-            items.* = new_items_p;
-            capacity.* = new_cap;
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 28) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]AstNode, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
         }
+        items.* = new_items_p;
+        capacity.* = new_cap;
     }
     items.*[len.*] = value;
     len.* += 1;
@@ -296,7 +270,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
     };
     var store = AstStore{
         .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .extra_children = .{ .items = @ptrCast([*]u32, &ec_static_buf), .len = @intCast(usize, 0), .capacity = @intCast(usize, 256) },
+        .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .identifiers = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .int_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -322,155 +296,17 @@ pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u
 
 pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
     var start = @intCast(u32, store.extra_children.len);
-    var old_cap = store.extra_children.capacity;
-    var bmsg: []const u8 = "B:";
-    pal.stderr_write(bmsg);
-    dbgPrintU32(start);
-    var sp1: []const u8 = "_";
-    pal.stderr_write(sp1);
-    var cl: u32 = @intCast(u32, children.len);
-    dbgPrintU32(cl);
-    var idx: u32 = @intCast(u32, 0);
-    while (idx < @intCast(u32, 3)) : (idx += @intCast(u32, 1)) {
-        var sp2: []const u8 = "_";
-        pal.stderr_write(sp2);
-        var pi: u32 = start + idx;
-        if (pi < @intCast(u32, store.extra_children.len)) {
-            var v = store.extra_children.items[@intCast(usize, pi)];
-            dbgPrintU32(v);
-        }
-    }
-    var pmsg: []const u8 = "!";
-    pal.stderr_write(pmsg);
-    var ptr_val: u32 = @intCast(u32, @ptrToInt(store.extra_children.items));
-    dbgPrintU32(ptr_val);
-    var spo: []const u8 = "\n";
-    pal.stderr_write(spo);
-    var lmsg: []const u8 = "L:";
-    pal.stderr_write(lmsg);
-    dbgPrintU32(@intCast(u32, store.extra_children.len));
-    var lnl: []const u8 = "\n";
-    pal.stderr_write(lnl);
     var i: usize = 0;
     while (i < children.len) {
-        if (store.extra_children.len >= store.extra_children.capacity) @panic("EC overflow");
-        store.extra_children.items[store.extra_children.len] = children[i];
-        store.extra_children.len += 1;
+        u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);
         i += 1;
-    }
-    var new_cap = store.extra_children.capacity;
-    if (new_cap != old_cap) {
-        var gmsg: []const u8 = "G:";
-        pal.stderr_write(gmsg);
-        dbgPrintU32(@intCast(u32, new_cap));
-        var gnl: []const u8 = "\n";
-        pal.stderr_write(gnl);
-    }
-    var amsg: []const u8 = "A:";
-    pal.stderr_write(amsg);
-    var nl_val: u32 = @intCast(u32, store.extra_children.len);
-    dbgPrintU32(nl_val);
-    var aidx: u32 = @intCast(u32, 0);
-    while (aidx < @intCast(u32, 3)) : (aidx += @intCast(u32, 1)) {
-        var sp3: []const u8 = "_";
-        pal.stderr_write(sp3);
-        if (aidx < @intCast(u32, store.extra_children.len)) {
-            var v = store.extra_children.items[@intCast(usize, aidx)];
-            dbgPrintU32(v);
-        }
-    }
-    var amsg2: []const u8 = "!";
-    pal.stderr_write(amsg2);
-    var ptr_val2: u32 = @intCast(u32, @ptrToInt(store.extra_children.items));
-    dbgPrintU32(ptr_val2);
-    var nptr: []const u8 = "n";
-    pal.stderr_write(nptr);
-    var nptr_val: u32 = @intCast(u32, @ptrToInt(store.nodes.items));
-    dbgPrintU32(nptr_val);
-    var anl: []const u8 = "\n";
-    pal.stderr_write(anl);
-    var kmsg: []const u8 = "K:";
-    pal.stderr_write(kmsg);
-    dbgPrintU32(store.extra_children.len);
-    var ksp: []const u8 = "_";
-    pal.stderr_write(ksp);
-    var kptr: [*]u32 = store.extra_children.items;
-    if (store.extra_children.len > @intCast(usize, 0)) {
-        dbgPrintU32(kptr[@intCast(usize, 0)]);
-    }
-    var ksp2: []const u8 = "_";
-    pal.stderr_write(ksp2);
-    if (store.extra_children.len > @intCast(usize, 1)) {
-        dbgPrintU32(kptr[@intCast(usize, 1)]);
-    }
-    var knl: []const u8 = "\n";
-    pal.stderr_write(knl);
-    if (@ptrToInt(store.extra_children.items) != @intCast(usize, 0)) {
-        var omsg: []const u8 = "O:";
-        pal.stderr_write(omsg);
-        var e_ptr: u32 = @intCast(u32, @ptrToInt(store.extra_children.items));
-        dbgPrintU32(e_ptr);
-        var osp: []const u8 = "_";
-        pal.stderr_write(osp);
-        var e_end: u32 = e_ptr + @intCast(u32, store.extra_children.capacity) * @intCast(u32, 4);
-        dbgPrintU32(e_end);
-        var osp2: []const u8 = "_";
-        pal.stderr_write(osp2);
-        var a_start: u32 = @intCast(u32, @ptrToInt(store.allocator.start));
-        dbgPrintU32(a_start);
-        var osp3: []const u8 = "_";
-        pal.stderr_write(osp3);
-        var a_pos: u32 = @intCast(u32, store.allocator.pos);
-        dbgPrintU32(a_pos);
-        var osp4: []const u8 = "_";
-        pal.stderr_write(osp4);
-        var a_end: u32 = @intCast(u32, store.allocator.end);
-        dbgPrintU32(a_end);
-    var onl: []const u8 = "\n";
-    pal.stderr_write(onl);
-    var fmsg: []const u8 = "F:";
-    pal.stderr_write(fmsg);
-    var f_store: u32 = @intCast(u32, @ptrToInt(store));
-    dbgPrintU32(f_store);
-    var fsp: []const u8 = "_";
-    pal.stderr_write(fsp);
-    var f_ec_items: u32 = @intCast(u32, @ptrToInt(&store.extra_children.items));
-    dbgPrintU32(f_ec_items);
-    var fsp2: []const u8 = "_";
-    pal.stderr_write(fsp2);
-    var f_ec_len: u32 = @intCast(u32, @ptrToInt(&store.extra_children.len));
-    dbgPrintU32(f_ec_len);
-    var fsp3: []const u8 = "_";
-    pal.stderr_write(fsp3);
-    var f_nodes_items: u32 = @intCast(u32, @ptrToInt(&store.nodes.items));
-    dbgPrintU32(f_nodes_items);
-    var fnl: []const u8 = "\n";
-    pal.stderr_write(fnl);
-    var nm: []const u8 = "N:";
-    pal.stderr_write(nm);
-    dbgPrintU32(@intCast(u32, store.nodes.len));
-    var nsp: []const u8 = "_";
-    pal.stderr_write(nsp);
-    dbgPrintU32(@intCast(u32, store.nodes.capacity));
-    var nsp2: []const u8 = "_";
-    pal.stderr_write(nsp2);
-    dbgPrintU32(@intCast(u32, store.extra_children.len));
-    var nsp3: []const u8 = "_";
-    pal.stderr_write(nsp3);
-    dbgPrintU32(@intCast(u32, store.extra_children.capacity));
-    var nnl: []const u8 = "\n";
-    pal.stderr_write(nnl);
     }
     return (start << @intCast(u32, 16)) | @intCast(u32, children.len);
 }
 
 pub fn astStoreGetExtraChildren(store: *AstStore, payload: u32) []const u32 {
-    var start: usize = @intCast(usize, payload >> 16);
-    var count: usize = @intCast(usize, payload & @intCast(u32, 0xFFFF));
-    if (start + count > @intCast(usize, store.extra_children.len)) {
-        var omsg: []const u8 = "extra OOB\n"; pal.stderr_write(omsg);
-        @panic("ast: extra_children OOB");
-    }
+    var start = @intCast(usize, payload >> 16);
+    var count = @intCast(usize, payload & @intCast(u32, 0xFFFF));
     return store.extra_children.items[start .. start + count];
 }
 
@@ -550,7 +386,7 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
 
 pub fn astStoreComputeMemory(store: *AstStore) u64 {
     var total: u64 = 0;
-    total += @intCast(u64, store.nodes.len) * @sizeOf(AstNode);
+    total += @intCast(u64, store.nodes.len) * @intCast(u64, 28);
     total += @intCast(u64, store.extra_children.len) * @sizeOf(u32);
     total += @intCast(u64, store.identifiers.len) * @sizeOf(u32);
     total += @intCast(u64, store.int_values.len) * @sizeOf(u64);
