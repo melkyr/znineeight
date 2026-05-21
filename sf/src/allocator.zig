@@ -4,6 +4,7 @@ pub const Sand = struct {
     end: usize,
     peak: usize,
 };
+const pal = @import("pal.zig");
 
 pub fn sandInit(buf: []u8) Sand {
     var s = Sand{
@@ -34,6 +35,18 @@ pub fn sandReset(sand: *Sand) void {
 
 pub fn sandResetPeak(sand: *Sand) void {
     sand.peak = sand.pos;
+}
+
+pub fn sandReallocInPlace(sand: *Sand, old_ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) ?[*]u8 {
+    if (new_size <= old_size) return old_ptr;
+    var old_end: usize = @ptrToInt(old_ptr) + old_size;
+    var arena_end: usize = @ptrToInt(sand.start) + sand.pos;
+    if (old_end == arena_end and new_size > old_size) {
+        sand.pos += (new_size - old_size);
+        if (sand.pos > sand.peak) sand.peak = sand.pos;
+        return old_ptr;
+    }
+    return null;
 }
 
 pub const CompilerAlloc = struct {

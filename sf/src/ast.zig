@@ -135,26 +135,22 @@ fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena:
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
-        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-        var new_items_p = @ptrCast([*]u32, raw);
-        for (items.*[0..len.*]) |item, i| {
-            new_items_p[i] = item;
+        var item_size: usize = @intCast(usize, 4);
+        if (alloc_mod.sandReallocInPlace(arena, @ptrCast([*]u8, items.*), capacity.* * item_size, new_cap * item_size, @intCast(usize, 4))) |ext_ptr| {
+            items.* = @ptrCast([*]u32, ext_ptr);
+            capacity.* = new_cap;
+        } else {
+            var rf: []const u8 = "R!"; pal.stderr_write(rf);
+            var raw = alloc_mod.sandAlloc(arena, item_size * new_cap, @intCast(usize, 4)) catch unreachable;
+            var new_items_p = @ptrCast([*]u32, raw);
+            for (items.*[0..len.*]) |item, i| {
+                new_items_p[i] = item;
+            }
+            items.* = new_items_p;
+            capacity.* = new_cap;
         }
-        items.* = new_items_p;
-        capacity.* = new_cap;
     }
     items.*[len.*] = value;
-    var wp: u32 = @intCast(u32, @ptrToInt(items.*));
-    var wmsg: []const u8 = "W:";
-    pal.stderr_write(wmsg);
-    dbgPrintU32(wp);
-    var wm2: []const u8 = ":";
-    pal.stderr_write(wm2);
-    dbgPrintU32(@intCast(u32, len.*));
-    pal.stderr_write(wm2);
-    dbgPrintU32(value);
-    var wnl: []const u8 = "\n";
-    pal.stderr_write(wnl);
     len.* += 1;
 }
 
@@ -163,13 +159,20 @@ fn astNodeArrayListAppendInner(items: *[*]AstNode, len: *usize, capacity: *usize
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
-        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 24) * new_cap, @intCast(usize, 4)) catch unreachable;
-        var new_items_p = @ptrCast([*]AstNode, raw);
-        for (items.*[0..len.*]) |item, i| {
-            new_items_p[i] = item;
+        var item_size: usize = @sizeOf(AstNode);
+        if (alloc_mod.sandReallocInPlace(arena, @ptrCast([*]u8, items.*), capacity.* * item_size, new_cap * item_size, @intCast(usize, 4))) |ext_ptr| {
+            items.* = @ptrCast([*]AstNode, ext_ptr);
+            capacity.* = new_cap;
+        } else {
+            var rf: []const u8 = "R!"; pal.stderr_write(rf);
+            var raw = alloc_mod.sandAlloc(arena, item_size * new_cap, @intCast(usize, 4)) catch unreachable;
+            var new_items_p = @ptrCast([*]AstNode, raw);
+            for (items.*[0..len.*]) |item, i| {
+                new_items_p[i] = item;
+            }
+            items.* = new_items_p;
+            capacity.* = new_cap;
         }
-        items.* = new_items_p;
-        capacity.* = new_cap;
     }
     items.*[len.*] = value;
     len.* += 1;
@@ -236,6 +239,7 @@ pub const AstStore = struct {
         items: [*]u32,
         len: usize,
         capacity: usize,
+        static_buf: [256]u32,
     },
     identifiers: struct {
         items: [*]u32,
@@ -291,7 +295,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
     };
     var store = AstStore{
         .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 256), .static_buf = undefined },
         .identifiers = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .int_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -299,19 +303,12 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .allocator = arena,
     };
+    store.extra_children.items = @ptrCast([*]u32, &store.extra_children.static_buf);
     astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, arena, null_node);
     return store;
 }
 
 pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
-    var snap0: u32 = @intCast(u32, 0);
-    var snap1: u32 = @intCast(u32, 0);
-    var snap2: u32 = @intCast(u32, 0);
-    var ec_len_before: u32 = @intCast(u32, store.extra_children.len);
-    var ec_items_before: [*]u32 = store.extra_children.items;
-    if (ec_len_before > @intCast(u32, 0)) { snap0 = ec_items_before[@intCast(usize, 0)]; }
-    if (ec_len_before > @intCast(u32, 1)) { snap1 = ec_items_before[@intCast(usize, 1)]; }
-    if (ec_len_before > @intCast(u32, 2)) { snap2 = ec_items_before[@intCast(usize, 2)]; }
     var span_len: u16 = @intCast(u16, span_end - span_start);
     var node = AstNode{
         .kind = kind, .flags = flags,
@@ -320,11 +317,6 @@ pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u
         .payload = payload,
     };
     astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, store.allocator, node);
-    if (store.extra_children.len == @intCast(usize, ec_len_before)) {
-        if (ec_len_before > @intCast(u32, 0)) { if (store.extra_children.items[@intCast(usize, 0)] != snap0) { var pmsg: []const u8 = "CORRUPTO\n"; pal.stderr_write(pmsg); @panic("EC0 corrupted"); } }
-        if (ec_len_before > @intCast(u32, 1)) { if (store.extra_children.items[@intCast(usize, 1)] != snap1) { var pmsg: []const u8 = "CORRUPTO\n"; pal.stderr_write(pmsg); @panic("EC1 corrupted"); } }
-        if (ec_len_before > @intCast(u32, 2)) { if (store.extra_children.items[@intCast(usize, 2)] != snap2) { var pmsg: []const u8 = "CORRUPTO\n"; pal.stderr_write(pmsg); @panic("EC2 corrupted"); } }
-    }
     return @intCast(u32, store.nodes.len - 1);
 }
 
@@ -361,7 +353,9 @@ pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
     pal.stderr_write(lnl);
     var i: usize = 0;
     while (i < children.len) {
-        u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);
+        if (store.extra_children.len >= store.extra_children.capacity) @panic("EC overflow");
+        store.extra_children.items[store.extra_children.len] = children[i];
+        store.extra_children.len += 1;
         i += 1;
     }
     var new_cap = store.extra_children.capacity;
