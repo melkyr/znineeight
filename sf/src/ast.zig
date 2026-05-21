@@ -122,6 +122,8 @@ const pal = @import("pal.zig");
 const alloc_mod = @import("allocator.zig");
 const itoa_mod = @import("util/itoa.zig");
 
+var ec_static_buf: [256]u32 = undefined;
+
 fn dbgPrintU32(val: u32) void {
     var buf: [20]u8 = undefined;
     var len = itoa_mod.itoa(val, buf[0..]);
@@ -239,7 +241,6 @@ pub const AstStore = struct {
         items: [*]u32,
         len: usize,
         capacity: usize,
-        static_buf: [256]u32,
     },
     identifiers: struct {
         items: [*]u32,
@@ -295,7 +296,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
     };
     var store = AstStore{
         .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 256), .static_buf = undefined },
+        .extra_children = .{ .items = @ptrCast([*]u32, &ec_static_buf), .len = @intCast(usize, 0), .capacity = @intCast(usize, 256) },
         .identifiers = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .int_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -303,7 +304,6 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .allocator = arena,
     };
-    store.extra_children.items = @ptrCast([*]u32, &store.extra_children.static_buf);
     astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, arena, null_node);
     return store;
 }
