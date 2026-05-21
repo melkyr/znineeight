@@ -51,7 +51,7 @@ pub const Parser = struct {
 
 pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Parser {
     var t_ptr = @ptrCast([*]Token, tokens.ptr);
-    var import_s: []const u8 = "import";
+    var import_s: []const u8 = "@import";
     var import_id = string_interner_mod.stringInternerIntern(interner, import_s);
     return Parser{
         .tokens_ptr = t_ptr,

@@ -242,7 +242,8 @@ pub fn moduleRegistryAddImport(self: *ModuleRegistry, importer_id: u32, imported
 
 pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer_id: u32, scratch: *Sand) ?u32 {
     var path_s = interner_mod.stringInternerGet(self.interner, path_id);
-    var resolved_path_id = moduleResolverResolve(&self.resolver, path_s, path_s, scratch) orelse return null;
+    var importer_path = interner_mod.stringInternerGet(self.interner, self.modules.items[importer_id].path_id);
+    var resolved_path_id = moduleResolverResolve(&self.resolver, importer_path, path_s, scratch) orelse return null;
     var mod_id = moduleRegistryGetOrCreateModule(self, resolved_path_id);
     moduleRegistryAddImport(self, importer_id, mod_id);
     importQueueEnqueue(&self.import_queue, mod_id);
