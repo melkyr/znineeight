@@ -29,7 +29,7 @@ pub const TypeResolver = struct {
 
 fn dependEnsureCapacity(self: *TypeResolver) void {
     if (self.depend_len < self.depend_cap) return;
-    var nc = if (self.depend_cap < 8) @intCast(usize, 8) else self.depend_cap * 2;
+    var nc: usize = if (self.depend_cap < 8) @intCast(usize, 8) else self.depend_cap * 2;
     var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 8), @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]DepEdge, raw);
     for (self.depend_items[0..self.depend_len]) |item, i| { new_items[i] = item; }
@@ -45,7 +45,7 @@ pub fn typeResolverAddEdge(self: *TypeResolver, from: u32, to: u32) void {
 
 fn worklistEnsureCapacity(self: *TypeResolver) void {
     if (self.worklist_len < self.worklist_cap) return;
-    var nc = if (self.worklist_cap < 64) @intCast(usize, 64) else self.worklist_cap * 2;
+    var nc: usize = if (self.worklist_cap < 64) @intCast(usize, 64) else self.worklist_cap * 2;
     var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     for (self.worklist_items[0..self.worklist_len]) |item, i| { new_items[i] = item; }
@@ -305,7 +305,7 @@ pub fn typeResolverResolveTypeExpr(self: *TypeResolver, store: *AstStore, depth:
     var kind = node.kind;
     var is_const: u8 = 0;
     if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) is_const = @intCast(u8, 1);
-    var ic_bool = is_const != @intCast(u8, 0);
+    var ic_bool: bool = is_const != @intCast(u8, 0);
 
     if (kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, node.payload)];

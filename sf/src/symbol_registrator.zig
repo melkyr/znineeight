@@ -51,7 +51,7 @@ pub fn depGraphAddEdge(self: *DepGraph, from: u32, to: u32) void {
 }
 
 pub fn depGraphFinalize(self: *DepGraph, max_type_id: u32) void {
-    var count = @intCast(usize, max_type_id + @intCast(u32, 1));
+    var count: usize = @intCast(usize, max_type_id + @intCast(u32, 1));
     if (count > self.in_degree_cap) {
         var raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * count, @intCast(usize, 4)) catch unreachable;
         self.in_degree_items = @ptrCast([*]u32, raw);
@@ -140,6 +140,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
     var node = store.nodes.items[decl_idx];
     switch (node.kind) {
         AstKind.var_decl => {
+            var ra_msg: []const u8 = "Ra"; pal_mod.stderr_write(ra_msg);
             var name_id = node.payload;
             var sym_kind = sym_mod.SymbolKind.global;
             var sym_mod_id = mod_id;
@@ -149,8 +150,11 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 if (init_node.kind == AstKind.import_expr) {
                     var target = hash_mod.u32ToU32MapGet(&reg.path_to_id, init_node.payload);
                     if (target) |mtid| {
+                        var rs_msg: []const u8 = "Rs"; pal_mod.stderr_write(rs_msg);
                         sym_kind = sym_mod.SymbolKind.module;
                         sym_mod_id = mtid;
+                    } else {
+                        var rf_msg: []const u8 = "Rf"; pal_mod.stderr_write(rf_msg);
                     }
                 }
                 if (init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.enum_decl or init_node.kind == AstKind.union_decl) {
@@ -179,6 +183,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
             _ = sym_mod.symbolTableInsert(table, sym);
+            var vi_msg: []const u8 = "Vi"; pal_mod.stderr_write(vi_msg);
         },
         AstKind.fn_decl => {
             var proto = store.fn_protos.items[@intCast(usize, node.payload)];
@@ -270,7 +275,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
 
 pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, module_id: u32, g: *DepGraph) void {
     var entry = reg.modules.items[@intCast(usize, module_id)];
-    if (entry.state != mr_mod.ModuleState.parsed or entry.ast_root == 0) return;
+    if ((entry.state != mr_mod.ModuleState.parsed and entry.state != mr_mod.ModuleState.resolved) or entry.ast_root == 0) return;
     var root = store.nodes.items[@intCast(usize, entry.ast_root)];
     if (root.kind != AstKind.module_root) return;
     var decls = ast_mod.astStoreGetExtraChildren(store, root.payload);

@@ -78,7 +78,7 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
     var content_raw = sourceManagerCopyToArena(self, content);
     var content_copy = content_raw[0..content.len];
 
-    var hint = content.len / 40 + 16;
+    var hint: usize = content.len / 40 + 16;
     var cap = util_mod.max(@intCast(u32, hint), 64);
     var lo_raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var lo_ptr = @ptrCast(*U32ArrayList, lo_raw);
@@ -120,7 +120,7 @@ pub fn sourceManagerGetLocation(self: *SourceManager, file_id: u32, offset: u32)
     var file = &files_slice[@intCast(usize, file_id)];
     var offsets = ga_mod.u32ArrayListGetSlice(file.line_offsets);
     var line_idx = mem_mod.binary_search(offsets, offset);
-    var col = offset - offsets[@intCast(usize, line_idx)];
+    var col: u32 = offset - offsets[@intCast(usize, line_idx)];
     return Location{
         .file_id = file_id,
         .line = line_idx + 1,

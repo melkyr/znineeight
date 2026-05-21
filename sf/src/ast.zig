@@ -305,8 +305,8 @@ pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
 }
 
 pub fn astStoreGetExtraChildren(store: *AstStore, payload: u32) []const u32 {
-    var start = @intCast(usize, payload >> 16);
-    var count = @intCast(usize, payload & @intCast(u32, 0xFFFF));
+    var start: usize = @intCast(usize, payload >> 16);
+    var count: usize = @intCast(usize, payload & @intCast(u32, 0xFFFF));
     return store.extra_children.items[start .. start + count];
 }
 

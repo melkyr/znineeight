@@ -38,25 +38,23 @@ pub fn main() void {
         }
         var store: AstStore = ast_mod.astStoreInit(&perm);
         var p: Parser = parser_mod.parserInit(tok_buf[0..tok_len], content, &store, &interner, &diag, &perm);
-        var root_result = parser_mod.parserParseModuleRoot(&p);
-        if (root_result) |ast_root| {
-            var root: AstNode = store.nodes.items[@intCast(usize, ast_root)];
-            if (root.kind == AstKind.module_root) {
-                var decls: []u32 = ast_mod.astStoreGetExtraChildren(&store, root.payload);
-                var di: usize = @intCast(usize, 0);
-                while (di < decls.len) : (di += @intCast(usize, 1)) {
-                    var decl: AstNode = store.nodes.items[@intCast(usize, decls[di])];
-                    if (decl.kind == AstKind.fn_decl) {
-                        var mf: []const u8 = "F";
-                        pal.stderr_write(mf);
-                    } else {
-                        var md: []const u8 = ".";
-                        pal.stderr_write(md);
-                    }
+        var ast_root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+        var root: AstNode = store.nodes.items[@intCast(usize, ast_root)];
+        if (root.kind == AstKind.module_root) {
+            var decls: []u32 = ast_mod.astStoreGetExtraChildren(&store, root.payload);
+            var di: usize = @intCast(usize, 0);
+            while (di < decls.len) : (di += @intCast(usize, 1)) {
+                var decl: AstNode = store.nodes.items[@intCast(usize, decls[di])];
+                if (decl.kind == AstKind.fn_decl) {
+                    var mf: []const u8 = "F";
+                    pal.stderr_write(mf);
+                } else {
+                    var md: []const u8 = ".";
+                    pal.stderr_write(md);
                 }
-                var ok: []const u8 = "ok\n";
-                pal.stderr_write(ok);
             }
+            var ok: []const u8 = "ok\n";
+            pal.stderr_write(ok);
         }
     }
 }

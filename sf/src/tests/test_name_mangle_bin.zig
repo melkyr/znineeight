@@ -108,6 +108,34 @@ pub fn main() void {
     if (id11 != id10) { var m: []const u8 = "mangle foo in mod42 not deterministic"; report(m, s11); pal.exit(1); }
     ok(s11);
 
+    var s12: []const u8 = "cross-module collision: same name diff modules get _1";
+    var s13: []const u8 = "cross-module collision: 3rd module gets _2";
+    var s14: []const u8 = "truncation: mangled name <= 31 chars";
+
+    var id12a = testMangle(&interner, &mangler, fn_bar, @intCast(u8, 0), @intCast(u32, 1));
+    var id12b = testMangle(&interner, &mangler, fn_bar, @intCast(u8, 0), @intCast(u32, 2));
+    if (id12a == @intCast(u32, 0)) { var m: []const u8 = "bar mod1 returned 0"; report(m, s12); pal.exit(1); }
+    if (id12b == @intCast(u32, 0)) { var m: []const u8 = "bar mod2 returned 0"; report(m, s12); pal.exit(1); }
+    if (id12a == id3) { var m: []const u8 = "bar mod1 collides with bar mod0"; report(m, s12); pal.exit(1); }
+    if (id12b == id3) { var m: []const u8 = "bar mod2 collides with bar mod0"; report(m, s12); pal.exit(1); }
+    if (id12b == id12a) { var m: []const u8 = "bar mod2 collides with bar mod1"; report(m, s13); pal.exit(1); }
+    ok(s12);
+    ok(s13);
+
+    var id12a2 = testMangle(&interner, &mangler, fn_bar, @intCast(u8, 0), @intCast(u32, 1));
+    var id12b2 = testMangle(&interner, &mangler, fn_bar, @intCast(u8, 0), @intCast(u32, 2));
+    if (id12a2 != id12a) { var m: []const u8 = "bar mod1 not deterministic"; report(m, s12); pal.exit(1); }
+    if (id12b2 != id12b) { var m: []const u8 = "bar mod2 not deterministic"; report(m, s13); pal.exit(1); }
+
+    var id14 = c89_mod.nameManglerMangle(&mangler, long_id, @intCast(u8, 0), @intCast(u32, 0));
+    var mangled_name = interner_mod.stringInternerGet(&interner, id14);
+    if (mangled_name.len > @intCast(usize, 31)) {
+        var m: []const u8 = "mangled name exceeds 31 chars";
+        report(m, s14);
+        pal.exit(1);
+    }
+    ok(s14);
+
     var end: []const u8 = "NameMangle tests passed.\n";
     pal.stderr_write(end);
 }

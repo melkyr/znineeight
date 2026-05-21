@@ -65,6 +65,14 @@ pub fn bufferedWriterWriteIndent(self: *BufferedWriter, level: u32) void {
     }
 }
 
+fn dbgPrintU32(val: u32) void {
+    var buf: [20]u8 = undefined;
+    var len = itoa_mod.itoa(val, buf[0..]);
+    var sbase: usize = @intCast(usize, 19) - @intCast(usize, len);
+    var send: usize = @intCast(usize, 19);
+    pal.stderr_write(buf[sbase .. send]);
+}
+
 pub const NameMangler = struct {
     hash_seed: u32,
     cache: U64ToU32Map,
@@ -208,7 +216,9 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
     if (isTempOrBuiltin(name) != @intCast(u8, 0)) return name_id;
     if (isC89Keyword(self, name_id) != @intCast(u8, 0)) return mangleC89Keyword(self, name);
     var key: u64 = (@intCast(u64, module_id) << @intCast(u64, 32)) | @intCast(u64, name_id);
-    if (hash_mod.u64ToU32MapGet(&self.cache, key)) |cached| return cached;
+    if (hash_mod.u64ToU32MapGet(&self.cache, key)) |cached| {
+        return cached;
+    }
     var hash = hash_mod.fnv1a(name);
     var kind_char: u8 = @intCast(u8, 'L');
     if (kind == @intCast(u8, 0)) kind_char = @intCast(u8, 'F');
@@ -229,17 +239,21 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
     }
     if (p > @intCast(usize, 31)) p = @intCast(usize, 31);
     var mangled_id = interner_mod.stringInternerIntern(self.interner, buf[0..p]);
+    // Collision resolution: if mangled_id already used by a different (module_id,name_id),
+    // append _N suffix, truncating base name to fit within 31-char C89 limit.
+    // Digit count computed dynamically to avoid truncation inside the suffix number.
     var counter: u32 = @intCast(u32, 0);
     while (true) {
         var existing_mod = hash_mod.u32ToU32MapGet(&self.collision_mod, mangled_id);
-        if (existing_mod) |mod| {
-            var existing_name = hash_mod.u32ToU32MapGet(&self.collision_name, mangled_id);
-            if (existing_name) |name| {
-                if (mod == module_id and name == name_id) break;
-            }
+        if (existing_mod) |_| {
             counter += @intCast(u32, 1);
             p = prefix_end;
-            var max_nc = @intCast(usize, 31) - prefix_end - @intCast(usize, 3);
+            var cnt = counter;
+            var dc: u32 = @intCast(u32, 1);
+            while (cnt >= @intCast(u32, 10)) : (cnt /= @intCast(u32, 10)) {
+                dc += @intCast(u32, 1);
+            }
+            var max_nc = @intCast(usize, 31) - prefix_end - @intCast(usize, 1) - @intCast(usize, dc);
             var ci: usize = @intCast(usize, 0);
             while (ci < name.len and p < prefix_end + max_nc) : (ci += @intCast(usize, 1)) {
                 buf[p] = name[ci];
@@ -702,7 +716,7 @@ fn mangleLocalName(mangler: *NameMangler, interner: *StringInterner, name_id: u3
     return name;
 }
 
-pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction, module_id: u32) void {
+pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
     var sc: []const u8 = "/* ";
     bufferedWriterWrite(&emitter.writer, sc);
@@ -715,7 +729,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction, module_
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
 
-    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), module_id);
+    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
     bufferedWriterWrite(&emitter.writer, fn_name);
 
@@ -747,12 +761,12 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction, module_
     emitter.indent += @intCast(u32, 1);
 }
 
-fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction, module_id: u32) void {
+fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     var ret_c = getCTypeName(emitter.registry, emitter.mangler, lir_fn.return_type);
     bufferedWriterWrite(&emitter.writer, ret_c);
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
-    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), module_id);
+    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
     bufferedWriterWrite(&emitter.writer, fn_name);
     var op: []const u8 = "(";
@@ -776,7 +790,7 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction, module_id:
     bufferedWriterWrite(&emitter.writer, rp);
 }
 
-fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, module_id: u32) void {
+fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
     var s1: []const u8 = "/* Module: ";
     bufferedWriterWrite(&emitter.writer, s1);
     bufferedWriterWrite(&emitter.writer, name);
@@ -785,7 +799,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, 
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         if (fns[i].is_extern == @intCast(u8, 0)) {
-            emitFunctionForwardDecl(emitter, fns[i], module_id);
+            emitFunctionForwardDecl(emitter, fns[i]);
         }
     }
     var nl: []const u8 = "\n";
@@ -797,13 +811,13 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
     bufferedWriterWrite(&emitter.writer, s);
 }
 
-pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, module_id: u32) void {
-    emitModuleHeader(emitter, name, fns, module_id);
+pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
+    emitModuleHeader(emitter, name, fns);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         var func = fns[i];
         if (func.is_extern == @intCast(u8, 0)) {
-            emitFunctionSignature(emitter, &func, module_id);
+            emitFunctionSignature(emitter, &func);
             emitHoistedDecls(emitter, &func);
             emitFunctionBody(emitter, &func);
         }
@@ -943,7 +957,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, sep);
             var fb: [16]u8 = undefined;
             var fl = itoa_mod.itoa(a.field_id, fb[0..]);
-            var fn_idx = @intCast(u32, @intCast(u32, 15) - fl);
+            var fn_idx: u32 = @intCast(u32, @intCast(u32, 15) - fl);
             var fn_start: usize = @intCast(usize, fn_idx);
             var fn_end: usize = @intCast(usize, 15);
             bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]);
@@ -1071,7 +1085,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
             var fb: [16]u8 = undefined;
             var fl = itoa_mod.itoa(lf.field_id, fb[0..]);
-            var fn_idx = @intCast(u32, @intCast(u32, 15) - fl);
+            var fn_idx: u32 = @intCast(u32, @intCast(u32, 15) - fl);
             var fn_start: usize = @intCast(usize, fn_idx);
             var fn_end: usize = @intCast(usize, 15);
             bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]);
@@ -1087,7 +1101,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s);
             var fb: [16]u8 = undefined;
             var fl = itoa_mod.itoa(sf.field_id, fb[0..]);
-            var fn_idx = @intCast(u32, @intCast(u32, 15) - fl);
+            var fn_idx: u32 = @intCast(u32, @intCast(u32, 15) - fl);
             var fn_start: usize = @intCast(usize, fn_idx);
             var fn_end: usize = @intCast(usize, 15);
             bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]);

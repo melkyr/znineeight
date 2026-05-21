@@ -23,6 +23,7 @@ const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const ModuleRegistry = @import("module_registry.zig").ModuleRegistry;
+const pal = @import("pal.zig");
 const sym_mod = @import("symbol_table.zig");
 const Symbol = @import("symbol_table.zig").Symbol;
 
@@ -457,7 +458,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .load_index = .{ .base = base_temp, .index = idx_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.ident_expr) {
-        var name_id = node.payload;
+        var name_id = store.identifiers.items[@intCast(usize, node.payload)];
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
@@ -483,6 +484,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         return tid;
     } else if (node.kind == AstKind.fn_call) {
+        var c_msg: []const u8 = "Cv"; pal.stderr_write(c_msg);
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         if (ec.len >= @intCast(usize, 2)) {
             var first = store.nodes.items[@intCast(usize, ec[0])];
@@ -493,17 +495,34 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var callee_node = store.nodes.items[@intCast(usize, node.child_0)];
         if (callee_node.kind == AstKind.field_access) {
+            var cf_msg: []const u8 = "Cf"; pal.stderr_write(cf_msg);
             var base_node = store.nodes.items[@intCast(usize, callee_node.child_0)];
             if (base_node.kind == AstKind.ident_expr) {
-                var base_name_id = base_node.payload;
+                var ci_msg: []const u8 = "Ci"; pal.stderr_write(ci_msg);
+                var base_name_id = store.identifiers.items[@intCast(usize, base_node.payload)];
+                var mid: u32 = self.module_id;
+                if (mid == @intCast(u32, 0)) { var m0: []const u8 = "m0"; pal.stderr_write(m0); }
+                else if (mid == @intCast(u32, 1)) { var m1: []const u8 = "m1"; pal.stderr_write(m1); }
+                else { var mx: []const u8 = "mx"; pal.stderr_write(mx); }
+                var table_check2 = sym_mod.symbolRegistryGetTable(self.ctx.symbol_tables, self.module_id);
+                var found_match: u8 = @intCast(u8, 0);
+                var tti: usize = @intCast(usize, 0);
+                while (tti < table_check2.len) : (tti += @intCast(usize, 1)) {
+                    if (table_check2.items[tti].name_id == base_name_id) { found_match = @intCast(u8, 1); break; }
+                }
+                if (found_match != @intCast(u8, 0)) { var tf: []const u8 = "Tf"; pal.stderr_write(tf); }
+                else { var tn: []const u8 = "Tn"; pal.stderr_write(tn); }
                 var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name_id);
                 if (sym) |sm| {
+                    var cs_msg: []const u8 = "Cs"; pal.stderr_write(cs_msg);
                     if (sm.kind != @intCast(u8, 0) and sm.module_id != @intCast(u32, 0) and sm.module_id != self.module_id) {
+                        var ck_msg: []const u8 = "Ck"; pal.stderr_write(ck_msg);
                         var target_mod_id = sm.module_id;
                         var field_name_id = callee_node.payload;
                         var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod_id, field_name_id);
                         if (field_sym) |fs| {
                             if (fs.kind == @intCast(u8, 3)) {
+                                var cr_msg: []const u8 = "Cr"; pal.stderr_write(cr_msg);
                                 var args_start = self.temp_counter;
                                 var i: usize = 0;
                                 while (i < ec.len) : (i += 1) {
@@ -518,12 +537,25 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     .args_count = args_count,
                                     .result = result,
                                 } });
+                                var cd_msg: []const u8 = "Cd"; pal.stderr_write(cd_msg);
                                 return result;
+                            } else {
+                                var cn_msg: []const u8 = "Cn"; pal.stderr_write(cn_msg);
                             }
+                        } else {
+                            var cn_msg: []const u8 = "Cn"; pal.stderr_write(cn_msg);
                         }
+                    } else {
+                        var cn_msg: []const u8 = "Cn"; pal.stderr_write(cn_msg);
                     }
+                } else {
+                    var cn_msg: []const u8 = "Cn"; pal.stderr_write(cn_msg);
                 }
+            } else {
+                var cn_msg: []const u8 = "Cn"; pal.stderr_write(cn_msg);
             }
+        } else {
+            var cn_msg: []const u8 = "Cn"; pal.stderr_write(cn_msg);
         }
         var callee_temp = lowerExpr(self, node.child_0);
         var args_start = self.temp_counter;
@@ -1021,6 +1053,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     var func_raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
     var func_ptr = @ptrCast(*LirFunction, func_raw);
     func_ptr.name_id = proto.name_id;
+    func_ptr.module_id = self.module_id;
     var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
     func_ptr.return_type = if (rt) |tid| tid else type_mod.TYPE_VOID;
     func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);

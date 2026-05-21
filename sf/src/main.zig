@@ -434,7 +434,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.bufferedWriterWrite(&emitter.writer, dbg_s);
     var dbg_e: []const u8 = " */\n";
     c89_mod.bufferedWriterWrite(&emitter.writer, dbg_e);
-    c89_mod.emitModule(&emitter, module_name, fns, @intCast(u32, 0));
+    c89_mod.emitModule(&emitter, module_name, fns);
     c89_mod.bufferedWriterFlush(&emitter.writer);
 
     var target_name: []const u8 = "target";

@@ -113,7 +113,7 @@ pub const TypeRegistry = struct {
 };
 
 fn arrayGrow(items_out: *[*]u8, len_ptr: *usize, cap_ptr: *usize, alloc: *Sand, elem_size: usize) void {
-    var nc = if (cap_ptr.* < @intCast(usize, 8)) @intCast(usize, 8) else cap_ptr.* * @intCast(usize, 2);
+    var nc: usize = if (cap_ptr.* < @intCast(usize, 8)) @intCast(usize, 8) else cap_ptr.* * @intCast(usize, 2);
     var raw = alloc_mod.sandAlloc(alloc, elem_size * nc, @intCast(usize, 4)) catch unreachable;
     var src = @ptrCast([*]u8, items_out.*);
     var dst = @ptrCast([*]u8, raw);
@@ -377,7 +377,7 @@ pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, e
 }
 
 pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u32) u32 {
-    var key = (@intCast(u64, elem) << @intCast(u64, 32)) | @intCast(u64, length);
+    var key: u64 = (@intCast(u64, elem) << @intCast(u64, 32)) | @intCast(u64, length);
     if (hash_mod.u64ToU32MapGet(&self.array_cache, key)) |existing| return existing;
     arrayAppend(self, ArrayPayload{ .elem = elem, .length = length });
     var elem_ty = self.types_items[elem];

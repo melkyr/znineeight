@@ -319,6 +319,7 @@ pub fn lirFunctionArrayListGetSlice(self: *LirFunctionArrayList) []LirFunction {
 
 pub const LirFunction = struct {
     name_id: u32,
+    module_id: u32,
     return_type: TypeId,
     params: LirParamArrayList,
     blocks: BasicBlockArrayList,
