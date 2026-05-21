@@ -317,6 +317,10 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
     if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
+    if (ty.kind == TypeKind.enum_type) {
+        var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
+        return getCTypeName(reg, mangler, ep.backing_type);
+    }
     var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
@@ -483,8 +487,10 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
     }
     var se: []const u8 = "typedef struct {\n";
     bufferedWriterWrite(&emitter.writer, se);
-    var sf: []const u8 = "\tint tag;\n";
-    bufferedWriterWrite(&emitter.writer, sf);
+    var sf1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, sf1);
+    var tag_ctype = getCTypeName(reg, emitter.mangler, tp.tag_type);
+    bufferedWriterWrite(&emitter.writer, tag_ctype);
+    var sf2: []const u8 = " tag;\n"; bufferedWriterWrite(&emitter.writer, sf2);
     var sg: []const u8 = "\tunion {\n";
     bufferedWriterWrite(&emitter.writer, sg);
     var sh: []const u8 = "\t\tchar _dummy;\n";
@@ -536,6 +542,32 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.optional_type) { emitOptionalType(emitter, tid); return; }
     if (ty.kind == TypeKind.error_union_type) { emitErrorUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.tagged_union_type) { emitTaggedUnionType(emitter, tid); return; }
+    if (ty.kind == TypeKind.enum_type) { emitEnumType(emitter, tid); return; }
+}
+
+fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var ep = emitter.registry.en_items[@intCast(usize, ty.payload_idx)];
+    var ctype = getCTypeName(emitter.registry, emitter.mangler, ep.backing_type);
+    var td: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, td);
+    bufferedWriterWrite(&emitter.writer, ctype);
+    var sp: []const u8 = " "; bufferedWriterWrite(&emitter.writer, sp);
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
+    var i: u16 = @intCast(u16, 0);
+    while (i < ep.members_count) : (i += @intCast(u16, 1)) {
+        var def: []const u8 = "#define "; bufferedWriterWrite(&emitter.writer, def);
+        bufferedWriterWrite(&emitter.writer, mangled_name);
+        var us: []const u8 = "_"; bufferedWriterWrite(&emitter.writer, us);
+        var mi: u32 = @intCast(u32, i);
+        var mname = interner_mod.stringInternerGet(emitter.interner, mi);
+        bufferedWriterWrite(&emitter.writer, mname);
+        var eq: []const u8 = " "; bufferedWriterWrite(&emitter.writer, eq);
+        var d: []const u8 = "0\n"; bufferedWriterWrite(&emitter.writer, d);
+    }
+    var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
 }
 
 fn emitSliceType(emitter: *C89Emitter, tid: u32) void {

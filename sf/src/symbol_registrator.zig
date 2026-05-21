@@ -114,6 +114,26 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         ty.payload_idx = st_idx;
         type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
     }
+    if (decl_kind == AstKind.enum_decl) {
+        var mstart: u32 = @intCast(u32, type_reg.en_len);
+        var mcount: u32 = 0;
+        var i: usize = 0;
+        while (i < children.len) {
+            var mval = children[i];
+            mcount += 1;
+            i += 1;
+        }
+        type_mod.enAppend(type_reg, type_mod.EnumPayload{
+            .members_start = @intCast(u16, mstart),
+            .members_count = @intCast(u16, mcount),
+            .backing_type = type_mod.TYPE_U32,
+        });
+        var en_last: usize = type_reg.en_len - @intCast(usize, 1);
+        var en_idx: u32 = @intCast(u32, en_last);
+        var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+        ty.payload_idx = en_idx;
+        type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+    }
 }
 
 fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, mod_id: u32, decl_idx: u32, g: *DepGraph, reg: *mr_mod.ModuleRegistry) void {
