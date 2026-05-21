@@ -248,7 +248,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
 
 pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, module_id: u32, g: *DepGraph) void {
     var entry = reg.modules.items[@intCast(usize, module_id)];
-    if (entry.state != mr_mod.ModuleState.resolved or entry.ast_root == 0) return;
+    if (entry.state != mr_mod.ModuleState.parsed or entry.ast_root == 0) return;
     var root = store.nodes.items[@intCast(usize, entry.ast_root)];
     if (root.kind != AstKind.module_root) return;
     var decls = ast_mod.astStoreGetExtraChildren(store, root.payload);

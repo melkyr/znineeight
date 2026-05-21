@@ -61,5 +61,6 @@ build_and_run "test_analyzer_integration_bin"
 build_and_run "test_memory_budget_bin"
 build_and_run "test_lower_bin"
 build_and_run "test_name_mangle_bin"
+build_and_run "dump_ir_bin"
 
 echo "=== [test] Results: $PASS passed, $FAIL failed ==="

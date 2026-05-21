@@ -94,6 +94,8 @@ pub const CompilerContext = struct {
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
+    var startmsg: []const u8 = "START\n";
+    pal.stderr_write(startmsg);
     var cli = parseArgs();
     if (cli.sanity_test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
@@ -216,6 +218,7 @@ fn runCompiler(ctx: *CompilerContext) void {
 }
 
 fn phase_ImportResolution(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "I\n"; pal.stderr_write(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     var path_id = interner_mod.stringInternerIntern(ctx.interner, ctx.cli.input_file);
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
@@ -224,6 +227,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
 }
 
 fn phase_SymbolRegistration(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "S\n"; pal.stderr_write(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     var dep_graph = symbol_registrator.depGraphInit(&ctx.alloc.scratch);
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
@@ -234,6 +238,7 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
 }
 
 fn phase_TypeResolution(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "T\n"; pal.stderr_write(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     var dep_graph = symbol_registrator.depGraphInit(&ctx.alloc.scratch);
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
@@ -252,6 +257,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
 }
 
 fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "A\n"; pal.stderr_write(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     alloc_mod.sandResetPeak(&ctx.alloc.scratch);
     if (ctx.cli.no_null_check != true or ctx.cli.no_lifetime_check != true or ctx.cli.no_leak_check != true) {
@@ -266,6 +272,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
 }
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "L\n"; pal.stderr_write(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     ctx.lir_fns.len = @intCast(usize, 0);
     var sem_ctx = SemanticContext{
@@ -279,19 +286,24 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
+        var mm: []const u8 = "M"; pal.stderr_write(mm);
         if (mods[mi].ast_root != @intCast(u32, 0)) {
             var root = ctx.store.nodes.items[@intCast(usize, mods[mi].ast_root)];
             if (root.kind == AstKind.module_root) {
+                var mr: []const u8 = "R"; pal.stderr_write(mr);
                 var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
                 var di: usize = @intCast(usize, 0);
                 while (di < decls.len) : (di += @intCast(usize, 1)) {
                     var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
                     if (decl.kind == AstKind.fn_decl) {
+                        var mf: []const u8 = "F"; pal.stderr_write(mf);
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
+                    } else {
+                        var md: []const u8 = "."; pal.stderr_write(md);
                     }
                 }
             }
@@ -300,6 +312,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
 }
 
 fn phase_C89Emission(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "C\n"; pal.stderr_write(p_msg);
     if (!ctx.cli.dump_c89) return;
     var mangler: c89_mod.NameMangler = undefined;
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch);
@@ -326,6 +339,11 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitZigRuntimeC(&swriter2);
     c89_mod.bufferedWriterFlush(&swriter2);
 
+    
+    var dbg_s: []const u8 = "/* LIR_FNS=";
+    c89_mod.bufferedWriterWrite(&emitter.writer, dbg_s);
+    var dbg_e: []const u8 = " */\n";
+    c89_mod.bufferedWriterWrite(&emitter.writer, dbg_e);
     c89_mod.emitModule(&emitter, module_name, fns, @intCast(u32, 0));
     c89_mod.bufferedWriterFlush(&emitter.writer);
 

@@ -357,5 +357,80 @@ $OUT/foo
 
 ---
 
+---
+
+## X. Debugging Protocol for zig1
+
+### X.1 PAL Diagnostic First
+
+Before investigating ANY pipeline issue, verify that `pal.stderr_write`
+works from the target module. Add a single marker at program start:
+
+```zig
+var dbg: []const u8 = "START\n";
+pal.stderr_write(dbg);
+```
+
+Build + run. If `"START"` does not appear in stderr, resolve the PAL
+issue before any other debugging. Never proceed to instrumentation
+without a working diagnostic channel.
+
+### X.2 Letter-Code Markers
+
+For pipeline tracing, use single-letter markers (no `itoa` needed):
+
+| Marker | Meaning |
+|--------|---------|
+| `"I"` | phase_ImportResolution |
+| `"S"` | phase_SymbolRegistration |
+| `"T"` | phase_TypeResolution |
+| `"A"` | phase_StaticAnalyzers |
+| `"L"` | phase_LIRLowering |
+| `"C"` | phase_C89Emission |
+| `"M"` | Module found (in per-module loop) |
+| `"R"` | Root is AstKind.module_root |
+| `"F"` | fn_decl found |
+| `"."` | Non-fn_decl found |
+| `"E"` | Error / unexpected state |
+
+This shows pipeline flow and module contents without numeric formatting.
+
+### X.3 FORBIDDEN: Python Scripts for Code Editing
+
+Python-based code modification (using `str.replace`, `split('\n')`,
+regex over Z98 source, `sed` with regex) is PROHIBITED. These scripts:
+
+- Corrupt newline sequences (LF vs CRLF)
+- Break string literal line endings (`\n` vs `\\n`)
+- Crush multi-line structures into single lines
+- Cannot be undone without `git checkout` which
+  reverts ALL uncommitted fixes alongside the attempted changes
+
+**Use only the `edit` tool** with exact `oldString`/`newString` matching.
+One edit at a time. No bulk transforms. No exceptions.
+
+### X.4 FORBIDDEN: git checkout to Erase Diagnostic Code
+
+Using `git checkout -- sf/src/file.zig` to "clean up" diagnostics
+ERASES actual bug fixes applied in the same file. Never use
+`git checkout` to undo work. If a diagnostic is wrong, fix it with
+another `edit` — do not revert to an earlier state that has neither
+the fix nor the diagnostic.
+
+### X.5 Z98 String Literal Pattern (Slice_u8)
+
+Raw string literals in Z98 are fixed-size arrays, not slices.
+Always use the Slice_u8 workaround:
+
+```zig
+var msg: []const u8 = "hello";
+pal.stderr_write(msg);
+// CORRECT: above
+// WRONG:   pal.stderr_write("hello");
+```
+
+This applies to ALL `pal.stderr_write`, `pal.stdout_write`, and
+`bufferedWriterWrite` calls.
+
 **End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```
