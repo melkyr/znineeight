@@ -344,11 +344,6 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         var name_id = ctx.store.identifiers.items[@intCast(usize, node.payload)];
         var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, name_id));
         if (tid) |t| return t;
-        var smsg: []const u8 = "A_SA:null ";
-        pal.stderr_write(smsg);
-        var sstr = interner_mod.stringInternerGet(ctx.interner, name_id);
-        pal.stderr_write(sstr);
-        var snl: []const u8 = "\n"; pal.stderr_write(snl);
         return type_mod.TYPE_UNDEFINED;
     }
     if (node.child_0 != 0) {

@@ -1168,7 +1168,14 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     }
     _ = try parserExpect(self, TokenKind.rparen);
 
-    var saved_param_count: usize = self.child_buf_len;
+    var param_start: u16 = @intCast(u16, 0);
+    var param_count: u16 = @intCast(u16, 0);
+    if (self.child_buf_len > @intCast(usize, 0)) {
+        var pp = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
+        param_start = @intCast(u16, pp >> 16);
+        param_count = @intCast(u16, self.child_buf_len);
+        self.child_buf_len = 0;
+    }
 
     var ret_type_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.colon) {
@@ -1188,8 +1195,8 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
         end_pos = self.last_end;
     }
 
-    if (self.child_buf_len != saved_param_count) {
-        self.child_buf_len = saved_param_count;
+    if (self.child_buf_len > @intCast(usize, 0)) {
+        var dmsg: []const u8 = "DP:child_buf_stale\n"; pal.stderr_write(dmsg);
     }
 
     var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
@@ -1197,14 +1204,13 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     var pmsg: []const u8 = "P:";
     pal.stderr_write(pmsg);
     var pa_buf: [20]u8 = undefined;
-    var pa_val: u32 = @intCast(u32, self.child_buf_len);
+    var pa_val: u32 = @intCast(u32, param_count);
     var pa_len = itoa_mod.itoa(pa_val, pa_buf[0..]);
     var pa_start: usize = @intCast(usize, 19) - @intCast(usize, pa_len);
     pal.stderr_write(pa_buf[pa_start .. @intCast(usize, 19)]);
     var pnl: []const u8 = "\n";
     pal.stderr_write(pnl);
-    var param_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
-    var proto: FnProto = FnProto{ .name_id = name_id, .params_start = @intCast(u16, param_payload >> 16), .params_count = @intCast(u16, self.child_buf_len), .return_type_node = ret_type_node };
+    var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
     self.child_buf_len = 0;
     var fok: []const u8 = "Fk"; pal.stderr_write(fok);

@@ -1232,20 +1232,6 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
             var p_name_id = pnode.payload;
             var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
             var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
-            if (p_tid == type_mod.TYPE_UNDEFINED and pnode.child_0 != 0) {
-                var pmsg: []const u8 = "A_LOWER:null child=";
-                pal.stderr_write(pmsg);
-                var pt_node = store.nodes.items[@intCast(usize, pnode.child_0)];
-                if (pt_node.kind == AstKind.ident_expr) {
-                    var p_name = store.identifiers.items[@intCast(usize, pt_node.payload)];
-                    var p_str = si_mod.stringInternerGet(self.ctx.registry.interner, p_name);
-                    pal.stderr_write(p_str);
-                } else {
-                    var puk: []const u8 = "?";
-                    pal.stderr_write(puk);
-                }
-                var pnl: []const u8 = "\n"; pal.stderr_write(pnl);
-            }
             lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
                 .name_id = p_name_id,
                 .type_id = p_tid,
