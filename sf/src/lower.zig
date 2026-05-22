@@ -950,9 +950,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.var_decl) {
+        var name_id = node.payload;
+        var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+        if (node.child_0 != 0) {
+            var type_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+            if (type_node.kind == AstKind.ident_expr) {
+                var tn_id = self.ctx.store.identifiers.items[@intCast(usize, type_node.payload)];
+                var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
+                if (tn) |t| decl_type = t;
+            }
+        }
+        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var dl_temp = nextTemp(self, decl_type);
+            emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = decl_type, .temp = dl_temp } });
+        }
         if (node.child_1 != 0) {
             var init_val = lowerExpr(self, node.child_1);
-            var name_id = node.payload;
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
         }
     } else if (node.kind == AstKind.add_assign) {

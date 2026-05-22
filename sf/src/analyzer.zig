@@ -349,7 +349,7 @@ pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) void {
 pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_return: u32) void {
     var tnode = ctx.store.nodes.items[@intCast(usize, type_node_idx)];
     if (tnode.kind == AstKind.ident_expr) {
-        var name_id = tnode.payload;
+        var name_id = ctx.store.identifiers.items[@intCast(usize, tnode.payload)];
         var key = @intCast(u64, name_id);
         var tid = type_mod.nameCacheGet(ctx.registry, key);
         if (tid) |ttid| {

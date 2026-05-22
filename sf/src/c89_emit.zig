@@ -940,6 +940,17 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         },
         .loop_header => {},
         .label => {},
+        .decl_local => |dl| {
+            var c_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
+            var name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, c_type);
+            var sp: []const u8 = " ";
+            bufferedWriterWrite(&emitter.writer, sp);
+            bufferedWriterWrite(&emitter.writer, name);
+            var sm: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, sm);
+        },
         .assign => |a| {
             var dst = mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);

@@ -341,7 +341,8 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
     if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.ident_expr) {
-        var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, node.payload));
+        var name_id = ctx.store.identifiers.items[@intCast(usize, node.payload)];
+        var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, name_id));
         if (tid) |t| return t;
         return type_mod.TYPE_UNDEFINED;
     }
