@@ -56,7 +56,7 @@ pub fn bufferedWriterWriteByte(self: *BufferedWriter, byte: u8) void {
 }
 
 pub fn bufferedWriterWriteIndent(self: *BufferedWriter, level: u32) void {
-    var total = level * @intCast(u32, 4);
+    var total: u32 = level * @intCast(u32, 4);
     var i: u32 = @intCast(u32, 0);
     while (i < total) : (i += @intCast(u32, 1)) {
         if (self.pos == 4096) bufferedWriterFlush(self);
@@ -253,7 +253,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
             while (cnt >= @intCast(u32, 10)) : (cnt /= @intCast(u32, 10)) {
                 dc += @intCast(u32, 1);
             }
-            var max_nc = @intCast(usize, 31) - prefix_end - @intCast(usize, 1) - @intCast(usize, dc);
+            var max_nc: usize = @intCast(usize, 31) - prefix_end - @intCast(usize, 1) - @intCast(usize, dc);
             var ci: usize = @intCast(usize, 0);
             while (ci < name.len and p < prefix_end + max_nc) : (ci += @intCast(usize, 1)) {
                 buf[p] = name[ci];
@@ -988,7 +988,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s);
             var nb: [16]u8 = undefined;
             var nl = itoa_mod.itoa(bb, nb[0..]);
-            var ns = @intCast(u32, @intCast(u32, 15) - nl);
+            var ns: u32 = @intCast(u32, @intCast(u32, 15) - nl);
             var si: usize = @intCast(usize, ns);
             var ei: usize = @intCast(usize, 15);
             bufferedWriterWrite(&emitter.writer, nb[si..ei]);

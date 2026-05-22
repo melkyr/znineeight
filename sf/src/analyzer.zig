@@ -103,7 +103,7 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
     var prov = classifyProvenance(ctx, state, expr_idx);
     var rnode = ctx.store.nodes.items[@intCast(usize, ret_node_idx)];
     var start = rnode.span_start;
-    var end = rnode.span_start + @intCast(u32, rnode.span_len);
+    var end: u32 = rnode.span_start + @intCast(u32, rnode.span_len);
     var expr_node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
     var pl = @intCast(u8, @enumToInt(Provenance.local));
     var ppa = @intCast(u8, @enumToInt(Provenance.param_addr));

@@ -148,7 +148,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             }
 
             var start = @intCast(usize, entry.imports_start);
-            var end = start + @intCast(usize, entry.import_count);
+            var end: usize = start + @intCast(usize, entry.import_count);
             var i: usize = start;
             while (i < end) {
                 var imported_id = reg.import_edges_items[i];

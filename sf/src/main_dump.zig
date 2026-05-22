@@ -37,8 +37,6 @@ pub const CompilerCli = struct {
     output_dir: []const u8,
     dump_tokens: bool,
     dump_ast: bool,
-    dump_types: bool,
-    dump_lir: bool,
     max_mem: u32,
     max_errors: u32,
     color: ColorMode,
@@ -198,8 +196,6 @@ fn parseArgs() CompilerCli {
         .output_dir = dot_str,
         .dump_tokens = false,
         .dump_ast = false,
-        .dump_types = false,
-        .dump_lir = false,
         .max_mem = @intCast(u32, 16 * 1024 * 1024),
         .max_errors = @intCast(u32, 256),
         .color = ColorMode.auto,
@@ -266,10 +262,6 @@ fn parseArgs() CompilerCli {
             cli.dump_tokens = true;
         } else if (matchFlag(arg, s_dump_ast)) {
             cli.dump_ast = true;
-        } else if (matchFlag(arg, s_dump_types)) {
-            cli.dump_types = true;
-        } else if (matchFlag(arg, s_dump_lir)) {
-            cli.dump_lir = true;
         } else if (arg.len > 0 and arg[0] == '-') {
             const msg: []const u8 = "error: unknown flag\n";
             pal.stderr_write(msg);
@@ -304,8 +296,6 @@ const s_e: []const u8 = "-e";
 const s_track_memory: []const u8 = "--track-memory";
 const s_dump_tokens: []const u8 = "--dump-tokens";
 const s_dump_ast: []const u8 = "--dump-ast";
-const s_dump_types: []const u8 = "--dump-types";
-const s_dump_lir: []const u8 = "--dump-lir";
 const s_include: []const u8 = "--include";
 const s_I: []const u8 = "-I";
 

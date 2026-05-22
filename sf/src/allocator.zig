@@ -5,6 +5,7 @@ pub const Sand = struct {
     peak: usize,
 };
 const pal = @import("pal.zig");
+const panic_mod = @import("panic.zig");
 
 pub fn sandInit(buf: []u8) Sand {
     var s = Sand{
@@ -22,7 +23,12 @@ pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
     var mask = alignment - @intCast(usize, 1);
     var aligned = (sand.pos + mask) & ~mask;
     var new_pos = aligned + size;
-    if (new_pos > sand.end) return error.OutOfMemory;
+    if (new_pos > sand.end) {
+        var oom: []const u8 = "out of memory";
+        var file: []const u8 = "allocator.zig";
+        panic_mod.panicHandler(oom, file, 25);
+        return error.OutOfMemory;
+    }
     var result = sand.start + aligned;
     sand.pos = new_pos;
     if (new_pos > sand.peak) sand.peak = new_pos;

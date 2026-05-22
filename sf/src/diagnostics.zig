@@ -78,6 +78,14 @@ pub const Diagnostic = struct {
     message_id: u32,
     note_count: u8,
     note_ids: [3]u32,
+    related_span_idx: u16,
+};
+
+pub const RelatedSpan = struct {
+    span_file_id: u32,
+    span_start: u32,
+    span_end: u32,
+    message_id: u32,
 };
 
 const Sand = @import("allocator.zig").Sand;
@@ -198,6 +206,9 @@ pub fn diagnosticArrayListGetSlice(self: *DiagnosticArrayList) []Diagnostic {
 
 pub const DiagnosticCollector = struct {
     diagnostics: *DiagnosticArrayList,
+    related_span_items: [*]RelatedSpan,
+    related_span_len: usize,
+    related_span_cap: usize,
     allocator: *Sand,
     source_manager: *SourceManager,
     interner: *StringInterner,
@@ -212,6 +223,9 @@ pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager,
     d_ptr.* = diagnosticArrayListInit(allocator);
     return DiagnosticCollector{
         .diagnostics = d_ptr,
+        .related_span_items = undefined,
+        .related_span_len = @intCast(usize, 0),
+        .related_span_cap = @intCast(usize, 0),
         .allocator = allocator,
         .source_manager = source_manager,
         .interner = interner,
@@ -225,8 +239,8 @@ pub fn diagnosticCollectorIntern(self: *DiagnosticCollector, msg: []const u8) u3
     return interner_mod.stringInternerIntern(self.interner, msg);
 }
 
-pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, file_id: u32, span_start: u32, span_end: u32, message: []const u8) void {
-    if (code == 9999) return;
+pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, file_id: u32, span_start: u32, span_end: u32, message: []const u8) u32 {
+    if (code == 9999) return @intCast(u32, 0);
     if (self.diagnostics.len >= self.max_diagnostics) {
         var overflow_msg: []const u8 = "too many errors, stopping";
         var msg_id = interner_mod.stringInternerIntern(self.interner, overflow_msg);
@@ -239,9 +253,10 @@ pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, 
             .message_id = msg_id,
             .note_count = @intCast(u8, 0),
             .note_ids = [3]u32{ @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) },
+            .related_span_idx = @intCast(u16, 0),
         });
         self.error_count += 1;
-        return;
+        return @intCast(u32, 0);
     }
     var msg_id = interner_mod.stringInternerIntern(self.interner, message);
     diagnosticArrayListAppend(self.diagnostics, Diagnostic{
@@ -253,9 +268,11 @@ pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, 
         .message_id = msg_id,
         .note_count = @intCast(u8, 0),
         .note_ids = [3]u32{ @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) },
+        .related_span_idx = @intCast(u16, 0),
     });
     if (level == 0) self.error_count += 1;
     else if (level == 1) self.warning_count += 1;
+    return @intCast(u32, self.diagnostics.len - 1);
 }
 
 pub fn diagnosticCollectorHasErrors(self: *DiagnosticCollector) bool {
@@ -268,6 +285,48 @@ pub fn diagnosticCollectorErrorCount(self: *DiagnosticCollector) u32 {
 
 pub fn diagnosticCollectorWarningCount(self: *DiagnosticCollector) u32 {
     return @intCast(u32, self.warning_count);
+}
+
+pub fn diagnosticCollectorAddNote(self: *DiagnosticCollector, diag_idx: u32, note: []const u8) void {
+    if (diag_idx >= @intCast(u32, self.diagnostics.len)) return;
+    var d = &self.diagnostics.items[@intCast(usize, diag_idx)];
+    if (d.note_count < 3) {
+        d.note_ids[@intCast(usize, d.note_count)] = interner_mod.stringInternerIntern(self.interner, note);
+        d.note_count += 1;
+    }
+}
+
+pub fn diagnosticCollectorAddRelatedSpan(self: *DiagnosticCollector, diag_idx: u32,
+    file_id: u32, span_start: u32, span_end: u32, msg: []const u8) void {
+    if (diag_idx >= @intCast(u32, self.diagnostics.len)) return;
+    var msg_id = interner_mod.stringInternerIntern(self.interner, msg);
+    var new_len: usize = self.related_span_len + @intCast(usize, 1);
+    if (new_len >= self.related_span_cap) {
+        var new_cap = self.related_span_cap * 2;
+        if (new_cap < 8) new_cap = 8;
+        var sz: usize = @intCast(usize, 16) * new_cap;
+        var raw = alloc_mod.sandAlloc(self.allocator, sz, @intCast(usize, 4)) catch unreachable;
+        var items = @ptrCast([*]RelatedSpan, raw);
+        for (self.related_span_items[0..self.related_span_len]) |item, i| {
+            items[i] = item;
+        }
+        self.related_span_items = items;
+        self.related_span_cap = new_cap;
+    }
+    self.related_span_items[self.related_span_len] = RelatedSpan{
+        .span_file_id = file_id,
+        .span_start = span_start,
+        .span_end = span_end,
+        .message_id = msg_id,
+    };
+    var rs_idx: u16 = @intCast(u16, self.related_span_len);
+    self.related_span_len += 1;
+    self.diagnostics.items[@intCast(usize, diag_idx)].related_span_idx = rs_idx;
+}
+
+pub fn diagnosticCollectorFlushAndExit(self: *DiagnosticCollector, exit_code: u32) void {
+    diagnosticCollectorPrintAll(self);
+    pal.exit(@intCast(u8, exit_code));
 }
 
 pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
@@ -344,6 +403,33 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
             writeStr(caret_buf[0..caret_len]);
             var nl3: []const u8 = "\n";
             writeStr(nl3);
+        }
+        var n: u8 = 0;
+        while (n < d.note_count) {
+            var note_hdr: []const u8 = "note: ";
+            writeStr(note_hdr);
+            var note_entry = self.interner.entries_items[@intCast(usize, d.note_ids[@intCast(usize, n)])];
+            writeStr(note_entry.text);
+            var note_nl: []const u8 = "\n";
+            writeStr(note_nl);
+            n += 1;
+        }
+        if (d.related_span_idx > 0 and d.related_span_idx < @intCast(u16, self.related_span_len)) {
+            var rs = self.related_span_items[@intCast(usize, d.related_span_idx)];
+            var rs_loc = sm_mod.sourceManagerGetLocation(self.source_manager, rs.span_file_id, rs.span_start);
+            var rs_fname = sm_mod.sourceManagerGetFileName(self.source_manager, rs.span_file_id);
+            writeStr(rs_fname);
+            var rs_col_s: []const u8 = ":";
+            writeStr(rs_col_s);
+            var rs_line_buf: [16]u8 = undefined;
+            var rs_line_len = formatU32(rs_loc.line, rs_line_buf[0..16]);
+            writeStr(rs_line_buf[0..@intCast(usize, rs_line_len)]);
+            var rs_sep: []const u8 = ": note: ";
+            writeStr(rs_sep);
+            var rs_msg = self.interner.entries_items[@intCast(usize, rs.message_id)];
+            writeStr(rs_msg.text);
+            var rs_nl: []const u8 = "\n";
+            writeStr(rs_nl);
         }
         i += 1;
     }
