@@ -302,9 +302,29 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
         var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
         var mi: usize = 0;
         while (mi < mods.len) : (mi += 1) {
-            if (mods[mi].ast_root != @intCast(u32, 0)) {
-                _ = mods[mi].ast_root;
-            }
+            var ast_root = mods[mi].ast_root;
+            if (ast_root == @intCast(u32, 0)) continue;
+            var sym_table = sym_mod.symbolRegistryGetTable(ctx.symbol_reg, @intCast(u32, mi));
+            var ac = az_mod.AnalyzerContext{
+                .store             = ctx.store,
+                .registry          = ctx.typereg,
+                .interner          = ctx.interner,
+                .diag              = ctx.diag,
+                .symbols           = sym_table,
+                .alloc             = &ctx.alloc.scratch,
+                .current_fn_name   = @intCast(u32, 0),
+                .defer_queue_items = undefined,
+                .defer_queue_len   = @intCast(usize, 0),
+                .defer_queue_cap   = @intCast(usize, 0),
+                .defer_queue_alloc = &ctx.alloc.scratch,
+                .current_depth     = @intCast(u32, 0),
+                .null_analysis_mode    = @intCast(u8, 0),
+                .skip_null_check       = @intCast(u8, if (ctx.cli.no_null_check) 1 else 0),
+                .skip_lifetime_check   = @intCast(u8, if (ctx.cli.no_lifetime_check) 1 else 0),
+                .skip_doublefree_check = @intCast(u8, if (ctx.cli.no_leak_check) 1 else 0),
+                .warn_all          = @intCast(u8, if (ctx.cli.warn_all) 1 else 0),
+            };
+            az_mod.runAllAnalyzers(&ac, ast_root);
         }
     }
 }
