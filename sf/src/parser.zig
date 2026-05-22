@@ -248,6 +248,8 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
         }
         return parserParseIdentExpr(self);
     }
+    if (tok.kind == TokenKind.kw_bool) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.kw_c_char) return parserParseIdentExpr(self);
     if (tok.kind == TokenKind.builtin_identifier) return parserParseBuiltinCall(self);
     if (tok.kind == TokenKind.kw_error) return parserParseErrorLiteral(self);
     if (tok.kind == TokenKind.minus) return parserParsePrefixUnary(self, AstKind.negate);
@@ -498,7 +500,6 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     }
     var id = tok.value.string_id;
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
-    _ = end;
     var lparen = parserPeek(self);
     if (lparen.kind != TokenKind.lparen) return error.UnexpectedToken;
     _ = parserAdvance(self);
@@ -512,7 +513,7 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     end = rparen.span_start + @intCast(u32, rparen.span_len);
     var payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
     self.child_buf_len = 0;
-    return ast_mod.astStoreAddNode(self.store, AstKind.builtin_call, 0, tok.span_start, end, 0, 0, 0, payload);
+    return ast_mod.astStoreAddNode(self.store, AstKind.builtin_call, 0, tok.span_start, end, id, 0, 0, payload);
 }
 
 fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {

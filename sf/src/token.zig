@@ -166,7 +166,7 @@ pub fn initKeywordTable(alloc: *Sand) void {
     table[i] = KeywordEntry{ .name = "void",        .kind = TokenKind.kw_void };        i += 1;
     table[i] = KeywordEntry{ .name = "bool",        .kind = TokenKind.kw_bool };        i += 1;
     table[i] = KeywordEntry{ .name = "noreturn",    .kind = TokenKind.kw_noreturn };    i += 1;
-    table[i] = KeywordEntry{ .name = "c_char",      .kind = TokenKind.kw_c_char };      i += 1;
+    var s_c_char: []const u8 = "c_char"; table[i] = KeywordEntry{ .name = s_c_char, .kind = TokenKind.kw_c_char }; i += 1;
 
     keyword_table = table[0..35];
     keyword_count = i;

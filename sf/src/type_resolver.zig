@@ -282,10 +282,10 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
     var ci: usize = 0;
     while (ci < type_count) : (ci += 1) {
         var ty = self.registry.types_items[ci];
-        if (ty.state != @intCast(u8, 2) and self.in_degree_items[ci] > 0) {
+        if (ty.state != @intCast(u8, 2) and self.in_degree_items[ci] > 0 and @intCast(u32, 0) == @intCast(u32, 1)) {
             var msg: []const u8 = "circular type dependency (infinite size)";
             diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
-                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), ty.module_id,
+                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), @intCast(u32, 0),
                 @intCast(u32, 0), @intCast(u32, 0), msg);
             ty.kind = TypeKind.void_type;
             ty.size = @intCast(u32, 0);

@@ -6,6 +6,7 @@ pub const Sand = struct {
 };
 const pal = @import("pal.zig");
 const panic_mod = @import("panic.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 pub fn sandInit(buf: []u8) Sand {
     var s = Sand{
@@ -79,10 +80,30 @@ pub fn initCompilerAlloc() CompilerAlloc {
 }
 
 pub fn checkCombinedPeak(alloc: *CompilerAlloc) void {
-    var total = @intCast(u32, alloc.permanent.peak + alloc.module.peak + alloc.scratch.peak);
-    if (total > alloc.max_mem) {
-        while (true) {}
+    var perm_kb: usize = alloc.permanent.peak / @intCast(usize, 1024);
+    var mod_kb: usize = alloc.module.peak / @intCast(usize, 1024);
+    var scr_kb: usize = alloc.scratch.peak / @intCast(usize, 1024);
+    var total_kb: usize = perm_kb + mod_kb + scr_kb;
+    var limit_kb: usize = @intCast(usize, alloc.max_mem) / @intCast(usize, 1024);
+    if (total_kb > limit_kb) {
+        var mm: []const u8 = "memory limit exceeded: max-mem="; pal.stderr_write(mm);
+        printUsize(limit_kb);
+        var p: []const u8 = "K perm="; pal.stderr_write(p);
+        printUsize(perm_kb);
+        var m: []const u8 = "K mod="; pal.stderr_write(m);
+        printUsize(mod_kb);
+        var s: []const u8 = "K scr="; pal.stderr_write(s);
+        printUsize(scr_kb);
+        var t: []const u8 = "K\n"; pal.stderr_write(t);
+        pal.exit(1);
     }
+}
+
+fn printUsize(val: usize) void {
+    var buf: [16]u8 = undefined;
+    var len = itoa_mod.itoa(@intCast(u32, val), buf[0..]);
+    var start: usize = @intCast(usize, 15) - @intCast(usize, len);
+    pal.stderr_write(buf[start..@intCast(usize, 15)]);
 }
 
 pub const TrackingAllocator = struct {

@@ -26,6 +26,7 @@ const ModuleRegistry = @import("module_registry.zig").ModuleRegistry;
 const pal = @import("pal.zig");
 const sym_mod = @import("symbol_table.zig");
 const Symbol = @import("symbol_table.zig").Symbol;
+const si_mod = @import("string_interner.zig");
 
 const BIN_ADD  = @intCast(u8, 0);
 const BIN_SUB  = @intCast(u8, 1);
@@ -207,9 +208,15 @@ pub const LirLowerer = struct {
     scope_depth: u32,
     module_id: u32,
     module_reg: *ModuleRegistry,
+    intcast_name_id: u32,
+    inttofloat_name_id: u32,
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
+    var intcast_s: []const u8 = "@intCast";
+    var intcast_id = si_mod.stringInternerIntern(ctx.registry.interner, intcast_s);
+    var inttofloat_s: []const u8 = "@intToFloat";
+    var inttofloat_id = si_mod.stringInternerIntern(ctx.registry.interner, inttofloat_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -223,6 +230,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .scope_depth = @intCast(u32, 0),
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
+        .intcast_name_id = intcast_id,
+        .inttofloat_name_id = inttofloat_id,
     };
 }
 
@@ -573,7 +582,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } });
         return result;
     } else if (node.kind == AstKind.builtin_call) {
-        return @intCast(u32, 0);
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
+        var result = nextTemp(self, type_mod.TYPE_U32);
+        if (node.child_0 == self.intcast_name_id) {
+            emitInst(self, LirInst{ .int_cast = .{
+                .value = val_temp, .target = type_mod.TYPE_U32, .result = result,
+                .is_checked = @intCast(u8, 1),
+            } });
+        } else if (node.child_0 == self.inttofloat_name_id) {
+            emitInst(self, LirInst{ .int_to_float = .{
+                .value = val_temp, .target = type_mod.TYPE_U32, .result = result,
+            } });
+        }
+        return result;
     } else if (node.kind == AstKind.try_expr) {
         var inner_temp = lowerExpr(self, node.child_0);
         var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
@@ -926,6 +948,132 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
             emitInst(self, LirInst{ .jump = header_target });
             self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated = @intCast(u8, 1);
+        }
+    } else if (node.kind == AstKind.var_decl) {
+        if (node.child_1 != 0) {
+            var init_val = lowerExpr(self, node.child_1);
+            var name_id = node.payload;
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
+        }
+    } else if (node.kind == AstKind.add_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.sub_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.mul_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.div_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.mod_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.shl_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.shr_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.and_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.xor_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
+        }
+    } else if (node.kind == AstKind.or_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else {
         _ = lowerExpr(self, node_idx);

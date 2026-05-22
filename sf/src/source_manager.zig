@@ -102,22 +102,36 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
 
 pub fn sourceManagerGetFileName(self: *SourceManager, file_id: u32) []const u8 {
     var files_slice = sourceFileArrayListGetSlice(self.files);
-    return files_slice[@intCast(usize, file_id)].filename;
+    if (files_slice.len == @intCast(usize, 0)) { var dummy: []const u8 = ""; return dummy; }
+    var fid = file_id;
+    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
+    return files_slice[@intCast(usize, fid)].filename;
 }
 
 pub fn sourceManagerGetSourceContent(self: *SourceManager, file_id: u32) []const u8 {
     var files_slice = sourceFileArrayListGetSlice(self.files);
-    return files_slice[@intCast(usize, file_id)].content;
+    if (files_slice.len == @intCast(usize, 0)) { var dummy: []const u8 = ""; return dummy; }
+    var fid = file_id;
+    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
+    return files_slice[@intCast(usize, fid)].content;
 }
 
 pub fn sourceManagerGetLineOffsets(self: *SourceManager, file_id: u32) []u32 {
     var files_slice = sourceFileArrayListGetSlice(self.files);
-    return ga_mod.u32ArrayListGetSlice(files_slice[@intCast(usize, file_id)].line_offsets);
+    if (files_slice.len == @intCast(usize, 0)) { var dummy: [0]u32 = undefined; return dummy[0..]; }
+    var fid = file_id;
+    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
+    return ga_mod.u32ArrayListGetSlice(files_slice[@intCast(usize, fid)].line_offsets);
 }
 
 pub fn sourceManagerGetLocation(self: *SourceManager, file_id: u32, offset: u32) Location {
     var files_slice = sourceFileArrayListGetSlice(self.files);
-    var file = &files_slice[@intCast(usize, file_id)];
+    var fid: u32 = file_id;
+    if (files_slice.len == @intCast(usize, 0)) {
+        return Location{ .file_id = @intCast(u32, 0), .line = @intCast(u32, 0), .col = @intCast(u32, 0) };
+    }
+    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
+    var file = &files_slice[@intCast(usize, fid)];
     var offsets = ga_mod.u32ArrayListGetSlice(file.line_offsets);
     var line_idx = mem_mod.binary_search(offsets, offset);
     var col: u32 = offset - offsets[@intCast(usize, line_idx)];

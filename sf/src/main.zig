@@ -159,17 +159,20 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
 
 fn runCompiler(ctx: *CompilerContext) void {
     phase_ImportResolution(ctx);
+    var z2: []const u8 = "2\n"; pal.stderr_write(z2);
     alloc_mod.checkCombinedPeak(ctx.alloc);
-    if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
-        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
-        pal.exit(2);
-    }
+    var z3: []const u8 = "3\n"; pal.stderr_write(z3);
+    var z3a: []const u8 = "3a\n"; pal.stderr_write(z3a);
+    var z4: []const u8 = "4\n"; pal.stderr_write(z4);
     phase_SymbolRegistration(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     phase_TypeResolution(ctx);
+    var t1: []const u8 = "t1\n"; pal.stderr_write(t1);
     alloc_mod.checkCombinedPeak(ctx.alloc);
+    var t2: []const u8 = "t2\n"; pal.stderr_write(t2);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        var p_msg: []const u8 = "E2\n"; pal.stderr_write(p_msg);
         pal.exit(2);
     }
     phase_SemanticAnalysis(ctx);
@@ -225,6 +228,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
     import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+    var z_msg: []const u8 = "Z\n"; pal.stderr_write(z_msg);
 }
 
 fn phase_SymbolRegistration(ctx: *CompilerContext) void {
