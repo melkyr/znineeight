@@ -1168,6 +1168,8 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     }
     _ = try parserExpect(self, TokenKind.rparen);
 
+    var saved_param_count: usize = self.child_buf_len;
+
     var ret_type_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.colon) {
         _ = parserAdvance(self);
@@ -1184,6 +1186,10 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     } else {
         body_node = try parserParseBlock(self);
         end_pos = self.last_end;
+    }
+
+    if (self.child_buf_len != saved_param_count) {
+        self.child_buf_len = saved_param_count;
     }
 
     var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,

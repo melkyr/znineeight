@@ -61,24 +61,27 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
 }
 
 fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?u64 {
-    if (node.payload == self.size_of_id) {
-        var tid = comptimeEvalResolveTypeArg(self, node.child_0);
+    if (node.child_0 == self.size_of_id) {
+        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
             if (ty.state == @intCast(u8, 2)) return @intCast(u64, ty.size);
         }
         return null;
     }
-    if (node.payload == self.align_of_id) {
-        var tid = comptimeEvalResolveTypeArg(self, node.child_0);
+    if (node.child_0 == self.align_of_id) {
+        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
             if (ty.state == @intCast(u8, 2)) return @intCast(u64, ty.alignment);
         }
         return null;
     }
-    if (node.payload == self.int_cast_id) {
-        return comptimeEvalEvaluate(self, node.child_1);
+    if (node.child_0 == self.int_cast_id) {
+        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        return comptimeEvalEvaluate(self, ec[@intCast(usize, 1)]);
     }
     return null;
 }

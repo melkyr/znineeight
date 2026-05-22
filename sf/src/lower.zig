@@ -1208,8 +1208,23 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
     func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
     func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
-    func_ptr.is_extern = @intCast(u8, 0);
-    func_ptr.is_pub = @intCast(u8, 0);
+    func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
+    func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
+    var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+    if (proto.params_count > @intCast(u16, 0)) {
+        var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
+        var pi: usize = @intCast(usize, 0);
+        while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
+            var pnode = store.nodes.items[@intCast(usize, pnodes[pi])];
+            var p_name_id = pnode.payload;
+            var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
+            var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
+            lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
+                .name_id = p_name_id,
+                .type_id = p_tid,
+            });
+        }
+    }
     self.func = func_ptr;
     self.current_bb = createBlock(self);
     self.scope_depth = @intCast(u32, 0);
@@ -1223,5 +1238,6 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
         emitInst(self, LirInst{ .ret_void = {} });
     }
     hoistTemps(self);
+    func_ptr.hoisted_temps = self.hoisted_temps;
     return func_ptr.*;
 }

@@ -335,6 +335,9 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
         return getCTypeName(reg, mangler, ep.backing_type);
     }
+    if (ty.kind == TypeKind.undefined_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.integer_literal_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.null_type) { var s: []const u8 = "int"; return s; }
     var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }

@@ -28,8 +28,8 @@ pub fn u32ToU32MapInit(alloc: *Sand) U32ToU32Map {
 
 pub fn u32ToU32MapGet(self: *U32ToU32Map, key: u32) ?u32 {
     if (self.capacity == @intCast(usize, 0)) return null;
-    var mask = self.capacity - @intCast(usize, 1);
-    var i = @intCast(usize, key) & mask;
+    var mask: usize = self.capacity - @intCast(usize, 1);
+    var i: usize = @intCast(usize, key) & mask;
     while (self.occupied[i] != @intCast(u8, 0)) {
         if (self.keys[i] == key) return self.values[i];
         i = (i + @intCast(usize, 1)) & mask;
@@ -42,7 +42,7 @@ fn u32ToU32MapGrow(self: *U32ToU32Map) void {
     var old_keys = self.keys;
     var old_values = self.values;
     var old_occupied = self.occupied;
-    var new_cap = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
+    var new_cap: usize = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
     var raw_keys = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_vals = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_occ = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
@@ -73,8 +73,8 @@ fn u32ToU32MapGrow(self: *U32ToU32Map) void {
 pub fn u32ToU32MapPut(self: *U32ToU32Map, key: u32, value: u32) void {
     if (self.count * @intCast(usize, 4) >= self.capacity * @intCast(usize, 3)) { u32ToU32MapGrow(self); }
     if (self.capacity == @intCast(usize, 0)) { u32ToU32MapGrow(self); }
-    var mask = self.capacity - @intCast(usize, 1);
-    var i = @intCast(usize, key) & mask;
+    var mask: usize = self.capacity - @intCast(usize, 1);
+    var i: usize = @intCast(usize, key) & mask;
     while (self.occupied[i] != @intCast(u8, 0)) {
         if (self.keys[i] == key) { self.values[i] = value; return; }
         i = (i + @intCast(usize, 1)) & mask;
@@ -103,8 +103,8 @@ pub fn u64ToU32MapInit(alloc: *Sand) U64ToU32Map {
 
 pub fn u64ToU32MapGet(self: *U64ToU32Map, key: u64) ?u32 {
     if (self.capacity == @intCast(usize, 0)) return null;
-    var mask = self.capacity - @intCast(usize, 1);
-    var i = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
+    var mask: usize = self.capacity - @intCast(usize, 1);
+    var i: usize = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
     while (self.occupied[i] != @intCast(u8, 0)) {
         if (self.keys[i] == key) return self.values[i];
         i = (i + @intCast(usize, 1)) & mask;
@@ -117,7 +117,7 @@ fn u64ToU32MapGrow(self: *U64ToU32Map) void {
     var old_keys = self.keys;
     var old_values = self.values;
     var old_occupied = self.occupied;
-    var new_cap = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
+    var new_cap: usize = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
     var raw_keys = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_vals = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_occ = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
@@ -148,8 +148,8 @@ fn u64ToU32MapGrow(self: *U64ToU32Map) void {
 pub fn u64ToU32MapPut(self: *U64ToU32Map, key: u64, value: u32) void {
     if (self.count * @intCast(usize, 4) >= self.capacity * @intCast(usize, 3)) { u64ToU32MapGrow(self); }
     if (self.capacity == @intCast(usize, 0)) { u64ToU32MapGrow(self); }
-    var mask = self.capacity - @intCast(usize, 1);
-    var i = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
+    var mask: usize = self.capacity - @intCast(usize, 1);
+    var i: usize = @intCast(usize, @intCast(u32, key & @intCast(u64, 0xFFFFFFFF))) & mask;
     while (self.occupied[i] != @intCast(u8, 0)) {
         if (self.keys[i] == key) { self.values[i] = value; return; }
         i = (i + @intCast(usize, 1)) & mask;

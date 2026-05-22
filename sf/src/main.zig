@@ -34,6 +34,7 @@ const resolved_type_table = @import("resolved_type_table.zig");
 const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
 const coercion_mod = @import("coercion.zig");
 const CoercionTable = coercion_mod.CoercionTable;
+const sa_mod = @import("semantic_analyzer.zig");
 const type_resolver = @import("type_resolver.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
@@ -295,7 +296,72 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
 
 fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
     alloc_mod.sandReset(&ctx.alloc.scratch);
-    _ = ctx;
+    var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var ast_root = mods[mi].ast_root;
+        if (ast_root == @intCast(u32, 0)) continue;
+        var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
+        var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+        var di: usize = 0;
+        while (di < decls.len) : (di += 1) {
+            var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
+            if (decl.kind == AstKind.fn_decl) {
+                var proto = ctx.store.fn_protos.items[@intCast(usize, decl.payload)];
+                if (proto.return_type_node != 0) {
+                    var rtype = resolveTypeExpr(ctx, proto.return_type_node);
+                    if (rtype != type_mod.TYPE_UNDEFINED) {
+                        resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, proto.return_type_node, rtype);
+                    }
+                }
+                if (proto.params_count > @intCast(u16, 0)) {
+                    var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+                    var pnodes = ast_mod.astStoreGetExtraChildren(ctx.store, p_payload);
+                    var pi: usize = 0;
+                    while (pi < pnodes.len) : (pi += 1) {
+                        var pnode = ctx.store.nodes.items[@intCast(usize, pnodes[pi])];
+                        if (pnode.child_0 != 0) {
+                            var ptype = resolveTypeExpr(ctx, pnode.child_0);
+                            if (ptype != type_mod.TYPE_UNDEFINED) {
+                                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, pnode.child_0, ptype);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn resolveTypeExpr(ctx: *CompilerContext, node_idx: u32) type_mod.TypeId {
+    return resolveTypeExprDepth(ctx, node_idx, @intCast(u32, 0));
+}
+
+fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_mod.TypeId {
+    if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.ident_expr) {
+        var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, node.payload));
+        if (tid) |t| return t;
+        return type_mod.TYPE_UNDEFINED;
+    }
+    if (node.child_0 != 0) {
+        var child_type = resolveTypeExprDepth(ctx, node.child_0, depth + @intCast(u32, 1));
+        if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type) {
+            return child_type;
+        }
+        if (node.kind == AstKind.slice_type) {
+            return type_mod.TYPE_UNDEFINED;
+        }
+        if (node.kind == AstKind.optional_type) {
+            return child_type;
+        }
+        if (node.kind == AstKind.error_union_type) {
+            return child_type;
+        }
+    }
+    return type_mod.TYPE_UNDEFINED;
 }
 
 fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
