@@ -1490,14 +1490,30 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
 }
 fn parserParseBlock(self: *Parser) ParserError!u32 {
     var lbrace = try parserExpect(self, TokenKind.lbrace);
-    self.child_buf_len = 0;
+    var saved_len: usize = self.child_buf_len;
+    var local_buf: [64]u32 = undefined;
+    var local_len: usize = @intCast(usize, 0);
     while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
         var stmt = try parserParseStatement(self);
-        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, stmt);
+        if (local_len < @intCast(usize, 64)) {
+            local_buf[@intCast(usize, local_len)] = stmt;
+        } else {
+            u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, stmt);
+        }
+        local_len += @intCast(usize, 1);
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
-    self.child_buf_len = 0;
+    var payload: u32 = 0;
+    if (local_len > @intCast(usize, 0)) {
+        var slice: []u32 = undefined;
+        if (local_len <= @intCast(usize, 64)) {
+            slice = local_buf[0..local_len];
+        } else {
+            slice = self.child_buf_items[0..local_len];
+        }
+        payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
+    }
+    self.child_buf_len = saved_len;
     return ast_mod.astStoreAddNode(self.store, AstKind.block, 0, lbrace.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len), 0, 0, 0, payload);
 }
 

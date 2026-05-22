@@ -953,12 +953,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var name_id = node.payload;
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != 0) {
-            var type_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-            if (type_node.kind == AstKind.ident_expr) {
-                var tn_id = self.ctx.store.identifiers.items[@intCast(usize, type_node.payload)];
-                var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
-                if (tn) |t| decl_type = t;
-            }
+            var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+            if (rt) |t| decl_type = t;
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var dl_temp = nextTemp(self, decl_type);

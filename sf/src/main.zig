@@ -328,9 +328,35 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                         }
                     }
                 }
+                if (decl.child_0 != 0) {
+                    resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
+                }
             }
         }
     }
+}
+
+fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
+    if (depth > @intCast(u32, 16)) return;
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.var_decl) {
+        if (node.child_0 != 0) {
+            var rtype = resolveTypeExpr(ctx, node.child_0);
+            if (rtype != type_mod.TYPE_UNDEFINED) {
+                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
+            }
+        }
+    }
+    if (node.kind == AstKind.block) {
+        var decls = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+        var di: usize = 0;
+        while (di < decls.len) : (di += 1) {
+            resolveStmtTypes(ctx, decls[di], depth + @intCast(u32, 1));
+        }
+    }
+    var cd = depth + @intCast(u32, 1);
+    if (node.child_0 != 0) { resolveStmtTypes(ctx, node.child_0, cd); }
+    if (node.child_1 != 0) { resolveStmtTypes(ctx, node.child_1, cd); }
 }
 
 fn resolveTypeExpr(ctx: *CompilerContext, node_idx: u32) type_mod.TypeId {
