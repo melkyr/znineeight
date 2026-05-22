@@ -387,6 +387,33 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         if (node.kind == AstKind.error_union_type) {
             return child_type;
         }
+        if (node.kind == AstKind.array_type) {
+            if (node.child_1 != 0) {
+                var sz_node = ctx.store.nodes.items[@intCast(usize, node.child_1)];
+                var arr_len: u32 = @intCast(u32, 0);
+                if (sz_node.kind == AstKind.int_literal) {
+                    arr_len = @intCast(u32, ctx.store.int_values.items[@intCast(usize, sz_node.payload)]);
+                } else if (sz_node.kind == AstKind.ident_expr) {
+                    var c_name_id = ctx.store.identifiers.items[@intCast(usize, sz_node.payload)];
+                    var c_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, @intCast(u32, 0), c_name_id);
+                    if (c_sym) |cs| {
+                        if (cs.flags & @intCast(u16, 0x01) == @intCast(u16, 0)) {
+                            var c_decl = ctx.store.nodes.items[@intCast(usize, cs.decl_node)];
+                            if (c_decl.child_1 != 0) {
+                                var c_init = ctx.store.nodes.items[@intCast(usize, c_decl.child_1)];
+                                if (c_init.kind == AstKind.int_literal) {
+                                    arr_len = @intCast(u32, ctx.store.int_values.items[@intCast(usize, c_init.payload)]);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (arr_len != @intCast(u32, 0)) {
+                    return type_mod.typeRegistryGetOrCreateArray(ctx.typereg, child_type, arr_len);
+                }
+            }
+            return type_mod.TYPE_UNDEFINED;
+        }
     }
     return type_mod.TYPE_UNDEFINED;
 }

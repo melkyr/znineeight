@@ -715,6 +715,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         self.current_bb = join_bb;
         return result;
+    } else if (node.kind == AstKind.array_init) {
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var arr_type: u32 = type_mod.TYPE_U32;
+        if (ec.len > @intCast(usize, 0)) {
+            var el0 = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
+            if (el0.kind == AstKind.char_literal) { arr_type = type_mod.TYPE_U8; }
+        }
+        var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, arr_type, @intCast(u32, ec.len));
+        var base_temp = nextTemp(self, arr_tid);
+        var ei: usize = @intCast(usize, 0);
+        while (ei < ec.len) : (ei += @intCast(usize, 1)) {
+            var val_temp = lowerExpr(self, ec[ei]);
+            var ix_temp = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
+            emitInst(self, LirInst{ .assign_index = .{ .base = base_temp, .index = ix_temp, .src = val_temp } });
+        }
+        return base_temp;
     } else if (node.kind == AstKind.switch_expr) {
         return @intCast(u32, 0);
     } else {
@@ -1005,6 +1022,16 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 decl_type = type_mod.TYPE_U32;
             } else if (init_node.kind == AstKind.fn_call) {
                 decl_type = type_mod.TYPE_U32;
+            } else if (init_node.kind == AstKind.array_init) {
+                var ec = ast_mod.astStoreGetExtraChildren(store, init_node.payload);
+                if (ec.len > @intCast(usize, 0)) {
+                    var el = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
+                    if (el.kind == AstKind.int_literal) {
+                        decl_type = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, type_mod.TYPE_U32, @intCast(u32, ec.len));
+                    } else if (el.kind == AstKind.char_literal) {
+                        decl_type = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, type_mod.TYPE_U8, @intCast(u32, ec.len));
+                    }
+                }
             }
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
@@ -1270,7 +1297,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
-    var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+    var p_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
     if (proto.params_count > @intCast(u16, 0)) {
         var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
         var pi: usize = @intCast(usize, 0);

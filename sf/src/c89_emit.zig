@@ -335,6 +335,10 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
         return getCTypeName(reg, mangler, ep.backing_type);
     }
+    if (ty.kind == TypeKind.array_type) {
+        var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
+        return getCTypeName(reg, mangler, ap.elem);
+    }
     if (ty.kind == TypeKind.undefined_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.integer_literal_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.null_type) { var s: []const u8 = "int"; return s; }
@@ -849,6 +853,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var i: usize = @intCast(usize, 0);
     while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
         var td = lir_fn.hoisted_temps.items[i];
+        var ty = emitter.registry.types_items[@intCast(usize, td.type_id)];
         var c_type = getCTypeName(emitter.registry, emitter.mangler, td.type_id);
         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
         bufferedWriterWrite(&emitter.writer, c_type);
@@ -856,6 +861,21 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         bufferedWriterWrite(&emitter.writer, sp);
         var tn = mangleTempName(emitter.interner, td.temp_id);
         bufferedWriterWrite(&emitter.writer, tn);
+        if (ty.kind == TypeKind.array_type) {
+            var ap_ind: usize = @intCast(usize, ty.payload_idx);
+            var ap_len: u32 = emitter.registry.array_items[ap_ind].length;
+            var lb: []const u8 = "[";
+            bufferedWriterWrite(&emitter.writer, lb);
+            var nb: [16]u8 = undefined;
+            var nb_sl: []u8 = nb[0..@intCast(usize, 16)];
+            var nl: u32 = itoa_mod.itoa(ap_len, nb_sl);
+            var nstart: u32 = @intCast(u32, 15) - nl;
+            var ns: usize = @intCast(usize, nstart);
+            var ne: usize = @intCast(usize, 15);
+            bufferedWriterWrite(&emitter.writer, nb[ns..ne]);
+            var rb: []const u8 = "]";
+            bufferedWriterWrite(&emitter.writer, rb);
+        }
         var sm: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, sm);
     }
@@ -941,6 +961,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .loop_header => {},
         .label => {},
         .decl_local => |dl| {
+            var ty = emitter.registry.types_items[@intCast(usize, dl.type_id)];
             var c_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
             var name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -948,6 +969,20 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var sp: []const u8 = " ";
             bufferedWriterWrite(&emitter.writer, sp);
             bufferedWriterWrite(&emitter.writer, name);
+        if (ty.kind == TypeKind.array_type) {
+                var ap_len: u32 = emitter.registry.array_items[@intCast(usize, ty.payload_idx)].length;
+                var lb: []const u8 = "[";
+                bufferedWriterWrite(&emitter.writer, lb);
+                var nb: [16]u8 = undefined;
+                var nb_sl: []u8 = nb[0..@intCast(usize, 16)];
+                var nl: u32 = itoa_mod.itoa(ap_len, nb_sl);
+                var nstart: u32 = @intCast(u32, 15) - nl;
+                var ns2: usize = @intCast(usize, nstart);
+                var ne2: usize = @intCast(usize, 15);
+                bufferedWriterWrite(&emitter.writer, nb[ns2..ne2]);
+                var rb: []const u8 = "]";
+                bufferedWriterWrite(&emitter.writer, rb);
+            }
             var sm: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, sm);
         },
