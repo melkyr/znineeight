@@ -330,9 +330,23 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 }
                 if (decl.child_0 != 0) {
                     resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
-                }
-            }
         }
+    }
+    var ac: u32 = @intCast(u32, 0);
+    var ei: usize = @intCast(usize, 0);
+    while (ei < ctx.resolved_types.entries_len) : (ei += @intCast(usize, 1)) {
+        var te = ctx.resolved_types.entries_items[@intCast(usize, ei)];
+        var ty = ctx.typereg.types_items[@intCast(usize, te.type_id)];
+        if (ty.kind == type_mod.TypeKind.array_type) ac += @intCast(u32, 1);
+    }
+    if (ac >= @intCast(u32, 2)) {
+        var am: []const u8 = "2\n"; pal.stderr_write(am);
+    } else if (ac == @intCast(u32, 1)) {
+        var am: []const u8 = "1\n"; pal.stderr_write(am);
+    } else {
+        var am: []const u8 = "0\n"; pal.stderr_write(am);
+    }
+}
     }
 }
 
@@ -344,6 +358,11 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
             var rtype = resolveTypeExpr(ctx, node.child_0);
             if (rtype != type_mod.TYPE_UNDEFINED) {
                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
+                var pb = node.child_0 & @intCast(u32, 3);
+                if (pb == @intCast(u32, 0)) { var pm: []const u8 = "P0"; pal.stderr_write(pm); }
+                else if (pb == @intCast(u32, 1)) { var pm: []const u8 = "P1"; pal.stderr_write(pm); }
+                else if (pb == @intCast(u32, 2)) { var pm: []const u8 = "P2"; pal.stderr_write(pm); }
+                else { var pm: []const u8 = "P3"; pal.stderr_write(pm); }
             }
         }
     }
@@ -393,11 +412,18 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
                 var arr_len: u32 = @intCast(u32, 0);
                 if (sz_node.kind == AstKind.int_literal) {
                     arr_len = @intCast(u32, ctx.store.int_values.items[@intCast(usize, sz_node.payload)]);
+                } else if (sz_node.kind == AstKind.add or sz_node.kind == AstKind.sub) {
+                    var lhs = evalConstU32(ctx, sz_node.child_0);
+                    var rhs = evalConstU32(ctx, sz_node.child_1);
+                    if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF)) {
+                        if (sz_node.kind == AstKind.add) arr_len = lhs + rhs;
+                        else arr_len = lhs - rhs;
+                    }
                 } else if (sz_node.kind == AstKind.ident_expr) {
                     var c_name_id = ctx.store.identifiers.items[@intCast(usize, sz_node.payload)];
                     var c_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, @intCast(u32, 0), c_name_id);
                     if (c_sym) |cs| {
-                        if (cs.flags & @intCast(u16, 0x01) == @intCast(u16, 0)) {
+                         if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                             var c_decl = ctx.store.nodes.items[@intCast(usize, cs.decl_node)];
                             if (c_decl.child_1 != 0) {
                                 var c_init = ctx.store.nodes.items[@intCast(usize, c_decl.child_1)];
@@ -409,13 +435,37 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
                     }
                 }
                 if (arr_len != @intCast(u32, 0)) {
-                    return type_mod.typeRegistryGetOrCreateArray(ctx.typereg, child_type, arr_len);
+                    var at = type_mod.typeRegistryGetOrCreateArray(ctx.typereg, child_type, arr_len);
+                    if (at != type_mod.TYPE_UNDEFINED) { var am: []const u8 = "A"; pal.stderr_write(am); }
+                    else { var am: []const u8 = "a"; pal.stderr_write(am); }
+                    return at;
                 }
             }
             return type_mod.TYPE_UNDEFINED;
         }
     }
     return type_mod.TYPE_UNDEFINED;
+}
+
+fn evalConstU32(ctx: *CompilerContext, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
+    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.int_literal) {
+        return @intCast(u32, ctx.store.int_values.items[@intCast(usize, node.payload)]);
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ctx.store.identifiers.items[@intCast(usize, node.payload)];
+        var c_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, @intCast(u32, 0), name_id);
+        if (c_sym) |cs| {
+            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                var c_decl = ctx.store.nodes.items[@intCast(usize, cs.decl_node)];
+                if (c_decl.child_1 != 0) {
+                    return evalConstU32(ctx, c_decl.child_1);
+                }
+            }
+        }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
 }
 
 fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
@@ -581,24 +631,6 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.bufferedWriterWrite(&emitter.writer, dbg_e);
     c89_mod.emitModule(&emitter, module_name, fns);
     c89_mod.bufferedWriterFlush(&emitter.writer);
-
-    var target_name: []const u8 = "target";
-    var target_exe: []const u8 = "target.exe";
-
-    var swriter: c89_mod.BufferedWriter = undefined;
-    swriter = c89_mod.bufferedWriterInit();
-    c89_mod.emitBuildTargetSh(&swriter, target_name);
-    c89_mod.bufferedWriterFlush(&swriter);
-
-    var bwriter: c89_mod.BufferedWriter = undefined;
-    bwriter = c89_mod.bufferedWriterInit();
-    c89_mod.emitBuildTargetBat(&bwriter, target_exe);
-    c89_mod.bufferedWriterFlush(&bwriter);
-
-    var owriter: c89_mod.BufferedWriter = undefined;
-    owriter = c89_mod.bufferedWriterInit();
-    c89_mod.emitBuildOwcBat(&owriter, target_exe);
-    c89_mod.bufferedWriterFlush(&owriter);
 }
 
 fn parseArgs() CompilerCli {
