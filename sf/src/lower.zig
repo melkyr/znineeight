@@ -468,6 +468,33 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, node.payload)];
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
+        if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.global and (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
+                if (decl_node.child_1 != 0) {
+                    var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
+                    if (init_node.kind == AstKind.int_literal) {
+                        var val = store.int_values.items[@intCast(usize, init_node.payload)];
+                        var tid = nextTemp(self, type_mod.TYPE_U32);
+                        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+                        return tid;
+                    }
+                    if (init_node.kind == AstKind.float_literal) {
+                        var val = store.float_values.items[@intCast(usize, init_node.payload)];
+                        var tid = nextTemp(self, type_mod.TYPE_F64);
+                        emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
+                        return tid;
+                    }
+                    if (init_node.kind == AstKind.char_literal) {
+                        var val = store.int_values.items[@intCast(usize, init_node.payload)];
+                        var tid = nextTemp(self, type_mod.TYPE_U8);
+                        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+                        return tid;
+                    }
+                }
+            }
+        }
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
@@ -748,6 +775,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         self.current_bb = join_bb;
     } else if (node.kind == AstKind.while_stmt) {
+        var entry_bb = self.current_bb;
         var cond_bb = createBlock(self);
         var body_bb = createBlock(self);
         var exit_bb = createBlock(self);
@@ -759,6 +787,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         };
         loopInfoArrayListAppend(&self.loop_stack, loop_info);
         emitInst(self, LirInst{ .jump = cond_bb });
+        self.func.blocks.items[@intCast(usize, entry_bb)].is_terminated = @intCast(u8, 1);
         self.current_bb = cond_bb;
         var cond_temp = lowerExpr(self, node.child_0);
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
@@ -955,6 +984,25 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (node.child_0 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
             if (rt) |t| decl_type = t;
+        } else if (node.child_1 != 0) {
+            var init_node = store.nodes.items[@intCast(usize, node.child_1)];
+            if (init_node.kind == AstKind.float_literal) {
+                decl_type = type_mod.TYPE_F64;
+            } else if (init_node.kind == AstKind.int_literal) {
+                decl_type = type_mod.TYPE_I32;
+            } else if (init_node.kind == AstKind.char_literal) {
+                decl_type = type_mod.TYPE_U8;
+            } else if (init_node.kind == AstKind.bool_literal) {
+                decl_type = type_mod.TYPE_BOOL;
+            } else if (init_node.kind == AstKind.add or init_node.kind == AstKind.sub or init_node.kind == AstKind.mul or init_node.kind == AstKind.div or init_node.kind == AstKind.mod_op) {
+                decl_type = type_mod.TYPE_F64;
+            } else if (init_node.kind == AstKind.negate) {
+                decl_type = type_mod.TYPE_F64;
+            } else if (init_node.kind == AstKind.builtin_call) {
+                decl_type = type_mod.TYPE_U32;
+            } else if (init_node.kind == AstKind.fn_call) {
+                decl_type = type_mod.TYPE_U32;
+            }
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var dl_temp = nextTemp(self, decl_type);
