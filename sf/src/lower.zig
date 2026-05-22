@@ -73,6 +73,7 @@ pub const SemanticContext = struct {
     resolved_types: *ResolvedTypeTable,
     coercions: *CoercionTable,
     diag: *DiagnosticCollector,
+    has_symbols: u8,
 };
 
 pub const DeferActionArrayList = struct {
@@ -468,6 +469,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, node.payload)];
+        if (self.ctx.has_symbols != @intCast(u8, 0)) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
         if (sym) |s| {
             if (s.kind == sym_mod.SymbolKind.global and (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
@@ -494,6 +496,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                 }
             }
+        }
         }
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });

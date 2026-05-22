@@ -448,6 +448,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .resolved_types = ctx.resolved_types,
         .coercions = ctx.coercion_table,
         .diag = ctx.diag,
+        .has_symbols = @intCast(u8, 1),
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
