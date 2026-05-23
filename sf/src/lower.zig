@@ -292,6 +292,7 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
+    var t_target: u32 = @intCast(u32, 10);
     if (node.kind == AstKind.int_literal) {
         var val = store.int_values.items[@intCast(usize, node.payload)];
         var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
@@ -649,15 +650,22 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
-        var result = nextTemp(self, type_mod.TYPE_U32);
+        var ty_node = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
+        t_target = type_mod.TYPE_U32;
+        if (ty_node.kind == AstKind.ident_expr) {
+            var tn_id = store.identifiers.items[@intCast(usize, ty_node.payload)];
+            var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
+            if (tn) |t| t_target = t;
+        }
+        var result = nextTemp(self, t_target);
         if (node.child_0 == self.intcast_name_id) {
             emitInst(self, LirInst{ .int_cast = .{
-                .value = val_temp, .target = type_mod.TYPE_U32, .result = result,
+                .value = val_temp, .target = t_target, .result = result,
                 .is_checked = @intCast(u8, 1),
             } });
         } else if (node.child_0 == self.inttofloat_name_id) {
             emitInst(self, LirInst{ .int_to_float = .{
-                .value = val_temp, .target = type_mod.TYPE_U32, .result = result,
+                .value = val_temp, .target = t_target, .result = result,
             } });
         }
         return result;
