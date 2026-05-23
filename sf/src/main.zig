@@ -624,11 +624,11 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitZigRuntimeC(&swriter2);
     c89_mod.bufferedWriterFlush(&swriter2);
 
-    
-    var dbg_s: []const u8 = "/* LIR_FNS=";
-    c89_mod.bufferedWriterWrite(&emitter.writer, dbg_s);
-    var dbg_e: []const u8 = " */\n";
-    c89_mod.bufferedWriterWrite(&emitter.writer, dbg_e);
+    var pwriter: c89_mod.BufferedWriter = undefined;
+    pwriter = c89_mod.bufferedWriterInit();
+    c89_mod.emitZigPalC(&pwriter);
+    c89_mod.bufferedWriterFlush(&pwriter);
+
     c89_mod.emitModule(&emitter, module_name, fns);
     c89_mod.bufferedWriterFlush(&emitter.writer);
 }
