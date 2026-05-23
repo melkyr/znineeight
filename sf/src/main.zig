@@ -616,18 +616,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
 
     var cwriter: c89_mod.BufferedWriter = undefined;
     cwriter = c89_mod.bufferedWriterInit();
-    c89_mod.emitZigCompatH(&cwriter);
+    c89_mod.emitIncludes(&cwriter);
     c89_mod.bufferedWriterFlush(&cwriter);
-
-    var swriter2: c89_mod.BufferedWriter = undefined;
-    swriter2 = c89_mod.bufferedWriterInit();
-    c89_mod.emitZigRuntimeC(&swriter2);
-    c89_mod.bufferedWriterFlush(&swriter2);
-
-    var pwriter: c89_mod.BufferedWriter = undefined;
-    pwriter = c89_mod.bufferedWriterInit();
-    c89_mod.emitZigPalC(&pwriter);
-    c89_mod.bufferedWriterFlush(&pwriter);
 
     c89_mod.emitModule(&emitter, module_name, fns);
     c89_mod.bufferedWriterFlush(&emitter.writer);

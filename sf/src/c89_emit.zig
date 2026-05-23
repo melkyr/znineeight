@@ -358,6 +358,13 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
 
+pub fn emitIncludes(writer: *BufferedWriter) void {
+    var l0: []const u8 = "#include \"zig_compat.h\"\n";
+    bufferedWriterWrite(writer, l0);
+    var l1: []const u8 = "#include \"zig_runtime.h\"\n";
+    bufferedWriterWrite(writer, l1);
+}
+
 pub fn emitZigCompatH(writer: *BufferedWriter) void {
     var l00: []const u8 = "/* zig_compat.h - C89 compatibility layer */\n";
     bufferedWriterWrite(writer, l00);

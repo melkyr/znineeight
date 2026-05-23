@@ -172,16 +172,3 @@ void __cdecl mainCRTStartup(void)
 #endif
 
 #endif /* ZIG_PAL_C */
-/* Module: output */
-#include "zig_compat.h"
-#include "zig_special_types.h"
-
-/* Forward declarations */
-void zF_EA90E208_main(void);
-
-/* main */
-void main(void) {
-    return;
-}
-
-/* EOF */
