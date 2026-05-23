@@ -339,6 +339,18 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
         return getCTypeName(reg, mangler, ap.elem);
     }
+    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+        var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
+        var et = reg.types_items[@intCast(usize, pp.base)];
+        var qm: []const u8 = "Q"; pal.stderr_write(qm);
+        if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
+        if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }
+        if (et.kind == TypeKind.i32_type) { var s: []const u8 = "int*"; return s; }
+        if (et.kind == TypeKind.f64_type) { var s: []const u8 = "double*"; return s; }
+        if (et.kind == TypeKind.c_char_type) { var s: []const u8 = "char*"; return s; }
+        if (et.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int*"; return s; }
+        var s: []const u8 = "void*"; return s;
+    }
     if (ty.kind == TypeKind.undefined_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.integer_literal_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.null_type) { var s: []const u8 = "int"; return s; }
@@ -725,6 +737,16 @@ fn mangleLocalName(mangler: *NameMangler, interner: *StringInterner, name_id: u3
 
 pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
+    var is_main: u8 = @intCast(u8, 0);
+    if (orig.len == @intCast(usize, 4)) {
+        if (orig[0] == 'm' and orig[1] == 'a' and orig[2] == 'i' and orig[3] == 'n') is_main = @intCast(u8, 1);
+    }
+    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
+    var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
+    if (is_main == @intCast(u8, 1) and lir_fn.is_pub == @intCast(u8, 1)) {
+        var mn: []const u8 = "main";
+        fn_name = mn;
+    }
     var sc: []const u8 = "/* ";
     bufferedWriterWrite(&emitter.writer, sc);
     bufferedWriterWrite(&emitter.writer, orig);
@@ -736,8 +758,6 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
 
-    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
-    var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
     bufferedWriterWrite(&emitter.writer, fn_name);
 
     var op: []const u8 = "(";
