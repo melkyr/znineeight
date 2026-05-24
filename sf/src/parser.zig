@@ -18,6 +18,7 @@ const ast_mod = @import("ast.zig");
 const string_interner_mod = @import("string_interner.zig");
 const pal = @import("pal.zig");
 const itoa_mod = @import("util/itoa.zig");
+const format_mod = @import("util/format.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
 
@@ -439,6 +440,11 @@ fn parserParseIntLiteral(self: *Parser) ParserError!u32 {
 fn parserParseFloatLiteral(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    var dbg_buf: [64]u8 = undefined;
+    var dbg = format_mod.formatF64(tok.value.float_val, dbg_buf[0..], 64);
+    var ps: []const u8 = "PF:"; pal.stderr_write(ps);
+    pal.stderr_write(dbg);
+    var pn: []const u8 = "\n"; pal.stderr_write(pn);
     return ast_mod.astStoreAddFloatLiteral(self.store, tok.value.float_val, tok.span_start, end);
 }
 

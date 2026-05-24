@@ -111,9 +111,6 @@ pub fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
             di += 1;
         }
     } else if (exp != 0) {
-        di = 0;
-        buf[@intCast(usize, bi)] = fmt_buf[@intCast(usize, di)];
-        bi += 1;
         buf[@intCast(usize, bi)] = '.';
         bi += 1;
         di = 1;
@@ -122,9 +119,6 @@ pub fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
             bi += 1;
             di += 1;
         }
-    } else {
-        buf[@intCast(usize, bi)] = fmt_buf[@intCast(usize, 0)];
-        bi += 1;
     }
     if (exp != 0) {
         buf[@intCast(usize, bi)] = 'e';

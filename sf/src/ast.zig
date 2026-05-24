@@ -119,6 +119,8 @@ pub const FnProto = struct {
 
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
+const pal = @import("pal.zig");
+const format_mod = @import("util/format.zig");
 
 fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
     if (len.* >= capacity.*) {
@@ -323,6 +325,11 @@ pub fn astStoreAddCharLiteral(store: *AstStore, value: u64, span_start: u32, spa
 }
 
 pub fn astStoreAddFloatLiteral(store: *AstStore, value: f64, span_start: u32, span_end: u32) u32 {
+    var as0_buf: [64]u8 = undefined;
+    var as0 = format_mod.formatF64(value, as0_buf[0..], 64);
+    var as0s: []const u8 = "AS:"; pal.stderr_write(as0s);
+    pal.stderr_write(as0);
+    var as0n: []const u8 = "\n"; pal.stderr_write(as0n);
     var val_idx = @intCast(u32, store.float_values.len);
     f64ArrayListAppendInner(&store.float_values.items, &store.float_values.len, &store.float_values.capacity, store.allocator, value);
     return astStoreAddNode(store, AstKind.float_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);

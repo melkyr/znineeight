@@ -14,6 +14,7 @@ const hash_mod = @import("util/hash.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
+const format_mod = @import("util/format.zig");
 const TypeResolver = type_resolver.TypeResolver;
 const sym_reg = @import("symbol_registrator.zig");
 const LirFunction = @import("lir.zig").LirFunction;
@@ -810,6 +811,17 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
 }
 
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
+    var tbuf: [64]u8 = undefined;
+    var ts1: []const u8 = "FMT0:"; pal.stderr_write(ts1);
+    var tf0 = format_mod.formatF64(0.0, tbuf[0..], 64);
+    pal.stderr_write(tf0);
+    var ts2: []const u8 = " FMT4:"; pal.stderr_write(ts2);
+    var tf4 = format_mod.formatF64(4.0, tbuf[0..], 64);
+    pal.stderr_write(tf4);
+    var ts3: []const u8 = " FMT3.5:"; pal.stderr_write(ts3);
+    var tf35 = format_mod.formatF64(3.5, tbuf[0..], 64);
+    pal.stderr_write(tf35);
+    var tsn: []const u8 = "\n"; pal.stderr_write(tsn);
     emitModuleHeader(emitter, name, fns);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
@@ -1252,8 +1264,18 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var result = mangleTempName(emitter.interner, fc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = 0.0;\n";
+            var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
+            var dx2_buf: [64]u8 = undefined;
+            var dx2 = format_mod.formatF64(fc.value, dx2_buf[0..], 64);
+            var dx2s: []const u8 = "D2:"; pal.stderr_write(dx2s);
+            pal.stderr_write(dx2);
+            var dx2n: []const u8 = "\n"; pal.stderr_write(dx2n);
+            var buf: [64]u8 = undefined;
+            var fb = format_mod.formatF64(fc.value, buf[0..], 64);
+            bufferedWriterWrite(&emitter.writer, fb);
+            var s2: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s2);
         },
         .string_const => |sc| {
             var result = mangleTempName(emitter.interner, sc.result);

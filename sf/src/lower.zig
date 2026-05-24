@@ -27,6 +27,7 @@ const pal = @import("pal.zig");
 const sym_mod = @import("symbol_table.zig");
 const Symbol = @import("symbol_table.zig").Symbol;
 const si_mod = @import("string_interner.zig");
+const format_mod = @import("util/format.zig");
 
 const BIN_ADD  = @intCast(u8, 0);
 const BIN_SUB  = @intCast(u8, 1);
@@ -332,7 +333,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.float_literal) {
         var val = store.float_values.items[@intCast(usize, node.payload)];
+        var dx0_buf: [64]u8 = undefined;
+        var dx0 = format_mod.formatF64(val, dx0_buf[0..], 64);
+        var dx0s: []const u8 = "D0:"; pal.stderr_write(dx0s);
+        pal.stderr_write(dx0);
+        var dx0n: []const u8 = "\n"; pal.stderr_write(dx0n);
         var tid = nextTemp(self, type_mod.TYPE_F64);
+        var dx1_buf: [64]u8 = undefined;
+        var dx1 = format_mod.formatF64(val, dx1_buf[0..], 64);
+        var dx1s: []const u8 = "D1:"; pal.stderr_write(dx1s);
+        pal.stderr_write(dx1);
+        var dx1n: []const u8 = "\n"; pal.stderr_write(dx1n);
         emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.string_literal) {

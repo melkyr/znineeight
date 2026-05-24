@@ -524,7 +524,8 @@ fn parseF64(text: []const u8) f64 {
         if (c == '_') continue;
         if (c == '.' or c == 'e' or c == 'E') { i -= 1; break; }
         if (!isDigit(c)) { i -= 1; break; }
-        result = result * 10.0 + @intToFloat(f64, @intCast(i32, c - '0'));
+        var dg: i32 = @intCast(i32, c - @intCast(u8, '0'));
+        result = result * 10.0 + @intToFloat(f64, dg);
     }
 
     if (i < text.len and text[i] == '.') {
@@ -536,7 +537,8 @@ fn parseF64(text: []const u8) f64 {
             if (c == '_') continue;
             if (c == 'e' or c == 'E') break;
             if (!isDigit(c)) break;
-            result += @intToFloat(f64, @intCast(i32, c - '0')) * frac_mul;
+            var dg2: i32 = @intCast(i32, c - @intCast(u8, '0'));
+            result += @intToFloat(f64, dg2) * frac_mul;
             frac_mul *= 0.1;
         }
     }
