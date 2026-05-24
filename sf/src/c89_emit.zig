@@ -342,7 +342,6 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
         var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
         var et = reg.types_items[@intCast(usize, pp.base)];
-        var qm: []const u8 = "Q"; pal.stderr_write(qm);
         if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
         if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }
         if (et.kind == TypeKind.i32_type) { var s: []const u8 = "int*"; return s; }
