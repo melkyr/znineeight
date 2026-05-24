@@ -217,6 +217,7 @@ pub const LirLowerer = struct {
     hoisted_temps: TempDeclArrayList,
     alloc: *Sand,
     scope_depth: u32,
+    block_terminated: u8,
     module_id: u32,
     module_reg: *ModuleRegistry,
     intcast_name_id: u32,
@@ -243,6 +244,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .hoisted_temps = lir_mod.tempDeclArrayListInit(alloc),
         .alloc = alloc,
         .scope_depth = @intCast(u32, 0),
+        .block_terminated = @intCast(u8, 0),
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
         .intcast_name_id = intcast_id,
@@ -397,7 +399,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.unreachable_expr) {
         emitInst(self, LirInst{ .nop = {} });
-        markTerminated(&self.func.blocks, self.current_bb);
+        self.block_terminated = @intCast(u8, 1);
         return @intCast(u32, 0);
     } else if (node.kind == AstKind.paren_expr) {
         return lowerExpr(self, node.child_0);
@@ -752,11 +754,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = err_bb;
         expandDefers(self, @intCast(u32, 0), @intCast(u8, 1));
         emitInst(self, LirInst{ .ret = inner_temp });
-        markTerminated(&self.func.blocks, self.current_bb);
+        self.block_terminated = @intCast(u8, 1);
         self.current_bb = ok_bb;
         var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = inner_temp, .result = result } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
@@ -773,14 +775,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = err_bb;
         var err_val = lowerExpr(self, node.child_1);
         emitInst(self, LirInst{ .assign = .{ .dst = join_temp, .src = err_val } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = ok_bb;
         var ok_val = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
         emitInst(self, LirInst{ .assign = .{ .dst = join_temp, .src = ok_val } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
@@ -797,14 +799,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = null_bb;
         var null_val = lowerExpr(self, node.child_1);
         emitInst(self, LirInst{ .assign = .{ .dst = join_temp, .src = null_val } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = ok_bb;
         var ok_val = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .unwrap_optional = .{ .value = lhs_temp, .result = ok_val } });
         emitInst(self, LirInst{ .assign = .{ .dst = join_temp, .src = ok_val } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
@@ -819,13 +821,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = then_bb;
         var then_val = lowerExpr(self, node.child_1);
         emitInst(self, LirInst{ .assign = .{ .dst = result, .src = then_val } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = else_bb;
         var else_val = lowerExpr(self, node.child_2);
         emitInst(self, LirInst{ .assign = .{ .dst = result, .src = else_val } });
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
@@ -871,10 +873,11 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
         var ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
         var i: usize = 0;
         while (i < ec.len) : (i += 1) {
+            self.block_terminated = @intCast(u8, 0);
             lowerStmt(self, ec[i]);
         }
     } else {
-        _ = lowerExpr(self, node_idx);
+        lowerStmt(self, node_idx);
     }
     expandDefers(self, self.scope_depth, @intCast(u8, 0));
     self.scope_depth -= @intCast(u32, 1);
@@ -907,15 +910,16 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var fallthrough = if (else_bb != 0) else_bb else join_bb;
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = fallthrough } });
         self.current_bb = then_bb;
+        self.block_terminated = @intCast(u8, 0);
         lowerStmtBody(self, node.child_1);
-        var bblock = &self.func.blocks.items[@intCast(usize, self.current_bb)];
-        if (bblock.insts.len == @intCast(usize, 0)) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         if (else_bb != 0) {
             self.current_bb = else_bb;
+            self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_2);
-            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = join_bb });
             }
         }
@@ -938,8 +942,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var cond_temp = lowerExpr(self, node.child_0);
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
         self.current_bb = body_bb;
+        self.block_terminated = @intCast(u8, 0);
         lowerStmtBody(self, node.child_1);
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = cond_bb });
         }
         self.current_bb = exit_bb;
@@ -967,8 +972,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, type_mod.TYPE_U32);
             emitInst(self, LirInst{ .load_index = .{ .base = ptr_temp, .index = idx_temp, .result = item_temp } });
+            self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
-            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            if (self.block_terminated == @intCast(u8, 0)) {
                 var nxt_idx = nextTemp(self, type_mod.TYPE_U32);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = @intCast(u32, 1), .result = nxt_idx } });
                 idx_temp = nxt_idx;
@@ -1023,15 +1029,16 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (else_target == else_bb) {
             self.current_bb = else_bb;
             emitInst(self, LirInst{ .nop = {} });
-            markTerminated(&self.func.blocks, else_bb);
+            self.block_terminated = @intCast(u8, 1);
         }
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
             var prong_bb_id = prong_start + @intCast(u32, pi);
             self.current_bb = prong_bb_id;
+            self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, prong_node.child_0);
-            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
         }
@@ -1051,8 +1058,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = cmp_op, .lhs = start_temp, .rhs = end_temp, .result = cmp_temp } });
             emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
             self.current_bb = body_bb;
+            self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
-            if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+            if (self.block_terminated == @intCast(u8, 0)) {
                 var nxt = nextTemp(self, type_mod.TYPE_U32);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = @intCast(u32, 1), .result = nxt } });
                 start_temp = nxt;
@@ -1063,14 +1071,14 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
     } else if (node.kind == AstKind.return_stmt) {
         expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
                 emitInst(self, LirInst{ .ret = val });
             } else {
                 emitInst(self, LirInst{ .ret_void = {} });
             }
-            markTerminated(&self.func.blocks, self.current_bb);
+            self.block_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.break_stmt) {
         if (self.loop_stack.len == @intCast(usize, 0)) { return; }
@@ -1094,9 +1102,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (exit_target == @intCast(u32, 0)) { return; }
         }
         expandDefers(self, exit_scope, @intCast(u8, 0));
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        { var bx: []const u8 = "BRK:"; pal.stderr_write(bx); dbgPrintU32(self.block_terminated); var nx: []const u8 = "\n"; pal.stderr_write(nx); }
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = exit_target });
-            markTerminated(&self.func.blocks, self.current_bb);
+            self.block_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.continue_stmt) {
         if (self.loop_stack.len == @intCast(usize, 0)) { return; }
@@ -1120,9 +1129,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (header_target == @intCast(u32, 0)) { return; }
         }
         expandDefers(self, cont_scope, @intCast(u8, 0));
-        if (self.func.blocks.items[@intCast(usize, self.current_bb)].is_terminated == 0) {
+        if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = header_target });
-            markTerminated(&self.func.blocks, self.current_bb);
+            self.block_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.var_decl) {
         var name_id = node.payload;
@@ -1492,11 +1501,11 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     self.temp_counter = @intCast(u32, 0);
     var body = node.child_0;
     if (body != 0) {
+        self.block_terminated = @intCast(u8, 0);
         lowerStmtBody(self, body);
     }
     expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
-    var cb = &self.func.blocks.items[@intCast(usize, self.current_bb)];
-    if (cb.is_terminated == @intCast(u8, 0)) {
+    if (self.block_terminated == @intCast(u8, 0)) {
         emitInst(self, LirInst{ .ret_void = {} });
     }
     hoistTemps(self);
