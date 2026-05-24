@@ -871,6 +871,36 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             tid_to_pos[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
         }
     }
+    var local_name_ids: [128]u32 = undefined;
+    var local_types: [128]u32 = undefined;
+    var local_count: u32 = @intCast(u32, 0);
+    var pi: usize = @intCast(usize, 0);
+    while (pi < lir_fn.params.len) : (pi += @intCast(usize, 1)) {
+        if (local_count < @intCast(u32, 128)) {
+            var p = lir_fn.params.items[pi];
+            local_name_ids[@intCast(usize, local_count)] = p.name_id;
+            local_types[@intCast(usize, local_count)] = p.type_id;
+            local_count += @intCast(u32, 1);
+        }
+    }
+    var dbi: usize = @intCast(usize, 0);
+    while (dbi < lir_fn.blocks.len) : (dbi += @intCast(usize, 1)) {
+        var dbb = &lir_fn.blocks.items[dbi];
+        var dii: usize = @intCast(usize, 0);
+        while (dii < dbb.insts.len) : (dii += @intCast(usize, 1)) {
+            var dinst = dbb.insts.items[dii];
+            switch (dinst) {
+                .decl_local => |dl| {
+                    if (local_count < @intCast(u32, 128)) {
+                        local_name_ids[@intCast(usize, local_count)] = dl.name_id;
+                        local_types[@intCast(usize, local_count)] = dl.type_id;
+                        local_count += @intCast(u32, 1);
+                    }
+                },
+                else => {},
+            }
+        }
+    }
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
         var bb = &lir_fn.blocks.items[bb_idx];
@@ -884,7 +914,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         if (src_p != @intCast(u32, 0xFFFFFFFF) and a.dst < MAX_T) {
                             var dst_p = tid_to_pos[@intCast(usize, a.dst)];
                             if (dst_p != @intCast(u32, 0xFFFFFFFF)) {
-                                var src_ty = lir_fn.hoisted_temps.items[@intCast(usize, src_p)].type_id;
+                                var src_ty: u32 = undefined;
+                                var swf = written_flag[@intCast(usize, src_p)];
+                                if (swf != @intCast(u8, 0)) {
+                                    src_ty = written_type[@intCast(usize, src_p)];
+                                } else {
+                                    src_ty = lir_fn.hoisted_temps.items[@intCast(usize, src_p)].type_id;
+                                }
                                 written_type[@intCast(usize, dst_p)] = src_ty;
                                 written_flag[@intCast(usize, dst_p)] = @intCast(u8, 1);
                             }
@@ -933,7 +969,14 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             var lhs_p = tid_to_pos[@intCast(usize, b.lhs)];
                             if (lhs_p != @intCast(u32, 0xFFFFFFFF)) {
-                                written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, lhs_p)].type_id;
+                                var lhs_ty: u32 = undefined;
+                                var lwf = written_flag[@intCast(usize, lhs_p)];
+                                if (lwf != @intCast(u8, 0)) {
+                                    lhs_ty = written_type[@intCast(usize, lhs_p)];
+                                } else {
+                                    lhs_ty = lir_fn.hoisted_temps.items[@intCast(usize, lhs_p)].type_id;
+                                }
+                                written_type[@intCast(usize, dp)] = lhs_ty;
                                 written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
                             }
                         }
@@ -999,7 +1042,14 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             var op_p = tid_to_pos[@intCast(usize, u.operand)];
                             if (op_p != @intCast(u32, 0xFFFFFFFF)) {
-                                written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, op_p)].type_id;
+                                var op_ty: u32 = undefined;
+                                var owf = written_flag[@intCast(usize, op_p)];
+                                if (owf != @intCast(u8, 0)) {
+                                    op_ty = written_type[@intCast(usize, op_p)];
+                                } else {
+                                    op_ty = lir_fn.hoisted_temps.items[@intCast(usize, op_p)].type_id;
+                                }
+                                written_type[@intCast(usize, dp)] = op_ty;
                                 written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
                             }
                         }
@@ -1065,6 +1115,54 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_USIZE;
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .load_local => |ll| {
+                    if (ll.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, ll.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            var li: u32 = @intCast(u32, 0);
+                            var found_p: u8 = @intCast(u8, 0);
+                            while (li < local_count) : (li += @intCast(u32, 1)) {
+                                if (local_name_ids[@intCast(usize, li)] == ll.name_id) {
+                                    written_type[@intCast(usize, dp)] = local_types[@intCast(usize, li)];
+                                    written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                                    found_p = @intCast(u8, 1);
+                                    break;
+                                }
+                            }
+                            var lls: []const u8 = "LLd:"; pal.stderr_write(lls);
+                            var lln = ll.result; dbgPrintU32(lln);
+                            var lls2: []const u8 = "="; pal.stderr_write(lls2);
+                            if (found_p != @intCast(u8, 0)) {
+                                var llty = written_type[@intCast(usize, dp)];
+                                dbgPrintU32(llty);
+                            } else {
+                                var llmiss: []const u8 = "MISS"; pal.stderr_write(llmiss);
+                            }
+                            var lls3: []const u8 = " "; pal.stderr_write(lls3);
+                        }
+                    }
+                },
+                .store_local => |sl| {
+                    if (sl.value < MAX_T) {
+                        var li2: u32 = @intCast(u32, 0);
+                        while (li2 < local_count) : (li2 += @intCast(u32, 1)) {
+                            if (local_name_ids[@intCast(usize, li2)] == sl.name_id) {
+                                var src_p = tid_to_pos[@intCast(usize, sl.value)];
+                                if (src_p != @intCast(u32, 0xFFFFFFFF)) {
+                                    var ss_ty: u32 = undefined;
+                                    var swf = written_flag[@intCast(usize, src_p)];
+                                    if (swf != @intCast(u8, 0)) {
+                                        ss_ty = written_type[@intCast(usize, src_p)];
+                                    } else {
+                                        ss_ty = lir_fn.hoisted_temps.items[@intCast(usize, src_p)].type_id;
+                                    }
+                                    local_types[@intCast(usize, li2)] = ss_ty;
+                                }
+                                break;
+                            }
                         }
                     }
                 },
