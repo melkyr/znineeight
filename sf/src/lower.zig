@@ -226,6 +226,7 @@ pub const LirLowerer = struct {
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
     local_decl_count: usize,
+    _fn_ret_type: u32,
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
@@ -253,6 +254,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
         .local_decl_count = @intCast(usize, 0),
+        ._fn_ret_type = @intCast(u32, 0),
     };
 }
 
@@ -366,7 +368,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.string_literal) {
         var str_id = store.string_values.items[@intCast(usize, node.payload)];
-        var tid = nextTemp(self, type_mod.TYPE_U8);
+        var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_C_CHAR, true);
+        var tid = nextTemp(self, ptr_type);
         emitInst(self, LirInst{ .string_const = .{ .string_id = str_id, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.char_literal) {
@@ -651,14 +654,27 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                  var d2s: []const u8 = "D2S:ns="; pal.stderr_write(d2s);
                                  dbgPrintU32(call_ns); var d2n: []const u8 = " nc="; pal.stderr_write(d2n);
                                  dbgPrintU32(args_count); var d2nl: []const u8 = "\n"; pal.stderr_write(d2nl);
-                                  var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
-                                  emitInst(self, LirInst{ .call_direct = .{
-                                      .name_id = fs.name_id,
-                                      .module_id = target_mod_id,
-                                     .args_start = call_ns,
-                                     .args_count = args_count,
-                                    .result = result,
-                                } });
+                                   var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+                                    self._fn_ret_type = type_mod.TYPE_UNDEFINED;
+                                    if (fs.decl_node != 0) {
+                                        var dn = store.nodes.items[@intCast(usize, fs.decl_node)];
+                                        if (dn.kind == AstKind.fn_decl) {
+                                            var proto = store.fn_protos.items[@intCast(usize, dn.payload)];
+                                            if (proto.return_type_node != 0) {
+                                                var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
+                                                if (rt) |t| { self._fn_ret_type = t; }
+                                            }
+                                        }
+                                    }
+                                    if (self._fn_ret_type == type_mod.TYPE_VOID) { result = 0; }
+                                    emitInst(self, LirInst{ .call_direct = .{
+                                        .name_id = fs.name_id,
+                                        .module_id = target_mod_id,
+                                        .args_start = call_ns,
+                                        .args_count = args_count,
+                                        .result = result,
+                                        .return_type = self._fn_ret_type,
+                                    } });
                                 return result;
                             }
                         }
@@ -686,12 +702,25 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     dbgPrintU32(args_start); var d2n2: []const u8 = " nc="; pal.stderr_write(d2n2);
                     dbgPrintU32(args_count); var d2nl2: []const u8 = "\n"; pal.stderr_write(d2nl2);
                     var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+                    self._fn_ret_type = type_mod.TYPE_UNDEFINED;
+                    if (sm.decl_node != 0) {
+                        var dn = store.nodes.items[@intCast(usize, sm.decl_node)];
+                        if (dn.kind == AstKind.fn_decl) {
+                            var proto = store.fn_protos.items[@intCast(usize, dn.payload)];
+                            if (proto.return_type_node != 0) {
+                                var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
+                                if (rt) |t| { self._fn_ret_type = t; }
+                            }
+                        }
+                    }
+                    if (self._fn_ret_type == type_mod.TYPE_VOID) { result = 0; }
                     emitInst(self, LirInst{ .call_direct = .{
                         .name_id = sm.name_id,
                         .module_id = sm.module_id,
                         .args_start = args_start,
                         .args_count = args_count,
                         .result = result,
+                        .return_type = self._fn_ret_type,
                     } });
                     return result;
                 }

@@ -949,7 +949,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     if (sc.result < MAX_T) {
                         var dp = tid_to_pos[@intCast(usize, sc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
-                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U8;
+                            written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id;
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
                         }
                     }
@@ -975,6 +975,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                                     lhs_ty = written_type[@intCast(usize, lhs_p)];
                                 } else {
                                     lhs_ty = lir_fn.hoisted_temps.items[@intCast(usize, lhs_p)].type_id;
+                                }
+                                var lt = emitter.registry.types_items[@intCast(usize, lhs_ty)];
+                                if (lt.kind == TypeKind.array_type) {
+                                    var ap = emitter.registry.array_items[@intCast(usize, lt.payload_idx)];
+                                    lhs_ty = type_mod.typeRegistryGetOrCreatePtr(emitter.registry, ap.elem, false);
                                 }
                                 written_type[@intCast(usize, dp)] = lhs_ty;
                                 written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
@@ -1719,13 +1724,15 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .call_direct => |c| {
-            var result = mangleTempName(emitter.interner, c.result);
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 1), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
+            if (c.result != 0) {
+                var result = mangleTempName(emitter.interner, c.result);
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+            }
             bufferedWriterWrite(&emitter.writer, fn_name);
             var sp: []const u8 = "(";
             bufferedWriterWrite(&emitter.writer, sp);
