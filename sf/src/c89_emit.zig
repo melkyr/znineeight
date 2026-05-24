@@ -1113,8 +1113,16 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var i: usize = @intCast(usize, 0);
     while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
         var td = lir_fn.hoisted_temps.items[i];
-        var ty = emitter.registry.types_items[@intCast(usize, td.type_id)];
-        var c_type = getCTypeName(emitter.registry, emitter.mangler, td.type_id);
+        var eff_type: u32 = td.type_id;
+        var wf2 = written_flag[@intCast(usize, i)];
+        if (wf2 == @intCast(u8, 1)) {
+            var wt = written_type[@intCast(usize, i)];
+            if (wt != @intCast(u32, 0xFFFFFFFF) and wt != td.type_id) {
+                eff_type = wt;
+            }
+        }
+        var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
+        var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
         var tn = mangleTempName(emitter.interner, td.temp_id);
         var dht: []const u8 = "HT:"; pal.stderr_write(dht);
         pal.stderr_write(tn);
@@ -1613,9 +1621,13 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .call_direct => |c| {
+            var result = mangleTempName(emitter.interner, c.result);
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 1), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, result);
+            var s: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, s);
             bufferedWriterWrite(&emitter.writer, fn_name);
             var sp: []const u8 = "(";
             bufferedWriterWrite(&emitter.writer, sp);
@@ -1716,6 +1728,36 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
                 var s3: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, s3);
             }
+        },
+        .int_to_float => |c| {
+            var dst = mangleTempName(emitter.interner, c.result);
+            var src = mangleTempName(emitter.interner, c.value);
+            var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, ctype);
+            var s2: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, s2);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s3: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s3);
+        },
+        .float_cast => |c| {
+            var dst = mangleTempName(emitter.interner, c.result);
+            var src = mangleTempName(emitter.interner, c.value);
+            var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, ctype);
+            var s2: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, s2);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s3: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s3);
         },
         .make_slice => |s| {
             var dst = mangleTempName(emitter.interner, s.result);

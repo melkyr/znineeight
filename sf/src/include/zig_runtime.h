@@ -20,6 +20,13 @@ void __bootstrap_print_f64(double val);
 void __bootstrap_print_bool(int val);
 void __bootstrap_print_char(unsigned char val);
 void __bootstrap_print_str(const unsigned char* ptr, unsigned int len);
+signed char __bootstrap_checked_cast_i8(unsigned long long val);
+unsigned char __bootstrap_checked_cast_u8(unsigned long long val);
+short __bootstrap_checked_cast_i16(unsigned long long val);
+unsigned short __bootstrap_checked_cast_u16(unsigned long long val);
+int __bootstrap_checked_cast_i32(unsigned long long val);
 unsigned int __bootstrap_checked_cast_u32(unsigned long long val);
+long long __bootstrap_checked_cast_i64(unsigned long long val);
+unsigned long long __bootstrap_checked_cast_u64(unsigned long long val);
 
 #endif
