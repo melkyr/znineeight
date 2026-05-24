@@ -336,6 +336,7 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
     var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
         return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, 0);
     }
+    var saved_fncall: usize = self.child_buf_len;
     while (true) {
         var arg = try parserParseExprPrec(self, Prec.none);
         u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
@@ -344,8 +345,11 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
     }
     var rparen = parserAdvance(self);
     var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
-    var payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
-    self.child_buf_len = 0;
+    var payload: u32 = 0;
+    if (self.child_buf_len > saved_fncall) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_fncall..self.child_buf_len]);
+    }
+    self.child_buf_len = saved_fncall;
     return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, payload);
 }
 
@@ -450,7 +454,7 @@ fn parserParseStringLiteral(self: *Parser) ParserError!u32 {
 fn parserParseCharLiteral(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
-    return ast_mod.astStoreAddNode(self.store, AstKind.char_literal, 0, tok.span_start, end, 0, 0, 0, 0);
+    return ast_mod.astStoreAddCharLiteral(self.store, tok.value.int_val, tok.span_start, end);
 }
 
 fn parserParseBoolLiteral(self: *Parser) ParserError!u32 {
@@ -503,6 +507,7 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     var lparen = parserPeek(self);
     if (lparen.kind != TokenKind.lparen) return error.UnexpectedToken;
     _ = parserAdvance(self);
+    var saved_builtin: usize = self.child_buf_len;
     while (true) {
         var arg = try parserParseExprPrec(self, Prec.none);
         u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
@@ -511,8 +516,11 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     }
     var rparen = parserAdvance(self);
     end = rparen.span_start + @intCast(u32, rparen.span_len);
-    var payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
-    self.child_buf_len = 0;
+    var payload: u32 = 0;
+    if (self.child_buf_len > saved_builtin) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_builtin..self.child_buf_len]);
+    }
+    self.child_buf_len = saved_builtin;
     return ast_mod.astStoreAddNode(self.store, AstKind.builtin_call, 0, tok.span_start, end, id, 0, 0, payload);
 }
 
@@ -654,7 +662,7 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.rparen);
     _ = try parserExpect(self, TokenKind.lbrace);
 
-    self.child_buf_len = @intCast(usize, 0);
+    var saved_switch: usize = self.child_buf_len;
     while (true) {
         var tok = parserPeek(self);
         if (tok.kind == TokenKind.rbrace) break;
@@ -667,7 +675,11 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     }
     _ = try parserExpect(self, TokenKind.rbrace);
 
-    var payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
+    var payload: u32 = 0;
+    if (self.child_buf_len > saved_switch) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_switch..self.child_buf_len]);
+    }
+    self.child_buf_len = saved_switch;
     var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.switch_expr, 0,
         kw_tok.span_start, end_pos, cond, 0, 0, payload);

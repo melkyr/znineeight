@@ -526,13 +526,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, node.payload)];
         if (self.ctx.has_symbols != @intCast(u8, 0)) {
-        var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
-        if (sym) |s| {
-            if (s.kind == sym_mod.SymbolKind.global and (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
-                var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
-                if (decl_node.child_1 != 0) {
-                    var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
-                    if (init_node.kind == AstKind.int_literal) {
+         var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
+         if (sym) |s| {
+             if (s.kind == sym_mod.SymbolKind.global and (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                 var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
+                 if (decl_node.child_1 != 0) {
+                     var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
+                     if (init_node.kind == AstKind.int_literal) {
                         var val = store.int_values.items[@intCast(usize, init_node.payload)];
                         var tid = nextTemp(self, type_mod.TYPE_U32);
                         emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
@@ -789,8 +789,22 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         self.current_bb = join_bb;
         return result;
-    } else if (node.kind == AstKind.array_init) {
+     } else if (node.kind == AstKind.array_init) {
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var dg: []const u8 = "AI:"; pal.stderr_write(dg);
+        var di: usize = @intCast(usize, 0);
+        while (di < ec.len and di < @intCast(usize, 4)) : (di += @intCast(usize, 1)) {
+            var el_node = store.nodes.items[@intCast(usize, ec[di])];
+            var ek: u8 = el_node.kind;
+            if (ek == @intCast(u8, AstKind.char_literal)) {
+                var vv: u64 = store.int_values.items[@intCast(usize, el_node.payload)];
+                if (vv == @intCast(u64, 32)) { var dm: []const u8 = "S"; pal.stderr_write(dm); }
+                else if (vv == @intCast(u64, 80)) { var dm: []const u8 = "W"; pal.stderr_write(dm); }
+                else { var dm: []const u8 = "C"; pal.stderr_write(dm); }
+            }
+            else { var dm: []const u8 = "?"; pal.stderr_write(dm); }
+        }
+        var dn: []const u8 = "\n"; pal.stderr_write(dn);
         var aelem: u32 = if (ec.len > @intCast(usize, 0)) if (store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])].kind == AstKind.char_literal) type_mod.TYPE_U8 else type_mod.TYPE_U32 else type_mod.TYPE_U32;
         var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, aelem, @intCast(u32, ec.len));
         var base_temp = nextTemp(self, arr_tid);

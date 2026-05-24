@@ -316,6 +316,12 @@ pub fn astStoreAddIntLiteral(store: *AstStore, value: u64, span_start: u32, span
     return astStoreAddNode(store, AstKind.int_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);
 }
 
+pub fn astStoreAddCharLiteral(store: *AstStore, value: u64, span_start: u32, span_end: u32) u32 {
+    var val_idx = @intCast(u32, store.int_values.len);
+    u64ArrayListAppendInner(&store.int_values.items, &store.int_values.len, &store.int_values.capacity, store.allocator, value);
+    return astStoreAddNode(store, AstKind.char_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);
+}
+
 pub fn astStoreAddFloatLiteral(store: *AstStore, value: f64, span_start: u32, span_end: u32) u32 {
     var val_idx = @intCast(u32, store.float_values.len);
     f64ArrayListAppendInner(&store.float_values.items, &store.float_values.len, &store.float_values.capacity, store.allocator, value);
