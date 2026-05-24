@@ -291,13 +291,9 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
 
 fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     if (self.local_decl_count >= @intCast(usize, 64)) return;
-    var stored = temp + @intCast(u32, 1);
-    if (stored == @intCast(u32, 0)) {
-        var wm: []const u8 = "WARN:local_temp_overflow\n"; pal.stderr_write(wm);
-    }
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_types[self.local_decl_count] = type_id;
-    self.local_decl_temps[self.local_decl_count] = stored;
+    self.local_decl_temps[self.local_decl_count] = temp;
     self.local_decl_count += @intCast(usize, 1);
 }
 
@@ -306,20 +302,17 @@ fn findLocalDecl(self: *LirLowerer, name_id: u32, out_type: *u32, out_is_arr: *u
     if (self.local_decl_count == @intCast(usize, 0)) return;
     var li: usize = @intCast(usize, 0);
     while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
-        if (self.local_decl_names[li] == name_id) {
-            var raw_temp = self.local_decl_temps[li];
-            if (raw_temp == @intCast(u32, 0)) {
-                var wm: []const u8 = "WARN:local_sentinel_missing\n"; pal.stderr_write(wm);
-                out_type.* = self.local_decl_types[li];
-                return;
-            }
-            var ltype = self.local_decl_types[li];
+          if (self.local_decl_names[li] == name_id) {
+             var fm: []const u8 = "F"; pal.stderr_write(fm);
+             var fl: []const u8 = "\n"; pal.stderr_write(fl);
+             var raw_temp = self.local_decl_temps[li];
+             var ltype = self.local_decl_types[li];
             var lt = self.ctx.registry.types_items[@intCast(usize, ltype)];
             if (lt.kind == type_mod.TypeKind.array_type) {
                 var lap = self.ctx.registry.array_items[@intCast(usize, lt.payload_idx)];
                 out_type.* = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lap.elem, false);
-                out_temp.* = raw_temp - @intCast(u32, 1);
-                out_is_arr.* = @intCast(u8, 1);
+             out_temp.* = raw_temp;
+             out_is_arr.* = @intCast(u8, 1);
             } else {
                 out_type.* = ltype;
             }
@@ -495,9 +488,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .unary = .{ .op = UN_BNOT, .operand = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.assign) {
-        var dst = lowerExpr(self, node.child_0);
+        var child_node = store.nodes.items[@intCast(usize, node.child_0)];
         var src = lowerExpr(self, node.child_1);
-        emitInst(self, LirInst{ .assign = .{ .dst = dst, .src = src } });
+        if (child_node.kind == AstKind.ident_expr) {
+            var name_id = store.identifiers.items[@intCast(usize, child_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });
+        } else if (child_node.kind == AstKind.index_access) {
+            var base_temp = lowerExpr(self, child_node.child_0);
+            var idx_temp = lowerExpr(self, child_node.child_1);
+            emitInst(self, LirInst{ .assign_index = .{ .base = base_temp, .index = idx_temp, .src = src } });
+        } else {
+            var dst = lowerExpr(self, node.child_0);
+            emitInst(self, LirInst{ .assign = .{ .dst = dst, .src = src } });
+        }
         return src;
     } else if (node.kind == AstKind.deref) {
         var ptr_temp = lowerExpr(self, node.child_0);
@@ -507,10 +510,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.address_of) {
         var child_node = store.nodes.items[@intCast(usize, node.child_0)];
         if (child_node.kind == AstKind.index_access) {
-            var am: []const u8 = "A"; pal.stderr_write(am);
             var base_temp = lowerExpr(self, child_node.child_0);
             var idx_temp = lowerExpr(self, child_node.child_1);
-            var tid = nextTemp(self, type_mod.TYPE_U32);
+            var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
             emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
             return tid;
         }
@@ -560,9 +562,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var is_arr_local: u8 = @intCast(u8, 0);
         findLocalDecl(self, name_id, &ptype, &is_arr_local, &arr_temp);
         if (is_arr_local != @intCast(u8, 0)) {
-            var result = nextTemp(self, ptype);
-            emitInst(self, LirInst{ .addr_of = .{ .operand = arr_temp, .result = result } });
-            return result;
+            return arr_temp;
         }
         var tid = nextTemp(self, ptype);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
