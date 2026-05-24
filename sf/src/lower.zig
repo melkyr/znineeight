@@ -28,6 +28,7 @@ const sym_mod = @import("symbol_table.zig");
 const Symbol = @import("symbol_table.zig").Symbol;
 const si_mod = @import("string_interner.zig");
 const format_mod = @import("util/format.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 const BIN_ADD  = @intCast(u8, 0);
 const BIN_SUB  = @intCast(u8, 1);
@@ -195,6 +196,14 @@ pub fn switchInfoArrayListAppend(self: *SwitchInfoArrayList, value: SwitchInfo) 
 
 pub fn switchInfoArrayListGetSlice(self: *SwitchInfoArrayList) []SwitchInfo {
     return self.items[0..self.len];
+}
+
+fn dbgPrintU32(val: u32) void {
+    var buf: [20]u8 = undefined;
+    var len = itoa_mod.itoa(val, buf[0..]);
+    var sbase: usize = @intCast(usize, 19) - @intCast(usize, len);
+    var send: usize = @intCast(usize, 19);
+    pal.stderr_write(buf[sbase .. send]);
 }
 
 pub const LirLowerer = struct {
@@ -630,10 +639,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                      emitInst(self, LirInst{ .assign = .{ .dst = call_ns + @intCast(u32, ai), .src = call_val } });
                                  }
                                  var args_count: u32 = @intCast(u32, ec.len);
-                                 var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
-                                 emitInst(self, LirInst{ .call_direct = .{
-                                     .name_id = fs.name_id,
-                                     .module_id = target_mod_id,
+                                 var d2s: []const u8 = "D2S:ns="; pal.stderr_write(d2s);
+                                 dbgPrintU32(call_ns); var d2n: []const u8 = " nc="; pal.stderr_write(d2n);
+                                 dbgPrintU32(args_count); var d2nl: []const u8 = "\n"; pal.stderr_write(d2nl);
+                                  var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+                                  emitInst(self, LirInst{ .call_direct = .{
+                                      .name_id = fs.name_id,
+                                      .module_id = target_mod_id,
                                      .args_start = call_ns,
                                      .args_count = args_count,
                                     .result = result,
@@ -661,6 +673,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         emitInst(self, LirInst{ .assign = .{ .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                     }
                     var args_count: u32 = @intCast(u32, ec.len);
+                    var d2s2: []const u8 = "D2S:ns="; pal.stderr_write(d2s2);
+                    dbgPrintU32(args_start); var d2n2: []const u8 = " nc="; pal.stderr_write(d2n2);
+                    dbgPrintU32(args_count); var d2nl2: []const u8 = "\n"; pal.stderr_write(d2nl2);
                     var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
                     emitInst(self, LirInst{ .call_direct = .{
                         .name_id = sm.name_id,
@@ -682,6 +697,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var arg_val = lowerExpr(self, ec[ai2]);
             emitInst(self, LirInst{ .assign = .{ .dst = args_start + @intCast(u32, ai2), .src = arg_val } });
         }
+        var d2s3: []const u8 = "D2I:ns="; pal.stderr_write(d2s3);
+        dbgPrintU32(args_start); var d2n3: []const u8 = " nc="; pal.stderr_write(d2n3);
+        dbgPrintU32(@intCast(u32, ec.len)); var d2nl3: []const u8 = "\n"; pal.stderr_write(d2nl3);
         var result = nextTemp(self, type_mod.TYPE_I32);
         emitInst(self, LirInst{ .call = .{
             .callee = callee_temp,
@@ -1473,6 +1491,18 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
         emitInst(self, LirInst{ .ret_void = {} });
     }
     hoistTemps(self);
+    var hi: usize = 0;
+    var ht0: []const u8 = "D3HT:"; pal.stderr_write(ht0);
+    while (hi < self.hoisted_temps.len) : (hi += 1) {
+        var td = self.hoisted_temps.items[hi];
+        dbgPrintU32(td.temp_id);
+        var sp: []const u8 = ","; pal.stderr_write(sp);
+        dbgPrintU32(td.type_id);
+        if (hi + 1 < self.hoisted_temps.len) {
+            var sep: []const u8 = "|"; pal.stderr_write(sep);
+        }
+    }
+    var htnl: []const u8 = "\n"; pal.stderr_write(htnl);
     func_ptr.hoisted_temps = self.hoisted_temps;
     return func_ptr.*;
 }

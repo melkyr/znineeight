@@ -12,6 +12,7 @@ const alloc_mod = @import("allocator.zig");
 const Sand = @import("allocator.zig").Sand;
 const hash_mod = @import("util/hash.zig");
 const interner_mod = @import("string_interner.zig");
+const type_mod = @import("type_registry.zig");
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
 const format_mod = @import("util/format.zig");
@@ -853,16 +854,277 @@ fn mangleTempName(interner: *StringInterner, temp_id: u32) []const u8 {
 }
 
 pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
+    const MAX_T: u32 = 256;
+    var tid_to_pos: [256]u32 = undefined;
+    var written_type: [256]u32 = undefined;
+    var written_flag: [256]u8 = undefined;
+    var tp: u32 = 0;
+    while (tp < MAX_T) : (tp += @intCast(u32, 1)) {
+        tid_to_pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
+        written_type[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
+        written_flag[@intCast(usize, tp)] = @intCast(u8, 0);
+    }
+    var hti: usize = @intCast(usize, 0);
+    while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
+        var htd = lir_fn.hoisted_temps.items[hti];
+        if (htd.temp_id < MAX_T) {
+            tid_to_pos[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
+        }
+    }
+    var bb_idx: usize = @intCast(usize, 0);
+    while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
+        var bb = &lir_fn.blocks.items[bb_idx];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            var inst = bb.insts.items[ii];
+            switch (inst) {
+                .assign => |a| {
+                    if (a.src < MAX_T) {
+                        var src_p = tid_to_pos[@intCast(usize, a.src)];
+                        if (src_p != @intCast(u32, 0xFFFFFFFF) and a.dst < MAX_T) {
+                            var dst_p = tid_to_pos[@intCast(usize, a.dst)];
+                            if (dst_p != @intCast(u32, 0xFFFFFFFF)) {
+                                var src_ty = lir_fn.hoisted_temps.items[@intCast(usize, src_p)].type_id;
+                                written_type[@intCast(usize, dst_p)] = src_ty;
+                                written_flag[@intCast(usize, dst_p)] = @intCast(u8, 1);
+                            }
+                        }
+                    }
+                },
+                .float_const => |fc| {
+                    if (fc.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, fc.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_F64;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .int_const => |ic| {
+                    if (ic.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, ic.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .string_const => |sc| {
+                    if (sc.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, sc.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U8;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .bool_const => |bc| {
+                    if (bc.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, bc.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_BOOL;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .binary => |b| {
+                    if (b.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, b.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            var lhs_p = tid_to_pos[@intCast(usize, b.lhs)];
+                            if (lhs_p != @intCast(u32, 0xFFFFFFFF)) {
+                                written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, lhs_p)].type_id;
+                                written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                            }
+                        }
+                    }
+                },
+                .call_direct => |cd| {
+                    if (cd.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, cd.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 2);
+                        }
+                    }
+                },
+                .call => |cl| {
+                    if (cl.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, cl.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 2);
+                        }
+                    }
+                },
+                .int_cast => |ic| {
+                    if (ic.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, ic.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = ic.target;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .int_to_float => |itf| {
+                    if (itf.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, itf.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = itf.target;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .float_cast => |fc| {
+                    if (fc.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, fc.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = fc.target;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .load_index => |li| {
+                    if (li.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, li.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U8;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .unary => |u| {
+                    if (u.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, u.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            var op_p = tid_to_pos[@intCast(usize, u.operand)];
+                            if (op_p != @intCast(u32, 0xFFFFFFFF)) {
+                                written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, op_p)].type_id;
+                                written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                            }
+                        }
+                    }
+                },
+                .load => |l| {
+                    if (l.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, l.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U8;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .addr_of => |ao| {
+                    if (ao.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, ao.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .make_slice => |ms| {
+                    if (ms.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, ms.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = ms.type_id;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .load_field => |lf| {
+                    if (lf.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, lf.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .ptr_cast => |pc| {
+                    if (pc.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, pc.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = pc.target;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .int_to_ptr => |itp| {
+                    if (itp.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, itp.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = itp.target;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .ptr_to_int => |pti| {
+                    if (pti.result < MAX_T) {
+                        var dp = tid_to_pos[@intCast(usize, pti.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_USIZE;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+    var d4p: []const u8 = "D4:"; pal.stderr_write(d4p);
+    var di: usize = @intCast(usize, 0);
+    var had: u8 = 0;
+    while (di < lir_fn.hoisted_temps.len) : (di += @intCast(usize, 1)) {
+        var td = lir_fn.hoisted_temps.items[di];
+        var tn = mangleTempName(emitter.interner, td.temp_id);
+        var wf = written_flag[@intCast(usize, di)];
+        if (wf == @intCast(u8, 0)) {
+            if (td.type_id != type_mod.TYPE_UNDEFINED) {
+                pal.stderr_write(tn);
+                var d4u: []const u8 = "=UNWRITTEN "; pal.stderr_write(d4u);
+                had = @intCast(u8, 1);
+            }
+        } else if (wf == @intCast(u8, 2)) {
+            var d4c: []const u8 = "=call_result "; pal.stderr_write(d4c);
+            pal.stderr_write(tn); var d4s: []const u8 = " "; pal.stderr_write(d4s);
+            had = @intCast(u8, 1);
+        } else {
+            var wt = written_type[@intCast(usize, di)];
+            if (wt != @intCast(u32, 0xFFFFFFFF) and wt != td.type_id) {
+                pal.stderr_write(tn);
+                var d4d: []const u8 = ":"; pal.stderr_write(d4d);
+                var dc = getCTypeName(emitter.registry, emitter.mangler, td.type_id);
+                pal.stderr_write(dc);
+                var d4a: []const u8 = "->"; pal.stderr_write(d4a);
+                var wc = getCTypeName(emitter.registry, emitter.mangler, wt);
+                pal.stderr_write(wc);
+                var d4m: []const u8 = " MISMATCH "; pal.stderr_write(d4m);
+                had = @intCast(u8, 1);
+            }
+        }
+    }
+    if (had != @intCast(u8, 0)) {
+        var d4n: []const u8 = "\n"; pal.stderr_write(d4n);
+    } else {
+        var d4ok: []const u8 = "OK\n"; pal.stderr_write(d4ok);
+    }
+
     var i: usize = @intCast(usize, 0);
     while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
         var td = lir_fn.hoisted_temps.items[i];
         var ty = emitter.registry.types_items[@intCast(usize, td.type_id)];
         var c_type = getCTypeName(emitter.registry, emitter.mangler, td.type_id);
+        var tn = mangleTempName(emitter.interner, td.temp_id);
+        var dht: []const u8 = "HT:"; pal.stderr_write(dht);
+        pal.stderr_write(tn);
+        var dsep: []const u8 = ":"; pal.stderr_write(dsep);
+        pal.stderr_write(c_type);
+        var dnl: []const u8 = "\n"; pal.stderr_write(dnl);
         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
         bufferedWriterWrite(&emitter.writer, c_type);
         var sp: []const u8 = " ";
         bufferedWriterWrite(&emitter.writer, sp);
-        var tn = mangleTempName(emitter.interner, td.temp_id);
         bufferedWriterWrite(&emitter.writer, tn);
         if (ty.kind == TypeKind.array_type) {
             var ap_ind: usize = @intCast(usize, ty.payload_idx);
@@ -993,6 +1255,11 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .assign => |a| {
             var dst = mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);
+            var d1s: []const u8 = "D1:"; pal.stderr_write(d1s);
+            pal.stderr_write(dst);
+            var d1e: []const u8 = "="; pal.stderr_write(d1e);
+            pal.stderr_write(src);
+            var d1n: []const u8 = "\n"; pal.stderr_write(d1n);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
             var sep: []const u8 = " = ";
