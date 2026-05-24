@@ -905,6 +905,7 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "__bootstrap_checked_cast_i32"; return s; }
     if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "__bootstrap_checked_cast_i64"; return s; }
     if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "__bootstrap_checked_cast_u8"; return s; }
+    if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "__bootstrap_checked_cast_u8"; return s; }
     if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "__bootstrap_checked_cast_u16"; return s; }
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "__bootstrap_checked_cast_u32"; return s; }
     if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "__bootstrap_checked_cast_u64"; return s; }

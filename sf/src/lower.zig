@@ -507,6 +507,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.address_of) {
         var child_node = store.nodes.items[@intCast(usize, node.child_0)];
         if (child_node.kind == AstKind.index_access) {
+            var am: []const u8 = "A"; pal.stderr_write(am);
             var base_temp = lowerExpr(self, child_node.child_0);
             var idx_temp = lowerExpr(self, child_node.child_1);
             var tid = nextTemp(self, type_mod.TYPE_U32);
@@ -680,14 +681,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return result;
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var elm: []const u8 = "B"; pal.stderr_write(elm);
+        if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.stderr_write(bm); }
+        else { var bm: []const u8 = "F"; pal.stderr_write(bm); }
         var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
         var ty_node = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
         t_target = type_mod.TYPE_U32;
         if (ty_node.kind == AstKind.ident_expr) {
             var tn_id = store.identifiers.items[@intCast(usize, ty_node.payload)];
             var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
-            if (tn) |t| t_target = t;
-        }
+            if (tn) |t| { t_target = t; var tt: []const u8 = "T"; pal.stderr_write(tt); }
+            else { var tt: []const u8 = "t"; pal.stderr_write(tt); }
+        } else { var tu: []const u8 = "U"; pal.stderr_write(tu); }
         var result = nextTemp(self, t_target);
         if (node.child_0 == self.intcast_name_id) {
             emitInst(self, LirInst{ .int_cast = .{
