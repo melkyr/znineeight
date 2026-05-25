@@ -31,6 +31,9 @@ pub const SemanticAnalyzer = struct {
     current_fn_name: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
+    ev_nids: [*]u32,
+    ev_fids: [*]u32,
+    ev_count_ptr: *usize,
     current_switch_cond_tu: u32,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
@@ -38,7 +41,7 @@ pub const SemanticAnalyzer = struct {
     local_decl_cap: usize,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, ev_nids: [*]u32, ev_fids: [*]u32, ev_count_ptr: *usize) SemanticAnalyzer {
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -54,6 +57,9 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_fn_name = @intCast(u32, 0),
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
+        .ev_nids = ev_nids,
+        .ev_fids = ev_fids,
+        .ev_count_ptr = ev_count_ptr,
         .current_switch_cond_tu = @intCast(u32, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
@@ -381,6 +387,10 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
             while (fi < fcount) : (fi += 1) {
                 if (self.registry.fe_items[fstart + fi].name_id == name_id) {
                     hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
+                    var ec = self.ev_count_ptr.*;
+                    self.ev_nids[ec] = node_idx;
+                    self.ev_fids[ec] = @intCast(u32, fi);
+                    self.ev_count_ptr.* = ec + @intCast(usize, 1);
                     var re: []const u8 = "E"; pal_mod.stderr_write(re);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
                     return type_mod.TYPE_U32;
@@ -471,6 +481,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var se: []const u8 = "SE"; pal_mod.stderr_write(se);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.payload == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -654,6 +665,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
+    var fb: []const u8 = "FB"; pal_mod.stderr_write(fb);
     var decl = self.store.nodes.items[@intCast(usize, fn_decl_node)];
     if (decl.kind != AstKind.fn_decl) return;
     var store = self.store;
@@ -723,6 +735,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
         _ = semanticAnalyzerResolveExpr(self, node.child_0);
         semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
     } else if (node.kind == AstKind.switch_expr) {
+        var sw: []const u8 = "SW"; pal_mod.stderr_write(sw);
         _ = semanticAnalyzerResolveExpr(self, node_idx);
         if (node.payload != @intCast(u32, 0)) {
             var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);

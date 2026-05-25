@@ -78,6 +78,9 @@ pub const SemanticContext = struct {
     diag: *DiagnosticCollector,
     has_symbols: u8,
     enum_value_table: *hash_mod.U32ToU32Map,
+    env_nids: [*]u32,
+    env_fids: [*]u32,
+    env_count_ptr: *usize,
 };
 
 pub const DeferActionArrayList = struct {
@@ -383,10 +386,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
         return tid;
     } else if (node.kind == AstKind.enum_literal) {
-        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
-        var val: u64 = if (ev) |v| @intCast(u64, v) else @intCast(u64, node.payload);
+        var ev_val: u64 = @intCast(u64, node.payload);
+        var evi: usize = 0;
+        while (evi < self.ctx.env_count_ptr.*) : (evi += 1) {
+            if (self.ctx.env_nids[evi] == node_idx) { ev_val = @intCast(u64, self.ctx.env_fids[evi]); break; }
+        }
         var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
-        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+        emitInst(self, LirInst{ .int_const = .{ .value = ev_val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.error_literal) {
         var val = @intCast(u64, node.payload);
@@ -922,8 +928,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
-                    var case_ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
-                    case_val = if (case_ev) |cv| @intCast(u64, cv) else @intCast(u64, case_node.payload);
+                    var evc: []const u8 = "EC"; pal.stderr_write(evc);
+                    var cval: u64 = @intCast(u64, case_node.payload);
+                    var cevi: usize = 0;
+                    while (cevi < self.ctx.env_count_ptr.*) : (cevi += 1) {
+                        if (self.ctx.env_nids[cevi] == @intCast(u32, case_ec[ci])) { cval = @intCast(u64, self.ctx.env_fids[cevi]); break; }
+                    }
+                    if (cval != @intCast(u64, case_node.payload)) { var ef: []const u8 = "EF"; pal.stderr_write(ef); }
+                    else { var ef: []const u8 = "Ef"; pal.stderr_write(ef); }
+                    case_val = cval;
                 } else { continue; }
                 lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
                     lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
@@ -1105,8 +1118,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
-                    var case_ev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
-                    case_val = if (case_ev2) |cv2| @intCast(u64, cv2) else @intCast(u64, case_node.payload);
+                    var cval2: u64 = @intCast(u64, case_node.payload);
+                    var cevi2: usize = 0;
+                    while (cevi2 < self.ctx.env_count_ptr.*) : (cevi2 += 1) {
+                        if (self.ctx.env_nids[cevi2] == @intCast(u32, case_ec[ci])) { cval2 = @intCast(u64, self.ctx.env_fids[cevi2]); break; }
+                    }
+                    case_val = cval2;
                 } else {
                     continue;
                 }
