@@ -13,6 +13,7 @@ const diag_mod = @import("diagnostics.zig");
 const sym_mod = @import("symbol_table.zig");
 const ast_mod = @import("ast.zig");
 const coercion_mod = @import("coercion.zig");
+const hash_mod = @import("util/hash.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -28,9 +29,15 @@ pub const SemanticAnalyzer = struct {
     current_fn_return: TypeId,
     current_fn_name: u32,
     coercion_table: *coercion_mod.CoercionTable,
+    enum_value_table: *hash_mod.U32ToU32Map,
+    current_switch_cond_tu: u32,
+    local_decl_names: [*]u32,
+    local_decl_types: [*]u32,
+    local_decl_count: usize,
+    local_decl_cap: usize,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map) SemanticAnalyzer {
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -45,10 +52,39 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_fn_return = @intCast(u32, 0),
         .current_fn_name = @intCast(u32, 0),
         .coercion_table = coercion_tab,
+        .enum_value_table = enum_val_tab,
+        .current_switch_cond_tu = @intCast(u32, 0),
+        .local_decl_names = undefined,
+        .local_decl_types = undefined,
+        .local_decl_count = @intCast(usize, 0),
+        .local_decl_cap = @intCast(usize, 0),
     };
 }
 
+fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
+    var new_cap: usize = if (self.local_decl_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.local_decl_cap * @intCast(usize, 2);
+    var raw_names = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_types = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst = @ptrCast([*]u32, raw_names);
+    var tdst = @ptrCast([*]u32, raw_types);
+    if (self.local_decl_count > @intCast(usize, 0)) {
+        var ci: usize = 0;
+        while (ci < self.local_decl_count) : (ci += 1) {
+            ndst[ci] = self.local_decl_names[ci];
+            tdst[ci] = self.local_decl_types[ci];
+        }
+    }
+    self.local_decl_names = ndst;
+    self.local_decl_types = tdst;
+    self.local_decl_cap = new_cap;
+}
+
 pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, name_id: u32) u32 {
+    var li = self.local_decl_count;
+    while (li > @intCast(usize, 0)) {
+        li -= @intCast(usize, 1);
+        if (self.local_decl_names[li] == name_id) return self.local_decl_types[li];
+    }
     var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id);
     if (sym) |s| {
         if (s.kind == sym_mod.SymbolKind.type_alias) return s.type_id;
@@ -73,6 +109,24 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     if (base_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_node.payload);
         if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.type_alias) {
+                var alias_type_id = s.type_id;
+                if (alias_type_id != @intCast(u32, 0)) {
+                    var aty = self.registry.types_items[@intCast(usize, alias_type_id)];
+                    if (aty.kind == type_mod.TypeKind.tagged_union_type) {
+                        var tp = self.registry.tu_items[@intCast(usize, aty.payload_idx)];
+                        var fstart: usize = @intCast(usize, tp.fields_start);
+                        var fcount: usize = @intCast(usize, tp.fields_count);
+                        var fi: usize = 0;
+                        while (fi < fcount) : (fi += 1) {
+                            if (self.registry.fe_items[fstart + fi].name_id == field_name_id) {
+                                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
+                                return type_mod.TYPE_U32;
+                            }
+                        }
+                    }
+                }
+            }
             if (s.kind == sym_mod.SymbolKind.module) {
                 var target_mod = s.module_id;
                 var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, target_mod, field_name_id);
@@ -213,6 +267,25 @@ fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+    if (callee_node.kind == AstKind.ident_expr) {
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, callee_node.payload);
+        if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
+                var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
+                if (dn.kind == AstKind.fn_decl) {
+                    var proto = self.store.fn_protos.items[@intCast(usize, dn.payload)];
+                    if (proto.return_type_node != @intCast(u32, 0)) {
+                        var rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
+                        if (rt) |t| {
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, t);
+                            return t;
+                        }
+                    }
+                }
+            }
+        }
+    }
     var callee_type = semanticAnalyzerResolveExpr(self, node.child_0);
     if (callee_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var callee_ty = self.registry.types_items[@intCast(usize, callee_type)];
@@ -279,11 +352,120 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return type_mod.TYPE_VOID;
 }
 
+fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var name_id = node.payload;
+    if (self.current_switch_cond_tu != @intCast(u32, 0)) {
+        var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+        if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
+            var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
+            var fstart: usize = @intCast(usize, tp.fields_start);
+            var fcount: usize = @intCast(usize, tp.fields_count);
+            var fi: usize = 0;
+            while (fi < fcount) : (fi += 1) {
+                if (self.registry.fe_items[fstart + fi].name_id == name_id) {
+                    hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
+                    return type_mod.TYPE_U32;
+                }
+            }
+        }
+    }
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var target_type: u32 = @intCast(u32, 0);
+    if (node.child_0 != @intCast(u32, 0)) {
+        target_type = semanticAnalyzerResolveExpr(self, node.child_0);
+    }
+    if (target_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    var tgt = self.registry.types_items[@intCast(usize, target_type)];
+    if (tgt.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp = self.registry.tu_items[@intCast(usize, tgt.payload_idx)];
+        var fstart: usize = @intCast(usize, tp.fields_start);
+        var fcount: usize = @intCast(usize, tp.fields_count);
+        var field_inits = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var fii: usize = 0;
+        while (fii < field_inits.len) : (fii += 1) {
+            var fi_node = self.store.nodes.items[@intCast(usize, field_inits[fii])];
+            if (fi_node.child_0 != @intCast(u32, 0)) {
+                var fname_node = self.store.nodes.items[@intCast(usize, fi_node.child_0)];
+                var fname_id = fname_node.payload;
+                var fi: usize = 0;
+                while (fi < fcount) : (fi += 1) {
+                    if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
+                        if (fi_node.child_1 != @intCast(u32, 0)) {
+                            _ = semanticAnalyzerResolveExpr(self, fi_node.child_1);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
+        return target_type;
+    }
+    if (tgt.kind == type_mod.TypeKind.struct_type) {
+        var sp = self.registry.st_items[@intCast(usize, tgt.payload_idx)];
+        var fstart: usize = @intCast(usize, sp.fields_start);
+        var fcount: usize = @intCast(usize, sp.fields_count);
+        var field_inits = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var fii: usize = 0;
+        while (fii < field_inits.len) : (fii += 1) {
+            var fi_node = self.store.nodes.items[@intCast(usize, field_inits[fii])];
+            if (fi_node.child_0 != @intCast(u32, 0)) {
+                var fname_node = self.store.nodes.items[@intCast(usize, fi_node.child_0)];
+                var fname_id = fname_node.payload;
+                var fi: usize = 0;
+                while (fi < fcount) : (fi += 1) {
+                    if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
+                        if (fi_node.child_1 != @intCast(u32, 0)) {
+                            _ = semanticAnalyzerResolveExpr(self, fi_node.child_1);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
+        return target_type;
+    }
+    return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+    var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    if (type_mod.typeRegistryIsAssignable(self.registry, rhs, lhs)) {
+        if (lhs != rhs) {
+            var ck = coercion_mod.classifyCoercion(self.registry, rhs, lhs);
+            if (ck != coercion_mod.CoercionKind.none) {
+                coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, lhs);
+            }
+        }
+        return lhs;
+    }
+    return type_mod.TYPE_VOID;
+}
+
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.payload == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
+    self.current_switch_cond_tu = @intCast(u32, 0);
+    if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
+        var cond_ty = self.registry.types_items[@intCast(usize, cond_type)];
+        if (cond_ty.kind == type_mod.TypeKind.tagged_union_type) {
+            self.current_switch_cond_tu = cond_type;
+        }
+    }
     var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-    if (prongs.len == @intCast(usize, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    if (prongs.len == @intCast(usize, 0)) { self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var unified: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
     var i: usize = 0;
@@ -291,6 +473,16 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     while (i < prongs.len) : (i += 1) {
         var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
+        if (self.current_switch_cond_tu != @intCast(u32, 0) and prong.payload != @intCast(u32, 0)) {
+            var case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong.payload);
+            var ci: usize = 0;
+            while (ci < case_ec.len) : (ci += 1) {
+                var case_node = self.store.nodes.items[@intCast(usize, case_ec[ci])];
+                if (case_node.kind == AstKind.enum_literal) {
+                    _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
+                }
+            }
+        }
         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
         if (i == @intCast(usize, 0)) { unified = bt; }
         else if (bt == type_mod.TYPE_NORETURN) {}
@@ -303,6 +495,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
 
+    self.current_switch_cond_tu = @intCast(u32, 0);
     if (has_else == @intCast(u8, 0)) {
         var wmsg: []const u8 = "switch may not be exhaustive";
         diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1),
@@ -338,7 +531,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.string_literal) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.enum_literal) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveEnumLiteral(self, node_idx);
     } else if (node.kind == AstKind.error_literal) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.ident_expr) {
@@ -350,13 +543,34 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.slice_expr) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.deref) {
-        result = semanticAnalyzerResolveExpr(self, node.child_0);
+        var base = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (base != @intCast(u32, 0) and base != type_mod.TYPE_VOID) {
+            var bt = self.registry.types_items[@intCast(usize, base)];
+            if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                var pp = self.registry.ptr_items[@intCast(usize, bt.payload_idx)];
+                result = pp.base;
+            } else {
+                result = base;
+            }
+        } else {
+            result = type_mod.TYPE_VOID;
+        }
     } else if (node.kind == AstKind.address_of) {
-        result = type_mod.TYPE_VOID;
+        var base = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (base != @intCast(u32, 0) and base != type_mod.TYPE_VOID) {
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, base, false);
+        } else {
+            result = type_mod.TYPE_VOID;
+        }
     } else if (node.kind == AstKind.fn_call) {
         result = semanticAnalyzerResolveFnCall(self, node_idx);
     } else if (node.kind == AstKind.builtin_call) {
-        result = type_mod.TYPE_VOID;
+        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        if (ec.len >= @intCast(usize, 1)) {
+            result = semanticAnalyzerResolveExpr(self, ec[0]);
+        } else {
+            result = type_mod.TYPE_VOID;
+        }
     } else if (node.kind == AstKind.bool_not) {
         result = type_mod.TYPE_BOOL;
     } else if (node.kind == AstKind.negate) {
@@ -376,7 +590,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.tuple_literal) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.struct_init) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveStructInit(self, node_idx);
     } else if (node.kind == AstKind.array_init) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type or
@@ -414,11 +628,104 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
                node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
                node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign) {
-        result = type_mod.TYPE_VOID;
+        result = semanticAnalyzerResolveAssign(self, node_idx);
     } else {
         result = type_mod.TYPE_VOID;
     }
 
-    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+    if (result != type_mod.TYPE_VOID) {
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+    }
     return result;
+}
+
+pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
+    var decl = self.store.nodes.items[@intCast(usize, fn_decl_node)];
+    if (decl.kind != AstKind.fn_decl) return;
+    var store = self.store;
+    var proto = store.fn_protos.items[@intCast(usize, decl.payload)];
+    if (decl.child_0 == @intCast(u32, 0)) return;
+    semanticAnalyzerResolveStmt(self, decl.child_0);
+}
+
+pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, depth: u32) void {
+    if (depth > @intCast(u32, 16)) return;
+    if (node_idx == @intCast(u32, 0)) return;
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.block) {
+        var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var i: usize = 0;
+        while (i < children.len) : (i += 1) {
+            semanticAnalyzerResolveStmtDepth(self, children[i], depth + @intCast(u32, 1));
+        }
+    } else if (node.kind == AstKind.var_decl) {
+        var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
+            if (rt) |t| { decl_type = t; }
+        }
+        if (node.child_1 != @intCast(u32, 0)) {
+            var it = semanticAnalyzerResolveExpr(self, node.child_1);
+            if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
+        }
+        if (self.local_decl_count >= self.local_decl_cap) {
+            semanticAnalyzerGrowLocalDecls(self);
+        }
+        self.local_decl_names[self.local_decl_count] = node.payload;
+        self.local_decl_types[self.local_decl_count] = decl_type;
+        self.local_decl_count += @intCast(usize, 1);
+    } else if (node.kind == AstKind.if_stmt) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
+        if (node.child_2 != @intCast(u32, 0)) {
+            semanticAnalyzerResolveStmtDepth(self, node.child_2, depth + @intCast(u32, 1));
+        }
+    } else if (node.kind == AstKind.while_stmt) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
+    } else if (node.kind == AstKind.for_stmt) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
+    } else if (node.kind == AstKind.switch_expr) {
+        _ = semanticAnalyzerResolveExpr(self, node_idx);
+        if (node.payload != @intCast(u32, 0)) {
+            var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+            var pi: usize = 0;
+            while (pi < prongs.len) : (pi += 1) {
+                var prong_node = self.store.nodes.items[@intCast(usize, prongs[pi])];
+                if (prong_node.child_0 != @intCast(u32, 0)) {
+                    semanticAnalyzerResolveStmtDepth(self, prong_node.child_0, depth + @intCast(u32, 1));
+                }
+            }
+        }
+    } else if (node.kind == AstKind.return_stmt) {
+        if (node.child_0 != @intCast(u32, 0)) {
+            _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        }
+    } else if (node.kind == AstKind.assign or
+               node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
+               node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
+               node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
+               node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
+               node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign) {
+        _ = semanticAnalyzerResolveExpr(self, node_idx);
+    } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
+        semanticAnalyzerResolveStmtDepth(self, node.child_0, depth + @intCast(u32, 1));
+    } else if (node.kind == AstKind.break_stmt) {
+    } else if (node.kind == AstKind.continue_stmt) {
+    } else {
+        _ = semanticAnalyzerResolveExpr(self, node_idx);
+    }
+    if (node.child_0 != @intCast(u32, 0)) {
+        var nc = self.store.nodes.items[@intCast(usize, node.child_0)];
+        if (nc.kind == AstKind.fn_decl) return;
+    }
+    if (node.child_1 != @intCast(u32, 0)) {
+        var nc = self.store.nodes.items[@intCast(usize, node.child_1)];
+        if (nc.kind == AstKind.fn_decl) return;
+    }
+}
+
+pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void {
+    semanticAnalyzerResolveStmtDepth(self, node_idx, @intCast(u32, 0));
 }

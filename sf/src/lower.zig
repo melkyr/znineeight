@@ -29,6 +29,7 @@ const Symbol = @import("symbol_table.zig").Symbol;
 const si_mod = @import("string_interner.zig");
 const format_mod = @import("util/format.zig");
 const itoa_mod = @import("util/itoa.zig");
+const hash_mod = @import("util/hash.zig");
 
 const BIN_ADD  = @intCast(u8, 0);
 const BIN_SUB  = @intCast(u8, 1);
@@ -76,6 +77,7 @@ pub const SemanticContext = struct {
     coercions: *CoercionTable,
     diag: *DiagnosticCollector,
     has_symbols: u8,
+    enum_value_table: *hash_mod.U32ToU32Map,
 };
 
 pub const DeferActionArrayList = struct {
@@ -381,7 +383,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
         return tid;
     } else if (node.kind == AstKind.enum_literal) {
-        var val = @intCast(u64, node.payload);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        var val: u64 = if (ev) |v| @intCast(u64, v) else @intCast(u64, node.payload);
         var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
         emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
         return tid;
@@ -916,7 +919,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
-                    case_val = @intCast(u64, case_node.payload);
+                    var case_ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
+                    case_val = if (case_ev) |cv| @intCast(u64, cv) else @intCast(u64, case_node.payload);
                 } else { continue; }
                 lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
                     lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
@@ -1098,7 +1102,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
-                    case_val = @intCast(u64, case_node.payload);
+                    var case_ev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
+                    case_val = if (case_ev2) |cv2| @intCast(u64, cv2) else @intCast(u64, case_node.payload);
                 } else {
                     continue;
                 }

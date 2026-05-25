@@ -31,6 +31,7 @@ const LirLowerer = lower_mod.LirLowerer;
 const lir_mod = @import("lir.zig");
 const LirFunctionArrayList = lir_mod.LirFunctionArrayList;
 const resolved_type_table = @import("resolved_type_table.zig");
+const hash_mod = @import("util/hash.zig");
 const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
 const coercion_mod = @import("coercion.zig");
 const CoercionTable = coercion_mod.CoercionTable;
@@ -93,6 +94,7 @@ pub const CompilerContext = struct {
     coercion_table: *CoercionTable,
     dep_graph: *symbol_registrator.DepGraph,
     lir_fns: LirFunctionArrayList,
+    enum_value_table: hash_mod.U32ToU32Map,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -142,6 +144,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
     var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
+    var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -157,6 +160,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .coercion_table = &coercion_table,
         .dep_graph = &dep_graph,
         .lir_fns = lir_fns,
+        .enum_value_table = enum_value_table,
     };
     runCompiler(&ctx);
 }
@@ -306,6 +310,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         if (ast_root == @intCast(u32, 0)) continue;
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -333,6 +338,9 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 }
                 if (decl.child_0 != 0) {
                     resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
+                }
+                sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
+            }
         }
     }
     var ac: u32 = @intCast(u32, 0);
@@ -348,9 +356,8 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var am: []const u8 = "1\n"; pal.stderr_write(am);
     } else {
         var am: []const u8 = "0\n"; pal.stderr_write(am);
-    }
 }
-    }
+
 }
 
 fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
@@ -530,6 +537,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .coercions = ctx.coercion_table,
         .diag = ctx.diag,
         .has_symbols = @intCast(u8, 1),
+        .enum_value_table = &ctx.enum_value_table,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
