@@ -78,9 +78,6 @@ pub const SemanticContext = struct {
     diag: *DiagnosticCollector,
     has_symbols: u8,
     enum_value_table: *hash_mod.U32ToU32Map,
-    env_nids: [*]u32,
-    env_fids: [*]u32,
-    env_count_ptr: *usize,
 };
 
 pub const DeferActionArrayList = struct {
@@ -387,10 +384,22 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.enum_literal) {
         var ev_val: u64 = @intCast(u64, node.payload);
-        var evi: usize = 0;
-        while (evi < self.ctx.env_count_ptr.*) : (evi += 1) {
-            if (self.ctx.env_nids[evi] == node_idx) { ev_val = @intCast(u64, self.ctx.env_fids[evi]); break; }
-        }
+        var evptr: u32 = @intCast(u32, @ptrToInt(self.ctx.enum_value_table));
+        var evpb: [20]u8 = undefined;
+        var evpl = itoa_mod.itoa(evptr, evpb[0..]);
+        var evps: usize = @intCast(usize, 19) - @intCast(usize, evpl);
+        var evR: []const u8 = "ER"; pal.stderr_write(evR);
+        pal.stderr_write(evpb[evps..@intCast(usize, 19)]);
+        var evgc2 = self.ctx.enum_value_table.count;
+        var eg2b: [20]u8 = undefined;
+        var eg2l = itoa_mod.itoa(@intCast(u32, evgc2), eg2b[0..]);
+        var eg2s: usize = @intCast(usize, 19) - @intCast(usize, eg2l);
+        var eRc: []const u8 = "c="; pal.stderr_write(eRc);
+        pal.stderr_write(eg2b[eg2s..@intCast(usize, 19)]);
+        var eRs: []const u8 = " "; pal.stderr_write(eRs);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        if (ev) |v| { ev_val = @intCast(u64, v); var we1: []const u8 = "WE"; pal.stderr_write(we1); }
+        else { var we1: []const u8 = "wE"; pal.stderr_write(we1); }
         var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
         emitInst(self, LirInst{ .int_const = .{ .value = ev_val, .result = tid } });
         return tid;
@@ -930,10 +939,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 } else if (case_node.kind == AstKind.enum_literal) {
                     var evc: []const u8 = "EC"; pal.stderr_write(evc);
                     var cval: u64 = @intCast(u64, case_node.payload);
-                    var cevi: usize = 0;
-                    while (cevi < self.ctx.env_count_ptr.*) : (cevi += 1) {
-                        if (self.ctx.env_nids[cevi] == @intCast(u32, case_ec[ci])) { cval = @intCast(u64, self.ctx.env_fids[cevi]); break; }
-                    }
+                    var lk = @intCast(u32, case_ec[ci]);
+                    var lkb = @intCast(u8, lk & @intCast(u32, 0xFF));
+                    var lkb_buf: [20]u8 = undefined;
+                    var lkb_len = itoa_mod.itoa(@intCast(u32, lkb), lkb_buf[0..]);
+                    var lkb_s: usize = @intCast(usize, 19) - @intCast(usize, lkb_len);
+                    pal.stderr_write(lkb_buf[lkb_s..@intCast(usize, 19)]);
+                    var lks: []const u8 = " "; pal.stderr_write(lks);
+                    var cev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, lk);
+                    if (cev) |v| { cval = @intCast(u64, v); }
                     if (cval != @intCast(u64, case_node.payload)) { var ef: []const u8 = "EF"; pal.stderr_write(ef); }
                     else { var ef: []const u8 = "Ef"; pal.stderr_write(ef); }
                     case_val = cval;
@@ -1119,10 +1133,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
                     var cval2: u64 = @intCast(u64, case_node.payload);
-                    var cevi2: usize = 0;
-                    while (cevi2 < self.ctx.env_count_ptr.*) : (cevi2 += 1) {
-                        if (self.ctx.env_nids[cevi2] == @intCast(u32, case_ec[ci])) { cval2 = @intCast(u64, self.ctx.env_fids[cevi2]); break; }
-                    }
+                    var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
+                    if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
                 } else {
                     continue;
@@ -1563,6 +1575,17 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
 }
 
 pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
+    var evcap = self.ctx.enum_value_table.capacity; var evcnt = self.ctx.enum_value_table.count;
+    var evcap_buf: [20]u8 = undefined; var evcnt_buf: [20]u8 = undefined;
+    var evcap_len = itoa_mod.itoa(@intCast(u32, evcap), evcap_buf[0..]);
+    var evcnt_len = itoa_mod.itoa(@intCast(u32, evcnt), evcnt_buf[0..]);
+    var evcap_s: usize = @intCast(usize, 19) - @intCast(usize, evcap_len);
+    var evcnt_s: usize = @intCast(usize, 19) - @intCast(usize, evcnt_len);
+    var lN: []const u8 = "lN="; pal.stderr_write(lN);
+    pal.stderr_write(evcnt_buf[evcnt_s..@intCast(usize, 19)]);
+    var lC: []const u8 = " lC="; pal.stderr_write(lC);
+    pal.stderr_write(evcap_buf[evcap_s..@intCast(usize, 19)]);
+    var lnl: []const u8 = "\n"; pal.stderr_write(lnl);
     var store = self.ctx.store;
     var node = store.nodes.items[@intCast(usize, fn_node)];
     var proto_idx = node.payload;

@@ -15,6 +15,7 @@ const ast_mod = @import("ast.zig");
 const coercion_mod = @import("coercion.zig");
 const hash_mod = @import("util/hash.zig");
 const pal_mod = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -31,9 +32,6 @@ pub const SemanticAnalyzer = struct {
     current_fn_name: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
-    ev_nids: [*]u32,
-    ev_fids: [*]u32,
-    ev_count_ptr: *usize,
     current_switch_cond_tu: u32,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
@@ -41,7 +39,7 @@ pub const SemanticAnalyzer = struct {
     local_decl_cap: usize,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, ev_nids: [*]u32, ev_fids: [*]u32, ev_count_ptr: *usize) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map) SemanticAnalyzer {
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -57,9 +55,6 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_fn_name = @intCast(u32, 0),
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
-        .ev_nids = ev_nids,
-        .ev_fids = ev_fids,
-        .ev_count_ptr = ev_count_ptr,
         .current_switch_cond_tu = @intCast(u32, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
@@ -375,8 +370,14 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var el: []const u8 = "eL"; pal_mod.stderr_write(el);
     var name_id = node.payload;
+    var nmb: [20]u8 = undefined;
+    var nml = itoa_mod.itoa(name_id, nmb[0..]);
+    var nms: usize = @intCast(usize, 19) - @intCast(usize, nml);
+    var eN2: []const u8 = "n="; pal_mod.stderr_write(eN2);
+    pal_mod.stderr_write(nmb[nms..@intCast(usize, 19)]);
+    var eS2: []const u8 = " "; pal_mod.stderr_write(eS2);
     if (self.current_switch_cond_tu != @intCast(u32, 0)) {
         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
         if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
@@ -385,12 +386,28 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
             var fcount: usize = @intCast(usize, tp.fields_count);
             var fi: usize = 0;
             while (fi < fcount) : (fi += 1) {
-                if (self.registry.fe_items[fstart + fi].name_id == name_id) {
+                var fnid = self.registry.fe_items[fstart + fi].name_id;
+                var fb: [20]u8 = undefined;
+                var fl = itoa_mod.itoa(@intCast(u32, fnid), fb[0..]);
+                var fs: usize = @intCast(usize, 19) - @intCast(usize, fl);
+                var ef: []const u8 = "f"; pal_mod.stderr_write(ef);
+                pal_mod.stderr_write(fb[fs..@intCast(usize, 19)]);
+                var ef2: []const u8 = " "; pal_mod.stderr_write(ef2);
+                if (fnid == name_id) {
                     hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
-                    var ec = self.ev_count_ptr.*;
-                    self.ev_nids[ec] = node_idx;
-                    self.ev_fids[ec] = @intCast(u32, fi);
-                    self.ev_count_ptr.* = ec + @intCast(usize, 1);
+                    var evptr: u32 = @intCast(u32, @ptrToInt(self.enum_value_table));
+                    var evpb: [20]u8 = undefined;
+                    var evpl = itoa_mod.itoa(evptr, evpb[0..]);
+                    var evps: usize = @intCast(usize, 19) - @intCast(usize, evpl);
+                    var evW: []const u8 = "EW"; pal_mod.stderr_write(evW);
+                    pal_mod.stderr_write(evpb[evps..@intCast(usize, 19)]);
+                    var evgc = self.enum_value_table.count;
+                    var eg_buf: [20]u8 = undefined;
+                    var eg_len = itoa_mod.itoa(@intCast(u32, evgc), eg_buf[0..]);
+                    var egs: usize = @intCast(usize, 19) - @intCast(usize, eg_len);
+                    var eN: []const u8 = "eN="; pal_mod.stderr_write(eN);
+                    pal_mod.stderr_write(eg_buf[egs..@intCast(usize, 19)]);
+                    var eS: []const u8 = " "; pal_mod.stderr_write(eS);
                     var re: []const u8 = "E"; pal_mod.stderr_write(re);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
                     return type_mod.TYPE_U32;
@@ -502,12 +519,31 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     while (i < prongs.len) : (i += 1) {
         var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
+        var pct = self.current_switch_cond_tu; var pp = prong.payload;
+        var pct_buf: [20]u8 = undefined; var pp_buf: [20]u8 = undefined;
+        var pct_len = itoa_mod.itoa(pct, pct_buf[0..]);
+        var pp_len = itoa_mod.itoa(pp, pp_buf[0..]);
+        var ps1: usize = @intCast(usize, 19) - @intCast(usize, pct_len);
+        var ps2: usize = @intCast(usize, 19) - @intCast(usize, pp_len);
+        var pS: []const u8 = "pC="; pal_mod.stderr_write(pS);
+        pal_mod.stderr_write(pct_buf[ps1..@intCast(usize, 19)]);
+        var pP: []const u8 = " pP="; pal_mod.stderr_write(pP);
+        pal_mod.stderr_write(pp_buf[ps2..@intCast(usize, 19)]);
+        var pn: []const u8 = " "; pal_mod.stderr_write(pn);
         if (self.current_switch_cond_tu != @intCast(u32, 0) and prong.payload != @intCast(u32, 0)) {
             var case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong.payload);
             var ci: usize = 0;
             while (ci < case_ec.len) : (ci += 1) {
                 var case_node = self.store.nodes.items[@intCast(usize, case_ec[ci])];
-                if (case_node.kind == AstKind.enum_literal) {
+                var cc_buf: [20]u8 = undefined;
+                var cc_val = @intCast(u32, @enumToInt(case_node.kind));
+                var cc_len = itoa_mod.itoa(cc_val, cc_buf[0..]);
+                var ccs: usize = @intCast(usize, 19) - @intCast(usize, cc_len);
+                var ccS: []const u8 = "cK="; pal_mod.stderr_write(ccS);
+                pal_mod.stderr_write(cc_buf[ccs..@intCast(usize, 19)]);
+                var ccP: []const u8 = " "; pal_mod.stderr_write(ccP);
+                var ck18: u8 = 0; if (case_node.kind == AstKind.enum_literal) { ck18 = 1; } if (case_node.kind == AstKind.undefined_literal) { ck18 = 1; }
+                if (ck18 != @intCast(u8, 0)) {
                     _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
                 }
             }
@@ -693,6 +729,17 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
         }
     }
     semanticAnalyzerResolveStmt(self, decl.child_0);
+    var evcap = self.enum_value_table.capacity; var evcnt = self.enum_value_table.count;
+    var evcap_buf: [20]u8 = undefined; var evcnt_buf: [20]u8 = undefined;
+    var evcap_len = itoa_mod.itoa(@intCast(u32, evcap), evcap_buf[0..]);
+    var evcnt_len = itoa_mod.itoa(@intCast(u32, evcnt), evcnt_buf[0..]);
+    var evcap_s: usize = @intCast(usize, 19) - @intCast(usize, evcap_len);
+    var evcnt_s: usize = @intCast(usize, 19) - @intCast(usize, evcnt_len);
+    var vl: []const u8 = "vN="; pal_mod.stderr_write(vl);
+    pal_mod.stderr_write(evcnt_buf[evcnt_s..@intCast(usize, 19)]);
+    var vc: []const u8 = " vC="; pal_mod.stderr_write(vc);
+    pal_mod.stderr_write(evcap_buf[evcap_s..@intCast(usize, 19)]);
+    var vnl: []const u8 = "\n"; pal_mod.stderr_write(vnl);
 }
 
 pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, depth: u32) void {

@@ -95,9 +95,6 @@ pub const CompilerContext = struct {
     dep_graph: *symbol_registrator.DepGraph,
     lir_fns: LirFunctionArrayList,
     enum_value_table: hash_mod.U32ToU32Map,
-    enum_node_ids: [*]u32,
-    enum_field_ids: [*]u32,
-    enum_val_count: usize,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -148,8 +145,6 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
-    var env_nids_mem = alloc_mod.sandAlloc(&compiler_alloc.module, @intCast(usize, 4) * @intCast(usize, 512), @intCast(usize, 4)) catch unreachable;
-    var env_fids_mem = alloc_mod.sandAlloc(&compiler_alloc.module, @intCast(usize, 4) * @intCast(usize, 512), @intCast(usize, 4)) catch unreachable;
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -166,9 +161,6 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .dep_graph = &dep_graph,
         .lir_fns = lir_fns,
         .enum_value_table = enum_value_table,
-        .enum_node_ids = @ptrCast([*]u32, env_nids_mem),
-        .enum_field_ids = @ptrCast([*]u32, env_fids_mem),
-        .enum_val_count = @intCast(usize, 0),
     };
     runCompiler(&ctx);
 }
@@ -313,7 +305,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
         var ad: []const u8 = "AD"; pal.stderr_write(ad);
-        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table, ctx.enum_node_ids, ctx.enum_field_ids, &ctx.enum_val_count);
+        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -540,9 +532,6 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .diag = ctx.diag,
         .has_symbols = @intCast(u8, 1),
         .enum_value_table = &ctx.enum_value_table,
-        .env_nids = ctx.enum_node_ids,
-        .env_fids = ctx.enum_field_ids,
-        .env_count_ptr = &ctx.enum_val_count,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
