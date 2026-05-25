@@ -272,7 +272,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var direct_ret: u32 = @intCast(u32, 0);
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, callee_node.payload)]);
-        if (sym) |s| {
+        if (sym) |s| { var xf: []const u8 = "XF"; pal_mod.stderr_write(xf);
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
                 var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
                 if (dn.kind == AstKind.fn_decl) {
@@ -299,9 +299,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     }
                 }
             }
-        }
+        } else { var xs: []const u8 = "xS"; pal_mod.stderr_write(xs); }
     }
     if (direct_ret != @intCast(u32, 0)) {
+        var xd: []const u8 = "xD"; pal_mod.stderr_write(xd);
         var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         var ai: usize = 0;
         while (ai < args.len) : (ai += 1) {

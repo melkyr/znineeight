@@ -487,6 +487,7 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
     });
     var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
     nameCachePut(self, key, tid);
+    nameCachePut(self, @intCast(u64, name_id), tid);
     return tid;
 }
 
