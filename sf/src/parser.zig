@@ -605,11 +605,10 @@ fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
 
 fn parserParseEnumLiteral(self: *Parser) ParserError!u32 {
     var dot = parserAdvance(self);
-    var name_tok = try parserExpect(self, TokenKind.identifier);
-    var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-    var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+    var name_tok = parserPeek(self);
+    _ = try parserExpect(self, TokenKind.identifier);
     var end_pos: u32 = name_tok.span_start + @intCast(u32, name_tok.span_len);
-    return ast_mod.astStoreAddIdentifier(self.store, AstKind.enum_literal, name_id, dot.span_start, end_pos);
+    return ast_mod.astStoreAddIdentifier(self.store, AstKind.enum_literal, name_tok.value.string_id, dot.span_start, end_pos);
 }
 
 fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {

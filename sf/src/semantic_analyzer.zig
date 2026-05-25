@@ -371,36 +371,35 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var el: []const u8 = "eL"; pal_mod.stderr_write(el);
-    var name_id = node.payload;
-    var nmb: [20]u8 = undefined;
-    var nml = itoa_mod.itoa(name_id, nmb[0..]);
-    var nms: usize = @intCast(usize, 19) - @intCast(usize, nml);
-    var eN2: []const u8 = "n="; pal_mod.stderr_write(eN2);
-    pal_mod.stderr_write(nmb[nms..@intCast(usize, 19)]);
-    var eS2: []const u8 = " "; pal_mod.stderr_write(eS2);
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var n: u32 = self.store.identifiers.items[@intCast(usize, node.payload)];
     if (self.current_switch_cond_tu != @intCast(u32, 0)) {
         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
         if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
             var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
             var fstart: usize = @intCast(usize, tp.fields_start);
             var fcount: usize = @intCast(usize, tp.fields_count);
+            var f0: u32 = @intCast(u32, self.registry.fe_items[fstart].name_id);
+            var nb: [20]u8 = undefined; var fb: [20]u8 = undefined;
+            var nl = itoa_mod.itoa(n, nb[0..]); var fl = itoa_mod.itoa(f0, fb[0..]);
+            var ns = @intCast(usize, 19) - @intCast(usize, nl); var fs2 = @intCast(usize, 19) - @intCast(usize, fl);
+            var nd: []const u8 = "n"; pal_mod.stderr_write(nd); pal_mod.stderr_write(nb[ns..@intCast(usize, 19)]);
+            var fd: []const u8 = "f"; pal_mod.stderr_write(fd); pal_mod.stderr_write(fb[fs2..@intCast(usize, 19)]);
+            var sp: []const u8 = " "; pal_mod.stderr_write(sp);
+            var fcB: [20]u8 = undefined; var fcL = itoa_mod.itoa(@intCast(u32, fcount), fcB[0..]);
+            var fcS: usize = @intCast(usize, 19) - @intCast(usize, fcL);
+            var fcT: []const u8 = "fc="; pal_mod.stderr_write(fcT); pal_mod.stderr_write(fcB[fcS..@intCast(usize, 19)]);
+            var fcP: []const u8 = " "; pal_mod.stderr_write(fcP);
             var fi: usize = 0;
             while (fi < fcount) : (fi += 1) {
-                var fnid = self.registry.fe_items[fstart + fi].name_id;
-                var fb: [20]u8 = undefined;
-                var fl = itoa_mod.itoa(@intCast(u32, fnid), fb[0..]);
-                var fs: usize = @intCast(usize, 19) - @intCast(usize, fl);
-                var ef: []const u8 = "f"; pal_mod.stderr_write(ef);
-                pal_mod.stderr_write(fb[fs..@intCast(usize, 19)]);
-                var ef2: []const u8 = " "; pal_mod.stderr_write(ef2);
-                if (fnid == name_id) {
+                var fe = self.registry.fe_items[fstart + fi];
+                var feb: [20]u8 = undefined; var feL = itoa_mod.itoa(@intCast(u32, fe.name_id), feb[0..]);
+                var fes: usize = @intCast(usize, 19) - @intCast(usize, feL);
+                var feT: []const u8 = "g"; pal_mod.stderr_write(feT); pal_mod.stderr_write(feb[fes..@intCast(usize, 19)]);
+                var feP: []const u8 = " "; pal_mod.stderr_write(feP);
+                if (fe.name_id == n) {
                     hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
-                    var evptr: u32 = @intCast(u32, @ptrToInt(self.enum_value_table));
-                    var evpb: [20]u8 = undefined;
-                    var evpl = itoa_mod.itoa(evptr, evpb[0..]);
-                    var evps: usize = @intCast(usize, 19) - @intCast(usize, evpl);
-                    var evW: []const u8 = "EW"; pal_mod.stderr_write(evW);
-                    pal_mod.stderr_write(evpb[evps..@intCast(usize, 19)]);
+                    var ew: []const u8 = "EW"; pal_mod.stderr_write(ew);
                     var evgc = self.enum_value_table.count;
                     var eg_buf: [20]u8 = undefined;
                     var eg_len = itoa_mod.itoa(@intCast(u32, evgc), eg_buf[0..]);
@@ -541,11 +540,12 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                 var ccs: usize = @intCast(usize, 19) - @intCast(usize, cc_len);
                 var ccS: []const u8 = "cK="; pal_mod.stderr_write(ccS);
                 pal_mod.stderr_write(cc_buf[ccs..@intCast(usize, 19)]);
-                var ccP: []const u8 = " "; pal_mod.stderr_write(ccP);
-                var ck18: u8 = 0; if (case_node.kind == AstKind.enum_literal) { ck18 = 1; } if (case_node.kind == AstKind.undefined_literal) { ck18 = 1; }
-                if (ck18 != @intCast(u8, 0)) {
-                    _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
-                }
+                    var ccP: []const u8 = " "; pal_mod.stderr_write(ccP);
+                    if (case_node.kind == AstKind.enum_literal) {
+                        _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
+                    } else if (case_node.kind == AstKind.undefined_literal) {
+                        _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
+                    }
             }
         }
         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
