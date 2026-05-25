@@ -179,31 +179,25 @@ fn runCompiler(ctx: *CompilerContext) void {
     alloc_mod.checkCombinedPeak(ctx.alloc);
     var t2: []const u8 = "t2\n"; pal.stderr_write(t2);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
-        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
-        var p_msg: []const u8 = "E2\n"; pal.stderr_write(p_msg);
         pal.exit(2);
     }
     phase_SemanticAnalysis(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
-        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_StaticAnalyzers(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
-        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
-        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
-    diag_mod.diagnosticCollectorPrintAll(ctx.diag);
     if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
         pal.exit(1);
     }
@@ -339,24 +333,12 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 if (decl.child_0 != 0) {
                     resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
                 }
+                var sa0: []const u8 = "SA"; pal.stderr_write(sa0);
                 sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
+                var sa1: []const u8 = "sA"; pal.stderr_write(sa1);
             }
         }
     }
-    var ac: u32 = @intCast(u32, 0);
-    var ei: usize = @intCast(usize, 0);
-    while (ei < ctx.resolved_types.entries_len) : (ei += @intCast(usize, 1)) {
-        var te = ctx.resolved_types.entries_items[@intCast(usize, ei)];
-        var ty = ctx.typereg.types_items[@intCast(usize, te.type_id)];
-        if (ty.kind == type_mod.TypeKind.array_type) ac += @intCast(u32, 1);
-    }
-    if (ac >= @intCast(u32, 2)) {
-        var am: []const u8 = "2\n"; pal.stderr_write(am);
-    } else if (ac == @intCast(u32, 1)) {
-        var am: []const u8 = "1\n"; pal.stderr_write(am);
-    } else {
-        var am: []const u8 = "0\n"; pal.stderr_write(am);
-}
 
 }
 

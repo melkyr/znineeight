@@ -94,10 +94,6 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     var key = @intCast(u64, name_id);
     var tid = type_mod.nameCacheGet(self.registry, key);
     if (tid) |t| return t;
-    var umsg: []const u8 = "undefined symbol";
-    diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
-        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)),
-        self.module_id, @intCast(u32, 0), @intCast(u32, 0), umsg);
     return type_mod.TYPE_VOID;
 }
 
@@ -107,6 +103,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     var field_name_id = node.payload;
 
     if (base_node.kind == AstKind.ident_expr) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_node.payload);
         if (sym) |s| {
             if (s.kind == sym_mod.SymbolKind.type_alias) {
@@ -268,6 +265,7 @@ fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+    var direct_ret: u32 = @intCast(u32, 0);
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, callee_node.payload);
         if (sym) |s| {
@@ -278,21 +276,26 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rt) |t| {
-                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, t);
-                            return t;
+                            direct_ret = t;
                         }
                     }
                 }
             }
         }
     }
+    if (direct_ret != @intCast(u32, 0)) {
+        var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var ai: usize = 0;
+        while (ai < args.len) : (ai += 1) {
+            _ = semanticAnalyzerResolveExpr(self, args[ai]);
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, direct_ret);
+        return direct_ret;
+    }
     var callee_type = semanticAnalyzerResolveExpr(self, node.child_0);
     if (callee_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var callee_ty = self.registry.types_items[@intCast(usize, callee_type)];
     if (callee_ty.kind != type_mod.TypeKind.fn_type) {
-        var fmsg: []const u8 = "expression is not callable";
-        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 0),
-            @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fmsg);
         return type_mod.TYPE_VOID;
     }
     var fnp = self.registry.fn_items[@intCast(usize, callee_ty.payload_idx)];
@@ -300,9 +303,6 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var pstart: usize = @intCast(usize, fnp.params_start);
     var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
     if (args.len != pcount) {
-        var amsg: []const u8 = "wrong number of arguments";
-        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 0),
-            @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), amsg);
         return fnp.return_type;
     }
     var ai: usize = 0;
@@ -327,9 +327,6 @@ fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
     if (ty.kind != type_mod.TypeKind.error_union_type) {
-        var tmsg: []const u8 = "try requires error union type";
-        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 0),
-            @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), tmsg);
         return type_mod.TYPE_VOID;
     }
     var eu = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
@@ -497,10 +494,6 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 
     self.current_switch_cond_tu = @intCast(u32, 0);
     if (has_else == @intCast(u8, 0)) {
-        var wmsg: []const u8 = "switch may not be exhaustive";
-        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1),
-            @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3004_SWITCH_NOT_EXHAUSTIVE)),
-            self.module_id, @intCast(u32, 0), @intCast(u32, 0), wmsg);
     }
     if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_VOID;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
@@ -645,6 +638,27 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     var store = self.store;
     var proto = store.fn_protos.items[@intCast(usize, decl.payload)];
     if (decl.child_0 == @intCast(u32, 0)) return;
+    if (proto.params_count > @intCast(u16, 0)) {
+        var p_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+        var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
+        var pi: usize = @intCast(usize, 0);
+        while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
+            var pnode = store.nodes.items[@intCast(usize, pnodes[pi])];
+            if (pnode.child_0 != @intCast(u32, 0)) {
+                if (self.local_decl_count >= self.local_decl_cap) {
+                    semanticAnalyzerGrowLocalDecls(self);
+                }
+                self.local_decl_names[self.local_decl_count] = pnode.payload;
+                var rt = rtt_mod.resolvedTypeTableGet(self.type_table, pnode.child_0);
+                if (rt) |t| {
+                    self.local_decl_types[self.local_decl_count] = t;
+                } else {
+                    self.local_decl_types[self.local_decl_count] = type_mod.TYPE_UNDEFINED;
+                }
+                self.local_decl_count += @intCast(usize, 1);
+            }
+        }
+    }
     semanticAnalyzerResolveStmt(self, decl.child_0);
 }
 
@@ -661,6 +675,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     } else if (node.kind == AstKind.var_decl) {
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != @intCast(u32, 0)) {
+            _ = semanticAnalyzerResolveExpr(self, node.child_0);
             var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
             if (rt) |t| { decl_type = t; }
         }

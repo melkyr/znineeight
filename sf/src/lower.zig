@@ -623,6 +623,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var base_temp = lowerExpr(self, node.child_0);
         var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (resolved) |_| { var df: []const u8 = "HF"; pal.stderr_write(df); } else { var df: []const u8 = "MF"; pal.stderr_write(df); }
         var tid = nextTemp(self, type_mod.TYPE_U32);
         if (resolved) |type_id| {
             var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
@@ -682,6 +683,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                             var proto = store.fn_protos.items[@intCast(usize, dn.payload)];
                                             if (proto.return_type_node != 0) {
                                                 var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
+                                                if (rt) |_| { var dx: []const u8 = "HX"; pal.stderr_write(dx); } else { var dx: []const u8 = "MX"; pal.stderr_write(dx); }
                                                 if (rt) |t| { self._fn_ret_type = t; }
                                             }
                                         }
@@ -729,6 +731,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var proto = store.fn_protos.items[@intCast(usize, dn.payload)];
                             if (proto.return_type_node != 0) {
                                 var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
+                                if (rt) |_| { var dd: []const u8 = "HD"; pal.stderr_write(dd); } else { var dd: []const u8 = "MD"; pal.stderr_write(dd); }
                                 if (rt) |t| { self._fn_ret_type = t; }
                             }
                         }
@@ -1235,6 +1238,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+            if (rt) |_| { var dv: []const u8 = "HV"; pal.stderr_write(dv); } else { var dv: []const u8 = "MV"; pal.stderr_write(dv); }
             if (rt) |t| { decl_type = t; }
         } else if (node.child_1 != 0) {
             var init_node = store.nodes.items[@intCast(usize, node.child_1)];
@@ -1551,6 +1555,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.name_id = proto.name_id;
     func_ptr.module_id = self.module_id;
     var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
+    if (rt) |_| { var dr: []const u8 = "HR"; pal.stderr_write(dr); } else { var dr: []const u8 = "MR"; pal.stderr_write(dr); }
     func_ptr.return_type = if (rt) |tid| tid else type_mod.TYPE_VOID;
     func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);
     func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
@@ -1568,6 +1573,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
             if (pnode.child_0 != @intCast(u32, 0)) {
                 var p_name_id = pnode.payload;
                 var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
+                if (p_type) |_| { var dp: []const u8 = "HP"; pal.stderr_write(dp); } else { var dp: []const u8 = "MP"; pal.stderr_write(dp); }
                 var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
                 lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
                     .name_id = p_name_id,
