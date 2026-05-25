@@ -353,17 +353,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.float_literal) {
         var val = store.float_values.items[@intCast(usize, node.payload)];
-        var dx0_buf: [64]u8 = undefined;
-        var dx0 = format_mod.formatF64(val, dx0_buf[0..], 64);
-        var dx0s: []const u8 = "D0:"; pal.stderr_write(dx0s);
-        pal.stderr_write(dx0);
-        var dx0n: []const u8 = "\n"; pal.stderr_write(dx0n);
         var tid = nextTemp(self, type_mod.TYPE_F64);
-        var dx1_buf: [64]u8 = undefined;
-        var dx1 = format_mod.formatF64(val, dx1_buf[0..], 64);
-        var dx1s: []const u8 = "D1:"; pal.stderr_write(dx1s);
-        pal.stderr_write(dx1);
-        var dx1n: []const u8 = "\n"; pal.stderr_write(dx1n);
         emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.string_literal) {
@@ -600,8 +590,35 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.field_access) {
-        var base_temp = lowerExpr(self, node.child_0);
         var field_name_id = node.payload;
+        var base_node = store.nodes.items[@intCast(usize, node.child_0)];
+        if (base_node.kind == AstKind.ident_expr and self.ctx.has_symbols != @intCast(u8, 0)) {
+            var base_name_id = store.identifiers.items[@intCast(usize, base_node.payload)];
+            var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name_id);
+            if (sym) |s| {
+                if (s.kind == sym_mod.SymbolKind.type_alias) {
+                    var key: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, base_name_id);
+                    var lt = type_mod.nameCacheGet(self.ctx.registry, key);
+                    if (lt) |type_id| {
+                        var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
+                        if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+                            var tp = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
+                            var fstart: usize = @intCast(usize, tp.fields_start);
+                            var fcount: usize = @intCast(usize, tp.fields_count);
+                            var fi: usize = 0;
+                            while (fi < fcount) : (fi += 1) {
+                                if (self.ctx.registry.fe_items[fstart + fi].name_id == field_name_id) {
+                                    var tid = nextTemp(self, type_mod.TYPE_U32);
+                                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, fi), .result = tid } });
+                                    return tid;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        var base_temp = lowerExpr(self, node.child_0);
         var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         var tid = nextTemp(self, type_mod.TYPE_U32);
         if (resolved) |type_id| {
@@ -863,20 +880,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return result;
      } else if (node.kind == AstKind.array_init) {
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
-        var dg: []const u8 = "AI:"; pal.stderr_write(dg);
-        var di: usize = @intCast(usize, 0);
-        while (di < ec.len and di < @intCast(usize, 4)) : (di += @intCast(usize, 1)) {
-            var el_node = store.nodes.items[@intCast(usize, ec[di])];
-            var ek: u8 = el_node.kind;
-            if (ek == @intCast(u8, AstKind.char_literal)) {
-                var vv: u64 = store.int_values.items[@intCast(usize, el_node.payload)];
-                if (vv == @intCast(u64, 32)) { var dm: []const u8 = "S"; pal.stderr_write(dm); }
-                else if (vv == @intCast(u64, 80)) { var dm: []const u8 = "W"; pal.stderr_write(dm); }
-                else { var dm: []const u8 = "C"; pal.stderr_write(dm); }
-            }
-            else { var dm: []const u8 = "?"; pal.stderr_write(dm); }
-        }
-        var dn: []const u8 = "\n"; pal.stderr_write(dn);
         var aelem: u32 = if (ec.len > @intCast(usize, 0)) if (store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])].kind == AstKind.char_literal) type_mod.TYPE_U8 else type_mod.TYPE_U32 else type_mod.TYPE_U32;
         var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, aelem, @intCast(u32, ec.len));
         var base_temp = nextTemp(self, arr_tid);
@@ -889,7 +892,68 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         return base_temp;
     } else if (node.kind == AstKind.switch_expr) {
-        return @intCast(u32, 0);
+        var cond_temp = lowerExpr(self, node.child_0);
+        var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var prong_count = prong_ec.len;
+        var result_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var switch_bb = self.current_bb;
+        var prong_start = @intCast(u32, self.func.blocks.len);
+        var pi: usize = @intCast(usize, 0);
+        while (pi < prong_count) : (pi += @intCast(usize, 1)) { _ = createBlock(self); }
+        var else_bb = createBlock(self);
+        var exit_bb = createBlock(self);
+        var cases_start = @intCast(u32, self.func.switch_cases.len);
+        pi = @intCast(usize, 0);
+        while (pi < prong_count) : (pi += @intCast(usize, 1)) {
+            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) { continue; }
+            var prong_bb_id = prong_start + @intCast(u32, pi);
+            var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
+            var ci: usize = @intCast(usize, 0);
+            while (ci < case_ec.len) : (ci += @intCast(usize, 1)) {
+                var case_node = store.nodes.items[@intCast(usize, case_ec[ci])];
+                var case_val: u64 = @intCast(u64, 0);
+                if (case_node.kind == AstKind.int_literal) {
+                    case_val = store.int_values.items[@intCast(usize, case_node.payload)];
+                } else if (case_node.kind == AstKind.enum_literal) {
+                    case_val = @intCast(u64, case_node.payload);
+                } else { continue; }
+                lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
+                    lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
+            }
+        }
+        var sc_len = @intCast(u32, self.func.switch_cases.len);
+        var cases_count: u32 = sc_len - cases_start;
+        var else_target = else_bb;
+        pi = @intCast(usize, 0);
+        while (pi < prong_count) : (pi += @intCast(usize, 1)) {
+            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) {
+                else_target = prong_start + @intCast(u32, pi);
+                break;
+            }
+        }
+        self.current_bb = switch_bb;
+        emitInst(self, LirInst{ .switch_br = .{ .cond = cond_temp, .cases_start = cases_start, .cases_count = cases_count, .else_bb = else_target } });
+        if (else_target == else_bb) {
+            self.current_bb = else_bb;
+            emitInst(self, LirInst{ .nop = {} });
+            self.block_terminated = @intCast(u8, 1);
+        }
+        pi = @intCast(usize, 0);
+        while (pi < prong_count) : (pi += @intCast(usize, 1)) {
+            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+            var prong_bb_id = prong_start + @intCast(u32, pi);
+            self.current_bb = prong_bb_id;
+            self.block_terminated = @intCast(u8, 0);
+            var prong_val = lowerExpr(self, prong_node.child_0);
+            if (self.block_terminated == @intCast(u8, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = result_temp, .src = prong_val } });
+                emitInst(self, LirInst{ .jump = exit_bb });
+            }
+        }
+        self.current_bb = exit_bb;
+        return result_temp;
     } else {
         return @intCast(u32, 0);
     }
@@ -1131,7 +1195,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (exit_target == @intCast(u32, 0)) { return; }
         }
         expandDefers(self, exit_scope, @intCast(u8, 0));
-        { var bx: []const u8 = "BRK:"; pal.stderr_write(bx); dbgPrintU32(self.block_terminated); var nx: []const u8 = "\n"; pal.stderr_write(nx); }
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = exit_target });
             self.block_terminated = @intCast(u8, 1);
@@ -1166,27 +1229,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var name_id = node.payload;
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != 0) {
-            var pb = node.child_0 & @intCast(u32, 3);
-            if (pb == @intCast(u32, 0)) { var pm: []const u8 = "L0"; pal.stderr_write(pm); }
-            else if (pb == @intCast(u32, 1)) { var pm: []const u8 = "L1"; pal.stderr_write(pm); }
-            else if (pb == @intCast(u32, 2)) { var pm: []const u8 = "L2"; pal.stderr_write(pm); }
-            else { var pm: []const u8 = "L3"; pal.stderr_write(pm); }
-            if (node.child_0 > @intCast(u32, 0)) { var nm: []const u8 = "N"; pal.stderr_write(nm); }
-            else { var nm: []const u8 = "0"; pal.stderr_write(nm); }
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-            if (rt) |t| { decl_type = t; var tm: []const u8 = "T"; pal.stderr_write(tm); }
-            else {
-                var tm: []const u8 = "t"; pal.stderr_write(tm);
-                var i: u32 = 0;
-                while (i < @intCast(u32, self.ctx.resolved_types.entries_len)) : (i += 1) {
-                    var ent = self.ctx.resolved_types.entries_items[@intCast(usize, i)];
-                    if (ent.node_idx < node.child_0) { var km: []const u8 = "<"; pal.stderr_write(km); }
-                    if (ent.node_idx == node.child_0) { var km: []const u8 = "="; pal.stderr_write(km); }
-                    if (ent.node_idx > node.child_0) { var km: []const u8 = ">"; pal.stderr_write(km); }
-                }
-                if (i > @intCast(u32, 0)) { var em: []const u8 = "E"; pal.stderr_write(em); }
-                else { var em: []const u8 = "e"; pal.stderr_write(em); }
-            }
+            if (rt) |t| { decl_type = t; }
         } else if (node.child_1 != 0) {
             var init_node = store.nodes.items[@intCast(usize, node.child_1)];
             if (init_node.kind == AstKind.float_literal) {
@@ -1509,19 +1553,24 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
+    func_ptr.is_variadic = @intCast(u8, 0);
     var p_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
     if (proto.params_count > @intCast(u16, 0)) {
         var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
         var pi: usize = @intCast(usize, 0);
         while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
             var pnode = store.nodes.items[@intCast(usize, pnodes[pi])];
-            var p_name_id = pnode.payload;
-            var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
-            var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
-            lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
-                .name_id = p_name_id,
-                .type_id = p_tid,
-            });
+            if (pnode.child_0 != @intCast(u32, 0)) {
+                var p_name_id = pnode.payload;
+                var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
+                var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
+                lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
+                    .name_id = p_name_id,
+                    .type_id = p_tid,
+                });
+            } else {
+                func_ptr.is_variadic = @intCast(u8, 1);
+            }
         }
     }
     self.func = func_ptr;

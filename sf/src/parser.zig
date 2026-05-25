@@ -318,7 +318,12 @@ fn parserParseIndexOrSlice(self: *Parser, base: u32) ParserError!u32 {
     var tok = parserPeek(self);
     if (tok.kind == TokenKind.dot_dot) {
         _ = parserAdvance(self);
-        var last = try parserParseExprPrec(self, Prec.none);
+        var last: u32 = 0;
+        if (parserPeek(self).kind == TokenKind.rbracket) {
+            // open-ended range: grid[0..]
+        } else {
+            last = try parserParseExprPrec(self, Prec.none);
+        }
         _ = try parserExpect(self, TokenKind.rbracket);
         return ast_mod.astStoreAddNode(self.store, AstKind.slice_expr, 0,
             tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
@@ -769,6 +774,7 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
+    if (tok.kind == TokenKind.kw_anytype) { _ = parserAdvance(self); var z: u32 = @intCast(u32, 0); return z; }
     return parserParseTypeName(self);
 }
 
@@ -974,6 +980,10 @@ fn parserParseUnionType(self: *Parser) ParserError!u32 {
             field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
                 name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
                 field_type, 0, 0, name_id);
+        } else {
+            field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+                0, 0, 0, name_id);
         }
         fields_buf[fields_count] = field_node;
         fields_count += 1;

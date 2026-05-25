@@ -737,8 +737,13 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     bufferedWriterWrite(&emitter.writer, op);
 
     if (lir_fn.params.len == @intCast(usize, 0)) {
-        var vd: []const u8 = "void";
-        bufferedWriterWrite(&emitter.writer, vd);
+        if (lir_fn.is_variadic != @intCast(u8, 0)) {
+            var vd: []const u8 = "...";
+            bufferedWriterWrite(&emitter.writer, vd);
+        } else {
+            var vd: []const u8 = "void";
+            bufferedWriterWrite(&emitter.writer, vd);
+        }
     } else {
         var pi: usize = @intCast(usize, 0);
         while (pi < lir_fn.params.len) : (pi += @intCast(usize, 1)) {
@@ -753,6 +758,14 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             bufferedWriterWrite(&emitter.writer, sp2);
             var pn = mangleLocalName(emitter.mangler, emitter.interner, param.name_id);
             bufferedWriterWrite(&emitter.writer, pn);
+        }
+        if (lir_fn.is_variadic != @intCast(u8, 0)) {
+            if (lir_fn.params.len > @intCast(usize, 0)) {
+                var cm: []const u8 = ", ";
+                bufferedWriterWrite(&emitter.writer, cm);
+            }
+            var vd: []const u8 = "...";
+            bufferedWriterWrite(&emitter.writer, vd);
         }
     }
 
@@ -772,8 +785,13 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     var op: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, op);
     if (lir_fn.params.len == @intCast(usize, 0)) {
-        var vd: []const u8 = "void";
-        bufferedWriterWrite(&emitter.writer, vd);
+        if (lir_fn.is_variadic != @intCast(u8, 0)) {
+            var vd: []const u8 = "...";
+            bufferedWriterWrite(&emitter.writer, vd);
+        } else {
+            var vd: []const u8 = "void";
+            bufferedWriterWrite(&emitter.writer, vd);
+        }
     } else {
         var pi: usize = @intCast(usize, 0);
         while (pi < lir_fn.params.len) : (pi += @intCast(usize, 1)) {
@@ -784,6 +802,12 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
             var param = lir_fn.params.items[pi];
             var pt_c = getCTypeName(emitter.registry, emitter.mangler, param.type_id);
             bufferedWriterWrite(&emitter.writer, pt_c);
+        }
+        if (lir_fn.is_variadic != @intCast(u8, 0)) {
+            var cm: []const u8 = ", ";
+            bufferedWriterWrite(&emitter.writer, cm);
+            var vd: []const u8 = "...";
+            bufferedWriterWrite(&emitter.writer, vd);
         }
     }
     var rp: []const u8 = ");\n";
@@ -827,6 +851,7 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) vo
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         var func = fns[i];
+        emitter.switch_cases = &func.switch_cases;
         if (func.is_extern == @intCast(u8, 0)) {
             emitFunctionSignature(emitter, &func);
             emitHoistedDecls(emitter, &func);
@@ -1366,11 +1391,6 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .assign => |a| {
             var dst = mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);
-            var d1s: []const u8 = "D1:"; pal.stderr_write(d1s);
-            pal.stderr_write(dst);
-            var d1e: []const u8 = "="; pal.stderr_write(d1e);
-            pal.stderr_write(src);
-            var d1n: []const u8 = "\n"; pal.stderr_write(d1n);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
             var sep: []const u8 = " = ";

@@ -114,6 +114,46 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         ty.payload_idx = st_idx;
         type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
     }
+    if (decl_kind == AstKind.union_decl) {
+        var fstart: u32 = @intCast(u32, type_reg.fe_len);
+        var fcount: u32 = 0;
+        var i: usize = 0;
+        while (i < children.len) {
+            var fd = store.nodes.items[@intCast(usize, children[i])];
+            if (fd.kind == AstKind.field_decl) {
+                type_mod.feAppend(type_reg, type_mod.FieldEntry{
+                    .name_id = fd.payload,
+                    .type_id = type_mod.TYPE_VOID,
+                    .offset = @intCast(u32, 0),
+                });
+                fcount += 1;
+            }
+            i += 1;
+        }
+        if ((@intCast(u16, node.flags) & 1) != 0) {
+            type_mod.tuAppend(type_reg, type_mod.TaggedUnionPayload{
+                .tag_type = type_mod.TYPE_U32,
+                .fields_start = @intCast(u16, fstart),
+                .fields_count = @intCast(u16, fcount),
+            });
+            var tu_last: usize = type_reg.tu_len - @intCast(usize, 1);
+            var tu_idx: u32 = @intCast(u32, tu_last);
+            var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+            ty.payload_idx = tu_idx;
+            type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+        } else {
+            type_mod.unAppend(type_reg, type_mod.UnionPayload{
+                .fields_start = @intCast(u16, fstart),
+                .fields_count = @intCast(u16, fcount),
+                .tag_type = type_mod.TYPE_VOID,
+            });
+            var un_last: usize = type_reg.un_len - @intCast(usize, 1);
+            var un_idx: u32 = @intCast(u32, un_last);
+            var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+            ty.payload_idx = un_idx;
+            type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+        }
+    }
     if (decl_kind == AstKind.enum_decl) {
         var mstart: u32 = @intCast(u32, type_reg.en_len);
         var mcount: u32 = 0;

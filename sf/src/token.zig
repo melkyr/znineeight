@@ -91,6 +91,7 @@ pub const TokenKind = enum(u16) {
     kw_bool,
     kw_noreturn,
     kw_c_char,
+    kw_anytype,
     eof,
     err_token,            // unrecognized character (error recovery)
 };
@@ -129,7 +130,7 @@ pub var keyword_table: []KeywordEntry = undefined;
 pub var keyword_count: usize = 0;
 
 pub fn initKeywordTable(alloc: *Sand) void {
-    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 12) * @intCast(usize, 35), @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 12) * @intCast(usize, 36), @intCast(usize, 4)) catch unreachable;
     var table = @ptrCast([*]KeywordEntry, raw);
     var i: usize = 0;
     table[i] = KeywordEntry{ .name = "const",       .kind = TokenKind.kw_const };       i += 1;
@@ -167,8 +168,9 @@ pub fn initKeywordTable(alloc: *Sand) void {
     var s_bool: []const u8 = "bool"; table[i] = KeywordEntry{ .name = s_bool, .kind = TokenKind.kw_bool }; i += 1;
     table[i] = KeywordEntry{ .name = "noreturn",    .kind = TokenKind.kw_noreturn };    i += 1;
     var s_c_char: []const u8 = "c_char"; table[i] = KeywordEntry{ .name = s_c_char, .kind = TokenKind.kw_c_char }; i += 1;
+    var s_anytype: []const u8 = "anytype"; table[i] = KeywordEntry{ .name = s_anytype, .kind = TokenKind.kw_anytype }; i += 1;
 
-    keyword_table = table[0..35];
+    keyword_table = table[0..36];
     keyword_count = i;
 }
 

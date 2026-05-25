@@ -91,6 +91,7 @@ pub const CompilerContext = struct {
     symbol_reg: *SymbolRegistry,
     resolved_types: *ResolvedTypeTable,
     coercion_table: *CoercionTable,
+    dep_graph: *symbol_registrator.DepGraph,
     lir_fns: LirFunctionArrayList,
 };
 
@@ -140,6 +141,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
     var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
+    var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -153,6 +155,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .symbol_reg = &symbol_reg,
         .resolved_types = &resolved_types,
         .coercion_table = &coercion_table,
+        .dep_graph = &dep_graph,
         .lir_fns = lir_fns,
     };
     runCompiler(&ctx);
@@ -398,7 +401,8 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
             return child_type;
         }
         if (node.kind == AstKind.slice_type) {
-            return type_mod.TYPE_UNDEFINED;
+            var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+            return type_mod.typeRegistryGetOrCreateSlice(ctx.typereg, child_type, is_const);
         }
         if (node.kind == AstKind.optional_type) {
             return child_type;

@@ -327,4 +327,5 @@ pub const LirFunction = struct {
     switch_cases: SwitchCaseArrayList,
     is_extern: u8,
     is_pub: u8,
+    is_variadic: u8,
 };
