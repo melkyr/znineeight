@@ -314,6 +314,9 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                     var rtype = resolveTypeExpr(ctx, proto.return_type_node);
                     if (rtype != type_mod.TYPE_UNDEFINED) {
                         resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, proto.return_type_node, rtype);
+                        var rt_ok: []const u8 = "T"; pal.stderr_write(rt_ok);
+                    } else {
+                        var rt_nok: []const u8 = "U"; pal.stderr_write(rt_nok);
                     }
                 }
                 if (proto.params_count > @intCast(u16, 0)) {

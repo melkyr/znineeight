@@ -14,6 +14,7 @@ const sym_mod = @import("symbol_table.zig");
 const ast_mod = @import("ast.zig");
 const coercion_mod = @import("coercion.zig");
 const hash_mod = @import("util/hash.zig");
+const pal_mod = @import("pal.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -83,7 +84,10 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     var li = self.local_decl_count;
     while (li > @intCast(usize, 0)) {
         li -= @intCast(usize, 1);
-        if (self.local_decl_names[li] == name_id) return self.local_decl_types[li];
+        if (self.local_decl_names[li] == name_id) {
+            var ri: []const u8 = "R"; pal_mod.stderr_write(ri);
+            return self.local_decl_types[li];
+        }
     }
     var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id);
     if (sym) |s| {
@@ -269,6 +273,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, callee_node.payload);
         if (sym) |s| {
+            var sg: []const u8 = "G"; pal_mod.stderr_write(sg);
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
                 var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
                 if (dn.kind == AstKind.fn_decl) {
@@ -277,10 +282,15 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rt) |t| {
                             direct_ret = t;
+                            var fy: []const u8 = "Y"; pal_mod.stderr_write(fy);
+                        } else {
+                            var fnk: []const u8 = "N"; pal_mod.stderr_write(fnk);
                         }
                     }
                 }
             }
+        } else {
+            var sq: []const u8 = "Q"; pal_mod.stderr_write(sq);
         }
     }
     if (direct_ret != @intCast(u32, 0)) {
@@ -362,6 +372,7 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
             while (fi < fcount) : (fi += 1) {
                 if (self.registry.fe_items[fstart + fi].name_id == name_id) {
                     hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
+                    var re: []const u8 = "E"; pal_mod.stderr_write(re);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
                     return type_mod.TYPE_U32;
                 }
@@ -459,6 +470,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         var cond_ty = self.registry.types_items[@intCast(usize, cond_type)];
         if (cond_ty.kind == type_mod.TypeKind.tagged_union_type) {
             self.current_switch_cond_tu = cond_type;
+            var rs: []const u8 = "Z"; pal_mod.stderr_write(rs);
         }
     }
     var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
