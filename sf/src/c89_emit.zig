@@ -1664,13 +1664,27 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s);
             var si: usize = @intCast(usize, 0);
             while (si < str.len) : (si += @intCast(usize, 1)) {
-                if (str[si] == @intCast(u8, '"') or str[si] == @intCast(u8, '\\')) {
+                var b = str[si];
+                if (b == @intCast(u8, '\n')) {
+                    var esc: []const u8 = "\\n";
+                    bufferedWriterWrite(&emitter.writer, esc);
+                } else if (b == @intCast(u8, '\t')) {
+                    var esc: []const u8 = "\\t";
+                    bufferedWriterWrite(&emitter.writer, esc);
+                } else if (b == @intCast(u8, '\r')) {
+                    var esc: []const u8 = "\\r";
+                    bufferedWriterWrite(&emitter.writer, esc);
+                } else if (b == @intCast(u8, '"') or b == @intCast(u8, '\\')) {
                     var bs: []const u8 = "\\";
                     bufferedWriterWrite(&emitter.writer, bs);
+                    var ch: [1]u8 = undefined;
+                    ch[0] = b;
+                    bufferedWriterWrite(&emitter.writer, ch[0..1]);
+                } else {
+                    var ch: [1]u8 = undefined;
+                    ch[0] = b;
+                    bufferedWriterWrite(&emitter.writer, ch[0..1]);
                 }
-                var ch: [1]u8 = undefined;
-                ch[0] = str[si];
-                bufferedWriterWrite(&emitter.writer, ch[0..1]);
             }
             var s2: []const u8 = "\";\n";
             bufferedWriterWrite(&emitter.writer, s2);

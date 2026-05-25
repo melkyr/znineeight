@@ -450,11 +450,8 @@ fn parserParseFloatLiteral(self: *Parser) ParserError!u32 {
 
 fn parserParseStringLiteral(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
-    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
-    var text = parserTokenText(self, pt);
-    var id = string_interner_mod.stringInternerIntern(self.interner, text);
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
-    return ast_mod.astStoreAddStringLiteral(self.store, id, tok.span_start, end);
+    return ast_mod.astStoreAddStringLiteral(self.store, tok.value.string_id, tok.span_start, end);
 }
 
 fn parserParseCharLiteral(self: *Parser) ParserError!u32 {
