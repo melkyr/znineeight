@@ -108,7 +108,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
 
     if (base_node.kind == AstKind.ident_expr) {
         _ = semanticAnalyzerResolveExpr(self, node.child_0);
-        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_node.payload);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, base_node.payload)]);
         if (sym) |s| {
             if (s.kind == sym_mod.SymbolKind.type_alias) {
                 var alias_type_id = s.type_id;
@@ -271,26 +271,34 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
     var direct_ret: u32 = @intCast(u32, 0);
     if (callee_node.kind == AstKind.ident_expr) {
-        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, callee_node.payload);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, callee_node.payload)]);
         if (sym) |s| {
-            var sg: []const u8 = "G"; pal_mod.stderr_write(sg);
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
                 var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
                 if (dn.kind == AstKind.fn_decl) {
                     var proto = self.store.fn_protos.items[@intCast(usize, dn.payload)];
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
-                        if (rt) |t| {
-                            direct_ret = t;
-                            var fy: []const u8 = "Y"; pal_mod.stderr_write(fy);
-                        } else {
-                            var fnk: []const u8 = "N"; pal_mod.stderr_write(fnk);
+                        if (rt) |t| { direct_ret = t; }
+                        else {
+                            var rn = self.store.nodes.items[@intCast(usize, proto.return_type_node)];
+                            if (rn.kind == AstKind.ident_expr) {
+                                var rnid = self.store.identifiers.items[@intCast(usize, rn.payload)];
+                                var nc = type_mod.nameCacheGet(self.registry, @intCast(u64, rnid));
+                                if (nc == null) {
+                                    var mti: usize = 0;
+                                    while (mti < self.symbols.tables_len) : (mti += 1) {
+                                        var nck: u64 = @intCast(u64, mti) * @intCast(u64, 4294967296) + @intCast(u64, rnid);
+                                        nc = type_mod.nameCacheGet(self.registry, nck);
+                                        if (nc != null) break;
+                                    }
+                                }
+                                if (nc) |t| { direct_ret = t; }
+                            }
                         }
                     }
                 }
             }
-        } else {
-            var sq: []const u8 = "Q"; pal_mod.stderr_write(sq);
         }
     }
     if (direct_ret != @intCast(u32, 0)) {
@@ -540,7 +548,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.error_literal) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.ident_expr) {
-        result = semanticAnalyzerResolveIdent(self, self.module_id, node.payload);
+        result = semanticAnalyzerResolveIdent(self, self.module_id, self.store.identifiers.items[@intCast(usize, node.payload)]);
     } else if (node.kind == AstKind.field_access) {
         result = semanticAnalyzerResolveFieldAccess(self, node_idx);
     } else if (node.kind == AstKind.index_access) {
