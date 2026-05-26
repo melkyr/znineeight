@@ -757,7 +757,6 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     } else if (node.kind == AstKind.var_decl) {
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != @intCast(u32, 0)) {
-            _ = semanticAnalyzerResolveExpr(self, node.child_0);
             var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
             if (rt) |t| { decl_type = t; }
         }

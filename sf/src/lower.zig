@@ -1384,6 +1384,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     }
                 }
                 var da: []const u8 = "a"; pal.stderr_write(da);
+            } else if (init_node.kind == AstKind.struct_init) {
+                var si_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
+                if (si_rt) |t| { decl_type = t; }
             }
         }
         var is_arr_init: u8 = @intCast(u8, 0);
@@ -1398,6 +1401,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var sc_dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
             if (sc_dt.kind == type_mod.TypeKind.array_type) is_sc_arr = @intCast(u8, 1);
+        }
+        if (decl_type == @intCast(u32, type_mod.TYPE_TYPE)) {
+            var vk: []const u8 = "VK:"; pal.stderr_write(vk);
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and is_arr_init == @intCast(u8, 0)) {
             var dl_temp = nextTemp(self, decl_type);
