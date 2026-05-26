@@ -344,6 +344,32 @@ fn findLocalDecl(self: *LirLowerer, name_id: u32, out_type: *u32, out_is_arr: *u
     }
 }
 
+fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
+    var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node);
+    if (resolved) |rt| {
+        var rt_ty = self.ctx.registry.types_items[@intCast(usize, rt)];
+        if (rt_ty.kind == type_mod.TypeKind.slice_type) {
+            var ptr_temp = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
+            return ptr_temp;
+        }
+    }
+    return base_temp;
+}
+
+fn addLoopCapture(self: *LirLowerer, capture_node: u32, item_temp: u32) void {
+    var cap = self.ctx.store.nodes.items[@intCast(usize, capture_node)];
+    addLocalDecl(self, cap.payload, type_mod.TYPE_U32, item_temp);
+}
+
+fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
+    var dn_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, s.decl_node);
+    var tid_type = if (dn_type) |dt| dt else type_mod.TYPE_UNDEFINED;
+    var tid = nextTemp(self, tid_type);
+    emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid } });
+    return tid;
+}
+
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
@@ -535,6 +561,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });
         } else if (child_node.kind == AstKind.index_access) {
             var base_temp = lowerExpr(self, child_node.child_0);
+            base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
             var idx_temp = lowerExpr(self, child_node.child_1);
             emitInst(self, LirInst{ .assign_index = .{ .base = base_temp, .index = idx_temp, .src = src } });
         } else {
@@ -551,6 +578,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var child_node = store.nodes.items[@intCast(usize, node.child_0)];
         if (child_node.kind == AstKind.index_access) {
             var base_temp = lowerExpr(self, child_node.child_0);
+            base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
             var idx_temp = lowerExpr(self, child_node.child_1);
             var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
             emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
@@ -562,6 +590,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, node.child_0);
+        base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var idx_temp = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, type_mod.TYPE_U32);
         emitInst(self, LirInst{ .load_index = .{ .base = base_temp, .index = idx_temp, .result = tid } });
@@ -594,6 +623,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         return tid;
                     }
                 }
+                return lowerGlobalRef(self, s.*, name_id);
             }
         }
         }
@@ -1145,6 +1175,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, type_mod.TYPE_U32);
             emitInst(self, LirInst{ .load_index = .{ .base = ptr_temp, .index = idx_temp, .result = item_temp } });
+            if (node.child_2 != @intCast(u32, 0)) addLocalDecl(self, node.payload, type_mod.TYPE_U32, item_temp);
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {

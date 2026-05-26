@@ -600,6 +600,8 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.field_access) {
         result = semanticAnalyzerResolveFieldAccess(self, node_idx);
     } else if (node.kind == AstKind.index_access) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        _ = semanticAnalyzerResolveExpr(self, node.child_1);
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.slice_expr) {
         result = type_mod.TYPE_VOID;
