@@ -337,6 +337,25 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
         return getCTypeName(reg, mangler, ep.backing_type);
     }
+    if (ty.kind == TypeKind.array_type) {
+        var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
+        var e_cname = getCTypeName(reg, mangler, ap.elem);
+        var abuf: [128]u8 = undefined;
+        var ap2: usize = @intCast(usize, 0);
+        var a_pfx: []const u8 = "Arr_"; var apfx: usize = 0;
+        while (apfx < a_pfx.len and ap2 < 127) : (apfx += 1) { abuf[ap2] = a_pfx[apfx]; ap2 += 1; }
+        var aei: usize = 0;
+        while (aei < e_cname.len and ap2 < 127) : (aei += 1) { var ac = e_cname[aei]; if (ac == 32) { ac = '_'; } abuf[ap2] = ac; ap2 += 1; }
+        if (ap2 < 127) { abuf[ap2] = '_'; ap2 += 1; }
+        var albuf: [16]u8 = undefined;
+        var all = itoa_mod.itoa(ap.length, albuf[0..]);
+        var alst: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, all);
+        var ali: usize = alst;
+        while (ali < @intCast(usize, 16) - @intCast(usize, 1) and ap2 < 127) : (ali += 1) { abuf[ap2] = albuf[ali]; ap2 += 1; }
+        var anid = interner_mod.stringInternerIntern(mangler.interner, abuf[0..ap2]);
+        var amid = nameManglerMangle(mangler, anid, @intCast(u8, 2), @intCast(u32, 0));
+        return interner_mod.stringInternerGet(mangler.interner, amid);
+    }
     if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
         var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
         var et = reg.types_items[@intCast(usize, pp.base)];
