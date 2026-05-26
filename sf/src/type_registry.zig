@@ -399,6 +399,17 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
     return tid;
 }
 
+pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems_count: u16) u32 {
+    tupAppend(self, TuplePayload{ .elems_start = elems_start, .elems_count = elems_count });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.tuple_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .size = @intCast(u32, 0), .alignment = @intCast(u32, 1),
+        .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.tup_len - @intCast(usize, 1)),
+    });
+    return tid;
+}
+
 pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, params_start: u16, params_count: u16, return_type: TypeId) u32 {
     fnAppend(self, FnPayload{ .name_id = name_id, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = @intCast(u8, 0) });
     return typeRegistryAppend(self, Type{

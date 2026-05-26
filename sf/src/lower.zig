@@ -624,8 +624,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             return tid;
                         }
                     }
-                 }
-                 return lowerGlobalRef(self, s.*, name_id);
+                  }
+                  return lowerGlobalRef(self, s.*, name_id);
               }
          }
         }
@@ -1356,7 +1356,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-            if (rt) |_| { var dv: []const u8 = "HV"; pal.stderr_write(dv); } else { var dv: []const u8 = "MV"; pal.stderr_write(dv); }
             if (rt) |t| { decl_type = t; }
         } else if (node.child_1 != 0) {
             var init_node = store.nodes.items[@intCast(usize, node.child_1)];
