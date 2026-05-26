@@ -471,6 +471,8 @@ fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {
 }
 
 pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_id: u32, kind: TypeKind) u32 {
+    var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+    if (nameCacheGet(self, key)) |existing| return existing;
     var tid = self.next_type_id;
     self.next_type_id += 1;
     typeRegistryAppend(self, Type{
@@ -485,7 +487,6 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
         .module_id = module_id,
         .payload_idx = @intCast(u32, 0),
     });
-    var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
     nameCachePut(self, key, tid);
     nameCachePut(self, @intCast(u64, name_id), tid);
     return tid;

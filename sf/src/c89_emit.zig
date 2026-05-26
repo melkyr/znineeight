@@ -337,10 +337,6 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
         return getCTypeName(reg, mangler, ep.backing_type);
     }
-    if (ty.kind == TypeKind.array_type) {
-        var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
-        return getCTypeName(reg, mangler, ap.elem);
-    }
     if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
         var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
         var et = reg.types_items[@intCast(usize, pp.base)];
@@ -427,7 +423,8 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
                 ty.kind != TypeKind.optional_type and
                 ty.kind != TypeKind.error_union_type and
                 ty.kind != TypeKind.tagged_union_type and
-                ty.kind != TypeKind.union_type)
+                ty.kind != TypeKind.union_type and
+                ty.kind != TypeKind.array_type)
                 continue;
         }
         emitTypeDefinition(emitter, tid);
@@ -590,6 +587,38 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var es5: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es5);
 }
 
+fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
+    var ename = getCTypeName(reg, emitter.mangler, ap.elem);
+    var lbuf2: [16]u8 = undefined;
+    var ll2 = itoa_mod.itoa(ap.length, lbuf2[0..]);
+    var lst2: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, ll2);
+    var nam_buf: [128]u8 = undefined;
+    var nam_p: usize = 0;
+    var pfx: []const u8 = "Arr_"; var px: usize = 0;
+    while (px < pfx.len and nam_p < 127) : (px += 1) { nam_buf[nam_p] = pfx[px]; nam_p += 1; }
+    var ex: usize = 0;
+    while (ex < ename.len and nam_p < 127) : (ex += 1) { var c = ename[ex]; if (c == 32) { c = '_'; } nam_buf[nam_p] = c; nam_p += 1; }
+    if (nam_p < 127) { nam_buf[nam_p] = '_'; nam_p += 1; }
+    var lx: usize = lst2;
+    while (lx < @intCast(usize, 16) - @intCast(usize, 1) and nam_p < 127) : (lx += 1) { nam_buf[nam_p] = lbuf2[lx]; nam_p += 1; }
+    var anid = interner_mod.stringInternerIntern(emitter.interner, nam_buf[0..nam_p]);
+    var amid = nameManglerMangle(emitter.mangler, anid, @intCast(u8, 2), @intCast(u32, 0));
+    var aname = interner_mod.stringInternerGet(emitter.interner, amid);
+    var a0: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, a0);
+    bufferedWriterWrite(&emitter.writer, ename);
+    var a1: []const u8 = " "; bufferedWriterWrite(&emitter.writer, a1);
+    bufferedWriterWrite(&emitter.writer, aname);
+    var a2: []const u8 = "["; bufferedWriterWrite(&emitter.writer, a2);
+    var buf: [16]u8 = undefined;
+    var al = itoa_mod.itoa(ap.length, buf[0..]);
+    var astart: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, al);
+    bufferedWriterWrite(&emitter.writer, buf[astart..@intCast(usize, 16) - @intCast(usize, 1)]);
+    var a3: []const u8 = "];\n"; bufferedWriterWrite(&emitter.writer, a3);
+}
+
 fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.slice_type) { emitSliceType(emitter, tid); return; }
@@ -599,6 +628,7 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.enum_type) { emitEnumType(emitter, tid); return; }
     if (ty.kind == TypeKind.struct_type) { emitStructType(emitter, tid); return; }
     if (ty.kind == TypeKind.union_type) { emitStructType(emitter, tid); return; }
+    if (ty.kind == TypeKind.array_type) { emitArrayType(emitter, tid); return; }
 }
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {

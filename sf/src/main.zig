@@ -342,6 +342,40 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
                 var sa1: []const u8 = "sA"; pal.stderr_write(sa1);
             }
+            if (decl.kind == AstKind.var_decl and decl.child_1 != 0) {
+                var init = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
+                if (init.kind == AstKind.struct_decl or init.kind == AstKind.union_decl) {
+                    var spid = type_mod.nameCacheGet(ctx.typereg, (@intCast(u64, mods[mi].id) << @intCast(u64, 32)) | @intCast(u64, decl.payload));
+                    if (spid) |stid| {
+                        var sty = ctx.typereg.types_items[@intCast(usize, stid)];
+                        var fchildren = ast_mod.astStoreGetExtraChildren(ctx.store, init.payload);
+                        var fi2: usize = 0;
+                        if (sty.kind == type_mod.TypeKind.struct_type) {
+                            var sp = ctx.typereg.st_items[@intCast(usize, sty.payload_idx)];
+                            while (fi2 < @intCast(usize, sp.fields_count)) : (fi2 += 1) {
+                                var fd = ctx.store.nodes.items[@intCast(usize, fchildren[fi2])];
+                                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                                    var ft = resolveTypeExpr(ctx, fd.child_0);
+                                    if (ft != type_mod.TYPE_UNDEFINED) {
+                                        ctx.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
+                                    }
+                                }
+                            }
+                        } else if (sty.kind == type_mod.TypeKind.tagged_union_type) {
+                            var tp = ctx.typereg.tu_items[@intCast(usize, sty.payload_idx)];
+                            while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += 1) {
+                                var fd = ctx.store.nodes.items[@intCast(usize, fchildren[fi2])];
+                                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                                    var ft = resolveTypeExpr(ctx, fd.child_0);
+                                    if (ft != type_mod.TYPE_UNDEFINED) {
+                                        ctx.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
