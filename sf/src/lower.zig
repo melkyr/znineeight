@@ -1358,35 +1358,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
             if (rt) |t| { decl_type = t; }
         } else if (node.child_1 != 0) {
-            var init_node = store.nodes.items[@intCast(usize, node.child_1)];
-            if (init_node.kind == AstKind.float_literal) {
-                decl_type = type_mod.TYPE_F64;
-            } else if (init_node.kind == AstKind.int_literal) {
-                decl_type = type_mod.TYPE_I32;
-            } else if (init_node.kind == AstKind.char_literal) {
-                decl_type = type_mod.TYPE_U8;
-            } else if (init_node.kind == AstKind.bool_literal) {
-                decl_type = type_mod.TYPE_BOOL;
-            } else if (init_node.kind == AstKind.add or init_node.kind == AstKind.sub or init_node.kind == AstKind.mul or init_node.kind == AstKind.div or init_node.kind == AstKind.mod_op) {
-                decl_type = type_mod.TYPE_F64;
-            } else if (init_node.kind == AstKind.negate) {
-                decl_type = type_mod.TYPE_F64;
-            } else if (init_node.kind == AstKind.builtin_call) {
-                decl_type = type_mod.TYPE_U32;
-            } else if (init_node.kind == AstKind.fn_call) {
-                decl_type = type_mod.TYPE_U32;
-            } else if (init_node.kind == AstKind.array_init) {
-                var ec = ast_mod.astStoreGetExtraChildren(store, init_node.payload);
-                if (ec.len > @intCast(usize, 0)) {
-                    var el = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
-                    if (el.kind == AstKind.int_literal) {
-                        decl_type = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, type_mod.TYPE_U32, @intCast(u32, ec.len));
-                    } else if (el.kind == AstKind.char_literal) {
-                        decl_type = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, type_mod.TYPE_U8, @intCast(u32, ec.len));
-                    }
-                }
-                var da: []const u8 = "a"; pal.stderr_write(da);
-            }
+            var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
+            if (rt) |t| { decl_type = t; }
         }
         var is_arr_init: u8 = @intCast(u8, 0);
         if (node.child_1 != 0 and decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
