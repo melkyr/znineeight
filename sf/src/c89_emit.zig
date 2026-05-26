@@ -951,14 +951,13 @@ fn emitGlobalDecls(emitter: *C89Emitter, fns: []LirFunction) void {
     var gcount: usize = @intCast(usize, 0);
     var fi: usize = @intCast(usize, 0);
     while (fi < fns.len) : (fi += @intCast(usize, 1)) {
-        var fn_blocks_len: usize = fns[fi].blocks.len;
+        var func = fns[fi];
         var bi: usize = @intCast(usize, 0);
-        while (bi < fn_blocks_len) : (bi += @intCast(usize, 1)) {
-            var fn_blocks_items = fns[fi].blocks.items;
-            var bb_insts_len: usize = fn_blocks_items[bi].insts.len;
+        while (bi < func.blocks.len) : (bi += @intCast(usize, 1)) {
+            var bb = func.blocks.items[bi];
             var ii: usize = @intCast(usize, 0);
-            while (ii < bb_insts_len) : (ii += @intCast(usize, 1)) {
-                var inst = fn_blocks_items[bi].insts.items[ii];
+            while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+                var inst = bb.insts.items[ii];
                 var nid: u32 = @intCast(u32, 0);
                 var tid_for_type: u32 = @intCast(u32, 0);
                 switch (inst) {
@@ -977,7 +976,8 @@ fn emitGlobalDecls(emitter: *C89Emitter, fns: []LirFunction) void {
                         if (tid_for_type != @intCast(u32, 0)) {
                             var tp: u32 = tid_for_type;
                             if (tp < @intCast(u32, 256)) {
-                                var ht: u32 = fns[fi].hoisted_temps.items[@intCast(usize, tp)].type_id;
+                                var ht_tp: usize = @intCast(usize, tp);
+                                var ht: u32 = func.hoisted_temps.items[ht_tp].type_id;
                                 if (ht != @intCast(u32, 0xFFFFFFFF)) { gtype = ht; }
                             }
                         }
