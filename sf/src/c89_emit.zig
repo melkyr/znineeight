@@ -393,6 +393,12 @@ pub fn emitZigPalC(writer: *BufferedWriter) void {
 }
 
 pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
+    var st0: []const u8 = "ST0"; pal.stderr_write(st0);
+    var len_buf: [20]u8 = undefined;
+    var len_sl = itoa_mod.itoa(@intCast(u32, reg.types_len), len_buf[0..]);
+    var ls: usize = @intCast(usize, 19) - @intCast(usize, len_sl);
+    pal.stderr_write(len_buf[ls..@intCast(usize, 19)]);
+    var nl: []const u8 = "\n"; pal.stderr_write(nl);
     var ti: u32 = @intCast(u32, 0);
     while (@intCast(usize, ti) < reg.types_len) : (ti += @intCast(u32, 1)) {
         var tid = ti;
@@ -410,11 +416,20 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
                 ty.kind != TypeKind.optional_type and
                 ty.kind != TypeKind.error_union_type and
                 ty.kind != TypeKind.tagged_union_type and
-                ty.kind != TypeKind.union_type)
+                ty.kind != TypeKind.union_type) {
+                var sx: []const u8 = "SX"; pal.stderr_write(sx);
+                var kb: [20]u8 = undefined;
+                var kl = itoa_mod.itoa(@intCast(u32, ty.kind), kb[0..]);
+                var ks: usize = @intCast(usize, 19) - @intCast(usize, kl);
+                pal.stderr_write(kb[ks..@intCast(usize, 19)]);
                 continue;
+            }
         }
+        var sf: []const u8 = "SF"; pal.stderr_write(sf);
         emitTypeDefinition(emitter, tid);
+        var sw: []const u8 = "SW"; pal.stderr_write(sw);
     }
+    var sd: []const u8 = "SD\n"; pal.stderr_write(sd);
 }
 
 fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
@@ -866,7 +881,9 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
 }
 
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
+    var em0: []const u8 = "EM0"; pal.stderr_write(em0);
     emitSpecialTypes(emitter, emitter.registry);
+    var em1: []const u8 = "EM1"; pal.stderr_write(em1);
     emitModuleHeader(emitter, name, fns);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
