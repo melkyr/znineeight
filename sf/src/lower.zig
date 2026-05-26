@@ -366,7 +366,7 @@ fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
     var dn_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, s.decl_node);
     var tid_type = if (dn_type) |dt| dt else type_mod.TYPE_UNDEFINED;
     var tid = nextTemp(self, tid_type);
-    emitInst(self, LirInst{ .load_global = .{ .name_id = name_id, .result = tid } });
+    emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid } });
     return tid;
 }
 
@@ -558,15 +558,49 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var src = lowerExpr(self, node.child_1);
         if (child_node.kind == AstKind.ident_expr) {
             var name_id = store.identifiers.items[@intCast(usize, child_node.payload)];
-            if (self.ctx.has_symbols != @intCast(u8, 0)) {
-                var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
-                if (sym) |s| {
-                    if (s.kind == sym_mod.SymbolKind.global) {
-                        emitInst(self, LirInst{ .store_global = .{ .name_id = name_id, .value = src } });
-                        return src;
-                    }
+            var gsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
+            var gbuf: [20]u8 = undefined;
+            var gh: []const u8 = "GL";
+            pal.stderr_write(gh);
+            if (gsym) |gs| {
+                var gsk = itoa_mod.itoa(@intCast(u32, @enumToInt(gs.kind)), gbuf[0..]);
+                var gsl: usize = @intCast(usize, gsk);
+                var gss: usize = @intCast(usize, 20) - @intCast(usize, 1) - gsl;
+                pal.stderr_write(gh);
+                pal.stderr_write(gbuf[gss..@intCast(usize, 20)]);
+            } else {
+                var gtable = sym_mod.symbolRegistryGetTable(self.ctx.symbol_tables, self.module_id);
+                var gtl = itoa_mod.itoa(@intCast(u32, gtable.len), gbuf[0..]);
+                var gtsl: usize = @intCast(usize, gtl);
+                var gtss: usize = @intCast(usize, 20) - @intCast(usize, 1) - gtsl;
+                var gms: []const u8 = "M:";
+                pal.stderr_write(gms);
+                pal.stderr_write(gbuf[gtss..@intCast(usize, 20)]);
+                var gnl = itoa_mod.itoa(name_id, gbuf[0..]);
+                var gnsl: usize = @intCast(usize, gnl);
+                var gnss: usize = @intCast(usize, 20) - @intCast(usize, 1) - gnsl;
+                var gns: []const u8 = ":";
+                pal.stderr_write(gns);
+                pal.stderr_write(gbuf[gnss..@intCast(usize, 20)]);
+                var gei: usize = @intCast(usize, 0);
+                while (gei < @intCast(usize, gtable.len)) : (gei += @intCast(usize, 1)) {
+                    var dent = gtable.items[gei];
+                    var dn = itoa_mod.itoa(dent.name_id, gbuf[0..]);
+                    var dnl: usize = @intCast(usize, dn);
+                    var dns: usize = @intCast(usize, 20) - @intCast(usize, 1) - dnl;
+                    var dq: []const u8 = ".";
+                    pal.stderr_write(dq);
+                    pal.stderr_write(gbuf[dns..@intCast(usize, 20)]);
+                    var dk = itoa_mod.itoa(@intCast(u32, @enumToInt(dent.kind)), gbuf[0..]);
+                    var dkl: usize = @intCast(usize, dk);
+                    var dks: usize = @intCast(usize, 20) - @intCast(usize, 1) - dkl;
+                    var dsp: []const u8 = ",";
+                    pal.stderr_write(dsp);
+                    pal.stderr_write(gbuf[dks..@intCast(usize, 20)]);
                 }
-            }
+                }
+            var gn: []const u8 = "\n";
+            pal.stderr_write(gn);
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });
         } else if (child_node.kind == AstKind.index_access) {
             var base_temp = lowerExpr(self, child_node.child_0);
@@ -1370,10 +1404,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
             if (rt) |t| { decl_type = t; }
         }
+        var is_arr_init: u8 = @intCast(u8, 0);
+        if (node.child_1 != 0 and decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var sc_dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
+            if (sc_dt.kind == type_mod.TypeKind.array_type) {
+                var sc_init = store.nodes.items[@intCast(usize, node.child_1)];
+                if (sc_init.kind == AstKind.array_init) is_arr_init = @intCast(u8, 1);
+            }
+        }
+        var is_sc_arr: u8 = @intCast(u8, 0);
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var sc_dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
+            if (sc_dt.kind == type_mod.TypeKind.array_type) is_sc_arr = @intCast(u8, 1);
+        }
+        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and is_arr_init == @intCast(u8, 0)) {
             var dl_temp = nextTemp(self, decl_type);
-            var dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
-            if (dt.kind != type_mod.TypeKind.array_type) {
+            if (is_sc_arr == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = decl_type, .temp = dl_temp } });
             }
             addLocalDecl(self, name_id, decl_type, dl_temp);

@@ -305,10 +305,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      d4_wtype: [*]u32,
      d4_wflag: [*]u8,
      d4_t2p: [*]u32,
-      dl_hoisted: u8,
-      gids: [32]u32,
-      gtys: [32]u32,
-      gcount: u32,
+     dl_hoisted: u8,
  };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
@@ -326,11 +323,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_wtype = undefined,
          .d4_wflag = undefined,
          .d4_t2p = undefined,
-          .dl_hoisted = @intCast(u8, 0),
-          .gids = undefined,
-          .gtys = undefined,
-          .gcount = @intCast(u32, 0),
-      };
+         .dl_hoisted = @intCast(u8, 0),
+     };
 }
 
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
@@ -964,25 +958,6 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) vo
             emitFunctionBody(emitter, &func);
         }
     }
-    if (emitter.gcount > @intCast(u32, 0)) {
-        var gs: []const u8 = "\n/* Global variables */\n";
-        bufferedWriterWrite(&emitter.writer, gs);
-        var ggi: usize = @intCast(usize, 0);
-        while (ggi < @intCast(usize, emitter.gcount)) : (ggi += @intCast(usize, 1)) {
-            var gname = interner_mod.stringInternerGet(emitter.interner, emitter.gids[ggi]);
-            var gty: u32 = emitter.gtys[ggi];
-            if (gty == @intCast(u32, type_mod.TYPE_UNDEFINED)) { gty = type_mod.TYPE_I32; }
-            var ctype = getCTypeName(emitter.registry, emitter.mangler, gty);
-            var gs1: []const u8 = "static ";
-            bufferedWriterWrite(&emitter.writer, gs1);
-            bufferedWriterWrite(&emitter.writer, ctype);
-            var gs2: []const u8 = " ";
-            bufferedWriterWrite(&emitter.writer, gs2);
-            bufferedWriterWrite(&emitter.writer, gname);
-            var gs3: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, gs3);
-        }
-    }
     emitModuleFooter(emitter);
 }
 
@@ -1612,22 +1587,6 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .load_global => |lg| {
-            if (emitter.gcount < @intCast(u32, 32)) {
-                var fnd: u8 = @intCast(u8, 0);
-                var gi2: usize = @intCast(usize, 0);
-                while (gi2 < @intCast(usize, emitter.gcount)) : (gi2 += @intCast(usize, 1)) {
-                    if (emitter.gids[gi2] == lg.name_id) { fnd = @intCast(u8, 1); break; }
-                }
-                if (fnd == @intCast(u8, 0)) {
-                    emitter.gids[@intCast(usize, emitter.gcount)] = lg.name_id;
-                    if (lg.result < @intCast(u32, 256)) {
-                        emitter.gtys[@intCast(usize, emitter.gcount)] = emitter.current_fn.hoisted_temps.items[@intCast(usize, lg.result)].type_id;
-                    } else {
-                        emitter.gtys[@intCast(usize, emitter.gcount)] = type_mod.TYPE_UNDEFINED;
-                    }
-                    emitter.gcount += @intCast(u32, 1);
-                }
-            }
             var result = mangleTempName(emitter.interner, lg.result);
             var name = mangleLocalName(emitter.mangler, emitter.interner, lg.name_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -1639,18 +1598,6 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .store_global => |sg| {
-            if (emitter.gcount < @intCast(u32, 32)) {
-                var fns: u8 = @intCast(u8, 0);
-                var gs2: usize = @intCast(usize, 0);
-                while (gs2 < @intCast(usize, emitter.gcount)) : (gs2 += @intCast(usize, 1)) {
-                    if (emitter.gids[gs2] == sg.name_id) { fns = @intCast(u8, 1); break; }
-                }
-                if (fns == @intCast(u8, 0)) {
-                    emitter.gids[@intCast(usize, emitter.gcount)] = sg.name_id;
-                    emitter.gtys[@intCast(usize, emitter.gcount)] = type_mod.TYPE_UNDEFINED;
-                    emitter.gcount += @intCast(u32, 1);
-                }
-            }
             var val = mangleTempName(emitter.interner, sg.value);
             var name = mangleLocalName(emitter.mangler, emitter.interner, sg.name_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);

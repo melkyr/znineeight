@@ -222,7 +222,24 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
-            _ = sym_mod.symbolTableInsert(table, sym);
+            var inserted = sym_mod.symbolTableInsert(table, sym);
+            if (!inserted) {
+                var vr: []const u8 = "VR";
+                pal_mod.stderr_write(vr);
+            }
+            var vd: []const u8 = "VD";
+            pal_mod.stderr_write(vd);
+            var vb: [20]u8 = undefined;
+            var vn = itoa_mod.itoa(name_id, vb[0..]);
+            var vns: usize = @intCast(usize, 20) - @intCast(usize, 1) - @intCast(usize, vn);
+            pal_mod.stderr_write(vb[vns..@intCast(usize, 20)]);
+            var vc: []const u8 = ":";
+            pal_mod.stderr_write(vc);
+            var vk = itoa_mod.itoa(@intCast(u32, @enumToInt(sym_kind)), vb[0..]);
+            var vks: usize = @intCast(usize, 20) - @intCast(usize, 1) - @intCast(usize, vk);
+            pal_mod.stderr_write(vb[vks..@intCast(usize, 20)]);
+            var ven: []const u8 = "\n";
+            pal_mod.stderr_write(ven);
             var vi_msg: []const u8 = "Vi"; pal_mod.stderr_write(vi_msg);
         },
         AstKind.fn_decl => {
