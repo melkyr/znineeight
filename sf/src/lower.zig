@@ -600,32 +600,34 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (self.ctx.has_symbols != @intCast(u8, 0)) {
          var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
          if (sym) |s| {
-             if (s.kind == sym_mod.SymbolKind.global and (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
-                 var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
-                 if (decl_node.child_1 != 0) {
-                     var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
-                     if (init_node.kind == AstKind.int_literal) {
-                        var val = store.int_values.items[@intCast(usize, init_node.payload)];
-                        var tid = nextTemp(self, type_mod.TYPE_U32);
-                        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
-                        return tid;
+              if (s.kind == sym_mod.SymbolKind.global) {
+                  if ((@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                     var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
+                     if (decl_node.child_1 != 0) {
+                         var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
+                         if (init_node.kind == AstKind.int_literal) {
+                            var val = store.int_values.items[@intCast(usize, init_node.payload)];
+                            var tid = nextTemp(self, type_mod.TYPE_U32);
+                            emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+                            return tid;
+                        }
+                        if (init_node.kind == AstKind.float_literal) {
+                            var val = store.float_values.items[@intCast(usize, init_node.payload)];
+                            var tid = nextTemp(self, type_mod.TYPE_F64);
+                            emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
+                            return tid;
+                        }
+                        if (init_node.kind == AstKind.char_literal) {
+                            var val = store.int_values.items[@intCast(usize, init_node.payload)];
+                            var tid = nextTemp(self, type_mod.TYPE_U8);
+                            emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+                            return tid;
+                        }
                     }
-                    if (init_node.kind == AstKind.float_literal) {
-                        var val = store.float_values.items[@intCast(usize, init_node.payload)];
-                        var tid = nextTemp(self, type_mod.TYPE_F64);
-                        emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
-                        return tid;
-                    }
-                    if (init_node.kind == AstKind.char_literal) {
-                        var val = store.int_values.items[@intCast(usize, init_node.payload)];
-                        var tid = nextTemp(self, type_mod.TYPE_U8);
-                        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
-                        return tid;
-                    }
-                }
-                return lowerGlobalRef(self, s.*, name_id);
-            }
-        }
+                 }
+                 return lowerGlobalRef(self, s.*, name_id);
+              }
+         }
         }
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         var arr_temp: u32 = @intCast(u32, 0);
@@ -1259,8 +1261,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
         }
         self.current_bb = exit_bb;
-    } else {
+        } else {
             var start_temp = lowerExpr(self, pattern.child_0);
+            if (node.payload != 0) addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp);
             var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
@@ -1384,9 +1387,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     }
                 }
                 var da: []const u8 = "a"; pal.stderr_write(da);
-            } else if (init_node.kind == AstKind.struct_init) {
-                var si_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
-                if (si_rt) |t| { decl_type = t; }
             }
         }
         var is_arr_init: u8 = @intCast(u8, 0);
@@ -1401,9 +1401,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var sc_dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
             if (sc_dt.kind == type_mod.TypeKind.array_type) is_sc_arr = @intCast(u8, 1);
-        }
-        if (decl_type == @intCast(u32, type_mod.TYPE_TYPE)) {
-            var vk: []const u8 = "VK:"; pal.stderr_write(vk);
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and is_arr_init == @intCast(u8, 0)) {
             var dl_temp = nextTemp(self, decl_type);

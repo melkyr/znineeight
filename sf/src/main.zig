@@ -341,6 +341,12 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 var sa0: []const u8 = "SA"; pal.stderr_write(sa0);
                 sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
                 var sa1: []const u8 = "sA"; pal.stderr_write(sa1);
+            } else if (decl.kind == AstKind.var_decl and decl.child_0 != 0) {
+                var rtype = resolveTypeExpr(ctx, decl.child_0);
+                if (rtype != type_mod.TYPE_UNDEFINED) {
+                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decl.child_0, rtype);
+                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], rtype);
+                }
             }
             if (decl.kind == AstKind.var_decl and decl.child_1 != 0) {
                 var init = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
@@ -389,6 +395,7 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
             var rtype = resolveTypeExpr(ctx, node.child_0);
             if (rtype != type_mod.TYPE_UNDEFINED) {
                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
+                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node_idx, rtype);
                 var pb = node.child_0 & @intCast(u32, 3);
                 if (pb == @intCast(u32, 0)) { var pm: []const u8 = "P0"; pal.stderr_write(pm); }
                 else if (pb == @intCast(u32, 1)) { var pm: []const u8 = "P1"; pal.stderr_write(pm); }
