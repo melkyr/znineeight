@@ -392,14 +392,10 @@ pub fn emitZigPalC(writer: *BufferedWriter) void {
     var h12: []const u8 = "#if defined(_WIN32) && defined(ZIG_NO_CRT)\nint main(void);\nvoid __cdecl mainCRTStartup(void)\n{\n    int result = main();\n    ExitProcess((UINT)result);\n}\n#endif\n\n#endif /* ZIG_PAL_C */\n"; bufferedWriterWrite(writer, h12);
 }
 
-pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, g: *sym_reg.DepGraph) void {
-    var resolver: TypeResolver = type_resolver.typeResolverInit(reg, emitter.diag, emitter.alloc);
-    type_resolver.typeResolverBuild(&resolver, g);
-    type_resolver.typeResolverResolve(&resolver);
-    var sorted = type_resolver.typeResolverGetSorted(&resolver);
-    var i: usize = @intCast(usize, 0);
-    while (i < sorted.len) : (i += @intCast(usize, 1)) {
-        var tid = sorted[i];
+pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
+    var ti: u32 = @intCast(u32, 0);
+    while (@intCast(usize, ti) < reg.types_len) : (ti += @intCast(u32, 1)) {
+        var tid = ti;
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind == TypeKind.void_type) continue;
         if (ty.kind == TypeKind.bool_type) continue;
@@ -428,9 +424,10 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
     var base_mid = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var base_str = interner_mod.stringInternerGet(emitter.interner, base_mid);
     var tag_ty = reg.types_items[@intCast(usize, tp.tag_type)];
-    var tag_ep = reg.en_items[@intCast(usize, tag_ty.payload_idx)];
     var fstart: usize = @intCast(usize, tp.fields_start);
     var fcount: usize = @intCast(usize, tp.fields_count);
+    if (tag_ty.kind == TypeKind.enum_type) {
+    var tag_ep = reg.en_items[@intCast(usize, tag_ty.payload_idx)];
     var name_buf: [64]u8 = undefined;
     var np: usize = @intCast(usize, 0);
     var pref_tu: []const u8 = "TU_";
@@ -491,55 +488,86 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         var sd: []const u8 = "\n";
         bufferedWriterWrite(&emitter.writer, sd);
     }
-    var se: []const u8 = "typedef struct {\n";
-    bufferedWriterWrite(&emitter.writer, se);
-    var sf1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, sf1);
+    bufferedWriterWrite(&emitter.writer, "typedef struct {\n");
+    bufferedWriterWrite(&emitter.writer, "\t");
     var tag_ctype = getCTypeName(reg, emitter.mangler, tp.tag_type);
     bufferedWriterWrite(&emitter.writer, tag_ctype);
-    var sf2: []const u8 = " tag;\n"; bufferedWriterWrite(&emitter.writer, sf2);
-    var sg: []const u8 = "\tunion {\n";
-    bufferedWriterWrite(&emitter.writer, sg);
-    var sh: []const u8 = "\t\tchar _dummy;\n";
-    bufferedWriterWrite(&emitter.writer, sh);
+    bufferedWriterWrite(&emitter.writer, " tag;\n");
+    bufferedWriterWrite(&emitter.writer, "\tunion {\n");
+    bufferedWriterWrite(&emitter.writer, "\t\tchar _dummy;\n");
+    } else {
+    var fefi: usize = @intCast(usize, 0);
+    while (fefi < fcount) : (fefi += @intCast(usize, 1)) {
+        var fe = reg.fe_items[fstart + fefi];
+        var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+        var def_buf: [128]u8 = undefined;
+        var dp: usize = @intCast(usize, 0);
+        var da: []const u8 = "#define "; var dai: usize = 0;
+        while (dai < da.len and dp < 127) : (dai += 1) { def_buf[dp] = da[dai]; dp += 1; }
+        var dbi: usize = 0;
+        while (dbi < base_str.len and dp < 127) : (dbi += 1) { def_buf[dp] = base_str[dbi]; dp += 1; }
+        if (dp < 127) { def_buf[dp] = '_'; dp += 1; }
+        var dni: usize = 0;
+        while (dni < fname.len and dp < 127) : (dni += 1) { def_buf[dp] = fname[dni]; dp += 1; }
+        if (dp < 127) { def_buf[dp] = ' '; dp += 1; }
+        var fi_val: [16]u8 = undefined;
+        var fi_len = itoa_mod.itoa(@intCast(u32, @intCast(u64, fefi)), fi_val[0..]);
+        var fii: usize = @intCast(usize, 0);
+        while (fii < @intCast(usize, fi_len) and dp < 127) : (fii += @intCast(usize, 1)) { def_buf[dp] = fi_val[fii]; dp += @intCast(usize, 1); }
+        if (dp < 127) { def_buf[dp] = '\n'; dp += 1; }
+        bufferedWriterWrite(&emitter.writer, def_buf[0..dp]);
+    }
+    bufferedWriterWrite(&emitter.writer, "typedef struct {\n");
+    bufferedWriterWrite(&emitter.writer, "\tunsigned int tag;\n");
+    bufferedWriterWrite(&emitter.writer, "\tunion {\n");
+    bufferedWriterWrite(&emitter.writer, "\t\tchar _dummy;\n");
+    }
     var fi: usize = @intCast(usize, 0);
     while (fi < fcount) : (fi += @intCast(usize, 1)) {
         var fe = reg.fe_items[fstart + fi];
         var ft = reg.types_items[@intCast(usize, fe.type_id)];
         if (ft.kind != TypeKind.void_type) {
-            var var_buf: [64]u8 = undefined;
-            var vp: usize = @intCast(usize, 0);
-            var vti: usize = @intCast(usize, 0);
-            while (vti < tp_pos and vp < @intCast(usize, 63)) : (vti += @intCast(usize, 1)) {
-                var_buf[vp] = tag_pref_buf[vti]; vp += @intCast(usize, 1);
-            }
-            if (vp < @intCast(usize, 63)) { var_buf[vp] = @intCast(u8, '_'); vp += @intCast(usize, 1); }
             var fe_name = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
-            var fni: usize = @intCast(usize, 0);
-            while (fni < fe_name.len and vp < @intCast(usize, 63)) : (fni += @intCast(usize, 1)) {
-                var_buf[vp] = fe_name[fni]; vp += @intCast(usize, 1);
-            }
-            if (vp > @intCast(usize, 63)) vp = @intCast(usize, 63);
-            var varnid = interner_mod.stringInternerIntern(emitter.interner, var_buf[0..vp]);
-            var var_mid = nameManglerMangle(emitter.mangler, varnid, @intCast(u8, 2), @intCast(u32, 0));
-            var var_name = interner_mod.stringInternerGet(emitter.interner, var_mid);
             var si1: []const u8 = "\t\tstruct { ";
             bufferedWriterWrite(&emitter.writer, si1);
             var fi_type = getCTypeName(reg, emitter.mangler, fe.type_id);
             bufferedWriterWrite(&emitter.writer, fi_type);
             var si2: []const u8 = " _0; } ";
             bufferedWriterWrite(&emitter.writer, si2);
-            bufferedWriterWrite(&emitter.writer, var_name);
+            bufferedWriterWrite(&emitter.writer, fe_name);
             var si3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, si3);
         }
     }
-    var sj: []const u8 = "\t} payload;\n";
-    bufferedWriterWrite(&emitter.writer, sj);
-    var sk: []const u8 = "} ";
-    bufferedWriterWrite(&emitter.writer, sk);
-    bufferedWriterWrite(&emitter.writer, struct_name);
-    var sl: []const u8 = ";\n";
-    bufferedWriterWrite(&emitter.writer, sl);
+    bufferedWriterWrite(&emitter.writer, "\t} payload;\n");
+    bufferedWriterWrite(&emitter.writer, "} ");
+    bufferedWriterWrite(&emitter.writer, base_str);
+    bufferedWriterWrite(&emitter.writer, ";\n");
+}
+
+fn emitStructType(emitter: *C89Emitter, tid: u32) void {
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, sp.fields_start);
+    var fcount: usize = @intCast(usize, sp.fields_count);
+    bufferedWriterWrite(&emitter.writer, "typedef struct {\n");
+    var i: usize = @intCast(usize, 0);
+    while (i < fcount) : (i += @intCast(usize, 1)) {
+        var fe = reg.fe_items[fstart + i];
+        var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+        var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
+        bufferedWriterWrite(&emitter.writer, "\t");
+        bufferedWriterWrite(&emitter.writer, ftype);
+        bufferedWriterWrite(&emitter.writer, " ");
+        bufferedWriterWrite(&emitter.writer, fname);
+        bufferedWriterWrite(&emitter.writer, ";\n");
+    }
+    bufferedWriterWrite(&emitter.writer, "} ");
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    bufferedWriterWrite(&emitter.writer, ";\n");
 }
 
 fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
@@ -549,6 +577,8 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.error_union_type) { emitErrorUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.tagged_union_type) { emitTaggedUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.enum_type) { emitEnumType(emitter, tid); return; }
+    if (ty.kind == TypeKind.struct_type) { emitStructType(emitter, tid); return; }
+    if (ty.kind == TypeKind.union_type) { emitStructType(emitter, tid); return; }
 }
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
@@ -836,17 +866,7 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
 }
 
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
-    var tbuf: [64]u8 = undefined;
-    var ts1: []const u8 = "FMT0:"; pal.stderr_write(ts1);
-    var tf0 = format_mod.formatF64(0.0, tbuf[0..], 64);
-    pal.stderr_write(tf0);
-    var ts2: []const u8 = " FMT4:"; pal.stderr_write(ts2);
-    var tf4 = format_mod.formatF64(4.0, tbuf[0..], 64);
-    pal.stderr_write(tf4);
-    var ts3: []const u8 = " FMT3.5:"; pal.stderr_write(ts3);
-    var tf35 = format_mod.formatF64(3.5, tbuf[0..], 64);
-    pal.stderr_write(tf35);
-    var tsn: []const u8 = "\n"; pal.stderr_write(tsn);
+    emitSpecialTypes(emitter, emitter.registry);
     emitModuleHeader(emitter, name, fns);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {

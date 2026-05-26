@@ -912,8 +912,54 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .assign_index = .{ .base = base_temp, .index = ix_temp, .src = val_temp } });
         }
         return base_temp;
+    } else if (node.kind == AstKind.struct_init) {
+        var init_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var base_temp = nextTemp(self, if (init_type) |it| it else type_mod.TYPE_UNDEFINED);
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var ei: usize = @intCast(usize, 0);
+        while (ei < ec.len) : (ei += @intCast(usize, 1)) {
+            var fi_node = store.nodes.items[@intCast(usize, ec[ei])];
+            var fi_name_id = store.identifiers.items[@intCast(usize, fi_node.payload)];
+            var val_temp = if (fi_node.child_1 != @intCast(u32, 0)) lowerExpr(self, fi_node.child_1) else @intCast(u32, 0);
+            if (init_type) |it| {
+                var ts = self.ctx.registry.types_items[@intCast(usize, it)];
+                if (ts.kind == type_mod.TypeKind.tagged_union_type) {
+                    var tp = self.ctx.registry.tu_items[@intCast(usize, ts.payload_idx)];
+                    var fs: usize = @intCast(usize, tp.fields_start);
+                    var fc: usize = @intCast(usize, tp.fields_count);
+                    var fj: usize = @intCast(usize, 0);
+                    while (fj < fc) : (fj += @intCast(usize, 1)) {
+                        if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
+                            emitInst(self, LirInst{ .assign_field = .{ .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                            break;
+                        }
+                    }
+                } else if (ts.kind == type_mod.TypeKind.struct_type) {
+                    var sp = self.ctx.registry.st_items[@intCast(usize, ts.payload_idx)];
+                    var fs: usize = @intCast(usize, sp.fields_start);
+                    var fc: usize = @intCast(usize, sp.fields_count);
+                    var fj: usize = @intCast(usize, 0);
+                    while (fj < fc) : (fj += @intCast(usize, 1)) {
+                        if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
+                            emitInst(self, LirInst{ .assign_field = .{ .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return base_temp;
     } else if (node.kind == AstKind.switch_expr) {
         var cond_temp = lowerExpr(self, node.child_0);
+        var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (cond_ty_id) |ct| {
+            var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+            if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .load_field = .{ .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                cond_temp = tag_temp;
+            }
+        }
         var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var prong_count = prong_ec.len;
         var result_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
@@ -1111,6 +1157,15 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
     } else if (node.kind == AstKind.switch_expr) {
         var cond_temp = lowerExpr(self, node.child_0);
+        var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (cond_ty_id) |ct| {
+            var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+            if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .load_field = .{ .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                cond_temp = tag_temp;
+            }
+        }
         var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
