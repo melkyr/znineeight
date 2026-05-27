@@ -404,6 +404,14 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
             }
         }
     }
+    if (node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) {
+        if (node.child_0 != 0) {
+            var rtype = resolveTypeExpr(ctx, node.child_0);
+            if (rtype != type_mod.TYPE_UNDEFINED) {
+                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
+            }
+        }
+    }
     if (node.kind == AstKind.block) {
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
         var di: usize = 0;

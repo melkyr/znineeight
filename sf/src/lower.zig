@@ -1404,25 +1404,27 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
             if (rt) |t| { decl_type = t; }
         }
-        var is_arr_init: u8 = @intCast(u8, 0);
-        if (node.child_1 != 0 and decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
-            var sc_dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
-            if (sc_dt.kind == type_mod.TypeKind.array_type) {
-                var sc_init = store.nodes.items[@intCast(usize, node.child_1)];
-                if (sc_init.kind == AstKind.array_init) is_arr_init = @intCast(u8, 1);
-            }
-        }
-        var is_sc_arr: u8 = @intCast(u8, 0);
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
-            var sc_dt = self.ctx.registry.types_items[@intCast(usize, decl_type)];
-            if (sc_dt.kind == type_mod.TypeKind.array_type) is_sc_arr = @intCast(u8, 1);
-        }
-        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and is_arr_init == @intCast(u8, 0)) {
             var dl_temp = nextTemp(self, decl_type);
-            if (is_sc_arr == @intCast(u8, 0)) {
-                emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = decl_type, .temp = dl_temp } });
-            }
+            emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = decl_type, .temp = dl_temp } });
             addLocalDecl(self, name_id, decl_type, dl_temp);
+        } else {
+            var und: []const u8 = "NU";
+            pal.stderr_write(und);
+            if (node.child_1 != @intCast(u32, 0)) {
+                var und2: []const u8 = "I";
+                pal.stderr_write(und2);
+                var init_node = store.nodes.items[@intCast(usize, node.child_1)];
+                if (init_node.kind == AstKind.array_init) { var dk2: []const u8 = "a"; pal.stderr_write(dk2); }
+                else if (init_node.kind == AstKind.struct_init) { var dk2: []const u8 = "s"; pal.stderr_write(dk2); }
+                else { var dk2: []const u8 = "o"; pal.stderr_write(dk2); }
+            }
+            if (node.child_0 != @intCast(u32, 0)) {
+                var und3: []const u8 = "T";
+                pal.stderr_write(und3);
+            }
+            var und4: []const u8 = " ";
+            pal.stderr_write(und4);
         }
         if (node.child_1 != 0) {
             var init_node = store.nodes.items[@intCast(usize, node.child_1)];

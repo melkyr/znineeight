@@ -757,12 +757,22 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             semanticAnalyzerResolveStmtDepth(self, children[i], depth + @intCast(u32, 1));
         }
     } else if (node.kind == AstKind.var_decl) {
+        var vd_m: []const u8 = "VD"; pal_mod.stderr_write(vd_m);
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != @intCast(u32, 0)) {
+            var vdt: []const u8 = "T"; pal_mod.stderr_write(vdt);    
             var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
             if (rt) |t| { decl_type = t; }
         }
         if (node.child_1 != @intCast(u32, 0)) {
+            var vdi: []const u8 = "I"; pal_mod.stderr_write(vdi);
+            var init_node = self.store.nodes.items[@intCast(usize, node.child_1)];
+            var ik = @intCast(u32, @enumToInt(init_node.kind));
+            var ib: [20]u8 = undefined;
+            var il = itoa_mod.itoa(ik, ib[0..]);
+            var is: usize = @intCast(usize, 20) - @intCast(usize, 1) - @intCast(usize, il);
+            pal_mod.stderr_write(ib[is..@intCast(usize, 20)]);
+            pal_mod.stderr_write(vdi);
             var it = semanticAnalyzerResolveExpr(self, node.child_1);
             if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
         }
@@ -880,7 +890,6 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
 fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.child_0 != @intCast(u32, 0)) {
-        _ = semanticAnalyzerResolveExpr(self, node.child_0);
         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
         if (rt) |t| {
             var tt = self.registry.types_items[@intCast(usize, t)];
@@ -895,7 +904,10 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
     else if (el.kind == AstKind.int_literal) { self._stub_0 = type_mod.TYPE_U32; }
     else { self._stub_0 = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
     if (self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
-    return type_mod.typeRegistryGetOrCreateArray(self.registry, self._stub_0, @intCast(u32, ec.len));
+    var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, self._stub_0, @intCast(u32, ec.len));
+    var ai_m: []const u8 = "AI";
+    pal_mod.stderr_write(ai_m);
+    return arr_tid;
 }
 
 pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void {
