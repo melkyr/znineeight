@@ -1934,9 +1934,13 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var s: []const u8 = " = 0;\n";
             bufferedWriterWrite(&emitter.writer, s);
         },
-        .call => |c| {
+         .call => |c| {
             var result = mangleTempName(emitter.interner, c.result);
             var callee = mangleTempName(emitter.interner, c.callee);
+            if (c.args_count > @intCast(u32, 0)) {
+                var ad_m: []const u8 = "AD:a"; pal.stderr_write(ad_m);
+                var ad_ab: [20]u8 = undefined; var ad_al = itoa_mod.itoa(c.args_count, ad_ab[0..]); var ad_as: usize = @intCast(usize, 19) - @intCast(usize, ad_al); pal.stderr_write(ad_ab[ad_as..@intCast(usize, 19)]);
+            }
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";

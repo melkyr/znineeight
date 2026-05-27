@@ -324,6 +324,10 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                         var rt_nok: []const u8 = "U"; pal.stderr_write(rt_nok);
                     }
                 }
+                var u1b_m: []const u8 = "U1b:c"; pal.stderr_write(u1b_m);
+                var u1b_c: [20]u8 = undefined; var u1b_cl = itoa_mod.itoa(@intCast(u32, proto.params_count), u1b_c[0..]); var u1b_cs: usize = @intCast(usize, 19) - @intCast(usize, u1b_cl); pal.stderr_write(u1b_c[u1b_cs..@intCast(usize, 19)]);
+                var u1b_sm: []const u8 = "s"; pal.stderr_write(u1b_sm);
+                var u1b_s: [20]u8 = undefined; var u1b_sl = itoa_mod.itoa(@intCast(u32, proto.params_start), u1b_s[0..]); var u1b_ss: usize = @intCast(usize, 19) - @intCast(usize, u1b_sl); pal.stderr_write(u1b_s[u1b_ss..@intCast(usize, 19)]);
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
                     var fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
@@ -333,6 +337,10 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                         var pnode = ctx.store.nodes.items[@intCast(usize, pnodes[pi])];
                         if (pnode.child_0 != 0) {
                             var ptype = resolveTypeExpr(ctx, pnode.child_0);
+                            var u1_m: []const u8 = "U1:"; pal.stderr_write(u1_m);
+                            var u1_pb: [20]u8 = undefined; var u1_pl = itoa_mod.itoa(@intCast(u32, pi), u1_pb[0..]); var u1_ps: usize = @intCast(usize, 19) - @intCast(usize, u1_pl); pal.stderr_write(u1_pb[u1_ps..@intCast(usize, 19)]);
+                            var u1_tm: []const u8 = "t"; pal.stderr_write(u1_tm);
+                            var u1_tb: [20]u8 = undefined; var u1_tl = itoa_mod.itoa(ptype, u1_tb[0..]); var u1_ts: usize = @intCast(usize, 19) - @intCast(usize, u1_tl); pal.stderr_write(u1_tb[u1_ts..@intCast(usize, 19)]);
                             type_mod.xtAppend(ctx.typereg, ptype);
                             if (ptype != type_mod.TYPE_UNDEFINED) {
                                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, pnode.child_0, ptype);

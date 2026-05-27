@@ -339,7 +339,15 @@ pub fn typeRegistryGetOrCreateManyPtr(self: *TypeRegistry, base: TypeId, is_cons
 pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const: bool) u32 {
     var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
     var key: u64 = (@intCast(u64, elem) << @intCast(u64, 1)) | ic;
-    if (hash_mod.u64ToU32MapGet(&self.slice_cache, key)) |existing| return existing;
+    if (hash_mod.u64ToU32MapGet(&self.slice_cache, key)) |existing| {
+        var u2h_m: []const u8 = "U2H:e"; pal.stderr_write(u2h_m);
+        var u2h_eb: [20]u8 = undefined; var u2h_el = itoa_mod.itoa(elem, u2h_eb[0..]); var u2h_es: usize = @intCast(usize, 19) - @intCast(usize, u2h_el); pal.stderr_write(u2h_eb[u2h_es..@intCast(usize, 19)]);
+        var u2h_rm: []const u8 = "r"; pal.stderr_write(u2h_rm);
+        var u2h_rb: [20]u8 = undefined; var u2h_rl = itoa_mod.itoa(existing, u2h_rb[0..]); var u2h_rs: usize = @intCast(usize, 19) - @intCast(usize, u2h_rl); pal.stderr_write(u2h_rb[u2h_rs..@intCast(usize, 19)]);
+        var u2h_cm: []const u8 = "c"; pal.stderr_write(u2h_cm);
+        var u2h_cb: [20]u8 = undefined; var u2h_cl = itoa_mod.itoa(@intCast(u32, ic), u2h_cb[0..]); var u2h_cs: usize = @intCast(usize, 19) - @intCast(usize, u2h_cl); pal.stderr_write(u2h_cb[u2h_cs..@intCast(usize, 19)]);
+        return existing;
+    }
     sliceAppend(self, SlicePayload{ .elem = elem });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.slice_type, .state = @intCast(u8, 2),
@@ -349,6 +357,12 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.slice_len - @intCast(usize, 1)),
     });
     hash_mod.u64ToU32MapPut(&self.slice_cache, key, tid);
+    var u2n_m: []const u8 = "U2N:e"; pal.stderr_write(u2n_m);
+    var u2n_eb: [20]u8 = undefined; var u2n_el = itoa_mod.itoa(elem, u2n_eb[0..]); var u2n_es: usize = @intCast(usize, 19) - @intCast(usize, u2n_el); pal.stderr_write(u2n_eb[u2n_es..@intCast(usize, 19)]);
+    var u2n_rm: []const u8 = "r"; pal.stderr_write(u2n_rm);
+    var u2n_rb: [20]u8 = undefined; var u2n_rl = itoa_mod.itoa(tid, u2n_rb[0..]); var u2n_rs: usize = @intCast(usize, 19) - @intCast(usize, u2n_rl); pal.stderr_write(u2n_rb[u2n_rs..@intCast(usize, 19)]);
+    var u2n_cm: []const u8 = "c"; pal.stderr_write(u2n_cm);
+    var u2n_cb: [20]u8 = undefined; var u2n_cl = itoa_mod.itoa(@intCast(u32, ic), u2n_cb[0..]); var u2n_cs: usize = @intCast(usize, 19) - @intCast(usize, u2n_cl); pal.stderr_write(u2n_cb[u2n_cs..@intCast(usize, 19)]);
     return tid;
 }
 

@@ -643,33 +643,36 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (self.ctx.has_symbols != @intCast(u8, 0)) {
          var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
          if (sym) |s| {
-              if (s.kind == sym_mod.SymbolKind.global) {
-                  if ((@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
-                     var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
-                     if (decl_node.child_1 != 0) {
-                         var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
-                         if (init_node.kind == AstKind.int_literal) {
-                            var val = store.int_values.items[@intCast(usize, init_node.payload)];
-                            var tid = nextTemp(self, type_mod.TYPE_U32);
-                            emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
-                            return tid;
-                        }
-                        if (init_node.kind == AstKind.float_literal) {
-                            var val = store.float_values.items[@intCast(usize, init_node.payload)];
-                            var tid = nextTemp(self, type_mod.TYPE_F64);
-                            emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
-                            return tid;
-                        }
-                        if (init_node.kind == AstKind.char_literal) {
-                            var val = store.int_values.items[@intCast(usize, init_node.payload)];
-                            var tid = nextTemp(self, type_mod.TYPE_U8);
-                            emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
-                            return tid;
-                        }
-                    }
-                  }
-                  return lowerGlobalRef(self, s.*, name_id);
-              }
+               if (s.kind == sym_mod.SymbolKind.global) {
+                   if ((@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                      var decl_node = store.nodes.items[@intCast(usize, s.decl_node)];
+                      if (decl_node.child_1 != 0) {
+                          var init_node = store.nodes.items[@intCast(usize, decl_node.child_1)];
+                          if (init_node.kind == AstKind.int_literal) {
+                             var val = store.int_values.items[@intCast(usize, init_node.payload)];
+                             var tid = nextTemp(self, type_mod.TYPE_U32);
+                             emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+                             return tid;
+                         }
+                         if (init_node.kind == AstKind.float_literal) {
+                             var val = store.float_values.items[@intCast(usize, init_node.payload)];
+                             var tid = nextTemp(self, type_mod.TYPE_F64);
+                             emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
+                             return tid;
+                         }
+                         if (init_node.kind == AstKind.char_literal) {
+                             var val = store.int_values.items[@intCast(usize, init_node.payload)];
+                             var tid = nextTemp(self, type_mod.TYPE_U8);
+                             emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+                             return tid;
+                         }
+                     }
+                   }
+                    return lowerGlobalRef(self, s.*, name_id);
+                } else if (s.kind == sym_mod.SymbolKind.module) {
+                    var m1m: []const u8 = "M1:"; pal.stderr_write(m1m);
+                    return type_mod.TYPE_UNDEFINED;
+                }
          }
         }
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
