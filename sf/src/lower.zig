@@ -555,6 +555,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.assign) {
         var child_node = store.nodes.items[@intCast(usize, node.child_0)];
+        var ck_val: u32 = @intCast(u32, @enumToInt(child_node.kind));
+        var ck_ie: u32 = @intCast(u32, @enumToInt(AstKind.ident_expr));
+        if (ck_val != ck_ie) {
+            var ka: []const u8 = "KA"; pal.stderr_write(ka);
+            var kb: [20]u8 = undefined;
+            var kl = itoa_mod.itoa(ck_val, kb[0..]);
+            var ks: usize = @intCast(usize, 19) - @intCast(usize, kl);
+            pal.stderr_write(kb[ks..@intCast(usize, 19)]);
+            var kc: []const u8 = " "; pal.stderr_write(kc);
+            kl = itoa_mod.itoa(ck_ie, kb[0..]);
+            ks = @intCast(usize, 19) - @intCast(usize, kl);
+            pal.stderr_write(kb[ks..@intCast(usize, 19)]);
+            var kd: []const u8 = "\n"; pal.stderr_write(kd);
+        }
         var src = lowerExpr(self, node.child_1);
         if (child_node.kind == AstKind.ident_expr) {
             var name_id = store.identifiers.items[@intCast(usize, child_node.payload)];
@@ -599,6 +613,48 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     pal.stderr_write(gbuf[dks..@intCast(usize, 20)]);
                 }
                 }
+            if (name_id > @intCast(u32, 100000)) {
+                var cx: []const u8 = "CXN:"; pal.stderr_write(cx);
+                var nbuf: [20]u8 = undefined;
+                var nl = itoa_mod.itoa(name_id, nbuf[0..]);
+                var ns: usize = @intCast(usize, 19) - @intCast(usize, nl);
+                pal.stderr_write(nbuf[ns..@intCast(usize, 19)]);
+                var cv: []const u8 = " S:"; pal.stderr_write(cv);
+                var sbuf: [20]u8 = undefined;
+                var sl = itoa_mod.itoa(src, sbuf[0..]);
+                var ss: usize = @intCast(usize, 19) - @intCast(usize, sl);
+                pal.stderr_write(sbuf[ss..@intCast(usize, 19)]);
+                var pk: []const u8 = " P:"; pal.stderr_write(pk);
+                var pbuf: [20]u8 = undefined;
+                var pl = itoa_mod.itoa(child_node.payload, pbuf[0..]);
+                var ps: usize = @intCast(usize, 19) - @intCast(usize, pl);
+                pal.stderr_write(pbuf[ps..@intCast(usize, 19)]);
+                var ck: []const u8 = " K:"; pal.stderr_write(ck);
+                var kbuf: [20]u8 = undefined;
+                var kl = itoa_mod.itoa(@intCast(u32, @enumToInt(child_node.kind)), kbuf[0..]);
+                var ks: usize = @intCast(usize, 19) - @intCast(usize, kl);
+                pal.stderr_write(kbuf[ks..@intCast(usize, 19)]);
+                var nk: []const u8 = " N:"; pal.stderr_write(nk);
+                var nobuf: [20]u8 = undefined;
+                var nol = itoa_mod.itoa(node.child_0, nobuf[0..]);
+                var nos: usize = @intCast(usize, 19) - @intCast(usize, nol);
+                pal.stderr_write(nobuf[nos..@intCast(usize, 19)]);
+                var il: []const u8 = " IL:"; pal.stderr_write(il);
+                var ilbuf: [20]u8 = undefined;
+                var ill = itoa_mod.itoa(@intCast(u32, store.identifiers.len), ilbuf[0..]);
+                var ils: usize = @intCast(usize, 19) - @intCast(usize, ill);
+                pal.stderr_write(ilbuf[ils..@intCast(usize, 19)]);
+                var di: usize = @intCast(usize, 136);
+                while (di <= @intCast(usize, 140)) : (di += @intCast(usize, 1)) {
+                    var iv: []const u8 = " "; pal.stderr_write(iv);
+                    var ivbuf: [20]u8 = undefined;
+                    var ival = store.identifiers.items[di];
+                    var ivl = itoa_mod.itoa(ival, ivbuf[0..]);
+                    var ivs: usize = @intCast(usize, 19) - @intCast(usize, ivl);
+                    pal.stderr_write(ivbuf[ivs..@intCast(usize, 19)]);
+                }
+                var nl2: []const u8 = "\n"; pal.stderr_write(nl2);
+            }
             var gn: []const u8 = "\n";
             pal.stderr_write(gn);
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });

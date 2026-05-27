@@ -22,7 +22,7 @@ echo "Compiling Z98 to C89..."
 
 echo "Compiling C89 to binary..."
 mkdir -p "$BUILD_DIR"
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-unused-but-set-variable \
+gcc -m32 -g -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-unused-but-set-variable \
     -Wno-implicit-function-declaration -I"$ROOT_DIR/include" \
     "$WORK_DIR"/*.c -o "$BUILD_DIR/zig1"
 

@@ -378,7 +378,8 @@ fn lexerScanIdentifierOrKeyword(self: *Lexer, start: usize) Token {
     var text = self.source[start..self.pos];
 
     if (text.len == 1 and text[0] == '_') {
-        return lexerMakeToken(self, TokenKind.underscore, start, .{ .none = {} });
+        var string_id = interner_mod.stringInternerIntern(self.interner, text);
+        return lexerMakeToken(self, TokenKind.underscore, start, .{ .string_id = string_id });
     }
 
     if (token_mod.lookupKeyword(text)) |kind| {
