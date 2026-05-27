@@ -782,6 +782,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                         }
                                     }
                                     if (self._fn_ret_type == type_mod.TYPE_VOID) { result = 0; }
+                                    var ad3m: []const u8 = "AD3"; pal.stderr_write(ad3m);
                                     emitInst(self, LirInst{ .call_direct = .{
                                         .name_id = fs.name_id,
                                         .module_id = target_mod_id,
@@ -830,6 +831,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                     }
                     if (self._fn_ret_type == type_mod.TYPE_VOID) { result = 0; }
+                    var ad3m2: []const u8 = "AD3"; pal.stderr_write(ad3m2);
                     emitInst(self, LirInst{ .call_direct = .{
                         .name_id = sm.name_id,
                         .module_id = sm.module_id,

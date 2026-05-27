@@ -305,8 +305,9 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      d4_wtype: [*]u32,
      d4_wflag: [*]u8,
      d4_t2p: [*]u32,
-     dl_hoisted: u8,
- };
+    dl_hoisted: u8,
+    emitted_type_set: U32ToU32Map,
+};
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
     return C89Emitter{
@@ -324,6 +325,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_wflag = undefined,
          .d4_t2p = undefined,
          .dl_hoisted = @intCast(u8, 0),
+         .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
      };
 }
 
@@ -456,6 +458,14 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
                 ty.kind != TypeKind.array_type)
                 continue;
         }
+        var cname = getCTypeName(reg, emitter.mangler, tid);
+        var dedup_key: u32 = @intCast(u32, 0);
+        var h_ci: usize = @intCast(usize, 0);
+        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
+            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+        }
+        if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key)) |_| continue;
+        hash_mod.u32ToU32MapPut(&emitter.emitted_type_set, dedup_key, @intCast(u32, 1));
         emitTypeDefinition(emitter, tid);
     }
 }
