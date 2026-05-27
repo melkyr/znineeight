@@ -200,10 +200,17 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 return mfs.type_id;
             }
             if (mfs.kind == sym_mod.SymbolKind.function) {
+                var fn_tid_opt = rtt_mod.resolvedTypeTableGet(self.type_table, mfs.decl_node);
+                if (fn_tid_opt) |fn_tid| {
+                    var mf1: []const u8 = "MF1"; pal_mod.stderr_write(mf1);
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_tid);
+                    return fn_tid;
+                }
                 var mff: []const u8 = "MFF"; pal_mod.stderr_write(mff);
                 var dn = self.store.nodes.items[@intCast(usize, mfs.decl_node)];
                 if (dn.kind == AstKind.fn_decl) {
                     var proto = self.store.fn_protos.items[@intCast(usize, dn.payload)];
+                    var mfp_buf: [20]u8 = undefined; var mfp_len = itoa_mod.itoa(@intCast(u32, proto.params_start), mfp_buf[0..]); var mfp_s: usize = @intCast(usize, 19) - @intCast(usize, mfp_len); var mfp_m: []const u8 = "MFP"; pal_mod.stderr_write(mfp_m); pal_mod.stderr_write(mfp_buf[mfp_s..@intCast(usize, 19)]);
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rtt) |rtv| {
@@ -383,16 +390,25 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var fn3_ck_buf: [20]u8 = undefined; var fn3_ck_len = itoa_mod.itoa(@intCast(u32, @enumToInt(callee_ty.kind)), fn3_ck_buf[0..]); var fn3_ck_s: usize = @intCast(usize, 19) - @intCast(usize, fn3_ck_len); var fn3_ck_m: []const u8 = "k"; pal_mod.stderr_write(fn3_ck_m); pal_mod.stderr_write(fn3_ck_buf[fn3_ck_s..@intCast(usize, 19)]);
         return type_mod.TYPE_VOID;
     }
+    var fn4a: []const u8 = "FN4a"; pal_mod.stderr_write(fn4a);
     var fnp = self.registry.fn_items[@intCast(usize, callee_ty.payload_idx)];
+    var fn4b: []const u8 = "FN4b"; pal_mod.stderr_write(fn4b);
     var pcount: usize = @intCast(usize, fnp.params_count);
     var pstart: usize = @intCast(usize, fnp.params_start);
+    var fn4c: []const u8 = "FN4c"; pal_mod.stderr_write(fn4c);
     var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+    var fn4d: []const u8 = "FN4d"; pal_mod.stderr_write(fn4d);
     if (args.len != pcount) {
         return fnp.return_type;
     }
     var ai: usize = 0;
+    var fn4e: []const u8 = "FN4e"; pal_mod.stderr_write(fn4e);
+    var fn4x_buf: [20]u8 = undefined; var fn4x_len = itoa_mod.itoa(@intCast(u32, self.registry.xt_len), fn4x_buf[0..]); var fn4x_s: usize = @intCast(usize, 19) - @intCast(usize, fn4x_len); var fn4x_m: []const u8 = "FN4x"; pal_mod.stderr_write(fn4x_m); pal_mod.stderr_write(fn4x_buf[fn4x_s..@intCast(usize, 19)]);
+    var fn4y_buf: [20]u8 = undefined; var fn4y_len = itoa_mod.itoa(@intCast(u32, pstart), fn4y_buf[0..]); var fn4y_s: usize = @intCast(usize, 19) - @intCast(usize, fn4y_len); var fn4y_m: []const u8 = "FN4y"; pal_mod.stderr_write(fn4y_m); pal_mod.stderr_write(fn4y_buf[fn4y_s..@intCast(usize, 19)]);
     while (ai < args.len) : (ai += 1) {
+        var fn4f: []const u8 = "FN4f"; pal_mod.stderr_write(fn4f);
         var param_type = self.registry.xt_items[pstart + ai];
+        var fn4g: []const u8 = "FN4g"; pal_mod.stderr_write(fn4g);
         var arg_type = semanticAnalyzerResolveExpr(self, args[ai]);
         if (arg_type != param_type) {
             if (type_mod.typeRegistryIsAssignable(self.registry, arg_type, param_type)) {

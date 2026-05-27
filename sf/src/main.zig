@@ -324,17 +324,23 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 }
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+                    var fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
                     var pnodes = ast_mod.astStoreGetExtraChildren(ctx.store, p_payload);
                     var pi: usize = 0;
                     while (pi < pnodes.len) : (pi += 1) {
                         var pnode = ctx.store.nodes.items[@intCast(usize, pnodes[pi])];
                         if (pnode.child_0 != 0) {
                             var ptype = resolveTypeExpr(ctx, pnode.child_0);
+                            type_mod.xtAppend(ctx.typereg, ptype);
                             if (ptype != type_mod.TYPE_UNDEFINED) {
                                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, pnode.child_0, ptype);
                             }
+                        } else {
+                            type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
                         }
                     }
+                    var zz0_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, proto.name_id, fn_start, proto.params_count, type_mod.TYPE_VOID);
+                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], zz0_tid);
                 }
                 if (decl.child_0 != 0) {
                     resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
