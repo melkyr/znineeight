@@ -313,9 +313,11 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
             var dn: []const u8 = "DN"; pal.stderr_write(dn);
             if (decl.kind == AstKind.fn_decl) {
                 var proto = ctx.store.fn_protos.items[@intCast(usize, decl.payload)];
+                var rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
                 if (proto.return_type_node != 0) {
                     var rtype = resolveTypeExpr(ctx, proto.return_type_node);
                     if (rtype != type_mod.TYPE_UNDEFINED) {
+                        rt_box[0] = rtype;
                         resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, proto.return_type_node, rtype);
                         var rt_ok: []const u8 = "T"; pal.stderr_write(rt_ok);
                     } else {
@@ -339,7 +341,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                             type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
                         }
                     }
-                    var zz0_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, proto.name_id, fn_start, proto.params_count, type_mod.TYPE_VOID);
+                    var zz0_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, proto.name_id, fn_start, proto.params_count, rt_box[0]);
                     resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], zz0_tid);
                 }
                 if (decl.child_0 != 0) {
