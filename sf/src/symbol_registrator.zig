@@ -193,6 +193,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         var rs_msg: []const u8 = "Rs"; pal_mod.stderr_write(rs_msg);
                         sym_kind = sym_mod.SymbolKind.module;
                         sym_mod_id = mtid;
+                        sym_type_id = type_mod.typeRegistryGetOrCreateModule(type_reg, mtid);
                     } else {
                         var rf_msg: []const u8 = "Rf"; pal_mod.stderr_write(rf_msg);
                     }
@@ -315,7 +316,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             if (target_mod_id) |tid| {
                 var sym = sym_mod.Symbol{
                     .name_id = path_id,
-                    .type_id = @intCast(u32, 0),
+                    .type_id = type_mod.typeRegistryGetOrCreateModule(type_reg, tid),
                     .kind = sym_mod.SymbolKind.module,
                     .flags = @intCast(u16, 0),
                     .decl_node = decl_idx,

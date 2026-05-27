@@ -190,6 +190,40 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var tp = self.registry.tu_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, tp.fields_start);
         fields_count = @intCast(usize, tp.fields_count);
+    } else if (base_ty.kind == type_mod.TypeKind.module_type) {
+        var mfa: []const u8 = "MFA"; pal_mod.stderr_write(mfa);
+        var mod_field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, base_ty.module_id, field_name_id);
+        if (mod_field_sym) |mfs| {
+            if (mfs.type_id != @intCast(u32, 0)) {
+                var mf1: []const u8 = "MF1"; pal_mod.stderr_write(mf1);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, mfs.type_id);
+                return mfs.type_id;
+            }
+            if (mfs.kind == sym_mod.SymbolKind.function) {
+                var mff: []const u8 = "MFF"; pal_mod.stderr_write(mff);
+                var dn = self.store.nodes.items[@intCast(usize, mfs.decl_node)];
+                if (dn.kind == AstKind.fn_decl) {
+                    var proto = self.store.fn_protos.items[@intCast(usize, dn.payload)];
+                    if (proto.return_type_node != @intCast(u32, 0)) {
+                        var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
+                        if (rtt) |rtv| {
+                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, proto.params_start, proto.params_count, rtv);
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                            return fn_ty;
+                        }
+                    }
+                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                    return fn_ty;
+                }
+            }
+            var mf2: []const u8 = "MF2"; pal_mod.stderr_write(mf2);
+            var mf2_k: [20]u8 = undefined; var mf2_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(mfs.kind)), mf2_k[0..]); var mf2_ks: usize = @intCast(usize, 19) - @intCast(usize, mf2_kl); pal_mod.stderr_write(mf2_k[mf2_ks..@intCast(usize, 19)]);
+        } else {
+            var mf3: []const u8 = "MF3"; pal_mod.stderr_write(mf3);
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
     } else {
         var fnf: []const u8 = "FF"; pal_mod.stderr_write(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);

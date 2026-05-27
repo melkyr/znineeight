@@ -454,6 +454,26 @@ pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u16, tag
     });
 }
 
+pub fn typeRegistryGetOrCreateModule(self: *TypeRegistry, module_id: u32) u32 {
+    var i: usize = 0;
+    while (i < self.types_len) : (i += 1) {
+        var it = self.types_items[i];
+        if (it.kind == TypeKind.module_type and it.module_id == module_id) {
+            return @intCast(u32, i);
+        }
+    }
+    var t = Type{
+        .kind = TypeKind.module_type,
+        .state = @intCast(u8, 0), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .size = @intCast(u32, 0), .alignment = @intCast(u32, 0),
+        .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
+        .module_id = module_id, .payload_idx = @intCast(u32, 0),
+    };
+    var mc: []const u8 = "MC"; pal_mod.stderr_write(mc);
+    var mcid = typeRegistryAppend(self, t);
+    return mcid;
+}
+
 pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
     registerPrimitive(self, TypeKind.none_sentinel, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.void_type, @intCast(u32, 0), @intCast(u32, 0));
