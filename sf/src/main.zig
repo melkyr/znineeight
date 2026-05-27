@@ -306,7 +306,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
         var ad: []const u8 = "AD"; pal.stderr_write(ad);
-        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table);
+        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table, ctx.interner);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];

@@ -1649,13 +1649,22 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .store_local => |sl| {
             var val = mangleTempName(emitter.interner, sl.value);
             var name = mangleLocalName(emitter.mangler, emitter.interner, sl.name_id);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, name);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, val);
-            var s2: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            if (name.len == @intCast(usize, 1) and name[0] == '_') {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var vd: []const u8 = "(void)";
+                bufferedWriterWrite(&emitter.writer, vd);
+                bufferedWriterWrite(&emitter.writer, val);
+                var vd2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, vd2);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, name);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+                bufferedWriterWrite(&emitter.writer, val);
+                var s2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .load_global => |lg| {
             var result = mangleTempName(emitter.interner, lg.result);
