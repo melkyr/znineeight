@@ -761,8 +761,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                  while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                                  ai = 0;
                                  while (ai < ec.len) : (ai += 1) {
-                                     var call_val = lowerExpr(self, ec[ai]);
-                                     emitInst(self, LirInst{ .assign = .{ .dst = call_ns + @intCast(u32, ai), .src = call_val } });
+                                      var call_val = lowerExpr(self, ec[ai]);
+                                      emitInst(self, LirInst{ .assign = .{ .dst = call_ns + @intCast(u32, ai), .src = call_val } });
+                                      var ct: ?coercion_mod.CoercionEntry = coercion_mod.coercionTableGet(self.ctx.coercions, ec[ai]);
+                                      var slot_tid: u32 = if (ct) |c| c.target_type else self.hoisted_temps.items[@intCast(usize, call_val)].type_id;
+                                      self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = slot_tid;
                                  }
                                  var args_count: u32 = @intCast(u32, ec.len);
                                  var d2s: []const u8 = "D2S:ns="; pal.stderr_write(d2s);
@@ -812,6 +815,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     while (ai < ec.len) : (ai += 1) {
                         var arg_val = lowerExpr(self, ec[ai]);
                         emitInst(self, LirInst{ .assign = .{ .dst = args_start + @intCast(u32, ai), .src = arg_val } });
+                        var ct: ?coercion_mod.CoercionEntry = coercion_mod.coercionTableGet(self.ctx.coercions, ec[ai]);
+                        var slot_tid: u32 = if (ct) |c| c.target_type else self.hoisted_temps.items[@intCast(usize, arg_val)].type_id;
+                        self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = slot_tid;
                     }
                     var args_count: u32 = @intCast(u32, ec.len);
                     var d2s2: []const u8 = "D2S:ns="; pal.stderr_write(d2s2);
