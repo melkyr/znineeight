@@ -406,10 +406,22 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
         }
     }
     if (node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) {
+        var r0m: []const u8 = "R0n"; pal.stderr_write(r0m);
+        var r0b: [20]u8 = undefined;
+        var r0l = itoa_mod.itoa(node_idx, r0b[0..]);
+        var r0s: usize = @intCast(usize, 19) - @intCast(usize, r0l);
+        pal.stderr_write(r0b[r0s..@intCast(usize, 19)]);
+        var r0nl: []const u8 = "\n"; pal.stderr_write(r0nl);
         var aii: []const u8 = "AI"; pal.stderr_write(aii);
         if (node.child_0 != 0) {
             var rtype = resolveTypeExpr(ctx, node.child_0);
+            var r1m: []const u8 = "R1t"; pal.stderr_write(r1m);
+            var r1b: [20]u8 = undefined;
+            var r1l = itoa_mod.itoa(rtype, r1b[0..]);
+            var r1s: usize = @intCast(usize, 19) - @intCast(usize, r1l);
+            pal.stderr_write(r1b[r1s..@intCast(usize, 19)]);
             if (rtype != type_mod.TYPE_UNDEFINED) {
+                var r2m: []const u8 = "R2s"; pal.stderr_write(r2m);
                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
             }
             else { var fi: []const u8 = "FI"; pal.stderr_write(fi); }
@@ -465,6 +477,12 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
             return child_type;
         }
         if (node.kind == AstKind.array_type) {
+            var t0m: []const u8 = "T0"; pal.stderr_write(t0m);
+            var t1m: []const u8 = "T1e"; pal.stderr_write(t1m);
+            var t1b: [20]u8 = undefined;
+            var t1l = itoa_mod.itoa(child_type, t1b[0..]);
+            var t1s: usize = @intCast(usize, 19) - @intCast(usize, t1l);
+            pal.stderr_write(t1b[t1s..@intCast(usize, 19)]);
             if (node.child_1 != 0) {
                 var sz_node = ctx.store.nodes.items[@intCast(usize, node.child_1)];
                 var arr_len: u32 = @intCast(u32, 0);
@@ -492,8 +510,18 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
                         }
                     }
                 }
+                var t2m: []const u8 = "T2L"; pal.stderr_write(t2m);
+                var t2b: [20]u8 = undefined;
+                var t2l = itoa_mod.itoa(arr_len, t2b[0..]);
+                var t2s: usize = @intCast(usize, 19) - @intCast(usize, t2l);
+                pal.stderr_write(t2b[t2s..@intCast(usize, 19)]);
                 if (arr_len != @intCast(u32, 0)) {
                     var at = type_mod.typeRegistryGetOrCreateArray(ctx.typereg, child_type, arr_len);
+                    var t3m: []const u8 = "T3a"; pal.stderr_write(t3m);
+                    var t3b: [20]u8 = undefined;
+                    var t3l = itoa_mod.itoa(at, t3b[0..]);
+                    var t3s: usize = @intCast(usize, 19) - @intCast(usize, t3l);
+                    pal.stderr_write(t3b[t3s..@intCast(usize, 19)]);
                     if (at != type_mod.TYPE_UNDEFINED) { var am: []const u8 = "A"; pal.stderr_write(am); }
                     else { var am: []const u8 = "a"; pal.stderr_write(am); }
                     return at;

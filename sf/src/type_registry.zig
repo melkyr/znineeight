@@ -3,6 +3,8 @@ const alloc_mod = @import("allocator.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
 const interner_mod = @import("string_interner.zig");
 const hash_mod = @import("util/hash.zig");
+const pal_mod = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 pub const TypeId = u32;
 
@@ -118,7 +120,7 @@ fn arrayGrow(items_out: *[*]u8, len_ptr: *usize, cap_ptr: *usize, alloc: *Sand, 
     var src = @ptrCast([*]u8, items_out.*);
     var dst = @ptrCast([*]u8, raw);
     var i: usize = 0;
-    while (i < len_ptr.*) { dst[i] = src[i]; i += 1; }
+    while (i < len_ptr.* * elem_size) { dst[i] = src[i]; i += 1; }
     items_out.* = raw;
     cap_ptr.* = nc;
 }
@@ -377,8 +379,25 @@ pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, e
 }
 
 pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u32) u32 {
+    var o0m: []const u8 = "O0e"; pal_mod.stderr_write(o0m);
+    var o0b: [20]u8 = undefined;
+    var o0l = itoa_mod.itoa(elem, o0b[0..]);
+    var o0s: usize = @intCast(usize, 19) - @intCast(usize, o0l);
+    pal_mod.stderr_write(o0b[o0s..@intCast(usize, 19)]);
+    var o0m2: []const u8 = "L"; pal_mod.stderr_write(o0m2);
+    var o0b2: [20]u8 = undefined;
+    var o0l2 = itoa_mod.itoa(length, o0b2[0..]);
+    var o0s2: usize = @intCast(usize, 19) - @intCast(usize, o0l2);
+    pal_mod.stderr_write(o0b2[o0s2..@intCast(usize, 19)]);
     var key: u64 = (@intCast(u64, elem) << @intCast(u64, 32)) | @intCast(u64, length);
-    if (hash_mod.u64ToU32MapGet(&self.array_cache, key)) |existing| return existing;
+    if (hash_mod.u64ToU32MapGet(&self.array_cache, key)) |existing| {
+        var o1m: []const u8 = "O1H"; pal_mod.stderr_write(o1m);
+        var o1b: [20]u8 = undefined;
+        var o1l = itoa_mod.itoa(existing, o1b[0..]);
+        var o1s: usize = @intCast(usize, 19) - @intCast(usize, o1l);
+        pal_mod.stderr_write(o1b[o1s..@intCast(usize, 19)]);
+        return existing;
+    }
     arrayAppend(self, ArrayPayload{ .elem = elem, .length = length });
     var elem_ty = self.types_items[elem];
     var arr_size: u32 = 0;
@@ -395,6 +414,11 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.array_len - @intCast(usize, 1)),
     });
+    var o2m: []const u8 = "O2N"; pal_mod.stderr_write(o2m);
+    var o2b: [20]u8 = undefined;
+    var o2l = itoa_mod.itoa(tid, o2b[0..]);
+    var o2s: usize = @intCast(usize, 19) - @intCast(usize, o2l);
+    pal_mod.stderr_write(o2b[o2s..@intCast(usize, 19)]);
     if (elem_ty.state == @intCast(u8, 2)) hash_mod.u64ToU32MapPut(&self.array_cache, key, tid);
     return tid;
 }
