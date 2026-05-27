@@ -476,7 +476,17 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         }
         if (node.kind == AstKind.slice_type) {
             var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
-            return type_mod.typeRegistryGetOrCreateSlice(ctx.typereg, child_type, is_const);
+            var sl_tid = type_mod.typeRegistryGetOrCreateSlice(ctx.typereg, child_type, is_const);
+            var sl_e: [20]u8 = undefined;
+            var sl_el = itoa_mod.itoa(child_type, sl_e[0..]);
+            var sl_es: usize = @intCast(usize, 19) - @intCast(usize, sl_el);
+            var sm: []const u8 = "SL:e"; pal.stderr_write(sm); pal.stderr_write(sl_e[sl_es..@intCast(usize, 19)]);
+            var sl_r: [20]u8 = undefined;
+            var sl_rl = itoa_mod.itoa(sl_tid, sl_r[0..]);
+            var sl_rs: usize = @intCast(usize, 19) - @intCast(usize, sl_rl);
+            var s2: []const u8 = "s"; pal.stderr_write(s2); pal.stderr_write(sl_r[sl_rs..@intCast(usize, 19)]);
+            var s3: []const u8 = "\n"; pal.stderr_write(s3);
+            return sl_tid;
         }
         if (node.kind == AstKind.optional_type) {
             return child_type;

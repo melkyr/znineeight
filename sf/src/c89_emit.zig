@@ -650,6 +650,16 @@ fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
 
 fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var et_k: [20]u8 = undefined;
+    var et_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), et_k[0..]);
+    var et_ks: usize = @intCast(usize, 19) - @intCast(usize, et_kl);
+    var etm: []const u8 = "ET:t"; pal.stderr_write(etm);
+    var et_t: [20]u8 = undefined;
+    var et_tl = itoa_mod.itoa(tid, et_t[0..]);
+    var et_ts: usize = @intCast(usize, 19) - @intCast(usize, et_tl);
+    pal.stderr_write(et_t[et_ts..@intCast(usize, 19)]);
+    var etk: []const u8 = "k"; pal.stderr_write(etk); pal.stderr_write(et_k[et_ks..@intCast(usize, 19)]);
+    var etnl: []const u8 = "\n"; pal.stderr_write(etnl);
     if (ty.kind == TypeKind.slice_type) { emitSliceType(emitter, tid); return; }
     if (ty.kind == TypeKind.optional_type) { emitOptionalType(emitter, tid); return; }
     if (ty.kind == TypeKind.error_union_type) { emitErrorUnionType(emitter, tid); return; }

@@ -84,7 +84,6 @@ pub const TypeRegistry = struct {
     types_cap: usize,
     types_alloc: *Sand,
     interner: *StringInterner,
-    next_type_id: u32,
 
     ptr_items: [*]PtrPayload, ptr_len: usize, ptr_cap: usize,
     array_items: [*]ArrayPayload, array_len: usize, array_cap: usize,
@@ -147,6 +146,19 @@ fn typeRegistryAppend(self: *TypeRegistry, t: Type) u32 {
     var id = @intCast(u32, self.types_len);
     self.types_items[self.types_len] = t;
     self.types_len += 1;
+    var dc_k: [20]u8 = undefined;
+    var dc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(t.kind)), dc_k[0..]);
+    var dc_ks: usize = @intCast(usize, 19) - @intCast(usize, dc_kl);
+    var dcm: []const u8 = "DC:k"; pal_mod.stderr_write(dcm); pal_mod.stderr_write(dc_k[dc_ks..@intCast(usize, 19)]);
+    var dc_n: [20]u8 = undefined;
+    var dc_nl = itoa_mod.itoa(t.name_id, dc_n[0..]);
+    var dc_ns: usize = @intCast(usize, 19) - @intCast(usize, dc_nl);
+    var dcn: []const u8 = "n"; pal_mod.stderr_write(dcn); pal_mod.stderr_write(dc_n[dc_ns..@intCast(usize, 19)]);
+    var dc_i: [20]u8 = undefined;
+    var dc_il = itoa_mod.itoa(id, dc_i[0..]);
+    var dc_is: usize = @intCast(usize, 19) - @intCast(usize, dc_il);
+    var dci: []const u8 = "t"; pal_mod.stderr_write(dci); pal_mod.stderr_write(dc_i[dc_is..@intCast(usize, 19)]);
+    var dcnl: []const u8 = "\n"; pal_mod.stderr_write(dcnl);
     return id;
 }
 
@@ -247,7 +259,7 @@ fn initArray(items: *[*]u8, len: *usize, cap: *usize) void {
 pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
     var reg = TypeRegistry{
         .types_items = undefined, .types_len = @intCast(usize, 0), .types_cap = @intCast(usize, 0), .types_alloc = alloc,
-        .interner = interner, .next_type_id = @intCast(u32, 0),
+        .interner = interner,
         .ptr_items = undefined, .ptr_len = @intCast(usize, 0), .ptr_cap = @intCast(usize, 0),
         .array_items = undefined, .array_len = @intCast(usize, 0), .array_cap = @intCast(usize, 0),
         .slice_items = undefined, .slice_len = @intCast(usize, 0), .slice_cap = @intCast(usize, 0),
@@ -281,6 +293,15 @@ pub fn nameCacheGet(self: *TypeRegistry, key: u64) ?u32 {
 
 fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {
     hash_mod.u64ToU32MapPut(&self.name_cache, key, value);
+    var np_k: [20]u8 = undefined;
+    var np_kl = itoa_mod.itoa(@intCast(u32, key & @intCast(u64, 0xFFFF)), np_k[0..]);
+    var np_ks: usize = @intCast(usize, 19) - @intCast(usize, np_kl);
+    var npm: []const u8 = "NP:k"; pal_mod.stderr_write(npm); pal_mod.stderr_write(np_k[np_ks..@intCast(usize, 19)]);
+    var np_v: [20]u8 = undefined;
+    var np_vl = itoa_mod.itoa(value, np_v[0..]);
+    var np_vs: usize = @intCast(usize, 19) - @intCast(usize, np_vl);
+    var npv: []const u8 = "v"; pal_mod.stderr_write(npv); pal_mod.stderr_write(np_v[np_vs..@intCast(usize, 19)]);
+    var npnl: []const u8 = "\n"; pal_mod.stderr_write(npnl);
 }
 
 pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
@@ -514,7 +535,6 @@ pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
     var pn_null: []const u8 = "null"; registerPrimitiveName(self, @intCast(u32, 17), pn_null);
     var pn_undefined: []const u8 = "undefined"; registerPrimitiveName(self, @intCast(u32, 18), pn_undefined);
     var pn_type: []const u8 = "type"; registerPrimitiveName(self, @intCast(u32, 20), pn_type);
-    self.next_type_id = @intCast(u32, self.types_len);
 }
 
 fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {
@@ -528,9 +548,7 @@ fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {
 pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_id: u32, kind: TypeKind) u32 {
     var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
     if (nameCacheGet(self, key)) |existing| return existing;
-    var tid = self.next_type_id;
-    self.next_type_id += 1;
-    typeRegistryAppend(self, Type{
+    var tid = typeRegistryAppend(self, Type{
         .kind = kind,
         .state = @intCast(u8, 0),
         .flags = @intCast(u8, 0),
@@ -544,6 +562,23 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
     });
     nameCachePut(self, key, tid);
     nameCachePut(self, @intCast(u64, name_id), tid);
+    var rn_m: [20]u8 = undefined;
+    var rn_ml = itoa_mod.itoa(module_id, rn_m[0..]);
+    var rn_ms: usize = @intCast(usize, 19) - @intCast(usize, rn_ml);
+    var rnm: []const u8 = "RN:m"; pal_mod.stderr_write(rnm); pal_mod.stderr_write(rn_m[rn_ms..@intCast(usize, 19)]);
+    var rn_n: [20]u8 = undefined;
+    var rn_nl = itoa_mod.itoa(name_id, rn_n[0..]);
+    var rn_ns: usize = @intCast(usize, 19) - @intCast(usize, rn_nl);
+    var rnn: []const u8 = "n"; pal_mod.stderr_write(rnn); pal_mod.stderr_write(rn_n[rn_ns..@intCast(usize, 19)]);
+    var rn_k: [20]u8 = undefined;
+    var rn_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(kind)), rn_k[0..]);
+    var rn_ks: usize = @intCast(usize, 19) - @intCast(usize, rn_kl);
+    var rnk: []const u8 = "k"; pal_mod.stderr_write(rnk); pal_mod.stderr_write(rn_k[rn_ks..@intCast(usize, 19)]);
+    var rn_t: [20]u8 = undefined;
+    var rn_tl = itoa_mod.itoa(tid, rn_t[0..]);
+    var rn_ts: usize = @intCast(usize, 19) - @intCast(usize, rn_tl);
+    var rnt: []const u8 = "t"; pal_mod.stderr_write(rnt); pal_mod.stderr_write(rn_t[rn_ts..@intCast(usize, 19)]);
+    var rnnl: []const u8 = "\n"; pal_mod.stderr_write(rnnl);
     return tid;
 }
 
