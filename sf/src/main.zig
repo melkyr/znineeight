@@ -296,6 +296,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
 }
 
 fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
+    var rs: []const u8 = "RS"; pal.stderr_write(rs);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
@@ -405,11 +406,13 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
         }
     }
     if (node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) {
+        var aii: []const u8 = "AI"; pal.stderr_write(aii);
         if (node.child_0 != 0) {
             var rtype = resolveTypeExpr(ctx, node.child_0);
             if (rtype != type_mod.TYPE_UNDEFINED) {
                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
             }
+            else { var fi: []const u8 = "FI"; pal.stderr_write(fi); }
         }
     }
     if (node.kind == AstKind.block) {
@@ -435,6 +438,14 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         var name_id = ctx.store.identifiers.items[@intCast(usize, node.payload)];
         var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, name_id));
         if (tid) |t| return t;
+        var nf: []const u8 = "NF"; pal.stderr_write(nf);
+        var mi: usize = 0;
+        while (mi < @intCast(usize, ctx.symbol_reg.tables_len)) : (mi += 1) {
+            var ck: u64 = @intCast(u64, mi) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+            var tc = type_mod.nameCacheGet(ctx.typereg, ck);
+            if (tc) |t| return t;
+        }
+        var n2: []const u8 = "N2"; pal.stderr_write(n2);
         return type_mod.TYPE_UNDEFINED;
     }
     if (node.child_0 != 0) {

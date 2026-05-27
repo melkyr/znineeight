@@ -1399,7 +1399,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-            if (rt) |t| { decl_type = t; }
+            if (rt) |t| { decl_type = t; var vc: []const u8 = "VC"; pal.stderr_write(vc); }
+            else { var vf: []const u8 = "VF"; pal.stderr_write(vf); }
         } else if (node.child_1 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
             if (rt) |t| { decl_type = t; }
