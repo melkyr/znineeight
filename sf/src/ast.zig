@@ -121,7 +121,6 @@ const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const pal = @import("pal.zig");
 const format_mod = @import("util/format.zig");
-const itoa_mod = @import("util/itoa.zig");
 
 fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
     if (len.* >= capacity.*) {
@@ -345,24 +344,6 @@ pub fn astStoreAddStringLiteral(store: *AstStore, string_id: u32, span_start: u3
 pub fn astStoreAddIdentifier(store: *AstStore, kind: AstKind, string_id: u32, span_start: u32, span_end: u32) u32 {
     var id_idx = @intCast(u32, store.identifiers.len);
     u32ArrayListAppendInner(&store.identifiers.items, &store.identifiers.len, &store.identifiers.capacity, store.allocator, string_id);
-    if (id_idx >= @intCast(u32, 130) and id_idx <= @intCast(u32, 145)) {
-        var ai: []const u8 = "AI"; pal.stderr_write(ai);
-        var aibuf: [20]u8 = undefined;
-        var ail: usize = @intCast(usize, itoa_mod.itoa(id_idx, aibuf[0..]));
-        var ais: usize = @intCast(usize, 19) - @intCast(usize, ail);
-        pal.stderr_write(aibuf[ais..@intCast(usize, 19)]);
-        var as1: []const u8 = ":"; pal.stderr_write(as1);
-        var asbuf: [20]u8 = undefined;
-        var asl: usize = @intCast(usize, itoa_mod.itoa(string_id, asbuf[0..]));
-        var ass: usize = @intCast(usize, 19) - @intCast(usize, asl);
-        pal.stderr_write(asbuf[ass..@intCast(usize, 19)]);
-        var asp: []const u8 = "@"; pal.stderr_write(asp);
-        var apbuf: [20]u8 = undefined;
-        var apl: usize = @intCast(usize, itoa_mod.itoa(span_start, apbuf[0..]));
-        var aps: usize = @intCast(usize, 19) - @intCast(usize, apl);
-        pal.stderr_write(apbuf[aps..@intCast(usize, 19)]);
-        var as2: []const u8 = "\n"; pal.stderr_write(as2);
-    }
     return astStoreAddNode(store, kind, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), id_idx);
 }
 

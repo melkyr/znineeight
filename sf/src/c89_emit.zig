@@ -620,27 +620,6 @@ fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
     var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
-    var ea0: []const u8 = "EAt"; pal.stderr_write(ea0);
-    var eab0: [20]u8 = undefined;
-    var eal0 = itoa_mod.itoa(tid, eab0[0..]);
-    var eas0: usize = @intCast(usize, 19) - @intCast(usize, eal0);
-    pal.stderr_write(eab0[eas0..@intCast(usize, 19)]);
-    var ea1: []const u8 = "p"; pal.stderr_write(ea1);
-    var eab1: [20]u8 = undefined;
-    var eal1 = itoa_mod.itoa(ty.payload_idx, eab1[0..]);
-    var eas1: usize = @intCast(usize, 19) - @intCast(usize, eal1);
-    pal.stderr_write(eab1[eas1..@intCast(usize, 19)]);
-    var ea2: []const u8 = "e"; pal.stderr_write(ea2);
-    var eab2: [20]u8 = undefined;
-    var eal2 = itoa_mod.itoa(ap.elem, eab2[0..]);
-    var eas2: usize = @intCast(usize, 19) - @intCast(usize, eal2);
-    pal.stderr_write(eab2[eas2..@intCast(usize, 19)]);
-    var ea3: []const u8 = "L"; pal.stderr_write(ea3);
-    var eab3: [20]u8 = undefined;
-    var eal3 = itoa_mod.itoa(ap.length, eab3[0..]);
-    var eas3: usize = @intCast(usize, 19) - @intCast(usize, eal3);
-    pal.stderr_write(eab3[eas3..@intCast(usize, 19)]);
-    var ea_nl: []const u8 = "\n"; pal.stderr_write(ea_nl);
     var ename = getCTypeName(reg, emitter.mangler, ap.elem);
     var lbuf2: [16]u8 = undefined;
     var ll2 = itoa_mod.itoa(ap.length, lbuf2[0..]);
@@ -1371,6 +1350,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var wt = written_type[@intCast(usize, i)];
             if (wt != @intCast(u32, 0xFFFFFFFF) and wt != td.type_id) {
                 eff_type = wt;
+                lir_fn.hoisted_temps.items[i].type_id = wt;
             }
         }
         var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
@@ -1472,16 +1452,53 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .loop_header => {},
         .label => {},
          .decl_local => |dl| {},
-         .assign => |a| {
+          .assign => |a| {
             var dst = mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, dst);
-            var sep: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, sep);
-            bufferedWriterWrite(&emitter.writer, src);
-            var sep2: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, sep2);
+            var is_arr: u8 = @intCast(u8, 0);
+            var arr_len: u32 = @intCast(u32, 0);
+            var tj_ca: usize = @intCast(usize, 0);
+            while (tj_ca < emitter.current_fn.hoisted_temps.len) : (tj_ca += @intCast(usize, 1)) {
+                var ht_ca = emitter.current_fn.hoisted_temps.items[tj_ca];
+                if (ht_ca.temp_id == a.dst) {
+                    var dty = emitter.registry.types_items[@intCast(usize, ht_ca.type_id)];
+                    if (dty.kind == type_mod.TypeKind.array_type) {
+                        is_arr = @intCast(u8, 1);
+                        var ap = emitter.registry.array_items[@intCast(usize, dty.payload_idx)];
+                        arr_len = ap.length;
+                    }
+                    break;
+                }
+            }
+            if (is_arr == @intCast(u8, 1)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var loop_begin: []const u8 = "{\n";
+                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var loop_decl: []const u8 = "    unsigned int _i = 0;\n";
+                bufferedWriterWrite(&emitter.writer, loop_decl);
+                var loop_cond: []const u8 = "    while (_i < ";
+                bufferedWriterWrite(&emitter.writer, loop_cond);
+                var alb: [20]u8 = undefined;
+                var all = itoa_mod.itoa(arr_len, alb[0..]);
+                var als: usize = @intCast(usize, 19) - @intCast(usize, all);
+                bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
+                var loop_body: []const u8 = ") {\n        ";
+                bufferedWriterWrite(&emitter.writer, loop_body);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var lb: []const u8 = "[_i] = ";
+                bufferedWriterWrite(&emitter.writer, lb);
+                bufferedWriterWrite(&emitter.writer, src);
+                var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
+                bufferedWriterWrite(&emitter.writer, rb);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var sep: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, sep);
+                bufferedWriterWrite(&emitter.writer, src);
+                var sep2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, sep2);
+            }
         },
          .assign_field => |a| {
              var base = mangleTempName(emitter.interner, a.base);
@@ -1588,13 +1605,46 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .load_local => |ll| {
             var result = mangleTempName(emitter.interner, ll.result);
             var name = mangleLocalName(emitter.mangler, emitter.interner, ll.name_id);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, name);
-            var s2: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            var ll_is_arr: u8 = @intCast(u8, 0);
+            var ll_arr_len: u32 = @intCast(u32, 0);
+            var ll_tj: usize = @intCast(usize, 0);
+            while (ll_tj < emitter.current_fn.hoisted_temps.len) : (ll_tj += @intCast(usize, 1)) {
+                var ll_ht = emitter.current_fn.hoisted_temps.items[ll_tj];
+                if (ll_ht.temp_id == ll.result) {
+                    var ll_dty = emitter.registry.types_items[@intCast(usize, ll_ht.type_id)];
+                    if (ll_dty.kind == type_mod.TypeKind.array_type) {
+                        ll_is_arr = @intCast(u8, 1);
+                        var ll_ap = emitter.registry.array_items[@intCast(usize, ll_dty.payload_idx)];
+                        ll_arr_len = ll_ap.length;
+                    }
+                    break;
+                }
+            }
+            if (ll_is_arr == @intCast(u8, 1)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var loop_begin: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < ";
+                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var alb: [20]u8 = undefined;
+                var all = itoa_mod.itoa(ll_arr_len, alb[0..]);
+                var als: usize = @intCast(usize, 19) - @intCast(usize, all);
+                bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
+                var loop_body: []const u8 = ") {\n        ";
+                bufferedWriterWrite(&emitter.writer, loop_body);
+                bufferedWriterWrite(&emitter.writer, result);
+                var lb: []const u8 = "[_i] = ";
+                bufferedWriterWrite(&emitter.writer, lb);
+                bufferedWriterWrite(&emitter.writer, name);
+                var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
+                bufferedWriterWrite(&emitter.writer, rb);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+                bufferedWriterWrite(&emitter.writer, name);
+                var s2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .store_local => |sl| {
             var val = mangleTempName(emitter.interner, sl.value);

@@ -482,15 +482,6 @@ fn parserParseSingleToken(self: *Parser, kind: AstKind) ParserError!u32 {
 fn parserParseIdentExpr(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
     var id = tok.value.string_id;
-    if (tok.kind == TokenKind.underscore) {
-        var us: []const u8 = "US"; pal.stderr_write(us);
-        var us2: []const u8 = ":"; pal.stderr_write(us2);
-        var usbuf: [20]u8 = undefined;
-        var usl: usize = @intCast(usize, itoa_mod.itoa(id, usbuf[0..]));
-        var uss: usize = @intCast(usize, 19) - @intCast(usize, usl);
-        pal.stderr_write(usbuf[uss..@intCast(usize, 19)]);
-        var usnl: []const u8 = "\n"; pal.stderr_write(usnl);
-    }
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
     return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, id, tok.span_start, end);
 }
