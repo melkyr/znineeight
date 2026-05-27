@@ -95,6 +95,7 @@ pub const CompilerContext = struct {
     dep_graph: *symbol_registrator.DepGraph,
     lir_fns: LirFunctionArrayList,
     enum_value_table: hash_mod.U32ToU32Map,
+    call_arg_types: hash_mod.U32ToU32Map,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -145,6 +146,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
+    var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -161,6 +163,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .dep_graph = &dep_graph,
         .lir_fns = lir_fns,
         .enum_value_table = enum_value_table,
+        .call_arg_types = call_arg_types,
     };
     runCompiler(&ctx);
 }
@@ -306,7 +309,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
         var ad: []const u8 = "AD"; pal.stderr_write(ad);
-        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table, ctx.interner);
+        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table, ctx.interner, &ctx.call_arg_types);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -630,7 +633,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     var lnl: []const u8 = "\n"; pal.stderr_write(lnl);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     ctx.lir_fns.len = @intCast(usize, 0);
-    var sem_ctx = SemanticContext{
+    var sem_ctx: SemanticContext = SemanticContext{
         .store = ctx.store,
         .registry = ctx.typereg,
         .symbol_tables = ctx.symbol_reg,
@@ -639,6 +642,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .diag = ctx.diag,
         .has_symbols = @intCast(u8, 1),
         .enum_value_table = &ctx.enum_value_table,
+        .call_arg_types = &ctx.call_arg_types,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;

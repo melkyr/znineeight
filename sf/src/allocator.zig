@@ -21,16 +21,16 @@ pub fn sandInit(buf: []u8) Sand {
 }
 
 pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
-    var mask = alignment - @intCast(usize, 1);
-    var aligned = (sand.pos + mask) & ~mask;
-    var new_pos = aligned + size;
+    var mask: usize = alignment - @intCast(usize, 1);
+    var aligned: usize = (sand.pos + mask) & ~mask;
+    var new_pos: usize = aligned + size;
     if (new_pos > sand.end) {
         var oom: []const u8 = "out of memory";
         var file: []const u8 = "allocator.zig";
         panic_mod.panicHandler(oom, file, 25);
         return error.OutOfMemory;
     }
-    var result = sand.start + aligned;
+    var result: [*]u8 = sand.start + aligned;
     sand.pos = new_pos;
     if (new_pos > sand.peak) sand.peak = new_pos;
     return result;

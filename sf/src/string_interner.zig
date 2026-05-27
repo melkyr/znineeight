@@ -91,8 +91,8 @@ pub fn stringInternerIntern(self: *StringInterner, text: []const u8) u32 {
         stringInternerGrowBuckets(self, 8);
         bucket_count = self.buckets_len;
     }
-    var bucket = hash % @intCast(u32, bucket_count);
-    var idx = self.buckets_items[@intCast(usize, bucket)];
+    var bucket: u32 = hash % @intCast(u32, bucket_count);
+    var idx: u32 = self.buckets_items[@intCast(usize, bucket)];
     while (idx != 0) {
         var entry = &self.entries_items[@intCast(usize, idx)];
         if (entry.hash == hash and mem_mod.mem_eql(entry.text, text)) return idx;
