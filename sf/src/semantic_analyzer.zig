@@ -657,6 +657,8 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.struct_init) {
         result = semanticAnalyzerResolveStructInit(self, node_idx);
     } else if (node.kind == AstKind.array_init) {
+        var ai_dbg: []const u8 = "AW";
+        pal_mod.stderr_write(ai_dbg);
         result = semanticAnalyzerResolveArrayInit(self, node_idx);
     } else if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type or
                node.kind == AstKind.array_type or node.kind == AstKind.slice_type or
@@ -905,8 +907,6 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
     else { self._stub_0 = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
     if (self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, self._stub_0, @intCast(u32, ec.len));
-    var ai_m: []const u8 = "AI";
-    pal_mod.stderr_write(ai_m);
     return arr_tid;
 }
 

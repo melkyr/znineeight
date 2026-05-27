@@ -435,13 +435,6 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         var name_id = ctx.store.identifiers.items[@intCast(usize, node.payload)];
         var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, name_id));
         if (tid) |t| return t;
-        var mi2: usize = 0;
-        var mods2 = mr_mod.moduleRegistryGetModules(ctx.module_reg);
-        while (mi2 < mods2.len) : (mi2 += 1) {
-            var ck: u64 = (@intCast(u64, mods2[mi2].id) << @intCast(u64, 32)) | @intCast(u64, name_id);
-            var tc = type_mod.nameCacheGet(ctx.typereg, ck);
-            if (tc) |t| return t;
-        }
         return type_mod.TYPE_UNDEFINED;
     }
     if (node.child_0 != 0) {
