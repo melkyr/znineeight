@@ -387,7 +387,6 @@ fn parserParseOrelseRHS(self: *Parser, next_min: Prec) ParserError!u32 {
 
 fn parserParseFieldInitListNamed(self: *Parser) ParserError!u32 {
     var saved_child_len = self.child_buf_len;
-    self.child_buf_len = 0;
     while (parserPeek(self).kind == TokenKind.dot) {
         _ = parserAdvance(self);
         var name_raw3 = parserPeek(self);
@@ -404,8 +403,8 @@ fn parserParseFieldInitListNamed(self: *Parser) ParserError!u32 {
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
     var payload: u32 = 0;
-    if (self.child_buf_len > 0) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
+    if (self.child_buf_len > saved_child_len) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_child_len..self.child_buf_len]);
     }
     self.child_buf_len = saved_child_len;
     return payload;
