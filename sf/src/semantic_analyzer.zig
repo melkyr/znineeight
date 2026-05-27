@@ -702,6 +702,29 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
     if (result != type_mod.TYPE_VOID) {
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+    } else {
+        var st_k: [20]u8 = undefined;
+        var st_l = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), st_k[0..]);
+        var st_s: usize = @intCast(usize, 19) - @intCast(usize, st_l);
+        var st_m: []const u8 = "ST:";
+        pal_mod.stderr_write(st_m);
+        pal_mod.stderr_write(st_k[st_s..@intCast(usize, 19)]);
+        var st_n: []const u8 = "V";
+        pal_mod.stderr_write(st_n);
+    }
+    {
+        var sm_k: [20]u8 = undefined;
+        var sm_l = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), sm_k[0..]);
+        var sm_s: usize = @intCast(usize, 19) - @intCast(usize, sm_l);
+        var sm_m: []const u8 = "SM:";
+        pal_mod.stderr_write(sm_m);
+        pal_mod.stderr_write(sm_k[sm_s..@intCast(usize, 19)]);
+        var sm_r: [20]u8 = undefined;
+        var sm_rl = itoa_mod.itoa(result, sm_r[0..]);
+        var sm_rs: usize = @intCast(usize, 19) - @intCast(usize, sm_rl);
+        pal_mod.stderr_write(sm_r[sm_rs..@intCast(usize, 19)]);
+        var sm_sep: []const u8 = ",";
+        pal_mod.stderr_write(sm_sep);
     }
     return result;
 }
