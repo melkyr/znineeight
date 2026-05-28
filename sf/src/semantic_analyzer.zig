@@ -274,8 +274,12 @@ fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_
     if (lhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, rhs)) return rhs;
     if (rhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, lhs)) return lhs;
 
-    if (lhs != rhs or !type_mod.typeRegistryIsNumeric(self.registry, lhs)) return type_mod.TYPE_VOID;
-    return lhs;
+    if (!type_mod.typeRegistryIsNumeric(self.registry, lhs) or !type_mod.typeRegistryIsNumeric(self.registry, rhs)) return type_mod.TYPE_VOID;
+    if (lhs == rhs) return lhs;
+    var ls = self.registry.types_items[@intCast(usize, lhs)].size;
+    var rs = self.registry.types_items[@intCast(usize, rhs)].size;
+    if (ls >= rs) return lhs;
+    return rhs;
 }
 
 fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {

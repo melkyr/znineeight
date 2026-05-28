@@ -448,21 +448,25 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.add) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var bh: []const u8 = "B1+:l="; pal.stderr_write(bh); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, lhs)].type_id); var br: []const u8 = " r="; pal.stderr_write(br); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, rhs)].type_id); var be: []const u8 = "\n"; pal.stderr_write(be);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.sub) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.mul) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var mulm: []const u8 = "MUL:l="; pal.stderr_write(mulm); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, lhs)].type_id); var mulr: []const u8 = " r="; pal.stderr_write(mulr); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, rhs)].type_id); var muln: []const u8 = "\n"; pal.stderr_write(muln);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.div) {
@@ -640,8 +644,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var base_temp = lowerExpr(self, node.child_0);
         base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var idx_temp = lowerExpr(self, node.child_1);
-        var i2s: []const u8 = "I2:1\n"; pal.stderr_write(i2s);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var reg = self.ctx.registry;
+        var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+        if (bt != type_mod.TYPE_UNDEFINED) {
+            var bty = reg.types_items[@intCast(usize, bt)];
+            if (bty.kind == type_mod.TypeKind.slice_type) {
+                elem_type[0] = reg.slice_items[@intCast(usize, bty.payload_idx)].elem;
+            } else if (bty.kind == type_mod.TypeKind.array_type) {
+                elem_type[0] = reg.array_items[@intCast(usize, bty.payload_idx)].elem;
+            }
+        }
+        var tid = nextTemp(self, elem_type[0]);
         emitInst(self, LirInst{ .load_index = .{ .base = base_temp, .index = idx_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.ident_expr) {
@@ -728,7 +742,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (resolved) |type_id| {
             var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
             var kind = ty.kind;
-            if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
+            if (kind == type_mod.TypeKind.slice_type) {
+                var elem = self.ctx.registry.slice_items[@intCast(usize, ty.payload_idx)].elem;
+                var pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem, false);
+                tid = nextTemp(self, pty);
+                emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 0), .result = tid } });
+                return tid;
+            } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
                 var fields: []FieldEntry = undefined;
                 type_mod.typeRegistryGetStructFields(self.ctx.registry, type_id, &fields);
                 var fi: usize = 0;
@@ -1748,8 +1768,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                     .type_id = p_tid,
                 });
                 if (p_type) |pt| {
-                    var p_temp = nextTemp(self, pt);
-                    addLocalDecl(self, p_name_id, pt, p_temp);
+                    addLocalDecl(self, p_name_id, pt, 0);
                 }
             } else {
                 func_ptr.is_variadic = @intCast(u8, 1);
