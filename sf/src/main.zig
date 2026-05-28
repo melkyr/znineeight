@@ -389,6 +389,10 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                                 var fd = ctx.store.nodes.items[@intCast(usize, fchildren[fi2])];
                                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                                     var ft = resolveTypeExpr(ctx, fd.child_0);
+                                    var b2_pn: []const u8 = "B2:p"; pal.stderr_write(b2_pn);
+                                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal.stderr_write(b2_pb[b2_ps..@intCast(usize, 19)]);
+                                    var b2_tn: []const u8 = "t"; pal.stderr_write(b2_tn);
+                                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal.stderr_write(b2_tb[b2_ts..@intCast(usize, 19)]);
                                     if (ft != type_mod.TYPE_UNDEFINED) {
                                         ctx.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
                                     }
@@ -400,6 +404,10 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                                 var fd = ctx.store.nodes.items[@intCast(usize, fchildren[fi2])];
                                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                                     var ft = resolveTypeExpr(ctx, fd.child_0);
+                                    var b2_pn: []const u8 = "B2:p"; pal.stderr_write(b2_pn);
+                                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal.stderr_write(b2_pb[b2_ps..@intCast(usize, 19)]);
+                                    var b2_tn: []const u8 = "t"; pal.stderr_write(b2_tn);
+                                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal.stderr_write(b2_tb[b2_ts..@intCast(usize, 19)]);
                                     if (ft != type_mod.TYPE_UNDEFINED) {
                                         ctx.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
                                     }

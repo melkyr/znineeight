@@ -336,7 +336,9 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
         var rt_ty = self.ctx.registry.types_items[@intCast(usize, rt)];
         var mg1s: []const u8 = "MS:1\n"; pal.stderr_write(mg1s);
         if (rt_ty.kind == type_mod.TypeKind.slice_type) {
-            var ptr_temp = nextTemp(self, type_mod.TYPE_U32);
+            var sp = self.ctx.registry.slice_items[@intCast(usize, rt_ty.payload_idx)];
+            var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, sp.elem, false);
+            var ptr_temp = nextTemp(self, ptr_type);
             emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
             return ptr_temp;
         }
@@ -548,7 +550,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.negate) {
         var val = lowerExpr(self, node.child_0);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var ng_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } }
+        var tid = nextTemp(self, ng_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_NEG, .operand = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bool_not) {
@@ -558,7 +563,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.bit_not) {
         var val = lowerExpr(self, node.child_0);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var rt_bn = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var bn_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_bn) |t| { if (t != type_mod.TYPE_UNDEFINED) { bn_box[0] = t; } }
+        var tid = nextTemp(self, bn_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_BNOT, .operand = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.assign) {
@@ -622,7 +630,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return src;
     } else if (node.kind == AstKind.deref) {
         var ptr_temp = lowerExpr(self, node.child_0);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var rt_dr = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var dr_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_dr) |t| { if (t != type_mod.TYPE_UNDEFINED) { dr_box[0] = t; } }
+        var tid = nextTemp(self, dr_box[0]);
         emitInst(self, LirInst{ .load = .{ .ptr = ptr_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.address_of) {
@@ -631,12 +642,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var base_temp = lowerExpr(self, child_node.child_0);
             base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
             var idx_temp = lowerExpr(self, child_node.child_1);
-            var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
+            var rt_aoi = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+            var aoi_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+            if (rt_aoi) |t| { if (t != type_mod.TYPE_UNDEFINED) { aoi_box[0] = t; } }
+            var tid = nextTemp(self, aoi_box[0]);
             emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
             return tid;
         }
         var operand_temp = lowerExpr(self, node.child_0);
-        var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+        if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } }
+        var tid = nextTemp(self, ao_box[0]);
         emitInst(self, LirInst{ .addr_of = .{ .operand = operand_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.index_access) {
@@ -644,6 +661,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var idx_temp = lowerExpr(self, node.child_1);
         var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; } }
+        else {
         var reg = self.ctx.registry;
         var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
         if (bt != type_mod.TYPE_UNDEFINED) {
@@ -653,6 +673,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             } else if (bty.kind == type_mod.TypeKind.array_type) {
                 elem_type[0] = reg.array_items[@intCast(usize, bty.payload_idx)].elem;
             }
+        }
         }
         var tid = nextTemp(self, elem_type[0]);
         emitInst(self, LirInst{ .load_index = .{ .base = base_temp, .index = idx_temp, .result = tid } });
@@ -697,11 +718,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         var arr_temp: u32 = findLocalTemp(self, name_id);
         var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (rt) |t| { ptype = t; }
-        else {
-            var rt2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-            if (rt2) |t2| { ptype = t2; }
-        }
+        if (rt) |t| { if (t != type_mod.TYPE_UNDEFINED) { ptype = t; } }
         if (ptype == type_mod.TYPE_UNDEFINED) { ptype = type_mod.TYPE_U32; }
         if (arr_temp != @intCast(u32, 0)) { return arr_temp; }
         var tid = nextTemp(self, ptype);
@@ -738,10 +755,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
-        var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-        if (resolved) |_| { var f4s: []const u8 = "F4:H\n"; pal.stderr_write(f4s); } else { var f4s: []const u8 = "F4:M\n"; pal.stderr_write(f4s); }
-        var tid = nextTemp(self, type_mod.TYPE_U32);
-        if (resolved) |type_id| {
+        var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.stderr_write(f4s); } else { var f4s: []const u8 = "F4:M\n"; pal.stderr_write(f4s); }
+        var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } }
+        var tid = nextTemp(self, fa_box[0]);
+        if (resolved_base) |type_id| {
             var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
             var kind = ty.kind;
             if (kind == type_mod.TypeKind.slice_type) {
@@ -1151,6 +1171,24 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         self.current_bb = exit_bb;
         return result_temp;
+    } else if (node.kind == AstKind.slice_expr) {
+        var se_base = lowerExpr(self, node.child_0);
+        var se_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (se_rt) |st| {
+            var se_bt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
+            if (se_bt != type_mod.TYPE_UNDEFINED) {
+                var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
+                if (se_bty.kind == type_mod.TypeKind.array_type) {
+                    var se_arr_len = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)].length;
+                    var se_len_temp = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr_len), .result = se_len_temp } });
+                    var se_result = nextTemp(self, st);
+                    emitInst(self, LirInst{ .make_slice = .{ .ptr = se_base, .len = se_len_temp, .result = se_result, .type_id = st } });
+                    return se_result;
+                }
+            }
+        }
+        return @intCast(u32, 0);
     } else {
         return @intCast(u32, 0);
     }
