@@ -727,7 +727,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var fi: usize = 0;
                             while (fi < fcount) : (fi += 1) {
                                 if (self.ctx.registry.fe_items[fstart + fi].name_id == field_name_id) {
-                                    var tid = nextTemp(self, type_mod.TYPE_U32);
+                                    var tid = nextTemp(self, tp.tag_type);
                                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, fi), .result = tid } });
                                     return tid;
                                 }
@@ -814,7 +814,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                             }
                                         }
                                     }
-                                    if (self._fn_ret_type == type_mod.TYPE_VOID) { result = 0; }
+                                     if (self._fn_ret_type == type_mod.TYPE_VOID or self._fn_ret_type == type_mod.TYPE_UNDEFINED) { result = 0; }
                                     var ad3m: []const u8 = "AD3"; pal.stderr_write(ad3m);
                                     emitInst(self, LirInst{ .call_direct = .{
                                         .name_id = fs.name_id,
@@ -1239,15 +1239,27 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         self.current_bb = exit_bb;
         self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-    } else if (node.kind == AstKind.for_stmt) {
-        var pattern = store.nodes.items[@intCast(usize, node.child_0)];
-        if (node.child_2 != @intCast(u32, 0)) {
-            var slice_temp = lowerExpr(self, node.child_0);
-            var ptr_temp = nextTemp(self, type_mod.TYPE_U32);
-            var len_temp = nextTemp(self, type_mod.TYPE_U32);
+     } else if (node.kind == AstKind.for_stmt) {
+          var pattern = store.nodes.items[@intCast(usize, node.child_0)];
+          var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
+          var pat_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+          if (pat_type) |pt| {
+              var pt_ty = self.ctx.registry.types_items[@intCast(usize, pt)];
+              if (pt_ty.kind == type_mod.TypeKind.slice_type) {
+                  var sp = self.ctx.registry.slice_items[@intCast(usize, pt_ty.payload_idx)];
+                  elem_type[0] = sp.elem;
+              } else if (pt_ty.kind == type_mod.TypeKind.array_type) {
+                  var ap = self.ctx.registry.array_items[@intCast(usize, pt_ty.payload_idx)];
+                  elem_type[0] = ap.elem;
+              }
+          }
+          if (node.child_2 != @intCast(u32, 0)) {
+              var slice_temp = lowerExpr(self, node.child_0);
+              var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
+              var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .load_field = .{ .base = slice_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
             emitInst(self, LirInst{ .load_field = .{ .base = slice_temp, .field_id = @intCast(u32, 1), .result = len_temp } });
-            var idx_temp = nextTemp(self, type_mod.TYPE_U32);
+             var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
@@ -1260,13 +1272,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
             emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
             self.current_bb = body_bb;
-            var item_temp = nextTemp(self, type_mod.TYPE_U32);
-            emitInst(self, LirInst{ .load_index = .{ .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-            if (node.child_2 != @intCast(u32, 0)) addLocalDecl(self, node.payload, type_mod.TYPE_U32, item_temp);
+              var item_temp = nextTemp(self, elem_type[0]);
+              emitInst(self, LirInst{ .load_index = .{ .base = ptr_temp, .index = idx_temp, .result = item_temp } });
+              if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.payload, elem_type[0], item_temp); addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
-                var nxt_idx = nextTemp(self, type_mod.TYPE_U32);
+                var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = @intCast(u32, 1), .result = nxt_idx } });
                 idx_temp = nxt_idx;
                 emitInst(self, LirInst{ .jump = cond_bb });
