@@ -448,6 +448,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.add) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
+        var bh: []const u8 = "B1+:l="; pal.stderr_write(bh); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, lhs)].type_id); var br: []const u8 = " r="; pal.stderr_write(br); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, rhs)].type_id); var be: []const u8 = "\n"; pal.stderr_write(be);
         var tid = nextTemp(self, type_mod.TYPE_U32);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
