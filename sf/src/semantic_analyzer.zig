@@ -389,6 +389,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai2], pt);
                 }
             }
+            }
         }
         var ai: usize = 0;
         while (ai < args.len) : (ai += 1) {
