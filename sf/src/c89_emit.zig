@@ -331,6 +331,15 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
 
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
+    if (tid >= @intCast(u32, 20)) {
+        var d6m: []const u8 = "D6:"; pal.stderr_write(d6m);
+        var d6tb: [20]u8 = undefined; var d6tl = itoa_mod.itoa(tid, d6tb[0..]); var d6ts: usize = @intCast(usize, 19) - @intCast(usize, d6tl); pal.stderr_write(d6tb[d6ts..@intCast(usize, 19)]);
+        var d6kn: []const u8 = "k"; pal.stderr_write(d6kn);
+        var d6kb: [20]u8 = undefined; var d6kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), d6kb[0..]); var d6ks: usize = @intCast(usize, 19) - @intCast(usize, d6kl); pal.stderr_write(d6kb[d6ks..@intCast(usize, 19)]);
+        var d6nn: []const u8 = "n"; pal.stderr_write(d6nn);
+        var d6nb: [20]u8 = undefined; var d6nl = itoa_mod.itoa(ty.name_id, d6nb[0..]); var d6ns: usize = @intCast(usize, 19) - @intCast(usize, d6nl); pal.stderr_write(d6nb[d6ns..@intCast(usize, 19)]);
+        var d6nl2: []const u8 = "\n"; pal.stderr_write(d6nl2);
+    }
     if (ty.kind == TypeKind.void_type) { var s: []const u8 = "void"; return s; }
     if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "signed char"; return s; }
@@ -448,6 +457,15 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
     while (@intCast(usize, ti) < reg.types_len) : (ti += @intCast(u32, 1)) {
         var tid = ti;
         var ty = reg.types_items[@intCast(usize, tid)];
+        if (ty.kind == TypeKind.tagged_union_type) {
+            var d2m: []const u8 = "D2:t"; pal.stderr_write(d2m);
+            var d2b: [20]u8 = undefined; var d2l = itoa_mod.itoa(tid, d2b[0..]); var d2s: usize = @intCast(usize, 19) - @intCast(usize, d2l); pal.stderr_write(d2b[d2s..@intCast(usize, 19)]);
+            var d2nn: []const u8 = "n"; pal.stderr_write(d2nn);
+            var d2nb: [20]u8 = undefined; var d2nl = itoa_mod.itoa(ty.name_id, d2nb[0..]); var d2ns: usize = @intCast(usize, 19) - @intCast(usize, d2nl); pal.stderr_write(d2nb[d2ns..@intCast(usize, 19)]);
+            var d2mm: []const u8 = "m"; pal.stderr_write(d2mm);
+            var d2mb: [20]u8 = undefined; var d2ml = itoa_mod.itoa(ty.module_id, d2mb[0..]); var d2ms: usize = @intCast(usize, 19) - @intCast(usize, d2ml); pal.stderr_write(d2mb[d2ms..@intCast(usize, 19)]);
+            var d2nl2: []const u8 = "\n"; pal.stderr_write(d2nl2);
+        }
         if (ty.kind == TypeKind.void_type) continue;
         if (ty.kind == TypeKind.bool_type) continue;
         if (ty.kind == TypeKind.noreturn_type) continue;
@@ -1052,7 +1070,12 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         while (ldi < local_count) : (ldi += @intCast(u32, 1)) {
                             if (local_name_ids[@intCast(usize, ldi)] == dl.name_id) { ldup = @intCast(u8, 1); break; }
                         }
-                        if (ldup == @intCast(u8, 0)) {
+                         if (ldup == @intCast(u8, 0)) {
+                             var p1m: []const u8 = "P1:t"; pal.stderr_write(p1m);
+                             var p1tb: [20]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 19) - @intCast(usize, p1tl); pal.stderr_write(p1tb[p1ts..@intCast(usize, 19)]);
+                             var p1tn: []const u8 = "T"; pal.stderr_write(p1tn);
+                             var p1db: [20]u8 = undefined; var p1dl = itoa_mod.itoa(dl.type_id, p1db[0..]); var p1ds: usize = @intCast(usize, 19) - @intCast(usize, p1dl); pal.stderr_write(p1db[p1ds..@intCast(usize, 19)]);
+                             var p1nl: []const u8 = "\n"; pal.stderr_write(p1nl);
                             local_name_ids[@intCast(usize, local_count)] = dl.name_id;
                             local_types[@intCast(usize, local_count)] = dl.type_id;
                             local_count += @intCast(u32, 1);
@@ -1158,6 +1181,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             } else {
                                 written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
                             }
+                            var p3m: []const u8 = "P3:r"; pal.stderr_write(p3m);
+                            var p3rb: [20]u8 = undefined; var p3rl = itoa_mod.itoa(cd.result, p3rb[0..]); var p3rs: usize = @intCast(usize, 19) - @intCast(usize, p3rl); pal.stderr_write(p3rb[p3rs..@intCast(usize, 19)]);
+                            var p3tn: []const u8 = "T"; pal.stderr_write(p3tn);
+                            var p3tb: [20]u8 = undefined; var p3tl = itoa_mod.itoa(cd.return_type, p3tb[0..]); var p3ts: usize = @intCast(usize, 19) - @intCast(usize, p3tl); pal.stderr_write(p3tb[p3ts..@intCast(usize, 19)]);
+                            var p3wn: []const u8 = "W"; pal.stderr_write(p3wn);
+                            var p3wb: [20]u8 = undefined; var p3wl = itoa_mod.itoa(written_type[@intCast(usize, dp)], p3wb[0..]); var p3ws: usize = @intCast(usize, 19) - @intCast(usize, p3wl); pal.stderr_write(p3wb[p3ws..@intCast(usize, 19)]);
+                            var p3nl: []const u8 = "\n"; pal.stderr_write(p3nl);
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 2);
                         }
                     }
@@ -1358,8 +1388,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var d4c: []const u8 = "=call_result "; pal.stderr_write(d4c);
             pal.stderr_write(tn); var d4s: []const u8 = " "; pal.stderr_write(d4s);
             had = @intCast(u8, 1);
-        } else {
+         } else {
             var wt = written_type[@intCast(usize, di)];
+            var d7m: []const u8 = "D7:"; pal.stderr_write(d7m);
+            pal.stderr_write(tn);
+            var d7t: []const u8 = "="; pal.stderr_write(d7t);
+            var d7tb: [20]u8 = undefined; var d7tl = itoa_mod.itoa(wt, d7tb[0..]); var d7ts: usize = @intCast(usize, 19) - @intCast(usize, d7tl); pal.stderr_write(d7tb[d7ts..@intCast(usize, 19)]);
+            var d7nl: []const u8 = "\n"; pal.stderr_write(d7nl);
             if (wt != @intCast(u32, 0xFFFFFFFF) and wt != td.type_id) {
                 pal.stderr_write(tn);
                 var d4d: []const u8 = ":"; pal.stderr_write(d4d);

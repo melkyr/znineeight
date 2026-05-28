@@ -274,6 +274,11 @@ pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
 
 pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
     var tid = self.temp_counter;
+    if (type_id == type_mod.TYPE_UNDEFINED or type_id == type_mod.TYPE_VOID) {
+        var nm: []const u8 = "N"; pal.stderr_write(nm);
+        var ntb: [20]u8 = undefined; var ntl = itoa_mod.itoa(tid, ntb[0..]); var nts: usize = @intCast(usize, 19) - @intCast(usize, ntl); pal.stderr_write(ntb[nts..@intCast(usize, 19)]);
+        var nnl: []const u8 = " "; pal.stderr_write(nnl);
+    }
     self.temp_counter += @intCast(u32, 1);
     lir_mod.tempDeclArrayListAppend(&self.hoisted_temps, TempDecl{
         .temp_id = tid,
@@ -856,8 +861,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (sym) |sm| { var sf: []const u8 = "S"; pal.stderr_write(sf);
                 if (sm.kind == @intCast(u8, 0)) { var sk: []const u8 = "0"; pal.stderr_write(sk); }
                 else if (sm.kind == @intCast(u8, 1)) { var sk: []const u8 = "1"; pal.stderr_write(sk); }
-                else if (sm.kind == @intCast(u8, 2)) { var sk: []const u8 = "2"; pal.stderr_write(sk); }
-                else if (sm.kind == @intCast(u8, 3)) { var sk: []const u8 = "3"; pal.stderr_write(sk);
+                else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var sk: []const u8 = "K2/3"; pal.stderr_write(sk);
                     var args_start = self.temp_counter;
                     var ai: usize = 0;
                     while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
