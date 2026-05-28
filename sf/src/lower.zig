@@ -461,6 +461,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.mul) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
+        var mulm: []const u8 = "MUL:l="; pal.stderr_write(mulm); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, lhs)].type_id); var mulr: []const u8 = " r="; pal.stderr_write(mulr); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, rhs)].type_id); var muln: []const u8 = "\n"; pal.stderr_write(muln);
         var tid = nextTemp(self, type_mod.TYPE_U32);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
@@ -1355,6 +1356,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
+                var retm: []const u8 = "RET:v="; pal.stderr_write(retm); dbgPrintU32(val); var rett: []const u8 = " t="; pal.stderr_write(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id); var retn: []const u8 = "\n"; pal.stderr_write(retn);
                 emitInst(self, LirInst{ .ret = val });
             } else {
                 emitInst(self, LirInst{ .ret_void = {} });
@@ -1745,6 +1747,10 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                     .name_id = p_name_id,
                     .type_id = p_tid,
                 });
+                if (p_type) |pt| {
+                    var p_temp = nextTemp(self, pt);
+                    addLocalDecl(self, p_name_id, pt, p_temp);
+                }
             } else {
                 func_ptr.is_variadic = @intCast(u8, 1);
             }
