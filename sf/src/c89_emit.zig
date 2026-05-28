@@ -1139,7 +1139,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     if (cd.result < MAX_T) {
                         var dp = tid_to_pos[@intCast(usize, cd.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
-                            written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
+                            if (cd.return_type != type_mod.TYPE_UNDEFINED) {
+                                written_type[@intCast(usize, dp)] = cd.return_type;
+                            } else {
+                                written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
+                            }
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 2);
                         }
                     }

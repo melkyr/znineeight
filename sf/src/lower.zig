@@ -321,28 +321,13 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     self.local_decl_count += @intCast(usize, 1);
 }
 
-fn findLocalDecl(self: *LirLowerer, name_id: u32, out_type: *u32, out_is_arr: *u8, out_temp: *u32) void {
-    out_is_arr.* = @intCast(u8, 0);
-    if (self.local_decl_count == @intCast(usize, 0)) return;
+fn findLocalTemp(self: *LirLowerer, name_id: u32) u32 {
+    if (self.local_decl_count == @intCast(usize, 0)) return @intCast(u32, 0);
     var li: usize = @intCast(usize, 0);
     while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
-          if (self.local_decl_names[li] == name_id) {
-             var fm: []const u8 = "F"; pal.stderr_write(fm);
-             var fl: []const u8 = "\n"; pal.stderr_write(fl);
-             var raw_temp = self.local_decl_temps[li];
-             var ltype = self.local_decl_types[li];
-            var lt = self.ctx.registry.types_items[@intCast(usize, ltype)];
-            if (lt.kind == type_mod.TypeKind.array_type) {
-                var lap = self.ctx.registry.array_items[@intCast(usize, lt.payload_idx)];
-                out_type.* = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lap.elem, false);
-             out_temp.* = raw_temp;
-             out_is_arr.* = @intCast(u8, 1);
-            } else {
-                out_type.* = ltype;
-            }
-            return;
-        }
+        if (self.local_decl_names[li] == name_id) { return self.local_decl_temps[li]; }
     }
+    return @intCast(u32, 0);
 }
 
 fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
@@ -472,43 +457,57 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.div) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.mod_op) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bit_and) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bit_or) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bit_xor) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.shl) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.shr) {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_U32);
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.cmp_eq) {
@@ -696,12 +695,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          }
         }
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
-        var arr_temp: u32 = @intCast(u32, 0);
-        var is_arr_local: u8 = @intCast(u8, 0);
-        findLocalDecl(self, name_id, &ptype, &is_arr_local, &arr_temp);
-        if (is_arr_local != @intCast(u8, 0)) {
-            return arr_temp;
+        var arr_temp: u32 = findLocalTemp(self, name_id);
+        var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (rt) |t| { ptype = t; }
+        else {
+            var rt2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+            if (rt2) |t2| { ptype = t2; }
         }
+        if (ptype == type_mod.TYPE_UNDEFINED) { ptype = type_mod.TYPE_U32; }
+        if (arr_temp != @intCast(u32, 0)) { return arr_temp; }
         var tid = nextTemp(self, ptype);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
@@ -1377,6 +1379,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
                 var retm: []const u8 = "RET:v="; pal.stderr_write(retm); dbgPrintU32(val); var rett: []const u8 = " t="; pal.stderr_write(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id); var retn: []const u8 = "\n"; pal.stderr_write(retn);
+                if (self.func.return_type != type_mod.TYPE_VOID) {
+                    self.hoisted_temps.items[@intCast(usize, val)].type_id = self.func.return_type;
+                }
                 emitInst(self, LirInst{ .ret = val });
             } else {
                 emitInst(self, LirInst{ .ret_void = {} });
@@ -1479,6 +1484,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var arr_temp = lowerExpr(self, node.child_1);
                 addLocalDecl(self, name_id, decl_type, arr_temp);
             } else if (is_array_type == @intCast(u8, 1) and init_node.kind == AstKind.undefined_literal) {
+                var arr_temp = nextTemp(self, decl_type);
+                addLocalDecl(self, name_id, decl_type, arr_temp);
             } else {
                 var init_val = lowerExpr(self, node.child_1);
                 emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
