@@ -98,9 +98,11 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     while (li > @intCast(usize, 0)) {
         li -= @intCast(usize, 1);
         if (self.local_decl_names[li] == name_id) {
+            var lcl_t = self.local_decl_types[li];
             var ri: []const u8 = "R"; pal_mod.stderr_write(ri);
             var id1: []const u8 = "L"; pal_mod.stderr_write(id1);
-            return self.local_decl_types[li];
+            var lcl_b: [20]u8 = undefined; var lcl_l = itoa_mod.itoa(lcl_t, lcl_b[0..]); var lcl_s: usize = @intCast(usize, 19) - @intCast(usize, lcl_l); pal_mod.stderr_write(lcl_b[lcl_s..@intCast(usize, 19)]);
+            return lcl_t;
         }
     }
     var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id);
@@ -368,7 +370,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                                         var nck: u64 = @intCast(u64, mti) * @intCast(u64, 4294967296) + @intCast(u64, rnid);
                                         nc = type_mod.nameCacheGet(self.registry, nck);
                                         if (nc != null) break;
-                                    }
+        }
                                 }
                                 if (nc) |t| { direct_ret = t; }
                             }
@@ -814,6 +816,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     }
 
     if (result != type_mod.TYPE_VOID) {
+        var a4_m: []const u8 = "A4:"; pal_mod.stderr_write(a4_m);
+        var a4_nb: [20]u8 = undefined; var a4_nl = itoa_mod.itoa(node_idx, a4_nb[0..]); var a4_ns: usize = @intCast(usize, 19) - @intCast(usize, a4_nl); pal_mod.stderr_write(a4_nb[a4_ns..@intCast(usize, 19)]);
+        var a4_km: []const u8 = "k"; pal_mod.stderr_write(a4_km);
+        var a4_kb: [20]u8 = undefined; var a4_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), a4_kb[0..]); var a4_ks: usize = @intCast(usize, 19) - @intCast(usize, a4_kl); pal_mod.stderr_write(a4_kb[a4_ks..@intCast(usize, 19)]);
+        var a4_rm: []const u8 = "r"; pal_mod.stderr_write(a4_rm);
+        var a4_rb: [20]u8 = undefined; var a4_rl = itoa_mod.itoa(result, a4_rb[0..]); var a4_rs: usize = @intCast(usize, 19) - @intCast(usize, a4_rl); pal_mod.stderr_write(a4_rb[a4_rs..@intCast(usize, 19)]);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
     }
     return result;
@@ -837,10 +845,17 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
                     semanticAnalyzerGrowLocalDecls(self);
                 }
                 self.local_decl_names[self.local_decl_count] = pnode.payload;
+                var rtm: []const u8 = "A2:"; pal_mod.stderr_write(rtm);
+                var rt_nb: [20]u8 = undefined; var rt_nl = itoa_mod.itoa(pnode.payload, rt_nb[0..]); var rt_ns: usize = @intCast(usize, 19) - @intCast(usize, rt_nl); pal_mod.stderr_write(rt_nb[rt_ns..@intCast(usize, 19)]);
+                var rt_am: []const u8 = "a"; pal_mod.stderr_write(rt_am);
+                var rt_ab: [20]u8 = undefined; var rt_al = itoa_mod.itoa(pnode.child_0, rt_ab[0..]); var rt_as: usize = @intCast(usize, 19) - @intCast(usize, rt_al); pal_mod.stderr_write(rt_ab[rt_as..@intCast(usize, 19)]);
                 var rt = rtt_mod.resolvedTypeTableGet(self.type_table, pnode.child_0);
                 if (rt) |t| {
+                    var rth_m: []const u8 = "H"; pal_mod.stderr_write(rth_m);
+                    var rth_b: [20]u8 = undefined; var rth_l = itoa_mod.itoa(t, rth_b[0..]); var rth_s: usize = @intCast(usize, 19) - @intCast(usize, rth_l); pal_mod.stderr_write(rth_b[rth_s..@intCast(usize, 19)]);
                     self.local_decl_types[self.local_decl_count] = t;
                 } else {
+                    var rtm_m: []const u8 = "M"; pal_mod.stderr_write(rtm_m);
                     self.local_decl_types[self.local_decl_count] = type_mod.TYPE_UNDEFINED;
                 }
                 self.local_decl_count += @intCast(usize, 1);
@@ -909,8 +924,14 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     } else if (node.kind == AstKind.for_stmt) {
         _ = semanticAnalyzerResolveExpr(self, node.child_0);
         var fsm: []const u8 = "FS:"; pal.stderr_write(fsm);
+        var fsc_b: [20]u8 = undefined; var fsc_l = itoa_mod.itoa(node.child_0, fsc_b[0..]); var fsc_s: usize = @intCast(usize, 19) - @intCast(usize, fsc_l); pal.stderr_write(fsc_b[fsc_s..@intCast(usize, 19)]);
+        var fsk_m: []const u8 = "k"; pal.stderr_write(fsk_m);
+        var cnode = self.store.nodes.items[@intCast(usize, node.child_0)];
+        var fsk_b: [20]u8 = undefined; var fsk_l = itoa_mod.itoa(@intCast(u32, @enumToInt(cnode.kind)), fsk_b[0..]); var fsk_s: usize = @intCast(usize, 19) - @intCast(usize, fsk_l); pal.stderr_write(fsk_b[fsk_s..@intCast(usize, 19)]);
         var it_tid = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
         if (it_tid) |tid| {
+            var a5_hm: []const u8 = "H"; pal.stderr_write(a5_hm);
+            var a5_hb: [20]u8 = undefined; var a5_hl = itoa_mod.itoa(tid, a5_hb[0..]); var a5_hs: usize = @intCast(usize, 19) - @intCast(usize, a5_hl); pal.stderr_write(a5_hb[a5_hs..@intCast(usize, 19)]);
             var ty = self.registry.types_items[@intCast(usize, tid)];
             var elem_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
             if (ty.kind == type_mod.TypeKind.slice_type) {
@@ -926,6 +947,8 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
                 if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                 self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_count += @intCast(usize, 1);
             }
+        } else {
+            var a5_mm: []const u8 = "M"; pal_mod.stderr_write(a5_mm);
         }
         semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
     } else if (node.kind == AstKind.switch_expr) {

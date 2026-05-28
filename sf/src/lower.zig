@@ -1242,8 +1242,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
      } else if (node.kind == AstKind.for_stmt) {
           var pattern = store.nodes.items[@intCast(usize, node.child_0)];
           var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
-          var pat_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-          if (pat_type) |pt| {
+           var pat_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+           var a6_m: []const u8 = "A6:"; pal.stderr_write(a6_m);
+           var a6_cb: [20]u8 = undefined; var a6_cl = itoa_mod.itoa(node.child_0, a6_cb[0..]); var a6_cs: usize = @intCast(usize, 19) - @intCast(usize, a6_cl); pal.stderr_write(a6_cb[a6_cs..@intCast(usize, 19)]);
+           if (pat_type) |pt| {
+               var a6_hm: []const u8 = "H"; pal.stderr_write(a6_hm);
+               var a6_hb: [20]u8 = undefined; var a6_hl = itoa_mod.itoa(pt, a6_hb[0..]); var a6_hs: usize = @intCast(usize, 19) - @intCast(usize, a6_hl); pal.stderr_write(a6_hb[a6_hs..@intCast(usize, 19)]);
               var pt_ty = self.ctx.registry.types_items[@intCast(usize, pt)];
               if (pt_ty.kind == type_mod.TypeKind.slice_type) {
                   var sp = self.ctx.registry.slice_items[@intCast(usize, pt_ty.payload_idx)];
@@ -1252,8 +1256,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                   var ap = self.ctx.registry.array_items[@intCast(usize, pt_ty.payload_idx)];
                   elem_type[0] = ap.elem;
               }
-          }
-          if (node.child_2 != @intCast(u32, 0)) {
+           } else {
+               var a6_mm: []const u8 = "M"; pal.stderr_write(a6_mm);
+           }
+           if (node.child_2 != @intCast(u32, 0)) {
               var slice_temp = lowerExpr(self, node.child_0);
               var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
               var len_temp = nextTemp(self, type_mod.TYPE_USIZE);

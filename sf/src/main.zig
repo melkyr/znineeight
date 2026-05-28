@@ -344,9 +344,16 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                             var u1_pb: [20]u8 = undefined; var u1_pl = itoa_mod.itoa(@intCast(u32, pi), u1_pb[0..]); var u1_ps: usize = @intCast(usize, 19) - @intCast(usize, u1_pl); pal.stderr_write(u1_pb[u1_ps..@intCast(usize, 19)]);
                             var u1_tm: []const u8 = "t"; pal.stderr_write(u1_tm);
                             var u1_tb: [20]u8 = undefined; var u1_tl = itoa_mod.itoa(ptype, u1_tb[0..]); var u1_ts: usize = @intCast(usize, 19) - @intCast(usize, u1_tl); pal.stderr_write(u1_tb[u1_ts..@intCast(usize, 19)]);
+                            var a1_nn: []const u8 = "n"; pal.stderr_write(a1_nn);
+                            var a1_nb: [20]u8 = undefined; var a1_nl = itoa_mod.itoa(pnode.payload, a1_nb[0..]); var a1_ns: usize = @intCast(usize, 19) - @intCast(usize, a1_nl); pal.stderr_write(a1_nb[a1_ns..@intCast(usize, 19)]);
+                            var a1_an: []const u8 = "a"; pal.stderr_write(a1_an);
+                            var a1_ab: [20]u8 = undefined; var a1_al = itoa_mod.itoa(pnode.child_0, a1_ab[0..]); var a1_as: usize = @intCast(usize, 19) - @intCast(usize, a1_al); pal.stderr_write(a1_ab[a1_as..@intCast(usize, 19)]);
                             type_mod.xtAppend(ctx.typereg, ptype);
                             if (ptype != type_mod.TYPE_UNDEFINED) {
+                                var a1_sm: []const u8 = "+"; pal.stderr_write(a1_sm);
                                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, pnode.child_0, ptype);
+                            } else {
+                                var a1_xm: []const u8 = "-"; pal.stderr_write(a1_xm);
                             }
                         } else {
                             type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
