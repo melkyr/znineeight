@@ -349,6 +349,7 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
     var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node);
     if (resolved) |rt| {
         var rt_ty = self.ctx.registry.types_items[@intCast(usize, rt)];
+        var mg1s: []const u8 = "MS:1\n"; pal.stderr_write(mg1s);
         if (rt_ty.kind == type_mod.TypeKind.slice_type) {
             var ptr_temp = nextTemp(self, type_mod.TYPE_U32);
             emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
@@ -360,6 +361,7 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
 
 fn addLoopCapture(self: *LirLowerer, capture_node: u32, item_temp: u32) void {
     var cap = self.ctx.store.nodes.items[@intCast(usize, capture_node)];
+    var l5s: []const u8 = "L5:1\n"; pal.stderr_write(l5s);
     addLocalDecl(self, cap.payload, type_mod.TYPE_U32, item_temp);
 }
 
@@ -636,6 +638,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var base_temp = lowerExpr(self, node.child_0);
         base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var idx_temp = lowerExpr(self, node.child_1);
+        var i2s: []const u8 = "I2:1\n"; pal.stderr_write(i2s);
         var tid = nextTemp(self, type_mod.TYPE_U32);
         emitInst(self, LirInst{ .load_index = .{ .base = base_temp, .index = idx_temp, .result = tid } });
         return tid;
@@ -697,6 +700,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var key: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, base_name_id);
                     var lt = type_mod.nameCacheGet(self.ctx.registry, key);
                     if (lt) |type_id| {
+                        var f3s: []const u8 = "F3:1\n"; pal.stderr_write(f3s);
                         var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
                         if (ty.kind == type_mod.TypeKind.tagged_union_type) {
                             var tp = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
@@ -717,7 +721,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var base_temp = lowerExpr(self, node.child_0);
         var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-        if (resolved) |_| { var df: []const u8 = "HF"; pal.stderr_write(df); } else { var df: []const u8 = "MF"; pal.stderr_write(df); }
+        if (resolved) |_| { var f4s: []const u8 = "F4:H\n"; pal.stderr_write(f4s); } else { var f4s: []const u8 = "F4:M\n"; pal.stderr_write(f4s); }
         var tid = nextTemp(self, type_mod.TYPE_U32);
         if (resolved) |type_id| {
             var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];

@@ -341,8 +341,8 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
     var direct_ret: u32 = @intCast(u32, 0);
+    var decl_cap: u32 = 0;
     if (callee_node.kind == AstKind.ident_expr) {
-        var decl_cap: u32 = 0;
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, callee_node.payload)]);
         if (sym) |s| { var xf: []const u8 = "XF"; pal_mod.stderr_write(xf);
             decl_cap = s.decl_node;
