@@ -913,14 +913,31 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         return tid;
     } else if (node.kind == AstKind.fn_call) {
+        var d9m: []const u8 = "D9:FCk"; pal.stderr_write(d9m);
+        var callee_head = store.nodes.items[@intCast(usize, node.child_0)];
+        var ck_val: u8 = callee_head.kind;
+        var d9kb: [10]u8 = undefined; var d9kl = itoa_mod.itoa(@intCast(u32, ck_val), d9kb[0..]); var d9ks: usize = @intCast(usize, 9) - @intCast(usize, d9kl); pal.stderr_write(d9kb[d9ks..@intCast(usize, 9)]);
+        var d9sp: []const u8 = " "; pal.stderr_write(d9sp);
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         if (ec.len >= @intCast(usize, 2)) {
             var first = store.nodes.items[@intCast(usize, ec[0])];
             var second = store.nodes.items[@intCast(usize, ec[1])];
             if (first.kind == AstKind.string_literal and second.kind == AstKind.tuple_literal) {
-                var d2m: []const u8 = "D2:PRINTa"; pal.stderr_write(d2m);
+                var d2m: []const u8 = "D2:PRINTx"; pal.stderr_write(d2m);
+                var fk_val: u8 = first.kind; var sk_val: u8 = second.kind;
+                var d2xb: [10]u8 = undefined; var d2xl = itoa_mod.itoa(@intCast(u32, fk_val), d2xb[0..]); var d2xs: usize = @intCast(usize, 9) - @intCast(usize, d2xl); pal.stderr_write(d2xb[d2xs..@intCast(usize, 9)]);
+                var d2ym: []const u8 = "y"; pal.stderr_write(d2ym);
+                var d2yb: [10]u8 = undefined; var d2yl = itoa_mod.itoa(@intCast(u32, sk_val), d2yb[0..]); var d2ys: usize = @intCast(usize, 9) - @intCast(usize, d2yl); pal.stderr_write(d2yb[d2ys..@intCast(usize, 9)]);
+                var d2am: []const u8 = "a"; pal.stderr_write(d2am);
                 var d2ab: [10]u8 = undefined; var d2al = itoa_mod.itoa(@intCast(u32, ec.len), d2ab[0..]); var d2as: usize = @intCast(usize, 9) - @intCast(usize, d2al); pal.stderr_write(d2ab[d2as..@intCast(usize, 9)]);
+                var d2nl: []const u8 = "\n"; pal.stderr_write(d2nl);
                 return lowerPrintCall(self, ec);
+            } else {
+                var d2b: []const u8 = "D2b:MISS_x"; pal.stderr_write(d2b);
+                var fkv: u8 = first.kind; var d2xb2: [10]u8 = undefined; var d2xl2 = itoa_mod.itoa(@intCast(u32, fkv), d2xb2[0..]); var d2xs2: usize = @intCast(usize, 9) - @intCast(usize, d2xl2); pal.stderr_write(d2xb2[d2xs2..@intCast(usize, 9)]);
+                var d2by: []const u8 = "_y"; pal.stderr_write(d2by);
+                var skv: u8 = second.kind; var d2yb2: [10]u8 = undefined; var d2yl2 = itoa_mod.itoa(@intCast(u32, skv), d2yb2[0..]); var d2ys2: usize = @intCast(usize, 9) - @intCast(usize, d2yl2); pal.stderr_write(d2yb2[d2ys2..@intCast(usize, 9)]);
+                var d2bnl: []const u8 = "\n"; pal.stderr_write(d2bnl);
             }
         }
         var callee_node = store.nodes.items[@intCast(usize, node.child_0)];

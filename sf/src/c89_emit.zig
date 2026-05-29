@@ -307,6 +307,8 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      d4_t2p: [*]u32,
     dl_hoisted: u8,
     emitted_type_set: U32ToU32Map,
+    dedup_names: [128]u32,
+    dedup_count: u32,
 };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
@@ -326,6 +328,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_t2p = undefined,
          .dl_hoisted = @intCast(u8, 0),
          .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
+         .dedup_names = undefined,
+         .dedup_count = @intCast(u32, 0),
      };
 }
 
@@ -1546,7 +1550,17 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .loop_header => {},
         .label => {},
          .decl_local => |dl| {},
-          .assign => |a| {
+           .assign => |a| {
+            var mkb: []const u8 = "/*==MARKER_ASSIGN dst=";
+            bufferedWriterWrite(&emitter.writer, mkb);
+            var mkdst = mangleTempName(emitter.interner, a.dst);
+            bufferedWriterWrite(&emitter.writer, mkdst);
+            var mksep: []const u8 = " src=";
+            bufferedWriterWrite(&emitter.writer, mksep);
+            var mksrc = mangleTempName(emitter.interner, a.src);
+            bufferedWriterWrite(&emitter.writer, mksrc);
+            var mkend: []const u8 = "==*/\n";
+            bufferedWriterWrite(&emitter.writer, mkend);
             var dst = mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);
             var is_arr: u8 = @intCast(u8, 0);
@@ -2076,7 +2090,17 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
-        .call_direct => |c| {
+         .call_direct => |c| {
+            var mkc: []const u8 = "/*==MARKER_CALL n=";
+            bufferedWriterWrite(&emitter.writer, mkc);
+            var mknb: [10]u8 = undefined; var mknl = itoa_mod.itoa(c.name_id, mknb[0..]); var mkns: usize = @intCast(usize, 9) - @intCast(usize, mknl);
+            bufferedWriterWrite(&emitter.writer, mknb[mkns..@intCast(usize, 9)]);
+            var mkmk: []const u8 = " m=";
+            bufferedWriterWrite(&emitter.writer, mkmk);
+            var mkmmb: [10]u8 = undefined; var mkmml = itoa_mod.itoa(c.module_id, mkmmb[0..]); var mkmms: usize = @intCast(usize, 9) - @intCast(usize, mkmml);
+            bufferedWriterWrite(&emitter.writer, mkmmb[mkmms..@intCast(usize, 9)]);
+            var mkend: []const u8 = "==*/\n";
+            bufferedWriterWrite(&emitter.writer, mkend);
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 1), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
             var dc2m: []const u8 = "DC2:n"; pal.stderr_write(dc2m);
@@ -2276,8 +2300,9 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     }
 }
 
-pub fn emitFunctionBody(emitter: *C89Emitter, lir_fn: *LirFunction) void {
+ pub fn emitFunctionBody(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     emitter.current_fn = lir_fn;
+    emitter.dedup_count = @intCast(u32, 0);
     if (emitter.dl_hoisted == @intCast(u8, 0)) {
         var bb_idx: usize = @intCast(usize, 0);
         while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
@@ -2287,6 +2312,16 @@ pub fn emitFunctionBody(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                 var inst = bb.insts.items[ii];
                 switch (inst) {
                     .decl_local => |dl| {
+                        var dl_is_dup: u8 = @intCast(u8, 0);
+                        var dl_lc: u32 = @intCast(u32, 0);
+                        while (@intCast(usize, dl_lc) < @intCast(usize, emitter.dedup_count)) : (dl_lc += @intCast(u32, 1)) {
+                            if (emitter.dedup_names[@intCast(usize, dl_lc)] == dl.name_id) { dl_is_dup = @intCast(u8, 1); break; }
+                        }
+                        if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.stderr_write(da); continue; }
+                        if (@intCast(usize, emitter.dedup_count) < @intCast(usize, 128)) {
+                            emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
+                            emitter.dedup_count += @intCast(u32, 1);
+                        }
                         var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
                         var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
                         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);

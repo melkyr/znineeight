@@ -120,8 +120,21 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     var key = @intCast(u64, name_id);
     var tid = type_mod.nameCacheGet(self.registry, key);
     if (tid) |t| { var id3: []const u8 = "C"; pal_mod.stderr_write(id3); return t; }
-    var id4: []const u8 = "N"; pal_mod.stderr_write(id4);
-    var id4_nid_buf: [20]u8 = undefined; var id4_nid_len = itoa_mod.itoa(node_idx, id4_nid_buf[0..]); var id4_nid_s: usize = @intCast(usize, 19) - @intCast(usize, id4_nid_len); pal_mod.stderr_write(id4_nid_buf[id4_nid_s..@intCast(usize, 19)]);
+     var id4: []const u8 = "D8:Nn"; pal_mod.stderr_write(id4);
+     var d8nb: [10]u8 = undefined; var d8nl = itoa_mod.itoa(name_id, d8nb[0..]); var d8ns: usize = @intCast(usize, 9) - @intCast(usize, d8nl); pal_mod.stderr_write(d8nb[d8ns..@intCast(usize, 9)]);
+     var d8cm: []const u8 = "c"; pal_mod.stderr_write(d8cm);
+     var d8cb: [10]u8 = undefined; var d8cl = itoa_mod.itoa(@intCast(u32, self.local_decl_count), d8cb[0..]); var d8cs: usize = @intCast(usize, 9) - @intCast(usize, d8cl); pal_mod.stderr_write(d8cb[d8cs..@intCast(usize, 9)]);
+     if (self.local_decl_count > @intCast(usize, 0)) {
+         var d8fm: []const u8 = "f"; pal_mod.stderr_write(d8fm);
+         var d8fb: [10]u8 = undefined; var d8fl = itoa_mod.itoa(self.local_decl_names[@intCast(usize, 0)], d8fb[0..]); var d8fs: usize = @intCast(usize, 9) - @intCast(usize, d8fl); pal_mod.stderr_write(d8fb[d8fs..@intCast(usize, 9)]);
+         var d8lm: []const u8 = "l"; pal_mod.stderr_write(d8lm);
+         var d8lb: [10]u8 = undefined; var d8ll = itoa_mod.itoa(self.local_decl_names[self.local_decl_count - @intCast(usize, 1)], d8lb[0..]); var d8ls: usize = @intCast(usize, 9) - @intCast(usize, d8ll); pal_mod.stderr_write(d8lb[d8ls..@intCast(usize, 9)]);
+     }
+     if (self.local_decl_count > @intCast(usize, 4)) {
+         var d8x: []const u8 = "x"; pal_mod.stderr_write(d8x);
+         var d8x5: [10]u8 = undefined; var d8x5l = itoa_mod.itoa(self.local_decl_names[@intCast(usize, 4)], d8x5[0..]); var d8x5s: usize = @intCast(usize, 9) - @intCast(usize, d8x5l); pal_mod.stderr_write(d8x5[d8x5s..@intCast(usize, 9)]);
+     }
+     var d8sp: []const u8 = " "; pal_mod.stderr_write(d8sp);
     if (name_id == self._stub_0) {
         return type_mod.TYPE_UNDEFINED;
     }
