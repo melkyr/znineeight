@@ -198,6 +198,12 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         var rs_msg: []const u8 = "Rs"; pal_mod.stderr_write(rs_msg);
                         sym_kind = sym_mod.SymbolKind.module;
                         sym_mod_id = mtid;
+                        var di_m: []const u8 = "FIX1:mid="; pal_mod.stderr_write(di_m);
+                        var di_mb: [10]u8 = undefined; var di_ml = itoa_mod.itoa(sym_mod_id, di_mb[0..]); var di_ms: usize = @intCast(usize, 9) - @intCast(usize, di_ml); pal_mod.stderr_write(di_mb[di_ms..@intCast(usize, 9)]);
+                        var di_t: []const u8 = "t"; pal_mod.stderr_write(di_t);
+                        var di_tb: [10]u8 = undefined; var di_tl = itoa_mod.itoa(mtid, di_tb[0..]); var di_ts: usize = @intCast(usize, 9) - @intCast(usize, di_tl); pal_mod.stderr_write(di_tb[di_ts..@intCast(usize, 9)]);
+                        var di_n: []const u8 = "n"; pal_mod.stderr_write(di_n);
+                        var di_nb: [10]u8 = undefined; var di_nl = itoa_mod.itoa(mod_id, di_nb[0..]); var di_ns: usize = @intCast(usize, 9) - @intCast(usize, di_nl);                         pal_mod.stderr_write(di_nb[di_ns..@intCast(usize, 9)]);
                         sym_type_id = type_mod.typeRegistryGetOrCreateModule(type_reg, mtid);
                     } else {
                         var rf_msg: []const u8 = "Rf"; pal_mod.stderr_write(rf_msg);
