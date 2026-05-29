@@ -2076,6 +2076,13 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .call_direct => |c| {
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 1), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+            var dc2m: []const u8 = "DC2:n"; pal.stderr_write(dc2m);
+            var dc2b: [10]u8 = undefined; var dc2l = itoa_mod.itoa(c.name_id, dc2b[0..]); var dc2s: usize = @intCast(usize, 9) - @intCast(usize, dc2l); pal.stderr_write(dc2b[dc2s..@intCast(usize, 9)]);
+            var dc2mm: []const u8 = "m"; pal.stderr_write(dc2mm);
+            var dc2mb: [10]u8 = undefined; var dc2ml = itoa_mod.itoa(c.module_id, dc2mb[0..]); var dc2ms: usize = @intCast(usize, 9) - @intCast(usize, dc2ml); pal.stderr_write(dc2mb[dc2ms..@intCast(usize, 9)]);
+            var dc2fn: []const u8 = "f"; pal.stderr_write(dc2fn);
+            pal.stderr_write(fn_name);
+            var dc2nl: []const u8 = "\n"; pal.stderr_write(dc2nl);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             if (c.result != 0) {
                 var result = mangleTempName(emitter.interner, c.result);

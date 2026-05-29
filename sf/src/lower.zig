@@ -819,7 +819,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (ptype == type_mod.TYPE_UNDEFINED) {
             var fu: []const u8 = "F3cU:n"; pal.stderr_write(fu);
             var fub: [20]u8 = undefined; var ful = itoa_mod.itoa(name_id, fub[0..]); var fus: usize = @intCast(usize, 19) - @intCast(usize, ful); pal.stderr_write(fub[fus..@intCast(usize, 19)]);
-            var funl: []const u8 = " "; pal.stderr_write(funl);
+            var fus2: []const u8 = "s"; pal.stderr_write(fus2);
+            var fsn = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
+            pal.stderr_write(fsn);
+            var funl2: []const u8 = " "; pal.stderr_write(funl2);
             ptype = type_mod.TYPE_U32;
         }
         if (arr_temp != @intCast(u32, 0)) { return arr_temp; }
@@ -877,9 +880,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var kind = ty.kind;
             if (kind == type_mod.TypeKind.slice_type) {
                 var elem = self.ctx.registry.slice_items[@intCast(usize, ty.payload_idx)].elem;
-                var pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem, false);
-                tid = nextTemp(self, pty);
-                emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 0), .result = tid } });
+                var len_s: []const u8 = "len";
+                var len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, len_s);
+                if (field_name_id == len_id) {
+                    var f4sl: []const u8 = "F4SL\n"; pal.stderr_write(f4sl);
+                    tid = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 1), .result = tid } });
+                } else {
+                    var pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem, false);
+                    tid = nextTemp(self, pty);
+                    emitInst(self, LirInst{ .load_field = .{ .base = base_temp, .field_id = @intCast(u32, 0), .result = tid } });
+                }
                 return tid;
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
                 var fields: []FieldEntry = undefined;
