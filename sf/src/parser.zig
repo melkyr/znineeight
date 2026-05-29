@@ -228,6 +228,11 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
         return error.UnexpectedToken;
     }
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    var bok: []const u8 = "BOP:tk"; pal.stderr_write(bok);
+    var bokb: [10]u8 = undefined; var bokl = itoa_mod.itoa(@enumToInt(tok.kind), bokb[0..]); var boks: usize = @intCast(usize, 9) - @intCast(usize, bokl); pal.stderr_write(bokb[boks..@intCast(usize, 9)]);
+    var bokk: []const u8 = "ak"; pal.stderr_write(bokk);
+    var bokkb: [10]u8 = undefined; var bokkl = itoa_mod.itoa(@enumToInt(kind), bokkb[0..]); var bokks: usize = @intCast(usize, 9) - @intCast(usize, bokkl); pal.stderr_write(bokkb[bokks..@intCast(usize, 9)]);
+    var boknl: []const u8 = " "; pal.stderr_write(boknl);
     return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, 0, 0);
 }
 
@@ -1243,6 +1248,22 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
     var cond = try parserParseExprPrec(self, Prec.none);
+    var pc0: []const u8 = "PIF:c="; pal.stderr_write(pc0);
+    var pc0b: [10]u8 = undefined; var pc0l = itoa_mod.itoa(cond, pc0b[0..]); var pc0s: usize = @intCast(usize, 9) - @intCast(usize, pc0l); pal.stderr_write(pc0b[pc0s..@intCast(usize, 9)]);
+    var pck: []const u8 = "k"; pal.stderr_write(pck);
+    var cond_n = self.store.nodes.items[@intCast(usize, cond)];
+    var pckb: [10]u8 = undefined; var pckl = itoa_mod.itoa(cond_n.kind, pckb[0..]); var pcks: usize = @intCast(usize, 9) - @intCast(usize, pckl); pal.stderr_write(pckb[pcks..@intCast(usize, 9)]);
+    var pc1: []const u8 = "c1"; pal.stderr_write(pc1);
+    var pc1b: [10]u8 = undefined; var pc1l = itoa_mod.itoa(cond_n.child_0, pc1b[0..]); var pc1s: usize = @intCast(usize, 9) - @intCast(usize, pc1l); pal.stderr_write(pc1b[pc1s..@intCast(usize, 9)]);
+    var pc2: []const u8 = "c2"; pal.stderr_write(pc2);
+    var pc2b: [10]u8 = undefined; var pc2l = itoa_mod.itoa(cond_n.child_1, pc2b[0..]); var pc2s: usize = @intCast(usize, 9) - @intCast(usize, pc2l); pal.stderr_write(pc2b[pc2s..@intCast(usize, 9)]);
+    var pck1: []const u8 = "k1"; pal.stderr_write(pck1);
+    var cn1 = self.store.nodes.items[@intCast(usize, cond_n.child_0)];
+    var pck1b: [10]u8 = undefined; var pck1l = itoa_mod.itoa(cn1.kind, pck1b[0..]); var pck1s: usize = @intCast(usize, 9) - @intCast(usize, pck1l); pal.stderr_write(pck1b[pck1s..@intCast(usize, 9)]);
+    var pck2: []const u8 = "k2"; pal.stderr_write(pck2);
+    var cn2 = self.store.nodes.items[@intCast(usize, cond_n.child_1)];
+    var pck2b: [10]u8 = undefined; var pck2l = itoa_mod.itoa(cn2.kind, pck2b[0..]); var pck2s: usize = @intCast(usize, 9) - @intCast(usize, pck2l); pal.stderr_write(pck2b[pck2s..@intCast(usize, 9)]);
+    var pknl: []const u8 = "\n"; pal.stderr_write(pknl);
     _ = try parserExpect(self, TokenKind.rparen);
 
     var capture_node: u32 = 0;

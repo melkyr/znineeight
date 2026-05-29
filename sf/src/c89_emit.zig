@@ -1094,6 +1094,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             }
         }
     }
+    var d2c: []const u8 = "P2:lc="; pal.stderr_write(d2c);
+    var d2cb: [10]u8 = undefined; var d2cl = itoa_mod.itoa(local_count, d2cb[0..]); var d2cs: usize = @intCast(usize, 9) - @intCast(usize, d2cl); pal.stderr_write(d2cb[d2cs..@intCast(usize, 9)]);
+    var d2cn: []const u8 = "\n"; pal.stderr_write(d2cn);
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
         var bb = &lir_fn.blocks.items[bb_idx];

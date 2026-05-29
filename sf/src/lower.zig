@@ -277,6 +277,8 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
     if (type_id == type_mod.TYPE_UNDEFINED or type_id == type_mod.TYPE_VOID) {
         var nm: []const u8 = "N"; pal.stderr_write(nm);
         var ntb: [20]u8 = undefined; var ntl = itoa_mod.itoa(tid, ntb[0..]); var nts: usize = @intCast(usize, 19) - @intCast(usize, ntl); pal.stderr_write(ntb[nts..@intCast(usize, 19)]);
+        var ntp: []const u8 = "t"; pal.stderr_write(ntp);
+        var ntpb: [20]u8 = undefined; var ntpl = itoa_mod.itoa(type_id, ntpb[0..]); var ntps: usize = @intCast(usize, 19) - @intCast(usize, ntpl); pal.stderr_write(ntpb[ntps..@intCast(usize, 19)]);
         var nnl: []const u8 = " "; pal.stderr_write(nnl);
     }
     self.temp_counter += @intCast(u32, 1);
@@ -557,6 +559,52 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var tid = nextTemp(self, type_mod.TYPE_BOOL);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_GE, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
+    } else if (node.kind == AstKind.bool_or) {
+        var lhs_tid = lowerExpr(self, node.child_0);
+        var rhs_bb = createBlock(self);
+        var true_bb = createBlock(self);
+        var done_bb = createBlock(self);
+        var result = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .branch = .{ .cond = lhs_tid, .then_bb = true_bb, .else_bb = rhs_bb } });
+        self.current_bb = rhs_bb;
+        self.block_terminated = @intCast(u8, 0);
+        var rhs_tid = lowerExpr(self, node.child_1);
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .assign = .{ .dst = result, .src = rhs_tid } });
+            emitInst(self, LirInst{ .jump = done_bb });
+        }
+        self.current_bb = true_bb;
+        self.block_terminated = @intCast(u8, 0);
+        emitInst(self, LirInst{ .bool_const = .{ .value = @intCast(u8, 1), .result = result } });
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = done_bb });
+        }
+        self.current_bb = done_bb;
+        self.block_terminated = @intCast(u8, 0);
+        return result;
+    } else if (node.kind == AstKind.bool_and) {
+        var lhs_tid = lowerExpr(self, node.child_0);
+        var rhs_bb = createBlock(self);
+        var false_bb = createBlock(self);
+        var done_bb = createBlock(self);
+        var result = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .branch = .{ .cond = lhs_tid, .then_bb = rhs_bb, .else_bb = false_bb } });
+        self.current_bb = rhs_bb;
+        self.block_terminated = @intCast(u8, 0);
+        var rhs_tid = lowerExpr(self, node.child_1);
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .assign = .{ .dst = result, .src = rhs_tid } });
+            emitInst(self, LirInst{ .jump = done_bb });
+        }
+        self.current_bb = false_bb;
+        self.block_terminated = @intCast(u8, 0);
+        emitInst(self, LirInst{ .bool_const = .{ .value = @intCast(u8, 0), .result = result } });
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = done_bb });
+        }
+        self.current_bb = done_bb;
+        self.block_terminated = @intCast(u8, 0);
+        return result;
     } else if (node.kind == AstKind.negate) {
         var val = lowerExpr(self, node.child_0);
         var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -968,6 +1016,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var a3p: []const u8 = "F3aP"; pal.stderr_write(a3p);
+        var callee_cn = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        var a3pt: [20]u8 = undefined; var a3ptl = itoa_mod.itoa(callee_cn.kind, a3pt[0..]); var a3pts: usize = @intCast(usize, 19) - @intCast(usize, a3ptl); pal.stderr_write(a3pt[a3pts..@intCast(usize, 19)]);
+        if (callee_cn.kind == AstKind.ident_expr) {
+            var a3pn: []const u8 = "n"; pal.stderr_write(a3pn);
+            var a3pnb: [20]u8 = undefined; var a3pnl = itoa_mod.itoa(self.ctx.store.identifiers.items[@intCast(usize, callee_cn.payload)], a3pnb[0..]); var a3pns: usize = @intCast(usize, 19) - @intCast(usize, a3pnl); pal.stderr_write(a3pnb[a3pns..@intCast(usize, 19)]);
+        }
+        var a3pnl: []const u8 = " "; pal.stderr_write(a3pnl);
         var callee_temp = lowerExpr(self, node.child_0);
         var args_start = self.temp_counter;
         var ai2: usize = 0;
@@ -1295,6 +1350,16 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     } else if (node.kind == AstKind.errdefer_stmt) {
         pushDefer(self, @intCast(u8, 1), node.child_0);
     } else if (node.kind == AstKind.if_stmt) {
+        var if_c0: []const u8 = "IF:c0="; pal.stderr_write(if_c0);
+        var if_c0b: [10]u8 = undefined; var if_c0l = itoa_mod.itoa(node.child_0, if_c0b[0..]); var if_c0s: usize = @intCast(usize, 9) - @intCast(usize, if_c0l); pal.stderr_write(if_c0b[if_c0s..@intCast(usize, 9)]);
+        var if_kh: []const u8 = " k="; pal.stderr_write(if_kh);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var cond_n = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+            var if_ckl = itoa_mod.itoa(cond_n.kind, if_c0b[0..]); var if_cks: usize = @intCast(usize, 9) - @intCast(usize, if_ckl); pal.stderr_write(if_c0b[if_cks..@intCast(usize, 9)]);
+        } else {
+            var if_z: []const u8 = "ZERO"; pal.stderr_write(if_z);
+        }
+        var if_nl: []const u8 = "\n"; pal.stderr_write(if_nl);
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (cond_ty_id) |ct| {
@@ -1307,7 +1372,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
         }
         if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
-        var d10m: []const u8 = "D10:c"; pal.stderr_write(d10m);
+        var d10m: []const u8 = "D10:k"; pal.stderr_write(d10m);
+        var cond_node_k = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        var d10kb: [20]u8 = undefined; var d10kl = itoa_mod.itoa(cond_node_k.kind, d10kb[0..]); var d10ks: usize = @intCast(usize, 19) - @intCast(usize, d10kl); pal.stderr_write(d10kb[d10ks..@intCast(usize, 19)]);
+        var d10mc: []const u8 = "c"; pal.stderr_write(d10mc);
         var d10cb: [20]u8 = undefined; var d10cl = itoa_mod.itoa(cond_temp, d10cb[0..]); var d10cs: usize = @intCast(usize, 19) - @intCast(usize, d10cl); pal.stderr_write(d10cb[d10cs..@intCast(usize, 19)]);
         var d10t: []const u8 = "t"; pal.stderr_write(d10t);
         var d10tb: [20]u8 = undefined; var d10tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, cond_temp)].type_id, d10tb[0..]); var d10ts: usize = @intCast(usize, 19) - @intCast(usize, d10tl); pal.stderr_write(d10tb[d10ts..@intCast(usize, 19)]);
