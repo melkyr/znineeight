@@ -97,9 +97,14 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     var li = self.local_decl_count;
     while (li > @intCast(usize, 0)) {
         li -= @intCast(usize, 1);
-        if (self.local_decl_names[li] == name_id) {
-            var lcl_t = self.local_decl_types[li];
-            var ri: []const u8 = "R"; pal_mod.stderr_write(ri);
+            if (self.local_decl_names[li] == name_id) {
+                var lcl_t = self.local_decl_types[li];
+                var d7m: []const u8 = "D7:Yn"; pal_mod.stderr_write(d7m);
+                var d7nb: [10]u8 = undefined; var d7nl = itoa_mod.itoa(name_id, d7nb[0..]); var d7ns: usize = @intCast(usize, 9) - @intCast(usize, d7nl); pal_mod.stderr_write(d7nb[d7ns..@intCast(usize, 9)]);
+                var d7tm: []const u8 = "t"; pal_mod.stderr_write(d7tm);
+                var d7tb: [10]u8 = undefined; var d7tl = itoa_mod.itoa(lcl_t, d7tb[0..]); var d7ts: usize = @intCast(usize, 9) - @intCast(usize, d7tl); pal_mod.stderr_write(d7tb[d7ts..@intCast(usize, 9)]);
+                var d7sp: []const u8 = " "; pal_mod.stderr_write(d7sp);
+                var ri: []const u8 = "R"; pal_mod.stderr_write(ri);
             var id1: []const u8 = "L"; pal_mod.stderr_write(id1);
             var lcl_b: [20]u8 = undefined; var lcl_l = itoa_mod.itoa(lcl_t, lcl_b[0..]); var lcl_s: usize = @intCast(usize, 19) - @intCast(usize, lcl_l); pal_mod.stderr_write(lcl_b[lcl_s..@intCast(usize, 19)]);
             return lcl_t;
@@ -237,6 +242,23 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
+    } else if (base_ty.kind == type_mod.TypeKind.slice_type) {
+        var sp = self.registry.slice_items[@intCast(usize, base_ty.payload_idx)];
+        var len_s: []const u8 = "len";
+        var len_id = interner_mod.stringInternerIntern(self.interner, len_s);
+        if (field_name_id == len_id) {
+            var fsl: []const u8 = "FSL:USIZE\n"; pal_mod.stderr_write(fsl);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_USIZE);
+            return type_mod.TYPE_USIZE;
+        }
+        var ptr_s: []const u8 = "ptr";
+        var ptr_id = interner_mod.stringInternerIntern(self.interner, ptr_s);
+        if (field_name_id == ptr_id) {
+            var pty = type_mod.typeRegistryGetOrCreatePtr(self.registry, sp.elem, false);
+            var fsp: []const u8 = "FSP:PTR\n"; pal_mod.stderr_write(fsp);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, pty);
+            return pty;
+        }
     } else {
         var fnf: []const u8 = "FF"; pal_mod.stderr_write(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
@@ -921,6 +943,11 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
         self.local_decl_names[self.local_decl_count] = node.payload;
         self.local_decl_types[self.local_decl_count] = decl_type;
         self.local_decl_count += @intCast(usize, 1);
+        var d4v: []const u8 = "D4:vn"; pal.stderr_write(d4v);
+        var d4vb: [10]u8 = undefined; var d4vl = itoa_mod.itoa(node.payload, d4vb[0..]); var d4vs: usize = @intCast(usize, 9) - @intCast(usize, d4vl); pal.stderr_write(d4vb[d4vs..@intCast(usize, 9)]);
+        var d4vt: []const u8 = "t"; pal.stderr_write(d4vt);
+        var d4vtb: [10]u8 = undefined; var d4vtl = itoa_mod.itoa(decl_type, d4vtb[0..]); var d4vts: usize = @intCast(usize, 9) - @intCast(usize, d4vtl); pal.stderr_write(d4vtb[d4vts..@intCast(usize, 9)]);
+        var d4vnl: []const u8 = " "; pal.stderr_write(d4vnl);
     } else if (node.kind == AstKind.if_stmt) {
         _ = semanticAnalyzerResolveExpr(self, node.child_0);
         semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
@@ -951,10 +978,20 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             if (node.payload != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
                 if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                 self.local_decl_names[self.local_decl_count] = node.payload; self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_count += @intCast(usize, 1);
+                var d4f: []const u8 = "D4:fn"; pal.stderr_write(d4f);
+                var d4fb: [10]u8 = undefined; var d4fl = itoa_mod.itoa(node.payload, d4fb[0..]); var d4fs: usize = @intCast(usize, 9) - @intCast(usize, d4fl); pal.stderr_write(d4fb[d4fs..@intCast(usize, 9)]);
+                var d4ft: []const u8 = "t"; pal.stderr_write(d4ft);
+                var d4ftb: [10]u8 = undefined; var d4ftl = itoa_mod.itoa(elem_box[0], d4ftb[0..]); var d4fts: usize = @intCast(usize, 9) - @intCast(usize, d4ftl); pal.stderr_write(d4ftb[d4fts..@intCast(usize, 9)]);
+                var d4fnl: []const u8 = " "; pal.stderr_write(d4fnl);
             }
             if (node.child_2 != @intCast(u32, 0)) {
                 if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                 self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_count += @intCast(usize, 1);
+                var d4i: []const u8 = "D4:ln"; pal.stderr_write(d4i);
+                var d4ib: [10]u8 = undefined; var d4il = itoa_mod.itoa(node.child_2, d4ib[0..]); var d4is: usize = @intCast(usize, 9) - @intCast(usize, d4il); pal.stderr_write(d4ib[d4is..@intCast(usize, 9)]);
+                var d4it: []const u8 = "t"; pal.stderr_write(d4it);
+                var d4itb: [10]u8 = undefined; var d4itl = itoa_mod.itoa(type_mod.TYPE_USIZE, d4itb[0..]); var d4its: usize = @intCast(usize, 9) - @intCast(usize, d4itl); pal.stderr_write(d4itb[d4its..@intCast(usize, 9)]);
+                var d4inl: []const u8 = " "; pal.stderr_write(d4inl);
             }
         } else {
             var a5_mm: []const u8 = "M"; pal_mod.stderr_write(a5_mm);

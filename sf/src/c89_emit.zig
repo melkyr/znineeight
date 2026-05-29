@@ -1056,6 +1056,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             local_count += @intCast(u32, 1);
         }
     }
+    var p0m: []const u8 = "P0:lc="; pal.stderr_write(p0m);
+    var p0mb: [10]u8 = undefined; var p0ml = itoa_mod.itoa(local_count, p0mb[0..]); var p0ms: usize = @intCast(usize, 9) - @intCast(usize, p0ml); pal.stderr_write(p0mb[p0ms..@intCast(usize, 9)]);
+    var p0nl: []const u8 = "\n"; pal.stderr_write(p0nl);
     var dbi: usize = @intCast(usize, 0);
     while (dbi < lir_fn.blocks.len) : (dbi += @intCast(usize, 1)) {
         var dbb = &lir_fn.blocks.items[dbi];

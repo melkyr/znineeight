@@ -865,6 +865,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } }
+        var d1f: []const u8 = "D1:FADr"; pal.stderr_write(d1f);
+        var d1fb: [20]u8 = undefined;
+        if (rt_fa) |d1t| { var d1fl = itoa_mod.itoa(d1t, d1fb[0..]); var d1fs: usize = @intCast(usize, 19) - @intCast(usize, d1fl); pal.stderr_write(d1fb[d1fs..@intCast(usize, 19)]); }
+        else { var d1z: []const u8 = "NULL"; pal.stderr_write(d1z); }
+        var d1fn: []const u8 = "fn"; pal.stderr_write(d1fn);
+        var d1fnb: [20]u8 = undefined; var d1fnl = itoa_mod.itoa(field_name_id, d1fnb[0..]); var d1fns: usize = @intCast(usize, 19) - @intCast(usize, d1fnl); pal.stderr_write(d1fnb[d1fns..@intCast(usize, 19)]);
+        var d1nl: []const u8 = " "; pal.stderr_write(d1nl);
         var fa_ty = self.ctx.registry.types_items[@intCast(usize, fa_box[0])];
         if (fa_ty.kind == type_mod.TypeKind.fn_type or fa_ty.kind == type_mod.TypeKind.module_type) {
             return @intCast(u32, 0);
@@ -911,6 +918,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var first = store.nodes.items[@intCast(usize, ec[0])];
             var second = store.nodes.items[@intCast(usize, ec[1])];
             if (first.kind == AstKind.string_literal and second.kind == AstKind.tuple_literal) {
+                var d2m: []const u8 = "D2:PRINTa"; pal.stderr_write(d2m);
+                var d2ab: [10]u8 = undefined; var d2al = itoa_mod.itoa(@intCast(u32, ec.len), d2ab[0..]); var d2as: usize = @intCast(usize, 9) - @intCast(usize, d2al); pal.stderr_write(d2ab[d2as..@intCast(usize, 9)]);
                 return lowerPrintCall(self, ec);
             }
         }
@@ -921,6 +930,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var base_name_id = store.identifiers.items[@intCast(usize, base_node.payload)];
                 var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name_id);
                 if (sym) |sm| {
+                    var d5m: []const u8 = "D5:sm="; pal.stderr_write(d5m);
+                    var d5mb: [10]u8 = undefined; var d5ml = itoa_mod.itoa(sm.module_id, d5mb[0..]); var d5ms: usize = @intCast(usize, 9) - @intCast(usize, d5ml); pal.stderr_write(d5mb[d5ms..@intCast(usize, 9)]);
+                    var d5bn: []const u8 = "bn"; pal.stderr_write(d5bn);
+                    var d5bnb: [10]u8 = undefined; var d5bnl = itoa_mod.itoa(base_name_id, d5bnb[0..]); var d5bns: usize = @intCast(usize, 9) - @intCast(usize, d5bnl); pal.stderr_write(d5bnb[d5bns..@intCast(usize, 9)]);
+                    var d5nl: []const u8 = " "; pal.stderr_write(d5nl);
                     if (sm.module_id != @intCast(u32, 0) and sm.module_id != self.module_id) {
                         var target_mod_id = sm.module_id;
                         var field_name_id = callee_node.payload;
@@ -982,9 +996,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var callee_name_id = store.identifiers.items[@intCast(usize, callee_node.payload)];
             var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, callee_name_id);
             if (sym) |sm| { var sf: []const u8 = "S"; pal.stderr_write(sf);
-                if (sm.kind == @intCast(u8, 0)) { var sk: []const u8 = "0"; pal.stderr_write(sk); }
-                else if (sm.kind == @intCast(u8, 1)) { var sk: []const u8 = "1"; pal.stderr_write(sk); }
-                else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var sk: []const u8 = "K2/3"; pal.stderr_write(sk);
+                if (sm.kind == @intCast(u8, 0)) { var d3m: []const u8 = "D3:SKIPn"; pal.stderr_write(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.stderr_write(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k0"; pal.stderr_write(d3kn); }
+                else if (sm.kind == @intCast(u8, 1)) { var d3m: []const u8 = "D3:SKIPn"; pal.stderr_write(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.stderr_write(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k1"; pal.stderr_write(d3kn); }
+                else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var d3m: []const u8 = "D3:OKn"; pal.stderr_write(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.stderr_write(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k"; pal.stderr_write(d3kn); var d3kb: [10]u8 = undefined; var d3kl = itoa_mod.itoa(sm.kind, d3kb[0..]); var d3ks: usize = @intCast(usize, 9) - @intCast(usize, d3kl); pal.stderr_write(d3kb[d3ks..@intCast(usize, 9)]);
                     var args_start = self.temp_counter;
                     var ai: usize = 0;
                     while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
