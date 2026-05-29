@@ -768,7 +768,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 ptype = t;
             }
         }
-        if (ptype == type_mod.TYPE_UNDEFINED) { ptype = type_mod.TYPE_U32; }
+        if (ptype == type_mod.TYPE_UNDEFINED) {
+            var fu: []const u8 = "F3cU:n"; pal.stderr_write(fu);
+            var fub: [20]u8 = undefined; var ful = itoa_mod.itoa(name_id, fub[0..]); var fus: usize = @intCast(usize, 19) - @intCast(usize, ful); pal.stderr_write(fub[fus..@intCast(usize, 19)]);
+            var funl: []const u8 = " "; pal.stderr_write(funl);
+            ptype = type_mod.TYPE_U32;
+        }
         if (arr_temp != @intCast(u32, 0)) { return arr_temp; }
         var tid = nextTemp(self, ptype);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
@@ -861,7 +866,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var target_mod_id = sm.module_id;
                         var field_name_id = callee_node.payload;
                         var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod_id, field_name_id);
-                        if (field_sym) |fs| {
+                        if (field_sym) |fs| { var a3: []const u8 = "F3a1"; pal.stderr_write(a3);
                             if (fs.kind == @intCast(u8, 3)) {
                                  var call_ns: u32 = self.temp_counter;
                                  var ai: usize = 0;
@@ -905,10 +910,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                         .return_type = self._fn_ret_type,
                                     } });
                                 return result;
-                            }
-                        }
+                            } else { var a3f: []const u8 = "F3aK\n"; pal.stderr_write(a3f); }
+                        } else { var a3m: []const u8 = "F3aM"; pal.stderr_write(a3m); }
                     }
-                }
+                } else { var a3b: []const u8 = "F3aB"; pal.stderr_write(a3b); }
             }
         } else if (callee_node.kind == AstKind.ident_expr) {
             var callee_name_id = store.identifiers.items[@intCast(usize, callee_node.payload)];
@@ -962,6 +967,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
             }
         }
+        var a3p: []const u8 = "F3aP"; pal.stderr_write(a3p);
         var callee_temp = lowerExpr(self, node.child_0);
         var args_start = self.temp_counter;
         var ai2: usize = 0;
@@ -1290,6 +1296,16 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         pushDefer(self, @intCast(u8, 1), node.child_0);
     } else if (node.kind == AstKind.if_stmt) {
         var cond_temp = lowerExpr(self, node.child_0);
+        var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (cond_ty_id) |ct| {
+            var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+            if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                var a3b: []const u8 = "F3bT"; pal.stderr_write(a3b);
+                var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .load_field = .{ .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                cond_temp = tag_temp;
+            }
+        }
         if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
         var d10m: []const u8 = "D10:c"; pal.stderr_write(d10m);
         var d10cb: [20]u8 = undefined; var d10cl = itoa_mod.itoa(cond_temp, d10cb[0..]); var d10cs: usize = @intCast(usize, 19) - @intCast(usize, d10cl); pal.stderr_write(d10cb[d10cs..@intCast(usize, 19)]);

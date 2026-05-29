@@ -1081,7 +1081,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             local_name_ids[@intCast(usize, local_count)] = dl.name_id;
                             local_types[@intCast(usize, local_count)] = dl.type_id;
                             local_count += @intCast(u32, 1);
-                        }
+                         } else {
+                             var d3e: []const u8 = "F3eD:t"; pal.stderr_write(d3e);
+                             var d3etb: [20]u8 = undefined; var d3etl = itoa_mod.itoa(dl.temp, d3etb[0..]); var d3ets: usize = @intCast(usize, 19) - @intCast(usize, d3etl); pal.stderr_write(d3etb[d3ets..@intCast(usize, 19)]);
+                             var d3en: []const u8 = "N"; pal.stderr_write(d3en);
+                             var d3enb: [20]u8 = undefined; var d3enl = itoa_mod.itoa(dl.name_id, d3enb[0..]); var d3ens: usize = @intCast(usize, 19) - @intCast(usize, d3enl); pal.stderr_write(d3enb[d3ens..@intCast(usize, 19)]);
+                             var d3enl2: []const u8 = "\n"; pal.stderr_write(d3enl2);
+                         }
                     }
                 },
                 else => {},
