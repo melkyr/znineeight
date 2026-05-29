@@ -1075,6 +1075,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                              var p1tb: [20]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 19) - @intCast(usize, p1tl); pal.stderr_write(p1tb[p1ts..@intCast(usize, 19)]);
                              var p1tn: []const u8 = "T"; pal.stderr_write(p1tn);
                              var p1db: [20]u8 = undefined; var p1dl = itoa_mod.itoa(dl.type_id, p1db[0..]); var p1ds: usize = @intCast(usize, 19) - @intCast(usize, p1dl); pal.stderr_write(p1db[p1ds..@intCast(usize, 19)]);
+                             var p1nn: []const u8 = "N"; pal.stderr_write(p1nn);
+                             var p1nb: [20]u8 = undefined; var p1nl2 = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 19) - @intCast(usize, p1nl2); pal.stderr_write(p1nb[p1ns..@intCast(usize, 19)]);
                              var p1nl: []const u8 = "\n"; pal.stderr_write(p1nl);
                             local_name_ids[@intCast(usize, local_count)] = dl.name_id;
                             local_types[@intCast(usize, local_count)] = dl.type_id;
@@ -1385,8 +1387,15 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                 had = @intCast(u8, 1);
             }
         } else if (wf == @intCast(u8, 2)) {
-            var d4c: []const u8 = "=call_result "; pal.stderr_write(d4c);
-            pal.stderr_write(tn); var d4s: []const u8 = " "; pal.stderr_write(d4s);
+            var d9m: []const u8 = "D9:"; pal.stderr_write(d9m);
+            pal.stderr_write(tn);
+            var d9e: []const u8 = "="; pal.stderr_write(d9e);
+            var wt2 = written_type[@intCast(usize, di)];
+            var d9tb: [20]u8 = undefined; var d9tl = itoa_mod.itoa(wt2, d9tb[0..]); var d9ts: usize = @intCast(usize, 19) - @intCast(usize, d9tl); pal.stderr_write(d9tb[d9ts..@intCast(usize, 19)]);
+            var d9h: []const u8 = " ht="; pal.stderr_write(d9h);
+            var ht2 = lir_fn.hoisted_temps.items[@intCast(usize, di)].type_id;
+            var d9hb: [20]u8 = undefined; var d9hl = itoa_mod.itoa(ht2, d9hb[0..]); var d9hs: usize = @intCast(usize, 19) - @intCast(usize, d9hl); pal.stderr_write(d9hb[d9hs..@intCast(usize, 19)]);
+            var d9nl: []const u8 = "\n"; pal.stderr_write(d9nl);
             had = @intCast(u8, 1);
          } else {
             var wt = written_type[@intCast(usize, di)];
