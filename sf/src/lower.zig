@@ -948,7 +948,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                      var c3nl: []const u8 = "\n"; pal.stderr_write(c3nl);
                                      result = nextTemp(self, self._fn_ret_type);
                                  }
-                                    var ad3m: []const u8 = "AD3"; pal.stderr_write(ad3m);
+                                    var ad3m: []const u8 = "ADX:n"; pal.stderr_write(ad3m);
+                                    var adx1b: [10]u8 = undefined; var adx1l = itoa_mod.itoa(fs.name_id, adx1b[0..]); var adx1s: usize = @intCast(usize, 9) - @intCast(usize, adx1l); pal.stderr_write(adx1b[adx1s..@intCast(usize, 9)]);
+                                    var adx1m: []const u8 = "m"; pal.stderr_write(adx1m);
+                                    var adx1mb: [10]u8 = undefined; var adx1ml = itoa_mod.itoa(target_mod_id, adx1mb[0..]); var adx1ms: usize = @intCast(usize, 9) - @intCast(usize, adx1ml); pal.stderr_write(adx1mb[adx1ms..@intCast(usize, 9)]);
+                                    var adx1nl: []const u8 = "\n"; pal.stderr_write(adx1nl);
                                     emitInst(self, LirInst{ .call_direct = .{
                                         .name_id = fs.name_id,
                                         .module_id = target_mod_id,
@@ -1002,7 +1006,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var c3nl2: []const u8 = "\n"; pal.stderr_write(c3nl2);
                         result = nextTemp(self, self._fn_ret_type);
                     }
-                    var ad3m2: []const u8 = "AD3"; pal.stderr_write(ad3m2);
+                    var ad3m2: []const u8 = "ADX:n"; pal.stderr_write(ad3m2);
+                    var adx2b: [10]u8 = undefined; var adx2l = itoa_mod.itoa(sm.name_id, adx2b[0..]); var adx2s: usize = @intCast(usize, 9) - @intCast(usize, adx2l); pal.stderr_write(adx2b[adx2s..@intCast(usize, 9)]);
+                    var adx2m: []const u8 = "m"; pal.stderr_write(adx2m);
+                    var adx2mb: [10]u8 = undefined; var adx2ml = itoa_mod.itoa(sm.module_id, adx2mb[0..]); var adx2ms: usize = @intCast(usize, 9) - @intCast(usize, adx2ml); pal.stderr_write(adx2mb[adx2ms..@intCast(usize, 9)]);
+                    var adx2nl: []const u8 = "\n"; pal.stderr_write(adx2nl);
                     emitInst(self, LirInst{ .call_direct = .{
                         .name_id = sm.name_id,
                         .module_id = sm.module_id,
@@ -1208,6 +1216,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         return base_temp;
+    } else if (node.kind == AstKind.tuple_literal) {
+        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+        var tupm: []const u8 = "TUP\n"; pal.stderr_write(tupm);
+        if (ec.len == 0) {
+            return nextTemp(self, type_mod.TYPE_VOID);
+        }
+        return lowerExpr(self, ec[0]);
     } else if (node.kind == AstKind.switch_expr) {
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
