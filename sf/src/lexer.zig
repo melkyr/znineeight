@@ -387,6 +387,11 @@ fn lexerScanIdentifierOrKeyword(self: *Lexer, start: usize) Token {
     }
 
     var string_id = interner_mod.stringInternerIntern(self.interner, text);
+    if (text.len == @intCast(usize, 9)) {
+        if (text[@intCast(usize, 0)] == 'n' and text[@intCast(usize, 1)] == 'e' and text[@intCast(usize, 2)] == 'i' and text[@intCast(usize, 3)] == 'g' and text[@intCast(usize, 4)] == 'h' and text[@intCast(usize, 5)] == 'b' and text[@intCast(usize, 6)] == 'o' and text[@intCast(usize, 7)] == 'r' and text[@intCast(usize, 8)] == 's') {
+            var lxm: []const u8 = "LEX"; pal.stderr_write(lxm);
+        }
+    }
     return lexerMakeToken(self, TokenKind.identifier, start, .{ .string_id = string_id });
 }
 

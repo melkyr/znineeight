@@ -947,26 +947,59 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var d2bnl: []const u8 = "\n"; pal.stderr_write(d2bnl);
             }
         }
+        var callee_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (callee_rt) |crt| {
+            var crt_ty = self.ctx.registry.types_items[@intCast(usize, crt)];
+            if (crt_ty.kind == type_mod.TypeKind.fn_type) {
+                var fp = self.ctx.registry.fn_items[@intCast(usize, crt_ty.payload_idx)];
+                var args_start = self.temp_counter;
+                var ai: usize = 0;
+                while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                ai = 0;
+                while (ai < ec.len) : (ai += 1) {
+                    var arg_val = lowerExpr(self, ec[ai]);
+                    emitInst(self, LirInst{ .assign = .{ .dst = args_start + @intCast(u32, ai), .src = arg_val } });
+                    var sbox: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+                    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { sbox[0] = pt; }
+                    else { sbox[0] = self.hoisted_temps.items[@intCast(usize, arg_val)].type_id; }
+                    self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sbox[0];
+                }
+                var result: u32 = @intCast(u32, 0);
+                if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
+                    result = nextTemp(self, fp.return_type);
+                }
+                var rt1: []const u8 = "RT1"; pal.stderr_write(rt1);
+                emitInst(self, LirInst{ .call_direct = .{
+                    .name_id = fp.name_id,
+                    .module_id = self.module_id,
+                    .args_start = args_start,
+                    .args_count = @intCast(u32, ec.len),
+                    .result = result,
+                    .return_type = fp.return_type,
+                } });
+                return result;
+            }
+        }
         var callee_node = store.nodes.items[@intCast(usize, node.child_0)];
-        if (callee_node.kind == AstKind.field_access) {
+        if (callee_node.kind == @enumToInt(AstKind.field_access)) {
             var dfa: []const u8 = "DFA:ck="; pal.stderr_write(dfa);
             var ckv: u8 = callee_node.kind; var dfab: [10]u8 = undefined; var dfal = itoa_mod.itoa(@intCast(u32, ckv), dfab[0..]); var dfas: usize = @intCast(usize, 9) - @intCast(usize, dfal); pal.stderr_write(dfab[dfas..@intCast(usize, 9)]);
             var dfasp: []const u8 = "\n"; pal.stderr_write(dfasp);
             var bnode = store.nodes.items[@intCast(usize, callee_node.child_0)];
             var bkv: u8 = bnode.kind; var bfb: [10]u8 = undefined; var bfl = itoa_mod.itoa(@intCast(u32, bkv), bfb[0..]); var bfs: usize = @intCast(usize, 9) - @intCast(usize, bfl); pal.stderr_write(bfb[bfs..@intCast(usize, 9)]); var bfsp: []const u8 = "bk\n"; pal.stderr_write(bfsp);
             var base_node = bnode;
-            if (base_node.kind == AstKind.ident_expr or base_node.kind == @intCast(u8, 25)) {
-                var field_name_id: u32 = callee_node.payload;
-                if (base_node.kind == @intCast(u8, 25)) {
+            if (base_node.kind == AstKind.ident_expr or base_node.kind == @enumToInt(AstKind.field_access)) {
+            var field_name_id: u32 = callee_node.payload;
+            if (base_node.kind == @enumToInt(AstKind.field_access)) {
                     var chain: [4]u32 = undefined;
                     var chain_len: u32 = @intCast(u32, 0);
                     chain[@intCast(usize, chain_len)] = callee_node.payload; chain_len += @intCast(u32, 1);
                     var cw = base_node;
-                    while (cw.kind == @intCast(u8, 25)) {
+                    while (cw.kind == @enumToInt(AstKind.field_access)) {
                         chain[@intCast(usize, chain_len)] = cw.payload; chain_len += @intCast(u32, 1);
                         cw = store.nodes.items[@intCast(usize, cw.child_0)];
                     }
-                    if (cw.kind != AstKind.ident_expr) { return @intCast(u32, 0); }
+                    if (cw.kind != @enumToInt(AstKind.ident_expr)) { return @intCast(u32, 0); }
                     base_node = cw;
                     field_name_id = chain[@intCast(usize, 0)];
                     var cmod: u32 = self.module_id;
@@ -1012,7 +1045,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                  self._fn_ret_type = type_mod.TYPE_UNDEFINED;
                                  if (fs.decl_node != 0) {
                                      var dn = store.nodes.items[@intCast(usize, fs.decl_node)];
-                                     if (dn.kind == AstKind.fn_decl) {
+                                     if (dn.kind == @enumToInt(AstKind.fn_decl)) {
                                          var proto = store.fn_protos.items[@intCast(usize, dn.payload)];
                                          if (proto.return_type_node != 0) {
                                              var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
@@ -1047,7 +1080,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     } else { var dz1_fail: []const u8 = "DZ1:MSKIP\n"; pal.stderr_write(dz1_fail); }
                 } else { var a3b: []const u8 = "F3aBn"; pal.stderr_write(a3b); var a3bb: [10]u8 = undefined; var a3bl = itoa_mod.itoa(base_name_id, a3bb[0..]); var a3bs: usize = @intCast(usize, 9) - @intCast(usize, a3bl); pal.stderr_write(a3bb[a3bs..@intCast(usize, 9)]); var a3bns: []const u8 = " "; pal.stderr_write(a3bns); }
             }
-        } else if (callee_node.kind == AstKind.ident_expr) {
+        } else if (callee_node.kind == @enumToInt(AstKind.ident_expr)) {
             var callee_name_id = store.identifiers.items[@intCast(usize, callee_node.payload)];
             var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, callee_name_id);
             if (sym) |sm| { var sf: []const u8 = "S"; pal.stderr_write(sf);
@@ -1070,7 +1103,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     self._fn_ret_type = type_mod.TYPE_UNDEFINED;
                     if (sm.decl_node != 0) {
                         var dn = store.nodes.items[@intCast(usize, sm.decl_node)];
-                        if (dn.kind == AstKind.fn_decl) {
+                        if (dn.kind == @intCast(u8, 2)) {
                             var proto = store.fn_protos.items[@intCast(usize, dn.payload)];
                             if (proto.return_type_node != 0) {
                                 var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);

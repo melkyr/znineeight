@@ -63,46 +63,7 @@ pub const CompilerContext = struct {
 pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.initArgs(argc, argv);
     var cli = parseArgs();
-    if (cli.sanity_test_mode) {
-        var compiler_alloc = alloc_mod.initCompilerAlloc();
-        var perm_sand = compiler_alloc.permanent;
-        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-        var source_man = sm_mod.sourceManagerInit(&perm_sand);
-        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-        compiler_alloc.permanent = perm_sand;
-        token_mod.initKeywordTable(&perm_sand);
-        lexer_mod.lexerTestSanityCheck();
-        return;
-    }
-    if (cli.test_mode) {
-        const msg: []const u8 = "error: use test_main.zig for test mode\n";
-        pal.stderr_write(msg);
-        pal.exit(1);
-        return;
-    }
-    if (cli.input_file.len == 0) {
-        printUsage();
-        return;
-    }
-    if (cli.dump_tokens) {
-        var compiler_alloc = alloc_mod.initCompilerAlloc();
-        var perm_sand = compiler_alloc.permanent;
-        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-        var source_man = sm_mod.sourceManagerInit(&perm_sand);
-        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-        compiler_alloc.permanent = perm_sand;
-        token_mod.initKeywordTable(&perm_sand);
-        var source = pal.readFile(cli.input_file, &perm_sand) orelse {
-            const msg: []const u8 = "error: could not read input file\n";
-            pal.stderr_write(msg);
-            pal.exit(1);
-            return;
-        };
-        var module_sand = compiler_alloc.module;
-        var lex = lexer_mod.lexerInit(source, 0, &interner, &diag, &module_sand);
-        dump_tokens.dumpTokens(&lex, &interner);
-        return;
-    }
+    if (cli.input_file.len == 0) { printUsage(); return; }
     if (cli.dump_ast) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
         var perm_sand = compiler_alloc.permanent;
@@ -144,43 +105,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         dump_ast.dumpAst(&store, root, &interner);
         return;
     }
-    var compiler_alloc = alloc_mod.initCompilerAlloc();
-    compiler_alloc.max_mem = cli.max_mem;
-    var perm_sand = compiler_alloc.permanent;
-    var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-    var source_man = sm_mod.sourceManagerInit(&perm_sand);
-    var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-    diag.max_diagnostics = @intCast(usize, cli.max_errors);
-    compiler_alloc.permanent = perm_sand;
-    token_mod.initKeywordTable(&perm_sand);
-    var source = pal.readFile(cli.input_file, &perm_sand) orelse {
-        const msg: []const u8 = "error: could not read input file\n";
-        pal.stderr_write(msg);
-        pal.exit(1);
-        return;
-    };
-    var module_sand = compiler_alloc.module;
-    var string_interner = interner;
-    var name_mangler = nm_mod.nameManglerInit();
-    var ctx = CompilerContext{
-        .cli = cli,
-        .alloc = &compiler_alloc,
-        .interner = &string_interner,
-        .diag = &diag,
-        .source_man = &source_man,
-        .name_mangler = &name_mangler,
-    };
-    runCompiler(source, &ctx);
-    var peak = alloc_mod.checkCombinedPeak(&compiler_alloc);
-    if (cli.track_memory) {
-        var peak_msg: []const u8 = "Peak memory: ";
-        pal.stdout_write(peak_msg);
-        var buf: [32]u8 = undefined;
-        var s = fmt.formatU32(peak, buf[0..], 32);
-        pal.stdout_write(s);
-        var nl2: []const u8 = " bytes\n";
-        pal.stdout_write(nl2);
-    }
+    var msg2: []const u8 = "error: no mode selected, use --dump-ast\n"; pal.stderr_write(msg2); pal.exit(1);
 }
 
 fn printUsage() void {

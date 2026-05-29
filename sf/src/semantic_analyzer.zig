@@ -136,7 +136,17 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
      }
      var d8sp: []const u8 = "i"; pal_mod.stderr_write(d8sp);
      var d8ib: [10]u8 = undefined; var d8il = itoa_mod.itoa(node_idx, d8ib[0..]); var d8is: usize = @intCast(usize, 9) - @intCast(usize, d8il); pal_mod.stderr_write(d8ib[d8is..@intCast(usize, 9)]);
-     var d8nll: []const u8 = " "; pal_mod.stderr_write(d8nll);
+      var d8nll: []const u8 = " "; pal_mod.stderr_write(d8nll);
+      if (node_idx == @intCast(u32, 436) or name_id == @intCast(u32, 55)) {
+          var d8kn: []const u8 = "k="; pal_mod.stderr_write(d8kn);
+          var cnode = self.store.nodes.items[@intCast(usize, node_idx)];
+          var d8kb: [10]u8 = undefined; var d8kl = itoa_mod.itoa(@intCast(u32, cnode.kind), d8kb[0..]); var d8ks: usize = @intCast(usize, 9) - @intCast(usize, d8kl); pal_mod.stderr_write(d8kb[d8ks..@intCast(usize, 9)]);
+          var d8rt: []const u8 = "r"; pal_mod.stderr_write(d8rt);
+          var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node_idx);
+          if (rt) |t| { var d8tb: [10]u8 = undefined; var d8tl = itoa_mod.itoa(t, d8tb[0..]); var d8ts: usize = @intCast(usize, 9) - @intCast(usize, d8tl); pal_mod.stderr_write(d8tb[d8ts..@intCast(usize, 9)]); }
+          else { var d8z: []const u8 = "Z"; pal_mod.stderr_write(d8z); }
+          var d8nl2: []const u8 = "\n"; pal_mod.stderr_write(d8nl2);
+      }
     if (name_id == self._stub_0) {
         return type_mod.TYPE_UNDEFINED;
     }
@@ -927,11 +937,28 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.block) {
         var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var blkm: []const u8 = "BLK:ni="; pal_mod.stderr_write(blkm);
+        var blkb: [20]u8 = undefined; var blkl = itoa_mod.itoa(node_idx, blkb[0..]); var blks: usize = @intCast(usize, 19) - @intCast(usize, blkl); pal_mod.stderr_write(blkb[blks..@intCast(usize, 19)]);
+        var blkc: []const u8 = "c="; pal_mod.stderr_write(blkc);
+        var blkcb: [10]u8 = undefined; var blkcl = itoa_mod.itoa(@intCast(u32, children.len), blkcb[0..]); var blkcs: usize = @intCast(usize, 9) - @intCast(usize, blkcl); pal_mod.stderr_write(blkcb[blkcs..@intCast(usize, 9)]);
+        var blknl: []const u8 = "\n"; pal_mod.stderr_write(blknl);
         var i: usize = 0;
         while (i < children.len) : (i += 1) {
             semanticAnalyzerResolveStmtDepth(self, children[i], depth + @intCast(u32, 1));
         }
-    } else if (node.kind == AstKind.var_decl) {
+     } else if (node.kind == AstKind.var_decl) {
+        if (node.payload == @intCast(u32, 55)) {
+            var d10m: []const u8 = "D10:V55c0="; pal_mod.stderr_write(d10m);
+            var d10b0: [10]u8 = undefined; var d10l0 = itoa_mod.itoa(node.child_0, d10b0[0..]); var d10s0: usize = @intCast(usize, 9) - @intCast(usize, d10l0); pal_mod.stderr_write(d10b0[d10s0..@intCast(usize, 9)]);
+            var d10c1: []const u8 = "c1="; pal_mod.stderr_write(d10c1);
+            var d10b1: [10]u8 = undefined; var d10l1 = itoa_mod.itoa(node.child_1, d10b1[0..]); var d10s1: usize = @intCast(usize, 9) - @intCast(usize, d10l1); pal_mod.stderr_write(d10b1[d10s1..@intCast(usize, 9)]);
+            if (node.child_1 != @intCast(u32, 0)) {
+                var inode = self.store.nodes.items[@intCast(usize, node.child_1)];
+                var d10ik: []const u8 = "ik="; pal_mod.stderr_write(d10ik);
+                var d10ikb: [10]u8 = undefined; var d10ikl = itoa_mod.itoa(@intCast(u32, @enumToInt(inode.kind)), d10ikb[0..]); var d10iks: usize = @intCast(usize, 9) - @intCast(usize, d10ikl); pal_mod.stderr_write(d10ikb[d10iks..@intCast(usize, 9)]);
+            }
+            var d10nl: []const u8 = "\n"; pal_mod.stderr_write(d10nl);
+        }
         var vd_m: []const u8 = "FB1:VDn"; pal_mod.stderr_write(vd_m);
         var vd_nb: [10]u8 = undefined; var vd_nl = itoa_mod.itoa(node.payload, vd_nb[0..]); var vd_ns: usize = @intCast(usize, 9) - @intCast(usize, vd_nl); pal_mod.stderr_write(vd_nb[vd_ns..@intCast(usize, 9)]);
         var vd_dd: []const u8 = "c"; pal_mod.stderr_write(vd_dd);
@@ -973,7 +1000,10 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
         if (node.child_2 != @intCast(u32, 0)) {
             semanticAnalyzerResolveStmtDepth(self, node.child_2, depth + @intCast(u32, 1));
         }
-    } else if (node.kind == AstKind.while_stmt) {
+     } else if (node.kind == AstKind.while_stmt) {
+        var wsm: []const u8 = "WS:b1="; pal_mod.stderr_write(wsm);
+        var wsb: [20]u8 = undefined; var wsl = itoa_mod.itoa(node.child_1, wsb[0..]); var wss: usize = @intCast(usize, 19) - @intCast(usize, wsl); pal_mod.stderr_write(wsb[wss..@intCast(usize, 19)]);
+        var wsnl: []const u8 = " "; pal_mod.stderr_write(wsnl);
         _ = semanticAnalyzerResolveExpr(self, node.child_0);
         semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
     } else if (node.kind == AstKind.for_stmt) {
