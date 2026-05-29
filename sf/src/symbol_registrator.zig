@@ -323,15 +323,20 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     .name_id = path_id,
                     .type_id = type_mod.typeRegistryGetOrCreateModule(type_reg, tid),
                     .kind = sym_mod.SymbolKind.module,
-                    .flags = @intCast(u16, 0),
-                    .decl_node = decl_idx,
-                    .module_id = tid,
-                    .scope_level = @intCast(u32, 0),
-                };
-                var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
-                _ = sym_mod.symbolTableInsert(table, sym);
-            }
-        },
+                     .flags = @intCast(u16, 0),
+                     .decl_node = decl_idx,
+                     .module_id = tid,
+                     .scope_level = @intCast(u32, 0),
+                 };
+                 var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
+                 _ = sym_mod.symbolTableInsert(table, sym);
+                 var imr: []const u8 = "IMR:n"; pal.stderr_write(imr);
+                 var imb: [10]u8 = undefined; var iml = itoa_mod.itoa(path_id, imb[0..]); var ims: usize = @intCast(usize, 9) - @intCast(usize, iml); pal.stderr_write(imb[ims..@intCast(usize, 9)]);
+                 var imm: []const u8 = "m"; pal.stderr_write(imm);
+                 var immb: [10]u8 = undefined; var imml = itoa_mod.itoa(tid, immb[0..]); var imms: usize = @intCast(usize, 9) - @intCast(usize, imml); pal.stderr_write(immb[imms..@intCast(usize, 9)]);
+                 var imsnl: []const u8 = " "; pal.stderr_write(imsnl);
+             }
+         },
         else => {},
     }
 }

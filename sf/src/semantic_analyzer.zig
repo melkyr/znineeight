@@ -989,6 +989,11 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
                 elem_box[0] = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem;
             }
             if (node.payload != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
+                var fsm1: []const u8 = "FSRp"; pal.stderr_write(fsm1);
+                var fsm1b: [10]u8 = undefined; var fsm1l = itoa_mod.itoa(node.payload, fsm1b[0..]); var fsm1s: usize = @intCast(usize, 9) - @intCast(usize, fsm1l); pal.stderr_write(fsm1b[fsm1s..@intCast(usize, 9)]);
+                var fsm1et: []const u8 = "e"; pal.stderr_write(fsm1et);
+                var fsm1eb: [10]u8 = undefined; var fsm1el = itoa_mod.itoa(elem_box[0], fsm1eb[0..]); var fsm1es: usize = @intCast(usize, 9) - @intCast(usize, fsm1el); pal.stderr_write(fsm1eb[fsm1es..@intCast(usize, 9)]);
+                var fsm1sp: []const u8 = " "; pal.stderr_write(fsm1sp);
                 if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                 self.local_decl_names[self.local_decl_count] = node.payload; self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_count += @intCast(usize, 1);
                 var d4f: []const u8 = "D4:fn"; pal.stderr_write(d4f);

@@ -933,10 +933,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var d2nl: []const u8 = "\n"; pal.stderr_write(d2nl);
                 return lowerPrintCall(self, ec);
             } else {
-                var d2b: []const u8 = "D2b:MISS_x"; pal.stderr_write(d2b);
+                var d2b: []const u8 = "D2b:x"; pal.stderr_write(d2b);
                 var fkv: u8 = first.kind; var d2xb2: [10]u8 = undefined; var d2xl2 = itoa_mod.itoa(@intCast(u32, fkv), d2xb2[0..]); var d2xs2: usize = @intCast(usize, 9) - @intCast(usize, d2xl2); pal.stderr_write(d2xb2[d2xs2..@intCast(usize, 9)]);
-                var d2by: []const u8 = "_y"; pal.stderr_write(d2by);
+                var d2by: []const u8 = "y"; pal.stderr_write(d2by);
                 var skv: u8 = second.kind; var d2yb2: [10]u8 = undefined; var d2yl2 = itoa_mod.itoa(@intCast(u32, skv), d2yb2[0..]); var d2ys2: usize = @intCast(usize, 9) - @intCast(usize, d2yl2); pal.stderr_write(d2yb2[d2ys2..@intCast(usize, 9)]);
+                var d2blen: []const u8 = "L"; pal.stderr_write(d2blen);
+                var d2blenb: [10]u8 = undefined; var d2blenl = itoa_mod.itoa(@intCast(u32, ec.len), d2blenb[0..]); var d2blens: usize = @intCast(usize, 9) - @intCast(usize, d2blenl); pal.stderr_write(d2blenb[d2blens..@intCast(usize, 9)]);
+                if (ec.len >= @intCast(usize, 3)) {
+                    var third = store.nodes.items[@intCast(usize, ec[2])];
+                    var d2bz: []const u8 = "z"; pal.stderr_write(d2bz);
+                    var tzv: u8 = third.kind; var d2zxb2: [10]u8 = undefined; var d2zxl2 = itoa_mod.itoa(@intCast(u32, tzv), d2zxb2[0..]); var d2zxs2: usize = @intCast(usize, 9) - @intCast(usize, d2zxl2); pal.stderr_write(d2zxb2[d2zxs2..@intCast(usize, 9)]);
+                }
                 var d2bnl: []const u8 = "\n"; pal.stderr_write(d2bnl);
             }
         }
@@ -1005,9 +1012,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     } });
                                 return result;
                             } else { var a3f: []const u8 = "F3aK\n"; pal.stderr_write(a3f); }
-                        } else { var a3m: []const u8 = "F3aM"; pal.stderr_write(a3m); }
+                        } else { var a3m: []const u8 = "F3aMf"; pal.stderr_write(a3m); var a3mb: [10]u8 = undefined; var a3ml = itoa_mod.itoa(field_name_id, a3mb[0..]); var a3ms: usize = @intCast(usize, 9) - @intCast(usize, a3ml); pal.stderr_write(a3mb[a3ms..@intCast(usize, 9)]); var a3mns: []const u8 = " "; pal.stderr_write(a3mns); }
                     }
-                } else { var a3b: []const u8 = "F3aB"; pal.stderr_write(a3b); }
+                } else { var a3b: []const u8 = "F3aBn"; pal.stderr_write(a3b); var a3bb: [10]u8 = undefined; var a3bl = itoa_mod.itoa(base_name_id, a3bb[0..]); var a3bs: usize = @intCast(usize, 9) - @intCast(usize, a3bl); pal.stderr_write(a3bb[a3bs..@intCast(usize, 9)]); var a3bns: []const u8 = " "; pal.stderr_write(a3bns); }
             }
         } else if (callee_node.kind == AstKind.ident_expr) {
             var callee_name_id = store.identifiers.items[@intCast(usize, callee_node.payload)];

@@ -1648,10 +1648,21 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
              var sep3: []const u8 = ";\n";
              bufferedWriterWrite(&emitter.writer, sep3);
          },
-        .assign_index => |a| {
+         .assign_index => |a| {
             var base = mangleTempName(emitter.interner, a.base);
             var idx = mangleTempName(emitter.interner, a.index);
             var src = mangleTempName(emitter.interner, a.src);
+            var adm: []const u8 = "/*==MARKER_AIDX base=";
+            bufferedWriterWrite(&emitter.writer, adm);
+            bufferedWriterWrite(&emitter.writer, base);
+            var adsep: []const u8 = " idx=";
+            bufferedWriterWrite(&emitter.writer, adsep);
+            bufferedWriterWrite(&emitter.writer, idx);
+            var adsep2: []const u8 = " src=";
+            bufferedWriterWrite(&emitter.writer, adsep2);
+            bufferedWriterWrite(&emitter.writer, src);
+            var adend: []const u8 = "==*/\n";
+            bufferedWriterWrite(&emitter.writer, adend);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, base);
             var sep: []const u8 = "[";
