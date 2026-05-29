@@ -415,6 +415,15 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                             }
                         }
                     }
+                } else {
+                    var v2m: []const u8 = "V2:"; pal.stderr_write(v2m);
+                    var init_type = sa_mod.semanticAnalyzerResolveExpr(&sa, decl.child_1);
+                    var v2tb: [20]u8 = undefined; var v2tl = itoa_mod.itoa(init_type, v2tb[0..]); var v2ts: usize = @intCast(usize, 19) - @intCast(usize, v2tl); pal.stderr_write(v2tb[v2ts..@intCast(usize, 19)]);
+                    var v2nl: []const u8 = "\n"; pal.stderr_write(v2nl);
+                    if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED) {
+                        resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decl.child_1, init_type);
+                        resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], init_type);
+                    }
                 }
             }
         }
@@ -694,7 +703,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     pal.stderr_write(rbuf[rstart..@intCast(usize, 19)]);
                     var sp2: []const u8 = " ";
                     pal.stderr_write(sp2);
-                    if (decl.kind == AstKind.fn_decl) {
+            if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.stderr_write(mf);
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
                         lowerer.module_id = mods[mi].id;

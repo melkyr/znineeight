@@ -179,9 +179,12 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
 fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, mod_id: u32, decl_idx: u32, g: *DepGraph, reg: *mr_mod.ModuleRegistry) void {
     var node = store.nodes.items[decl_idx];
     switch (node.kind) {
-        AstKind.var_decl => {
-            var ra_msg: []const u8 = "Ra"; pal_mod.stderr_write(ra_msg);
-            var name_id = node.payload;
+         AstKind.var_decl => {
+             var ra_msg: []const u8 = "Ra"; pal_mod.stderr_write(ra_msg);
+             var name_id = node.payload;
+             var d12m: []const u8 = "D12:n"; pal_mod.stderr_write(d12m);
+             var d12b: [20]u8 = undefined; var d12l = itoa_mod.itoa(name_id, d12b[0..]); var d12s: usize = @intCast(usize, 19) - @intCast(usize, d12l); pal_mod.stderr_write(d12b[d12s..@intCast(usize, 19)]);
+             var d12nl: []const u8 = "\n"; pal_mod.stderr_write(d12nl);
             var sym_kind = sym_mod.SymbolKind.global;
             var sym_mod_id = mod_id;
             var sym_type_id: u32 = @intCast(u32, 0);

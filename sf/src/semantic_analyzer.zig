@@ -913,6 +913,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             pal_mod.stderr_write(vdi);
             var it = semanticAnalyzerResolveExpr(self, node.child_1);
             if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
+            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
         }
         if (self.local_decl_count >= self.local_decl_cap) {
             semanticAnalyzerGrowLocalDecls(self);
