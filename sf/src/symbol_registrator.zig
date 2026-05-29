@@ -189,6 +189,8 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 if (init_node.kind == AstKind.import_expr) {
                     var target = hash_mod.u32ToU32MapGet(&reg.path_to_id, init_node.payload);
+                    var m5m: []const u8 = "M5:p"; pal_mod.stderr_write(m5m);
+                    var m5pb: [20]u8 = undefined; var m5pl = itoa_mod.itoa(init_node.payload, m5pb[0..]); var m5ps: usize = @intCast(usize, 19) - @intCast(usize, m5pl); pal_mod.stderr_write(m5pb[m5ps..@intCast(usize, 19)]);
                     if (target) |mtid| {
                         var rs_msg: []const u8 = "Rs"; pal_mod.stderr_write(rs_msg);
                         sym_kind = sym_mod.SymbolKind.module;

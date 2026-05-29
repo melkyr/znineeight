@@ -713,8 +713,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          }
                      }
                     }
-                     var skip_rt: u32 = s.type_id;
-                     if (skip_rt != @intCast(u32, 0)) {
+                      var gdb_here: []const u8 = "GDB_HERE_SYM"; pal.stderr_write(gdb_here);
+                      var gtdb: [20]u8 = undefined; var gtdl = itoa_mod.itoa(s.type_id, gtdb[0..]); var gtds: usize = @intCast(usize, 19) - @intCast(usize, gtdl); pal.stderr_write(gtdb[gtds..@intCast(usize, 19)]);
+                      var gkk: u32 = s.kind;
+                      var gkdb: [20]u8 = undefined; var gkdl = itoa_mod.itoa(gkk, gkdb[0..]); var gkds: usize = @intCast(usize, 19) - @intCast(usize, gkdl); pal.stderr_write(gkdb[gkds..@intCast(usize, 19)]);
+                      var gdn: []const u8 = "d"; pal.stderr_write(gdn);
+                      var gddb: [20]u8 = undefined; var gddl = itoa_mod.itoa(s.decl_node, gddb[0..]); var gdds: usize = @intCast(usize, 19) - @intCast(usize, gddl); pal.stderr_write(gddb[gdds..@intCast(usize, 19)]);
+                      var gnn: []const u8 = "n"; pal.stderr_write(gnn);
+                      var gndb: [20]u8 = undefined; var gndl = itoa_mod.itoa(s.name_id, gndb[0..]); var gnds: usize = @intCast(usize, 19) - @intCast(usize, gndl); pal.stderr_write(gndb[gnds..@intCast(usize, 19)]);
+                      var gnl2: []const u8 = "\n"; pal.stderr_write(gnl2);
+                      var skip_rt: u32 = s.type_id;
+                      if (skip_rt != @intCast(u32, 0)) {
                          var srty = self.ctx.registry.types_items[@intCast(usize, skip_rt)];
                          if (srty.kind == type_mod.TypeKind.fn_type or srty.kind == type_mod.TypeKind.module_type) {
                              return type_mod.TYPE_UNDEFINED;
@@ -746,7 +755,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         var arr_temp: u32 = findLocalTemp(self, name_id);
         var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (rt) |t| { if (t != type_mod.TYPE_UNDEFINED) { ptype = t; } }
+        if (rt) |t| {
+            if (t != type_mod.TYPE_UNDEFINED) {
+                var rty = self.ctx.registry.types_items[@intCast(usize, t)];
+                if (rty.kind == type_mod.TypeKind.fn_type or rty.kind == type_mod.TypeKind.module_type) {
+                    return @intCast(u32, 0);
+                }
+                ptype = t;
+            }
+        }
         if (ptype == type_mod.TYPE_UNDEFINED) { ptype = type_mod.TYPE_U32; }
         if (arr_temp != @intCast(u32, 0)) { return arr_temp; }
         var tid = nextTemp(self, ptype);
