@@ -990,6 +990,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     .args_count = @intCast(u32, ec.len),
                     .result = result,
                     .return_type = fp.return_type,
+                     .is_extern = fp.is_extern,
                 } });
                 return result;
             }
@@ -1086,6 +1087,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                         .args_start = call_ns,
                                         .args_count = args_count,
                                         .result = result,
+                                         .is_extern = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)),
                                         .return_type = self._fn_ret_type,
                                     } });
                                 return result;
@@ -1144,6 +1146,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         .args_start = args_start,
                         .args_count = args_count,
                         .result = result,
+                         .is_extern = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)),
                         .return_type = self._fn_ret_type,
                     } });
                     return result;

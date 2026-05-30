@@ -876,6 +876,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
 "; pal.stderr_write(fwdnl2);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
+     if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
     if (is_main == @intCast(u8, 1) and lir_fn.is_pub == @intCast(u8, 1)) {
         var mn: []const u8 = "main";
         fn_name = mn;
@@ -2123,6 +2124,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, mkend);
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+             if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
             var dc2m: []const u8 = "DC2:n"; pal.stderr_write(dc2m);
             var dc2b: [10]u8 = undefined; var dc2l = itoa_mod.itoa(c.name_id, dc2b[0..]); var dc2s: usize = @intCast(usize, 9) - @intCast(usize, dc2l); pal.stderr_write(dc2b[dc2s..@intCast(usize, 9)]);
             var dc2mm: []const u8 = "m"; pal.stderr_write(dc2mm);

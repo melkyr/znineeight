@@ -359,7 +359,8 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                             type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
                         }
                     }
-                    var zz0_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, proto.name_id, mods[mi].id, fn_start, proto.params_count, rt_box[0]);
+                    var is_ext: u8 = @intCast(u8, 0); if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
+                    var zz0_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, proto.name_id, mods[mi].id, is_ext, fn_start, proto.params_count, rt_box[0]);
                     resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], zz0_tid);
                 }
                 if (decl.child_0 != 0) {

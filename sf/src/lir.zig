@@ -40,7 +40,7 @@ pub const LirInst = union(enum) {
     store: struct { ptr: u32, value: u32 },
     addr_of: struct { operand: u32, result: u32 },
     wrap_optional: struct { value: u32, result: u32, type_id: TypeId },
-    call_direct: struct { name_id: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32 },
+    call_direct: struct { name_id: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32, is_extern: u8 },
     unwrap_optional: struct { value: u32, result: u32 },
     check_optional: struct { value: u32, result: u32 },
     wrap_error_ok: struct { value: u32, result: u32, type_id: TypeId },
