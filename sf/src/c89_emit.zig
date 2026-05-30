@@ -217,7 +217,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
     var name = interner_mod.stringInternerGet(self.interner, name_id);
     if (isTempOrBuiltin(name) != @intCast(u8, 0)) return name_id;
     if (isC89Keyword(self, name_id) != @intCast(u8, 0)) return mangleC89Keyword(self, name);
-    var key: u64 = (@intCast(u64, module_id) << @intCast(u64, 32)) | @intCast(u64, name_id);
+    var key: u64 = (@intCast(u64, module_id) << @intCast(u64, 35)) | (@intCast(u64, kind) << @intCast(u64, 32)) | @intCast(u64, name_id);
     if (hash_mod.u64ToU32MapGet(&self.cache, key)) |cached| {
         return cached;
     }
@@ -872,6 +872,8 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     if (orig.len == @intCast(usize, 4)) {
         if (orig[0] == 'm' and orig[1] == 'a' and orig[2] == 'i' and orig[3] == 'n') is_main = @intCast(u8, 1);
     }
+     var fwdm: []const u8 = "FWD:n="; pal.stderr_write(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.stderr_write(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.stderr_write(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.stderr_write(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "
+"; pal.stderr_write(fwdnl2);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
     if (is_main == @intCast(u8, 1) and lir_fn.is_pub == @intCast(u8, 1)) {
@@ -2119,7 +2121,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, mkmmb[mkmms..@intCast(usize, 9)]);
             var mkend: []const u8 = "==*/\n";
             bufferedWriterWrite(&emitter.writer, mkend);
-            var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 1), c.module_id);
+            var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
             var dc2m: []const u8 = "DC2:n"; pal.stderr_write(dc2m);
             var dc2b: [10]u8 = undefined; var dc2l = itoa_mod.itoa(c.name_id, dc2b[0..]); var dc2s: usize = @intCast(usize, 9) - @intCast(usize, dc2l); pal.stderr_write(dc2b[dc2s..@intCast(usize, 9)]);

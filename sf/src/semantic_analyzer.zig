@@ -252,12 +252,12 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rtt) |rtv| {
-                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, proto.params_start, proto.params_count, rtv);
-                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
-                            return fn_ty;
-                        }
-                    }
-                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, proto.params_start, proto.params_count, rtv);
+                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                             return fn_ty;
+                         }
+                     }
+                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, proto.params_start, proto.params_count, type_mod.TYPE_VOID);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                     return fn_ty;
                 }

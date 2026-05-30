@@ -67,7 +67,7 @@ pub const SlicePayload = struct { elem: TypeId };
 pub const OptionalPayload = struct { payload: TypeId };
 pub const EUPayload = struct { payload: TypeId, error_set: TypeId };
 pub const ErrorSetPayload = struct { tags_start: u16, tags_count: u16 };
-pub const FnPayload = struct { name_id: u32, params_start: u16, params_count: u16, return_type: TypeId, flags_packed: u8 };
+pub const FnPayload = struct { name_id: u32, module_id: u32, params_start: u16, params_count: u16, return_type: TypeId, flags_packed: u8 };
 pub const StructPayload = struct { fields_start: u16, fields_count: u16 };
 pub const EnumPayload = struct { members_start: u16, members_count: u16, backing_type: TypeId };
 pub const UnionPayload = struct { fields_start: u16, fields_count: u16, tag_type: TypeId };
@@ -469,18 +469,18 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems
     return tid;
 }
 
-pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, params_start: u16, params_count: u16, return_type: TypeId) u32 {
-    var p2m: []const u8 = "P2:n"; pal.stderr_write(p2m);
-    var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal.stderr_write(p2nb[p2ns..@intCast(usize, 19)]);
-    var i: usize = 0;
-    while (i < self.types_len) : (i += 1) {
-        var it = self.types_items[i];
-        if (it.kind == TypeKind.fn_type and it.name_id == name_id) {
-            var p2hm: []const u8 = "H"; pal.stderr_write(p2hm);
-            return @intCast(u32, i);
-        }
-    }
-    fnAppend(self, FnPayload{ .name_id = name_id, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = @intCast(u8, 0) });
+ pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, params_start: u16, params_count: u16, return_type: TypeId) u32 {
+     var p2m: []const u8 = "P2:n"; pal.stderr_write(p2m);
+     var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal.stderr_write(p2nb[p2ns..@intCast(usize, 19)]);
+     var i: usize = 0;
+     while (i < self.types_len) : (i += 1) {
+         var it = self.types_items[i];
+         if (it.kind == TypeKind.fn_type and it.name_id == name_id and self.fn_items[self.types_items[i].payload_idx].module_id == module_id) {
+             var p2hm: []const u8 = "H"; pal.stderr_write(p2hm);
+             return @intCast(u32, i);
+         }
+     }
+     fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = @intCast(u8, 0) });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.fn_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),

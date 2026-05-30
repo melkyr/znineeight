@@ -978,10 +978,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
                     result = nextTemp(self, fp.return_type);
                 }
-                var rt1: []const u8 = "RT1"; pal.stderr_write(rt1);
-                emitInst(self, LirInst{ .call_direct = .{
-                    .name_id = fp.name_id,
-                    .module_id = self.module_id,
+                 var rt1: []const u8 = "RT1"; pal.stderr_write(rt1);
+                 var call_name: u32 = fp.name_id;
+                 var cn = store.nodes.items[@intCast(usize, node.child_0)];
+                 if (cn.kind == @enumToInt(AstKind.ident_expr)) { call_name = store.identifiers.items[@intCast(usize, cn.payload)]; }
+                 var rt1ni: []const u8 = "ni="; pal.stderr_write(rt1ni); var rt1nb: [10]u8 = undefined; var rt1nl = itoa_mod.itoa(call_name, rt1nb[0..]); var rt1ns: usize = @intCast(usize, 9) - @intCast(usize, rt1nl); pal.stderr_write(rt1nb[rt1ns..@intCast(usize, 9)]); var rt1pf: []const u8 = "fp="; pal.stderr_write(rt1pf); var rt1pb: [10]u8 = undefined; var rt1pl = itoa_mod.itoa(fp.name_id, rt1pb[0..]); var rt1ps: usize = @intCast(usize, 9) - @intCast(usize, rt1pl); pal.stderr_write(rt1pb[rt1ps..@intCast(usize, 9)]); var rt1nl2: []const u8 = " "; pal.stderr_write(rt1nl2);
+                 emitInst(self, LirInst{ .call_direct = .{
+                     .name_id = call_name,
+                     .module_id = fp.module_id,
                     .args_start = args_start,
                     .args_count = @intCast(u32, ec.len),
                     .result = result,
