@@ -1648,7 +1648,14 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
              var sep3: []const u8 = ";\n";
              bufferedWriterWrite(&emitter.writer, sep3);
          },
-         .assign_index => |a| {
+          .assign_index => |a| {
+            var adm2: []const u8 = "AIDX:b"; pal.stderr_write(adm2);
+            var adm2b: [10]u8 = undefined; var adm2l = itoa_mod.itoa(a.base, adm2b[0..]); var adm2s: usize = @intCast(usize, 9) - @intCast(usize, adm2l); pal.stderr_write(adm2b[adm2s..@intCast(usize, 9)]);
+            var adm2i: []const u8 = "i"; pal.stderr_write(adm2i);
+            var adm2ib: [10]u8 = undefined; var adm2il = itoa_mod.itoa(a.index, adm2ib[0..]); var adm2is: usize = @intCast(usize, 9) - @intCast(usize, adm2il); pal.stderr_write(adm2ib[adm2is..@intCast(usize, 9)]);
+            var adm2s2: []const u8 = "s"; pal.stderr_write(adm2s2);
+            var adm2sb: [10]u8 = undefined; var adm2sl = itoa_mod.itoa(a.src, adm2sb[0..]); var adm2ss: usize = @intCast(usize, 9) - @intCast(usize, adm2sl); pal.stderr_write(adm2sb[adm2ss..@intCast(usize, 9)]);
+            var adm2nl2: []const u8 = " "; pal.stderr_write(adm2nl2);
             var base = mangleTempName(emitter.interner, a.base);
             var idx = mangleTempName(emitter.interner, a.index);
             var src = mangleTempName(emitter.interner, a.src);

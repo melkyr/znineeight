@@ -137,8 +137,10 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
      var d8sp: []const u8 = "i"; pal_mod.stderr_write(d8sp);
      var d8ib: [10]u8 = undefined; var d8il = itoa_mod.itoa(node_idx, d8ib[0..]); var d8is: usize = @intCast(usize, 9) - @intCast(usize, d8il); pal_mod.stderr_write(d8ib[d8is..@intCast(usize, 9)]);
       var d8nll: []const u8 = " "; pal_mod.stderr_write(d8nll);
-      if (node_idx == @intCast(u32, 436) or name_id == @intCast(u32, 55)) {
-          var d8kn: []const u8 = "k="; pal_mod.stderr_write(d8kn);
+       if (node_idx == @intCast(u32, 436) or name_id == @intCast(u32, 55)) {
+           var cname = interner_mod.stringInternerGet(self.interner, name_id);
+           pal_mod.stderr_write(cname);
+           var d8kn: []const u8 = " k="; pal_mod.stderr_write(d8kn);
           var cnode = self.store.nodes.items[@intCast(usize, node_idx)];
           var d8kb: [10]u8 = undefined; var d8kl = itoa_mod.itoa(@intCast(u32, cnode.kind), d8kb[0..]); var d8ks: usize = @intCast(usize, 9) - @intCast(usize, d8kl); pal_mod.stderr_write(d8kb[d8ks..@intCast(usize, 9)]);
           var d8rt: []const u8 = "r"; pal_mod.stderr_write(d8rt);
@@ -175,9 +177,9 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                         var fcount: usize = @intCast(usize, tp.fields_count);
                         var fi: usize = 0;
                         while (fi < fcount) : (fi += 1) {
-                            if (self.registry.fe_items[fstart + fi].name_id == field_name_id) {
-                                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
-                                return type_mod.TYPE_U32;
+                             if (self.registry.fe_items[fstart + fi].name_id == field_name_id) {
+                                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, alias_type_id);
+                                return alias_type_id;
                             }
                         }
                     }
@@ -295,6 +297,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fe = self.registry.fe_items[fields_start + fi];
         if (fe.name_id == field_name_id) {
             var result = fe.type_id;
+            if (base_ty.kind == type_mod.TypeKind.tagged_union_type) { result = base_type_id; }
             var ff: []const u8 = "FF:"; pal_mod.stderr_write(ff);
             var ff_b: [20]u8 = undefined; var ff_l = itoa_mod.itoa(result, ff_b[0..]); var ff_s: usize = @intCast(usize, 19) - @intCast(usize, ff_l); pal_mod.stderr_write(ff_b[ff_s..@intCast(usize, 19)]);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
@@ -567,8 +570,8 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                     pal_mod.stderr_write(eg_buf[egs..@intCast(usize, 19)]);
                     var eS: []const u8 = " "; pal_mod.stderr_write(eS);
                     var re: []const u8 = "E"; pal_mod.stderr_write(re);
-                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
-                    return type_mod.TYPE_U32;
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
+                    return self.current_switch_cond_tu;
                 }
             }
         }
@@ -936,16 +939,20 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     if (node_idx == @intCast(u32, 0)) return;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.block) {
-        var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-        var blkm: []const u8 = "BLK:ni="; pal_mod.stderr_write(blkm);
-        var blkb: [20]u8 = undefined; var blkl = itoa_mod.itoa(node_idx, blkb[0..]); var blks: usize = @intCast(usize, 19) - @intCast(usize, blkl); pal_mod.stderr_write(blkb[blks..@intCast(usize, 19)]);
-        var blkc: []const u8 = "c="; pal_mod.stderr_write(blkc);
-        var blkcb: [10]u8 = undefined; var blkcl = itoa_mod.itoa(@intCast(u32, children.len), blkcb[0..]); var blkcs: usize = @intCast(usize, 9) - @intCast(usize, blkcl); pal_mod.stderr_write(blkcb[blkcs..@intCast(usize, 9)]);
-        var blknl: []const u8 = "\n"; pal_mod.stderr_write(blknl);
-        var i: usize = 0;
-        while (i < children.len) : (i += 1) {
-            semanticAnalyzerResolveStmtDepth(self, children[i], depth + @intCast(u32, 1));
-        }
+         var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+         var blkm: []const u8 = "BLK:ni="; pal_mod.stderr_write(blkm);
+         var blkb: [20]u8 = undefined; var blkl = itoa_mod.itoa(node_idx, blkb[0..]); var blks: usize = @intCast(usize, 19) - @intCast(usize, blkl); pal_mod.stderr_write(blkb[blks..@intCast(usize, 19)]);
+         var blkc: []const u8 = "c="; pal_mod.stderr_write(blkc);
+         var blkcb: [10]u8 = undefined; var blkcl = itoa_mod.itoa(@intCast(u32, children.len), blkcb[0..]); var blkcs: usize = @intCast(usize, 9) - @intCast(usize, blkcl); pal_mod.stderr_write(blkcb[blkcs..@intCast(usize, 9)]);
+         var blkk: []const u8 = "k=["; pal_mod.stderr_write(blkk);
+         var i: usize = 0;
+         while (i < children.len) : (i += 1) {
+             if (i > @intCast(usize, 0)) { var bc: []const u8 = ","; pal_mod.stderr_write(bc); }
+             var cnode = self.store.nodes.items[@intCast(usize, children[i])];
+             var bkb: [10]u8 = undefined; var bkl = itoa_mod.itoa(@intCast(u32, @enumToInt(cnode.kind)), bkb[0..]); var bks: usize = @intCast(usize, 9) - @intCast(usize, bkl); pal_mod.stderr_write(bkb[bks..@intCast(usize, 9)]);
+             semanticAnalyzerResolveStmtDepth(self, children[i], depth + @intCast(u32, 1));
+         }
+         var bcej: []const u8 = "]\n"; pal_mod.stderr_write(bcej);
      } else if (node.kind == AstKind.var_decl) {
         if (node.payload == @intCast(u32, 55)) {
             var d10m: []const u8 = "D10:V55c0="; pal_mod.stderr_write(d10m);

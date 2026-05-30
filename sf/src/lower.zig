@@ -425,9 +425,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         pal.stderr_write(eg2b[eg2s..@intCast(usize, 19)]);
         var eRs: []const u8 = " "; pal.stderr_write(eRs);
         var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        var enum_type: [1]u32 = [1]u32{type_mod.TYPE_INT_LIT};
+        var ert = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (ert) |t| { if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) { enum_type[0] = t; } }
         if (ev) |v| { ev_val = @intCast(u64, v); var we1: []const u8 = "WE"; pal.stderr_write(we1); }
         else { var we1: []const u8 = "wE"; pal.stderr_write(we1); }
-        var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
+        var tid = nextTemp(self, enum_type[0]);
         emitInst(self, LirInst{ .int_const = .{ .value = ev_val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.error_literal) {
@@ -717,11 +720,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var base_temp = lowerExpr(self, node.child_0);
         base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var idx_temp = lowerExpr(self, node.child_1);
-        var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; } }
-        else {
-        var reg = self.ctx.registry;
+         var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
+         var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+         if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; var ixh: []const u8 = "IXH"; pal.stderr_write(ixh); var ixhtb: [10]u8 = undefined; var ixhtl = itoa_mod.itoa(t, ixhtb[0..]); var ixhts: usize = @intCast(usize, 9) - @intCast(usize, ixhtl); pal.stderr_write(ixhtb[ixhts..@intCast(usize, 9)]); } }
+         else {
+         var ixm: []const u8 = "IXM"; pal.stderr_write(ixm);
+         var reg = self.ctx.registry;
         var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
         if (bt != type_mod.TYPE_UNDEFINED) {
             var bty = reg.types_items[@intCast(usize, bt)];
@@ -849,9 +853,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var fi: usize = 0;
                             while (fi < fcount) : (fi += 1) {
                                 if (self.ctx.registry.fe_items[fstart + fi].name_id == field_name_id) {
-                                    var tid = nextTemp(self, tp.tag_type);
-                                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, fi), .result = tid } });
-                                    return tid;
+                                    var ft_box: [1]u32 = [1]u32{tp.tag_type};
+                                     var ftrt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                                     var eff_type: [1]u32 = [1]u32{type_id};
+                                     if (ftrt) |t2| { if (t2 != type_mod.TYPE_UNDEFINED and t2 != type_mod.TYPE_VOID) { eff_type[0] = t2; } }
+                                     var tun_temp = nextTemp(self, eff_type[0]);
+                                     var tag_temp = nextTemp(self, tp.tag_type);
+                                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, fi), .result = tag_temp } });
+                                     emitInst(self, LirInst{ .assign_field = .{ .base = tun_temp, .field_id = @intCast(u32, 0), .src = tag_temp } });
+                                     return tun_temp;
                                 }
                             }
                         }
