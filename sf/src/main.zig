@@ -182,26 +182,31 @@ fn runCompiler(ctx: *CompilerContext) void {
     alloc_mod.checkCombinedPeak(ctx.alloc);
     var t2: []const u8 = "t2\n"; pal.stderr_write(t2);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_SemanticAnalysis(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_StaticAnalyzers(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(1);
     }
     if (ctx.cli.track_memory) {

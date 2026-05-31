@@ -1199,7 +1199,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (node.child_0 == self.intcast_name_id) {
             emitInst(self, LirInst{ .int_cast = .{
                 .value = val_temp, .target = t_target, .result = result,
-                .is_checked = @intCast(u8, 1),
+                 .is_checked = @intCast(u8, 0),
             } });
         } else if (node.child_0 == self.inttofloat_name_id) {
             emitInst(self, LirInst{ .int_to_float = .{

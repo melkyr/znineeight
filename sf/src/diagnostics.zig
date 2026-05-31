@@ -331,24 +331,46 @@ pub fn diagnosticCollectorFlushAndExit(self: *DiagnosticCollector, exit_code: u3
 
 pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
     if (self.diagnostics.len == 0) return;
+    var pq: []const u8 = "PA_begin\n"; pal.stderr_write(pq);
     var diags = diagnosticArrayListGetSlice(self.diagnostics);
     sortDiagnostics(diags);
     var i: usize = 0;
     while (i < self.diagnostics.len) {
         var d = &diags[i];
+        if (d.file_id == @intCast(u32, 0)) {
+            writeStr(getLevelName(d.level));
+            var lb0: []const u8 = "[";
+            writeStr(lb0);
+            var code_buf0: [8]u8 = undefined;
+            var code_len0 = formatU32(d.code, code_buf0[0..8]);
+            var kcs0: usize = @intCast(usize, 8) - @intCast(usize, code_len0);
+            writeStr(code_buf0[kcs0..@intCast(usize, 8)]);
+            var rb0: []const u8 = "]: ";
+            writeStr(rb0);
+            if (d.message_id != @intCast(u32, 0)) {
+                var entry0 = self.interner.entries_items[@intCast(usize, d.message_id)];
+                writeStr(entry0.text);
+            }
+            var nl0: []const u8 = "\n";
+            writeStr(nl0);
+            i += 1; continue;
+        }
         var loc = sm_mod.sourceManagerGetLocation(self.source_manager, d.file_id, d.span_start);
         var fname = sm_mod.sourceManagerGetFileName(self.source_manager, d.file_id);
         writeStr(fname);
+        var pf: []const u8 = "PA_fname\n"; pal.stderr_write(pf);
         var col_s: []const u8 = ":";
         writeStr(col_s);
         var line_buf: [16]u8 = undefined;
         var line_len = formatU32(loc.line, line_buf[0..16]);
-        writeStr(line_buf[0..@intCast(usize, line_len)]);
+        var ls: usize = @intCast(usize, 16) - @intCast(usize, line_len);
+        writeStr(line_buf[ls..@intCast(usize, 16)]);
         var col_s2: []const u8 = ":";
         writeStr(col_s2);
         var col_buf: [16]u8 = undefined;
         var col_len = formatU32(loc.col, col_buf[0..16]);
-        writeStr(col_buf[0..@intCast(usize, col_len)]);
+        var cs: usize = @intCast(usize, 16) - @intCast(usize, col_len);
+        writeStr(col_buf[cs..@intCast(usize, 16)]);
         var sep: []const u8 = ": ";
         writeStr(sep);
         writeStr(getLevelName(d.level));
@@ -356,11 +378,14 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         writeStr(lb);
         var code_buf: [8]u8 = undefined;
         var code_len = formatU32(d.code, code_buf[0..8]);
-        writeStr(code_buf[0..@intCast(usize, code_len)]);
+        var kcs: usize = @intCast(usize, 8) - @intCast(usize, code_len);
+        writeStr(code_buf[kcs..@intCast(usize, 8)]);
         var rb: []const u8 = "]: ";
         writeStr(rb);
+        if (d.message_id != @intCast(u32, 0)) {
         var entry = self.interner.entries_items[@intCast(usize, d.message_id)];
         writeStr(entry.text);
+        } else { var em: []const u8 = "(no message)"; writeStr(em); }
         var nl: []const u8 = "\n";
         writeStr(nl);
         var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, d.file_id);
@@ -423,7 +448,8 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
             writeStr(rs_col_s);
             var rs_line_buf: [16]u8 = undefined;
             var rs_line_len = formatU32(rs_loc.line, rs_line_buf[0..16]);
-            writeStr(rs_line_buf[0..@intCast(usize, rs_line_len)]);
+            var rls: usize = @intCast(usize, 16) - @intCast(usize, rs_line_len);
+            writeStr(rs_line_buf[rls..@intCast(usize, 16)]);
             var rs_sep: []const u8 = ": note: ";
             writeStr(rs_sep);
             var rs_msg = self.interner.entries_items[@intCast(usize, rs.message_id)];
@@ -433,4 +459,5 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         }
         i += 1;
     }
+    var pe: []const u8 = "PA_end\n"; pal.stderr_write(pe);
 }
