@@ -1500,28 +1500,28 @@ fn getUnOpStr(op: u8) []const u8 {
 
 fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
-    if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "__bootstrap_checked_cast_i8"; return s; }
-    if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "__bootstrap_checked_cast_i16"; return s; }
-    if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "__bootstrap_checked_cast_i32"; return s; }
-    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "__bootstrap_checked_cast_i64"; return s; }
-    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "__bootstrap_checked_cast_u8"; return s; }
-    if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "__bootstrap_checked_cast_u8"; return s; }
-    if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "__bootstrap_checked_cast_u16"; return s; }
-    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "__bootstrap_checked_cast_u32"; return s; }
-    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "__bootstrap_checked_cast_u64"; return s; }
-    { var s: []const u8 = "__bootstrap_checked_cast_u32"; return s; }
+    if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "std_checked_cast_i8"; return s; }
+    if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "std_checked_cast_i16"; return s; }
+    if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "std_checked_cast_i32"; return s; }
+    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "std_checked_cast_i64"; return s; }
+    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "std_checked_cast_u8"; return s; }
+    if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "std_checked_cast_u8"; return s; }
+    if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "std_checked_cast_u16"; return s; }
+    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "std_checked_cast_u32"; return s; }
+    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "std_checked_cast_u64"; return s; }
+    { var s: []const u8 = "std_checked_cast_u32"; return s; }
 }
 
 fn getPrintFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
-    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "__bootstrap_print_u32"; return s; }
-    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "__bootstrap_print_i64"; return s; }
-    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "__bootstrap_print_u64"; return s; }
-    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "__bootstrap_print_f64"; return s; }
-    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "__bootstrap_print_bool"; return s; }
-    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "__bootstrap_print_char"; return s; }
-    if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "__bootstrap_print_str"; return s; }
-    { var s: []const u8 = "__bootstrap_print_i32"; return s; }
+    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "std_print_u32"; return s; }
+    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "std_print_i64"; return s; }
+    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "std_print_u64"; return s; }
+    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "std_print_f64"; return s; }
+    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "std_print_bool"; return s; }
+    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "std_print_char"; return s; }
+    if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "std_print_str"; return s; }
+    { var s: []const u8 = "std_print_i32"; return s; }
 }
 
 fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
@@ -2292,7 +2292,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .print_str => |p| {
             var str = interner_mod.stringInternerGet(emitter.interner, p.string_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            var s1: []const u8 = "__bootstrap_print(";
+            var s1: []const u8 = "std_print(";
             bufferedWriterWrite(&emitter.writer, s1);
             emitCStringLiteral(&emitter.writer, str);
             var s2: []const u8 = ");\n";
@@ -2411,7 +2411,7 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l010);
     var l011: []const u8 = "/* Panic handler */\n";
     bufferedWriterWrite(writer, l011);
-    var l012: []const u8 = "void __bootstrap_panic(const char* msg) {\n";
+    var l012: []const u8 = "void std_panic(const char* msg) {\n";
     bufferedWriterWrite(writer, l012);
     var l013: []const u8 = "    pal_print_stderr(\"panic: \", 7);\n";
     bufferedWriterWrite(writer, l013);
@@ -2427,87 +2427,87 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l018);
     var l019: []const u8 = "/* Print helpers */\n";
     bufferedWriterWrite(writer, l019);
-    var l020: []const u8 = "void __bootstrap_print(const char* s) { if (s) pal_print_stderr(s, strlen(s)); }\n";
+    var l020: []const u8 = "void std_print(const char* s) { if (s) pal_print_stderr(s, strlen(s)); }\n";
     bufferedWriterWrite(writer, l020);
-    var l021: []const u8 = "void __bootstrap_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stderr(s, len); }\n";
+    var l021: []const u8 = "void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stderr(s, len); }\n";
     bufferedWriterWrite(writer, l021);
     var l022: []const u8 = "\n";
     bufferedWriterWrite(writer, l022);
-    var l023: []const u8 = "void __bootstrap_print_i32(int val) {\n";
+    var l023: []const u8 = "void std_print_i32(int val) {\n";
     bufferedWriterWrite(writer, l023);
     var l024: []const u8 = "    char buf[16];\n";
     bufferedWriterWrite(writer, l024);
     var l025: []const u8 = "    pal_i64_to_str((long long)val, buf, sizeof(buf));\n";
     bufferedWriterWrite(writer, l025);
-    var l026: []const u8 = "    __bootstrap_print(buf);\n";
+    var l026: []const u8 = "    std_print(buf);\n";
     bufferedWriterWrite(writer, l026);
     var l027: []const u8 = "}\n";
     bufferedWriterWrite(writer, l027);
     var l028: []const u8 = "\n";
     bufferedWriterWrite(writer, l028);
-    var l029: []const u8 = "void __bootstrap_print_u32(unsigned int val) {\n";
+    var l029: []const u8 = "void std_print_u32(unsigned int val) {\n";
     bufferedWriterWrite(writer, l029);
     var l030: []const u8 = "    char buf[16];\n";
     bufferedWriterWrite(writer, l030);
     var l031: []const u8 = "    pal_u64_to_str((unsigned long long)val, buf, sizeof(buf));\n";
     bufferedWriterWrite(writer, l031);
-    var l032: []const u8 = "    __bootstrap_print(buf);\n";
+    var l032: []const u8 = "    std_print(buf);\n";
     bufferedWriterWrite(writer, l032);
     var l033: []const u8 = "}\n";
     bufferedWriterWrite(writer, l033);
     var l034: []const u8 = "\n";
     bufferedWriterWrite(writer, l034);
-    var l035: []const u8 = "void __bootstrap_print_i64(long long val) {\n";
+    var l035: []const u8 = "void std_print_i64(long long val) {\n";
     bufferedWriterWrite(writer, l035);
     var l036: []const u8 = "    char buf[24];\n";
     bufferedWriterWrite(writer, l036);
     var l037: []const u8 = "    pal_i64_to_str(val, buf, sizeof(buf));\n";
     bufferedWriterWrite(writer, l037);
-    var l038: []const u8 = "    __bootstrap_print(buf);\n";
+    var l038: []const u8 = "    std_print(buf);\n";
     bufferedWriterWrite(writer, l038);
     var l039: []const u8 = "}\n";
     bufferedWriterWrite(writer, l039);
     var l040: []const u8 = "\n";
     bufferedWriterWrite(writer, l040);
-    var l041: []const u8 = "void __bootstrap_print_u64(unsigned long long val) {\n";
+    var l041: []const u8 = "void std_print_u64(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l041);
     var l042: []const u8 = "    char buf[24];\n";
     bufferedWriterWrite(writer, l042);
     var l043: []const u8 = "    pal_u64_to_str(val, buf, sizeof(buf));\n";
     bufferedWriterWrite(writer, l043);
-    var l044: []const u8 = "    __bootstrap_print(buf);\n";
+    var l044: []const u8 = "    std_print(buf);\n";
     bufferedWriterWrite(writer, l044);
     var l045: []const u8 = "}\n";
     bufferedWriterWrite(writer, l045);
     var l046: []const u8 = "\n";
     bufferedWriterWrite(writer, l046);
-    var l047: []const u8 = "void __bootstrap_print_f64(double val) {\n";
+    var l047: []const u8 = "void std_print_f64(double val) {\n";
     bufferedWriterWrite(writer, l047);
     var l048: []const u8 = "    char buf[32];\n";
     bufferedWriterWrite(writer, l048);
     var l049: []const u8 = "    pal_f64_to_str(val, buf, sizeof(buf));\n";
     bufferedWriterWrite(writer, l049);
-    var l050: []const u8 = "    __bootstrap_print(buf);\n";
+    var l050: []const u8 = "    std_print(buf);\n";
     bufferedWriterWrite(writer, l050);
     var l051: []const u8 = "}\n";
     bufferedWriterWrite(writer, l051);
     var l052: []const u8 = "\n";
     bufferedWriterWrite(writer, l052);
-    var l053: []const u8 = "void __bootstrap_print_bool(int val) {\n";
+    var l053: []const u8 = "void std_print_bool(int val) {\n";
     bufferedWriterWrite(writer, l053);
-    var l054: []const u8 = "    if (val) __bootstrap_print(\"true\");\n";
+    var l054: []const u8 = "    if (val) std_print(\"true\");\n";
     bufferedWriterWrite(writer, l054);
-    var l055: []const u8 = "    else __bootstrap_print(\"false\");\n";
+    var l055: []const u8 = "    else std_print(\"false\");\n";
     bufferedWriterWrite(writer, l055);
     var l056: []const u8 = "}\n";
     bufferedWriterWrite(writer, l056);
     var l057: []const u8 = "\n";
     bufferedWriterWrite(writer, l057);
-    var l058: []const u8 = "void __bootstrap_print_char(unsigned char val) { char c = (char)val; pal_print_stderr(&c, 1); }\n";
+    var l058: []const u8 = "void std_print_char(unsigned char val) { char c = (char)val; pal_print_stderr(&c, 1); }\n";
     bufferedWriterWrite(writer, l058);
     var l059: []const u8 = "\n";
     bufferedWriterWrite(writer, l059);
-    var l060: []const u8 = "void __bootstrap_print_str(const unsigned char* ptr, unsigned int len) {\n";
+    var l060: []const u8 = "void std_print_str(const unsigned char* ptr, unsigned int len) {\n";
     bufferedWriterWrite(writer, l060);
     var l061: []const u8 = "    if (ptr && len) pal_print_stderr((const char*)ptr, len);\n";
     bufferedWriterWrite(writer, l061);
@@ -2519,9 +2519,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l064);
     var l065: []const u8 = "\n";
     bufferedWriterWrite(writer, l065);
-    var l066: []const u8 = "signed char __bootstrap_checked_cast_i8(unsigned long long val) {\n";
+    var l066: []const u8 = "signed char std_checked_cast_i8(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l066);
-    var l067: []const u8 = "    if (val > 127ULL) __bootstrap_panic(\"int cast overflow for i8\");\n";
+    var l067: []const u8 = "    if (val > 127ULL) std_panic(\"int cast overflow for i8\");\n";
     bufferedWriterWrite(writer, l067);
     var l068: []const u8 = "    return (signed char)val;\n";
     bufferedWriterWrite(writer, l068);
@@ -2529,9 +2529,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l069);
     var l070: []const u8 = "\n";
     bufferedWriterWrite(writer, l070);
-    var l071: []const u8 = "unsigned char __bootstrap_checked_cast_u8(unsigned long long val) {\n";
+    var l071: []const u8 = "unsigned char std_checked_cast_u8(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l071);
-    var l072: []const u8 = "    if (val > 255ULL) __bootstrap_panic(\"int cast overflow for u8\");\n";
+    var l072: []const u8 = "    if (val > 255ULL) std_panic(\"int cast overflow for u8\");\n";
     bufferedWriterWrite(writer, l072);
     var l073: []const u8 = "    return (unsigned char)val;\n";
     bufferedWriterWrite(writer, l073);
@@ -2539,9 +2539,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l074);
     var l075: []const u8 = "\n";
     bufferedWriterWrite(writer, l075);
-    var l076: []const u8 = "short __bootstrap_checked_cast_i16(unsigned long long val) {\n";
+    var l076: []const u8 = "short std_checked_cast_i16(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l076);
-    var l077: []const u8 = "    if (val > 32767ULL) __bootstrap_panic(\"int cast overflow for i16\");\n";
+    var l077: []const u8 = "    if (val > 32767ULL) std_panic(\"int cast overflow for i16\");\n";
     bufferedWriterWrite(writer, l077);
     var l078: []const u8 = "    return (short)val;\n";
     bufferedWriterWrite(writer, l078);
@@ -2549,9 +2549,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l079);
     var l080: []const u8 = "\n";
     bufferedWriterWrite(writer, l080);
-    var l081: []const u8 = "unsigned short __bootstrap_checked_cast_u16(unsigned long long val) {\n";
+    var l081: []const u8 = "unsigned short std_checked_cast_u16(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l081);
-    var l082: []const u8 = "    if (val > 65535ULL) __bootstrap_panic(\"int cast overflow for u16\");\n";
+    var l082: []const u8 = "    if (val > 65535ULL) std_panic(\"int cast overflow for u16\");\n";
     bufferedWriterWrite(writer, l082);
     var l083: []const u8 = "    return (unsigned short)val;\n";
     bufferedWriterWrite(writer, l083);
@@ -2559,9 +2559,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l084);
     var l085: []const u8 = "\n";
     bufferedWriterWrite(writer, l085);
-    var l086: []const u8 = "int __bootstrap_checked_cast_i32(unsigned long long val) {\n";
+    var l086: []const u8 = "int std_checked_cast_i32(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l086);
-    var l087: []const u8 = "    if (val > 2147483647ULL) __bootstrap_panic(\"int cast overflow for i32\");\n";
+    var l087: []const u8 = "    if (val > 2147483647ULL) std_panic(\"int cast overflow for i32\");\n";
     bufferedWriterWrite(writer, l087);
     var l088: []const u8 = "    return (int)val;\n";
     bufferedWriterWrite(writer, l088);
@@ -2569,9 +2569,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l089);
     var l090: []const u8 = "\n";
     bufferedWriterWrite(writer, l090);
-    var l091: []const u8 = "unsigned int __bootstrap_checked_cast_u32(unsigned long long val) {\n";
+    var l091: []const u8 = "unsigned int std_checked_cast_u32(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l091);
-    var l092: []const u8 = "    if (val > 4294967295ULL) __bootstrap_panic(\"int cast overflow for u32\");\n";
+    var l092: []const u8 = "    if (val > 4294967295ULL) std_panic(\"int cast overflow for u32\");\n";
     bufferedWriterWrite(writer, l092);
     var l093: []const u8 = "    return (unsigned int)val;\n";
     bufferedWriterWrite(writer, l093);
@@ -2579,9 +2579,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l094);
     var l095: []const u8 = "\n";
     bufferedWriterWrite(writer, l095);
-    var l096: []const u8 = "long long __bootstrap_checked_cast_i64(unsigned long long val) {\n";
+    var l096: []const u8 = "long long std_checked_cast_i64(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l096);
-    var l097: []const u8 = "    if (val > 9223372036854775807ULL) __bootstrap_panic(\"int cast overflow for i64\");\n";
+    var l097: []const u8 = "    if (val > 9223372036854775807ULL) std_panic(\"int cast overflow for i64\");\n";
     bufferedWriterWrite(writer, l097);
     var l098: []const u8 = "    return (long long)val;\n";
     bufferedWriterWrite(writer, l098);
@@ -2589,7 +2589,7 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l099);
     var l100: []const u8 = "\n";
     bufferedWriterWrite(writer, l100);
-    var l101: []const u8 = "unsigned long long __bootstrap_checked_cast_u64(unsigned long long val) {\n";
+    var l101: []const u8 = "unsigned long long std_checked_cast_u64(unsigned long long val) {\n";
     bufferedWriterWrite(writer, l101);
     var l102: []const u8 = "    return val;\n";
     bufferedWriterWrite(writer, l102);
