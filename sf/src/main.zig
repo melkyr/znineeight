@@ -514,7 +514,26 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         var child_type = resolveTypeExprDepth(ctx, node.child_0, depth + @intCast(u32, 1));
         if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
         if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type) {
-            return child_type;
+            var ptm: []const u8 = "PTR:i"; pal.stderr_write(ptm);
+            var ptib: [10]u8 = undefined; var ptil = itoa_mod.itoa(node_idx, ptib[0..]); var ptis: usize = @intCast(usize, 9) - @intCast(usize, ptil); pal.stderr_write(ptib[ptis..@intCast(usize, 9)]);
+            var ptkm: []const u8 = "k"; pal.stderr_write(ptkm);
+            var ptkb: [10]u8 = undefined; var ptkl = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), ptkb[0..]); var ptks: usize = @intCast(usize, 9) - @intCast(usize, ptkl); pal.stderr_write(ptkb[ptks..@intCast(usize, 9)]);
+            var ptcm: []const u8 = "c"; pal.stderr_write(ptcm);
+            var ptcb: [10]u8 = undefined; var ptcl = itoa_mod.itoa(child_type, ptcb[0..]); var ptcs: usize = @intCast(usize, 9) - @intCast(usize, ptcl); pal.stderr_write(ptcb[ptcs..@intCast(usize, 9)]);
+            var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+            if (node.kind == AstKind.ptr_type) {
+                var ptr_tid = type_mod.typeRegistryGetOrCreatePtr(ctx.typereg, child_type, is_const);
+                var ppm: []const u8 = "P"; pal.stderr_write(ppm);
+                var ppb: [10]u8 = undefined; var ppl = itoa_mod.itoa(ptr_tid, ppb[0..]); var pps: usize = @intCast(usize, 9) - @intCast(usize, ppl); pal.stderr_write(ppb[pps..@intCast(usize, 9)]);
+                var pnl: []const u8 = "\n"; pal.stderr_write(pnl);
+                return ptr_tid;
+            } else {
+                var ptr_tid2 = type_mod.typeRegistryGetOrCreateManyPtr(ctx.typereg, child_type, is_const);
+                var ppm2: []const u8 = "M"; pal.stderr_write(ppm2);
+                var ppb2: [10]u8 = undefined; var ppl2 = itoa_mod.itoa(ptr_tid2, ppb2[0..]); var pps2: usize = @intCast(usize, 9) - @intCast(usize, ppl2); pal.stderr_write(ppb2[pps2..@intCast(usize, 9)]);
+                var pnl2: []const u8 = "\n"; pal.stderr_write(pnl2);
+                return ptr_tid2;
+            }
         }
         if (node.kind == AstKind.slice_type) {
             var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);

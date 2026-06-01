@@ -1659,10 +1659,15 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
              }
              var sep2: []const u8 = " = ";
              bufferedWriterWrite(&emitter.writer, sep2);
-             bufferedWriterWrite(&emitter.writer, src);
-             var sep3: []const u8 = ";\n";
-             bufferedWriterWrite(&emitter.writer, sep3);
-         },
+              bufferedWriterWrite(&emitter.writer, src);
+              var sep3: []const u8 = ";\n";
+              bufferedWriterWrite(&emitter.writer, sep3);
+              var afe_m: []const u8 = "AFE:b"; pal.stderr_write(afe_m);
+              var afe_bb: [10]u8 = undefined; var afe_bl = itoa_mod.itoa(a.base, afe_bb[0..]); var afe_bs: usize = @intCast(usize, 9) - @intCast(usize, afe_bl); pal.stderr_write(afe_bb[afe_bs..@intCast(usize, 9)]);
+              var afe_fm: []const u8 = "f"; pal.stderr_write(afe_fm);
+              var afe_fb: [10]u8 = undefined; var afe_fl = itoa_mod.itoa(a.field_id, afe_fb[0..]); var afe_fs: usize = @intCast(usize, 9) - @intCast(usize, afe_fl); pal.stderr_write(afe_fb[afe_fs..@intCast(usize, 9)]);
+              var afe_nl: []const u8 = "\n"; pal.stderr_write(afe_nl);
+          },
           .assign_index => |a| {
             var adm2: []const u8 = "AIDX:b"; pal.stderr_write(adm2);
             var adm2b: [10]u8 = undefined; var adm2l = itoa_mod.itoa(a.base, adm2b[0..]); var adm2s: usize = @intCast(usize, 9) - @intCast(usize, adm2l); pal.stderr_write(adm2b[adm2s..@intCast(usize, 9)]);
