@@ -6,6 +6,7 @@ const StringInterner = @import("string_interner.zig").StringInterner;
 const interner_mod = @import("string_interner.zig");
 const pal_mod = @import("pal.zig");
 const hash_mod = @import("util/hash.zig");
+const SourceManager = @import("source_manager.zig").SourceManager;
 
 pub const ModuleState = enum(u8) {
     pending,
@@ -18,6 +19,7 @@ pub const ModuleState = enum(u8) {
 pub const ModuleEntry = struct {
     id: u32,
     path_id: u32,
+    source_file_id: u32,
     state: ModuleState,
     ast_root: u32,
     import_count: u32,
@@ -162,6 +164,7 @@ pub const ModuleRegistry = struct {
     resolver: ModuleResolver,
     interner: *StringInterner,
     diag: *DiagnosticCollector,
+    source_man: *SourceManager,
     alloc: *Sand,
     next_id: u32,
     path_to_id: hash_mod.U32ToU32Map,
@@ -186,6 +189,8 @@ fn importEdgesAppend(items: *[*]u32, len: *usize, cap: *usize, alloc: *Sand, val
     len.* += 1;
 }
 
+var source_man_stub: u8 = 0;
+
 pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *DiagnosticCollector) ModuleRegistry {
     return ModuleRegistry{
         .modules = moduleEntryArrayListInit(alloc, 8),
@@ -196,6 +201,7 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .resolver = moduleResolverInit(alloc, interner, diag),
         .interner = interner,
         .diag = diag,
+        .source_man = @ptrCast(*SourceManager, &source_man_stub),
         .alloc = alloc,
         .next_id = @intCast(u32, 0),
         .path_to_id = hash_mod.u32ToU32MapInit(alloc),
@@ -203,11 +209,16 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
     };
 }
 
+pub fn moduleRegistrySetSourceMan(self: *ModuleRegistry, sm: *SourceManager) void {
+    self.source_man = sm;
+}
+
 pub fn moduleRegistryAddModule(self: *ModuleRegistry, path_id: u32) u32 {
     var id = self.next_id;
     var entry = ModuleEntry{
         .id = id,
         .path_id = path_id,
+        .source_file_id = @intCast(u32, 0),
         .state = ModuleState.pending,
         .ast_root = @intCast(u32, 0),
         .import_count = @intCast(u32, 0),

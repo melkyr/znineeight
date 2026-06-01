@@ -135,6 +135,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     token_mod.initKeywordTable(&perm_sand);
     var name_mangler = nm_mod.nameManglerInit();
     var mr = mr_mod.moduleRegistryInit(&perm_sand, &interner, &diag);
+    mr_mod.moduleRegistrySetSourceMan(&mr, &source_man);
     var type_db_buf: [131072]u8 = undefined;
     var type_db = alloc_mod.sandInit(type_db_buf[0..]);
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);

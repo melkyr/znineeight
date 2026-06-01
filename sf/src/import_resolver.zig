@@ -9,6 +9,7 @@ const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
 const itoa_mod = @import("util/itoa.zig");
+const sm_mod = @import("source_manager.zig");
 const AstKind = @import("ast.zig").AstKind;
 
 fn tokenArrayEnsureCapacity(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
@@ -30,10 +31,14 @@ fn tokenArrayAppend(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, va
 }
 
 fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) ?u32 {
+    var path_s = interner_mod.stringInternerGet(reg.interner, reg.modules.items[mod_id].path_id);
+    var file_id = sm_mod.sourceManagerAddFile(reg.source_man, path_s, content);
+    reg.modules.items[mod_id].source_file_id = file_id;
+
     var tok_items: [*]Token = undefined;
     var tok_len: usize = 0;
     var tok_cap: usize = 0;
-    var lex = lexer_mod.lexerInit(content, @intCast(u32, 0), reg.interner, reg.diag, scratch);
+    var lex = lexer_mod.lexerInit(content, file_id, reg.interner, reg.diag, scratch);
     while (true) {
         var t = lexer_mod.lexerNextToken(&lex);
         tokenArrayAppend(&tok_items, &tok_len, &tok_cap, scratch, t);

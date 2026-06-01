@@ -50,6 +50,7 @@ pub const Parser = struct {
     expr_depth: u32,
     module_reg: ?*ModuleRegistry,
     current_module_id: u32,
+    file_id: u32,
 };
 
 pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Parser {
@@ -78,12 +79,14 @@ pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, i
         .builtin_import_id = import_id,
         .module_reg = null,
         .current_module_id = @intCast(u32, 0),
+        .file_id = @intCast(u32, 0),
     };
 }
 
 pub fn parserSetModuleContext(self: *Parser, reg: *ModuleRegistry, mod_id: u32) void {
     self.module_reg = reg;
     self.current_module_id = mod_id;
+    self.file_id = reg.modules.items[mod_id].source_file_id;
 }
 
 pub fn parserTokenText(self: *Parser, tok: ParseToken) []const u8 {
@@ -124,7 +127,7 @@ pub fn parserExpect(self: *Parser, kind: TokenKind) ParserError!ParseToken {
 
 pub fn parserAddError(self: *Parser, tok: Token, msg: []const u8) void {
     diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 2000),
-        @intCast(u32, 0), tok.span_start, tok.span_start + @intCast(u32, tok.span_len), msg);
+        self.file_id, tok.span_start, tok.span_start + @intCast(u32, tok.span_len), msg);
 }
 
 pub fn parserSynchronize(self: *Parser) void {

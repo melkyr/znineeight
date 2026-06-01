@@ -142,7 +142,7 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
            pal_mod.stderr_write(cname);
            var d8kn: []const u8 = " k="; pal_mod.stderr_write(d8kn);
           var cnode = self.store.nodes.items[@intCast(usize, node_idx)];
-          var d8kb: [10]u8 = undefined; var d8kl = itoa_mod.itoa(@intCast(u32, cnode.kind), d8kb[0..]); var d8ks: usize = @intCast(usize, 9) - @intCast(usize, d8kl); pal_mod.stderr_write(d8kb[d8ks..@intCast(usize, 9)]);
+          var d8kb: [10]u8 = undefined; var d8kl = itoa_mod.itoa(@intCast(u32, @enumToInt(cnode.kind)), d8kb[0..]); var d8ks: usize = @intCast(usize, 9) - @intCast(usize, d8kl); pal_mod.stderr_write(d8kb[d8ks..@intCast(usize, 9)]);
           var d8rt: []const u8 = "r"; pal_mod.stderr_write(d8rt);
           var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node_idx);
           if (rt) |t| { var d8tb: [10]u8 = undefined; var d8tl = itoa_mod.itoa(t, d8tb[0..]); var d8ts: usize = @intCast(usize, 9) - @intCast(usize, d8tl); pal_mod.stderr_write(d8tb[d8ts..@intCast(usize, 9)]); }

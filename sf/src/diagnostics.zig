@@ -185,7 +185,7 @@ pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 36) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(Diagnostic)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Diagnostic, raw);
     for (self.items[0..self.len]) |item, i| {
         new_items[i] = item;
