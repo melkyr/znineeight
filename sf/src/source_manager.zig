@@ -97,41 +97,47 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
         .content = content_copy,
         .line_offsets = lo_ptr,
     });
-    return @intCast(u32, self.files.len - 1);
+    return @intCast(u32, self.files.len);
 }
 
 pub fn sourceManagerGetFileName(self: *SourceManager, file_id: u32) []const u8 {
+    if (file_id == @intCast(u32, 0)) { var dummy: []const u8 = ""; return dummy; }
     var files_slice = sourceFileArrayListGetSlice(self.files);
     if (files_slice.len == @intCast(usize, 0)) { var dummy: []const u8 = ""; return dummy; }
     var fid = file_id;
-    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
-    return files_slice[@intCast(usize, fid)].filename;
+    if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    return files_slice[@intCast(usize, fid - 1)].filename;
 }
 
 pub fn sourceManagerGetSourceContent(self: *SourceManager, file_id: u32) []const u8 {
+    if (file_id == @intCast(u32, 0)) { var dummy: []const u8 = ""; return dummy; }
     var files_slice = sourceFileArrayListGetSlice(self.files);
     if (files_slice.len == @intCast(usize, 0)) { var dummy: []const u8 = ""; return dummy; }
     var fid = file_id;
-    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
-    return files_slice[@intCast(usize, fid)].content;
+    if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    return files_slice[@intCast(usize, fid - 1)].content;
 }
 
 pub fn sourceManagerGetLineOffsets(self: *SourceManager, file_id: u32) []u32 {
+    if (file_id == @intCast(u32, 0)) { var dummy: [0]u32 = undefined; return dummy[0..]; }
     var files_slice = sourceFileArrayListGetSlice(self.files);
     if (files_slice.len == @intCast(usize, 0)) { var dummy: [0]u32 = undefined; return dummy[0..]; }
     var fid = file_id;
-    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
-    return ga_mod.u32ArrayListGetSlice(files_slice[@intCast(usize, fid)].line_offsets);
+    if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    return ga_mod.u32ArrayListGetSlice(files_slice[@intCast(usize, fid - 1)].line_offsets);
 }
 
 pub fn sourceManagerGetLocation(self: *SourceManager, file_id: u32, offset: u32) Location {
+    if (file_id == @intCast(u32, 0)) {
+        return Location{ .file_id = @intCast(u32, 0), .line = @intCast(u32, 0), .col = @intCast(u32, 0) };
+    }
     var files_slice = sourceFileArrayListGetSlice(self.files);
     var fid: u32 = file_id;
     if (files_slice.len == @intCast(usize, 0)) {
         return Location{ .file_id = @intCast(u32, 0), .line = @intCast(u32, 0), .col = @intCast(u32, 0) };
     }
-    if (fid >= @intCast(u32, files_slice.len)) fid = @intCast(u32, 0);
-    var file = &files_slice[@intCast(usize, fid)];
+    if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    var file = &files_slice[@intCast(usize, fid - 1)];
     var offsets = ga_mod.u32ArrayListGetSlice(file.line_offsets);
     var line_idx = mem_mod.binary_search(offsets, offset);
     var col: u32 = offset - offsets[@intCast(usize, line_idx)];
