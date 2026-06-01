@@ -230,6 +230,8 @@ pub const LirLowerer = struct {
     local_decl_temps: [64]u32,
     local_decl_count: usize,
     _fn_ret_type: u32,
+    _ctx_node_idx: u32,
+    _ctx_node_kind: u32,
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
@@ -258,6 +260,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .local_decl_temps = undefined,
         .local_decl_count = @intCast(usize, 0),
         ._fn_ret_type = @intCast(u32, 0),
+        ._ctx_node_idx = @intCast(u32, 0),
+        ._ctx_node_kind = @intCast(u32, 0),
     };
 }
 
@@ -275,10 +279,12 @@ pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
 pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
     var tid = self.temp_counter;
     if (type_id == type_mod.TYPE_UNDEFINED or type_id == type_mod.TYPE_VOID) {
-        var nm: []const u8 = "N"; pal.stderr_write(nm);
-        var ntb: [20]u8 = undefined; var ntl = itoa_mod.itoa(tid, ntb[0..]); var nts: usize = @intCast(usize, 19) - @intCast(usize, ntl); pal.stderr_write(ntb[nts..@intCast(usize, 19)]);
+        var nm: []const u8 = "NXT:i"; pal.stderr_write(nm);
+        var ntb: [20]u8 = undefined; var ntl = itoa_mod.itoa(self._ctx_node_idx, ntb[0..]); var nts: usize = @intCast(usize, 19) - @intCast(usize, ntl); pal.stderr_write(ntb[nts..@intCast(usize, 19)]);
+        var nkp: []const u8 = "k"; pal.stderr_write(nkp);
+        var nkb: [20]u8 = undefined; var nkl = itoa_mod.itoa(self._ctx_node_kind, nkb[0..]); var nks: usize = @intCast(usize, 19) - @intCast(usize, nkl); pal.stderr_write(nkb[nks..@intCast(usize, 19)]);
         var ntp: []const u8 = "t"; pal.stderr_write(ntp);
-        var ntpb: [20]u8 = undefined; var ntpl = itoa_mod.itoa(type_id, ntpb[0..]); var ntps: usize = @intCast(usize, 19) - @intCast(usize, ntpl); pal.stderr_write(ntpb[ntps..@intCast(usize, 19)]);
+        var ntpb: [20]u8 = undefined; var ntpl = itoa_mod.itoa(tid, ntpb[0..]); var ntps: usize = @intCast(usize, 19) - @intCast(usize, ntpl); pal.stderr_write(ntpb[ntps..@intCast(usize, 19)]);
         var nnl: []const u8 = " "; pal.stderr_write(nnl);
     }
     self.temp_counter += @intCast(u32, 1);
@@ -371,7 +377,19 @@ fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
 }
 
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
-    var blm: []const u8 = "GBL"; pal.stderr_write(blm);
+    self._ctx_node_idx = node_idx;
+    self._ctx_node_kind = @intCast(u32, @enumToInt(self.ctx.store.nodes.items[@intCast(usize, node_idx)].kind));
+    var gb_im: []const u8 = "GBL:i"; pal.stderr_write(gb_im);
+    var gb_ib: [10]u8 = undefined; var gb_il = itoa_mod.itoa(node_idx, gb_ib[0..]); var gb_is: usize = @intCast(usize, 9) - @intCast(usize, gb_il); pal.stderr_write(gb_ib[gb_is..@intCast(usize, 9)]);
+    var gb_km: []const u8 = "k"; pal.stderr_write(gb_km);
+    var gb_kb: [10]u8 = undefined; var gb_kl = itoa_mod.itoa(self._ctx_node_kind, gb_kb[0..]); var gb_ks: usize = @intCast(usize, 9) - @intCast(usize, gb_kl); pal.stderr_write(gb_kb[gb_ks..@intCast(usize, 9)]);
+    var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    if (rt) |trt| {
+        var gb_h: []const u8 = "R"; pal.stderr_write(gb_h);
+        var gb_rb: [10]u8 = undefined; var gb_rl = itoa_mod.itoa(trt, gb_rb[0..]); var gb_rs: usize = @intCast(usize, 9) - @intCast(usize, gb_rl); pal.stderr_write(gb_rb[gb_rs..@intCast(usize, 9)]);
+    } else {
+        var gb_m: []const u8 = "M"; pal.stderr_write(gb_m);
+    }
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
     var t_target: u32 = @intCast(u32, 10);
@@ -686,7 +704,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
             var gn: []const u8 = "\n";
             pal.stderr_write(gn);
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });
+             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });
+            var reg = findLocalTemp(self, name_id);
+            var ass_m: []const u8 = "ASS:n"; pal.stderr_write(ass_m);
+            var ass_nb: [10]u8 = undefined; var ass_nl = itoa_mod.itoa(name_id, ass_nb[0..]); var ass_ns: usize = @intCast(usize, 9) - @intCast(usize, ass_nl); pal.stderr_write(ass_nb[ass_ns..@intCast(usize, 9)]);
+            var ass_rm: []const u8 = "→"; pal.stderr_write(ass_rm);
+            var ass_rb: [10]u8 = undefined; var ass_rl = itoa_mod.itoa(reg, ass_rb[0..]); var ass_rs: usize = @intCast(usize, 9) - @intCast(usize, ass_rl); pal.stderr_write(ass_rb[ass_rs..@intCast(usize, 9)]);
+            var ass_eq: []const u8 = "="; pal.stderr_write(ass_eq);
+            var ass_sb: [10]u8 = undefined; var ass_sl = itoa_mod.itoa(src, ass_sb[0..]); var ass_ss: usize = @intCast(usize, 9) - @intCast(usize, ass_sl); pal.stderr_write(ass_sb[ass_ss..@intCast(usize, 9)]);
+            var ass_nl2: []const u8 = "\n"; pal.stderr_write(ass_nl2);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = src } });
+            }
         } else if (child_node.kind == AstKind.index_access) {
             var base_temp = lowerExpr(self, child_node.child_0);
             base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
@@ -994,6 +1023,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  var call_name: u32 = fp.name_id;
                  var cn = store.nodes.items[@intCast(usize, node.child_0)];
                  if (cn.kind == @enumToInt(AstKind.ident_expr)) { call_name = store.identifiers.items[@intCast(usize, cn.payload)]; }
+                 var fnr: []const u8 = "FNR:n"; pal.stderr_write(fnr);
+                 var fnr_nb: [10]u8 = undefined; var fnr_nl = itoa_mod.itoa(call_name, fnr_nb[0..]); var fnr_ns: usize = @intCast(usize, 9) - @intCast(usize, fnr_nl); pal.stderr_write(fnr_nb[fnr_ns..@intCast(usize, 9)]);
+                 var fnr_rm: []const u8 = "r"; pal.stderr_write(fnr_rm);
+                 var fnr_rb: [10]u8 = undefined; var fnr_rl = itoa_mod.itoa(fp.return_type, fnr_rb[0..]); var fnr_rs: usize = @intCast(usize, 9) - @intCast(usize, fnr_rl); pal.stderr_write(fnr_rb[fnr_rs..@intCast(usize, 9)]);
+                 var fnr_tm: []const u8 = "t"; pal.stderr_write(fnr_tm);
+                 var fnr_tb: [10]u8 = undefined; var fnr_tl = itoa_mod.itoa(result, fnr_tb[0..]); var fnr_ts: usize = @intCast(usize, 9) - @intCast(usize, fnr_tl); pal.stderr_write(fnr_tb[fnr_ts..@intCast(usize, 9)]);
+                 var fnr_nl2: []const u8 = "\n"; pal.stderr_write(fnr_nl2);
                  var rt1ni: []const u8 = "ni="; pal.stderr_write(rt1ni); var rt1nb: [10]u8 = undefined; var rt1nl = itoa_mod.itoa(call_name, rt1nb[0..]); var rt1ns: usize = @intCast(usize, 9) - @intCast(usize, rt1nl); pal.stderr_write(rt1nb[rt1ns..@intCast(usize, 9)]); var rt1pf: []const u8 = "fp="; pal.stderr_write(rt1pf); var rt1pb: [10]u8 = undefined; var rt1pl = itoa_mod.itoa(fp.name_id, rt1pb[0..]); var rt1ps: usize = @intCast(usize, 9) - @intCast(usize, rt1pl); pal.stderr_write(rt1pb[rt1ps..@intCast(usize, 9)]); var rt1nl2: []const u8 = " "; pal.stderr_write(rt1nl2);
                  emitInst(self, LirInst{ .call_direct = .{
                      .name_id = call_name,
@@ -1147,6 +1183,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var c3nl2: []const u8 = "\n"; pal.stderr_write(c3nl2);
                         result = nextTemp(self, self._fn_ret_type);
                     }
+                    var fx2: []const u8 = "FNR2:n"; pal.stderr_write(fx2);
+                    var fx2b: [10]u8 = undefined; var fx2l = itoa_mod.itoa(callee_name_id, fx2b[0..]); var fx2s: usize = @intCast(usize, 9) - @intCast(usize, fx2l); pal.stderr_write(fx2b[fx2s..@intCast(usize, 9)]);
+                    var fx2rm: []const u8 = "r"; pal.stderr_write(fx2rm);
+                    var fx2rb: [10]u8 = undefined; var fx2rl = itoa_mod.itoa(self._fn_ret_type, fx2rb[0..]); var fx2rs: usize = @intCast(usize, 9) - @intCast(usize, fx2rl); pal.stderr_write(fx2rb[fx2rs..@intCast(usize, 9)]);
+                    var fx2tm: []const u8 = "t"; pal.stderr_write(fx2tm);
+                    var fx2tb: [10]u8 = undefined; var fx2tl = itoa_mod.itoa(result, fx2tb[0..]); var fx2ts: usize = @intCast(usize, 9) - @intCast(usize, fx2tl); pal.stderr_write(fx2tb[fx2ts..@intCast(usize, 9)]);
+                    var fxl2: []const u8 = "\n"; pal.stderr_write(fxl2);
                     var ad3m2: []const u8 = "ADX:n"; pal.stderr_write(ad3m2);
                     var adx2b: [10]u8 = undefined; var adx2l = itoa_mod.itoa(sm.name_id, adx2b[0..]); var adx2s: usize = @intCast(usize, 9) - @intCast(usize, adx2l); pal.stderr_write(adx2b[adx2s..@intCast(usize, 9)]);
                     var adx2m: []const u8 = "m"; pal.stderr_write(adx2m);
@@ -1378,7 +1421,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var prong_count = prong_ec.len;
-        var result_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var sw_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+        var sw_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (sw_rt) |t| { sw_box[0] = t; }
+        var result_temp = nextTemp(self, sw_box[0]);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
         var pi: usize = @intCast(usize, 0);
@@ -1491,6 +1537,8 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
 }
 
 pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
+    self._ctx_node_idx = node_idx;
+    self._ctx_node_kind = @intCast(u32, @enumToInt(self.ctx.store.nodes.items[@intCast(usize, node_idx)].kind));
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
     if (node.kind == AstKind.block) {
@@ -1848,6 +1896,21 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 } else {
                     var init_val = lowerExpr(self, node.child_1);
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
+                    var reg = findLocalTemp(self, name_id);
+                    var vds_m: []const u8 = "VDS:n"; pal.stderr_write(vds_m);
+                    var vds_nb: [10]u8 = undefined; var vds_nl = itoa_mod.itoa(name_id, vds_nb[0..]); var vds_ns: usize = @intCast(usize, 9) - @intCast(usize, vds_nl); pal.stderr_write(vds_nb[vds_ns..@intCast(usize, 9)]);
+                    var vds_tm: []const u8 = "t"; pal.stderr_write(vds_tm);
+                    var vds_tb: [10]u8 = undefined; var vds_tl = itoa_mod.itoa(decl_type, vds_tb[0..]); var vds_ts: usize = @intCast(usize, 9) - @intCast(usize, vds_tl); pal.stderr_write(vds_tb[vds_ts..@intCast(usize, 9)]);
+                    var vds_dm: []const u8 = "d"; pal.stderr_write(vds_dm);
+                    var vds_db: [10]u8 = undefined; var vds_dl = itoa_mod.itoa(dl_temp, vds_db[0..]); var vds_ds: usize = @intCast(usize, 9) - @intCast(usize, vds_dl); pal.stderr_write(vds_db[vds_ds..@intCast(usize, 9)]);
+                    var vds_rm: []const u8 = "r"; pal.stderr_write(vds_rm);
+                    var vds_rb: [10]u8 = undefined; var vds_rl = itoa_mod.itoa(reg, vds_rb[0..]); var vds_rs: usize = @intCast(usize, 9) - @intCast(usize, vds_rl); pal.stderr_write(vds_rb[vds_rs..@intCast(usize, 9)]);
+                    var vds_vm: []const u8 = "v"; pal.stderr_write(vds_vm);
+                    var vds_vb: [10]u8 = undefined; var vds_vl = itoa_mod.itoa(init_val, vds_vb[0..]); var vds_vs: usize = @intCast(usize, 9) - @intCast(usize, vds_vl); pal.stderr_write(vds_vb[vds_vs..@intCast(usize, 9)]);
+                    var vds_nl2: []const u8 = "\n"; pal.stderr_write(vds_nl2);
+                    if (reg != @intCast(u32, 0)) {
+                        emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = init_val } });
+                    }
                 }
             }
             }
@@ -1872,120 +1935,200 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     } else if (node.kind == AstKind.add_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.sub_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.mul_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.div_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.mod_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.shl_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.shr_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.and_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.xor_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }
     } else if (node.kind == AstKind.or_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
-        var op_r = nextTemp(self, type_mod.TYPE_U32);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.stderr_write(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .dst = reg, .src = op_r } });
+            }
         } else {
             emitInst(self, LirInst{ .assign = .{ .dst = lhs_val, .src = op_r } });
         }

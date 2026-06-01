@@ -88,6 +88,21 @@ void pal_print_stderr(const char* msg, usize len)
 #endif
 }
 
+void pal_print_stdout(const char* msg, usize len)
+{
+#ifdef _WIN32
+    HANDLE h;
+    DWORD written;
+    if (!msg || len == 0) return;
+    h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (h == INVALID_HANDLE_VALUE || h == NULL) return;
+    if (!WriteConsoleA(h, msg, (DWORD)len, &written, NULL))
+        WriteFile(h, msg, (DWORD)len, &written, NULL);
+#else
+    write(1, msg, (size_t)len);
+#endif
+}
+
 void pal_abort(void)
 {
 #ifdef _WIN32

@@ -449,6 +449,7 @@ pub fn emitZigPalC(writer: *BufferedWriter) void {
     var h05: []const u8 = "static void pal_reverse(char* buf, int len)\n{\n    int i = 0;\n    int j = len - 1;\n    while (i < j) {\n        char t = buf[i];\n        buf[i] = buf[j];\n        buf[j] = t;\n        i++;\n        j--;\n    }\n}\n\n"; bufferedWriterWrite(writer, h05);
     var h06: []const u8 = "static int pal_u64_to_str_buf(u64 value, char* buf, int bufsize)\n{\n    int i;\n    if (bufsize <= 0) return 0;\n    if (value == 0) {\n        buf[0] = '0';\n        buf[1] = '\\0';\n        return 1;\n    }\n    i = 0;\n    while (value > 0 && i < bufsize - 1) {\n        buf[i++] = '0' + (char)(value % 10);\n        value /= 10;\n    }\n    buf[i] = '\\0';\n    pal_reverse(buf, i);\n    return i;\n}\n\n"; bufferedWriterWrite(writer, h06);
     var h07: []const u8 = "void pal_print_stderr(const char* msg, usize len)\n{\n#ifdef _WIN32\n    HANDLE h;\n    DWORD written;\n    if (!msg || len == 0) return;\n    h = GetStdHandle(STD_ERROR_HANDLE);\n    if (h == INVALID_HANDLE_VALUE || h == NULL) return;\n    if (!WriteConsoleA(h, msg, (DWORD)len, &written, NULL))\n        WriteFile(h, msg, (DWORD)len, &written, NULL);\n#else\n    write(2, msg, (size_t)len);\n#endif\n}\n\n"; bufferedWriterWrite(writer, h07);
+    var h07b: []const u8 = "void pal_print_stdout(const char* msg, usize len)\n{\n#ifdef _WIN32\n    HANDLE h;\n    DWORD written;\n    if (!msg || len == 0) return;\n    h = GetStdHandle(STD_OUTPUT_HANDLE);\n    if (h == INVALID_HANDLE_VALUE || h == NULL) return;\n    if (!WriteConsoleA(h, msg, (DWORD)len, &written, NULL))\n        WriteFile(h, msg, (DWORD)len, &written, NULL);\n#else\n    write(1, msg, (size_t)len);\n#endif\n}\n\n"; bufferedWriterWrite(writer, h07b);
     var h08: []const u8 = "void pal_abort(void)\n{\n#ifdef _WIN32\n    TerminateProcess(GetCurrentProcess(), 3);\n#else\n    abort();\n#endif\n}\n\n"; bufferedWriterWrite(writer, h08);
     var h09: []const u8 = "int pal_i64_to_str(i64 value, char* buf, int bufsize)\n{\n    u64 uval;\n    int is_neg;\n    int dlen;\n    if (bufsize <= 0) return 0;\n    if (value == 0) {\n        buf[0] = '0';\n        buf[1] = '\\0';\n        return 1;\n    }\n    is_neg = (value < 0) ? 1 : 0;\n    uval = is_neg ? (u64)(-(value + 1)) + 1 : (u64)value;\n    if (is_neg) {\n        buf[0] = '-';\n        dlen = pal_u64_to_str_buf(uval, buf + 1, bufsize - 1);\n        return dlen + 1;\n    }\n    return pal_u64_to_str_buf(uval, buf, bufsize);\n}\n\n"; bufferedWriterWrite(writer, h09);
     var h10: []const u8 = "int pal_u64_to_str(u64 value, char* buf, int bufsize)\n{\n    return pal_u64_to_str_buf(value, buf, bufsize);\n}\n\n"; bufferedWriterWrite(writer, h10);
@@ -1128,6 +1129,17 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                                     src_ty = lir_fn.hoisted_temps.items[@intCast(usize, src_p)].type_id;
                                 }
                                 written_type[@intCast(usize, dst_p)] = src_ty;
+                                var p3m: []const u8 = "P3:d"; pal.stderr_write(p3m);
+                                var p3db: [10]u8 = undefined; var p3dl = itoa_mod.itoa(a.dst, p3db[0..]); var p3ds: usize = @intCast(usize, 9) - @intCast(usize, p3dl); pal.stderr_write(p3db[p3ds..@intCast(usize, 9)]);
+                                var p3sm: []const u8 = "s"; pal.stderr_write(p3sm);
+                                var p3sb: [10]u8 = undefined; var p3sl = itoa_mod.itoa(a.src, p3sb[0..]); var p3ss: usize = @intCast(usize, 9) - @intCast(usize, p3sl); pal.stderr_write(p3sb[p3ss..@intCast(usize, 9)]);
+                                var p3tm: []const u8 = "t"; pal.stderr_write(p3tm);
+                                var p3tb: [10]u8 = undefined; var p3tl = itoa_mod.itoa(src_ty, p3tb[0..]); var p3ts: usize = @intCast(usize, 9) - @intCast(usize, p3tl); pal.stderr_write(p3tb[p3ts..@intCast(usize, 9)]);
+                                var p3hm: []const u8 = "h"; pal.stderr_write(p3hm);
+                                var p3hb: [10]u8 = undefined; var p3hl = itoa_mod.itoa(lir_fn.hoisted_temps.items[@intCast(usize, dst_p)].type_id, p3hb[0..]); var p3hs: usize = @intCast(usize, 9) - @intCast(usize, p3hl); pal.stderr_write(p3hb[p3hs..@intCast(usize, 9)]);
+                                var p3im: []const u8 = "i"; pal.stderr_write(p3im);
+                                var p3ib: [10]u8 = undefined; var p3il = itoa_mod.itoa(@intCast(u32, (bb_idx << @intCast(usize, 16)) | ii), p3ib[0..]); var p3is: usize = @intCast(usize, 9) - @intCast(usize, p3il); pal.stderr_write(p3ib[p3is..@intCast(usize, 9)]);
+                                var p3nl: []const u8 = "\n"; pal.stderr_write(p3nl);
                                 written_flag[@intCast(usize, dst_p)] = @intCast(u8, 1);
                             }
                         }
@@ -2399,6 +2411,8 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l04);
     var l05: []const u8 = "extern void pal_print_stderr(const char* s, unsigned int len);\n";
     bufferedWriterWrite(writer, l05);
+    var l05b: []const u8 = "extern void pal_print_stdout(const char* s, unsigned int len);\n";
+    bufferedWriterWrite(writer, l05b);
     var l06: []const u8 = "extern void pal_abort(void);\n";
     bufferedWriterWrite(writer, l06);
     var l07: []const u8 = "extern int pal_i64_to_str(long long val, char* buf, int bufsize);\n";
@@ -2427,9 +2441,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l018);
     var l019: []const u8 = "/* Print helpers */\n";
     bufferedWriterWrite(writer, l019);
-    var l020: []const u8 = "void std_print(const char* s) { if (s) pal_print_stderr(s, strlen(s)); }\n";
+    var l020: []const u8 = "void std_print(const char* s) { if (s) pal_print_stdout(s, strlen(s)); }\n";
     bufferedWriterWrite(writer, l020);
-    var l021: []const u8 = "void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stderr(s, len); }\n";
+    var l021: []const u8 = "void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stdout(s, len); }\n";
     bufferedWriterWrite(writer, l021);
     var l022: []const u8 = "\n";
     bufferedWriterWrite(writer, l022);
@@ -2503,13 +2517,13 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l056);
     var l057: []const u8 = "\n";
     bufferedWriterWrite(writer, l057);
-    var l058: []const u8 = "void std_print_char(unsigned char val) { char c = (char)val; pal_print_stderr(&c, 1); }\n";
+    var l058: []const u8 = "void std_print_char(unsigned char val) { char c = (char)val; pal_print_stdout(&c, 1); }\n";
     bufferedWriterWrite(writer, l058);
     var l059: []const u8 = "\n";
     bufferedWriterWrite(writer, l059);
     var l060: []const u8 = "void std_print_str(const unsigned char* ptr, unsigned int len) {\n";
     bufferedWriterWrite(writer, l060);
-    var l061: []const u8 = "    if (ptr && len) pal_print_stderr((const char*)ptr, len);\n";
+    var l061: []const u8 = "    if (ptr && len) pal_print_stdout((const char*)ptr, len);\n";
     bufferedWriterWrite(writer, l061);
     var l062: []const u8 = "}\n";
     bufferedWriterWrite(writer, l062);
@@ -2595,6 +2609,20 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l102);
     var l103: []const u8 = "}\n";
     bufferedWriterWrite(writer, l103);
+    var l104: []const u8 = "\n/* Backward compatibility aliases for zig1 -> user code */\n";
+    bufferedWriterWrite(writer, l104);
+    var l105: []const u8 = "void __bootstrap_print(const char* s) { std_print(s); }\n";
+    bufferedWriterWrite(writer, l105);
+    var l106: []const u8 = "void __bootstrap_print_int(int n) { std_print_i32(n); }\n";
+    bufferedWriterWrite(writer, l106);
+    var l107: []const u8 = "void __bootstrap_print_char(int c) { unsigned char uc = (unsigned char)c; std_print_char(uc); }\n";
+    bufferedWriterWrite(writer, l107);
+    var l108: []const u8 = "void __bootstrap_panic(const char* msg, const char* file, int line) { (void)file; (void)line; std_panic(msg); }\n";
+    bufferedWriterWrite(writer, l108);
+    var l109: []const u8 = "void __bootstrap_write(const char* s, unsigned int len) { std_print_len(s, len); }\n";
+    bufferedWriterWrite(writer, l109);
+    var l110: []const u8 = "void __bootstrap_sleep_ms(unsigned int ms) { (void)ms; }\n";
+    bufferedWriterWrite(writer, l110);
 }
 
 pub fn emitBuildTargetSh(writer: *BufferedWriter, out_name: []const u8) void {

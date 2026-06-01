@@ -4,6 +4,7 @@
 
 /* Forward declarations for PAL functions */
 extern void pal_print_stderr(const char* s, unsigned int len);
+extern void pal_print_stdout(const char* s, unsigned int len);
 extern void pal_abort(void);
 extern int pal_i64_to_str(long long val, char* buf, int bufsize);
 extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);
@@ -18,8 +19,8 @@ void std_panic(const char* msg) {
 }
 
 /* Print helpers */
-void std_print(const char* s) { if (s) pal_print_stderr(s, strlen(s)); }
-void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stderr(s, len); }
+void std_print(const char* s) { if (s) pal_print_stdout(s, strlen(s)); }
+void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stdout(s, len); }
 
 void std_print_i32(int val) {
     char buf[16];
@@ -56,11 +57,19 @@ void std_print_bool(int val) {
     else std_print("false");
 }
 
-void std_print_char(unsigned char val) { char c = (char)val; pal_print_stderr(&c, 1); }
+void std_print_char(unsigned char val) { char c = (char)val; pal_print_stdout(&c, 1); }
 
 void std_print_str(const unsigned char* ptr, unsigned int len) {
-    if (ptr && len) pal_print_stderr((const char*)ptr, len);
+    if (ptr && len) pal_print_stdout((const char*)ptr, len);
 }
+
+/* Backward compat aliases */
+void __bootstrap_print(const char* s) { std_print(s); }
+void __bootstrap_print_int(int n) { std_print_i32(n); }
+void __bootstrap_print_char(int c) { std_print_char((unsigned char)c); }
+void __bootstrap_panic(const char* msg, const char* file, int line) { std_panic(msg); (void)file; (void)line; }
+void __bootstrap_write(const char* s, unsigned int len) { std_print_len(s, len); }
+void __bootstrap_sleep_ms(unsigned int ms) { if (ms > 0) { int _i; for (_i=0; _i<(int)ms*1000; _i++) {} } }
 
 /* Checked conversions (u64 -> target type) */
 
