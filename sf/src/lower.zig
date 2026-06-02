@@ -2013,6 +2013,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var arr_temp = lowerExpr(self, node.child_1);
                     emitInst(self, LirInst{ .assign = .{ .dst = dl_temp, .src = arr_temp } });
                 } else if (is_array_type == @intCast(u8, 1) and init_node.kind == AstKind.undefined_literal) {
+                    var arr_temp = nextTemp(self, decl_type);
+                    emitInst(self, LirInst{ .assign = .{ .dst = dl_temp, .src = arr_temp } });
                 } else {
                     var init_val = lowerExpr(self, node.child_1);
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });

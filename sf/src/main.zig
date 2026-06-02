@@ -281,6 +281,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     while (mi < mods.len) : (mi += 1) {
         symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
     }
+    resolveAllFnTypes(ctx);
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
@@ -304,6 +305,60 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     }
 }
 
+fn resolveAllFnTypes(ctx: *CompilerContext) void {
+    var rft_msg: []const u8 = "RFT\n"; pal.stderr_write(rft_msg);
+    var rft_mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var rft_mi: usize = 0;
+    while (rft_mi < rft_mods.len) : (rft_mi += 1) {
+        var rft_root = rft_mods[rft_mi].ast_root;
+        if (rft_root == @intCast(u32, 0)) continue;
+        var rft_node = ctx.store.nodes.items[@intCast(usize, rft_root)];
+        var rft_decls = ast_mod.astStoreGetExtraChildren(ctx.store, rft_node.payload);
+        var rft_di: usize = 0;
+        while (rft_di < rft_decls.len) : (rft_di += 1) {
+            var rft_decl = ctx.store.nodes.items[@intCast(usize, rft_decls[rft_di])];
+            if (rft_decl.kind == AstKind.fn_decl) {
+                var rft_proto = ctx.store.fn_protos.items[@intCast(usize, rft_decl.payload)];
+                var rft_rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
+                if (rft_proto.return_type_node != 0) {
+                    var rft_rtype = resolveTypeExpr(ctx, rft_proto.return_type_node);
+                    if (rft_rtype != type_mod.TYPE_UNDEFINED) {
+                        rft_rt_box[0] = rft_rtype;
+                        resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_proto.return_type_node, rft_rtype);
+                    }
+                }
+                if (rft_proto.params_count > @intCast(u16, 0)) {
+                    var rft_p_payload = (@intCast(u32, rft_proto.params_start) << @intCast(u32, 16)) | @intCast(u32, rft_proto.params_count);
+                    var rft_fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
+                    var rft_pnodes = ast_mod.astStoreGetExtraChildren(ctx.store, rft_p_payload);
+                    var rft_pi: usize = 0;
+                    while (rft_pi < rft_pnodes.len) : (rft_pi += 1) {
+                        var rft_pnode = ctx.store.nodes.items[@intCast(usize, rft_pnodes[rft_pi])];
+                        if (rft_pnode.child_0 != 0) {
+                            var rft_ptype = resolveTypeExpr(ctx, rft_pnode.child_0);
+                            type_mod.xtAppend(ctx.typereg, rft_ptype);
+                            if (rft_ptype != type_mod.TYPE_UNDEFINED) {
+                                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_pnode.child_0, rft_ptype);
+                            }
+                        } else {
+                            type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
+                        }
+                    }
+                    var rft_is_ext: u8 = @intCast(u8, 0); if ((rft_decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { rft_is_ext = @intCast(u8, 1); }
+                    var rft_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, rft_proto.name_id, rft_mods[rft_mi].id, rft_is_ext, rft_fn_start, rft_proto.params_count, rft_rt_box[0]);
+                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decls[rft_di], rft_tid);
+                }
+            } else if (rft_decl.kind == AstKind.var_decl and rft_decl.child_0 != 0) {
+                var rft_vtype = resolveTypeExpr(ctx, rft_decl.child_0);
+                if (rft_vtype != type_mod.TYPE_UNDEFINED) {
+                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decl.child_0, rft_vtype);
+                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decls[rft_di], rft_vtype);
+                }
+            }
+        }
+    }
+}
+
 fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
     var rs: []const u8 = "RS"; pal.stderr_write(rs);
     alloc_mod.sandReset(&ctx.alloc.scratch);
@@ -321,54 +376,6 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
             var dn: []const u8 = "DN"; pal.stderr_write(dn);
             if (decl.kind == AstKind.fn_decl) {
-                var proto = ctx.store.fn_protos.items[@intCast(usize, decl.payload)];
-                var rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
-                if (proto.return_type_node != 0) {
-                    var rtype = resolveTypeExpr(ctx, proto.return_type_node);
-                    if (rtype != type_mod.TYPE_UNDEFINED) {
-                        rt_box[0] = rtype;
-                        resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, proto.return_type_node, rtype);
-                        var rt_ok: []const u8 = "T"; pal.stderr_write(rt_ok);
-                    } else {
-                        var rt_nok: []const u8 = "U"; pal.stderr_write(rt_nok);
-                    }
-                }
-                var u1b_m: []const u8 = "U1b:c"; pal.stderr_write(u1b_m);
-                var u1b_c: [20]u8 = undefined; var u1b_cl = itoa_mod.itoa(@intCast(u32, proto.params_count), u1b_c[0..]); var u1b_cs: usize = @intCast(usize, 19) - @intCast(usize, u1b_cl); pal.stderr_write(u1b_c[u1b_cs..@intCast(usize, 19)]);
-                var u1b_sm: []const u8 = "s"; pal.stderr_write(u1b_sm);
-                var u1b_s: [20]u8 = undefined; var u1b_sl = itoa_mod.itoa(@intCast(u32, proto.params_start), u1b_s[0..]); var u1b_ss: usize = @intCast(usize, 19) - @intCast(usize, u1b_sl); pal.stderr_write(u1b_s[u1b_ss..@intCast(usize, 19)]);
-                if (proto.params_count > @intCast(u16, 0)) {
-                    var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
-                    var fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
-                    var pnodes = ast_mod.astStoreGetExtraChildren(ctx.store, p_payload);
-                    var pi: usize = 0;
-                    while (pi < pnodes.len) : (pi += 1) {
-                        var pnode = ctx.store.nodes.items[@intCast(usize, pnodes[pi])];
-                        if (pnode.child_0 != 0) {
-                            var ptype = resolveTypeExpr(ctx, pnode.child_0);
-                            var u1_m: []const u8 = "U1:"; pal.stderr_write(u1_m);
-                            var u1_pb: [20]u8 = undefined; var u1_pl = itoa_mod.itoa(@intCast(u32, pi), u1_pb[0..]); var u1_ps: usize = @intCast(usize, 19) - @intCast(usize, u1_pl); pal.stderr_write(u1_pb[u1_ps..@intCast(usize, 19)]);
-                            var u1_tm: []const u8 = "t"; pal.stderr_write(u1_tm);
-                            var u1_tb: [20]u8 = undefined; var u1_tl = itoa_mod.itoa(ptype, u1_tb[0..]); var u1_ts: usize = @intCast(usize, 19) - @intCast(usize, u1_tl); pal.stderr_write(u1_tb[u1_ts..@intCast(usize, 19)]);
-                            var a1_nn: []const u8 = "n"; pal.stderr_write(a1_nn);
-                            var a1_nb: [20]u8 = undefined; var a1_nl = itoa_mod.itoa(pnode.payload, a1_nb[0..]); var a1_ns: usize = @intCast(usize, 19) - @intCast(usize, a1_nl); pal.stderr_write(a1_nb[a1_ns..@intCast(usize, 19)]);
-                            var a1_an: []const u8 = "a"; pal.stderr_write(a1_an);
-                            var a1_ab: [20]u8 = undefined; var a1_al = itoa_mod.itoa(pnode.child_0, a1_ab[0..]); var a1_as: usize = @intCast(usize, 19) - @intCast(usize, a1_al); pal.stderr_write(a1_ab[a1_as..@intCast(usize, 19)]);
-                            type_mod.xtAppend(ctx.typereg, ptype);
-                            if (ptype != type_mod.TYPE_UNDEFINED) {
-                                var a1_sm: []const u8 = "+"; pal.stderr_write(a1_sm);
-                                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, pnode.child_0, ptype);
-                            } else {
-                                var a1_xm: []const u8 = "-"; pal.stderr_write(a1_xm);
-                            }
-                        } else {
-                            type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
-                        }
-                    }
-                    var is_ext: u8 = @intCast(u8, 0); if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
-                    var zz0_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, proto.name_id, mods[mi].id, is_ext, fn_start, proto.params_count, rt_box[0]);
-                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], zz0_tid);
-                }
                 if (decl.child_0 != 0) {
                     resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
                 }
