@@ -1038,20 +1038,28 @@ fn mangleTempName(interner: *StringInterner, temp_id: u32) []const u8 {
 }
 
 pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
-    const MAX_T: u32 = 256;
-    var tid_to_pos: [256]u32 = undefined;
-    var written_type: [256]u32 = undefined;
-    var written_flag: [256]u8 = undefined;
+    var max_temp: u32 = @intCast(u32, 256);
+    var hti: usize = @intCast(usize, 0);
+    while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
+        var htd = lir_fn.hoisted_temps.items[hti];
+        if (htd.temp_id >= max_temp) { max_temp = htd.temp_id + @intCast(u32, 1); }
+    }
+    var raw_t2p = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
+    var raw_wt = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
+    var raw_wf = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
+    var tid_to_pos = @ptrCast([*]u32, raw_t2p);
+    var written_type = @ptrCast([*]u32, raw_wt);
+    var written_flag = @ptrCast([*]u8, raw_wf);
     var tp: u32 = 0;
-    while (tp < MAX_T) : (tp += @intCast(u32, 1)) {
+    while (tp < max_temp) : (tp += @intCast(u32, 1)) {
         tid_to_pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         written_type[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         written_flag[@intCast(usize, tp)] = @intCast(u8, 0);
     }
-    var hti: usize = @intCast(usize, 0);
+    hti = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
         var htd = lir_fn.hoisted_temps.items[hti];
-        if (htd.temp_id < MAX_T) {
+        if (htd.temp_id < max_temp) {
             tid_to_pos[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
         }
     }
@@ -1128,9 +1136,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var inst = bb.insts.items[ii];
             switch (inst) {
                 .assign => |a| {
-                    if (a.src < MAX_T) {
+                    if (a.src < max_temp) {
                         var src_p = tid_to_pos[@intCast(usize, a.src)];
-                        if (src_p != @intCast(u32, 0xFFFFFFFF) and a.dst < MAX_T) {
+                        if (src_p != @intCast(u32, 0xFFFFFFFF) and a.dst < max_temp) {
                             var dst_p = tid_to_pos[@intCast(usize, a.dst)];
                             if (dst_p != @intCast(u32, 0xFFFFFFFF)) {
                                 var src_ty: u32 = undefined;
@@ -1158,7 +1166,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .float_const => |fc| {
-                    if (fc.result < MAX_T) {
+                    if (fc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, fc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_F64;
@@ -1167,7 +1175,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .int_const => |ic| {
-                    if (ic.result < MAX_T) {
+                    if (ic.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ic.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
@@ -1176,7 +1184,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .string_const => |sc| {
-                    if (sc.result < MAX_T) {
+                    if (sc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, sc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id;
@@ -1185,7 +1193,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .bool_const => |bc| {
-                    if (bc.result < MAX_T) {
+                    if (bc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, bc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_BOOL;
@@ -1194,7 +1202,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .binary => |b| {
-                    if (b.result < MAX_T) {
+                    if (b.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, b.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             var lhs_p = tid_to_pos[@intCast(usize, b.lhs)];
@@ -1218,7 +1226,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .call_direct => |cd| {
-                    if (cd.result < MAX_T) {
+                    if (cd.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, cd.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             if (cd.return_type != type_mod.TYPE_UNDEFINED) {
@@ -1238,7 +1246,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .call => |cl| {
-                    if (cl.result < MAX_T) {
+                    if (cl.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, cl.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
@@ -1247,7 +1255,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .int_cast => |ic| {
-                    if (ic.result < MAX_T) {
+                    if (ic.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ic.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = ic.target;
@@ -1256,7 +1264,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .int_to_float => |itf| {
-                    if (itf.result < MAX_T) {
+                    if (itf.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, itf.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = itf.target;
@@ -1265,7 +1273,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .float_cast => |fc| {
-                    if (fc.result < MAX_T) {
+                    if (fc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, fc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = fc.target;
@@ -1274,7 +1282,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .load_index => |li| {
-                    if (li.result < MAX_T) {
+                    if (li.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, li.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id;
@@ -1283,7 +1291,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .unary => |u| {
-                    if (u.result < MAX_T) {
+                    if (u.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, u.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             var op_p = tid_to_pos[@intCast(usize, u.operand)];
@@ -1302,7 +1310,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .load => |l| {
-                    if (l.result < MAX_T) {
+                    if (l.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, l.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_U8;
@@ -1311,7 +1319,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .addr_of => |ao| {
-                    if (ao.result < MAX_T) {
+                    if (ao.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ao.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
@@ -1320,7 +1328,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .make_slice => |ms| {
-                    if (ms.result < MAX_T) {
+                    if (ms.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ms.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = ms.type_id;
@@ -1329,7 +1337,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .load_field => |lf| {
-                    if (lf.result < MAX_T) {
+                    if (lf.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, lf.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id;
@@ -1338,7 +1346,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .ptr_cast => |pc| {
-                    if (pc.result < MAX_T) {
+                    if (pc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, pc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = pc.target;
@@ -1347,7 +1355,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .int_to_ptr => |itp| {
-                    if (itp.result < MAX_T) {
+                    if (itp.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, itp.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = itp.target;
@@ -1356,7 +1364,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .ptr_to_int => |pti| {
-                    if (pti.result < MAX_T) {
+                    if (pti.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, pti.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_USIZE;
@@ -1365,7 +1373,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .load_local => |ll| {
-                    if (ll.result < MAX_T) {
+                    if (ll.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ll.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             var li: u32 = @intCast(u32, 0);
@@ -1392,7 +1400,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .store_local => |sl| {
-                    if (sl.value < MAX_T) {
+                    if (sl.value < max_temp) {
                         var li2: u32 = @intCast(u32, 0);
                         while (li2 < local_count) : (li2 += @intCast(u32, 1)) {
                             if (local_name_ids[@intCast(usize, li2)] == sl.name_id) {
@@ -2416,8 +2424,15 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
                             emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
                             emitter.dedup_count += @intCast(u32, 1);
                         }
-                        var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
-                        var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
+                         var p1m: []const u8 = "P1:t"; pal.stderr_write(p1m);
+                         var p1tb: [10]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 9) - @intCast(usize, p1tl); pal.stderr_write(p1tb[p1ts..@intCast(usize, 9)]);
+                         var p1im: []const u8 = "T"; pal.stderr_write(p1im);
+                         var p1ib: [10]u8 = undefined; var p1il = itoa_mod.itoa(@intCast(u32, dl.type_id), p1ib[0..]); var p1is: usize = @intCast(usize, 9) - @intCast(usize, p1il); pal.stderr_write(p1ib[p1is..@intCast(usize, 9)]);
+                         var p1nm: []const u8 = "N"; pal.stderr_write(p1nm);
+                         var p1nb: [10]u8 = undefined; var p1nl = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 9) - @intCast(usize, p1nl); pal.stderr_write(p1nb[p1ns..@intCast(usize, 9)]);
+                         var p1nl2: []const u8 = "\n"; pal.stderr_write(p1nl2);
+                         var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
+                         var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
                         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                         bufferedWriterWrite(&emitter.writer, dl_type);
                         var sp1: []const u8 = " ";
