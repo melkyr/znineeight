@@ -751,6 +751,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var base_temp = lowerExpr(self, child_node.child_0);
             base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
             var idx_temp = lowerExpr(self, child_node.child_1);
+            var bai_m: []const u8 = "BAI:b"; pal.stderr_write(bai_m);
+            var bai_bb: [10]u8 = undefined; var bai_bl = itoa_mod.itoa(base_temp, bai_bb[0..]); var bai_bs: usize = @intCast(usize, 9) - @intCast(usize, bai_bl); pal.stderr_write(bai_bb[bai_bs..@intCast(usize, 9)]);
+            var bai_im: []const u8 = "i"; pal.stderr_write(bai_im);
+            var bai_ib: [10]u8 = undefined; var bai_il = itoa_mod.itoa(idx_temp, bai_ib[0..]); var bai_is: usize = @intCast(usize, 9) - @intCast(usize, bai_il); pal.stderr_write(bai_ib[bai_is..@intCast(usize, 9)]);
+            var bai_sm: []const u8 = "s"; pal.stderr_write(bai_sm);
+            var bai_sb: [10]u8 = undefined; var bai_sl = itoa_mod.itoa(src, bai_sb[0..]); var bai_ss: usize = @intCast(usize, 9) - @intCast(usize, bai_sl); pal.stderr_write(bai_sb[bai_ss..@intCast(usize, 9)]);
+            var bai_nl: []const u8 = "\n"; pal.stderr_write(bai_nl);
             emitInst(self, LirInst{ .assign_index = .{ .base = base_temp, .index = idx_temp, .src = src } });
         } else {
             var dst = lowerExpr(self, node.child_0);
@@ -787,7 +794,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, node.child_0);
+        var msp_m: []const u8 = "MSP:b"; pal.stderr_write(msp_m);
+        var msp_bb: [10]u8 = undefined; var msp_bl = itoa_mod.itoa(base_temp, msp_bb[0..]); var msp_bs: usize = @intCast(usize, 9) - @intCast(usize, msp_bl); pal.stderr_write(msp_bb[msp_bs..@intCast(usize, 9)]);
+        var msp_nm: []const u8 = "n"; pal.stderr_write(msp_nm);
+        var msp_nb: [10]u8 = undefined; var msp_nl = itoa_mod.itoa(node.child_0, msp_nb[0..]); var msp_ns: usize = @intCast(usize, 9) - @intCast(usize, msp_nl); pal.stderr_write(msp_nb[msp_ns..@intCast(usize, 9)]);
         base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
+        var msp2_m: []const u8 = "p"; pal.stderr_write(msp2_m);
+        var msp2b: [10]u8 = undefined; var msp2l = itoa_mod.itoa(base_temp, msp2b[0..]); var msp2s: usize = @intCast(usize, 9) - @intCast(usize, msp2l); pal.stderr_write(msp2b[msp2s..@intCast(usize, 9)]);
+        var msp_nl2: []const u8 = "\n"; pal.stderr_write(msp_nl2);
         var idx_temp = lowerExpr(self, node.child_1);
          var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
          var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -915,7 +929,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var funl2: []const u8 = " "; pal.stderr_write(funl2);
             ptype = type_mod.TYPE_U32;
         }
-        if (arr_temp != @intCast(u32, 0)) { return arr_temp; }
+        if (arr_temp != @intCast(u32, 0)) {
+            var ire_m: []const u8 = "IRE:n"; pal.stderr_write(ire_m);
+            var ire_nb: [10]u8 = undefined; var ire_nl = itoa_mod.itoa(name_id, ire_nb[0..]); var ire_ns: usize = @intCast(usize, 9) - @intCast(usize, ire_nl); pal.stderr_write(ire_nb[ire_ns..@intCast(usize, 9)]);
+            var ire_tm: []const u8 = "t"; pal.stderr_write(ire_tm);
+            var ire_tb: [10]u8 = undefined; var ire_tl = itoa_mod.itoa(arr_temp, ire_tb[0..]); var ire_ts: usize = @intCast(usize, 9) - @intCast(usize, ire_tl); pal.stderr_write(ire_tb[ire_ts..@intCast(usize, 9)]);
+            var ire_nl2: []const u8 = "\n"; pal.stderr_write(ire_nl2);
+            return arr_temp;
+        }
         var tid = nextTemp(self, ptype);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
@@ -1628,6 +1649,11 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
 pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     self._ctx_node_idx = node_idx;
     self._ctx_node_kind = @intCast(u32, @enumToInt(self.ctx.store.nodes.items[@intCast(usize, node_idx)].kind));
+    var stkm: []const u8 = "STK:n"; pal.stderr_write(stkm);
+    var stknb: [10]u8 = undefined; var stknl = itoa_mod.itoa(node_idx, stknb[0..]); var stkns: usize = @intCast(usize, 9) - @intCast(usize, stknl); pal.stderr_write(stknb[stkns..@intCast(usize, 9)]);
+    var stkkm: []const u8 = "k"; pal.stderr_write(stkkm);
+    var stkkb: [10]u8 = undefined; var stkkl = itoa_mod.itoa(self._ctx_node_kind, stkkb[0..]); var stkks: usize = @intCast(usize, 9) - @intCast(usize, stkkl); pal.stderr_write(stkkb[stkks..@intCast(usize, 9)]);
+    var stknl2: []const u8 = "\n"; pal.stderr_write(stknl2);
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
     if (node.kind == AstKind.block) {
@@ -1755,8 +1781,15 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
            }
            if (node.child_2 != @intCast(u32, 0)) {
               var slice_temp = lowerExpr(self, node.child_0);
-              var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
-              var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
+               var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
+               var fce_m: []const u8 = "FCE:n"; pal.stderr_write(fce_m);
+               var fce_nb: [10]u8 = undefined; var fce_nl = itoa_mod.itoa(node.child_0, fce_nb[0..]); var fce_ns: usize = @intCast(usize, 9) - @intCast(usize, fce_nl); pal.stderr_write(fce_nb[fce_ns..@intCast(usize, 9)]);
+               var fce_sm: []const u8 = "s"; pal.stderr_write(fce_sm);
+               var fce_sb: [10]u8 = undefined; var fce_sl = itoa_mod.itoa(slice_temp, fce_sb[0..]); var fce_ss: usize = @intCast(usize, 9) - @intCast(usize, fce_sl); pal.stderr_write(fce_sb[fce_ss..@intCast(usize, 9)]);
+               var fce_pm: []const u8 = "p"; pal.stderr_write(fce_pm);
+               var fce_pb: [10]u8 = undefined; var fce_pl = itoa_mod.itoa(ptr_temp, fce_pb[0..]); var fce_ps: usize = @intCast(usize, 9) - @intCast(usize, fce_pl); pal.stderr_write(fce_pb[fce_ps..@intCast(usize, 9)]);
+               var fce_nl2: []const u8 = "\n"; pal.stderr_write(fce_nl2);
+               var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .load_field = .{ .base = slice_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
             emitInst(self, LirInst{ .load_field = .{ .base = slice_temp, .field_id = @intCast(u32, 1), .result = len_temp } });
              var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
