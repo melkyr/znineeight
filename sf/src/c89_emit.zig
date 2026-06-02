@@ -333,10 +333,10 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
           .dedup_names = undefined,
           .dedup_count = @intCast(u32, 0),
-          .fl_name_ids = undefined,
-          .fl_temps = undefined,
-          .fl_count = @intCast(u32, 0),
-      };
+           .fl_name_ids = undefined,
+           .fl_temps = undefined,
+           .fl_count = @intCast(u32, 0),
+       };
 }
 
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
@@ -1665,11 +1665,18 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
                      if (ht.type_id != type_mod.TYPE_UNDEFINED) {
                          var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
                          if (bty.kind == type_mod.TypeKind.slice_type) {
-                             if (a.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
-                             else if (a.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
-                         } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
-                             if (a.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
-                         }
+                              if (a.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
+                              else if (a.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
+                           } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
+                               if (a.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
+                           } else if (bty.kind == type_mod.TypeKind.struct_type) {
+                               var dot_s: []const u8 = ".";
+                               bufferedWriterWrite(&emitter.writer, dot_s);
+                               var fe: type_mod.FieldEntry = emitter.registry.fe_items[@intCast(usize, emitter.registry.st_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, a.field_id)];
+                               var pn: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+                               fn_prefix3 = pn;
+                               found3 = @intCast(u8, 1);
+                           }
                      }
                      break;
                  }

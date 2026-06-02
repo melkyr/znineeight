@@ -1173,16 +1173,16 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
             if (tt.kind == type_mod.TypeKind.array_type) return t;
         }
     }
-    var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-    if (ec.len == @intCast(usize, 0)) return type_mod.TYPE_VOID;
-    var el = self.store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
-    self._stub_0 = type_mod.TYPE_VOID;
-    if (el.kind == AstKind.char_literal) { self._stub_0 = type_mod.TYPE_U8; }
-    else if (el.kind == AstKind.int_literal) { self._stub_0 = type_mod.TYPE_U32; }
-    else { self._stub_0 = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
-    if (self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
-    var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, self._stub_0, @intCast(u32, ec.len));
-    return arr_tid;
+     var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+     if (ec.len == @intCast(usize, 0)) return type_mod.TYPE_VOID;
+     var el = self.store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
+     self._stub_0 = type_mod.TYPE_VOID;
+     if (el.kind == AstKind.char_literal) { self._stub_0 = type_mod.TYPE_U8; }
+     else if (el.kind == AstKind.int_literal) { self._stub_0 = type_mod.TYPE_U32; }
+     else { self._stub_0 = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+     if (self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+     var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, self._stub_0, @intCast(u32, ec.len));
+     return arr_tid;
 }
 
 pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void {

@@ -1461,11 +1461,29 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         self.current_bb = join_bb;
         return result;
-     } else if (node.kind == AstKind.array_init) {
-        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
-        var aelem: u32 = if (ec.len > @intCast(usize, 0)) if (store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])].kind == AstKind.char_literal) type_mod.TYPE_U8 else type_mod.TYPE_U32 else type_mod.TYPE_U32;
-        var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, aelem, @intCast(u32, ec.len));
-        var base_temp = nextTemp(self, arr_tid);
+      } else if (node.kind == AstKind.array_init) {
+         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+         var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+         var arr_tid: u32 = if (rt) |it| it else @intCast(u32, 0);
+         if (arr_tid == @intCast(u32, 0)) {
+             var aelem: u32 = if (ec.len > @intCast(usize, 0)) if (store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])].kind == AstKind.char_literal) type_mod.TYPE_U8 else type_mod.TYPE_U32 else type_mod.TYPE_U32;
+               arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, aelem, @intCast(u32, ec.len));
+           }
+           var elem_t: u32 = arr_tid;
+           var aty = self.ctx.registry.types_items[@intCast(usize, arr_tid)];
+           if (@enumToInt(aty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type))) {
+               var ap = self.ctx.registry.array_items[@intCast(usize, aty.payload_idx)];
+               elem_t = ap.elem;
+           }
+           var bei: usize = @intCast(usize, 0);
+           while (bei < ec.len) : (bei += @intCast(usize, 1)) {
+               var cn = store.nodes.items[@intCast(usize, ec[bei])];
+               if (cn.kind == AstKind.struct_init) {
+                   var exi = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ec[bei]);
+                   if (exi == null) { resolved_mod.resolvedTypeTableSet(self.ctx.resolved_types, ec[bei], elem_t); }
+               }
+           }
+           var base_temp = nextTemp(self, arr_tid);
         var ei: usize = @intCast(usize, 0);
         while (ei < ec.len) : (ei += @intCast(usize, 1)) {
             var val_temp = lowerExpr(self, ec[ei]);
