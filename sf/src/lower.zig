@@ -947,18 +947,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var funl2: []const u8 = " "; pal.stderr_write(funl2);
             ptype = type_mod.TYPE_U32;
         }
-        var has_ld: u8 = @intCast(u8, 0);
-        {
-            var li4: usize = @intCast(usize, 0);
-            while (li4 < self.local_decl_count) : (li4 += @intCast(usize, 1)) { if (self.local_decl_names[li4] == name_id) { has_ld = @intCast(u8, 1); break; } }
-        }
-        if (arr_temp != @intCast(u32, 0) or has_ld == @intCast(u8, 1)) {
+        if (arr_temp != @intCast(u32, 0)) {
             var atm: []const u8 = "AT:n"; pal.stderr_write(atm);
             var atnb: [10]u8 = undefined; var atnl = itoa_mod.itoa(name_id, atnb[0..]); var atns: usize = @intCast(usize, 9) - @intCast(usize, atnl); pal.stderr_write(atnb[atns..@intCast(usize, 9)]);
             var attm: []const u8 = "a"; pal.stderr_write(attm);
             var attb: [10]u8 = undefined; var attl = itoa_mod.itoa(arr_temp, attb[0..]); var atts: usize = @intCast(usize, 9) - @intCast(usize, attl); pal.stderr_write(attb[atts..@intCast(usize, 9)]);
-            var athm: []const u8 = "h"; pal.stderr_write(athm);
-            var athb: [10]u8 = undefined; var athl = itoa_mod.itoa(@intCast(u32, has_ld), athb[0..]); var aths: usize = @intCast(usize, 9) - @intCast(usize, athl); pal.stderr_write(athb[aths..@intCast(usize, 9)]);
             var atnl2: []const u8 = "\n"; pal.stderr_write(atnl2);
             var ire_m: []const u8 = "IRE:n"; pal.stderr_write(ire_m);
             var ire_nb: [10]u8 = undefined; var ire_nl = itoa_mod.itoa(name_id, ire_nb[0..]); var ire_ns: usize = @intCast(usize, 9) - @intCast(usize, ire_nl); pal.stderr_write(ire_nb[ire_ns..@intCast(usize, 9)]);
