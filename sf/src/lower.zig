@@ -953,12 +953,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var attm: []const u8 = "a"; pal.stderr_write(attm);
             var attb: [10]u8 = undefined; var attl = itoa_mod.itoa(arr_temp, attb[0..]); var atts: usize = @intCast(usize, 9) - @intCast(usize, attl); pal.stderr_write(attb[atts..@intCast(usize, 9)]);
             var atnl2: []const u8 = "\n"; pal.stderr_write(atnl2);
-            var ire_m: []const u8 = "IRE:n"; pal.stderr_write(ire_m);
-            var ire_nb: [10]u8 = undefined; var ire_nl = itoa_mod.itoa(name_id, ire_nb[0..]); var ire_ns: usize = @intCast(usize, 9) - @intCast(usize, ire_nl); pal.stderr_write(ire_nb[ire_ns..@intCast(usize, 9)]);
-            var ire_tm: []const u8 = "t"; pal.stderr_write(ire_tm);
-            var ire_tb: [10]u8 = undefined; var ire_tl = itoa_mod.itoa(arr_temp, ire_tb[0..]); var ire_ts: usize = @intCast(usize, 9) - @intCast(usize, ire_tl); pal.stderr_write(ire_tb[ire_ts..@intCast(usize, 9)]);
-            var ire_nl2: []const u8 = "\n"; pal.stderr_write(ire_nl2);
-            return arr_temp;
+            var is_arr: u8 = @intCast(u8, 0);
+            if (ptype != type_mod.TYPE_UNDEFINED and ptype != type_mod.TYPE_VOID) {
+                var lty = self.ctx.registry.types_items[@intCast(usize, ptype)];
+                if (@enumToInt(lty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type))) { is_arr = @intCast(u8, 1); }
+            }
+            if (is_arr != @intCast(u8, 0)) {
+                var ire_m: []const u8 = "IRE:n"; pal.stderr_write(ire_m);
+                var ire_nb: [10]u8 = undefined; var ire_nl = itoa_mod.itoa(name_id, ire_nb[0..]); var ire_ns: usize = @intCast(usize, 9) - @intCast(usize, ire_nl); pal.stderr_write(ire_nb[ire_ns..@intCast(usize, 9)]);
+                var ire_tm: []const u8 = "t"; pal.stderr_write(ire_tm);
+                var ire_tb: [10]u8 = undefined; var ire_tl = itoa_mod.itoa(arr_temp, ire_tb[0..]); var ire_ts: usize = @intCast(usize, 9) - @intCast(usize, ire_tl); pal.stderr_write(ire_tb[ire_ts..@intCast(usize, 9)]);
+                var ire_nl2: []const u8 = "\n"; pal.stderr_write(ire_nl2);
+                return arr_temp;
+            }
+            var tid = nextTemp(self, ptype);
+            emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
+            var rtm: []const u8 = "RT:n"; pal.stderr_write(rtm);
+            var rtnb: [10]u8 = undefined; var rtnl = itoa_mod.itoa(name_id, rtnb[0..]); var rtns: usize = @intCast(usize, 9) - @intCast(usize, rtnl); pal.stderr_write(rtnb[rtns..@intCast(usize, 9)]);
+            var rtrm: []const u8 = "L"; pal.stderr_write(rtrm);
+            var rtnl2: []const u8 = "\n"; pal.stderr_write(rtnl2);
+            return tid;
         }
         var tid = nextTemp(self, ptype);
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
