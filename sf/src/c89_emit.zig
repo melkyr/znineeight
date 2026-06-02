@@ -1762,6 +1762,11 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .load_local => |ll| {
             var result = mangleTempName(emitter.interner, ll.result);
             var name = mangleLocalName(emitter.mangler, emitter.interner, ll.name_id);
+            var llm: []const u8 = "LL:n"; pal.stderr_write(llm);
+            var llnb: [10]u8 = undefined; var llnl = itoa_mod.itoa(ll.name_id, llnb[0..]); var llns: usize = @intCast(usize, 9) - @intCast(usize, llnl); pal.stderr_write(llnb[llns..@intCast(usize, 9)]);
+            var llrm: []const u8 = "r"; pal.stderr_write(llrm);
+            var llrb: [10]u8 = undefined; var llrl = itoa_mod.itoa(ll.result, llrb[0..]); var llrs: usize = @intCast(usize, 9) - @intCast(usize, llrl); pal.stderr_write(llrb[llrs..@intCast(usize, 9)]);
+            var llnl2: []const u8 = "\n"; pal.stderr_write(llnl2);
             var ll_is_arr: u8 = @intCast(u8, 0);
             var ll_arr_len: u32 = @intCast(u32, 0);
             var ll_tj: usize = @intCast(usize, 0);
@@ -2108,10 +2113,33 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         },
         .undefined_const => |uc| {
             var result = mangleTempName(emitter.interner, uc.result);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = 0;\n";
-            bufferedWriterWrite(&emitter.writer, s);
+            var uct_m: []const u8 = "UCT:r"; pal.stderr_write(uct_m);
+            var uct_rb: [10]u8 = undefined; var uct_rl = itoa_mod.itoa(uc.result, uct_rb[0..]); var uct_rs: usize = @intCast(usize, 9) - @intCast(usize, uct_rl); pal.stderr_write(uct_rb[uct_rs..@intCast(usize, 9)]);
+            var uct_tm: []const u8 = "t"; pal.stderr_write(uct_tm);
+            var uct_tb: [10]u8 = undefined; var uct_tl = itoa_mod.itoa(uc.type_id, uct_tb[0..]); var uct_ts: usize = @intCast(usize, 9) - @intCast(usize, uct_tl); pal.stderr_write(uct_tb[uct_ts..@intCast(usize, 9)]);
+            var uct_nl: []const u8 = "\n"; pal.stderr_write(uct_nl);
+            var uct_ty = emitter.registry.types_items[@intCast(usize, uc.type_id)];
+            if (uct_ty.kind == type_mod.TypeKind.array_type) {
+                var uap = emitter.registry.array_items[@intCast(usize, uct_ty.payload_idx)];
+                var loop_begin: []const u8 = "{\n";
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var loop_decl: []const u8 = "    unsigned int _i = 0;\n";
+                bufferedWriterWrite(&emitter.writer, loop_decl);
+                var loop_cond: []const u8 = "    while (_i < ";
+                bufferedWriterWrite(&emitter.writer, loop_cond);
+                var alb: [20]u8 = undefined; var all = itoa_mod.itoa(uap.length, alb[0..]); var als: usize = @intCast(usize, 19) - @intCast(usize, all); bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
+                var loop_body: []const u8 = ") {\n        ";
+                bufferedWriterWrite(&emitter.writer, loop_body);
+                bufferedWriterWrite(&emitter.writer, result);
+                var lb: []const u8 = "[_i] = 0;\n        _i++;\n    }\n}\n";
+                bufferedWriterWrite(&emitter.writer, lb);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = 0;\n";
+                bufferedWriterWrite(&emitter.writer, s);
+            }
         },
          .call => |c| {
             var result = mangleTempName(emitter.interner, c.result);
@@ -2242,6 +2270,13 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .int_cast => |c| {
             var dst = mangleTempName(emitter.interner, c.result);
             var src = mangleTempName(emitter.interner, c.value);
+            var icm: []const u8 = "IC:v"; pal.stderr_write(icm);
+            var icvb: [10]u8 = undefined; var icvl = itoa_mod.itoa(c.value, icvb[0..]); var icvs: usize = @intCast(usize, 9) - @intCast(usize, icvl); pal.stderr_write(icvb[icvs..@intCast(usize, 9)]);
+            var ictm: []const u8 = "t"; pal.stderr_write(ictm);
+            var ictb: [10]u8 = undefined; var ictl = itoa_mod.itoa(c.target, ictb[0..]); var icts: usize = @intCast(usize, 9) - @intCast(usize, ictl); pal.stderr_write(ictb[icts..@intCast(usize, 9)]);
+            var icrm: []const u8 = "r"; pal.stderr_write(icrm);
+            var icrb: [10]u8 = undefined; var icrl = itoa_mod.itoa(c.result, icrb[0..]); var icrs: usize = @intCast(usize, 9) - @intCast(usize, icrl); pal.stderr_write(icrb[icrs..@intCast(usize, 9)]);
+            var icnl: []const u8 = "\n"; pal.stderr_write(icnl);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             if (c.is_checked != @intCast(u8, 0)) {
                 var fn_name = getCheckedCastFnName(emitter.registry, c.target);
