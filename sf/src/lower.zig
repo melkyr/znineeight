@@ -2470,12 +2470,14 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                 var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
                 if (p_type) |_| { var dp: []const u8 = "HP"; pal.stderr_write(dp); } else { var dp: []const u8 = "MP"; pal.stderr_write(dp); }
                 var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
+                var p_temp: u32 = @intCast(u32, 10000) + @intCast(u32, pi);
                 lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
                     .name_id = p_name_id,
                     .type_id = p_tid,
+                    .temp_id = p_temp,
                 });
                 if (p_type) |pt| {
-                    addLocalDecl(self, p_name_id, pt, 0);
+                    addLocalDecl(self, p_name_id, pt, p_temp);
                 }
             } else {
                 func_ptr.is_variadic = @intCast(u8, 1);

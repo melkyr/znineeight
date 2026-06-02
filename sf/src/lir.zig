@@ -10,6 +10,7 @@ pub const SwitchCase = struct {
 pub const LirParam = struct {
     name_id: u32,
     type_id: TypeId,
+    temp_id: u32,
 };
 
 pub const TempDecl = struct {

@@ -1067,9 +1067,12 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var p = lir_fn.params.items[pi];
             local_name_ids[@intCast(usize, local_count)] = p.name_id;
             local_types[@intCast(usize, local_count)] = p.type_id;
+            emitter.fl_temps[@intCast(usize, local_count)] = p.temp_id;
+            emitter.fl_name_ids[@intCast(usize, local_count)] = p.name_id;
             local_count += @intCast(u32, 1);
         }
     }
+    emitter.fl_count = local_count;
     var p0m: []const u8 = "P0:lc="; pal.stderr_write(p0m);
     var p0mb: [10]u8 = undefined; var p0ml = itoa_mod.itoa(local_count, p0mb[0..]); var p0ms: usize = @intCast(usize, 9) - @intCast(usize, p0ml); pal.stderr_write(p0mb[p0ms..@intCast(usize, 9)]);
     var p0nl: []const u8 = "\n"; pal.stderr_write(p0nl);
