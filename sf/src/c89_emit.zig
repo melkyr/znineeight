@@ -1585,7 +1585,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, mksrc);
             var mkend: []const u8 = "==*/\n";
             bufferedWriterWrite(&emitter.writer, mkend);
-            var dst = mangleTempName(emitter.interner, a.dst);
+            var dst = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);
             var rfli: u32 = emitter.fl_count;
             while (rfli > @intCast(u32, 0)) { rfli = rfli - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { dst = mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rfli)]); break; } }
@@ -1635,7 +1635,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             }
         },
          .assign_field => |a| {
-             var base = mangleTempName(emitter.interner, a.base);
+             var base = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else mangleTempName(emitter.interner, a.base);
              var src = mangleTempName(emitter.interner, a.src);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              bufferedWriterWrite(&emitter.writer, base);
@@ -1687,7 +1687,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var adm2s2: []const u8 = "s"; pal.stderr_write(adm2s2);
             var adm2sb: [10]u8 = undefined; var adm2sl = itoa_mod.itoa(a.src, adm2sb[0..]); var adm2ss: usize = @intCast(usize, 9) - @intCast(usize, adm2sl); pal.stderr_write(adm2sb[adm2ss..@intCast(usize, 9)]);
             var adm2nl2: []const u8 = " "; pal.stderr_write(adm2nl2);
-            var base = mangleTempName(emitter.interner, a.base);
+            var base = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else mangleTempName(emitter.interner, a.base);
             var idx = mangleTempName(emitter.interner, a.index);
             var src = mangleTempName(emitter.interner, a.src);
             var adm: []const u8 = "/*==MARKER_AIDX base=";
@@ -1941,7 +1941,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s3);
         },
         .load_index => |li| {
-            var base = mangleTempName(emitter.interner, li.base);
+            var base = if (li.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, li.name_id) else mangleTempName(emitter.interner, li.base);
             var idx = mangleTempName(emitter.interner, li.index);
             var result = mangleTempName(emitter.interner, li.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
