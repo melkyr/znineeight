@@ -305,11 +305,14 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      d4_wtype: [*]u32,
      d4_wflag: [*]u8,
      d4_t2p: [*]u32,
-    dl_hoisted: u8,
-    emitted_type_set: U32ToU32Map,
-    dedup_names: [128]u32,
-    dedup_count: u32,
-};
+     dl_hoisted: u8,
+     emitted_type_set: U32ToU32Map,
+     dedup_names: [128]u32,
+     dedup_count: u32,
+     fl_name_ids: [128]u32,
+     fl_temps: [128]u32,
+     fl_count: u32,
+ };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
     return C89Emitter{
@@ -328,9 +331,12 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_t2p = undefined,
          .dl_hoisted = @intCast(u8, 0),
          .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
-         .dedup_names = undefined,
-         .dedup_count = @intCast(u32, 0),
-     };
+          .dedup_names = undefined,
+          .dedup_count = @intCast(u32, 0),
+          .fl_name_ids = undefined,
+          .fl_temps = undefined,
+          .fl_count = @intCast(u32, 0),
+      };
 }
 
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
@@ -1091,6 +1097,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                              var p1nl: []const u8 = "\n"; pal.stderr_write(p1nl);
                             local_name_ids[@intCast(usize, local_count)] = dl.name_id;
                             local_types[@intCast(usize, local_count)] = dl.type_id;
+                            emitter.fl_temps[@intCast(usize, local_count)] = dl.temp;
+                            emitter.fl_name_ids[@intCast(usize, local_count)] = dl.name_id;
+                            emitter.fl_count = local_count + @intCast(u32, 1);
                             local_count += @intCast(u32, 1);
                          } else {
                              var d3e: []const u8 = "F3eD:t"; pal.stderr_write(d3e);
@@ -1578,6 +1587,8 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, mkend);
             var dst = mangleTempName(emitter.interner, a.dst);
             var src = mangleTempName(emitter.interner, a.src);
+            var rfli: u32 = emitter.fl_count;
+            while (rfli > @intCast(u32, 0)) { rfli = rfli - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { dst = mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rfli)]); break; } }
             var is_arr: u8 = @intCast(u8, 0);
             var arr_len: u32 = @intCast(u32, 0);
             var tj_ca: usize = @intCast(usize, 0);

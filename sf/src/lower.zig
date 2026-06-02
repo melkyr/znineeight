@@ -287,6 +287,15 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
         var ntpb: [20]u8 = undefined; var ntpl = itoa_mod.itoa(tid, ntpb[0..]); var ntps: usize = @intCast(usize, 19) - @intCast(usize, ntpl); pal.stderr_write(ntpb[ntps..@intCast(usize, 19)]);
         var nnl: []const u8 = " "; pal.stderr_write(nnl);
     }
+    if (type_id >= @intCast(u32, 18)) {
+        var nxam: []const u8 = "NXA:t"; pal.stderr_write(nxam);
+        var nxatb: [10]u8 = undefined; var nxatl = itoa_mod.itoa(tid, nxatb[0..]); var nxats: usize = @intCast(usize, 9) - @intCast(usize, nxatl); pal.stderr_write(nxatb[nxats..@intCast(usize, 9)]);
+        var nxatm: []const u8 = "T"; pal.stderr_write(nxatm);
+        var nxat2b: [10]u8 = undefined; var nxat2l = itoa_mod.itoa(type_id, nxat2b[0..]); var nxat2s: usize = @intCast(usize, 9) - @intCast(usize, nxat2l); pal.stderr_write(nxat2b[nxat2s..@intCast(usize, 9)]);
+        var nxanm: []const u8 = "n"; pal.stderr_write(nxanm);
+        var nxanb: [10]u8 = undefined; var nxanl = itoa_mod.itoa(self._ctx_node_idx, nxanb[0..]); var nxans: usize = @intCast(usize, 9) - @intCast(usize, nxanl); pal.stderr_write(nxanb[nxans..@intCast(usize, 9)]);
+        var nxanl2: []const u8 = "\n"; pal.stderr_write(nxanl2);
+    }
     self.temp_counter += @intCast(u32, 1);
     lir_mod.tempDeclArrayListAppend(&self.hoisted_temps, TempDecl{
         .temp_id = tid,
@@ -929,7 +938,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var funl2: []const u8 = " "; pal.stderr_write(funl2);
             ptype = type_mod.TYPE_U32;
         }
-        if (arr_temp != @intCast(u32, 0)) {
+        var has_ld: u8 = @intCast(u8, 0);
+        {
+            var li4: usize = @intCast(usize, 0);
+            while (li4 < self.local_decl_count) : (li4 += @intCast(usize, 1)) { if (self.local_decl_names[li4] == name_id) { has_ld = @intCast(u8, 1); break; } }
+        }
+        if (arr_temp != @intCast(u32, 0) or has_ld == @intCast(u8, 1)) {
             var ire_m: []const u8 = "IRE:n"; pal.stderr_write(ire_m);
             var ire_nb: [10]u8 = undefined; var ire_nl = itoa_mod.itoa(name_id, ire_nb[0..]); var ire_ns: usize = @intCast(usize, 9) - @intCast(usize, ire_nl); pal.stderr_write(ire_nb[ire_ns..@intCast(usize, 9)]);
             var ire_tm: []const u8 = "t"; pal.stderr_write(ire_tm);
