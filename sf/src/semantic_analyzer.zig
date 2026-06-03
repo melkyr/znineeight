@@ -851,7 +851,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.cmp_lt or node.kind == AstKind.cmp_le or
                node.kind == AstKind.cmp_gt or node.kind == AstKind.cmp_ge) {
         result = semanticAnalyzerResolveComparison(self, node_idx, node.kind);
-    } else if (node.kind == AstKind.assign or
+    } else if (node.kind == AstKind.plain_assign or
                node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
                node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
                node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
@@ -1071,7 +1071,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
         if (node.child_0 != @intCast(u32, 0)) {
             _ = semanticAnalyzerResolveExpr(self, node.child_0);
         }
-    } else if (node.kind == AstKind.assign or
+    } else if (node.kind == AstKind.plain_assign or
                node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
                node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
                node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or

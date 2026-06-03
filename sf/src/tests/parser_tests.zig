@@ -630,9 +630,9 @@ fn testGapB_IfExprBody() void {
     var cond_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_0].kind));
     assertEqU32(cond_kind, @intCast(u32, @enumToInt(AstKind.bool_literal)));
     var then_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_1].kind));
-    assertEqU32(then_kind, @intCast(u32, @enumToInt(AstKind.assign)));
+    assertEqU32(then_kind, @intCast(u32, @enumToInt(AstKind.plain_assign)));
     var else_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_2].kind));
-    assertEqU32(else_kind, @intCast(u32, @enumToInt(AstKind.assign)));
+     assertEqU32(else_kind, @intCast(u32, @enumToInt(AstKind.plain_assign)));
 }
 
 fn testGapC_ReturnExpr() void {
@@ -692,7 +692,7 @@ fn testGapB_IfExprBody_Chain() void {
     var node = store.nodes.items[node_idx];
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.if_stmt)));
     var then_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_1].kind));
-    assertEqU32(then_kind, @intCast(u32, @enumToInt(AstKind.assign)));
+    assertEqU32(then_kind, @intCast(u32, @enumToInt(AstKind.plain_assign)));
     var else_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_2].kind));
     assertEqU32(else_kind, @intCast(u32, @enumToInt(AstKind.if_stmt)));
 }
@@ -748,7 +748,7 @@ fn testDiscardStmt() void {
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
     var node = store.nodes.items[node_idx];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.assign)));
+     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.plain_assign)));
 }
 
 fn testSwitchUnderscoreCapture() void {

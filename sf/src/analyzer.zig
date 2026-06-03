@@ -418,7 +418,7 @@ pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void 
         }
         return;
     }
-    if (kind == AstKind.assign) {
+    if (kind == AstKind.plain_assign) {
         analyzeExpr(ctx, state, node.child_1);
         var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
@@ -623,7 +623,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.var_decl) {
         handleNullVarDecl(ctx, state, node_idx);
         on_stmt(ctx, state, node_idx);
-    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.assign) {
+    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.plain_assign) {
         handleNullAssign(ctx, state, node_idx);
         on_stmt(ctx, state, node_idx);
     } else if (kind == AstKind.expr_stmt) {
@@ -646,9 +646,9 @@ fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
         } else {
             smap_mod.stateMapSet(state, node.payload, @intCast(u8, @enumToInt(Provenance.unknown)));
         }
-    }
-    if (node.kind == AstKind.assign) {
-        var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
+     }
+     if (node.kind == AstKind.plain_assign) {
+         var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var prov = classifyProvenance(ctx, state, node.child_1);
             smap_mod.stateMapSet(state, lhs_node.payload, prov);
@@ -660,9 +660,9 @@ fn onDoubleFreeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.var_decl) {
         handleAllocCall(ctx, state, node.payload, node.child_1);
-    }
-    if (node.kind == AstKind.assign) {
-        handleAllocAssign(ctx, state, node_idx);
+     }
+     if (node.kind == AstKind.plain_assign) {
+         handleAllocAssign(ctx, state, node_idx);
     }
     if (node.kind == AstKind.fn_call) {
         handleOwnershipPass(ctx, state, node_idx);

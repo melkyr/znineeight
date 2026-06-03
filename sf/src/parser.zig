@@ -210,7 +210,7 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
         TokenKind.less_eq => { kind = AstKind.cmp_le; found = 1; },
         TokenKind.greater => { kind = AstKind.cmp_gt; found = 1; },
         TokenKind.greater_eq => { kind = AstKind.cmp_ge; found = 1; },
-        TokenKind.eq => { kind = AstKind.assign; found = 1; },
+        TokenKind.eq => { kind = AstKind.plain_assign; found = 1; },
         TokenKind.plus_eq => { kind = AstKind.add_assign; found = 1; },
         TokenKind.minus_eq => { kind = AstKind.sub_assign; found = 1; },
         TokenKind.star_eq => { kind = AstKind.mul_assign; found = 1; },

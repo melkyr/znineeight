@@ -238,8 +238,8 @@ fn testNullAssignNull() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
-    var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
-    var ac: AnalyzerContext = undefined;
+     var as_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     az_mod.handleNullAssign(&ac, &st, as_node);
@@ -1129,8 +1129,8 @@ fn testAllocAssignLeak() void {
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf2[0..2]);
     var alloc_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
     var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
-    var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, alloc_node, @intCast(u32, 0), @intCast(u32, 0));
-    az_mod.handleAllocAssign(&ac, &st, as_node);
+     var as_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, alloc_node, @intCast(u32, 0), @intCast(u32, 0));
+     az_mod.handleAllocAssign(&ac, &st, as_node);
     if (diag.warning_count == @intCast(usize, 0)) {
         var fmsg: []const u8 = "testAllocAssignLeak: expected warning\n";
         pal.stdout_write(fmsg); pal.exit(1);
@@ -1155,8 +1155,8 @@ fn testAllocAssignNull() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
-    var as_node = ast_mod.astStoreAddNode(&store, AstKind.assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
-    az_mod.handleAllocAssign(&ac, &st, as_node);
+     var as_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
+     az_mod.handleAllocAssign(&ac, &st, as_node);
     if (diag.warning_count == @intCast(usize, 0)) {
         var fmsg: []const u8 = "testAllocAssignNull: expected warning\n";
         pal.stdout_write(fmsg); pal.exit(1);

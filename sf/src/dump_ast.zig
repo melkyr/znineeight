@@ -61,7 +61,7 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
         AstKind.cmp_le => { var s: []const u8 = "cmp_le"; fmt.copyStr(buf, &idx, s); },
         AstKind.cmp_gt => { var s: []const u8 = "cmp_gt"; fmt.copyStr(buf, &idx, s); },
         AstKind.cmp_ge => { var s: []const u8 = "cmp_ge"; fmt.copyStr(buf, &idx, s); },
-        AstKind.assign => { var s: []const u8 = "assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.plain_assign => { var s: []const u8 = "plain_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.add_assign => { var s: []const u8 = "add_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.sub_assign => { var s: []const u8 = "sub_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.mul_assign => { var s: []const u8 = "mul_assign"; fmt.copyStr(buf, &idx, s); },

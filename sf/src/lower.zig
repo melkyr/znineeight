@@ -727,7 +727,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var tid = nextTemp(self, bn_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_BNOT, .operand = val, .result = tid } });
         return tid;
-      } else if (@intCast(u32, @enumToInt(node.kind)) == @intCast(u32, @enumToInt(AstKind.assign))) {
+      } else if (node.kind == AstKind.plain_assign) {
          var child_node = store.nodes.items[@intCast(usize, node.child_0)];
           var coe_m: []const u8 = "COE:k"; pal.markerWrite(coe_m);
           var co2_m: []const u8 = "CO2:p\n"; pal.markerWrite(co2_m);
