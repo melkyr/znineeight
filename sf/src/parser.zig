@@ -1316,6 +1316,9 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
             else_node = try parserParseExprPrec(self, Prec.assignment);
         }
     }
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
+    }
     var end_pos: u32 = kw.span_start;
     if (self.pos > 0) {
         var last = self.tokens_ptr[self.pos - 1];
