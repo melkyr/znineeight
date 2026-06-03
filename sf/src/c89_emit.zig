@@ -1882,7 +1882,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
            .load_field => |lf| {
-               var base = resolveTempName(emitter, lf.base);
+               var base = if (lf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
                var result = resolveTempName(emitter, lf.result);
                var lfd_m: []const u8 = "LFD:b"; pal.markerWrite(lfd_m);
                var lfd_bb: [10]u8 = undefined; var lfd_bl = itoa_mod.itoa(lf.base, lfd_bb[0..]); var lfd_bs: usize = @intCast(usize, 9) - @intCast(usize, lfd_bl); pal.markerWrite(lfd_bb[lfd_bs..@intCast(usize, 9)]);
@@ -1941,8 +1941,8 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
               var s3: []const u8 = ";\n";
               bufferedWriterWrite(&emitter.writer, s3);
           },
-         .store_field => |sf| {
-             var base = resolveTempName(emitter, sf.base);
+        .store_field => |sf| {
+            var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
              var val = resolveTempName(emitter, sf.value);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              bufferedWriterWrite(&emitter.writer, base);
