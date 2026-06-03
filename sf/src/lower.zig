@@ -223,8 +223,9 @@ pub const LirLowerer = struct {
     block_terminated: u8,
     module_id: u32,
     module_reg: *ModuleRegistry,
-    intcast_name_id: u32,
-    inttofloat_name_id: u32,
+     intcast_name_id: u32,
+     inttofloat_name_id: u32,
+     print_fn_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -238,7 +239,9 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var intcast_s: []const u8 = "@intCast";
     var intcast_id = si_mod.stringInternerIntern(ctx.registry.interner, intcast_s);
     var inttofloat_s: []const u8 = "@intToFloat";
-    var inttofloat_id = si_mod.stringInternerIntern(ctx.registry.interner, inttofloat_s);
+     var inttofloat_id = si_mod.stringInternerIntern(ctx.registry.interner, inttofloat_s);
+     var print_s: []const u8 = "print";
+     var print_id = si_mod.stringInternerIntern(ctx.registry.interner, print_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -253,8 +256,9 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .block_terminated = @intCast(u8, 0),
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
-        .intcast_name_id = intcast_id,
-        .inttofloat_name_id = inttofloat_id,
+         .intcast_name_id = intcast_id,
+         .inttofloat_name_id = inttofloat_id,
+         .print_fn_id = print_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -1086,44 +1090,47 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ck_val: u8 = callee_head.kind;
         var d9kb: [10]u8 = undefined; var d9kl = itoa_mod.itoa(@intCast(u32, ck_val), d9kb[0..]); var d9ks: usize = @intCast(usize, 9) - @intCast(usize, d9kl); pal.stderr_write(d9kb[d9ks..@intCast(usize, 9)]);
         var d9sp: []const u8 = " "; pal.stderr_write(d9sp);
-        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
-        var d9p_m: []const u8 = "D9:p"; pal.stderr_write(d9p_m);
+         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+         var prt2_m: []const u8 = "PRT2:l"; pal.stderr_write(prt2_m);
+         var prt2_lb: [10]u8 = undefined; var prt2_ll = itoa_mod.itoa(@intCast(u32, ec.len), prt2_lb[0..]); var prt2_ls: usize = @intCast(usize, 9) - @intCast(usize, prt2_ll); pal.stderr_write(prt2_lb[prt2_ls..@intCast(usize, 9)]);
+         var ei2: usize = @intCast(usize, 0);
+         while (ei2 < ec.len and ei2 < @intCast(usize, 4)) : (ei2 += @intCast(usize, 1)) {
+             var ck2: u32 = @intCast(u32, @enumToInt(store.nodes.items[@intCast(usize, ec[ei2])].kind));
+             var p2m: []const u8 = "k"; pal.stderr_write(p2m);
+             var p2b: [10]u8 = undefined; var p2l = itoa_mod.itoa(ck2, p2b[0..]); var p2s: usize = @intCast(usize, 9) - @intCast(usize, p2l); pal.stderr_write(p2b[p2s..@intCast(usize, 9)]);
+         }
+         var prt2_nl: []const u8 = "\n"; pal.stderr_write(prt2_nl);
+         var e0m: []const u8 = "E0:p"; pal.stderr_write(e0m);
+         var e0b: [10]u8 = undefined; var e0l = itoa_mod.itoa(@intCast(u32, @enumToInt(store.nodes.items[@intCast(usize, ec[0])].kind)), e0b[0..]); var e0s: usize = @intCast(usize, 9) - @intCast(usize, e0l); pal.stderr_write(e0b[e0s..@intCast(usize, 9)]);
+         var e01m: []const u8 = "n"; pal.stderr_write(e01m);
+         var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(store.nodes.items[@intCast(usize, ec[0])].payload, e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.stderr_write(e01b[e01s..@intCast(usize, 9)]);
+         var e02m: []const u8 = "i"; pal.stderr_write(e02m);
+         var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, ec[0])].payload)], e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.stderr_write(e02b[e02s..@intCast(usize, 9)]);
+         var e0nl: []const u8 = "\n"; pal.stderr_write(e0nl);
+         var d9p_m: []const u8 = "D9:p"; pal.stderr_write(d9p_m);
         var d9p_b: [20]u8 = undefined; var d9p_l = itoa_mod.itoa(node.payload, d9p_b[0..]); var d9p_s: usize = @intCast(usize, 19) - @intCast(usize, d9p_l); pal.stderr_write(d9p_b[d9p_s..@intCast(usize, 19)]);
-        var d9p_nl: []const u8 = "\n"; pal.stderr_write(d9p_nl);
-        if (ec.len >= @intCast(usize, 2)) {
-            var first = store.nodes.items[@intCast(usize, ec[0])];
-            var second = store.nodes.items[@intCast(usize, ec[1])];
-            if (first.kind == AstKind.string_literal and second.kind == AstKind.tuple_literal) {
-                var d2m: []const u8 = "D2:PRINTx"; pal.stderr_write(d2m);
-                var fk_val: u8 = first.kind; var sk_val: u8 = second.kind;
-                var d2xb: [10]u8 = undefined; var d2xl = itoa_mod.itoa(@intCast(u32, fk_val), d2xb[0..]); var d2xs: usize = @intCast(usize, 9) - @intCast(usize, d2xl); pal.stderr_write(d2xb[d2xs..@intCast(usize, 9)]);
-                var d2ym: []const u8 = "y"; pal.stderr_write(d2ym);
-                var d2yb: [10]u8 = undefined; var d2yl = itoa_mod.itoa(@intCast(u32, sk_val), d2yb[0..]); var d2ys: usize = @intCast(usize, 9) - @intCast(usize, d2yl); pal.stderr_write(d2yb[d2ys..@intCast(usize, 9)]);
-                var d2am: []const u8 = "a"; pal.stderr_write(d2am);
-                var d2ab: [10]u8 = undefined; var d2al = itoa_mod.itoa(@intCast(u32, ec.len), d2ab[0..]); var d2as: usize = @intCast(usize, 9) - @intCast(usize, d2al); pal.stderr_write(d2ab[d2as..@intCast(usize, 9)]);
-                var d2nl: []const u8 = "\n"; pal.stderr_write(d2nl);
-                return lowerPrintCall(self, ec);
-            } else {
-                var d2b: []const u8 = "D2b:x"; pal.stderr_write(d2b);
-                var fkv: u8 = first.kind; var d2xb2: [10]u8 = undefined; var d2xl2 = itoa_mod.itoa(@intCast(u32, fkv), d2xb2[0..]); var d2xs2: usize = @intCast(usize, 9) - @intCast(usize, d2xl2); pal.stderr_write(d2xb2[d2xs2..@intCast(usize, 9)]);
-                var d2by: []const u8 = "y"; pal.stderr_write(d2by);
-                var skv: u8 = second.kind; var d2yb2: [10]u8 = undefined; var d2yl2 = itoa_mod.itoa(@intCast(u32, skv), d2yb2[0..]); var d2ys2: usize = @intCast(usize, 9) - @intCast(usize, d2yl2); pal.stderr_write(d2yb2[d2ys2..@intCast(usize, 9)]);
-                var d2blen: []const u8 = "L"; pal.stderr_write(d2blen);
-                var d2blenb: [10]u8 = undefined; var d2blenl = itoa_mod.itoa(@intCast(u32, ec.len), d2blenb[0..]); var d2blens: usize = @intCast(usize, 9) - @intCast(usize, d2blenl); pal.stderr_write(d2blenb[d2blens..@intCast(usize, 9)]);
-                if (ec.len >= @intCast(usize, 3)) {
-                    var third = store.nodes.items[@intCast(usize, ec[2])];
-                    var d2bz: []const u8 = "z"; pal.stderr_write(d2bz);
-                    var tzv: u8 = third.kind; var d2zxb2: [10]u8 = undefined; var d2zxl2 = itoa_mod.itoa(@intCast(u32, tzv), d2zxb2[0..]); var d2zxs2: usize = @intCast(usize, 9) - @intCast(usize, d2zxl2); pal.stderr_write(d2zxb2[d2zxs2..@intCast(usize, 9)]);
-                }
-                var d2bnl: []const u8 = "\n"; pal.stderr_write(d2bnl);
-            }
-        }
-        var callee_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-        if (callee_rt) |crt| {
+         var d9p_nl: []const u8 = "\n"; pal.stderr_write(d9p_nl);
+         var callee_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+         if (callee_rt) |crt| {
             var crt_ty = self.ctx.registry.types_items[@intCast(usize, crt)];
             if (crt_ty.kind == type_mod.TypeKind.fn_type) {
                 var fp = self.ctx.registry.fn_items[@intCast(usize, crt_ty.payload_idx)];
-                var args_start = self.temp_counter;
+                 if (fp.name_id == self.print_fn_id and ec.len >= @intCast(usize, 2)) {
+                     var dsi: usize = @intCast(usize, 1);
+                     while (dsi + @intCast(usize, 1) < ec.len) : (dsi += @intCast(usize, 1)) {
+                         var dsp = store.nodes.items[@intCast(usize, ec[dsi])];
+                         emitInst(self, LirInst{ .print_str = .{ .string_id = dsp.payload } });
+                     }
+                     var args_node = store.nodes.items[@intCast(usize, ec[ec.len - @intCast(usize, 1)])];
+                     var arg_ec = ast_mod.astStoreGetExtraChildren(store, args_node.payload);
+                     var dai: usize = @intCast(usize, 0);
+                     while (dai < arg_ec.len) : (dai += @intCast(usize, 1)) {
+                         var dval = lowerExpr(self, arg_ec[dai]);
+                         emitInst(self, LirInst{ .print_val = .{ .value = dval, .type_id = type_mod.TYPE_I32, .fmt = @intCast(u8, 'd') } });
+                     }
+                     return @intCast(u32, 0);
+                 }
+                 var args_start = self.temp_counter;
                 var ai: usize = 0;
                 while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                 ai = 0;
