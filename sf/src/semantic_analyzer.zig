@@ -1097,10 +1097,56 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     }
 }
 
+fn semaTraceStep(self: *SemanticAnalyzer, cur_name: *u32, done: *u8) u32 {
+    var ss = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, cur_name.*);
+    if (ss) |s| {
+        if (s.decl_node == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
+        var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
+        if (dn.kind != AstKind.var_decl) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
+        if (dn.child_1 == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
+        var init = self.store.nodes.items[@intCast(usize, dn.child_1)];
+        if (init.kind != AstKind.slice_expr) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
+        if (init.child_0 == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
+        var c0 = self.store.nodes.items[@intCast(usize, init.child_0)];
+        if (c0.kind != AstKind.ident_expr) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
+        var nn = self.store.identifiers.items[@intCast(usize, c0.payload)];
+        cur_name.* = nn;
+        return nn;
+    }
+    done.* = @intCast(u8, 1);
+    return @intCast(u32, 0);
+}
+
 fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var ii_m: []const u8 = "IXA:i"; pal_mod.markerWrite(ii_m);
+    var ii_b: [10]u8 = undefined; var ii_l = itoa_mod.itoa(node_idx, ii_b[0..]); var ii_s: usize = @intCast(usize, 9) - @intCast(usize, ii_l); pal_mod.markerWrite(ii_b[ii_s..@intCast(usize, 9)]);
+    var ii_nl: []const u8 = "\n"; pal_mod.markerWrite(ii_nl);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     _ = semanticAnalyzerResolveExpr(self, node.child_1);
     self._stub_0 = semanticAnalyzerResolveExpr(self, node.child_0);
+    var c0_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+    var c0k_m: []const u8 = "C0K:k"; pal_mod.markerWrite(c0k_m);
+    var c0k_b: [10]u8 = undefined; var c0k_l = itoa_mod.itoa(@intCast(u32, @enumToInt(c0_node.kind)), c0k_b[0..]); var c0k_s: usize = @intCast(usize, 9) - @intCast(usize, c0k_l); pal_mod.markerWrite(c0k_b[c0k_s..@intCast(usize, 9)]);
+    var c0k_nl: []const u8 = "\n"; pal_mod.markerWrite(c0k_nl);
+    if (c0_node.kind == AstKind.ident_expr) {
+        var c0_name_id = self.store.identifiers.items[@intCast(usize, c0_node.payload)];
+        var ste_m: []const u8 = "STE:n"; pal_mod.markerWrite(ste_m);
+        var ste_b: [10]u8 = undefined; var ste_l = itoa_mod.itoa(node_idx, ste_b[0..]); var ste_s: usize = @intCast(usize, 9) - @intCast(usize, ste_l); pal_mod.markerWrite(ste_b[ste_s..@intCast(usize, 9)]);
+        var ste_nl: []const u8 = "\n"; pal_mod.markerWrite(ste_nl);
+        var src_cur_name = c0_name_id;
+        var src_depth: u32 = @intCast(u32, 0);
+        var src_name: u32 = @intCast(u32, 0);
+        var src_done: u8 = @intCast(u8, 0);
+        while (src_done == @intCast(u8, 0) and src_depth < @intCast(u32, 3)) : (src_depth += @intCast(u32, 1)) { src_name = semaTraceStep(self, &src_cur_name, &src_done); }
+        if (src_name != @intCast(u32, 0)) {
+            var srs_n: []const u8 = "SRC:n"; pal_mod.markerWrite(srs_n);
+            var srs_b: [10]u8 = undefined; var srs_l = itoa_mod.itoa(node_idx, srs_b[0..]); var srs_s: usize = @intCast(usize, 9) - @intCast(usize, srs_l); pal_mod.markerWrite(srs_b[srs_s..@intCast(usize, 9)]);
+            var srs_m: []const u8 = "s"; pal_mod.markerWrite(srs_m);
+            var srs_b2: [10]u8 = undefined; var srs_l2 = itoa_mod.itoa(src_name, srs_b2[0..]); var srs_s2: usize = @intCast(usize, 9) - @intCast(usize, srs_l2); pal_mod.markerWrite(srs_b2[srs_s2..@intCast(usize, 9)]);
+            var srs_nl: []const u8 = "\n"; pal_mod.markerWrite(srs_nl);
+            _ = rtt_mod.resolvedSourceTableSet(self.type_table, node.child_0, src_name);
+        }
+    }
     var ix_m: []const u8 = "IX:"; pal_mod.markerWrite(ix_m);
     var ix_bb: [20]u8 = undefined; var ix_bl = itoa_mod.itoa(self._stub_0, ix_bb[0..]); var ix_bs: usize = @intCast(usize, 19) - @intCast(usize, ix_bl); pal_mod.markerWrite(ix_bb[ix_bs..@intCast(usize, 19)]);
     if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;

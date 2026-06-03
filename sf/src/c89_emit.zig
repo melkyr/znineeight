@@ -1574,11 +1574,17 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     bufferedWriterWrite(writer, se);
 }
 
-fn resolveTempName(emitter: *C89Emitter, temp_id: u32) []const u8 {
-    var rti: u32 = emitter.fl_count;
-    while (rti > @intCast(u32, 0)) { rti = rti - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rti)] == temp_id) { return mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rti)]); } }
-    return mangleTempName(emitter.interner, temp_id);
-}
+ fn resolveTempName(emitter: *C89Emitter, temp_id: u32) []const u8 {
+     var rti: u32 = emitter.fl_count;
+     while (rti > @intCast(u32, 0)) { rti = rti - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rti)] == temp_id) {
+         var rst_m: []const u8 = "RST:t"; pal.markerWrite(rst_m);
+         var rst_tb: [10]u8 = undefined; var rst_tl = itoa_mod.itoa(temp_id, rst_tb[0..]); var rst_ts: usize = @intCast(usize, 9) - @intCast(usize, rst_tl); pal.markerWrite(rst_tb[rst_ts..@intCast(usize, 9)]);
+         var rst_nm: []const u8 = "N"; pal.markerWrite(rst_nm);
+         var rst_nb: [10]u8 = undefined; var rst_nl = itoa_mod.itoa(emitter.fl_name_ids[@intCast(usize, rti)], rst_nb[0..]); var rst_ns: usize = @intCast(usize, 9) - @intCast(usize, rst_nl); pal.markerWrite(rst_nb[rst_ns..@intCast(usize, 9)]);
+         var rst_nl2: []const u8 = "\n"; pal.markerWrite(rst_nl2);
+         return mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rti)]); } }
+     return mangleTempName(emitter.interner, temp_id);
+ }
 
 fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     switch (inst) {
@@ -1875,10 +1881,15 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
-          .load_field => |lf| {
-              var base = resolveTempName(emitter, lf.base);
-              var result = resolveTempName(emitter, lf.result);
-              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+           .load_field => |lf| {
+               var base = resolveTempName(emitter, lf.base);
+               var result = resolveTempName(emitter, lf.result);
+               var lfd_m: []const u8 = "LFD:b"; pal.markerWrite(lfd_m);
+               var lfd_bb: [10]u8 = undefined; var lfd_bl = itoa_mod.itoa(lf.base, lfd_bb[0..]); var lfd_bs: usize = @intCast(usize, 9) - @intCast(usize, lfd_bl); pal.markerWrite(lfd_bb[lfd_bs..@intCast(usize, 9)]);
+               var lfd_rm: []const u8 = "r"; pal.markerWrite(lfd_rm);
+               var lfd_rb: [10]u8 = undefined; var lfd_rl = itoa_mod.itoa(lf.result, lfd_rb[0..]); var lfd_rs: usize = @intCast(usize, 9) - @intCast(usize, lfd_rl); pal.markerWrite(lfd_rb[lfd_rs..@intCast(usize, 9)]);
+               var lfd_nl: []const u8 = "\n"; pal.markerWrite(lfd_nl);
+               bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               bufferedWriterWrite(&emitter.writer, result);
               var s: []const u8 = " = ";
               bufferedWriterWrite(&emitter.writer, s);
