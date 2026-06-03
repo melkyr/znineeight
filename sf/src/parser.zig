@@ -231,11 +231,11 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
         return error.UnexpectedToken;
     }
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
-    var bok: []const u8 = "BOP:tk"; pal.stderr_write(bok);
-    var bokb: [10]u8 = undefined; var bokl = itoa_mod.itoa(@enumToInt(tok.kind), bokb[0..]); var boks: usize = @intCast(usize, 9) - @intCast(usize, bokl); pal.stderr_write(bokb[boks..@intCast(usize, 9)]);
-    var bokk: []const u8 = "ak"; pal.stderr_write(bokk);
-    var bokkb: [10]u8 = undefined; var bokkl = itoa_mod.itoa(@enumToInt(kind), bokkb[0..]); var bokks: usize = @intCast(usize, 9) - @intCast(usize, bokkl); pal.stderr_write(bokkb[bokks..@intCast(usize, 9)]);
-    var boknl: []const u8 = " "; pal.stderr_write(boknl);
+    var bok: []const u8 = "BOP:tk"; pal.markerWrite(bok);
+    var bokb: [10]u8 = undefined; var bokl = itoa_mod.itoa(@enumToInt(tok.kind), bokb[0..]); var boks: usize = @intCast(usize, 9) - @intCast(usize, bokl); pal.markerWrite(bokb[boks..@intCast(usize, 9)]);
+    var bokk: []const u8 = "ak"; pal.markerWrite(bokk);
+    var bokkb: [10]u8 = undefined; var bokkl = itoa_mod.itoa(@enumToInt(kind), bokkb[0..]); var bokks: usize = @intCast(usize, 9) - @intCast(usize, bokkl); pal.markerWrite(bokkb[bokks..@intCast(usize, 9)]);
+    var boknl: []const u8 = " "; pal.markerWrite(boknl);
     return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, 0, 0);
 }
 
@@ -454,9 +454,9 @@ fn parserParseFloatLiteral(self: *Parser) ParserError!u32 {
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
     var dbg_buf: [64]u8 = undefined;
     var dbg = format_mod.formatF64(tok.value.float_val, dbg_buf[0..], 64);
-    var ps: []const u8 = "PF:"; pal.stderr_write(ps);
-    pal.stderr_write(dbg);
-    var pn: []const u8 = "\n"; pal.stderr_write(pn);
+    var ps: []const u8 = "PF:"; pal.markerWrite(ps);
+    pal.markerWrite(dbg);
+    var pn: []const u8 = "\n"; pal.markerWrite(pn);
     return ast_mod.astStoreAddFloatLiteral(self.store, tok.value.float_val, tok.span_start, end);
 }
 
@@ -1123,7 +1123,7 @@ fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
 }
 
 fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool) ParserError!u32 {
-    var vmsg: []const u8 = "V"; pal.stderr_write(vmsg);
+    var vmsg: []const u8 = "V"; pal.markerWrite(vmsg);
     var kw = parserAdvance(self);
     var name_raw = parserPeek(self);
     _ = try parserExpect(self, TokenKind.identifier);
@@ -1144,7 +1144,7 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
     }
     var semi = try parserExpect(self, TokenKind.semicolon);
     var end_pos: u32 = semi.span_start + @intCast(u32, semi.span_len);
-    var vok: []const u8 = "v"; pal.stderr_write(vok);
+    var vok: []const u8 = "v"; pal.markerWrite(vok);
     return ast_mod.astStoreAddNode(self.store, AstKind.var_decl, flags,
         kw.span_start, end_pos, type_node, init_node, 0, name_id);
 }
@@ -1174,7 +1174,7 @@ fn parserParseExternDecl(self: *Parser, is_pub: bool) ParserError!u32 {
     return error.UnexpectedToken;
 }
 fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool) ParserError!u32 {
-    var fmsg: []const u8 = "Fv"; pal.stderr_write(fmsg);
+    var fmsg: []const u8 = "Fv"; pal.markerWrite(fmsg);
     var kw = parserAdvance(self);
     var flags: u8 = 0;
     if (is_pub) flags = flags | @intCast(u8, 0x02);
@@ -1226,24 +1226,24 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     }
 
     if (self.child_buf_len > @intCast(usize, 0)) {
-        var dmsg: []const u8 = "DP:child_buf_stale\n"; pal.stderr_write(dmsg);
+        var dmsg: []const u8 = "DP:child_buf_stale\n"; pal.markerWrite(dmsg);
     }
 
     var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
         ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len }));
     var pmsg: []const u8 = "P:";
-    pal.stderr_write(pmsg);
+    pal.markerWrite(pmsg);
     var pa_buf: [20]u8 = undefined;
     var pa_val: u32 = @intCast(u32, param_count);
     var pa_len = itoa_mod.itoa(pa_val, pa_buf[0..]);
     var pa_start: usize = @intCast(usize, 19) - @intCast(usize, pa_len);
-    pal.stderr_write(pa_buf[pa_start .. @intCast(usize, 19)]);
+    pal.markerWrite(pa_buf[pa_start .. @intCast(usize, 19)]);
     var pnl: []const u8 = "\n";
-    pal.stderr_write(pnl);
+    pal.markerWrite(pnl);
     var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
     self.child_buf_len = 0;
-    var fok: []const u8 = "Fk"; pal.stderr_write(fok);
+    var fok: []const u8 = "Fk"; pal.markerWrite(fok);
     return ast_mod.astStoreAddNode(self.store, AstKind.fn_decl, flags, kw.span_start, end_pos, body_node, 0, 0, proto_idx);
 }
 
@@ -1251,22 +1251,22 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
     var cond = try parserParseExprPrec(self, Prec.none);
-    var pc0: []const u8 = "PIF:c="; pal.stderr_write(pc0);
-    var pc0b: [10]u8 = undefined; var pc0l = itoa_mod.itoa(cond, pc0b[0..]); var pc0s: usize = @intCast(usize, 9) - @intCast(usize, pc0l); pal.stderr_write(pc0b[pc0s..@intCast(usize, 9)]);
-    var pck: []const u8 = "k"; pal.stderr_write(pck);
+    var pc0: []const u8 = "PIF:c="; pal.markerWrite(pc0);
+    var pc0b: [10]u8 = undefined; var pc0l = itoa_mod.itoa(cond, pc0b[0..]); var pc0s: usize = @intCast(usize, 9) - @intCast(usize, pc0l); pal.markerWrite(pc0b[pc0s..@intCast(usize, 9)]);
+    var pck: []const u8 = "k"; pal.markerWrite(pck);
     var cond_n = self.store.nodes.items[@intCast(usize, cond)];
-    var pckb: [10]u8 = undefined; var pckl = itoa_mod.itoa(cond_n.kind, pckb[0..]); var pcks: usize = @intCast(usize, 9) - @intCast(usize, pckl); pal.stderr_write(pckb[pcks..@intCast(usize, 9)]);
-    var pc1: []const u8 = "c1"; pal.stderr_write(pc1);
-    var pc1b: [10]u8 = undefined; var pc1l = itoa_mod.itoa(cond_n.child_0, pc1b[0..]); var pc1s: usize = @intCast(usize, 9) - @intCast(usize, pc1l); pal.stderr_write(pc1b[pc1s..@intCast(usize, 9)]);
-    var pc2: []const u8 = "c2"; pal.stderr_write(pc2);
-    var pc2b: [10]u8 = undefined; var pc2l = itoa_mod.itoa(cond_n.child_1, pc2b[0..]); var pc2s: usize = @intCast(usize, 9) - @intCast(usize, pc2l); pal.stderr_write(pc2b[pc2s..@intCast(usize, 9)]);
-    var pck1: []const u8 = "k1"; pal.stderr_write(pck1);
+    var pckb: [10]u8 = undefined; var pckl = itoa_mod.itoa(cond_n.kind, pckb[0..]); var pcks: usize = @intCast(usize, 9) - @intCast(usize, pckl); pal.markerWrite(pckb[pcks..@intCast(usize, 9)]);
+    var pc1: []const u8 = "c1"; pal.markerWrite(pc1);
+    var pc1b: [10]u8 = undefined; var pc1l = itoa_mod.itoa(cond_n.child_0, pc1b[0..]); var pc1s: usize = @intCast(usize, 9) - @intCast(usize, pc1l); pal.markerWrite(pc1b[pc1s..@intCast(usize, 9)]);
+    var pc2: []const u8 = "c2"; pal.markerWrite(pc2);
+    var pc2b: [10]u8 = undefined; var pc2l = itoa_mod.itoa(cond_n.child_1, pc2b[0..]); var pc2s: usize = @intCast(usize, 9) - @intCast(usize, pc2l); pal.markerWrite(pc2b[pc2s..@intCast(usize, 9)]);
+    var pck1: []const u8 = "k1"; pal.markerWrite(pck1);
     var cn1 = self.store.nodes.items[@intCast(usize, cond_n.child_0)];
-    var pck1b: [10]u8 = undefined; var pck1l = itoa_mod.itoa(cn1.kind, pck1b[0..]); var pck1s: usize = @intCast(usize, 9) - @intCast(usize, pck1l); pal.stderr_write(pck1b[pck1s..@intCast(usize, 9)]);
-    var pck2: []const u8 = "k2"; pal.stderr_write(pck2);
+    var pck1b: [10]u8 = undefined; var pck1l = itoa_mod.itoa(cn1.kind, pck1b[0..]); var pck1s: usize = @intCast(usize, 9) - @intCast(usize, pck1l); pal.markerWrite(pck1b[pck1s..@intCast(usize, 9)]);
+    var pck2: []const u8 = "k2"; pal.markerWrite(pck2);
     var cn2 = self.store.nodes.items[@intCast(usize, cond_n.child_1)];
-    var pck2b: [10]u8 = undefined; var pck2l = itoa_mod.itoa(cn2.kind, pck2b[0..]); var pck2s: usize = @intCast(usize, 9) - @intCast(usize, pck2l); pal.stderr_write(pck2b[pck2s..@intCast(usize, 9)]);
-    var pknl: []const u8 = "\n"; pal.stderr_write(pknl);
+    var pck2b: [10]u8 = undefined; var pck2l = itoa_mod.itoa(cn2.kind, pck2b[0..]); var pck2s: usize = @intCast(usize, 9) - @intCast(usize, pck2l); pal.markerWrite(pck2b[pck2s..@intCast(usize, 9)]);
+    var pknl: []const u8 = "\n"; pal.markerWrite(pknl);
     _ = try parserExpect(self, TokenKind.rparen);
 
     var capture_node: u32 = 0;

@@ -180,11 +180,11 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
     var node = store.nodes.items[decl_idx];
     switch (node.kind) {
          AstKind.var_decl => {
-             var ra_msg: []const u8 = "Ra"; pal_mod.stderr_write(ra_msg);
+             var ra_msg: []const u8 = "Ra"; pal_mod.markerWrite(ra_msg);
              var name_id = node.payload;
-             var d12m: []const u8 = "D12:n"; pal_mod.stderr_write(d12m);
-             var d12b: [20]u8 = undefined; var d12l = itoa_mod.itoa(name_id, d12b[0..]); var d12s: usize = @intCast(usize, 19) - @intCast(usize, d12l); pal_mod.stderr_write(d12b[d12s..@intCast(usize, 19)]);
-             var d12nl: []const u8 = "\n"; pal_mod.stderr_write(d12nl);
+             var d12m: []const u8 = "D12:n"; pal_mod.markerWrite(d12m);
+             var d12b: [20]u8 = undefined; var d12l = itoa_mod.itoa(name_id, d12b[0..]); var d12s: usize = @intCast(usize, 19) - @intCast(usize, d12l); pal_mod.markerWrite(d12b[d12s..@intCast(usize, 19)]);
+             var d12nl: []const u8 = "\n"; pal_mod.markerWrite(d12nl);
             var sym_kind = sym_mod.SymbolKind.global;
             var sym_mod_id = mod_id;
             var sym_type_id: u32 = @intCast(u32, 0);
@@ -192,21 +192,21 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 if (init_node.kind == AstKind.import_expr) {
                     var target = hash_mod.u32ToU32MapGet(&reg.path_to_id, init_node.payload);
-                    var m5m: []const u8 = "M5:p"; pal_mod.stderr_write(m5m);
-                    var m5pb: [20]u8 = undefined; var m5pl = itoa_mod.itoa(init_node.payload, m5pb[0..]); var m5ps: usize = @intCast(usize, 19) - @intCast(usize, m5pl); pal_mod.stderr_write(m5pb[m5ps..@intCast(usize, 19)]);
+                    var m5m: []const u8 = "M5:p"; pal_mod.markerWrite(m5m);
+                    var m5pb: [20]u8 = undefined; var m5pl = itoa_mod.itoa(init_node.payload, m5pb[0..]); var m5ps: usize = @intCast(usize, 19) - @intCast(usize, m5pl); pal_mod.markerWrite(m5pb[m5ps..@intCast(usize, 19)]);
                     if (target) |mtid| {
-                        var rs_msg: []const u8 = "Rs"; pal_mod.stderr_write(rs_msg);
+                        var rs_msg: []const u8 = "Rs"; pal_mod.markerWrite(rs_msg);
                         sym_kind = sym_mod.SymbolKind.module;
                         sym_mod_id = mtid;
-                        var di_m: []const u8 = "FIX1:mid="; pal_mod.stderr_write(di_m);
-                        var di_mb: [10]u8 = undefined; var di_ml = itoa_mod.itoa(sym_mod_id, di_mb[0..]); var di_ms: usize = @intCast(usize, 9) - @intCast(usize, di_ml); pal_mod.stderr_write(di_mb[di_ms..@intCast(usize, 9)]);
-                        var di_t: []const u8 = "t"; pal_mod.stderr_write(di_t);
-                        var di_tb: [10]u8 = undefined; var di_tl = itoa_mod.itoa(mtid, di_tb[0..]); var di_ts: usize = @intCast(usize, 9) - @intCast(usize, di_tl); pal_mod.stderr_write(di_tb[di_ts..@intCast(usize, 9)]);
-                        var di_n: []const u8 = "n"; pal_mod.stderr_write(di_n);
-                        var di_nb: [10]u8 = undefined; var di_nl = itoa_mod.itoa(mod_id, di_nb[0..]); var di_ns: usize = @intCast(usize, 9) - @intCast(usize, di_nl);                         pal_mod.stderr_write(di_nb[di_ns..@intCast(usize, 9)]);
+                        var di_m: []const u8 = "FIX1:mid="; pal_mod.markerWrite(di_m);
+                        var di_mb: [10]u8 = undefined; var di_ml = itoa_mod.itoa(sym_mod_id, di_mb[0..]); var di_ms: usize = @intCast(usize, 9) - @intCast(usize, di_ml); pal_mod.markerWrite(di_mb[di_ms..@intCast(usize, 9)]);
+                        var di_t: []const u8 = "t"; pal_mod.markerWrite(di_t);
+                        var di_tb: [10]u8 = undefined; var di_tl = itoa_mod.itoa(mtid, di_tb[0..]); var di_ts: usize = @intCast(usize, 9) - @intCast(usize, di_tl); pal_mod.markerWrite(di_tb[di_ts..@intCast(usize, 9)]);
+                        var di_n: []const u8 = "n"; pal_mod.markerWrite(di_n);
+                        var di_nb: [10]u8 = undefined; var di_nl = itoa_mod.itoa(mod_id, di_nb[0..]); var di_ns: usize = @intCast(usize, 9) - @intCast(usize, di_nl);                         pal_mod.markerWrite(di_nb[di_ns..@intCast(usize, 9)]);
                         sym_type_id = type_mod.typeRegistryGetOrCreateModule(type_reg, mtid);
                     } else {
-                        var rf_msg: []const u8 = "Rf"; pal_mod.stderr_write(rf_msg);
+                        var rf_msg: []const u8 = "Rf"; pal_mod.markerWrite(rf_msg);
                     }
                 }
                 if (init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.enum_decl or init_node.kind == AstKind.union_decl) {
@@ -237,22 +237,22 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             var inserted = sym_mod.symbolTableInsert(table, sym);
             if (!inserted) {
                 var vr: []const u8 = "VR";
-                pal_mod.stderr_write(vr);
+                pal_mod.markerWrite(vr);
             }
             var vd: []const u8 = "VD";
-            pal_mod.stderr_write(vd);
+            pal_mod.markerWrite(vd);
             var vb: [20]u8 = undefined;
             var vn = itoa_mod.itoa(name_id, vb[0..]);
             var vns: usize = @intCast(usize, 20) - @intCast(usize, 1) - @intCast(usize, vn);
-            pal_mod.stderr_write(vb[vns..@intCast(usize, 20)]);
+            pal_mod.markerWrite(vb[vns..@intCast(usize, 20)]);
             var vc: []const u8 = ":";
-            pal_mod.stderr_write(vc);
+            pal_mod.markerWrite(vc);
             var vk = itoa_mod.itoa(@intCast(u32, @enumToInt(sym_kind)), vb[0..]);
             var vks: usize = @intCast(usize, 20) - @intCast(usize, 1) - @intCast(usize, vk);
-            pal_mod.stderr_write(vb[vks..@intCast(usize, 20)]);
+            pal_mod.markerWrite(vb[vks..@intCast(usize, 20)]);
             var ven: []const u8 = "\n";
-            pal_mod.stderr_write(ven);
-            var vi_msg: []const u8 = "Vi"; pal_mod.stderr_write(vi_msg);
+            pal_mod.markerWrite(ven);
+            var vi_msg: []const u8 = "Vi"; pal_mod.markerWrite(vi_msg);
         },
         AstKind.fn_decl => {
             var proto = store.fn_protos.items[@intCast(usize, node.payload)];
@@ -336,11 +336,11 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                  };
                  var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
                  _ = sym_mod.symbolTableInsert(table, sym);
-                 var imr: []const u8 = "IMR:n"; pal.stderr_write(imr);
-                 var imb: [10]u8 = undefined; var iml = itoa_mod.itoa(path_id, imb[0..]); var ims: usize = @intCast(usize, 9) - @intCast(usize, iml); pal.stderr_write(imb[ims..@intCast(usize, 9)]);
-                 var imm: []const u8 = "m"; pal.stderr_write(imm);
-                 var immb: [10]u8 = undefined; var imml = itoa_mod.itoa(tid, immb[0..]); var imms: usize = @intCast(usize, 9) - @intCast(usize, imml); pal.stderr_write(immb[imms..@intCast(usize, 9)]);
-                 var imsnl: []const u8 = " "; pal.stderr_write(imsnl);
+                 var imr: []const u8 = "IMR:n"; pal.markerWrite(imr);
+                 var imb: [10]u8 = undefined; var iml = itoa_mod.itoa(path_id, imb[0..]); var ims: usize = @intCast(usize, 9) - @intCast(usize, iml); pal.markerWrite(imb[ims..@intCast(usize, 9)]);
+                 var imm: []const u8 = "m"; pal.markerWrite(imm);
+                 var immb: [10]u8 = undefined; var imml = itoa_mod.itoa(tid, immb[0..]); var imms: usize = @intCast(usize, 9) - @intCast(usize, imml); pal.markerWrite(immb[imms..@intCast(usize, 9)]);
+                 var imsnl: []const u8 = " "; pal.markerWrite(imsnl);
              }
          },
         else => {},
@@ -354,28 +354,28 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
     if (root.kind != AstKind.module_root) return;
     var decls = ast_mod.astStoreGetExtraChildren(store, root.payload);
     if (module_id == @intCast(u32, 0)) {
-        var dg: []const u8 = "RS"; pal_mod.stderr_write(dg);
+        var dg: []const u8 = "RS"; pal_mod.markerWrite(dg);
         var pb: [20]u8 = undefined;
         var pl = itoa_mod.itoa(root.payload, pb[0..]);
         var ps: usize = @intCast(usize, 19) - @intCast(usize, pl);
-        pal_mod.stderr_write(pb[ps..@intCast(usize, 19)]);
-        var sc: []const u8 = ":"; pal_mod.stderr_write(sc);
+        pal_mod.markerWrite(pb[ps..@intCast(usize, 19)]);
+        var sc: []const u8 = ":"; pal_mod.markerWrite(sc);
         var i2: usize = 0;
         while (i2 < decls.len) : (i2 += 1) {
             var ii_buf: [20]u8 = undefined;
             var ii_len = itoa_mod.itoa(decls[i2], ii_buf[0..]);
             var ii_start: usize = @intCast(usize, 19) - @intCast(usize, ii_len);
-            pal_mod.stderr_write(ii_buf[ii_start..@intCast(usize, 19)]);
-            var ss: []const u8 = "="; pal_mod.stderr_write(ss);
+            pal_mod.markerWrite(ii_buf[ii_start..@intCast(usize, 19)]);
+            var ss: []const u8 = "="; pal_mod.markerWrite(ss);
             var dc = store.nodes.items[@intCast(usize, decls[i2])];
             var dk: u32 = @intCast(u32, @enumToInt(dc.kind));
             var db: [20]u8 = undefined;
             var dl = itoa_mod.itoa(dk, db[0..]);
             var ds: usize = @intCast(usize, 19) - @intCast(usize, dl);
-            pal_mod.stderr_write(db[ds..@intCast(usize, 19)]);
-            var dsp: []const u8 = " "; pal_mod.stderr_write(dsp);
+            pal_mod.markerWrite(db[ds..@intCast(usize, 19)]);
+            var dsp: []const u8 = " "; pal_mod.markerWrite(dsp);
         }
-        var dn: []const u8 = "\n"; pal_mod.stderr_write(dn);
+        var dn: []const u8 = "\n"; pal_mod.markerWrite(dn);
     }
     var i: usize = 0;
     while (i < decls.len) {

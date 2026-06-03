@@ -84,3 +84,15 @@ pub fn argCount() i32 {
 pub fn argGet(i: i32) [*]const u8 {
     return saved_argv[@intCast(usize, i)];
 }
+
+var g_markers_enabled: u32 = 0;
+
+pub fn markersEnabled(on: u32) void {
+    g_markers_enabled = on;
+}
+
+pub fn markerWrite(msg: []const u8) void {
+    if (g_markers_enabled != @intCast(u32, 0)) {
+        stderr_write(msg);
+    }
+}

@@ -72,7 +72,7 @@ fn dbgPrintU32(val: u32) void {
     var len = itoa_mod.itoa(val, buf[0..]);
     var sbase: usize = @intCast(usize, 19) - @intCast(usize, len);
     var send: usize = @intCast(usize, 19);
-    pal.stderr_write(buf[sbase .. send]);
+    pal.markerWrite(buf[sbase .. send]);
 }
 
 pub const NameMangler = struct {
@@ -342,13 +342,13 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (tid >= @intCast(u32, 20)) {
-        var d6m: []const u8 = "D6:"; pal.stderr_write(d6m);
-        var d6tb: [20]u8 = undefined; var d6tl = itoa_mod.itoa(tid, d6tb[0..]); var d6ts: usize = @intCast(usize, 19) - @intCast(usize, d6tl); pal.stderr_write(d6tb[d6ts..@intCast(usize, 19)]);
-        var d6kn: []const u8 = "k"; pal.stderr_write(d6kn);
-        var d6kb: [20]u8 = undefined; var d6kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), d6kb[0..]); var d6ks: usize = @intCast(usize, 19) - @intCast(usize, d6kl); pal.stderr_write(d6kb[d6ks..@intCast(usize, 19)]);
-        var d6nn: []const u8 = "n"; pal.stderr_write(d6nn);
-        var d6nb: [20]u8 = undefined; var d6nl = itoa_mod.itoa(ty.name_id, d6nb[0..]); var d6ns: usize = @intCast(usize, 19) - @intCast(usize, d6nl); pal.stderr_write(d6nb[d6ns..@intCast(usize, 19)]);
-        var d6nl2: []const u8 = "\n"; pal.stderr_write(d6nl2);
+        var d6m: []const u8 = "D6:"; pal.markerWrite(d6m);
+        var d6tb: [20]u8 = undefined; var d6tl = itoa_mod.itoa(tid, d6tb[0..]); var d6ts: usize = @intCast(usize, 19) - @intCast(usize, d6tl); pal.markerWrite(d6tb[d6ts..@intCast(usize, 19)]);
+        var d6kn: []const u8 = "k"; pal.markerWrite(d6kn);
+        var d6kb: [20]u8 = undefined; var d6kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), d6kb[0..]); var d6ks: usize = @intCast(usize, 19) - @intCast(usize, d6kl); pal.markerWrite(d6kb[d6ks..@intCast(usize, 19)]);
+        var d6nn: []const u8 = "n"; pal.markerWrite(d6nn);
+        var d6nb: [20]u8 = undefined; var d6nl = itoa_mod.itoa(ty.name_id, d6nb[0..]); var d6ns: usize = @intCast(usize, 19) - @intCast(usize, d6nl); pal.markerWrite(d6nb[d6ns..@intCast(usize, 19)]);
+        var d6nl2: []const u8 = "\n"; pal.markerWrite(d6nl2);
     }
     if (ty.kind == TypeKind.void_type) { var s: []const u8 = "void"; return s; }
     if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "int"; return s; }
@@ -469,13 +469,13 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
         var tid = ti;
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind == TypeKind.tagged_union_type) {
-            var d2m: []const u8 = "D2:t"; pal.stderr_write(d2m);
-            var d2b: [20]u8 = undefined; var d2l = itoa_mod.itoa(tid, d2b[0..]); var d2s: usize = @intCast(usize, 19) - @intCast(usize, d2l); pal.stderr_write(d2b[d2s..@intCast(usize, 19)]);
-            var d2nn: []const u8 = "n"; pal.stderr_write(d2nn);
-            var d2nb: [20]u8 = undefined; var d2nl = itoa_mod.itoa(ty.name_id, d2nb[0..]); var d2ns: usize = @intCast(usize, 19) - @intCast(usize, d2nl); pal.stderr_write(d2nb[d2ns..@intCast(usize, 19)]);
-            var d2mm: []const u8 = "m"; pal.stderr_write(d2mm);
-            var d2mb: [20]u8 = undefined; var d2ml = itoa_mod.itoa(ty.module_id, d2mb[0..]); var d2ms: usize = @intCast(usize, 19) - @intCast(usize, d2ml); pal.stderr_write(d2mb[d2ms..@intCast(usize, 19)]);
-            var d2nl2: []const u8 = "\n"; pal.stderr_write(d2nl2);
+            var d2m: []const u8 = "D2:t"; pal.markerWrite(d2m);
+            var d2b: [20]u8 = undefined; var d2l = itoa_mod.itoa(tid, d2b[0..]); var d2s: usize = @intCast(usize, 19) - @intCast(usize, d2l); pal.markerWrite(d2b[d2s..@intCast(usize, 19)]);
+            var d2nn: []const u8 = "n"; pal.markerWrite(d2nn);
+            var d2nb: [20]u8 = undefined; var d2nl = itoa_mod.itoa(ty.name_id, d2nb[0..]); var d2ns: usize = @intCast(usize, 19) - @intCast(usize, d2nl); pal.markerWrite(d2nb[d2ns..@intCast(usize, 19)]);
+            var d2mm: []const u8 = "m"; pal.markerWrite(d2mm);
+            var d2mb: [20]u8 = undefined; var d2ml = itoa_mod.itoa(ty.module_id, d2mb[0..]); var d2ms: usize = @intCast(usize, 19) - @intCast(usize, d2ml); pal.markerWrite(d2mb[d2ms..@intCast(usize, 19)]);
+            var d2nl2: []const u8 = "\n"; pal.markerWrite(d2nl2);
         }
         if (ty.kind == TypeKind.void_type) continue;
         if (ty.kind == TypeKind.bool_type) continue;
@@ -699,13 +699,13 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     var et_k: [20]u8 = undefined;
     var et_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), et_k[0..]);
     var et_ks: usize = @intCast(usize, 19) - @intCast(usize, et_kl);
-    var etm: []const u8 = "ET:t"; pal.stderr_write(etm);
+    var etm: []const u8 = "ET:t"; pal.markerWrite(etm);
     var et_t: [20]u8 = undefined;
     var et_tl = itoa_mod.itoa(tid, et_t[0..]);
     var et_ts: usize = @intCast(usize, 19) - @intCast(usize, et_tl);
-    pal.stderr_write(et_t[et_ts..@intCast(usize, 19)]);
-    var etk: []const u8 = "k"; pal.stderr_write(etk); pal.stderr_write(et_k[et_ks..@intCast(usize, 19)]);
-    var etnl: []const u8 = "\n"; pal.stderr_write(etnl);
+    pal.markerWrite(et_t[et_ts..@intCast(usize, 19)]);
+    var etk: []const u8 = "k"; pal.markerWrite(etk); pal.markerWrite(et_k[et_ks..@intCast(usize, 19)]);
+    var etnl: []const u8 = "\n"; pal.markerWrite(etnl);
     if (ty.kind == TypeKind.slice_type) { emitSliceType(emitter, tid); return; }
     if (ty.kind == TypeKind.optional_type) { emitOptionalType(emitter, tid); return; }
     if (ty.kind == TypeKind.error_union_type) { emitErrorUnionType(emitter, tid); return; }
@@ -879,8 +879,8 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     if (orig.len == @intCast(usize, 4)) {
         if (orig[0] == 'm' and orig[1] == 'a' and orig[2] == 'i' and orig[3] == 'n') is_main = @intCast(u8, 1);
     }
-     var fwdm: []const u8 = "FWD:n="; pal.stderr_write(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.stderr_write(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.stderr_write(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.stderr_write(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "
-"; pal.stderr_write(fwdnl2);
+     var fwdm: []const u8 = "FWD:n="; pal.markerWrite(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.markerWrite(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.markerWrite(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.markerWrite(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "
+"; pal.markerWrite(fwdnl2);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
      if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
@@ -1081,9 +1081,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         }
     }
     emitter.fl_count = local_count;
-    var p0m: []const u8 = "P0:lc="; pal.stderr_write(p0m);
-    var p0mb: [10]u8 = undefined; var p0ml = itoa_mod.itoa(local_count, p0mb[0..]); var p0ms: usize = @intCast(usize, 9) - @intCast(usize, p0ml); pal.stderr_write(p0mb[p0ms..@intCast(usize, 9)]);
-    var p0nl: []const u8 = "\n"; pal.stderr_write(p0nl);
+    var p0m: []const u8 = "P0:lc="; pal.markerWrite(p0m);
+    var p0mb: [10]u8 = undefined; var p0ml = itoa_mod.itoa(local_count, p0mb[0..]); var p0ms: usize = @intCast(usize, 9) - @intCast(usize, p0ml); pal.markerWrite(p0mb[p0ms..@intCast(usize, 9)]);
+    var p0nl: []const u8 = "\n"; pal.markerWrite(p0nl);
     var dbi: usize = @intCast(usize, 0);
     while (dbi < lir_fn.blocks.len) : (dbi += @intCast(usize, 1)) {
         var dbb = &lir_fn.blocks.items[dbi];
@@ -1099,13 +1099,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             if (local_name_ids[@intCast(usize, ldi)] == dl.name_id) { ldup = @intCast(u8, 1); break; }
                         }
                          if (ldup == @intCast(u8, 0)) {
-                             var p1m: []const u8 = "P1:t"; pal.stderr_write(p1m);
-                             var p1tb: [20]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 19) - @intCast(usize, p1tl); pal.stderr_write(p1tb[p1ts..@intCast(usize, 19)]);
-                             var p1tn: []const u8 = "T"; pal.stderr_write(p1tn);
-                             var p1db: [20]u8 = undefined; var p1dl = itoa_mod.itoa(dl.type_id, p1db[0..]); var p1ds: usize = @intCast(usize, 19) - @intCast(usize, p1dl); pal.stderr_write(p1db[p1ds..@intCast(usize, 19)]);
-                             var p1nn: []const u8 = "N"; pal.stderr_write(p1nn);
-                             var p1nb: [20]u8 = undefined; var p1nl2 = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 19) - @intCast(usize, p1nl2); pal.stderr_write(p1nb[p1ns..@intCast(usize, 19)]);
-                             var p1nl: []const u8 = "\n"; pal.stderr_write(p1nl);
+                             var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
+                             var p1tb: [20]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 19) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 19)]);
+                             var p1tn: []const u8 = "T"; pal.markerWrite(p1tn);
+                             var p1db: [20]u8 = undefined; var p1dl = itoa_mod.itoa(dl.type_id, p1db[0..]); var p1ds: usize = @intCast(usize, 19) - @intCast(usize, p1dl); pal.markerWrite(p1db[p1ds..@intCast(usize, 19)]);
+                             var p1nn: []const u8 = "N"; pal.markerWrite(p1nn);
+                             var p1nb: [20]u8 = undefined; var p1nl2 = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 19) - @intCast(usize, p1nl2); pal.markerWrite(p1nb[p1ns..@intCast(usize, 19)]);
+                             var p1nl: []const u8 = "\n"; pal.markerWrite(p1nl);
                             local_name_ids[@intCast(usize, local_count)] = dl.name_id;
                             local_types[@intCast(usize, local_count)] = dl.type_id;
                             emitter.fl_temps[@intCast(usize, local_count)] = dl.temp;
@@ -1113,11 +1113,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             emitter.fl_count = local_count + @intCast(u32, 1);
                             local_count += @intCast(u32, 1);
                          } else {
-                             var d3e: []const u8 = "F3eD:t"; pal.stderr_write(d3e);
-                             var d3etb: [20]u8 = undefined; var d3etl = itoa_mod.itoa(dl.temp, d3etb[0..]); var d3ets: usize = @intCast(usize, 19) - @intCast(usize, d3etl); pal.stderr_write(d3etb[d3ets..@intCast(usize, 19)]);
-                             var d3en: []const u8 = "N"; pal.stderr_write(d3en);
-                             var d3enb: [20]u8 = undefined; var d3enl = itoa_mod.itoa(dl.name_id, d3enb[0..]); var d3ens: usize = @intCast(usize, 19) - @intCast(usize, d3enl); pal.stderr_write(d3enb[d3ens..@intCast(usize, 19)]);
-                             var d3enl2: []const u8 = "\n"; pal.stderr_write(d3enl2);
+                             var d3e: []const u8 = "F3eD:t"; pal.markerWrite(d3e);
+                             var d3etb: [20]u8 = undefined; var d3etl = itoa_mod.itoa(dl.temp, d3etb[0..]); var d3ets: usize = @intCast(usize, 19) - @intCast(usize, d3etl); pal.markerWrite(d3etb[d3ets..@intCast(usize, 19)]);
+                             var d3en: []const u8 = "N"; pal.markerWrite(d3en);
+                             var d3enb: [20]u8 = undefined; var d3enl = itoa_mod.itoa(dl.name_id, d3enb[0..]); var d3ens: usize = @intCast(usize, 19) - @intCast(usize, d3enl); pal.markerWrite(d3enb[d3ens..@intCast(usize, 19)]);
+                             var d3enl2: []const u8 = "\n"; pal.markerWrite(d3enl2);
                          }
                     }
                 },
@@ -1125,9 +1125,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             }
         }
     }
-    var d2c: []const u8 = "P2:lc="; pal.stderr_write(d2c);
-    var d2cb: [10]u8 = undefined; var d2cl = itoa_mod.itoa(local_count, d2cb[0..]); var d2cs: usize = @intCast(usize, 9) - @intCast(usize, d2cl); pal.stderr_write(d2cb[d2cs..@intCast(usize, 9)]);
-    var d2cn: []const u8 = "\n"; pal.stderr_write(d2cn);
+    var d2c: []const u8 = "P2:lc="; pal.markerWrite(d2c);
+    var d2cb: [10]u8 = undefined; var d2cl = itoa_mod.itoa(local_count, d2cb[0..]); var d2cs: usize = @intCast(usize, 9) - @intCast(usize, d2cl); pal.markerWrite(d2cb[d2cs..@intCast(usize, 9)]);
+    var d2cn: []const u8 = "\n"; pal.markerWrite(d2cn);
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
         var bb = &lir_fn.blocks.items[bb_idx];
@@ -1149,17 +1149,17 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                                     src_ty = lir_fn.hoisted_temps.items[@intCast(usize, src_p)].type_id;
                                 }
                                 written_type[@intCast(usize, dst_p)] = src_ty;
-                                var p3m: []const u8 = "P3:d"; pal.stderr_write(p3m);
-                                var p3db: [10]u8 = undefined; var p3dl = itoa_mod.itoa(a.dst, p3db[0..]); var p3ds: usize = @intCast(usize, 9) - @intCast(usize, p3dl); pal.stderr_write(p3db[p3ds..@intCast(usize, 9)]);
-                                var p3sm: []const u8 = "s"; pal.stderr_write(p3sm);
-                                var p3sb: [10]u8 = undefined; var p3sl = itoa_mod.itoa(a.src, p3sb[0..]); var p3ss: usize = @intCast(usize, 9) - @intCast(usize, p3sl); pal.stderr_write(p3sb[p3ss..@intCast(usize, 9)]);
-                                var p3tm: []const u8 = "t"; pal.stderr_write(p3tm);
-                                var p3tb: [10]u8 = undefined; var p3tl = itoa_mod.itoa(src_ty, p3tb[0..]); var p3ts: usize = @intCast(usize, 9) - @intCast(usize, p3tl); pal.stderr_write(p3tb[p3ts..@intCast(usize, 9)]);
-                                var p3hm: []const u8 = "h"; pal.stderr_write(p3hm);
-                                var p3hb: [10]u8 = undefined; var p3hl = itoa_mod.itoa(lir_fn.hoisted_temps.items[@intCast(usize, dst_p)].type_id, p3hb[0..]); var p3hs: usize = @intCast(usize, 9) - @intCast(usize, p3hl); pal.stderr_write(p3hb[p3hs..@intCast(usize, 9)]);
-                                var p3im: []const u8 = "i"; pal.stderr_write(p3im);
-                                var p3ib: [10]u8 = undefined; var p3il = itoa_mod.itoa(@intCast(u32, (bb_idx << @intCast(usize, 16)) | ii), p3ib[0..]); var p3is: usize = @intCast(usize, 9) - @intCast(usize, p3il); pal.stderr_write(p3ib[p3is..@intCast(usize, 9)]);
-                                var p3nl: []const u8 = "\n"; pal.stderr_write(p3nl);
+                                var p3m: []const u8 = "P3:d"; pal.markerWrite(p3m);
+                                var p3db: [10]u8 = undefined; var p3dl = itoa_mod.itoa(a.dst, p3db[0..]); var p3ds: usize = @intCast(usize, 9) - @intCast(usize, p3dl); pal.markerWrite(p3db[p3ds..@intCast(usize, 9)]);
+                                var p3sm: []const u8 = "s"; pal.markerWrite(p3sm);
+                                var p3sb: [10]u8 = undefined; var p3sl = itoa_mod.itoa(a.src, p3sb[0..]); var p3ss: usize = @intCast(usize, 9) - @intCast(usize, p3sl); pal.markerWrite(p3sb[p3ss..@intCast(usize, 9)]);
+                                var p3tm: []const u8 = "t"; pal.markerWrite(p3tm);
+                                var p3tb: [10]u8 = undefined; var p3tl = itoa_mod.itoa(src_ty, p3tb[0..]); var p3ts: usize = @intCast(usize, 9) - @intCast(usize, p3tl); pal.markerWrite(p3tb[p3ts..@intCast(usize, 9)]);
+                                var p3hm: []const u8 = "h"; pal.markerWrite(p3hm);
+                                var p3hb: [10]u8 = undefined; var p3hl = itoa_mod.itoa(lir_fn.hoisted_temps.items[@intCast(usize, dst_p)].type_id, p3hb[0..]); var p3hs: usize = @intCast(usize, 9) - @intCast(usize, p3hl); pal.markerWrite(p3hb[p3hs..@intCast(usize, 9)]);
+                                var p3im: []const u8 = "i"; pal.markerWrite(p3im);
+                                var p3ib: [10]u8 = undefined; var p3il = itoa_mod.itoa(@intCast(u32, (bb_idx << @intCast(usize, 16)) | ii), p3ib[0..]); var p3is: usize = @intCast(usize, 9) - @intCast(usize, p3il); pal.markerWrite(p3ib[p3is..@intCast(usize, 9)]);
+                                var p3nl: []const u8 = "\n"; pal.markerWrite(p3nl);
                                 written_flag[@intCast(usize, dst_p)] = @intCast(u8, 1);
                             }
                         }
@@ -1234,13 +1234,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             } else {
                                 written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
                             }
-                            var p3m: []const u8 = "P3:r"; pal.stderr_write(p3m);
-                            var p3rb: [20]u8 = undefined; var p3rl = itoa_mod.itoa(cd.result, p3rb[0..]); var p3rs: usize = @intCast(usize, 19) - @intCast(usize, p3rl); pal.stderr_write(p3rb[p3rs..@intCast(usize, 19)]);
-                            var p3tn: []const u8 = "T"; pal.stderr_write(p3tn);
-                            var p3tb: [20]u8 = undefined; var p3tl = itoa_mod.itoa(cd.return_type, p3tb[0..]); var p3ts: usize = @intCast(usize, 19) - @intCast(usize, p3tl); pal.stderr_write(p3tb[p3ts..@intCast(usize, 19)]);
-                            var p3wn: []const u8 = "W"; pal.stderr_write(p3wn);
-                            var p3wb: [20]u8 = undefined; var p3wl = itoa_mod.itoa(written_type[@intCast(usize, dp)], p3wb[0..]); var p3ws: usize = @intCast(usize, 19) - @intCast(usize, p3wl); pal.stderr_write(p3wb[p3ws..@intCast(usize, 19)]);
-                            var p3nl: []const u8 = "\n"; pal.stderr_write(p3nl);
+                            var p3m: []const u8 = "P3:r"; pal.markerWrite(p3m);
+                            var p3rb: [20]u8 = undefined; var p3rl = itoa_mod.itoa(cd.result, p3rb[0..]); var p3rs: usize = @intCast(usize, 19) - @intCast(usize, p3rl); pal.markerWrite(p3rb[p3rs..@intCast(usize, 19)]);
+                            var p3tn: []const u8 = "T"; pal.markerWrite(p3tn);
+                            var p3tb: [20]u8 = undefined; var p3tl = itoa_mod.itoa(cd.return_type, p3tb[0..]); var p3ts: usize = @intCast(usize, 19) - @intCast(usize, p3tl); pal.markerWrite(p3tb[p3ts..@intCast(usize, 19)]);
+                            var p3wn: []const u8 = "W"; pal.markerWrite(p3wn);
+                            var p3wb: [20]u8 = undefined; var p3wl = itoa_mod.itoa(written_type[@intCast(usize, dp)], p3wb[0..]); var p3ws: usize = @intCast(usize, 19) - @intCast(usize, p3wl); pal.markerWrite(p3wb[p3ws..@intCast(usize, 19)]);
+                            var p3nl: []const u8 = "\n"; pal.markerWrite(p3nl);
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 2);
                         }
                     }
@@ -1386,16 +1386,16 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                                     break;
                                 }
                             }
-                            var lls: []const u8 = "LLd:"; pal.stderr_write(lls);
+                            var lls: []const u8 = "LLd:"; pal.markerWrite(lls);
                             var lln = ll.result; dbgPrintU32(lln);
-                            var lls2: []const u8 = "="; pal.stderr_write(lls2);
+                            var lls2: []const u8 = "="; pal.markerWrite(lls2);
                             if (found_p != @intCast(u8, 0)) {
                                 var llty = written_type[@intCast(usize, dp)];
                                 dbgPrintU32(llty);
                             } else {
-                                var llmiss: []const u8 = "MISS"; pal.stderr_write(llmiss);
+                                var llmiss: []const u8 = "MISS"; pal.markerWrite(llmiss);
                             }
-                            var lls3: []const u8 = " "; pal.stderr_write(lls3);
+                            var lls3: []const u8 = " "; pal.markerWrite(lls3);
                         }
                     }
                 },
@@ -1424,7 +1424,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             }
         }
     }
-    var d4p: []const u8 = "D4:"; pal.stderr_write(d4p);
+    var d4p: []const u8 = "D4:"; pal.markerWrite(d4p);
     var di: usize = @intCast(usize, 0);
     var had: u8 = 0;
     while (di < lir_fn.hoisted_temps.len) : (di += @intCast(usize, 1)) {
@@ -1433,45 +1433,45 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var wf = written_flag[@intCast(usize, di)];
         if (wf == @intCast(u8, 0)) {
             if (td.type_id != type_mod.TYPE_UNDEFINED) {
-                pal.stderr_write(tn);
-                var d4u: []const u8 = "=UNWRITTEN "; pal.stderr_write(d4u);
+                pal.markerWrite(tn);
+                var d4u: []const u8 = "=UNWRITTEN "; pal.markerWrite(d4u);
                 had = @intCast(u8, 1);
             }
         } else if (wf == @intCast(u8, 2)) {
-            var d9m: []const u8 = "D9:"; pal.stderr_write(d9m);
-            pal.stderr_write(tn);
-            var d9e: []const u8 = "="; pal.stderr_write(d9e);
+            var d9m: []const u8 = "D9:"; pal.markerWrite(d9m);
+            pal.markerWrite(tn);
+            var d9e: []const u8 = "="; pal.markerWrite(d9e);
             var wt2 = written_type[@intCast(usize, di)];
-            var d9tb: [20]u8 = undefined; var d9tl = itoa_mod.itoa(wt2, d9tb[0..]); var d9ts: usize = @intCast(usize, 19) - @intCast(usize, d9tl); pal.stderr_write(d9tb[d9ts..@intCast(usize, 19)]);
-            var d9h: []const u8 = " ht="; pal.stderr_write(d9h);
+            var d9tb: [20]u8 = undefined; var d9tl = itoa_mod.itoa(wt2, d9tb[0..]); var d9ts: usize = @intCast(usize, 19) - @intCast(usize, d9tl); pal.markerWrite(d9tb[d9ts..@intCast(usize, 19)]);
+            var d9h: []const u8 = " ht="; pal.markerWrite(d9h);
             var ht2 = lir_fn.hoisted_temps.items[@intCast(usize, di)].type_id;
-            var d9hb: [20]u8 = undefined; var d9hl = itoa_mod.itoa(ht2, d9hb[0..]); var d9hs: usize = @intCast(usize, 19) - @intCast(usize, d9hl); pal.stderr_write(d9hb[d9hs..@intCast(usize, 19)]);
-            var d9nl: []const u8 = "\n"; pal.stderr_write(d9nl);
+            var d9hb: [20]u8 = undefined; var d9hl = itoa_mod.itoa(ht2, d9hb[0..]); var d9hs: usize = @intCast(usize, 19) - @intCast(usize, d9hl); pal.markerWrite(d9hb[d9hs..@intCast(usize, 19)]);
+            var d9nl: []const u8 = "\n"; pal.markerWrite(d9nl);
             had = @intCast(u8, 1);
          } else {
             var wt = written_type[@intCast(usize, di)];
-            var d7m: []const u8 = "D7:"; pal.stderr_write(d7m);
-            pal.stderr_write(tn);
-            var d7t: []const u8 = "="; pal.stderr_write(d7t);
-            var d7tb: [20]u8 = undefined; var d7tl = itoa_mod.itoa(wt, d7tb[0..]); var d7ts: usize = @intCast(usize, 19) - @intCast(usize, d7tl); pal.stderr_write(d7tb[d7ts..@intCast(usize, 19)]);
-            var d7nl: []const u8 = "\n"; pal.stderr_write(d7nl);
+            var d7m: []const u8 = "D7:"; pal.markerWrite(d7m);
+            pal.markerWrite(tn);
+            var d7t: []const u8 = "="; pal.markerWrite(d7t);
+            var d7tb: [20]u8 = undefined; var d7tl = itoa_mod.itoa(wt, d7tb[0..]); var d7ts: usize = @intCast(usize, 19) - @intCast(usize, d7tl); pal.markerWrite(d7tb[d7ts..@intCast(usize, 19)]);
+            var d7nl: []const u8 = "\n"; pal.markerWrite(d7nl);
             if (wt != @intCast(u32, 0xFFFFFFFF) and wt != td.type_id) {
-                pal.stderr_write(tn);
-                var d4d: []const u8 = ":"; pal.stderr_write(d4d);
+                pal.markerWrite(tn);
+                var d4d: []const u8 = ":"; pal.markerWrite(d4d);
                 var dc = getCTypeName(emitter.registry, emitter.mangler, td.type_id);
-                pal.stderr_write(dc);
-                var d4a: []const u8 = "->"; pal.stderr_write(d4a);
+                pal.markerWrite(dc);
+                var d4a: []const u8 = "->"; pal.markerWrite(d4a);
                 var wc = getCTypeName(emitter.registry, emitter.mangler, wt);
-                pal.stderr_write(wc);
-                var d4m: []const u8 = " MISMATCH "; pal.stderr_write(d4m);
+                pal.markerWrite(wc);
+                var d4m: []const u8 = " MISMATCH "; pal.markerWrite(d4m);
                 had = @intCast(u8, 1);
             }
         }
     }
     if (had != @intCast(u8, 0)) {
-        var d4n: []const u8 = "\n"; pal.stderr_write(d4n);
+        var d4n: []const u8 = "\n"; pal.markerWrite(d4n);
     } else {
-        var d4ok: []const u8 = "OK\n"; pal.stderr_write(d4ok);
+        var d4ok: []const u8 = "OK\n"; pal.markerWrite(d4ok);
     }
 
     var i: usize = @intCast(usize, 0);
@@ -1489,11 +1489,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
         var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
         var tn = mangleTempName(emitter.interner, td.temp_id);
-        var dht: []const u8 = "HT:"; pal.stderr_write(dht);
-        pal.stderr_write(tn);
-        var dsep: []const u8 = ":"; pal.stderr_write(dsep);
-        pal.stderr_write(c_type);
-        var dnl: []const u8 = "\n"; pal.stderr_write(dnl);
+        var dht: []const u8 = "HT:"; pal.markerWrite(dht);
+        pal.markerWrite(tn);
+        var dsep: []const u8 = ":"; pal.markerWrite(dsep);
+        pal.markerWrite(c_type);
+        var dnl: []const u8 = "\n"; pal.markerWrite(dnl);
         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
         bufferedWriterWrite(&emitter.writer, c_type);
         var sp: []const u8 = " ";
@@ -1698,20 +1698,20 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
               bufferedWriterWrite(&emitter.writer, src);
               var sep3: []const u8 = ";\n";
               bufferedWriterWrite(&emitter.writer, sep3);
-              var afe_m: []const u8 = "AFE:b"; pal.stderr_write(afe_m);
-              var afe_bb: [10]u8 = undefined; var afe_bl = itoa_mod.itoa(a.base, afe_bb[0..]); var afe_bs: usize = @intCast(usize, 9) - @intCast(usize, afe_bl); pal.stderr_write(afe_bb[afe_bs..@intCast(usize, 9)]);
-              var afe_fm: []const u8 = "f"; pal.stderr_write(afe_fm);
-              var afe_fb: [10]u8 = undefined; var afe_fl = itoa_mod.itoa(a.field_id, afe_fb[0..]); var afe_fs: usize = @intCast(usize, 9) - @intCast(usize, afe_fl); pal.stderr_write(afe_fb[afe_fs..@intCast(usize, 9)]);
-              var afe_nl: []const u8 = "\n"; pal.stderr_write(afe_nl);
+              var afe_m: []const u8 = "AFE:b"; pal.markerWrite(afe_m);
+              var afe_bb: [10]u8 = undefined; var afe_bl = itoa_mod.itoa(a.base, afe_bb[0..]); var afe_bs: usize = @intCast(usize, 9) - @intCast(usize, afe_bl); pal.markerWrite(afe_bb[afe_bs..@intCast(usize, 9)]);
+              var afe_fm: []const u8 = "f"; pal.markerWrite(afe_fm);
+              var afe_fb: [10]u8 = undefined; var afe_fl = itoa_mod.itoa(a.field_id, afe_fb[0..]); var afe_fs: usize = @intCast(usize, 9) - @intCast(usize, afe_fl); pal.markerWrite(afe_fb[afe_fs..@intCast(usize, 9)]);
+              var afe_nl: []const u8 = "\n"; pal.markerWrite(afe_nl);
           },
           .assign_index => |a| {
-            var adm2: []const u8 = "AIDX:b"; pal.stderr_write(adm2);
-            var adm2b: [10]u8 = undefined; var adm2l = itoa_mod.itoa(a.base, adm2b[0..]); var adm2s: usize = @intCast(usize, 9) - @intCast(usize, adm2l); pal.stderr_write(adm2b[adm2s..@intCast(usize, 9)]);
-            var adm2i: []const u8 = "i"; pal.stderr_write(adm2i);
-            var adm2ib: [10]u8 = undefined; var adm2il = itoa_mod.itoa(a.index, adm2ib[0..]); var adm2is: usize = @intCast(usize, 9) - @intCast(usize, adm2il); pal.stderr_write(adm2ib[adm2is..@intCast(usize, 9)]);
-            var adm2s2: []const u8 = "s"; pal.stderr_write(adm2s2);
-            var adm2sb: [10]u8 = undefined; var adm2sl = itoa_mod.itoa(a.src, adm2sb[0..]); var adm2ss: usize = @intCast(usize, 9) - @intCast(usize, adm2sl); pal.stderr_write(adm2sb[adm2ss..@intCast(usize, 9)]);
-            var adm2nl2: []const u8 = " "; pal.stderr_write(adm2nl2);
+            var adm2: []const u8 = "AIDX:b"; pal.markerWrite(adm2);
+            var adm2b: [10]u8 = undefined; var adm2l = itoa_mod.itoa(a.base, adm2b[0..]); var adm2s: usize = @intCast(usize, 9) - @intCast(usize, adm2l); pal.markerWrite(adm2b[adm2s..@intCast(usize, 9)]);
+            var adm2i: []const u8 = "i"; pal.markerWrite(adm2i);
+            var adm2ib: [10]u8 = undefined; var adm2il = itoa_mod.itoa(a.index, adm2ib[0..]); var adm2is: usize = @intCast(usize, 9) - @intCast(usize, adm2il); pal.markerWrite(adm2ib[adm2is..@intCast(usize, 9)]);
+            var adm2s2: []const u8 = "s"; pal.markerWrite(adm2s2);
+            var adm2sb: [10]u8 = undefined; var adm2sl = itoa_mod.itoa(a.src, adm2sb[0..]); var adm2ss: usize = @intCast(usize, 9) - @intCast(usize, adm2sl); pal.markerWrite(adm2sb[adm2ss..@intCast(usize, 9)]);
+            var adm2nl2: []const u8 = " "; pal.markerWrite(adm2nl2);
             var base = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
             var idx = resolveTempName(emitter, a.index);
             var src = resolveTempName(emitter, a.src);
@@ -1787,11 +1787,11 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .load_local => |ll| {
             var result = resolveTempName(emitter, ll.result);
             var name = mangleLocalName(emitter.mangler, emitter.interner, ll.name_id);
-            var llm: []const u8 = "LL:n"; pal.stderr_write(llm);
-            var llnb: [10]u8 = undefined; var llnl = itoa_mod.itoa(ll.name_id, llnb[0..]); var llns: usize = @intCast(usize, 9) - @intCast(usize, llnl); pal.stderr_write(llnb[llns..@intCast(usize, 9)]);
-            var llrm: []const u8 = "r"; pal.stderr_write(llrm);
-            var llrb: [10]u8 = undefined; var llrl = itoa_mod.itoa(ll.result, llrb[0..]); var llrs: usize = @intCast(usize, 9) - @intCast(usize, llrl); pal.stderr_write(llrb[llrs..@intCast(usize, 9)]);
-            var llnl2: []const u8 = "\n"; pal.stderr_write(llnl2);
+            var llm: []const u8 = "LL:n"; pal.markerWrite(llm);
+            var llnb: [10]u8 = undefined; var llnl = itoa_mod.itoa(ll.name_id, llnb[0..]); var llns: usize = @intCast(usize, 9) - @intCast(usize, llnl); pal.markerWrite(llnb[llns..@intCast(usize, 9)]);
+            var llrm: []const u8 = "r"; pal.markerWrite(llrm);
+            var llrb: [10]u8 = undefined; var llrl = itoa_mod.itoa(ll.result, llrb[0..]); var llrs: usize = @intCast(usize, 9) - @intCast(usize, llrl); pal.markerWrite(llrb[llrs..@intCast(usize, 9)]);
+            var llnl2: []const u8 = "\n"; pal.markerWrite(llnl2);
             var ll_is_arr: u8 = @intCast(u8, 0);
             var ll_arr_len: u32 = @intCast(u32, 0);
             var ll_tj: usize = @intCast(usize, 0);
@@ -2082,9 +2082,9 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s);
             var dx2_buf: [64]u8 = undefined;
             var dx2 = format_mod.formatF64(fc.value, dx2_buf[0..], 64);
-            var dx2s: []const u8 = "D2:"; pal.stderr_write(dx2s);
-            pal.stderr_write(dx2);
-            var dx2n: []const u8 = "\n"; pal.stderr_write(dx2n);
+            var dx2s: []const u8 = "D2:"; pal.markerWrite(dx2s);
+            pal.markerWrite(dx2);
+            var dx2n: []const u8 = "\n"; pal.markerWrite(dx2n);
             var buf: [64]u8 = undefined;
             var fb = format_mod.formatF64(fc.value, buf[0..], 64);
             bufferedWriterWrite(&emitter.writer, fb);
@@ -2146,11 +2146,11 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         },
         .undefined_const => |uc| {
             var result = resolveTempName(emitter, uc.result);
-            var uct_m: []const u8 = "UCT:r"; pal.stderr_write(uct_m);
-            var uct_rb: [10]u8 = undefined; var uct_rl = itoa_mod.itoa(uc.result, uct_rb[0..]); var uct_rs: usize = @intCast(usize, 9) - @intCast(usize, uct_rl); pal.stderr_write(uct_rb[uct_rs..@intCast(usize, 9)]);
-            var uct_tm: []const u8 = "t"; pal.stderr_write(uct_tm);
-            var uct_tb: [10]u8 = undefined; var uct_tl = itoa_mod.itoa(uc.type_id, uct_tb[0..]); var uct_ts: usize = @intCast(usize, 9) - @intCast(usize, uct_tl); pal.stderr_write(uct_tb[uct_ts..@intCast(usize, 9)]);
-            var uct_nl: []const u8 = "\n"; pal.stderr_write(uct_nl);
+            var uct_m: []const u8 = "UCT:r"; pal.markerWrite(uct_m);
+            var uct_rb: [10]u8 = undefined; var uct_rl = itoa_mod.itoa(uc.result, uct_rb[0..]); var uct_rs: usize = @intCast(usize, 9) - @intCast(usize, uct_rl); pal.markerWrite(uct_rb[uct_rs..@intCast(usize, 9)]);
+            var uct_tm: []const u8 = "t"; pal.markerWrite(uct_tm);
+            var uct_tb: [10]u8 = undefined; var uct_tl = itoa_mod.itoa(uc.type_id, uct_tb[0..]); var uct_ts: usize = @intCast(usize, 9) - @intCast(usize, uct_tl); pal.markerWrite(uct_tb[uct_ts..@intCast(usize, 9)]);
+            var uct_nl: []const u8 = "\n"; pal.markerWrite(uct_nl);
             var uct_ty = emitter.registry.types_items[@intCast(usize, uc.type_id)];
              if (uct_ty.kind == type_mod.TypeKind.array_type) {
                  var uap = emitter.registry.array_items[@intCast(usize, uct_ty.payload_idx)];
@@ -2187,8 +2187,8 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var result = resolveTempName(emitter, c.result);
             var callee = resolveTempName(emitter, c.callee);
             if (c.args_count > @intCast(u32, 0)) {
-                var ad_m: []const u8 = "AD:a"; pal.stderr_write(ad_m);
-                var ad_ab: [20]u8 = undefined; var ad_al = itoa_mod.itoa(c.args_count, ad_ab[0..]); var ad_as: usize = @intCast(usize, 19) - @intCast(usize, ad_al); pal.stderr_write(ad_ab[ad_as..@intCast(usize, 19)]);
+                var ad_m: []const u8 = "AD:a"; pal.markerWrite(ad_m);
+                var ad_ab: [20]u8 = undefined; var ad_al = itoa_mod.itoa(c.args_count, ad_ab[0..]); var ad_as: usize = @intCast(usize, 19) - @intCast(usize, ad_al); pal.markerWrite(ad_ab[ad_as..@intCast(usize, 19)]);
             }
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
@@ -2223,13 +2223,13 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
              if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
-            var dc2m: []const u8 = "DC2:n"; pal.stderr_write(dc2m);
-            var dc2b: [10]u8 = undefined; var dc2l = itoa_mod.itoa(c.name_id, dc2b[0..]); var dc2s: usize = @intCast(usize, 9) - @intCast(usize, dc2l); pal.stderr_write(dc2b[dc2s..@intCast(usize, 9)]);
-            var dc2mm: []const u8 = "m"; pal.stderr_write(dc2mm);
-            var dc2mb: [10]u8 = undefined; var dc2ml = itoa_mod.itoa(c.module_id, dc2mb[0..]); var dc2ms: usize = @intCast(usize, 9) - @intCast(usize, dc2ml); pal.stderr_write(dc2mb[dc2ms..@intCast(usize, 9)]);
-            var dc2fn: []const u8 = "f"; pal.stderr_write(dc2fn);
-            pal.stderr_write(fn_name);
-            var dc2nl: []const u8 = "\n"; pal.stderr_write(dc2nl);
+            var dc2m: []const u8 = "DC2:n"; pal.markerWrite(dc2m);
+            var dc2b: [10]u8 = undefined; var dc2l = itoa_mod.itoa(c.name_id, dc2b[0..]); var dc2s: usize = @intCast(usize, 9) - @intCast(usize, dc2l); pal.markerWrite(dc2b[dc2s..@intCast(usize, 9)]);
+            var dc2mm: []const u8 = "m"; pal.markerWrite(dc2mm);
+            var dc2mb: [10]u8 = undefined; var dc2ml = itoa_mod.itoa(c.module_id, dc2mb[0..]); var dc2ms: usize = @intCast(usize, 9) - @intCast(usize, dc2ml); pal.markerWrite(dc2mb[dc2ms..@intCast(usize, 9)]);
+            var dc2fn: []const u8 = "f"; pal.markerWrite(dc2fn);
+            pal.markerWrite(fn_name);
+            var dc2nl: []const u8 = "\n"; pal.markerWrite(dc2nl);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             if (c.result != 0) {
                 var result = resolveTempName(emitter, c.result);
@@ -2312,13 +2312,13 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         .int_cast => |c| {
             var dst = resolveTempName(emitter, c.result);
             var src = resolveTempName(emitter, c.value);
-            var icm: []const u8 = "IC:v"; pal.stderr_write(icm);
-            var icvb: [10]u8 = undefined; var icvl = itoa_mod.itoa(c.value, icvb[0..]); var icvs: usize = @intCast(usize, 9) - @intCast(usize, icvl); pal.stderr_write(icvb[icvs..@intCast(usize, 9)]);
-            var ictm: []const u8 = "t"; pal.stderr_write(ictm);
-            var ictb: [10]u8 = undefined; var ictl = itoa_mod.itoa(c.target, ictb[0..]); var icts: usize = @intCast(usize, 9) - @intCast(usize, ictl); pal.stderr_write(ictb[icts..@intCast(usize, 9)]);
-            var icrm: []const u8 = "r"; pal.stderr_write(icrm);
-            var icrb: [10]u8 = undefined; var icrl = itoa_mod.itoa(c.result, icrb[0..]); var icrs: usize = @intCast(usize, 9) - @intCast(usize, icrl); pal.stderr_write(icrb[icrs..@intCast(usize, 9)]);
-            var icnl: []const u8 = "\n"; pal.stderr_write(icnl);
+            var icm: []const u8 = "IC:v"; pal.markerWrite(icm);
+            var icvb: [10]u8 = undefined; var icvl = itoa_mod.itoa(c.value, icvb[0..]); var icvs: usize = @intCast(usize, 9) - @intCast(usize, icvl); pal.markerWrite(icvb[icvs..@intCast(usize, 9)]);
+            var ictm: []const u8 = "t"; pal.markerWrite(ictm);
+            var ictb: [10]u8 = undefined; var ictl = itoa_mod.itoa(c.target, ictb[0..]); var icts: usize = @intCast(usize, 9) - @intCast(usize, ictl); pal.markerWrite(ictb[icts..@intCast(usize, 9)]);
+            var icrm: []const u8 = "r"; pal.markerWrite(icrm);
+            var icrb: [10]u8 = undefined; var icrl = itoa_mod.itoa(c.result, icrb[0..]); var icrs: usize = @intCast(usize, 9) - @intCast(usize, icrl); pal.markerWrite(icrb[icrs..@intCast(usize, 9)]);
+            var icnl: []const u8 = "\n"; pal.markerWrite(icnl);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             if (c.is_checked != @intCast(u8, 0)) {
                 var fn_name = getCheckedCastFnName(emitter.registry, c.target);
@@ -2444,18 +2444,18 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
                         while (@intCast(usize, dl_lc) < @intCast(usize, emitter.dedup_count)) : (dl_lc += @intCast(u32, 1)) {
                             if (emitter.dedup_names[@intCast(usize, dl_lc)] == dl.name_id) { dl_is_dup = @intCast(u8, 1); break; }
                         }
-                        if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.stderr_write(da); continue; }
+                        if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.markerWrite(da); continue; }
                         if (@intCast(usize, emitter.dedup_count) < @intCast(usize, 128)) {
                             emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
                             emitter.dedup_count += @intCast(u32, 1);
                         }
-                         var p1m: []const u8 = "P1:t"; pal.stderr_write(p1m);
-                         var p1tb: [10]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 9) - @intCast(usize, p1tl); pal.stderr_write(p1tb[p1ts..@intCast(usize, 9)]);
-                         var p1im: []const u8 = "T"; pal.stderr_write(p1im);
-                         var p1ib: [10]u8 = undefined; var p1il = itoa_mod.itoa(@intCast(u32, dl.type_id), p1ib[0..]); var p1is: usize = @intCast(usize, 9) - @intCast(usize, p1il); pal.stderr_write(p1ib[p1is..@intCast(usize, 9)]);
-                         var p1nm: []const u8 = "N"; pal.stderr_write(p1nm);
-                         var p1nb: [10]u8 = undefined; var p1nl = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 9) - @intCast(usize, p1nl); pal.stderr_write(p1nb[p1ns..@intCast(usize, 9)]);
-                         var p1nl2: []const u8 = "\n"; pal.stderr_write(p1nl2);
+                         var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
+                         var p1tb: [10]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 9) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 9)]);
+                         var p1im: []const u8 = "T"; pal.markerWrite(p1im);
+                         var p1ib: [10]u8 = undefined; var p1il = itoa_mod.itoa(@intCast(u32, dl.type_id), p1ib[0..]); var p1is: usize = @intCast(usize, 9) - @intCast(usize, p1il); pal.markerWrite(p1ib[p1is..@intCast(usize, 9)]);
+                         var p1nm: []const u8 = "N"; pal.markerWrite(p1nm);
+                         var p1nb: [10]u8 = undefined; var p1nl = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 9) - @intCast(usize, p1nl); pal.markerWrite(p1nb[p1ns..@intCast(usize, 9)]);
+                         var p1nl2: []const u8 = "\n"; pal.markerWrite(p1nl2);
                          var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
                          var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
                         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
