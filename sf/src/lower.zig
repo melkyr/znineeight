@@ -762,8 +762,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = src } });
             }
         } else if (child_node.kind == AstKind.index_access) {
-            var raw_base = lowerExpr(self, child_node.child_0);
-            var base_temp = maybeExtractSlicePtr(self, child_node.child_0, raw_base);
+            var base_temp = lowerExpr(self, child_node.child_0);
+            base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
             var idx_temp = lowerExpr(self, child_node.child_1);
             var bai_m: []const u8 = "BAI:b"; pal.stderr_write(bai_m);
             var bai_bb: [10]u8 = undefined; var bai_bl = itoa_mod.itoa(base_temp, bai_bb[0..]); var bai_bs: usize = @intCast(usize, 9) - @intCast(usize, bai_bl); pal.stderr_write(bai_bb[bai_bs..@intCast(usize, 9)]);
@@ -773,8 +773,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var bai_sb: [10]u8 = undefined; var bai_sl = itoa_mod.itoa(src, bai_sb[0..]); var bai_ss: usize = @intCast(usize, 9) - @intCast(usize, bai_sl); pal.stderr_write(bai_sb[bai_ss..@intCast(usize, 9)]);
             var bai_nl: []const u8 = "\n"; pal.stderr_write(bai_nl);
             var ai_ni: u32 = @intCast(u32, 0);
-            if (base_temp == raw_base) {
-            if (store.nodes.items[@intCast(usize, child_node.child_0)].kind == AstKind.ident_expr) { ai_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, child_node.child_0)].payload)]; }
+            if (store.nodes.items[@intCast(usize, child_node.child_0)].kind == AstKind.ident_expr) {
+                var c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, child_node.child_0);
+                var is_slice: u8 = @intCast(u8, 0);
+                if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
+                if (is_slice == @intCast(u8, 0)) { ai_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, child_node.child_0)].payload)]; }
             }
             emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = src } });
         } else {
@@ -811,12 +814,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .addr_of = .{ .operand = operand_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.index_access) {
-        var raw_base = lowerExpr(self, node.child_0);
+        var base_temp = lowerExpr(self, node.child_0);
         var msp_m: []const u8 = "MSP:b"; pal.stderr_write(msp_m);
-        var msp_bb: [10]u8 = undefined; var msp_bl = itoa_mod.itoa(raw_base, msp_bb[0..]); var msp_bs: usize = @intCast(usize, 9) - @intCast(usize, msp_bl); pal.stderr_write(msp_bb[msp_bs..@intCast(usize, 9)]);
+        var msp_bb: [10]u8 = undefined; var msp_bl = itoa_mod.itoa(base_temp, msp_bb[0..]); var msp_bs: usize = @intCast(usize, 9) - @intCast(usize, msp_bl); pal.stderr_write(msp_bb[msp_bs..@intCast(usize, 9)]);
         var msp_nm: []const u8 = "n"; pal.stderr_write(msp_nm);
         var msp_nb: [10]u8 = undefined; var msp_nl = itoa_mod.itoa(node.child_0, msp_nb[0..]); var msp_ns: usize = @intCast(usize, 9) - @intCast(usize, msp_nl); pal.stderr_write(msp_nb[msp_ns..@intCast(usize, 9)]);
-        var base_temp = maybeExtractSlicePtr(self, node.child_0, raw_base);
+        base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var msp2_m: []const u8 = "p"; pal.stderr_write(msp2_m);
         var msp2b: [10]u8 = undefined; var msp2l = itoa_mod.itoa(base_temp, msp2b[0..]); var msp2s: usize = @intCast(usize, 9) - @intCast(usize, msp2l); pal.stderr_write(msp2b[msp2s..@intCast(usize, 9)]);
         var msp_nl2: []const u8 = "\n"; pal.stderr_write(msp_nl2);
@@ -839,8 +842,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var tid = nextTemp(self, elem_type[0]);
         var li_ni: u32 = @intCast(u32, 0);
-        if (base_temp == raw_base) {
-        if (store.nodes.items[@intCast(usize, node.child_0)].kind == AstKind.ident_expr) { li_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, node.child_0)].payload)]; }
+        if (store.nodes.items[@intCast(usize, node.child_0)].kind == AstKind.ident_expr) {
+            var c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+            var is_slice: u8 = @intCast(u8, 0);
+            if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
+            if (is_slice == @intCast(u8, 0)) { li_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, node.child_0)].payload)]; }
         }
         emitInst(self, LirInst{ .load_index = .{ .name_id = li_ni, .base = base_temp, .index = idx_temp, .result = tid } });
         return tid;
