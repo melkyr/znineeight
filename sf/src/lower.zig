@@ -1126,7 +1126,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                      var dai: usize = @intCast(usize, 0);
                      while (dai < arg_ec.len) : (dai += @intCast(usize, 1)) {
                          var dval = lowerExpr(self, arg_ec[dai]);
-                         emitInst(self, LirInst{ .print_val = .{ .value = dval, .type_id = type_mod.TYPE_I32, .fmt = @intCast(u8, 'd') } });
+                         emitInst(self, LirInst{ .print_val = .{ .value = dval, .type_id = self.hoisted_temps.items[@intCast(usize, dval)].type_id, .fmt = @intCast(u8, 'd') } });
                      }
                      return @intCast(u32, 0);
                  }
