@@ -987,6 +987,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var funl2: []const u8 = " "; pal.markerWrite(funl2);
             ptype = type_mod.TYPE_U32;
         }
+        if (ptype != type_mod.TYPE_UNDEFINED and ptype != type_mod.TYPE_VOID) {
+            var lty = self.ctx.registry.types_items[@intCast(usize, ptype)];
+            if (@enumToInt(lty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type))) {
+                return arr_temp;
+            }
+        }
         if (arr_temp != @intCast(u32, 0)) {
             var atm: []const u8 = "AT:n"; pal.markerWrite(atm);
             var atnb: [10]u8 = undefined; var atnl = itoa_mod.itoa(name_id, atnb[0..]); var atns: usize = @intCast(usize, 9) - @intCast(usize, atnl); pal.markerWrite(atnb[atns..@intCast(usize, 9)]);
