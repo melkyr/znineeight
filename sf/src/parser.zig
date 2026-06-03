@@ -534,9 +534,8 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
          if (tok.kind == TokenKind.kw_enum) { is_type = @intCast(u8, 1); }
          if (tok.kind == TokenKind.kw_union) { is_type = @intCast(u8, 1); }
          if (tok.kind == TokenKind.kw_error) { is_type = @intCast(u8, 1); }
-         if (tok.kind == TokenKind.kw_anytype) { is_type = @intCast(u8, 1); }
-         if (tok.kind == TokenKind.identifier) { is_type = @intCast(u8, 1); }
-         if (is_type != @intCast(u8, 0)) {
+          if (tok.kind == TokenKind.kw_anytype) { is_type = @intCast(u8, 1); }
+          if (is_type != @intCast(u8, 0)) {
              var arg = try parserParseType(self);
              u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
          } else {
