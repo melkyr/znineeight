@@ -1659,7 +1659,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
         },
          .assign_field => |a| {
              var base = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
-             var src = resolveTempName(emitter, a.src);
+              var src = mangleTempName(emitter.interner, a.src);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              bufferedWriterWrite(&emitter.writer, base);
              var fn_prefix3: []const u8 = ".f_";
@@ -1943,7 +1943,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
           },
         .store_field => |sf| {
             var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
-             var val = resolveTempName(emitter, sf.value);
+              var val = mangleTempName(emitter.interner, sf.value);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              bufferedWriterWrite(&emitter.writer, base);
              var fn_prefix2: []const u8 = ".f_";
@@ -2071,7 +2071,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .int_const => |ic| {
-            var result = resolveTempName(emitter, ic.result);
+            var result = mangleTempName(emitter.interner, ic.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
@@ -2086,7 +2086,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .float_const => |fc| {
-            var result = resolveTempName(emitter, fc.result);
+            var result = mangleTempName(emitter.interner, fc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
@@ -2103,7 +2103,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .string_const => |sc| {
-            var result = resolveTempName(emitter, sc.result);
+            var result = mangleTempName(emitter.interner, sc.result);
             var str = interner_mod.stringInternerGet(emitter.interner, sc.string_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
@@ -2137,14 +2137,14 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .null_const => |nc| {
-            var result = resolveTempName(emitter, nc.result);
+            var result = mangleTempName(emitter.interner, nc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = NULL;\n";
             bufferedWriterWrite(&emitter.writer, s);
         },
         .bool_const => |bc| {
-            var result = resolveTempName(emitter, bc.result);
+            var result = mangleTempName(emitter.interner, bc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             if (bc.value != @intCast(u8, 0)) {
@@ -2156,7 +2156,7 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             }
         },
         .undefined_const => |uc| {
-            var result = resolveTempName(emitter, uc.result);
+            var result = mangleTempName(emitter.interner, uc.result);
             var uct_m: []const u8 = "UCT:r"; pal.markerWrite(uct_m);
             var uct_rb: [10]u8 = undefined; var uct_rl = itoa_mod.itoa(uc.result, uct_rb[0..]); var uct_rs: usize = @intCast(usize, 9) - @intCast(usize, uct_rl); pal.markerWrite(uct_rb[uct_rs..@intCast(usize, 9)]);
             var uct_tm: []const u8 = "t"; pal.markerWrite(uct_tm);
