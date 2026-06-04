@@ -1654,57 +1654,45 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
             if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
                 var tag_temp = nextTemp(self, type_mod.TYPE_U32);
-                var tgn2 = self.local_decl_name_map[@intCast(usize, cond_temp)];
-               emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
                 cond_temp = tag_temp;
             }
         }
-        var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
-        var prong_count = prong_ec.len;
-        var sw_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+        var result_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
         var sw_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (sw_rt) |t| { sw_box[0] = t; }
-        var swr_m: []const u8 = "SWR:i"; pal.markerWrite(swr_m);
-        var swr_ib: [10]u8 = undefined; var swr_il = itoa_mod.itoa(node_idx, swr_ib[0..]); var swr_is: usize = @intCast(usize, 9) - @intCast(usize, swr_il); pal.markerWrite(swr_ib[swr_is..@intCast(usize, 9)]);
-        var swr_rm: []const u8 = "R"; pal.markerWrite(swr_rm);
-        var swr_rb: [10]u8 = undefined; var swr_rl = itoa_mod.itoa(sw_box[0], swr_rb[0..]); var swr_rs: usize = @intCast(usize, 9) - @intCast(usize, swr_rl); pal.markerWrite(swr_rb[swr_rs..@intCast(usize, 9)]);
-        var swr_nl: []const u8 = "\n"; pal.markerWrite(swr_nl);
-        var result_temp = nextTemp(self, sw_box[0]);
+        if (sw_rt) |t| {
+            if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) {
+                result_temp = nextTemp(self, t);
+            }
+        }
+        var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
-        var pi: usize = @intCast(usize, 0);
-        while (pi < prong_count) : (pi += @intCast(usize, 1)) { _ = createBlock(self); }
+        var pi: usize = 0;
+        while (pi < prong_ec.len) : (pi += 1) { _ = createBlock(self); }
         var else_bb = createBlock(self);
         var exit_bb = createBlock(self);
         var cases_start = @intCast(u32, self.func.switch_cases.len);
-        pi = @intCast(usize, 0);
-        while (pi < prong_count) : (pi += @intCast(usize, 1)) {
+        pi = 0;
+        while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
             if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) { continue; }
             var prong_bb_id = prong_start + @intCast(u32, pi);
             var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
-            var ci: usize = @intCast(usize, 0);
-            while (ci < case_ec.len) : (ci += @intCast(usize, 1)) {
+            var ci: usize = 0;
+            while (ci < case_ec.len) : (ci += 1) {
                 var case_node = store.nodes.items[@intCast(usize, case_ec[ci])];
                 var case_val: u64 = @intCast(u64, 0);
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
-                    var evc: []const u8 = "EC"; pal.markerWrite(evc);
-                    var cval: u64 = @intCast(u64, case_node.payload);
-                    var lk = @intCast(u32, case_ec[ci]);
-                    var lkb = @intCast(u8, lk & @intCast(u32, 0xFF));
-                    var lkb_buf: [20]u8 = undefined;
-                    var lkb_len = itoa_mod.itoa(@intCast(u32, lkb), lkb_buf[0..]);
-                    var lkb_s: usize = @intCast(usize, 19) - @intCast(usize, lkb_len);
-                    pal.markerWrite(lkb_buf[lkb_s..@intCast(usize, 19)]);
-                    var lks: []const u8 = " "; pal.markerWrite(lks);
-                    var cev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, lk);
-                    if (cev) |v| { cval = @intCast(u64, v); }
-                    if (cval != @intCast(u64, case_node.payload)) { var ef: []const u8 = "EF"; pal.markerWrite(ef); }
-                    else { var ef: []const u8 = "Ef"; pal.markerWrite(ef); }
-                    case_val = cval;
-                } else { continue; }
+                    var cval2: u64 = @intCast(u64, case_node.payload);
+                    var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
+                    if (cev2) |v| { cval2 = @intCast(u64, v); }
+                    case_val = cval2;
+                } else {
+                    continue;
+                }
                 lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
                     lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
             }
@@ -1712,8 +1700,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var sc_len = @intCast(u32, self.func.switch_cases.len);
         var cases_count: u32 = sc_len - cases_start;
         var else_target = else_bb;
-        pi = @intCast(usize, 0);
-        while (pi < prong_count) : (pi += @intCast(usize, 1)) {
+        pi = 0;
+        while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
             if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) {
                 else_target = prong_start + @intCast(u32, pi);
@@ -1727,15 +1715,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .nop = {} });
             self.block_terminated = @intCast(u8, 1);
         }
-        pi = @intCast(usize, 0);
-        while (pi < prong_count) : (pi += @intCast(usize, 1)) {
+        pi = 0;
+        while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
             var prong_bb_id = prong_start + @intCast(u32, pi);
             self.current_bb = prong_bb_id;
             self.block_terminated = @intCast(u8, 0);
-            var prong_val = lowerExpr(self, prong_node.child_0);
+            lowerStmtBody(self, prong_node.child_0);
             if (self.block_terminated == @intCast(u8, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result_temp, .src = prong_val } });
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
         }
@@ -1964,6 +1951,33 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             self.current_bb = exit_bb;
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        } else {
+            var start_temp = lowerExpr(self, pattern.child_0);
+            if (node.payload != 0) addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp);
+            var end_temp = lowerExpr(self, pattern.child_1);
+            var cond_bb = createBlock(self);
+            var body_bb = createBlock(self);
+            var exit_bb = createBlock(self);
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = @intCast(u32, 0) };
+            loopInfoArrayListAppend(&self.loop_stack, loop_info);
+            emitInst(self, LirInst{ .jump = cond_bb });
+            self.current_bb = cond_bb;
+            var cmp_op = if (pattern.kind == AstKind.range_inclusive) BIN_LE else BIN_LT;
+            var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = cmp_op, .lhs = start_temp, .rhs = end_temp, .result = cmp_temp } });
+            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+            self.current_bb = body_bb;
+            self.block_terminated = @intCast(u8, 0);
+            lowerStmtBody(self, node.child_1);
+            if (self.block_terminated == @intCast(u8, 0)) {
+                var nxt = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = @intCast(u32, 1), .result = nxt } });
+                start_temp = nxt;
+                emitInst(self, LirInst{ .jump = cond_bb });
+            }
+            self.current_bb = exit_bb;
+            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        }
     } else if (node.kind == AstKind.swt_ex) {
         var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
         var cond_temp = lowerExpr(self, node.child_0);
@@ -2039,33 +2053,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
         }
         self.current_bb = exit_bb;
-        } else {
-            var start_temp = lowerExpr(self, pattern.child_0);
-            if (node.payload != 0) addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp);
-            var end_temp = lowerExpr(self, pattern.child_1);
-            var cond_bb = createBlock(self);
-            var body_bb = createBlock(self);
-            var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = @intCast(u32, 0) };
-            loopInfoArrayListAppend(&self.loop_stack, loop_info);
-            emitInst(self, LirInst{ .jump = cond_bb });
-            self.current_bb = cond_bb;
-            var cmp_op = if (pattern.kind == AstKind.range_inclusive) BIN_LE else BIN_LT;
-            var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
-            emitInst(self, LirInst{ .binary = .{ .op = cmp_op, .lhs = start_temp, .rhs = end_temp, .result = cmp_temp } });
-            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
-            self.current_bb = body_bb;
-            self.block_terminated = @intCast(u8, 0);
-            lowerStmtBody(self, node.child_1);
-            if (self.block_terminated == @intCast(u8, 0)) {
-                var nxt = nextTemp(self, type_mod.TYPE_U32);
-                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = @intCast(u32, 1), .result = nxt } });
-                start_temp = nxt;
-                emitInst(self, LirInst{ .jump = cond_bb });
-            }
-            self.current_bb = exit_bb;
-            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-        }
     } else if (node.kind == AstKind.return_stmt) {
         expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
         if (self.block_terminated == @intCast(u8, 0)) {
@@ -2427,8 +2414,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
-    } else {
-        var rpt_m: []const u8 = "RPT:k"; pal.markerWrite(rpt_m);
+      } else if (node.kind == AstKind.expr_stmt) {
+          lowerStmtBody(self, node.child_0);
+      } else {
+          var rpt_m: []const u8 = "RPT:k"; pal.markerWrite(rpt_m);
         var rpt_kb: [10]u8 = undefined;         var rpt_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), rpt_kb[0..]); var rpt_ks: usize = @intCast(usize, 9) - @intCast(usize, rpt_kl); pal.markerWrite(rpt_kb[rpt_ks..@intCast(usize, 9)]);
         var rpt_nm: []const u8 = "n"; pal.markerWrite(rpt_nm);
         var rpt_nb: [10]u8 = undefined; var rpt_nl = itoa_mod.itoa(node_idx, rpt_nb[0..]); var rpt_ns: usize = @intCast(usize, 9) - @intCast(usize, rpt_nl); pal.markerWrite(rpt_nb[rpt_ns..@intCast(usize, 9)]);
