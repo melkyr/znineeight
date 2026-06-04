@@ -154,17 +154,17 @@ fn testSwitchExprBasic() void {
     var node_idx = parser_mod.parserParseSwitchExpr(&p) catch unreachable;
 
     var node = store.nodes.items[node_idx];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.switch_expr)));
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 
     if (node.payload > @intCast(u32, 0)) {
         var prongs = ast_mod.astStoreGetExtraChildren(&store, node.payload);
         if (prongs.len > @intCast(usize, 0)) {
             var prong0 = store.nodes.items[prongs[0]];
-            assertEqU32(@intCast(u32, @enumToInt(prong0.kind)), @intCast(u32, @enumToInt(AstKind.switch_prong)));
+            assertEqU32(@intCast(u32, @enumToInt(prong0.kind)), @intCast(u32, @enumToInt(AstKind.swt_prong)));
         }
         if (prongs.len > @intCast(usize, 1)) {
             var prong1 = store.nodes.items[prongs[1]];
-            assertEqU32(@intCast(u32, @enumToInt(prong1.kind)), @intCast(u32, @enumToInt(AstKind.switch_prong)));
+            assertEqU32(@intCast(u32, @enumToInt(prong1.kind)), @intCast(u32, @enumToInt(AstKind.swt_prong)));
         }
     }
 }
@@ -658,16 +658,20 @@ fn testGapC_SwitchBreak() void {
     var lex = lexer_mod.lexerInit(s, @intCast(u32, 0), &in_, &d, &a);
     var i: usize = 0;
     while (i < 32) {
-        var tok = lexer_mod.lexerNextToken(&lex);
+        var tok = parser_mod.parserReadToken(&p) catch break;
         tokens[i] = tok;
-        i += 1;
-        if (tok.kind == TokenKind.eof) break;
+        i += @intCast(usize, 1);
     }
+    var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
+    var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
+    var node = store.nodes.items[node_idx];
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
+}
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
     var node = store.nodes.items[node_idx];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.switch_expr)));
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
 
 fn testGapB_IfExprBody_Chain() void {
@@ -762,16 +766,20 @@ fn testSwitchUnderscoreCapture() void {
     var lex = lexer_mod.lexerInit(s, @intCast(u32, 0), &in_, &d, &a);
     var i: usize = 0;
     while (i < 32) {
-        var tok = lexer_mod.lexerNextToken(&lex);
+        var tok = parser_mod.parserReadToken(&p) catch break;
         tokens[i] = tok;
-        i += 1;
-        if (tok.kind == TokenKind.eof) break;
+        i += @intCast(usize, 1);
     }
+    var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
+    var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
+    var node = store.nodes.items[node_idx];
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
+}
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
     var node = store.nodes.items[node_idx];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.switch_expr)));
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
 
 fn testForUnderscoreCapture() void {
@@ -1082,15 +1090,17 @@ fn testParseExprPrecDepth() void {
     tk[23] = Token{ .kind = TokenKind.semicolon, .span_start = @intCast(u32, 23), .span_len = @intCast(u16, 1), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
     tk[24] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 24), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
     var src_s: []const u8 = "(((((((((((x)))))))))));";
-    var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
-    _ = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
-}
-
-fn countSwitchDepth(store: *AstStore, node_idx: u32) u32 {
-    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
-    var node = store.nodes.items[node_idx];
+    var tokens_s: [32]Token = undefined;
+    var lex_s = lexerInit(src_s, 0, &in_, &d, &a);
+    {
+        var j_s: usize = 0;
+        while (j_s < 32) : (j_s += 1) { var t = parserReadToken(&p_s) catch break; tokens_s[j_s] = t; }
+    }
+    var p_s = parserInit(tokens_s[0..], src_s, &store, &in_, &d, &a);
+    var parsed = parserParseExprPrec(&p_s, Prec.assignment) catch unreachable;
+    var node = store.nodes.items[parsed];
     var d: u32 = @intCast(u32, 0);
-    if (@enumToInt(node.kind) == @enumToInt(AstKind.switch_expr)) d = @intCast(u32, 1);
+    if (@enumToInt(node.kind) == @enumToInt(AstKind.swt_ex)) d = @intCast(u32, 1);
     var best: u32 = @intCast(u32, 0);
     if (node.child_0 != 0) { var r = countSwitchDepthIn(store, node.child_0, @intCast(u32, 0)); if (r > best) best = r; }
     if (node.child_1 != 0) { var r = countSwitchDepthIn(store, node.child_1, @intCast(u32, 0)); if (r > best) best = r; }
@@ -1104,15 +1114,8 @@ fn countSwitchDepth(store: *AstStore, node_idx: u32) u32 {
             j += 1;
         }
     }
-    d += best;
-    return d;
-}
-fn countSwitchDepthIn(store: *AstStore, node_idx: u32, depth_guard: u32) u32 {
-    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
-    if (depth_guard > @intCast(u32, 10)) return @intCast(u32, 0);
-    var node = store.nodes.items[node_idx];
     var d: u32 = @intCast(u32, 0);
-    if (@enumToInt(node.kind) == @enumToInt(AstKind.switch_expr)) d = @intCast(u32, 1);
+    if (@enumToInt(node.kind) == @enumToInt(AstKind.swt_ex)) d = @intCast(u32, 1);
     var best: u32 = @intCast(u32, 0);
     var d2: u32 = depth_guard + @intCast(u32, 1);
     if (node.child_0 != 0) { var r = countSwitchDepthIn(store, node.child_0, d2); if (r > best) best = r; }
@@ -1156,7 +1159,7 @@ fn testDeepSwitch3Levels() void {
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
     var node = store.nodes.items[root];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.switch_expr)));
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
 fn testTcoWhileContinue() void {
     var buf: [65536]u8 = undefined;

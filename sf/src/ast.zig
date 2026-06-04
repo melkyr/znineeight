@@ -73,8 +73,8 @@ pub const AstKind = enum(u8) {
     while_stmt = 71,
     while_capture = 72,
     for_stmt = 73,
-    switch_expr = 74,
-    switch_prong = 75,
+    swt_ex = 74,
+    swt_prong = 75,
     block = 76,
     return_stmt = 77,
     break_stmt = 78,
@@ -252,7 +252,7 @@ pub const AstStore = struct {
 //   string_literal     → string_values index (interned string ID)
 //   ident_expr         → identifiers index (interned string ID)
 //   fn_decl           → fn_protos index
-//   fn_call, block, struct_decl, enum_decl, union_decl, switch_expr,
+//   fn_call, block, struct_decl, enum_decl, union_decl, swt_ex,
 //     tuple_literal, struct_init → extra_children packed (start << 16 | count)
 //   builtin_call      → interned string ID of builtin name
 //   var_decl, field_decl, param_decl, field_access, enum_literal, error_literal → name ID
@@ -360,12 +360,12 @@ pub fn nodeHasExtraChildren(kind: AstKind) bool {
         AstKind.struct_decl => { return true; },
         AstKind.enum_decl => { return true; },
         AstKind.union_decl => { return true; },
-        AstKind.switch_expr => { return true; },
+        AstKind.swt_ex => { return true; },
         AstKind.tuple_literal => { return true; },
         AstKind.struct_init => { return true; },
         AstKind.array_init => { return true; },
         AstKind.module_root => { return true; },
-        AstKind.switch_prong => { return true; },
+        AstKind.swt_prong => { return true; },
         AstKind.error_set_decl => { return true; },
         else => { return false; },
     }

@@ -811,7 +811,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.if_expr) {
         result = semanticAnalyzerResolveIfExpr(self, node_idx);
-    } else if (node.kind == AstKind.switch_expr) {
+    } else if (node.kind == AstKind.swt_ex) {
         result = semanticAnalyzerResolveSwitchExpr(self, node_idx);
     } else if (node.kind == AstKind.tuple_literal) {
         result = semanticAnalyzerResolveTupleLiteral(self, node_idx);
@@ -1054,7 +1054,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             var f2sp: []const u8 = " "; pal_mod.markerWrite(f2sp);
         }
         semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
-    } else if (node.kind == AstKind.switch_expr) {
+    } else if (node.kind == AstKind.swt_ex) {
         var sw: []const u8 = "SW"; pal_mod.markerWrite(sw);
         _ = semanticAnalyzerResolveExpr(self, node_idx);
         if (node.payload != @intCast(u32, 0)) {

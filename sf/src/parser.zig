@@ -711,7 +711,7 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     }
     self.child_buf_len = saved_switch;
     var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
-    return ast_mod.astStoreAddNode(self.store, AstKind.switch_expr, 0,
+    return ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
         kw_tok.span_start, end_pos, cond, 0, 0, payload);
 }
 
@@ -781,7 +781,7 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
 
     var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.case_buf_items[0..self.case_buf_len]);
     var end_pos: u32 = start_tok.span_start + @intCast(u32, start_tok.span_len);
-    return ast_mod.astStoreAddNode(self.store, AstKind.switch_prong, flags,
+    return ast_mod.astStoreAddNode(self.store, AstKind.swt_prong, flags,
         start_tok.span_start, end_pos, body, 0, 0, items_payload);
 }
 

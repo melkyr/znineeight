@@ -32,11 +32,19 @@ pub fn bufferedWriterInit() BufferedWriter {
 
 pub fn bufferedWriterFlush(self: *BufferedWriter) void {
     if (self.pos == @intCast(usize, 0)) return;
+    var fp_m: []const u8 = "FLUSH:p"; pal.markerWrite(fp_m);
+    var fp_pb: [10]u8 = undefined; var fp_pl = itoa_mod.itoa(@intCast(u32, self.pos), fp_pb[0..]); var fp_ps: usize = @intCast(usize, 9) - @intCast(usize, fp_pl); pal.markerWrite(fp_pb[fp_ps..@intCast(usize, 9)]);
+    var fp_nl: []const u8 = "\n"; pal.markerWrite(fp_nl);
     pal.stdout_write(self.buf[0..self.pos]);
     self.pos = @intCast(usize, 0);
+    var fe_m: []const u8 = "FEND\n"; pal.markerWrite(fe_m);
 }
 
-pub fn bufferedWriterWrite(self: *BufferedWriter, data: []const u8) void {
+ pub fn bufferedWriterWrite(self: *BufferedWriter, data: []const u8) void {
+    pal.stderr_write(data);
+    var wr_m: []const u8 = "WRT:l"; pal.markerWrite(wr_m);
+    var wr_lb: [10]u8 = undefined; var wr_ll = itoa_mod.itoa(@intCast(u32, data.len), wr_lb[0..]); var wr_ls: usize = @intCast(usize, 9) - @intCast(usize, wr_ll); pal.markerWrite(wr_lb[wr_ls..@intCast(usize, 9)]);
+    var wr_nl: []const u8 = "\n"; pal.markerWrite(wr_nl);
     var remaining = data;
     while (remaining.len > @intCast(usize, 0)) {
         var space = 4096 - self.pos;
@@ -61,7 +69,7 @@ pub fn bufferedWriterWriteIndent(self: *BufferedWriter, level: u32) void {
     var total: u32 = level * @intCast(u32, 4);
     var i: u32 = @intCast(u32, 0);
     while (i < total) : (i += @intCast(u32, 1)) {
-        if (self.pos == 4096) bufferedWriterFlush(self);
+    if (self.pos == 4096) bufferedWriterFlush(self);
         self.buf[self.pos] = @intCast(u8, ' ');
         self.pos += @intCast(usize, 1);
     }
@@ -1586,7 +1594,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
      return mangleTempName(emitter.interner, temp_id);
  }
 
-fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
+ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
+    var ins: []const u8 = "I\n"; pal.markerWrite(ins);
     switch (inst) {
         .nop => {},
         .ret_void => {
@@ -1839,9 +1848,19 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
                 bufferedWriterWrite(&emitter.writer, s2);
             }
         },
-        .store_local => |sl| {
-            var val = resolveTempName(emitter, sl.value);
+         .store_local => |sl| {
+              var stl_m: []const u8 = "STL:n"; pal.markerWrite(stl_m);
+              var stl_nb: [10]u8 = undefined; var stl_nl = itoa_mod.itoa(sl.name_id, stl_nb[0..]); var stl_ns: usize = @intCast(usize, 9) - @intCast(usize, stl_nl); pal.markerWrite(stl_nb[stl_ns..@intCast(usize, 9)]);
+              var stl_vm: []const u8 = "v"; pal.markerWrite(stl_vm);
+              var stl_vb: [10]u8 = undefined; var stl_vl = itoa_mod.itoa(sl.value, stl_vb[0..]); var stl_vs: usize = @intCast(usize, 9) - @intCast(usize, stl_vl); pal.markerWrite(stl_vb[stl_vs..@intCast(usize, 9)]);
+              var stl_nl2: []const u8 = "\n"; pal.markerWrite(stl_nl2);
+             var val = resolveTempName(emitter, sl.value);
             var name = mangleLocalName(emitter.mangler, emitter.interner, sl.name_id);
+            var stln_m: []const u8 = "STN:"; pal.markerWrite(stln_m);
+            pal.markerWrite(name);
+            var stln_c: []const u8 = "="; pal.markerWrite(stln_c);
+            pal.markerWrite(val);
+            var stln_nl: []const u8 = "\n"; pal.markerWrite(stln_nl);
             if (name.len == @intCast(usize, 1) and name[0] == '_') {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var vd: []const u8 = "(void)";
@@ -2039,11 +2058,25 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
-        .binary => |b| {
-            var result = resolveTempName(emitter, b.result);
+         .binary => |b| {
+              var bin_m: []const u8 = "BIN:d"; pal.markerWrite(bin_m);
+              var bin_db: [10]u8 = undefined; var bin_dl = itoa_mod.itoa(b.result, bin_db[0..]); var bin_ds: usize = @intCast(usize, 9) - @intCast(usize, bin_dl); pal.markerWrite(bin_db[bin_ds..@intCast(usize, 9)]);
+              var bin_lm: []const u8 = "l"; pal.markerWrite(bin_lm);
+              var bin_lb: [10]u8 = undefined; var bin_ll = itoa_mod.itoa(b.lhs, bin_lb[0..]); var bin_ls: usize = @intCast(usize, 9) - @intCast(usize, bin_ll); pal.markerWrite(bin_lb[bin_ls..@intCast(usize, 9)]);
+              var bin_rm: []const u8 = "r"; pal.markerWrite(bin_rm);
+              var bin_rb: [10]u8 = undefined; var bin_rl = itoa_mod.itoa(b.rhs, bin_rb[0..]); var bin_rs: usize = @intCast(usize, 9) - @intCast(usize, bin_rl); pal.markerWrite(bin_rb[bin_rs..@intCast(usize, 9)]);
+              var bin_nl: []const u8 = "\n"; pal.markerWrite(bin_nl);
+             var result = resolveTempName(emitter, b.result);
             var lhs = resolveTempName(emitter, b.lhs);
             var rhs = resolveTempName(emitter, b.rhs);
             var op_str = getBinOpStr(b.op);
+            var bnr_m: []const u8 = "BNR:r"; pal.markerWrite(bnr_m);
+            var bnr_rb: [10]u8 = undefined; var bnr_rl = itoa_mod.itoa(@intCast(u32, result.len), bnr_rb[0..]); var bnr_rs: usize = @intCast(usize, 9) - @intCast(usize, bnr_rl); pal.markerWrite(bnr_rb[bnr_rs..@intCast(usize, 9)]);
+            var bnr_lm: []const u8 = "l"; pal.markerWrite(bnr_lm);
+            var bnr_lb: [10]u8 = undefined; var bnr_ll = itoa_mod.itoa(@intCast(u32, lhs.len), bnr_lb[0..]); var bnr_ls: usize = @intCast(usize, 9) - @intCast(usize, bnr_ll); pal.markerWrite(bnr_lb[bnr_ls..@intCast(usize, 9)]);
+            var bnr_rm: []const u8 = "R"; pal.markerWrite(bnr_rm);
+            var bnr_rrb: [10]u8 = undefined; var bnr_rrl = itoa_mod.itoa(@intCast(u32, rhs.len), bnr_rrb[0..]); var bnr_rrs: usize = @intCast(usize, 9) - @intCast(usize, bnr_rrl); pal.markerWrite(bnr_rrb[bnr_rrs..@intCast(usize, 9)]);
+            var bnr_nl: []const u8 = "\n"; pal.markerWrite(bnr_nl);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
@@ -2439,6 +2472,10 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
 }
 
  pub fn emitFunctionBody(emitter: *C89Emitter, lir_fn: *LirFunction) void {
+    bufferedWriterFlush(&emitter.writer);
+    var bfn_m: []const u8 = "BFN:p"; pal.markerWrite(bfn_m);
+    var bfn_pb: [10]u8 = undefined; var bfn_pl = itoa_mod.itoa(@intCast(u32, emitter.writer.pos), bfn_pb[0..]); var bfn_ps: usize = @intCast(usize, 9) - @intCast(usize, bfn_pl); pal.markerWrite(bfn_pb[bfn_ps..@intCast(usize, 9)]);
+    var bfn_nl: []const u8 = "\n"; pal.markerWrite(bfn_nl);
     emitter.current_fn = lir_fn;
     emitter.dedup_count = @intCast(u32, 0);
     if (emitter.dl_hoisted == @intCast(u8, 0)) {
@@ -2507,6 +2544,9 @@ fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     emitter.indent -= @intCast(u32, 1);
     var cl: []const u8 = "}\n\n";
     bufferedWriterWrite(&emitter.writer, cl);
+    var bfx_m: []const u8 = "BFX:p"; pal.markerWrite(bfx_m);
+    var bfx_pb: [10]u8 = undefined; var bfx_pl = itoa_mod.itoa(@intCast(u32, emitter.writer.pos), bfx_pb[0..]); var bfx_ps: usize = @intCast(usize, 9) - @intCast(usize, bfx_pl); pal.markerWrite(bfx_pb[bfx_ps..@intCast(usize, 9)]);
+    var bfx_nl: []const u8 = "\n"; pal.markerWrite(bfx_nl);
 }
 
 pub fn emitZigRuntimeC(writer: *BufferedWriter) void {

@@ -671,12 +671,12 @@ fn testSwitchExprSameType() void {
     var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong1 = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body1, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong1 = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body1, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var prong_buf: [2]u32 = undefined;
     prong_buf[0] = prong1;
     prong_buf[1] = prong1;
     var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..2]);
-    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.swt_ex, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, sw_idx);
     if (tid != type_mod.TYPE_INT_LIT) { var fmsg: []const u8 = "testSwitchExprSameType expected TYPE_INT_LIT"; fail(fmsg); return; }
     var emsg: []const u8 = "testSwitchExprSameType";
@@ -700,13 +700,13 @@ fn testSwitchExprMixed() void {
     var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body_a = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body_b = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong_a = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body_a, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong_b = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body_b, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_a = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body_a, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong_b = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, 1, @intCast(u32, 0), @intCast(u32, 0), body_b, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var prong_buf: [2]u32 = undefined;
     prong_buf[0] = prong_a;
     prong_buf[1] = prong_b;
     var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..2]);
-    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.swt_ex, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, sw_idx);
     if (tid != type_mod.TYPE_VOID) { var fmsg: []const u8 = "testSwitchExprMixed expected TYPE_VOID"; fail(fmsg); return; }
     var emsg: []const u8 = "testSwitchExprMixed";
@@ -1235,11 +1235,11 @@ fn testSwitchExhaustiveness() void {
     var check_tid = rtt_mod.resolvedTypeTableGet(&rtt, cond_idx);
     if (check_tid) |ct| { _ = ct; } else { var fmsg: []const u8 = "testSwitchExhaustiveness RTT missing"; fail(fmsg); return; }
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var pr_buf: [1]u32 = undefined;
     pr_buf[0] = prong;
     var ec = ast_mod.astStoreAddExtraChildren(&store, pr_buf[0..1]);
-    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond_idx, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.swt_ex, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond_idx, @intCast(u32, 0), @intCast(u32, 0), ec);
     cc_mod.checkSwitchExhaust(&store, &typereg, &diag, &rtt, sw_idx);
     var err_count = diag_mod.diagnosticCollectorErrorCount(&diag);
     if (err_count == @intCast(u32, 0)) { var fmsg: []const u8 = "testSwitchExhaustiveness expected error count > 0"; fail(fmsg); return; }
@@ -1447,11 +1447,11 @@ fn testSwitchExhaustivenessInteger() void {
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
     var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong = ast_mod.astStoreAddNode(&store, AstKind.switch_prong, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var prong = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var prong_buf: [1]u32 = undefined;
     prong_buf[0] = prong;
     var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..1]);
-    var sw = ast_mod.astStoreAddNode(&store, AstKind.switch_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
+    var sw = ast_mod.astStoreAddNode(&store, AstKind.swt_ex, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
     rtt_mod.resolvedTypeTableSet(&rtt, cond, type_mod.TYPE_U32);
     var old_ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
     cc_mod.checkSwitchExhaust(&store, &typereg, &diag, &rtt, sw);

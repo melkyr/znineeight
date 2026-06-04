@@ -595,7 +595,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         }
         walkBlock(ctx, body_state, node.child_1, on_stmt);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
-    } else if (kind == AstKind.switch_expr) {
+    } else if (kind == AstKind.swt_ex) {
         var prongs = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
         var si: usize = 0;
         while (si < prongs.len) : (si += 1) {

@@ -159,12 +159,12 @@ fn testNodeHasExtraChildren() void {
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.struct_decl));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.enum_decl));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.union_decl));
-    assertTrue(ast_mod.nodeHasExtraChildren(AstKind.switch_expr));
+    assertTrue(ast_mod.nodeHasExtraChildren(AstKind.swt_ex));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.tuple_literal));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.struct_init));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.array_init));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.module_root));
-    assertTrue(ast_mod.nodeHasExtraChildren(AstKind.switch_prong));
+    assertTrue(ast_mod.nodeHasExtraChildren(AstKind.swt_prong));
     assertTrue(ast_mod.nodeHasExtraChildren(AstKind.error_set_decl));
     assertTrue(!ast_mod.nodeHasExtraChildren(AstKind.int_literal));
     assertTrue(!ast_mod.nodeHasExtraChildren(AstKind.ident_expr));

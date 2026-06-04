@@ -1646,7 +1646,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             return nextTemp(self, type_mod.TYPE_VOID);
         }
         return lowerExpr(self, ec[0]);
-    } else if (node.kind == AstKind.switch_expr) {
+    } else if (node.kind == AstKind.swt_ex) {
+        var swe_m: []const u8 = "SWE:s\n"; pal.markerWrite(swe_m);
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (cond_ty_id) |ct| {
@@ -1770,6 +1771,12 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
         var ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
         var i: usize = 0;
         while (i < ec.len) : (i += 1) {
+            var blc_node = self.ctx.store.nodes.items[@intCast(usize, ec[i])];
+            var blc_m: []const u8 = "BLC:n"; pal.markerWrite(blc_m);
+            var blc_nb: [10]u8 = undefined; var blc_nl = itoa_mod.itoa(ec[i], blc_nb[0..]); var blc_ns: usize = @intCast(usize, 9) - @intCast(usize, blc_nl); pal.markerWrite(blc_nb[blc_ns..@intCast(usize, 9)]);
+            var blc_km: []const u8 = "k"; pal.markerWrite(blc_km);
+            var blc_kb: [10]u8 = undefined; var blc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(blc_node.kind)), blc_kb[0..]); var blc_ks: usize = @intCast(usize, 9) - @intCast(usize, blc_kl); pal.markerWrite(blc_kb[blc_ks..@intCast(usize, 9)]);
+            var blc_nl2: []const u8 = "\n"; pal.markerWrite(blc_nl2);
             self.block_terminated = @intCast(u8, 0);
             lowerStmt(self, ec[i]);
         }
@@ -1846,6 +1853,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = fallthrough } });
         self.current_bb = then_bb;
         self.block_terminated = @intCast(u8, 0);
+        var ifb_m: []const u8 = "IFB:b"; pal.markerWrite(ifb_m);
+        var ifb_bb: [10]u8 = undefined; var ifb_bl = itoa_mod.itoa(node.child_1, ifb_bb[0..]); var ifb_bs: usize = @intCast(usize, 9) - @intCast(usize, ifb_bl); pal.markerWrite(ifb_bb[ifb_bs..@intCast(usize, 9)]);
+        var ifb_nl: []const u8 = "\n"; pal.markerWrite(ifb_nl);
         lowerStmtBody(self, node.child_1);
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
@@ -1954,7 +1964,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             self.current_bb = exit_bb;
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-    } else if (node.kind == AstKind.switch_expr) {
+    } else if (node.kind == AstKind.swt_ex) {
+        var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (cond_ty_id) |ct| {
@@ -2203,6 +2214,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             pal.markerWrite(und4);
         }
     } else if (node.kind == AstKind.add_assign) {
+        var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
         var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
@@ -2211,10 +2223,23 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var bio_m: []const u8 = "BIO:r"; pal.markerWrite(bio_m);
+        var bio_rb: [10]u8 = undefined; var bio_rl = itoa_mod.itoa(op_r, bio_rb[0..]); var bio_rs: usize = @intCast(usize, 9) - @intCast(usize, bio_rl); pal.markerWrite(bio_rb[bio_rs..@intCast(usize, 9)]);
+        var bio_om: []const u8 = "o"; pal.markerWrite(bio_om);
+        var bio_ob: [10]u8 = undefined; var bio_ol = itoa_mod.itoa(@intCast(u32, BIN_ADD), bio_ob[0..]); var bio_os: usize = @intCast(usize, 9) - @intCast(usize, bio_ol); pal.markerWrite(bio_ob[bio_os..@intCast(usize, 9)]);
+        var bio_nl: []const u8 = "\n"; pal.markerWrite(bio_nl);
         var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        var adk_m: []const u8 = "ADK:k"; pal.markerWrite(adk_m);
+        var adk_kb: [10]u8 = undefined; var adk_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(lhs_node.kind)), adk_kb[0..]); var adk_ks: usize = @intCast(usize, 9) - @intCast(usize, adk_kl); pal.markerWrite(adk_kb[adk_ks..@intCast(usize, 9)]);
+        var adk_nl: []const u8 = "\n"; pal.markerWrite(adk_nl);
         if (lhs_node.kind == AstKind.ident_expr) {
             var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var sio_m: []const u8 = "SIO:n"; pal.markerWrite(sio_m);
+            var sio_nb: [10]u8 = undefined; var sio_nl = itoa_mod.itoa(name_id, sio_nb[0..]); var sio_ns: usize = @intCast(usize, 9) - @intCast(usize, sio_nl); pal.markerWrite(sio_nb[sio_ns..@intCast(usize, 9)]);
+            var sio_vm: []const u8 = "v"; pal.markerWrite(sio_vm);
+            var sio_vb: [10]u8 = undefined; var sio_vl = itoa_mod.itoa(op_r, sio_vb[0..]); var sio_vs: usize = @intCast(usize, 9) - @intCast(usize, sio_vl); pal.markerWrite(sio_vb[sio_vs..@intCast(usize, 9)]);
+            var sio_nl2: []const u8 = "\n"; pal.markerWrite(sio_nl2);
             var reg = findLocalTemp(self, name_id);
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
