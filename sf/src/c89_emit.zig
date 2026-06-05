@@ -1606,8 +1606,12 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         .loop_header => {},
         .label => {},
          .decl_local => |dl| {},
-           .assign => |a| {
-            var mkb: []const u8 = "/*==MARKER_ASSIGN dst=";
+            .assign => |a| {
+             var asx_m: []const u8 = "ASX:d"; pal.markerWrite(asx_m);
+             var asx_db: [10]u8 = undefined; var asx_dl = itoa_mod.itoa(a.dst, asx_db[0..]); var asx_ds: usize = @intCast(usize, 9) - @intCast(usize, asx_dl); pal.markerWrite(asx_db[asx_ds..@intCast(usize, 9)]);
+             var asx_sb: [10]u8 = undefined; var asx_sl = itoa_mod.itoa(a.src, asx_sb[0..]); var asx_ss: usize = @intCast(usize, 9) - @intCast(usize, asx_sl); pal.markerWrite(asx_sb[asx_ss..@intCast(usize, 9)]);
+             var asx_nl: []const u8 = "\n"; pal.markerWrite(asx_nl);
+             var mkb: []const u8 = "/*==MARKER_ASSIGN dst=";
             bufferedWriterWrite(&emitter.writer, mkb);
             var mkdst = resolveTempName(emitter, a.dst);
             bufferedWriterWrite(&emitter.writer, mkdst);
@@ -1753,6 +1757,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, sep3);
         },
         .jump => |bb| {
+            var jxp_m: []const u8 = "JXP\n"; pal.markerWrite(jxp_m);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var s: []const u8 = "goto z_bb_";
             bufferedWriterWrite(&emitter.writer, s);
