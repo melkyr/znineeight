@@ -1746,6 +1746,111 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         return @intCast(u32, 0);
+    } else if (node.kind == AstKind.add_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+            }
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+        }
+        return op_r;
+    } else if (node.kind == AstKind.sub_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+            }
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+        }
+        return op_r;
+    } else if (node.kind == AstKind.mul_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+            }
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+        }
+        return op_r;
+    } else if (node.kind == AstKind.div_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+            }
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+        }
+        return op_r;
+    } else if (node.kind == AstKind.mod_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+            var reg = findLocalTemp(self, name_id);
+            if (reg != @intCast(u32, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+            }
+        } else {
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+        }
+        return op_r;
     } else {
         return @intCast(u32, 0);
     }
