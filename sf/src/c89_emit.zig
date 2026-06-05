@@ -1067,6 +1067,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     hti = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
         var htd = lir_fn.hoisted_temps.items[hti];
+        var htt_m: []const u8 = "HTT:t"; pal.markerWrite(htt_m);
+        var htt_tb: [10]u8 = undefined; var htt_tl = itoa_mod.itoa(htd.temp_id, htt_tb[0..]); var htt_ts: usize = @intCast(usize, 9) - @intCast(usize, htt_tl); pal.markerWrite(htt_tb[htt_ts..@intCast(usize, 9)]);
+        var htt_ym: []const u8 = "Y"; pal.markerWrite(htt_ym);
+        var htt_yb: [10]u8 = undefined; var htt_yl = itoa_mod.itoa(htd.type_id, htt_yb[0..]); var htt_ys: usize = @intCast(usize, 9) - @intCast(usize, htt_yl); pal.markerWrite(htt_yb[htt_ys..@intCast(usize, 9)]);
+        var htt_nl: []const u8 = "\n"; pal.markerWrite(htt_nl);
         if (htd.temp_id < max_temp) {
             tid_to_pos[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
         }

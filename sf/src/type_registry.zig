@@ -588,7 +588,6 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
         .payload_idx = @intCast(u32, 0),
     });
     nameCachePut(self, key, tid);
-    nameCachePut(self, @intCast(u64, name_id), tid);
     var rn_m: [20]u8 = undefined;
     var rn_ml = itoa_mod.itoa(module_id, rn_m[0..]);
     var rn_ms: usize = @intCast(usize, 19) - @intCast(usize, rn_ml);

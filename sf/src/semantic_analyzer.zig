@@ -879,6 +879,11 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var a4_rm: []const u8 = "r"; pal_mod.markerWrite(a4_rm);
         var a4_rb: [20]u8 = undefined; var a4_rl = itoa_mod.itoa(result, a4_rb[0..]); var a4_rs: usize = @intCast(usize, 19) - @intCast(usize, a4_rl); pal_mod.markerWrite(a4_rb[a4_rs..@intCast(usize, 19)]);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+        var stb_m: []const u8 = "STB:n"; pal_mod.markerWrite(stb_m);
+        var stb_nb: [10]u8 = undefined; var stb_nl = itoa_mod.itoa(node_idx, stb_nb[0..]); var stb_ns: usize = @intCast(usize, 9) - @intCast(usize, stb_nl); pal_mod.markerWrite(stb_nb[stb_ns..@intCast(usize, 9)]);
+        var stb_rm: []const u8 = "R"; pal_mod.markerWrite(stb_rm);
+        var stb_rb: [10]u8 = undefined; var stb_rl = itoa_mod.itoa(result, stb_rb[0..]); var stb_rs: usize = @intCast(usize, 9) - @intCast(usize, stb_rl); pal_mod.markerWrite(stb_rb[stb_rs..@intCast(usize, 9)]);
+        var stb_nl2: []const u8 = "\n"; pal_mod.markerWrite(stb_nl2);
     }
     return result;
 }

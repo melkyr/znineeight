@@ -109,6 +109,7 @@ pub const AstNode = struct {
     child_2: u32,     // u32 — offset 16
     payload: u32,     // u32 — offset 20
 }; // total: 24 bytes (32-bit layout)
+const zzz_astnode_sz = "ZZZ_ASTNODE_24B_OFFSETS_kind0_flags1_spanlen2_spanstart4_child0_8_child1_12_child2_16_payload_20";
 
 pub const FnProto = struct {
     name_id: u32,

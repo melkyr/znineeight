@@ -1364,8 +1364,11 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
         var last = self.tokens_ptr[self.pos - 1];
         end_pos = last.span_start + @intCast(u32, last.span_len);
     } else end_pos = kw.span_start;
+    var zzz_sz = "ZZZ_ASTNODE_SZ_24_BEFORE_WHILESTMT_ASTSTOREADDNODE";
+    var zzz_buf_c2: [10]u8 = undefined; var zzz_c2e_m: []const u8 = "PTC2:e"; pal.markerWrite(zzz_c2e_m); var zzz_c2e_l = itoa_mod.itoa(continue_expr, zzz_buf_c2[0..]); var zzz_c2e_s: usize = @intCast(usize, 9) - @intCast(usize, zzz_c2e_l); pal.markerWrite(zzz_buf_c2[zzz_c2e_s..@intCast(usize, 9)]); var zzz_c2e_nl: []const u8 = "\n"; pal.markerWrite(zzz_c2e_nl);
+    var zzz_c2 = continue_expr;
     return ast_mod.astStoreAddNode(self.store, AstKind.while_stmt, 0,
-        kw.span_start, end_pos, cond, body, continue_expr, cap_node);
+        kw.span_start, end_pos, cond, body, zzz_c2, cap_node);
 }
 
 fn parserParseForStmt(self: *Parser) ParserError!u32 {
