@@ -1492,17 +1492,28 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var td = lir_fn.hoisted_temps.items[i];
         var eff_type: u32 = td.type_id;
         var wf2 = written_flag[@intCast(usize, i)];
-        if (wf2 == @intCast(u8, 1)) {
-            var wt = written_type[@intCast(usize, i)];
-            if (wt != @intCast(u32, 0xFFFFFFFF) and wt != td.type_id) {
-                eff_type = wt;
-                lir_fn.hoisted_temps.items[i].type_id = wt;
+        if (td.type_id == type_mod.TYPE_UNDEFINED) {
+            if (wf2 == @intCast(u8, 1)) {
+                var wt = written_type[@intCast(usize, i)];
+                if (wt != @intCast(u32, 0xFFFFFFFF)) {
+                    eff_type = wt;
+                }
             }
+        } else {
+            if (wf2 == @intCast(u8, 1)) { var wt2 = written_type[@intCast(usize, i)]; }
         }
         var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
         var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
         var tn = mangleTempName(emitter.interner, td.temp_id);
         var dht: []const u8 = "HT:"; pal.markerWrite(dht);
+        pal.markerWrite(tn);
+        var dsep3: []const u8 = "("; pal.markerWrite(dsep3);
+        var htvb: [10]u8 = undefined; var htvl = itoa_mod.itoa(td.type_id, htvb[0..]); var htvs: usize = @intCast(usize, 9) - @intCast(usize, htvl); pal.markerWrite(htvb[htvs..@intCast(usize, 9)]);
+        var htar: []const u8 = "->"; pal.markerWrite(htar);
+        var htfb: [10]u8 = undefined; var htfl = itoa_mod.itoa(eff_type, htfb[0..]); var htfs: usize = @intCast(usize, 9) - @intCast(usize, htfl); pal.markerWrite(htfb[htfs..@intCast(usize, 9)]);
+        var htwt: []const u8 = ")w"; pal.markerWrite(htwt);
+        var htwb: [10]u8 = undefined; var htwl = itoa_mod.itoa(wf2, htwb[0..]); var htws: usize = @intCast(usize, 9) - @intCast(usize, htwl); pal.markerWrite(htwb[htws..@intCast(usize, 9)]);
+        var htdc: []const u8 = ":"; pal.markerWrite(htdc);
         pal.markerWrite(tn);
         var dsep: []const u8 = ":"; pal.markerWrite(dsep);
         pal.markerWrite(c_type);

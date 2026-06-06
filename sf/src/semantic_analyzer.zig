@@ -110,16 +110,16 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
             return lcl_t;
         }
     }
+    var key = @intCast(u64, name_id);
+    var ncg = type_mod.nameCacheGet(self.registry, key);
     var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id);
     if (sym) |s| {
         var id2: []const u8 = "S"; pal_mod.markerWrite(id2);
-        if (s.kind == sym_mod.SymbolKind.type_alias) return s.type_id;
-        if (s.type_id != @intCast(u32, 0)) return s.type_id;
-        return type_mod.TYPE_VOID;
+        if (s.kind == sym_mod.SymbolKind.type_alias) { var rdt_talias: []const u8 = "TAL"; pal_mod.markerWrite(rdt_talias); return s.type_id; }
+        if (s.type_id != @intCast(u32, 0)) { var rdt_st: []const u8 = "STY:"; pal_mod.markerWrite(rdt_st); var rdt_cname = interner_mod.stringInternerGet(self.interner, name_id); pal.markerWrite(rdt_cname); var rdt_cm: []const u8 = ":"; pal.markerWrite(rdt_cm); var rdt_nb: [10]u8 = undefined; var rdt_nl = itoa_mod.itoa(name_id, rdt_nb[0..]); var rdt_ns: usize = @intCast(usize, 9) - @intCast(usize, rdt_nl); pal_mod.markerWrite(rdt_nb[rdt_ns..@intCast(usize, 9)]); var rdt_tm: []const u8 = "t"; pal_mod.markerWrite(rdt_tm); var rdt_tb: [10]u8 = undefined; var rdt_tl = itoa_mod.itoa(s.type_id, rdt_tb[0..]); var rdt_ts: usize = @intCast(usize, 9) - @intCast(usize, rdt_tl); pal.markerWrite(rdt_tb[rdt_ts..@intCast(usize, 9)]); var rdt_nm: []const u8 = "N"; pal.markerWrite(rdt_nm); if (ncg) |nt| { var rdt_ntb: [10]u8 = undefined; var rdt_ntl = itoa_mod.itoa(nt, rdt_ntb[0..]); var rdt_nts: usize = @intCast(usize, 9) - @intCast(usize, rdt_ntl); pal.markerWrite(rdt_ntb[rdt_nts..@intCast(usize, 9)]); } return s.type_id; }
+        var rdt_sv: []const u8 = "SVO"; pal.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
-    var key = @intCast(u64, name_id);
-    var tid = type_mod.nameCacheGet(self.registry, key);
-    if (tid) |t| { var id3: []const u8 = "C"; pal_mod.markerWrite(id3); return t; }
+    if (ncg) |t| { var id3: []const u8 = "C2:"; pal_mod.markerWrite(id3); var c2name = interner_mod.stringInternerGet(self.interner, name_id); pal_mod.markerWrite(c2name); var id3n: []const u8 = "\n"; pal_mod.markerWrite(id3n); return t; }
      var id4: []const u8 = "D8:Nn"; pal_mod.markerWrite(id4);
      var d8nb: [10]u8 = undefined; var d8nl = itoa_mod.itoa(name_id, d8nb[0..]); var d8ns: usize = @intCast(usize, 9) - @intCast(usize, d8nl); pal_mod.markerWrite(d8nb[d8ns..@intCast(usize, 9)]);
      var d8cm: []const u8 = "c"; pal_mod.markerWrite(d8cm);
@@ -976,9 +976,12 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
         var vd_sp: []const u8 = " "; pal_mod.markerWrite(vd_sp);
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != @intCast(u32, 0)) {
-            var vdt: []const u8 = "T"; pal_mod.markerWrite(vdt);    
-            var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
-            if (rt) |t| { decl_type = t; }
+            var ann = self.store.nodes.items[@intCast(usize, node.child_0)];
+            if (ann.kind == AstKind.ident_expr) { decl_type = semanticAnalyzerResolveExpr(self, node.child_0); }
+            else {
+                var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
+                if (rt) |t| { decl_type = t; }
+            }
         }
         if (node.child_1 != @intCast(u32, 0)) {
             var vdi: []const u8 = "I"; pal_mod.markerWrite(vdi);
