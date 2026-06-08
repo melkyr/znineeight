@@ -471,10 +471,178 @@ pub fn emitZigPalC(writer: *BufferedWriter) void {
     var h12: []const u8 = "#if defined(_WIN32) && defined(ZIG_NO_CRT)\nint main(void);\nvoid __cdecl mainCRTStartup(void)\n{\n    int result = main();\n    ExitProcess((UINT)result);\n}\n#endif\n\n#endif /* ZIG_PAL_C */\n"; bufferedWriterWrite(writer, h12);
 }
 
-pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
+fn tstEmitPrimitiveKind(kind: TypeKind) bool {
+    var k = @enumToInt(kind);
+    return (k >= @enumToInt(TypeKind.u8_type) and k <= @enumToInt(TypeKind.u64_type)) or
+           (k >= @enumToInt(TypeKind.i8_type) and k <= @enumToInt(TypeKind.i64_type)) or
+           k == @enumToInt(TypeKind.usize_type) or k == @enumToInt(TypeKind.isize_type) or
+           k == @enumToInt(TypeKind.c_char_type) or k == @enumToInt(TypeKind.f32_type) or
+           k == @enumToInt(TypeKind.f64_type) or k == @enumToInt(TypeKind.bool_type) or
+           k == @enumToInt(TypeKind.void_type) or k == @enumToInt(TypeKind.noreturn_type) or
+           k == @enumToInt(TypeKind.enum_type) or k == @enumToInt(TypeKind.error_set_type);
+}
+
+fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
+    var ty = reg.types_items[@intCast(usize, ti)];
+    var c: u32 = @intCast(u32, 0);
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
+            var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
+            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+        }
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
+            var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
+            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+        }
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) c += 1;
+    } else if (ty.kind == TypeKind.array_type) {
+        var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
+    } else if (ty.kind == TypeKind.slice_type) {
+        var et = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
+    } else if (ty.kind == TypeKind.ptr_type) {
+        var pt = reg.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) c += 1;
+    }
+    return c;
+}
+
+fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
+    var ty = reg.types_items[@intCast(usize, ti)];
+    var off: u32 = start;
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
+            var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
+            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+                tgt[@intCast(usize, off)] = ft; off += 1;
+            }
+        }
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
+            var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
+            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+                tgt[@intCast(usize, off)] = ft; off += 1;
+            }
+        }
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
+            tgt[@intCast(usize, off)] = tp.tag_type; off += 1;
+        }
+    } else if (ty.kind == TypeKind.array_type) {
+        var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
+            tgt[@intCast(usize, off)] = et; off += 1;
+        }
+    } else if (ty.kind == TypeKind.slice_type) {
+        var et = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
+            tgt[@intCast(usize, off)] = et; off += 1;
+        }
+    } else if (ty.kind == TypeKind.ptr_type) {
+        var pt = reg.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) {
+            tgt[@intCast(usize, off)] = pt; off += 1;
+        }
+    }
+}
+
+fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
+    var ty = reg.types_items[@intCast(usize, ti)];
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
+            if (reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id == target) return true;
+        }
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        if (tp.tag_type == target) return true;
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
+            if (reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id == target) return true;
+        }
+    } else if (ty.kind == TypeKind.array_type) {
+        if (reg.array_items[@intCast(usize, ty.payload_idx)].elem == target) return true;
+    } else if (ty.kind == TypeKind.slice_type) {
+        if (reg.slice_items[@intCast(usize, ty.payload_idx)].elem == target) return true;
+    } else if (ty.kind == TypeKind.ptr_type) {
+        if (reg.ptr_items[@intCast(usize, ty.payload_idx)].base == target) return true;
+    }
+    return false;
+}
+
+fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
+    var tl: usize = reg.types_len;
+    var indegree_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var indegree: [*]u32 = @ptrCast([*]u32, indegree_raw);
     var ti: u32 = @intCast(u32, 0);
-    while (@intCast(usize, ti) < reg.types_len) : (ti += @intCast(u32, 1)) {
-        var tid = ti;
+    while (@intCast(usize, ti) < tl) : (ti += 1) {
+        indegree[@intCast(usize, ti)] = tstEdgesCount(reg, ti);
+    }
+    var result_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var result: [*]u32 = @ptrCast([*]u32, result_raw);
+    var queue_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var queue: [*]u32 = @ptrCast([*]u32, queue_raw);
+    var qhead: usize = 0;
+    var qtail: usize = 0;
+    ti = @intCast(u32, 0);
+    while (@intCast(usize, ti) < tl) : (ti += 1) {
+        if (indegree[@intCast(usize, ti)] == 0) {
+            queue[qtail] = ti; qtail += 1;
+        }
+    }
+    var ri: usize = 0;
+    while (qhead < qtail) {
+        var cur = queue[qhead]; qhead += 1;
+        result[ri] = cur; ri += 1;
+        var tj: u32 = @intCast(u32, 0);
+        while (@intCast(usize, tj) < tl) : (tj += 1) {
+            if (tstIsDep(reg, tj, cur)) {
+                var idx = @intCast(usize, tj);
+                indegree[idx] = indegree[idx] - @intCast(u32, 1);
+                if (indegree[idx] == 0) {
+                    queue[qtail] = tj; qtail += 1;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
+    var sorted: [*]u32 = tstTopologicalSort(reg, emitter.alloc);
+    var tsi: usize = @intCast(usize, 0);
+    while (tsi < reg.types_len) : (tsi += 1) {
+        var tid = sorted[tsi];
+        var ty = reg.types_items[@intCast(usize, tid)];
+        if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type) {
+            if (ty.name_id != @intCast(u32, 0)) {
+                var cname = getCTypeName(reg, emitter.mangler, tid);
+                var dedup_key: u32 = @intCast(u32, 0);
+                var h_ci: usize = @intCast(usize, 0);
+                while (h_ci < cname.len) : (h_ci += 1) {
+                    dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+                }
+                if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key) == null) {
+                    var pre_s: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    bufferedWriterWrite(&emitter.writer, cname);
+                    var pre_s3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, pre_s3);
+                }
+            }
+        }
+    }
+    tsi = @intCast(usize, 0);
+    while (tsi < reg.types_len) : (tsi += 1) {
+        var tid = sorted[tsi];
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind == TypeKind.tagged_union_type) {
             var d2m: []const u8 = "D2:t"; pal.markerWrite(d2m);

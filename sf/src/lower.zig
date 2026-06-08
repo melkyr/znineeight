@@ -943,9 +943,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                var pik_tm: []const u8 = "t"; pal.markerWrite(pik_tm);
                                var pik_tb: [10]u8 = undefined; var pik_tl = itoa_mod.itoa(s.type_id, pik_tb[0..]); var pik_ts: usize = @intCast(usize, 9) - @intCast(usize, pik_tl); pal.markerWrite(pik_tb[pik_ts..@intCast(usize, 9)]);
                                var pik_nl2: []const u8 = "\n"; pal.markerWrite(pik_nl2);
-                               if (s_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                                  var tu_tid = nextTemp(self, s.type_id);
-                                  emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid, .field_id = @intCast(u32, 0), .src = literal_tid } });
+                                var tuc_sk = @intCast(u32, @enumToInt(s_ty.kind));
+                                var tuc_m: []const u8 = "TUC:n"; pal.markerWrite(tuc_m);
+                                var tuc_nb: [10]u8 = undefined; var tuc_nl = itoa_mod.itoa(name_id, tuc_nb[0..]); var tuc_ns: usize = @intCast(usize, 9) - @intCast(usize, tuc_nl); pal.markerWrite(tuc_nb[tuc_ns..@intCast(usize, 9)]);
+                                var tuc_tm: []const u8 = "t"; pal.markerWrite(tuc_tm);
+                                var tuc_tb: [10]u8 = undefined; var tuc_tl = itoa_mod.itoa(s.type_id, tuc_tb[0..]); var tuc_ts: usize = @intCast(usize, 9) - @intCast(usize, tuc_tl); pal.markerWrite(tuc_tb[tuc_ts..@intCast(usize, 9)]);
+                                var tuc_km: []const u8 = "k"; pal.markerWrite(tuc_km);
+                                var tuc_kb: [10]u8 = undefined; var tuc_kl = itoa_mod.itoa(tuc_sk, tuc_kb[0..]); var tuc_ks: usize = @intCast(usize, 9) - @intCast(usize, tuc_kl); pal.markerWrite(tuc_kb[tuc_ks..@intCast(usize, 9)]);
+                                var tuc_vm: []const u8 = "v"; pal.markerWrite(tuc_vm);
+                                var tuc_vb: [10]u8 = undefined; var tuc_vl = itoa_mod.itoa(literal_tid, tuc_vb[0..]); var tuc_vs: usize = @intCast(usize, 9) - @intCast(usize, tuc_vl); pal.markerWrite(tuc_vb[tuc_vs..@intCast(usize, 9)]);
+                                var tuc_nl3: []const u8 = "\n"; pal.markerWrite(tuc_nl3);
+                                if (s_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                                   var tu_tid = nextTemp(self, s.type_id);
+                                   emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid, .field_id = @intCast(u32, 0), .src = literal_tid } });
                                   return tu_tid;
                               }
                               return literal_tid;
