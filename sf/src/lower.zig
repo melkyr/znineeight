@@ -2882,6 +2882,13 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                 });
                 if (p_type) |pt| {
                     addLocalDecl(self, p_name_id, pt, p_temp);
+                    var lpf_m: []const u8 = "LPF:n"; pal.markerWrite(lpf_m);
+                    var lpf_nb: [10]u8 = undefined; var lpf_nl = itoa_mod.itoa(p_name_id, lpf_nb[0..]); var lpf_ns: usize = @intCast(usize, 9) - @intCast(usize, lpf_nl); pal.markerWrite(lpf_nb[lpf_ns..@intCast(usize, 9)]);
+                    var lpf_tm: []const u8 = "t"; pal.markerWrite(lpf_tm);
+                    var lpf_tb: [10]u8 = undefined; var lpf_tl = itoa_mod.itoa(pt, lpf_tb[0..]); var lpf_ts: usize = @intCast(usize, 9) - @intCast(usize, lpf_tl); pal.markerWrite(lpf_tb[lpf_ts..@intCast(usize, 9)]);
+                    var lpf_pm: []const u8 = "T"; pal.markerWrite(lpf_pm);
+                    var lpf_pb: [10]u8 = undefined; var lpf_pl = itoa_mod.itoa(p_temp, lpf_pb[0..]); var lpf_ps: usize = @intCast(usize, 9) - @intCast(usize, lpf_pl); pal.markerWrite(lpf_pb[lpf_ps..@intCast(usize, 9)]);
+                    var lpf_nl2: []const u8 = "\n"; pal.markerWrite(lpf_nl2);
                 }
             } else {
                 func_ptr.is_variadic = @intCast(u8, 1);
