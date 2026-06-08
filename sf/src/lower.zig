@@ -934,8 +934,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                               emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
                               literal_tid = tid;
                           }
-                          if (literal_tid != @intCast(u32, 0)) {
-                               var s_ty = self.ctx.registry.types_items[@intCast(usize, s.type_id)];
+                           if (literal_tid != @intCast(u32, 0)) {
+                                var s_ty = self.ctx.registry.types_items[@intCast(usize, s.type_id)];
+                                var rt_tu2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                                if (rt_tu2) |rt2v| { s_ty = self.ctx.registry.types_items[@intCast(usize, rt2v)]; }
                                var pik_m: []const u8 = "PIK:n"; pal.markerWrite(pik_m);
                                var pik_nb: [10]u8 = undefined; var pik_nl = itoa_mod.itoa(name_id, pik_nb[0..]); var pik_ns: usize = @intCast(usize, 9) - @intCast(usize, pik_nl); pal.markerWrite(pik_nb[pik_ns..@intCast(usize, 9)]);
                                var pik_km: []const u8 = "k"; pal.markerWrite(pik_km);
@@ -954,7 +956,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 var tuc_vb: [10]u8 = undefined; var tuc_vl = itoa_mod.itoa(literal_tid, tuc_vb[0..]); var tuc_vs: usize = @intCast(usize, 9) - @intCast(usize, tuc_vl); pal.markerWrite(tuc_vb[tuc_vs..@intCast(usize, 9)]);
                                 var tuc_nl3: []const u8 = "\n"; pal.markerWrite(tuc_nl3);
                                 if (s_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                                   var tu_tid = nextTemp(self, s.type_id);
+                                    var tutid_type: u32 = s.type_id;
+                                    if (rt_tu2) |rt2v| { tutid_type = rt2v; }
+                                    var tu_tid = nextTemp(self, tutid_type);
                                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid, .field_id = @intCast(u32, 0), .src = literal_tid } });
                                   return tu_tid;
                               }
@@ -994,7 +998,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          }
                          var b2nl: []const u8 = "\n"; pal.markerWrite(b2nl);
                      }
-                     return lowerGlobalRef(self, s.*, name_id);
+                      var node_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                      if (node_rt) |nt| {
+                          var nty = self.ctx.registry.types_items[@intCast(usize, nt)];
+                          if (@enumToInt(nty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.tagged_union_type))) {
+                              var literal_tid = lowerGlobalRef(self, s.*, name_id);
+                              var tu_tid2 = nextTemp(self, nt);
+                              emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid2, .field_id = @intCast(u32, 0), .src = literal_tid } });
+                              return tu_tid2;
+                          }
+                      }
+                      return lowerGlobalRef(self, s.*, name_id);
                 } else if (s.kind == sym_mod.SymbolKind.module) {
                     var m1m: []const u8 = "M1:"; pal.markerWrite(m1m);
                     return type_mod.TYPE_UNDEFINED;
@@ -1207,10 +1221,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                      }
                      return @intCast(u32, 0);
                  }
-                 var args_start = self.temp_counter;
-                var ai: usize = 0;
-                while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-                ai = 0;
+                      var args_start = self.temp_counter;
+                      var ai: usize = 0;
+                      while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                      ai = 0;
                 while (ai < ec.len) : (ai += 1) {
                     var arg_val = lowerExpr(self, ec[ai]);
                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
