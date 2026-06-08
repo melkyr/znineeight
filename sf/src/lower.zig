@@ -1151,15 +1151,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              var p2m: []const u8 = "k"; pal.markerWrite(p2m);
              var p2b: [10]u8 = undefined; var p2l = itoa_mod.itoa(ck2, p2b[0..]); var p2s: usize = @intCast(usize, 9) - @intCast(usize, p2l); pal.markerWrite(p2b[p2s..@intCast(usize, 9)]);
          }
-         var prt2_nl: []const u8 = "\n"; pal.markerWrite(prt2_nl);
-         var e0m: []const u8 = "E0:p"; pal.markerWrite(e0m);
-         var e0b: [10]u8 = undefined; var e0l = itoa_mod.itoa(@intCast(u32, @enumToInt(store.nodes.items[@intCast(usize, ec[0])].kind)), e0b[0..]); var e0s: usize = @intCast(usize, 9) - @intCast(usize, e0l); pal.markerWrite(e0b[e0s..@intCast(usize, 9)]);
-         var e01m: []const u8 = "n"; pal.markerWrite(e01m);
-         var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(store.nodes.items[@intCast(usize, ec[0])].payload, e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.markerWrite(e01b[e01s..@intCast(usize, 9)]);
-         var e02m: []const u8 = "i"; pal.markerWrite(e02m);
-         var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, ec[0])].payload)], e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
-         var e0nl: []const u8 = "\n"; pal.markerWrite(e0nl);
-         var d9p_m: []const u8 = "D9:p"; pal.markerWrite(d9p_m);
+           var prt2_nl: []const u8 = "\n"; pal.markerWrite(prt2_nl);
+          var d9p_m: []const u8 = "D9:p"; pal.markerWrite(d9p_m);
         var d9p_b: [20]u8 = undefined; var d9p_l = itoa_mod.itoa(node.payload, d9p_b[0..]); var d9p_s: usize = @intCast(usize, 19) - @intCast(usize, d9p_l); pal.markerWrite(d9p_b[d9p_s..@intCast(usize, 19)]);
          var d9p_nl: []const u8 = "\n"; pal.markerWrite(d9p_nl);
          var callee_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
@@ -1173,6 +1166,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       var prn_nm: []const u8 = "n"; pal.markerWrite(prn_nm);
                       var prn_nb: [10]u8 = undefined; var prn_nl = itoa_mod.itoa(fp.name_id, prn_nb[0..]); var prn_ns: usize = @intCast(usize, 9) - @intCast(usize, prn_nl); pal.markerWrite(prn_nb[prn_ns..@intCast(usize, 9)]);
                       var prn_xl: []const u8 = "\n"; pal.markerWrite(prn_xl);
+                      if (ec.len > @intCast(usize, 0)) {
+                      var e0m: []const u8 = "E0:p"; pal.markerWrite(e0m);
+                      var e0b: [10]u8 = undefined; var e0l = itoa_mod.itoa(@intCast(u32, @enumToInt(store.nodes.items[@intCast(usize, ec[0])].kind)), e0b[0..]); var e0s: usize = @intCast(usize, 9) - @intCast(usize, e0l); pal.markerWrite(e0b[e0s..@intCast(usize, 9)]);
+                      var e01m: []const u8 = "n"; pal.markerWrite(e01m);
+                      var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(store.nodes.items[@intCast(usize, ec[0])].payload, e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.markerWrite(e01b[e01s..@intCast(usize, 9)]);
+                      var e02m: []const u8 = "i"; pal.markerWrite(e02m);
+                      var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, ec[0])].payload)], e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
+                      var e0nl: []const u8 = "\n"; pal.markerWrite(e0nl);
+                      }
                       var dsi: usize = @intCast(usize, 1);
                      while (dsi + @intCast(usize, 1) < ec.len) : (dsi += @intCast(usize, 1)) {
                          var dsp = store.nodes.items[@intCast(usize, ec[dsi])];
