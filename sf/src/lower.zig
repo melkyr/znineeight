@@ -1063,6 +1063,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = rtt;
             }
         }
+        if (arr_kind == @intCast(u8, 0) and arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }

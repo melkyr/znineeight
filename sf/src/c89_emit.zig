@@ -1897,6 +1897,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                                     var aflb2: []const u8 = ") {\n        ";
                                     bufferedWriterWrite(&emitter.writer, aflb2);
                                     bufferedWriterWrite(&emitter.writer, base);
+                                    var dot_s2: []const u8 = ".";
+                                    bufferedWriterWrite(&emitter.writer, dot_s2);
                                     bufferedWriterWrite(&emitter.writer, fn_prefix3);
                                     var aflb3: []const u8 = "[_j] = 0;\n        _j++;\n    }\n}\n";
                                     bufferedWriterWrite(&emitter.writer, aflb3);
