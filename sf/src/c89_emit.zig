@@ -1608,8 +1608,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var d4p: []const u8 = "D4:"; pal.markerWrite(d4p);
     var di: usize = @intCast(usize, 0);
     var had: u8 = 0;
-    while (di < lir_fn.hoisted_temps.len) : (di += @intCast(usize, 1)) {
-        var td = lir_fn.hoisted_temps.items[di];
+     while (di < lir_fn.hoisted_temps.len) : (di += @intCast(usize, 1)) {
+         var td = lir_fn.hoisted_temps.items[di];
+         if (td.temp_id < @intCast(u32, lir_fn.params.len)) { continue; }
         var tn = mangleTempName(emitter.interner, td.temp_id);
         var wf = written_flag[@intCast(usize, di)];
         if (wf == @intCast(u8, 0)) {
@@ -1656,8 +1657,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     }
 
     var i: usize = @intCast(usize, 0);
-    while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
-        var td = lir_fn.hoisted_temps.items[i];
+     while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
+         var td = lir_fn.hoisted_temps.items[i];
+         if (td.temp_id < @intCast(u32, lir_fn.params.len)) { continue; }
         var eff_type: u32 = td.type_id;
         var wf2 = written_flag[@intCast(usize, i)];
         if (td.type_id == type_mod.TYPE_UNDEFINED) {

@@ -372,6 +372,10 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     var adnl2: []const u8 = "\n"; pal.markerWrite(adnl2);
 }
 
+fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
+    return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
+}
+
 fn findLocalTemp(self: *LirLowerer, name_id: u32) u32 {
     if (self.local_decl_count == @intCast(usize, 0)) return @intCast(u32, 0);
     var li: usize = @intCast(usize, 0);
@@ -1378,7 +1382,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                         var slot_tid_b: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { slot_tid_b[0] = pt; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
-                        else { slot_tid_b[0] = self.hoisted_temps.items[@intCast(usize, arg_val)].type_id; var mx2: u32 = 2; if (mx2 == 2) { var qx: usize = 999998; mx2 = 0; } }
+                        else { slot_tid_b[0] = getTempType(self, arg_val); var mx2: u32 = 2; if (mx2 == 2) { var qx: usize = 999998; mx2 = 0; } }
                         self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = slot_tid_b[0];
                     }
                     var args_count: u32 = @intCast(u32, ec.len);
@@ -2898,7 +2902,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                 var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
                 if (p_type) |_| { var dp: []const u8 = "HP"; pal.markerWrite(dp); } else { var dp: []const u8 = "MP"; pal.markerWrite(dp); }
                 var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
-                var p_temp: u32 = @intCast(u32, 10000) + @intCast(u32, pi);
+                var p_temp: u32 = nextTemp(self, type_mod.TYPE_UNDEFINED);
                 lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
                     .name_id = p_name_id,
                     .type_id = p_tid,
@@ -2922,7 +2926,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     self.func = func_ptr;
     self.current_bb = createBlock(self);
     self.scope_depth = @intCast(u32, 0);
-    self.temp_counter = @intCast(u32, 0);
+    self.temp_counter = @intCast(u32, proto.params_count);
     var body = node.child_0;
     if (body != 0) {
         self.block_terminated = @intCast(u8, 0);
