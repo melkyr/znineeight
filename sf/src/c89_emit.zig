@@ -1859,6 +1859,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
          .assign_field => |a| {
              var base = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
               var src = mangleTempName(emitter.interner, a.src);
+             var af_skip: u8 = @intCast(u8, 0);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              bufferedWriterWrite(&emitter.writer, base);
              var fn_prefix3: []const u8 = ".f_";
@@ -1875,18 +1876,38 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                            } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
                                if (a.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
                                else if (a.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".payload"; fn_prefix3 = pn; found3 = @intCast(u8, 1); }
-                           } else if (bty.kind == type_mod.TypeKind.struct_type) {
-                               var dot_s: []const u8 = ".";
-                               bufferedWriterWrite(&emitter.writer, dot_s);
-                               var fe: type_mod.FieldEntry = emitter.registry.fe_items[@intCast(usize, emitter.registry.st_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, a.field_id)];
-                               var pn: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
-                               fn_prefix3 = pn;
-                               found3 = @intCast(u8, 1);
-                           }
+                            } else if (bty.kind == type_mod.TypeKind.struct_type) {
+                                var dot_s: []const u8 = ".";
+                                bufferedWriterWrite(&emitter.writer, dot_s);
+                                var fe: type_mod.FieldEntry = emitter.registry.fe_items[@intCast(usize, emitter.registry.st_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, a.field_id)];
+                                var pn: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+                                fn_prefix3 = pn;
+                                found3 = @intCast(u8, 1);
+                                var af_fety = emitter.registry.types_items[@intCast(usize, fe.type_id)];
+                                if (af_fety.kind == type_mod.TypeKind.array_type) {
+                                    var afap = emitter.registry.array_items[@intCast(usize, af_fety.payload_idx)];
+                                    var afelem = emitter.registry.types_items[@intCast(usize, afap.elem)];
+                                    var aflb: []const u8 = "{\n";
+                                    bufferedWriterWrite(&emitter.writer, aflb);
+                                    var afli: []const u8 = "    unsigned int _j = 0;\n";
+                                    bufferedWriterWrite(&emitter.writer, afli);
+                                    var aflw: []const u8 = "    while (_j < ";
+                                    bufferedWriterWrite(&emitter.writer, aflw);
+                                    var afalb: [20]u8 = undefined; var afall = itoa_mod.itoa(afap.length, afalb[0..]); var afals: usize = @intCast(usize, 19) - @intCast(usize, afall); bufferedWriterWrite(&emitter.writer, afalb[afals..@intCast(usize, 19)]);
+                                    var aflb2: []const u8 = ") {\n        ";
+                                    bufferedWriterWrite(&emitter.writer, aflb2);
+                                    bufferedWriterWrite(&emitter.writer, base);
+                                    bufferedWriterWrite(&emitter.writer, fn_prefix3);
+                                    var aflb3: []const u8 = "[_j] = 0;\n        _j++;\n    }\n}\n";
+                                    bufferedWriterWrite(&emitter.writer, aflb3);
+                                    af_skip = @intCast(u8, 1);
+                                }
+                            }
                      }
                      break;
                  }
              }
+             if (af_skip == @intCast(u8, 0)) {
              if (found3 == @intCast(u8, 0)) {
                  bufferedWriterWrite(&emitter.writer, fn_prefix3);
                  var fb: [16]u8 = undefined;
@@ -1903,6 +1924,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
               bufferedWriterWrite(&emitter.writer, src);
               var sep3: []const u8 = ";\n";
               bufferedWriterWrite(&emitter.writer, sep3);
+             }
               var afe_m: []const u8 = "AFE:b"; pal.markerWrite(afe_m);
               var afe_bb: [10]u8 = undefined; var afe_bl = itoa_mod.itoa(a.base, afe_bb[0..]); var afe_bs: usize = @intCast(usize, 9) - @intCast(usize, afe_bl); pal.markerWrite(afe_bb[afe_bs..@intCast(usize, 9)]);
               var afe_fm: []const u8 = "f"; pal.markerWrite(afe_fm);
@@ -2135,6 +2157,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                   }
               }
               if (field_name_resolved == @intCast(u8, 0)) {
+                  var lfu_m: []const u8 = "LFU:f"; pal.markerWrite(lfu_m);
+                  var lfu_fb: [10]u8 = undefined; var lfu_fl = itoa_mod.itoa(lf.field_id, lfu_fb[0..]); var lfu_fs: usize = @intCast(usize, 9) - @intCast(usize, lfu_fl); pal.markerWrite(lfu_fb[lfu_fs..@intCast(usize, 9)]);
+                  var lfu_nl: []const u8 = "\n"; pal.markerWrite(lfu_nl);
                   if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; bufferedWriterWrite(&emitter.writer, pn); }
                   else if (lf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; bufferedWriterWrite(&emitter.writer, pn); }
                   else {
@@ -2170,14 +2195,20 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                          } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
                              if (sf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; fn_prefix2 = pn; found2 = @intCast(u8, 1); }
                              else if (sf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".payload"; fn_prefix2 = pn; found2 = @intCast(u8, 1); }
-                         } else if (bty.kind == type_mod.TypeKind.struct_type) {
-                             var dot_s: []const u8 = ".";
-                             bufferedWriterWrite(&emitter.writer, dot_s);
-                             var fe: type_mod.FieldEntry = emitter.registry.fe_items[@intCast(usize, emitter.registry.st_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, sf.field_id)];
-                             var fname: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
-                             bufferedWriterWrite(&emitter.writer, fname);
-                             found2 = @intCast(u8, 1);
-                         }
+                          } else if (bty.kind == type_mod.TypeKind.struct_type) {
+                              var dot_s: []const u8 = ".";
+                              bufferedWriterWrite(&emitter.writer, dot_s);
+                              var fe: type_mod.FieldEntry = emitter.registry.fe_items[@intCast(usize, emitter.registry.st_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, sf.field_id)];
+                              var fname: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+                              bufferedWriterWrite(&emitter.writer, fname);
+                              found2 = @intCast(u8, 1);
+                              var sf_fety = emitter.registry.types_items[@intCast(usize, fe.type_id)];
+                              if (sf_fety.kind == type_mod.TypeKind.array_type) {
+                                  var as2_m: []const u8 = "ASFN:n"; pal.markerWrite(as2_m);
+                                  var as2_nb: [10]u8 = undefined; var as2_nl = itoa_mod.itoa(fe.name_id, as2_nb[0..]); var as2_ns: usize = @intCast(usize, 9) - @intCast(usize, as2_nl); pal.markerWrite(as2_nb[as2_ns..@intCast(usize, 9)]);
+                                  var as2_nl2: []const u8 = "\n"; pal.markerWrite(as2_nl2);
+                              }
+                          }
                      }
                      break;
                  }
@@ -2399,15 +2430,50 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                  var alb: [20]u8 = undefined; var all = itoa_mod.itoa(uap.length, alb[0..]); var als: usize = @intCast(usize, 19) - @intCast(usize, all); bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
                  var loop_body: []const u8 = ") {\n        ";
                  bufferedWriterWrite(&emitter.writer, loop_body);
-                 bufferedWriterWrite(&emitter.writer, result);
                  var elem_ty = emitter.registry.types_items[@intCast(usize, uap.elem)];
                  if (elem_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                     bufferedWriterWrite(&emitter.writer, result);
                      var lb_tu: []const u8 = "[_i].tag = 0;\n        _i++;\n    }\n}\n";
                      bufferedWriterWrite(&emitter.writer, lb_tu);
-                 } else if (elem_ty.kind == type_mod.TypeKind.struct_type) {
-                     var lb_st: []const u8 = "[_i] = {0};\n        _i++;\n    }\n}\n";
-                     bufferedWriterWrite(&emitter.writer, lb_st);
-                 } else {
+               } else if (elem_ty.kind == type_mod.TypeKind.struct_type) {
+                      var ucs_m: []const u8 = "UCS:e"; pal.markerWrite(ucs_m);
+                      var ucs_eb: [10]u8 = undefined; var ucs_el = itoa_mod.itoa(uap.elem, ucs_eb[0..]); var ucs_es: usize = @intCast(usize, 9) - @intCast(usize, ucs_el); pal.markerWrite(ucs_eb[ucs_es..@intCast(usize, 9)]);
+                      var ucs_nl: []const u8 = "\n"; pal.markerWrite(ucs_nl);
+                      var final_ender: []const u8 = "_i++;\n    }\n}\n";
+                      var st = emitter.registry.st_items[@intCast(usize, elem_ty.payload_idx)];
+                      var sfi: usize = @intCast(usize, 0);
+                      while (sfi < @intCast(usize, st.fields_count)) : (sfi += @intCast(usize, 1)) {
+                          var sfe = emitter.registry.fe_items[@intCast(usize, st.fields_start) + sfi];
+                          var sfety = emitter.registry.types_items[@intCast(usize, sfe.type_id)];
+                          if (sfety.kind == type_mod.TypeKind.array_type) {
+                              var sfap = emitter.registry.array_items[@intCast(usize, sfety.payload_idx)];
+                              var slpb: []const u8 = "    unsigned int _k = 0;\n";
+                              bufferedWriterWrite(&emitter.writer, slpb);
+                              var slpw: []const u8 = "    while (_k < ";
+                              bufferedWriterWrite(&emitter.writer, slpw);
+                              var slpab: [20]u8 = undefined; var slpal = itoa_mod.itoa(sfap.length, slpab[0..]); var slpas: usize = @intCast(usize, 19) - @intCast(usize, slpal); bufferedWriterWrite(&emitter.writer, slpab[slpas..@intCast(usize, 19)]);
+                              var slpb2: []const u8 = ") {\n        ";
+                              bufferedWriterWrite(&emitter.writer, slpb2);
+                              bufferedWriterWrite(&emitter.writer, result);
+                              var slpd: []const u8 = "[_i].";
+                              bufferedWriterWrite(&emitter.writer, slpd);
+                              var slpfn: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              bufferedWriterWrite(&emitter.writer, slpfn);
+                              var slpb3: []const u8 = "[_k] = 0;\n        _k++;\n    }\n";
+                              bufferedWriterWrite(&emitter.writer, slpb3);
+                          } else {
+                              bufferedWriterWrite(&emitter.writer, result);
+                              var sld: []const u8 = "[_i].";
+                              bufferedWriterWrite(&emitter.writer, sld);
+                              var slfn: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              bufferedWriterWrite(&emitter.writer, slfn);
+                              var sle: []const u8 = " = 0;\n        ";
+                              bufferedWriterWrite(&emitter.writer, sle);
+                          }
+                      }
+                      bufferedWriterWrite(&emitter.writer, final_ender);
+                  } else {
+                     bufferedWriterWrite(&emitter.writer, result);
                      var lb: []const u8 = "[_i] = 0;\n        _i++;\n    }\n}\n";
                      bufferedWriterWrite(&emitter.writer, lb);
                  }

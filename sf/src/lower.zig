@@ -498,6 +498,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.undefined_literal) {
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
+        var uds_m: []const u8 = "UDS:t"; pal.markerWrite(uds_m);
+        var uds_tb: [10]u8 = undefined; var uds_tl = itoa_mod.itoa(tid, uds_tb[0..]); var uds_ts: usize = @intCast(usize, 9) - @intCast(usize, uds_tl); pal.markerWrite(uds_tb[uds_ts..@intCast(usize, 9)]);
+        var uds_nl: []const u8 = "\n"; pal.markerWrite(uds_nl);
         return tid;
     } else if (node.kind == AstKind.enum_literal) {
         var ev_val: u64 = @intCast(u64, node.payload);
@@ -1053,6 +1056,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     arr_kind = self.local_decl_kinds[li];
                     break;
                 }
+            }
+        }
+        if (arr_temp != @intCast(u32, 0)) {
+            if (rt) |rtt| {
+                self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = rtt;
             }
         }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
@@ -1704,6 +1712,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var swe_m: []const u8 = "SWE:s\n"; pal.markerWrite(swe_m);
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        var swc_m: []const u8 = "SWC:c"; pal.markerWrite(swc_m);
+        var swc_cb: [10]u8 = undefined; var swc_cl = itoa_mod.itoa(node.child_0, swc_cb[0..]); var swc_cs: usize = @intCast(usize, 9) - @intCast(usize, swc_cl); pal.markerWrite(swc_cb[swc_cs..@intCast(usize, 9)]);
+        if (cond_ty_id) |swv| {
+            var swc_rm: []const u8 = "R"; pal.markerWrite(swc_rm);
+            var swc_rb: [10]u8 = undefined; var swc_rl2 = itoa_mod.itoa(swv, swc_rb[0..]); var swc_rs: usize = @intCast(usize, 9) - @intCast(usize, swc_rl2); pal.markerWrite(swc_rb[swc_rs..@intCast(usize, 9)]);
+        } else {
+            var swc_x: []const u8 = "X"; pal.markerWrite(swc_x);
+        }
+        var swc_nl2: []const u8 = "\n"; pal.markerWrite(swc_nl2);
         if (cond_ty_id) |ct| {
             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
             if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
@@ -2469,16 +2486,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (is_array_type == @intCast(u8, 1) and init_node.kind == AstKind.array_init) {
                     var arr_temp = lowerExpr(self, node.child_1);
                     emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = arr_temp } });
-                } else if (is_array_type == @intCast(u8, 1) and init_node.kind == AstKind.undefined_literal) {
+                } else if (init_node.kind == AstKind.undefined_literal) {
                     var arr_temp = nextTemp(self, decl_type);
-                    emitInst(self, LirInst{ .undefined_const = .{ .result = arr_temp, .type_id = decl_type } });
-                    var udl_m: []const u8 = "UDL:d"; pal.markerWrite(udl_m);
-                    var udl_db: [10]u8 = undefined; var udl_dl = itoa_mod.itoa(dl_temp, udl_db[0..]); var udl_ds: usize = @intCast(usize, 9) - @intCast(usize, udl_dl); pal.markerWrite(udl_db[udl_ds..@intCast(usize, 9)]);
-                    var udl_sm: []const u8 = "s"; pal.markerWrite(udl_sm);
-                    var udl_sb: [10]u8 = undefined; var udl_sl = itoa_mod.itoa(arr_temp, udl_sb[0..]); var udl_ss: usize = @intCast(usize, 9) - @intCast(usize, udl_sl); pal.markerWrite(udl_sb[udl_ss..@intCast(usize, 9)]);
-                    var udl_tm: []const u8 = "t"; pal.markerWrite(udl_tm);
-                    var udl_tb: [10]u8 = undefined; var udl_tl = itoa_mod.itoa(decl_type, udl_tb[0..]); var udl_ts: usize = @intCast(usize, 9) - @intCast(usize, udl_tl); pal.markerWrite(udl_tb[udl_ts..@intCast(usize, 9)]);
-                    var udl_nl: []const u8 = "\n"; pal.markerWrite(udl_nl);
+                    if (is_array_type == @intCast(u8, 1)) {
+                        emitInst(self, LirInst{ .undefined_const = .{ .result = arr_temp, .type_id = decl_type } });
+                    }
                     emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = arr_temp } });
                 } else {
                     var init_val = lowerExpr(self, node.child_1);
