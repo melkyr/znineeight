@@ -154,6 +154,13 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         }
     }
     if ((source == type_mod.TYPE_U8 and target == type_mod.TYPE_C_CHAR) or (source == type_mod.TYPE_C_CHAR and target == type_mod.TYPE_U8)) return CoercionKind.none;
+    if (src.kind == type_mod.TypeKind.ptr_type and tgt.kind == type_mod.TypeKind.slice_type) {
+        var sp2 = reg.ptr_items[@intCast(usize, src.payload_idx)];
+        var ts2 = reg.slice_items[@intCast(usize, tgt.payload_idx)];
+        if (sp2.base == ts2.elem) return CoercionKind.string_to_slice;
+        if ((sp2.base == type_mod.TYPE_C_CHAR and ts2.elem == type_mod.TYPE_U8)) return CoercionKind.string_to_slice;
+        if ((sp2.base == type_mod.TYPE_U8 and ts2.elem == type_mod.TYPE_C_CHAR)) return CoercionKind.string_to_slice;
+    }
 
     return CoercionKind.none;
 }

@@ -351,6 +351,10 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
     var lex_kb: [10]u8 = undefined; var lex_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(lex_node.kind)), lex_kb[0..]); var lex_ks: usize = @intCast(usize, 9) - @intCast(usize, lex_kl); pal.markerWrite(lex_kb[lex_ks..@intCast(usize, 9)]);
     var lex_nl2: []const u8 = "\n"; pal.markerWrite(lex_nl2);
     var result = lowerExprImpl(self, node_idx);
+    var ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
+    if (ce) |coercion| {
+        result = applyCoercion(self, result, coercion);
+    }
     return result;
 }
 
@@ -2897,7 +2901,16 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         return dst;
     } else if (kind == CoercionKind.string_to_slice) {
         var dst = nextTemp(self, coercion.target_type);
-        emitInst(self, LirInst{ .make_slice = .{ .ptr = src_temp, .len = @intCast(u32, 1), .result = dst, .type_id = coercion.target_type } });
+        var sllen: u32 = @intCast(u32, 1);
+        var slnode = self.ctx.store.nodes.items[@intCast(usize, coercion.node_idx)];
+        if (slnode.kind == AstKind.string_literal) {
+            var slstr_id = self.ctx.store.string_values.items[@intCast(usize, slnode.payload)];
+            var slstr_data = si_mod.stringInternerGet(self.ctx.registry.interner, slstr_id);
+            sllen = @intCast(u32, slstr_data.len);
+        }
+        var sl_len_temp = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, sllen), .result = sl_len_temp } });
+        emitInst(self, LirInst{ .make_slice = .{ .ptr = src_temp, .len = sl_len_temp, .result = dst, .type_id = coercion.target_type } });
         return dst;
     } else if (kind == CoercionKind.string_to_many_ptr) {
         var dst = nextTemp(self, coercion.target_type);

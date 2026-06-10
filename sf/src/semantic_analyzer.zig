@@ -34,6 +34,7 @@ pub const SemanticAnalyzer = struct {
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
+    call_param_map: *hash_mod.U32ToU32Map,
     current_switch_cond_tu: u32,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
@@ -44,7 +45,7 @@ pub const SemanticAnalyzer = struct {
     interner: *interner_mod.StringInterner,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
     var und_text: []const u8 = "_";
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     return SemanticAnalyzer{
@@ -70,6 +71,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         ._stub_0 = und_name_id,
         ._stub_1 = @intCast(u32, 0),
         .call_arg_types = cal_typs,
+        .call_param_map = cp_map,
         .interner = interner,
     };
 }
@@ -400,6 +402,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
     var direct_ret: u32 = @intCast(u32, 0);
+    var cpp_val_fnx: u32 = @intCast(u32, 0);
     var decl_cap: u32 = 0;
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, callee_node.payload)]);
@@ -445,12 +448,21 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 var ftp = self.registry.fn_items[@intCast(usize, ft_ty.payload_idx)];
                 var ai2: usize = 0;
                 while (ai2 < args.len and ai2 < @intCast(usize, ftp.params_count)) : (ai2 += 1) {
-                    var pt = self.registry.xt_items[@intCast(usize, ftp.params_start) + ai2];
-                    hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai2], pt);
+                    var cpp_key = (@intCast(u32, decl_cap) << @intCast(u32, 16)) | @intCast(u32, ai2);
+                    cpp_val_fnx = type_mod.TYPE_UNDEFINED;
+                    if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { cpp_val_fnx = cpp_v; } else { cpp_val_fnx = self.registry.xt_items[@intCast(usize, ftp.params_start) + ai2]; }
+                    hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai2], cpp_val_fnx);
+                    var dxc_at = semanticAnalyzerResolveExpr(self, args[ai2]);
+                    if (dxc_at != cpp_val_fnx) {
+                        var dxc_ck = coercion_mod.classifyCoercion(self.registry, dxc_at, cpp_val_fnx);
+                        if (dxc_ck != coercion_mod.CoercionKind.none) {
+                            coercion_mod.coercionTableAdd(self.coercion_table, args[ai2], dxc_ck, cpp_val_fnx);
+                        }
+                    }
                 }
             }
             }
-        }
+            }
         var ai: usize = 0;
         while (ai < args.len) : (ai += 1) {
             _ = semanticAnalyzerResolveExpr(self, args[ai]);
@@ -762,7 +774,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.unreachable_expr) {
         result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.string_literal) {
-        result = type_mod.TYPE_VOID;
+        result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_C_CHAR, true);
     } else if (node.kind == AstKind.enum_literal) {
         result = semanticAnalyzerResolveEnumLiteral(self, node_idx);
     } else if (node.kind == AstKind.error_literal) {
@@ -1002,6 +1014,12 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             pal_mod.markerWrite(ib[is..@intCast(usize, 20)]);
             pal_mod.markerWrite(vdi);
             var it = semanticAnalyzerResolveExpr(self, node.child_1);
+            if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
+                var ck = coercion_mod.classifyCoercion(self.registry, it, decl_type);
+                if (ck != coercion_mod.CoercionKind.none) {
+                    coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
+                }
+            }
             if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
             rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
         }
