@@ -487,8 +487,17 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var fn4f: []const u8 = "FN4f"; pal_mod.markerWrite(fn4f);
         var param_type = self.registry.xt_items[pstart + ai];
         hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], param_type);
+        var ptm_m: []const u8 = "PTM:a"; pal_mod.markerWrite(ptm_m);
+        var ptm_ab2: [10]u8 = undefined; var ptm_al = itoa_mod.itoa(@intCast(u32, ai), ptm_ab2[0..]); var ptm_as2: usize = @intCast(usize, 9) - @intCast(usize, ptm_al); pal_mod.markerWrite(ptm_ab2[ptm_as2..@intCast(usize, 9)]);
+        var ptm_tm: []const u8 = "t"; pal_mod.markerWrite(ptm_tm);
+        var ptm_tb: [10]u8 = undefined; var ptm_tl2 = itoa_mod.itoa(param_type, ptm_tb[0..]); var ptm_ts: usize = @intCast(usize, 9) - @intCast(usize, ptm_tl2); pal_mod.markerWrite(ptm_tb[ptm_ts..@intCast(usize, 9)]);
+        var ptm_nm: []const u8 = "n"; pal_mod.markerWrite(ptm_nm);
+        var ptm_nb: [10]u8 = undefined; var ptm_nl3 = itoa_mod.itoa(args[ai], ptm_nb[0..]); var ptm_ns: usize = @intCast(usize, 9) - @intCast(usize, ptm_nl3); pal_mod.markerWrite(ptm_nb[ptm_ns..@intCast(usize, 9)]);
+        var ptm_nl4: []const u8 = "\n"; pal_mod.markerWrite(ptm_nl4);
         var fn4g: []const u8 = "FN4g"; pal_mod.markerWrite(fn4g);
         var arg_type = semanticAnalyzerResolveExpr(self, args[ai]);
+        if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
+        if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         if (arg_type != param_type) {
             if (type_mod.typeRegistryIsAssignable(self.registry, arg_type, param_type)) {
                 var ck = coercion_mod.classifyCoercion(self.registry, arg_type, param_type);

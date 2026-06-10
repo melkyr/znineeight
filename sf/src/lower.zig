@@ -361,6 +361,13 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     self.local_decl_temps[self.local_decl_count] = temp;
     self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
     self.local_decl_count += @intCast(usize, 1);
+    var adt_m: []const u8 = "ADT:n"; pal.markerWrite(adt_m);
+    var adt_nb: [10]u8 = undefined; var adt_nl = itoa_mod.itoa(name_id, adt_nb[0..]); var adt_ns: usize = @intCast(usize, 9) - @intCast(usize, adt_nl); pal.markerWrite(adt_nb[adt_ns..@intCast(usize, 9)]);
+    var adt_tm: []const u8 = "t"; pal.markerWrite(adt_tm);
+    var adt_tb: [10]u8 = undefined; var adt_tl = itoa_mod.itoa(type_id, adt_tb[0..]); var adt_ts: usize = @intCast(usize, 9) - @intCast(usize, adt_tl); pal.markerWrite(adt_tb[adt_ts..@intCast(usize, 9)]);
+    var adt_rm: []const u8 = "r"; pal.markerWrite(adt_rm);
+    var adt_rb: [10]u8 = undefined; var adt_rl = itoa_mod.itoa(temp, adt_rb[0..]); var adt_rs: usize = @intCast(usize, 9) - @intCast(usize, adt_rl); pal.markerWrite(adt_rb[adt_rs..@intCast(usize, 9)]);
+    var adt_nl2: []const u8 = "\n"; pal.markerWrite(adt_nl2);
     var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
     var adnb: [10]u8 = undefined; var adnl = itoa_mod.itoa(name_id, adnb[0..]); var adns: usize = @intCast(usize, 9) - @intCast(usize, adnl); pal.markerWrite(adnb[adns..@intCast(usize, 9)]);
     var adtm: []const u8 = "t"; pal.markerWrite(adtm);
@@ -1048,24 +1055,59 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             ptype = type_mod.TYPE_U32;
         }
         var arr_kind: u8 = @intCast(u8, 0);
+        var arr_tid: u32 = @intCast(u32, 0);
         {
             var li: usize = @intCast(usize, 0);
             while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
                 if (self.local_decl_names[li] == name_id) {
                     arr_temp = self.local_decl_temps[li];
                     arr_kind = self.local_decl_kinds[li];
+                    arr_tid = self.local_decl_types[li];
+                    var lds_m: []const u8 = "LDS:n"; pal.markerWrite(lds_m);
+                    var lds_nb: [10]u8 = undefined; var lds_nl = itoa_mod.itoa(name_id, lds_nb[0..]); var lds_ns: usize = @intCast(usize, 9) - @intCast(usize, lds_nl); pal.markerWrite(lds_nb[lds_ns..@intCast(usize, 9)]);
+                    var lds_tm: []const u8 = "t"; pal.markerWrite(lds_tm);
+                    var lds_tb: [10]u8 = undefined; var lds_tl = itoa_mod.itoa(self.local_decl_types[li], lds_tb[0..]); var lds_ts: usize = @intCast(usize, 9) - @intCast(usize, lds_tl); pal.markerWrite(lds_tb[lds_ts..@intCast(usize, 9)]);
+                    var lds_rm: []const u8 = "r"; pal.markerWrite(lds_rm);
+                    var lds_rb: [10]u8 = undefined; var lds_rl = itoa_mod.itoa(self.local_decl_temps[li], lds_rb[0..]); var lds_rs: usize = @intCast(usize, 9) - @intCast(usize, lds_rl); pal.markerWrite(lds_rb[lds_rs..@intCast(usize, 9)]);
+                    var lds_km: []const u8 = "k"; pal.markerWrite(lds_km);
+                    var lds_kb: [10]u8 = undefined; var lds_kl = itoa_mod.itoa(@intCast(u32, self.local_decl_kinds[li]), lds_kb[0..]); var lds_ks: usize = @intCast(usize, 9) - @intCast(usize, lds_kl); pal.markerWrite(lds_kb[lds_ks..@intCast(usize, 9)]);
+                    var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
                     break;
                 }
             }
         }
-        if (arr_temp != @intCast(u32, 0)) {
+        var parm_m: []const u8 = "PARM:n"; pal.markerWrite(parm_m);
+        var parm_nb: [10]u8 = undefined; var parm_nl = itoa_mod.itoa(name_id, parm_nb[0..]); var parm_ns: usize = @intCast(usize, 9) - @intCast(usize, parm_nl); pal.markerWrite(parm_nb[parm_ns..@intCast(usize, 9)]);
+        var parm_tm: []const u8 = "t"; pal.markerWrite(parm_tm);
+        var parm_tb: [10]u8 = undefined; var parm_tl = itoa_mod.itoa(ptype, parm_tb[0..]); var parm_ts: usize = @intCast(usize, 9) - @intCast(usize, parm_tl); pal.markerWrite(parm_tb[parm_ts..@intCast(usize, 9)]);
+        var parm_am: []const u8 = "a"; pal.markerWrite(parm_am);
+        var parm_ab: [10]u8 = undefined; var parm_al = itoa_mod.itoa(arr_temp, parm_ab[0..]); var parm_as2: usize = @intCast(usize, 9) - @intCast(usize, parm_al); pal.markerWrite(parm_ab[parm_as2..@intCast(usize, 9)]);
+        var parm_km: []const u8 = "k"; pal.markerWrite(parm_km);
+        var parm_kb: [10]u8 = undefined; var parm_kl = itoa_mod.itoa(@intCast(u32, arr_kind), parm_kb[0..]); var parm_ks: usize = @intCast(usize, 9) - @intCast(usize, parm_kl); pal.markerWrite(parm_kb[parm_ks..@intCast(usize, 9)]);
+        var parm_nl2: []const u8 = "\n"; pal.markerWrite(parm_nl2);
+        if (arr_kind != @intCast(u8, 0)) {
+            var tpp_m: []const u8 = "TPP:a"; pal.markerWrite(tpp_m);
+            var tpp_ab: [10]u8 = undefined; var tpp_al = itoa_mod.itoa(arr_temp, tpp_ab[0..]); var tpp_as: usize = @intCast(usize, 9) - @intCast(usize, tpp_al); pal.markerWrite(tpp_ab[tpp_as..@intCast(usize, 9)]);
+            var tpp_km: []const u8 = "k"; pal.markerWrite(tpp_km);
+            var tpp_kb: [10]u8 = undefined; var tpp_kl = itoa_mod.itoa(@intCast(u32, arr_kind), tpp_kb[0..]); var tpp_ks: usize = @intCast(usize, 9) - @intCast(usize, tpp_kl); pal.markerWrite(tpp_kb[tpp_ks..@intCast(usize, 9)]);
+            var tpp_tm: []const u8 = "t"; pal.markerWrite(tpp_tm);
+            var tpp_tb: [10]u8 = undefined; var tpp_tl = itoa_mod.itoa(arr_tid, tpp_tb[0..]); var tpp_ts: usize = @intCast(usize, 9) - @intCast(usize, tpp_tl); pal.markerWrite(tpp_tb[tpp_ts..@intCast(usize, 9)]);
             if (rt) |rtt| {
                 self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = rtt;
+                var hot_m: []const u8 = "HOT:a"; pal.markerWrite(hot_m);
+                var hot_ab: [10]u8 = undefined; var hot_al = itoa_mod.itoa(arr_temp, hot_ab[0..]); var hot_as: usize = @intCast(usize, 9) - @intCast(usize, hot_al); pal.markerWrite(hot_ab[hot_as..@intCast(usize, 9)]);
+                var hot_tm: []const u8 = "t"; pal.markerWrite(hot_tm);
+                var hot_tb: [10]u8 = undefined; var hot_tl = itoa_mod.itoa(rtt, hot_tb[0..]); var hot_ts: usize = @intCast(usize, 9) - @intCast(usize, hot_tl); pal.markerWrite(hot_tb[hot_ts..@intCast(usize, 9)]);
+                var hot_nl: []const u8 = "\n"; pal.markerWrite(hot_nl);
+            } else {
+                var hot_m2: []const u8 = "HOT:a"; pal.markerWrite(hot_m2);
+                var hot_ab2: [10]u8 = undefined; var hot_al2 = itoa_mod.itoa(arr_temp, hot_ab2[0..]); var hot_as2: usize = @intCast(usize, 9) - @intCast(usize, hot_al2); pal.markerWrite(hot_ab2[hot_as2..@intCast(usize, 9)]);
+                if (arr_tid != type_mod.TYPE_UNDEFINED) { self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = arr_tid; var hot_tm2: []const u8 = "tP\n"; pal.markerWrite(hot_tm2); } else { var hot_tm2: []const u8 = "tMISS\n"; pal.markerWrite(hot_tm2); }
             }
         }
         if (arr_kind == @intCast(u8, 0) and arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
-        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
+        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { var rig_m: []const u8 = "RIG:a"; pal.markerWrite(rig_m); var rig_ab: [10]u8 = undefined; var rig_al = itoa_mod.itoa(arr_temp, rig_ab[0..]); var rig_as: usize = @intCast(usize, 9) - @intCast(usize, rig_al); pal.markerWrite(rig_ab[rig_as..@intCast(usize, 9)]); var rig_tm: []const u8 = "t"; pal.markerWrite(rig_tm); var rig_tb: [10]u8 = undefined; var rig_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id, rig_tb[0..]); var rig_ts: usize = @intCast(usize, 9) - @intCast(usize, rig_tl); pal.markerWrite(rig_tb[rig_ts..@intCast(usize, 9)]); var rig_nl: []const u8 = "\n"; pal.markerWrite(rig_nl); self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type))) { self.local_decl_name_map[@intCast(usize, arr_temp)] = name_id; return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
@@ -2921,8 +2963,9 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                     .type_id = p_tid,
                     .temp_id = p_temp,
                 });
+                addLocalDecl(self, p_name_id, p_tid, p_temp);
+                self.hoisted_temps.items[@intCast(usize, p_temp)].type_id = p_tid;
                 if (p_type) |pt| {
-                    addLocalDecl(self, p_name_id, pt, p_temp);
                     var lpf_m: []const u8 = "LPF:n"; pal.markerWrite(lpf_m);
                     var lpf_nb: [10]u8 = undefined; var lpf_nl = itoa_mod.itoa(p_name_id, lpf_nb[0..]); var lpf_ns: usize = @intCast(usize, 9) - @intCast(usize, lpf_nl); pal.markerWrite(lpf_nb[lpf_ns..@intCast(usize, 9)]);
                     var lpf_tm: []const u8 = "t"; pal.markerWrite(lpf_tm);

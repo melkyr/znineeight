@@ -1887,6 +1887,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                                 if (af_fety.kind == type_mod.TypeKind.array_type) {
                                     var afap = emitter.registry.array_items[@intCast(usize, af_fety.payload_idx)];
                                     var afelem = emitter.registry.types_items[@intCast(usize, afap.elem)];
+                                    bufferedWriterWrite(&emitter.writer, fn_prefix3);
                                     var aflb: []const u8 = "{\n";
                                     bufferedWriterWrite(&emitter.writer, aflb);
                                     var afli: []const u8 = "    unsigned int _j = 0;\n";
