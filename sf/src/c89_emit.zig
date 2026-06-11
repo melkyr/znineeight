@@ -2156,10 +2156,36 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                               if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; bufferedWriterWrite(&emitter.writer, pn); }
                               else if (lf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; bufferedWriterWrite(&emitter.writer, pn); }
                               else { var s2: []const u8 = ".f_"; bufferedWriterWrite(&emitter.writer, s2); var fb: [16]u8 = undefined; var fl = itoa_mod.itoa(lf.field_id, fb[0..]); var fn_idx: u32 = @intCast(u32, @intCast(u32, 15) - fl); var fn_start: usize = @intCast(usize, fn_idx); var fn_end: usize = @intCast(usize, 15); bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]); }
-                          } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
-                              field_name_resolved = @intCast(u8, 1);
-                              if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; bufferedWriterWrite(&emitter.writer, pn); }
-                              else { var s2: []const u8 = ".payload"; bufferedWriterWrite(&emitter.writer, s2); }
+                             } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
+                                field_name_resolved = @intCast(u8, 1);
+                                if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; bufferedWriterWrite(&emitter.writer, pn); }
+                                else {
+                                    var res_ty: u32 = @intCast(u32, 0xFFFFFFFF);
+                                    var rtj: usize = @intCast(usize, 0);
+                                    var vfound: u8 = @intCast(u8, 0);
+                                    while (rtj < emitter.current_fn.hoisted_temps.len) : (rtj += @intCast(usize, 1)) {
+                                        var rht = emitter.current_fn.hoisted_temps.items[rtj];
+                                        if (rht.temp_id == lf.result) { res_ty = rht.type_id; }
+                                    }
+                                    if (res_ty != @intCast(u32, 0xFFFFFFFF) and res_ty != type_mod.TYPE_VOID) {
+                                        var tp = emitter.registry.tu_items[@intCast(usize, bty.payload_idx)];
+                                        var vfi: usize = @intCast(usize, 0);
+                                        while (vfi < @intCast(usize, tp.fields_count) and vfound == @intCast(u8, 0)) : (vfi += @intCast(usize, 1)) {
+                                            var vfe = emitter.registry.fe_items[@intCast(usize, tp.fields_start) + vfi];
+                                            if (vfe.type_id == res_ty) {
+                                                vfound = @intCast(u8, 1);
+                                                var pld: []const u8 = ".payload."; bufferedWriterWrite(&emitter.writer, pld);
+                                                var vname = interner_mod.stringInternerGet(emitter.interner, vfe.name_id);
+                                                bufferedWriterWrite(&emitter.writer, vname);
+                                                var dot_sf: []const u8 = "._"; bufferedWriterWrite(&emitter.writer, dot_sf);
+                                                var sfe_idx: u32 = @intCast(u32, 0);
+                                                if (hash_mod.u32ToU32MapGet(&emitter.current_fn.temp_variant_sub_field, lf.result)) |svi| { sfe_idx = svi; }
+                                                var sfib: [10]u8 = undefined; var sfil = itoa_mod.itoa(sfe_idx, sfib[0..]); var sfis: usize = @intCast(usize, 9) - @intCast(usize, sfil); bufferedWriterWrite(&emitter.writer, sfib[sfis..@intCast(usize, 9)]);
+                                            }
+                                        }
+                                    }
+                                    if (vfound == @intCast(u8, 0)) { var s2: []const u8 = ".payload"; bufferedWriterWrite(&emitter.writer, s2); }
+                                }
                           } else if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
                               field_name_resolved = @intCast(u8, 1);
                               var pointee = emitter.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;

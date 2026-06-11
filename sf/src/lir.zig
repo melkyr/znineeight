@@ -1,6 +1,7 @@
 pub const TypeId = @import("type_registry.zig").TypeId;
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
+const hash_mod = @import("util/hash.zig");
 
 pub const SwitchCase = struct {
     value: u64,
@@ -326,6 +327,7 @@ pub const LirFunction = struct {
     blocks: BasicBlockArrayList,
     hoisted_temps: TempDeclArrayList,
     switch_cases: SwitchCaseArrayList,
+    temp_variant_sub_field: hash_mod.U32ToU32Map,
     is_extern: u8,
     is_pub: u8,
     is_variadic: u8,

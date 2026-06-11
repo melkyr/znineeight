@@ -1147,11 +1147,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (arr_tid != type_mod.TYPE_UNDEFINED) { self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = arr_tid; var hot_tm2: []const u8 = "tP\n"; pal.markerWrite(hot_tm2); } else { var hot_tm2: []const u8 = "tMISS\n"; pal.markerWrite(hot_tm2); }
             }
         }
-        if (arr_kind == @intCast(u8, 0) and arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
-        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { var rig_m: []const u8 = "RIG:a"; pal.markerWrite(rig_m); var rig_ab: [10]u8 = undefined; var rig_al = itoa_mod.itoa(arr_temp, rig_ab[0..]); var rig_as: usize = @intCast(usize, 9) - @intCast(usize, rig_al); pal.markerWrite(rig_ab[rig_as..@intCast(usize, 9)]); var rig_tm: []const u8 = "t"; pal.markerWrite(rig_tm); var rig_tb: [10]u8 = undefined; var rig_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id, rig_tb[0..]); var rig_ts: usize = @intCast(usize, 9) - @intCast(usize, rig_tl); pal.markerWrite(rig_tb[rig_ts..@intCast(usize, 9)]); var rig_nl: []const u8 = "\n"; pal.markerWrite(rig_nl); _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
             var tid = nextTemp(self, ptype);
             var ncb_m: []const u8 = "NCB:t"; pal.markerWrite(ncb_m);
@@ -1909,6 +1909,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         if (ev3) |idx| {
                         var fe: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
                         var payload_temp = nextTemp(self, fe.type_id);
+                        _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
                         emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = @intCast(u32, 1), .result = payload_temp } });
                         addLocalDecl(self, capture_name, fe.type_id, payload_temp);
                     }
@@ -3051,6 +3052,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
     func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
     func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
+    func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);
