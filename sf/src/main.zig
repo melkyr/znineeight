@@ -358,6 +358,10 @@ fn resolveAllFnTypes(ctx: *CompilerContext) void {
                 if (rft_vtype != type_mod.TYPE_UNDEFINED) {
                     resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decl.child_0, rft_vtype);
                     resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decls[rft_di], rft_vtype);
+                    var rft_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, rft_mods[rft_mi].id, rft_decl.payload);
+                    if (rft_sym) |sp| {
+                        sp.type_id = rft_vtype;
+                    }
                 }
             }
         }

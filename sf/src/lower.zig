@@ -1847,7 +1847,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var prong_bb_id = prong_start + @intCast(u32, pi);
             self.current_bb = prong_bb_id;
             self.block_terminated = @intCast(u8, 0);
-            var prong_val = lowerExpr(self, prong_node.child_0);
+            var body_node = store.nodes.items[@intCast(usize, prong_node.child_0)];
+            var prong_val: u32 = @intCast(u32, 0);
+            if (body_node.kind == AstKind.block) {
+                var block_ec = ast_mod.astStoreGetExtraChildren(store, body_node.payload);
+                var bj: usize = 0;
+                while (bj < block_ec.len) : (bj += 1) {
+                    lowerStmt(self, block_ec[bj]);
+                }
+                prong_val = @intCast(u32, 0);
+            } else {
+                prong_val = lowerExpr(self, prong_node.child_0);
+            }
             var swp_m: []const u8 = "SWP:p"; pal.markerWrite(swp_m);
             var swp_pb: [10]u8 = undefined; var swp_pl = itoa_mod.itoa(prong_val, swp_pb[0..]); var swp_ps: usize = @intCast(usize, 9) - @intCast(usize, swp_pl); pal.markerWrite(swp_pb[swp_ps..@intCast(usize, 9)]);
             var swp_rb: [10]u8 = undefined; var swp_rl = itoa_mod.itoa(result_temp, swp_rb[0..]); var swp_rs: usize = @intCast(usize, 9) - @intCast(usize, swp_rl); pal.markerWrite(swp_rb[swp_rs..@intCast(usize, 9)]);
@@ -1863,10 +1874,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         self.current_bb = exit_bb;
         return result_temp;
-    } else if (node.kind == AstKind.slice_expr) {
-        var se_base = lowerExpr(self, node.child_0);
-        var se_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (se_rt) |st| {
+     } else if (node.kind == AstKind.slice_expr) {
+         var se_base = lowerExpr(self, node.child_0);
+         var se_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+         var sem_m: []const u8 = "SEM:bt"; pal.markerWrite(sem_m);
+         var sem_tb: [10]u8 = undefined; var sem_tl = itoa_mod.itoa(se_base, sem_tb[0..]); var sem_ts: usize = @intCast(usize, 9) - @intCast(usize, sem_tl); pal.markerWrite(sem_tb[sem_ts..@intCast(usize, 9)]);
+         var sem_bm: []const u8 = "h"; pal.markerWrite(sem_bm);
+         var sem_bb: [10]u8 = undefined; var sem_bl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, se_base)].type_id, sem_bb[0..]); var sem_bs: usize = @intCast(usize, 9) - @intCast(usize, sem_bl); pal.markerWrite(sem_bb[sem_bs..@intCast(usize, 9)]);
+         var sem_nl: []const u8 = "\n"; pal.markerWrite(sem_nl);
+         if (se_rt) |st| {
             var se_bt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
             if (se_bt != type_mod.TYPE_UNDEFINED) {
                 var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];

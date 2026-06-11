@@ -767,6 +767,9 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
         var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
         capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
         flags = 16;
+        var cpm: []const u8 = "CPT:n"; pal.markerWrite(cpm);
+        var cpnb: [10]u8 = undefined; var cpnl = itoa_mod.itoa(capture_name, cpnb[0..]); var cpns: usize = @intCast(usize, 9) - @intCast(usize, cpnl); pal.markerWrite(cpnb[cpns..@intCast(usize, 9)]);
+        var cpem: []const u8 = "\n"; pal.markerWrite(cpem);
     }
     if (is_else != 0) {
         flags = flags | 1;
