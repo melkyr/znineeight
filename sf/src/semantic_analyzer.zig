@@ -191,6 +191,15 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var target_mod = s.module_id;
                 var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, target_mod, field_name_id);
                 if (field_sym) |fs| {
+                    var q1m: []const u8 = "Q1:fl="; pal_mod.markerWrite(q1m);
+                    var q1fb: [10]u8 = undefined; var q1fl = itoa_mod.itoa(@intCast(u32, fs.flags), q1fb[0..]); var q1fs: usize = @intCast(usize, 9) - @intCast(usize, q1fl); pal_mod.markerWrite(q1fb[q1fs..@intCast(usize, 9)]);
+                    var q1km: []const u8 = ",ki="; pal_mod.markerWrite(q1km);
+                    var q1kb: [10]u8 = undefined; var q1kl = itoa_mod.itoa(@intCast(u32, @enumToInt(fs.kind)), q1kb[0..]); var q1ks: usize = @intCast(usize, 9) - @intCast(usize, q1kl); pal_mod.markerWrite(q1kb[q1ks..@intCast(usize, 9)]);
+                    var q1tm: []const u8 = ",ti="; pal_mod.markerWrite(q1tm);
+                    var q1tb: [10]u8 = undefined; var q1tl = itoa_mod.itoa(fs.type_id, q1tb[0..]); var q1ts: usize = @intCast(usize, 9) - @intCast(usize, q1tl); pal_mod.markerWrite(q1tb[q1ts..@intCast(usize, 9)]);
+                    var q1nm: []const u8 = ",fn="; pal_mod.markerWrite(q1nm);
+                    var q1nb: [10]u8 = undefined; var q1nbl = itoa_mod.itoa(field_name_id, q1nb[0..]); var q1nbs: usize = @intCast(usize, 9) - @intCast(usize, q1nbl); pal_mod.markerWrite(q1nb[q1nbs..@intCast(usize, 9)]);
+                    var q1x: []const u8 = "\n"; pal_mod.markerWrite(q1x);
                     if ((fs.flags & @intCast(u16, 2)) != @intCast(u16, 0)) {
                         if (fs.kind == sym_mod.SymbolKind.type_alias) {
                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fs.type_id);
@@ -201,7 +210,28 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                             return fs.type_id;
                         }
                     }
+                    if (fs.kind == sym_mod.SymbolKind.function and fs.decl_node != @intCast(u32, 0)) {
+                        var q1fx: []const u8 = "Q1FX:"; pal_mod.markerWrite(q1fx);
+                        var fn_dn = self.store.nodes.items[@intCast(usize, fs.decl_node)];
+                        if (fn_dn.kind == AstKind.fn_decl) {
+                            var proto = self.store.fn_protos.items[@intCast(usize, fn_dn.payload)];
+                            if (proto.return_type_node != @intCast(u32, 0)) {
+                                var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
+                                if (rtt) |rtv| {
+                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
+                                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                                    return fn_ty;
+                                }
+                            }
+                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                            return fn_ty;
+                        }
+                    }
                 }
+                var q1vf: []const u8 = "Q1VF:fn"; pal_mod.markerWrite(q1vf);
+                var q1vfb: [10]u8 = undefined; var q1vfl = itoa_mod.itoa(field_name_id, q1vfb[0..]); var q1vfs: usize = @intCast(usize, 9) - @intCast(usize, q1vfl); pal_mod.markerWrite(q1vfb[q1vfs..@intCast(usize, 9)]);
+                var q1vfnl: []const u8 = "\n"; pal_mod.markerWrite(q1vfnl);
                 rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
                 return type_mod.TYPE_VOID;
             }
