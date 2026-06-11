@@ -785,7 +785,7 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
     var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.case_buf_items[0..self.case_buf_len]);
     var end_pos: u32 = start_tok.span_start + @intCast(u32, start_tok.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.swt_prong, flags,
-        start_tok.span_start, end_pos, body, 0, 0, items_payload);
+        start_tok.span_start, end_pos, body, capture_name, 0, items_payload);
 }
 
 pub fn parserParseType(self: *Parser) ParserError!u32 {

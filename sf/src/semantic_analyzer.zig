@@ -1175,6 +1175,34 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             var pi: usize = 0;
             while (pi < prongs.len) : (pi += 1) {
                 var prong_node = self.store.nodes.items[@intCast(usize, prongs[pi])];
+                if (prong_node.flags & @intCast(u8, 16) != @intCast(u8, 0)) {
+                    var capture_name = prong_node.child_1;
+                    var cond_rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
+                    if (cond_rt) |cond_type| {
+                        if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
+                            var tu_ty = self.registry.types_items[@intCast(usize, cond_type)];
+                            if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                                var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
+                                var case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong_node.payload);
+                                if (case_ec.len > @intCast(usize, 0)) {
+                                    var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
+                                    if (ev) |idx| {
+                                        var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                                        if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
+                                        self.local_decl_names[self.local_decl_count] = capture_name;
+                                        self.local_decl_types[self.local_decl_count] = fe.type_id;
+                                        self.local_decl_count += @intCast(usize, 1);
+                                        var sca_m: []const u8 = "SCA:n"; pal_mod.markerWrite(sca_m);
+                                        var sca_nb: [10]u8 = undefined; var sca_nl = itoa_mod.itoa(capture_name, sca_nb[0..]); var sca_ns: usize = @intCast(usize, 9) - @intCast(usize, sca_nl); pal_mod.markerWrite(sca_nb[sca_ns..@intCast(usize, 9)]);
+                                        var sca_tm: []const u8 = "t"; pal_mod.markerWrite(sca_tm);
+                                        var sca_tb: [10]u8 = undefined; var sca_tl = itoa_mod.itoa(fe.type_id, sca_tb[0..]); var sca_ts: usize = @intCast(usize, 9) - @intCast(usize, sca_tl); pal_mod.markerWrite(sca_tb[sca_ts..@intCast(usize, 9)]);
+                                        var sca_em: []const u8 = "\n"; pal_mod.markerWrite(sca_em);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 if (prong_node.child_0 != @intCast(u32, 0)) {
                     semanticAnalyzerResolveStmtDepth(self, prong_node.child_0, depth + @intCast(u32, 1));
                 }
