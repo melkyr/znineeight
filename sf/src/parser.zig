@@ -782,7 +782,15 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
         body = try parserParseExprPrec(self, Prec.assignment);
     }
 
+    var pcb_m: []const u8 = "PCB:n"; pal.markerWrite(pcb_m);
+    var pcb_nb: [10]u8 = undefined; var pcb_nl = itoa_mod.itoa(@intCast(u32, self.case_buf_len), pcb_nb[0..]); var pcb_ns: usize = @intCast(usize, 9) - @intCast(usize, pcb_nl); pal.markerWrite(pcb_nb[pcb_ns..@intCast(usize, 9)]);
+    var pcb_pm: []const u8 = "p="; pal.markerWrite(pcb_pm);
+    var pcb_pb: [10]u8 = undefined; var pcb_pl = itoa_mod.itoa(flags, pcb_pb[0..]); var pcb_ps: usize = @intCast(usize, 9) - @intCast(usize, pcb_pl); pal.markerWrite(pcb_pb[pcb_ps..@intCast(usize, 9)]);
+    var pcb_n: []const u8 = "\n"; pal.markerWrite(pcb_n);
     var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.case_buf_items[0..self.case_buf_len]);
+    var ppl_m: []const u8 = "PPL:n"; pal.markerWrite(ppl_m);
+    var ppl_pb: [10]u8 = undefined; var ppl_pl = itoa_mod.itoa(items_payload, ppl_pb[0..]); var ppl_ps: usize = @intCast(usize, 9) - @intCast(usize, ppl_pl); pal.markerWrite(ppl_pb[ppl_ps..@intCast(usize, 9)]);
+    var ppl_n: []const u8 = "\n"; pal.markerWrite(ppl_n);
     var end_pos: u32 = start_tok.span_start + @intCast(u32, start_tok.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.swt_prong, flags,
         start_tok.span_start, end_pos, body, capture_name, 0, items_payload);

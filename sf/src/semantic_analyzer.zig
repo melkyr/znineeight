@@ -770,6 +770,24 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                         _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
                     }
             }
+            if ((prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
+                var cap_name = prong.child_1;
+                if (case_ec.len > @intCast(usize, 0)) {
+                    var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
+                    if (ev) |idx| {
+                        var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+                        var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
+                        var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                        if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
+                        self.local_decl_names[self.local_decl_count] = cap_name;
+                        self.local_decl_types[self.local_decl_count] = fe.type_id;
+                        self.local_decl_count += @intCast(usize, 1);
+                        var scax_m: []const u8 = "SCAX:n"; pal_mod.markerWrite(scax_m);
+                        var scax_nb: [10]u8 = undefined; var scax_nl = itoa_mod.itoa(cap_name, scax_nb[0..]); var scax_ns: usize = @intCast(usize, 9) - @intCast(usize, scax_nl); pal_mod.markerWrite(scax_nb[scax_ns..@intCast(usize, 9)]);
+                        var scax_n: []const u8 = "\n"; pal_mod.markerWrite(scax_n);
+                    }
+                }
+            }
         }
         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
         var swpb_m: []const u8 = "SWPB:pi"; pal_mod.markerWrite(swpb_m);
@@ -1175,18 +1193,32 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
             var pi: usize = 0;
             while (pi < prongs.len) : (pi += 1) {
                 var prong_node = self.store.nodes.items[@intCast(usize, prongs[pi])];
-                if (prong_node.flags & @intCast(u8, 16) != @intCast(u8, 0)) {
+                var flgm: []const u8 = "FLG:n"; pal_mod.markerWrite(flgm);
+                var flgnb: [10]u8 = undefined; var flgnl = itoa_mod.itoa(@intCast(u32, prong_node.flags), flgnb[0..]); var flgns: usize = @intCast(usize, 9) - @intCast(usize, flgnl); pal_mod.markerWrite(flgnb[flgns..@intCast(usize, 9)]);
+                var flgpm: []const u8 = "c1="; pal_mod.markerWrite(flgpm);
+                var flgpb: [10]u8 = undefined; var flgpl = itoa_mod.itoa(prong_node.child_1, flgpb[0..]); var flgps: usize = @intCast(usize, 9) - @intCast(usize, flgpl); pal_mod.markerWrite(flgpb[flgps..@intCast(usize, 9)]);
+                var flgn: []const u8 = "\n"; pal_mod.markerWrite(flgn);
+                if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                     var capture_name = prong_node.child_1;
                     var cond_rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                     if (cond_rt) |cond_type| {
+                        var crtm: []const u8 = "CRT:n"; pal_mod.markerWrite(crtm);
+                        var crtnb: [10]u8 = undefined; var crtnl = itoa_mod.itoa(cond_type, crtnb[0..]); var crtns: usize = @intCast(usize, 9) - @intCast(usize, crtnl); pal_mod.markerWrite(crtnb[crtns..@intCast(usize, 9)]);
+                        var crtn: []const u8 = "\n"; pal_mod.markerWrite(crtn);
                         if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
                             var tu_ty = self.registry.types_items[@intCast(usize, cond_type)];
                             if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
                                 var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
                                 var case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong_node.payload);
+                                var cecm: []const u8 = "CEC:n"; pal_mod.markerWrite(cecm);
+                                var cecnb: [10]u8 = undefined; var cecnl = itoa_mod.itoa(@intCast(u32, case_ec.len), cecnb[0..]); var cecns: usize = @intCast(usize, 9) - @intCast(usize, cecnl); pal_mod.markerWrite(cecnb[cecns..@intCast(usize, 9)]);
+                                var cecn: []const u8 = "\n"; pal_mod.markerWrite(cecn);
                                 if (case_ec.len > @intCast(usize, 0)) {
                                     var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
                                     if (ev) |idx| {
+                                        var evtm: []const u8 = "EVT:n"; pal_mod.markerWrite(evtm);
+                                        var evtnb: [10]u8 = undefined; var evtnl = itoa_mod.itoa(idx, evtnb[0..]); var evtns: usize = @intCast(usize, 9) - @intCast(usize, evtnl); pal_mod.markerWrite(evtnb[evtns..@intCast(usize, 9)]);
+                                        var evtn: []const u8 = "\n"; pal_mod.markerWrite(evtn);
                                         var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
                                         if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                                         self.local_decl_names[self.local_decl_count] = capture_name;
@@ -1197,10 +1229,14 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
                                         var sca_tm: []const u8 = "t"; pal_mod.markerWrite(sca_tm);
                                         var sca_tb: [10]u8 = undefined; var sca_tl = itoa_mod.itoa(fe.type_id, sca_tb[0..]); var sca_ts: usize = @intCast(usize, 9) - @intCast(usize, sca_tl); pal_mod.markerWrite(sca_tb[sca_ts..@intCast(usize, 9)]);
                                         var sca_em: []const u8 = "\n"; pal_mod.markerWrite(sca_em);
+                                    } else {
+                                        var evt_nul: []const u8 = "EVT:NULL\n"; pal_mod.markerWrite(evt_nul);
                                     }
                                 }
                             }
                         }
+                    } else {
+                        var crt_nul: []const u8 = "CRT:NULL\n"; pal_mod.markerWrite(crt_nul);
                     }
                 }
                 if (prong_node.child_0 != @intCast(u32, 0)) {

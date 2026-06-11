@@ -2210,6 +2210,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         .store_field => |sf| {
             var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
               var val = mangleTempName(emitter.interner, sf.value);
+             var is_arr2: u8 = @intCast(u8, 0);
+             var arr_len2: u32 = @intCast(u32, 0);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              bufferedWriterWrite(&emitter.writer, base);
              var fn_prefix2: []const u8 = ".f_";
@@ -2247,9 +2249,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                               found2 = @intCast(u8, 1);
                               var sf_fety = emitter.registry.types_items[@intCast(usize, fe.type_id)];
                               if (sf_fety.kind == type_mod.TypeKind.array_type) {
-                                  var as2_m: []const u8 = "ASFN:n"; pal.markerWrite(as2_m);
-                                  var as2_nb: [10]u8 = undefined; var as2_nl = itoa_mod.itoa(fe.name_id, as2_nb[0..]); var as2_ns: usize = @intCast(usize, 9) - @intCast(usize, as2_nl); pal.markerWrite(as2_nb[as2_ns..@intCast(usize, 9)]);
-                                  var as2_nl2: []const u8 = "\n"; pal.markerWrite(as2_nl2);
+                                  var sfap = emitter.registry.array_items[@intCast(usize, sf_fety.payload_idx)];
+                                  is_arr2 = @intCast(u8, 1);
+                                  arr_len2 = sfap.length;
                               }
                           }
                      }
@@ -2267,11 +2269,24 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
              } else {
                  bufferedWriterWrite(&emitter.writer, fn_prefix2);
              }
-            var s2: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, val);
-            var s3: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, s3);
+            if (is_arr2 != @intCast(u8, 0)) {
+                var sf_semi: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sf_semi);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var sf_lb: []const u8 = "{\n"; bufferedWriterWrite(&emitter.writer, sf_lb);
+                var sf_ld: []const u8 = "    unsigned int _j = 0;\n"; bufferedWriterWrite(&emitter.writer, sf_ld);
+                var sf_lw: []const u8 = "    while (_j < "; bufferedWriterWrite(&emitter.writer, sf_lw);
+                var sf_lab: [20]u8 = undefined; var sf_lal = itoa_mod.itoa(arr_len2, sf_lab[0..]); var sf_las: usize = @intCast(usize, 19) - @intCast(usize, sf_lal); bufferedWriterWrite(&emitter.writer, sf_lab[sf_las..@intCast(usize, 19)]);
+                var sf_lw2: []const u8 = ") {\n        "; bufferedWriterWrite(&emitter.writer, sf_lw2);
+                bufferedWriterWrite(&emitter.writer, base);
+                bufferedWriterWrite(&emitter.writer, fn_prefix2);
+                var sf_lv: []const u8 = "[_j] = "; bufferedWriterWrite(&emitter.writer, sf_lv);
+                bufferedWriterWrite(&emitter.writer, val);
+                var sf_lv2: []const u8 = "[_j];\n        _j++;\n    }\n}\n"; bufferedWriterWrite(&emitter.writer, sf_lv2);
+            } else {
+                var s2: []const u8 = " = "; bufferedWriterWrite(&emitter.writer, s2);
+                bufferedWriterWrite(&emitter.writer, val);
+                var s3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, s3);
+            }
         },
         .load_index => |li| {
             var base = if (li.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, li.name_id) else resolveTempName(emitter, li.base);

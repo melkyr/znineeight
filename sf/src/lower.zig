@@ -1843,7 +1843,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
-            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) { continue; }
+            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
             var prong_bb_id = prong_start + @intCast(u32, pi);
             var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
             var ci: usize = 0;
@@ -1870,7 +1870,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
-            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) {
+            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
                 else_target = prong_start + @intCast(u32, pi);
                 break;
             }
@@ -1885,24 +1885,37 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
-            if (prong_node.flags & @intCast(u8, 16) != @intCast(u8, 0)) {
+            var lf16_m: []const u8 = "LF16:n"; pal.markerWrite(lf16_m);
+            var lf16_fb: [10]u8 = undefined; var lf16_fl = itoa_mod.itoa(@intCast(u32, prong_node.flags), lf16_fb[0..]); var lf16_fs: usize = @intCast(usize, 9) - @intCast(usize, lf16_fl); pal.markerWrite(lf16_fb[lf16_fs..@intCast(usize, 9)]);
+            var lf16_cm: []const u8 = "c1="; pal.markerWrite(lf16_cm);
+            var lf16_cb: [10]u8 = undefined; var lf16_cl = itoa_mod.itoa(prong_node.child_1, lf16_cb[0..]); var lf16_cs: usize = @intCast(usize, 9) - @intCast(usize, lf16_cl); pal.markerWrite(lf16_cb[lf16_cs..@intCast(usize, 9)]);
+            var lf16_sp: []const u8 = "t"; pal.markerWrite(lf16_sp);
+            var lf16_tb: [10]u8 = undefined; var lf16_tl = itoa_mod.itoa(tu_type_box[0], lf16_tb[0..]); var lf16_ts: usize = @intCast(usize, 9) - @intCast(usize, lf16_tl); pal.markerWrite(lf16_tb[lf16_ts..@intCast(usize, 9)]);
+            var lf16_n: []const u8 = "\n"; pal.markerWrite(lf16_n);
+            if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                 var capture_name = prong_node.child_1;
                 if (tu_type_box[0] != @intCast(u32, 0)) {
+                    var cap1_m: []const u8 = "CAP1\n"; pal.markerWrite(cap1_m);
                     var tu_ty = self.ctx.registry.types_items[@intCast(usize, tu_type_box[0])];
                     var tp = self.ctx.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
                     var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
+                    var capy_m: []const u8 = "CAPY:n"; pal.markerWrite(capy_m);
+                    var capy_pb: [10]u8 = undefined; var capy_pl = itoa_mod.itoa(prong_node.payload, capy_pb[0..]); var capy_ps: usize = @intCast(usize, 9) - @intCast(usize, capy_pl); pal.markerWrite(capy_pb[capy_ps..@intCast(usize, 9)]);
+                    var capy_lm: []const u8 = "l"; pal.markerWrite(capy_lm);
+                    var capy_lb: [10]u8 = undefined; var capy_ll = itoa_mod.itoa(@intCast(u32, case_ec.len), capy_lb[0..]); var capy_ls: usize = @intCast(usize, 9) - @intCast(usize, capy_ll); pal.markerWrite(capy_lb[capy_ls..@intCast(usize, 9)]);
+                    var capy_n: []const u8 = "\n"; pal.markerWrite(capy_n);
                     if (case_ec.len > @intCast(usize, 0)) {
-                        var ev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec[0]);
-                        if (ev2) |idx| {
-                            var fe: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
-                            var payload_temp = nextTemp(self, fe.type_id);
-                            emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = @intCast(u32, 1), .result = payload_temp } });
-                            addLocalDecl(self, capture_name, fe.type_id, payload_temp);
-                        }
+                        var ev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec[0]);
+                        if (ev3) |idx| {
+                        var fe: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                        var payload_temp = nextTemp(self, fe.type_id);
+                        emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = @intCast(u32, 1), .result = payload_temp } });
+                        addLocalDecl(self, capture_name, fe.type_id, payload_temp);
                     }
                 }
             }
-            var prong_bb_id = prong_start + @intCast(u32, pi);
+        }
+        var prong_bb_id: u32 = prong_start + @intCast(u32, pi);
             self.current_bb = prong_bb_id;
             self.block_terminated = @intCast(u8, 0);
             var body_node = store.nodes.items[@intCast(usize, prong_node.child_0)];
@@ -2463,7 +2476,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
-            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) { continue; }
+            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
             var prong_bb_id = prong_start + @intCast(u32, pi);
             var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
             var ci: usize = 0;
@@ -2490,7 +2503,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
-            if (prong_node.flags & @intCast(u8, 1) != @intCast(u8, 0)) {
+            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
                 else_target = prong_start + @intCast(u32, pi);
                 break;
             }
