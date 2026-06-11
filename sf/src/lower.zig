@@ -353,7 +353,16 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
     var result = lowerExprImpl(self, node_idx);
     var ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
     if (ce) |coercion| {
+        var cep_m: []const u8 = "CEP:n"; pal.markerWrite(cep_m);
+        var cep_nb: [10]u8 = undefined; var cep_nl = itoa_mod.itoa(node_idx, cep_nb[0..]); var cep_ns: usize = @intCast(usize, 9) - @intCast(usize, cep_nl); pal.markerWrite(cep_nb[cep_ns..@intCast(usize, 9)]);
+        var cep_km: []const u8 = "k"; pal.markerWrite(cep_km);
+        var cep_kb: [10]u8 = undefined; var cep_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(coercion.kind)), cep_kb[0..]); var cep_ks: usize = @intCast(usize, 9) - @intCast(usize, cep_kl); pal.markerWrite(cep_kb[cep_ks..@intCast(usize, 9)]);
+        var cep_nl2: []const u8 = "\n"; pal.markerWrite(cep_nl2);
         result = applyCoercion(self, result, coercion);
+    } else {
+        var cem_m: []const u8 = "CEM:n"; pal.markerWrite(cem_m);
+        var cem_nb: [10]u8 = undefined; var cem_nl = itoa_mod.itoa(node_idx, cem_nb[0..]); var cem_ns: usize = @intCast(usize, 9) - @intCast(usize, cem_nl); pal.markerWrite(cem_nb[cem_ns..@intCast(usize, 9)]);
+        var cem_nl2: []const u8 = "\n"; pal.markerWrite(cem_nl2);
     }
     return result;
 }
@@ -906,6 +915,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, node.child_0);
+        var idxk: [1]u32 = [1]u32{@intCast(u32, 0)};
+        var idxb = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+        if (idxb != type_mod.TYPE_UNDEFINED) { var idxbt = self.ctx.registry.types_items[@intCast(usize, idxb)]; idxk[0] = @intCast(u32, @enumToInt(idxbt.kind)); }
+        var idx_m: []const u8 = "IDX:b"; pal.markerWrite(idx_m);
+        var idx_bb: [10]u8 = undefined; var idx_bl = itoa_mod.itoa(base_temp, idx_bb[0..]); var idx_bs: usize = @intCast(usize, 9) - @intCast(usize, idx_bl); pal.markerWrite(idx_bb[idx_bs..@intCast(usize, 9)]);
+        var idx_km: []const u8 = "k"; pal.markerWrite(idx_km);
+        var idx_kb: [10]u8 = undefined; var idx_kl = itoa_mod.itoa(idxk[0], idx_kb[0..]); var idx_ks: usize = @intCast(usize, 9) - @intCast(usize, idx_kl); pal.markerWrite(idx_kb[idx_ks..@intCast(usize, 9)]);
+        var idx_nl: []const u8 = "\n"; pal.markerWrite(idx_nl);
         var msp_m: []const u8 = "MSP:b"; pal.markerWrite(msp_m);
         var msp_bb: [10]u8 = undefined; var msp_bl = itoa_mod.itoa(base_temp, msp_bb[0..]); var msp_bs: usize = @intCast(usize, 9) - @intCast(usize, msp_bl); pal.markerWrite(msp_bb[msp_bs..@intCast(usize, 9)]);
         var msp_nm: []const u8 = "n"; pal.markerWrite(msp_nm);
@@ -1461,7 +1478,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                          .is_extern = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)),
                                         .return_type = self._fn_ret_type,
                                     } });
-                                return result;
+    var lex_rt_m: []const u8 = "r"; pal.markerWrite(lex_rt_m);
+    var lex_rt_b: [10]u8 = undefined; var lex_rt_l = itoa_mod.itoa(result, lex_rt_b[0..]); var lex_rt_s: usize = @intCast(usize, 9) - @intCast(usize, lex_rt_l); pal.markerWrite(lex_rt_b[lex_rt_s..@intCast(usize, 9)]);
+    var lex_rt_nl: []const u8 = "\n"; pal.markerWrite(lex_rt_nl);
+    return result;
                             } else { var fk_val: u8 = fs.kind; var a3f: []const u8 = "F3aKk"; pal.markerWrite(a3f); var a3fkb: [10]u8 = undefined; var a3fkl = itoa_mod.itoa(@intCast(u32, fk_val), a3fkb[0..]); var a3fks: usize = @intCast(usize, 9) - @intCast(usize, a3fkl); pal.markerWrite(a3fkb[a3fks..@intCast(usize, 9)]); var a3fsp: []const u8 = "\n"; pal.markerWrite(a3fsp); }
                         } else { var a3m: []const u8 = "DZ1:NF"; pal.markerWrite(a3m); var a3mb: [10]u8 = undefined; var a3ml = itoa_mod.itoa(field_name_id, a3mb[0..]); var a3ms: usize = @intCast(usize, 9) - @intCast(usize, a3ml); pal.markerWrite(a3mb[a3ms..@intCast(usize, 9)]); var a3mns: []const u8 = " "; pal.markerWrite(a3mns); }
                     } else { var dz1_fail: []const u8 = "DZ1:MSKIP\n"; pal.markerWrite(dz1_fail); }
@@ -1825,13 +1845,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 cond_temp = tag_temp;
             }
         }
-        var result_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
         var sw_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (sw_rt) |t| {
-            if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) {
-                result_temp = nextTemp(self, t);
-            }
-        }
+        var result_tid: u32 = if (sw_rt) |t| (if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) t else type_mod.TYPE_VOID) else type_mod.TYPE_VOID;
+        var result_temp = nextTemp(self, result_tid);
         var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
@@ -3006,6 +3022,9 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         }
         var sl_len_temp = nextTemp(self, type_mod.TYPE_U32);
         emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, sllen), .result = sl_len_temp } });
+        var mks_m: []const u8 = "MKS:r"; pal.markerWrite(mks_m);
+        var mks_rb: [10]u8 = undefined; var mks_rl = itoa_mod.itoa(dst, mks_rb[0..]); var mks_rs: usize = @intCast(usize, 9) - @intCast(usize, mks_rl); pal.markerWrite(mks_rb[mks_rs..@intCast(usize, 9)]);
+        var mks_nl: []const u8 = "\n"; pal.markerWrite(mks_nl);
         emitInst(self, LirInst{ .make_slice = .{ .ptr = src_temp, .len = sl_len_temp, .result = dst, .type_id = coercion.target_type } });
         return dst;
     } else if (kind == CoercionKind.string_to_many_ptr) {

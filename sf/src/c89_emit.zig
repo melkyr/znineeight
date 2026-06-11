@@ -1878,6 +1878,16 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
              var asx_db: [10]u8 = undefined; var asx_dl = itoa_mod.itoa(a.dst, asx_db[0..]); var asx_ds: usize = @intCast(usize, 9) - @intCast(usize, asx_dl); pal.markerWrite(asx_db[asx_ds..@intCast(usize, 9)]);
              var asx_sb: [10]u8 = undefined; var asx_sl = itoa_mod.itoa(a.src, asx_sb[0..]); var asx_ss: usize = @intCast(usize, 9) - @intCast(usize, asx_sl); pal.markerWrite(asx_sb[asx_ss..@intCast(usize, 9)]);
              var asx_nl: []const u8 = "\n"; pal.markerWrite(asx_nl);
+             var as_tj: usize = @intCast(usize, 0);
+             while (as_tj < emitter.current_fn.hoisted_temps.len) : (as_tj += @intCast(usize, 1)) {
+                 var as_ht = emitter.current_fn.hoisted_temps.items[as_tj];
+                 if (as_ht.temp_id == a.dst) {
+                     var as_m: []const u8 = "AS:t"; pal.markerWrite(as_m);
+                     var as_b: [10]u8 = undefined; var as_l = itoa_mod.itoa(as_ht.type_id, as_b[0..]); var as_s: usize = @intCast(usize, 9) - @intCast(usize, as_l); pal.markerWrite(as_b[as_s..@intCast(usize, 9)]);
+                     var as_n: []const u8 = "\n"; pal.markerWrite(as_n);
+                     break;
+                 }
+             }
              var mkb: []const u8 = "/*==MARKER_ASSIGN dst=";
             bufferedWriterWrite(&emitter.writer, mkb);
             var mkdst = resolveTempName(emitter, a.dst);

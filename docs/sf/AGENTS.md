@@ -432,5 +432,35 @@ pal.stderr_write(msg);
 This applies to ALL `pal.stderr_write`, `pal.stdout_write`, and
 `bufferedWriterWrite` calls.
 
+<context_management_directive>
+### X.6 QUICK_REF.md — Operational Commands & Memory Search
+
+Before any build/debug/troubleshooting session, consult
+**`docs/sf/QUICK_REF.md`** for:
+
+- zig0 → zig1 bootstrap build command
+- zig1 → C89 compilation command
+- GCC C89 compilation + linking (with zig_runtime.c + zig_pal.c)
+- Building and running Mandelbrot, Game of Life, mud_server
+- Running test binaries (sf/src/tests/)
+
+**Memory search fallback (Section 8 directive):**
+
+When `memory_recall()` with keyword queries returns older/irrelevant
+entries only, use the direct file read approach:
+
+1. Memory files are stored at **`/workspace/znineeight/.opencode/memory/`**
+   as `YYYY-MM-DD.logfmt` (one entry per line, logfmt format)
+2. Read specific date files directly with the Read tool:
+   `filePath="/workspace/znineeight/.opencode/memory/2026-06-10.logfmt"`
+3. For broad search across all dates, use:
+   `grep -r "keyword" /workspace/znineeight/.opencode/memory/`
+4. Each line format: `ts=ISO-time type=<kind> scope=<label> content="<text>"`
+   The `content` field is double-quoted with escaped inner quotes (`\"`)
+
+This bypasses the memory_recall tool's score-based ranking which may
+bury recent entries under older high-score matches.
+</context_management_directive>
+
 **End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```

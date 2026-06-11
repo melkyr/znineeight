@@ -438,6 +438,13 @@ fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) void {
+    var coe_m: []const u8 = "COE:n"; pal_mod.markerWrite(coe_m);
+    var coe_nb: [10]u8 = undefined; var coe_nl2 = itoa_mod.itoa(src_node, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl2); pal_mod.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
+    var coe_sm: []const u8 = "s"; pal_mod.markerWrite(coe_sm);
+    var coe_sb: [10]u8 = undefined; var coe_sl = itoa_mod.itoa(src_type, coe_sb[0..]); var coe_ss: usize = @intCast(usize, 9) - @intCast(usize, coe_sl); pal_mod.markerWrite(coe_sb[coe_ss..@intCast(usize, 9)]);
+    var coe_tm: []const u8 = "d"; pal_mod.markerWrite(coe_tm);
+    var coe_tb: [10]u8 = undefined; var coe_tl = itoa_mod.itoa(dst_type, coe_tb[0..]); var coe_ts: usize = @intCast(usize, 9) - @intCast(usize, coe_tl); pal_mod.markerWrite(coe_tb[coe_ts..@intCast(usize, 9)]);
+    var coe_nl: []const u8 = "\n"; pal_mod.markerWrite(coe_nl);
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
@@ -917,19 +924,21 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.return_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
             result = semanticAnalyzerResolveExpr(self, node.child_0);
-            if (self.current_fn_return != @intCast(u32, 0) and result != self.current_fn_return) {
-                var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
-                if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                    var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
-                    if (ret_node.kind == AstKind.enum_literal) {
-                        var old_tu = self.current_switch_cond_tu;
-                        self.current_switch_cond_tu = self.current_fn_return;
-                        var elv_res = semanticAnalyzerResolveExpr(self, node.child_0);
-                        self.current_switch_cond_tu = old_tu;
-                        tryRecordCoercion(self, node.child_0, elv_res, self.current_fn_return);
-                        result = elv_res;
+            if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
+                if (result != self.current_fn_return) {
+                    var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
+                    if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                        var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+                        if (ret_node.kind == AstKind.enum_literal) {
+                            var old_tu = self.current_switch_cond_tu;
+                            self.current_switch_cond_tu = self.current_fn_return;
+                            var elv_res = semanticAnalyzerResolveExpr(self, node.child_0);
+                            self.current_switch_cond_tu = old_tu;
+                            result = elv_res;
+                        }
                     }
                 }
+                tryRecordCoercion(self, node.child_0, result, self.current_fn_return);
             }
         } else {
             result = type_mod.TYPE_VOID;
@@ -1247,18 +1256,20 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     } else if (node.kind == AstKind.return_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
             var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
-            if (self.current_fn_return != @intCast(u32, 0) and ret_val != self.current_fn_return) {
-                var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
-                if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                    var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
-                    if (ret_node.kind == AstKind.enum_literal) {
-                        var old_tu = self.current_switch_cond_tu;
-                        self.current_switch_cond_tu = self.current_fn_return;
-                        _ = semanticAnalyzerResolveExpr(self, node.child_0);
-                        self.current_switch_cond_tu = old_tu;
-                        tryRecordCoercion(self, node.child_0, ret_val, self.current_fn_return);
+            if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
+                if (ret_val != self.current_fn_return) {
+                    var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
+                    if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                        var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+                        if (ret_node.kind == AstKind.enum_literal) {
+                            var old_tu = self.current_switch_cond_tu;
+                            self.current_switch_cond_tu = self.current_fn_return;
+                            _ = semanticAnalyzerResolveExpr(self, node.child_0);
+                            self.current_switch_cond_tu = old_tu;
+                        }
                     }
                 }
+                tryRecordCoercion(self, node.child_0, ret_val, self.current_fn_return);
             }
         }
     } else if (node.kind == AstKind.plain_assign or
@@ -1337,7 +1348,7 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
     }
     var ix_m: []const u8 = "IX:"; pal_mod.markerWrite(ix_m);
     var ix_bb: [20]u8 = undefined; var ix_bl = itoa_mod.itoa(self._stub_0, ix_bb[0..]); var ix_bs: usize = @intCast(usize, 19) - @intCast(usize, ix_bl); pal_mod.markerWrite(ix_bb[ix_bs..@intCast(usize, 19)]);
-    if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+    if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
     if (bt.kind == type_mod.TypeKind.array_type) {
         var r1 = self.registry.array_items[@intCast(usize, bt.payload_idx)].elem;
