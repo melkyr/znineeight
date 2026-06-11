@@ -763,6 +763,11 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             }
         }
         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+        var swpb_m: []const u8 = "SWPB:pi"; pal_mod.markerWrite(swpb_m);
+        var swpb_ib: [10]u8 = undefined; var swpb_il = itoa_mod.itoa(@intCast(u32, i), swpb_ib[0..]); var swpb_is: usize = @intCast(usize, 9) - @intCast(usize, swpb_il); pal_mod.markerWrite(swpb_ib[swpb_is..@intCast(usize, 9)]);
+        var swpb_tm: []const u8 = ",bt"; pal_mod.markerWrite(swpb_tm);
+        var swpb_tb: [10]u8 = undefined; var swpb_tl = itoa_mod.itoa(bt, swpb_tb[0..]); var swpb_ts: usize = @intCast(usize, 9) - @intCast(usize, swpb_tl); pal_mod.markerWrite(swpb_tb[swpb_ts..@intCast(usize, 9)]);
+        var swpb_nl: []const u8 = "\n"; pal_mod.markerWrite(swpb_nl);
         if (i == @intCast(usize, 0)) { unified = bt; }
         else if (bt == type_mod.TYPE_NORETURN) {}
         else if (bt == unified) {}

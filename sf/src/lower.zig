@@ -890,9 +890,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          else {
          var ixm: []const u8 = "IXM"; pal.markerWrite(ixm);
          var reg = self.ctx.registry;
-        var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
-        if (bt != type_mod.TYPE_UNDEFINED) {
-            var bty = reg.types_items[@intCast(usize, bt)];
+         var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+         if (bt != type_mod.TYPE_UNDEFINED) {
+             var bty = reg.types_items[@intCast(usize, bt)];
+             var lixm_m: []const u8 = "LIX:bt"; pal.markerWrite(lixm_m);
+             var lixm_tb: [10]u8 = undefined; var lixm_tl = itoa_mod.itoa(bt, lixm_tb[0..]); var lixm_ts: usize = @intCast(usize, 9) - @intCast(usize, lixm_tl); pal.markerWrite(lixm_tb[lixm_ts..@intCast(usize, 9)]);
+             var lixm_km: []const u8 = ",bk"; pal.markerWrite(lixm_km);
+             var lixm_kb: [10]u8 = undefined; var lixm_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(bty.kind)), lixm_kb[0..]); var lixm_ks: usize = @intCast(usize, 9) - @intCast(usize, lixm_kl); pal.markerWrite(lixm_kb[lixm_ks..@intCast(usize, 9)]);
+             var lixm_nl: []const u8 = "\n"; pal.markerWrite(lixm_nl);
             if (bty.kind == type_mod.TypeKind.slice_type) {
                 elem_type[0] = reg.slice_items[@intCast(usize, bty.payload_idx)].elem;
             } else if (bty.kind == type_mod.TypeKind.array_type) {
