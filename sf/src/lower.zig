@@ -1169,6 +1169,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
+        var fabs_m: []const u8 = "FABS:bt"; pal.markerWrite(fabs_m);
+        var fabs_b: [10]u8 = undefined; var fabs_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, base_temp)].type_id, fabs_b[0..]); var fabs_ts: usize = @intCast(usize, 9) - @intCast(usize, fabs_tl); pal.markerWrite(fabs_b[fabs_ts..@intCast(usize, 9)]);
+        var fabs_nl: []const u8 = "\n"; pal.markerWrite(fabs_nl);
         var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.markerWrite(f4s); } else { var f4s: []const u8 = "F4:M\n"; pal.markerWrite(f4s); }
         var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);

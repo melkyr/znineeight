@@ -628,6 +628,9 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
             }
         }
     }
+    var elv_m: []const u8 = "ELV:n"; pal_mod.markerWrite(elv_m);
+    var elv_nb: [10]u8 = undefined; var elv_nl: u32 = itoa_mod.itoa(n, elv_nb[0..]); var elv_ns: usize = @intCast(usize, 9) - @intCast(usize, elv_nl); pal_mod.markerWrite(elv_nb[elv_ns..@intCast(usize, 9)]);
+    var elv_x: []const u8 = "\n"; pal_mod.markerWrite(elv_x);
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
     return type_mod.TYPE_VOID;
 }
@@ -887,12 +890,24 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = type_mod.TYPE_TYPE;
     } else if (node.kind == AstKind.paren_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
+    } else if (node.kind == AstKind.return_stmt) {
+        if (node.child_0 != @intCast(u32, 0)) {
+            result = semanticAnalyzerResolveExpr(self, node.child_0);
+        } else {
+            result = type_mod.TYPE_VOID;
+        }
     } else if (node.kind == AstKind.expr_stmt) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.import_expr) {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.block) {
-        result = type_mod.TYPE_VOID;
+        var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        if (children.len > @intCast(usize, 0)) {
+            var last_child = children[children.len - @intCast(usize, 1)];
+            result = semanticAnalyzerResolveExpr(self, last_child);
+        } else {
+            result = type_mod.TYPE_VOID;
+        }
     } else if (node.kind == AstKind.add or node.kind == AstKind.sub or
                node.kind == AstKind.mul or node.kind == AstKind.div or
                node.kind == AstKind.mod_op) {
