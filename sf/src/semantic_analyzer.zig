@@ -999,7 +999,17 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
 }
 
 pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, depth: u32) void {
-    if (depth > @intCast(u32, 16)) return;
+    if (node_idx >= @intCast(u32, 680) and node_idx <= @intCast(u32, 700)) {
+        var dtr_nm: []const u8 = "DTR:N"; pal_mod.markerWriteInt(dtr_nm, node_idx);
+        var dtr_dm: []const u8 = "DTR:D"; pal_mod.markerWriteInt(dtr_dm, depth);
+    }
+    if (depth > @intCast(u32, 64)) {
+        var dov_nm: []const u8 = "DOV:N"; pal_mod.markerWriteInt(dov_nm, node_idx);
+        var dov_dm: []const u8 = "DOV:D"; pal_mod.markerWriteInt(dov_dm, depth);
+        var dov_n = self.store.nodes.items[@intCast(usize, node_idx)];
+        var dov_km: []const u8 = "DOV:K"; pal_mod.markerWriteInt(dov_km, @intCast(u32, @enumToInt(dov_n.kind)));
+        return;
+    }
     if (node_idx == @intCast(u32, 0)) return;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
      if (node.kind == AstKind.block) {
