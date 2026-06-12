@@ -3,17 +3,20 @@ pub const Sand = struct {
     pos: usize,
     end: usize,
     peak: usize,
+    name: []const u8,
 };
 const pal = @import("pal.zig");
 const panic_mod = @import("panic.zig");
 const itoa_mod = @import("util/itoa.zig");
 
 pub fn sandInit(buf: []u8) Sand {
+    var uname: []const u8 = "unknown";
     var s = Sand{
         .start = buf.ptr,
         .pos = @intCast(usize, 0),
         .end = buf.len,
         .peak = @intCast(usize, 0),
+        .name = uname,
     };
     var used = s.pos;
     if (used > s.peak) s.peak = used;
@@ -25,9 +28,14 @@ pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
     var aligned: usize = (sand.pos + mask) & ~mask;
     var new_pos: usize = aligned + size;
     if (new_pos > sand.end) {
-        var oom: []const u8 = "out of memory";
-        var file: []const u8 = "allocator.zig";
-        panic_mod.panicHandler(oom, file, 25);
+        pal.stderr_write("OOM: used=");
+        printUsize(sand.pos);
+        pal.stderr_write(" new=");
+        printUsize(new_pos);
+        pal.stderr_write(" total=");
+        printUsize(sand.end);
+        pal.stderr_write("\n");
+        panic_mod.panicHandler("out of memory", "allocator.zig", 28);
         return error.OutOfMemory;
     }
     var result: [*]u8 = sand.start + aligned;
@@ -71,12 +79,16 @@ pub const DEV_MAX_MEM: usize = 8 * 1024 * 1024;
 pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
 
 pub fn initCompilerAlloc() CompilerAlloc {
-    return CompilerAlloc{
+    var ca = CompilerAlloc{
         .permanent = sandInit(perm_arena_buf[0..]),
         .module = sandInit(mod_arena_buf[0..]),
         .scratch = sandInit(scr_arena_buf[0..]),
         .max_mem = @intCast(u32, DEV_MAX_MEM),
     };
+    ca.permanent.name = "perm";
+    ca.module.name = "module";
+    ca.scratch.name = "scratch";
+    return ca;
 }
 
 pub fn checkCombinedPeak(alloc: *CompilerAlloc) void {

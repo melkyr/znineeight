@@ -568,7 +568,7 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
     if (self.module_reg) |reg| {
-        var scratch: [64]u8 = undefined;
+        var scratch: [256]u8 = undefined;
         var scratch_sand = alloc_mod.sandInit(scratch[0..]);
         var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, &scratch_sand);
         if (resolved) |mod_id| {
