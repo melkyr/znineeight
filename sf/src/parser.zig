@@ -306,7 +306,7 @@ pub fn parserParsePostfixChain(self: *Parser, base: u32) ParserError!u32 {
 fn parserParseDotAccess(self: *Parser, base: u32) ParserError!u32 {
     _ = parserAdvance(self);
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.star) {
+    if (@intCast(u32, @enumToInt(tok.kind)) == @intCast(u32, @enumToInt(TokenKind.star))) {
         _ = parserAdvance(self);
         return ast_mod.astStoreAddNode(self.store, AstKind.deref, 0,
             tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
@@ -1058,8 +1058,9 @@ fn parserParseTypeName(self: *Parser) ParserError!u32 {
 
 pub fn parserParseStatement(self: *Parser) ParserError!u32 {
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, false, false);
-    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, false, false);
+    var pstk_m: []const u8 = "PSTK:k"; pal.markerWrite(pstk_m); var pstk_b: [10]u8 = undefined; var pstk_l = itoa_mod.itoa(@intCast(u32, @enumToInt(tok.kind)), pstk_b[0..]); var pstk_s: usize = @intCast(usize, 9) - @intCast(usize, pstk_l); pal.markerWrite(pstk_b[pstk_s..@intCast(usize, 9)]); var pstk_nl: []const u8 = "\n"; pal.markerWrite(pstk_nl);
+    if (tok.kind == TokenKind.kw_const) { var varc_s: []const u8 = "VARC"; pal.markerWrite(varc_s); return parserParseVarDecl(self, false, false, false); }
+    if (tok.kind == TokenKind.kw_var) { var varv_s: []const u8 = "VARV"; pal.markerWrite(varv_s); return parserParseVarDecl(self, true, false, false); }
     if (tok.kind == TokenKind.kw_pub) return parserParsePubDecl(self);
     if (tok.kind == TokenKind.kw_extern) return parserParseExternDecl(self, false);
     if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, false, false, false);
@@ -1166,13 +1167,14 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
         type_node = try parserParseType(self);
     }
     var init_node: u32 = 0;
-    if (parserPeek(self).kind == TokenKind.eq) {
-        _ = parserAdvance(self);
-        init_node = try parserParseExprPrec(self, Prec.none);
-    }
+      if (parserPeek(self).kind == TokenKind.eq) {
+          _ = parserAdvance(self);
+          init_node = try parserParseExprPrec(self, Prec.none);
+     }
     var semi = try parserExpect(self, TokenKind.semicolon);
     var end_pos: u32 = semi.span_start + @intCast(u32, semi.span_len);
     var vok: []const u8 = "v"; pal.markerWrite(vok);
+    var pdv_s: []const u8 = "PDVx"; pal.markerWrite(pdv_s);
     return ast_mod.astStoreAddNode(self.store, AstKind.var_decl, flags,
         kw.span_start, end_pos, type_node, init_node, 0, name_id);
 }
@@ -1315,6 +1317,8 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     } else {
         then_body = try parserParseExprPrec(self, Prec.assignment);
     }
+
+    var pif_m: []const u8 = "PIF:b"; pal.markerWrite(pif_m); var pif_b: [10]u8 = undefined; var pif_l = itoa_mod.itoa(then_body, pif_b[0..]); var pif_s: usize = @intCast(usize, 9) - @intCast(usize, pif_l); pal.markerWrite(pif_b[pif_s..@intCast(usize, 9)]); var pif_km: []const u8 = "k"; pal.markerWrite(pif_km); var pif_kb: [10]u8 = undefined; var pif_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(self.store.nodes.items[@intCast(usize, then_body)].kind)), pif_kb[0..]); var pif_ks: usize = @intCast(usize, 9) - @intCast(usize, pif_kl); pal.markerWrite(pif_kb[pif_ks..@intCast(usize, 9)]); var pif_nl: []const u8 = "\n"; pal.markerWrite(pif_nl);
 
     var else_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.kw_else) {
@@ -1594,6 +1598,7 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
         payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
     }
     self.child_buf_len = saved_len;
+    var plen_m: []const u8 = "PLEN:l"; pal.markerWrite(plen_m); var plen_lb: [10]u8 = undefined; var plen_ll = itoa_mod.itoa(@intCast(u32, local_len), plen_lb[0..]); var plen_ls: usize = @intCast(usize, 9) - @intCast(usize, plen_ll); pal.markerWrite(plen_lb[plen_ls..@intCast(usize, 9)]); var plen_pm: []const u8 = "p"; pal.markerWrite(plen_pm); var plen_pb: [10]u8 = undefined; var plen_pl = itoa_mod.itoa(payload, plen_pb[0..]); var plen_ps: usize = @intCast(usize, 9) - @intCast(usize, plen_pl); pal.markerWrite(plen_pb[plen_ps..@intCast(usize, 9)]); var plen_nl: []const u8 = "\n"; pal.markerWrite(plen_nl);
     return ast_mod.astStoreAddNode(self.store, AstKind.block, 0, lbrace.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len), 0, 0, 0, payload);
 }
 

@@ -91,8 +91,23 @@ pub fn markersEnabled(on: u32) void {
     g_markers_enabled = on;
 }
 
+const itoa_mod = @import("util/itoa.zig");
+
 pub fn markerWrite(msg: []const u8) void {
     if (g_markers_enabled != @intCast(u32, 0)) {
         stderr_write(msg);
+    }
+}
+
+pub fn markerWriteInt(prefix: []const u8, value: u32) void {
+    if (g_markers_enabled != @intCast(u32, 0)) {
+        var s_p: []const u8 = prefix;
+        markerWrite(s_p);
+        var buf: [12]u8 = undefined;
+        var vlen = itoa_mod.itoa(value, buf[0..]);
+        var start: usize = @intCast(usize, 12) - @intCast(usize, vlen) - @intCast(usize, 1);
+        markerWrite(buf[start..@intCast(usize, 11)]);
+        var s_nl: []const u8 = "\n";
+        markerWrite(s_nl);
     }
 }

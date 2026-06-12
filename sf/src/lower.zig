@@ -1219,7 +1219,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var fabs_b: [10]u8 = undefined; var fabs_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, base_temp)].type_id, fabs_b[0..]); var fabs_ts: usize = @intCast(usize, 9) - @intCast(usize, fabs_tl); pal.markerWrite(fabs_b[fabs_ts..@intCast(usize, 9)]);
         var fabs_nl: []const u8 = "\n"; pal.markerWrite(fabs_nl);
         var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-        if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.markerWrite(f4s); } else { var f4s: []const u8 = "F4:M\n"; pal.markerWrite(f4s); }
+        if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.markerWrite(f4s); } else { var f4m: []const u8 = "F4:Mb"; pal.markerWrite(f4m); var f4mnb: [10]u8 = undefined; var f4mnl = itoa_mod.itoa(node.child_0, f4mnb[0..]); var f4mns: usize = @intCast(usize, 9) - @intCast(usize, f4mnl); pal.markerWrite(f4mnb[f4mns..@intCast(usize, 9)]); var f4mnl2: []const u8 = "\n"; pal.markerWrite(f4mnl2); }
         var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } }
@@ -2410,54 +2410,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
            } else {
                var a6_mm: []const u8 = "M"; pal.markerWrite(a6_mm);
            }
-           if (node.child_2 != @intCast(u32, 0)) {
-              var slice_temp = lowerExpr(self, node.child_0);
-               var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
-               var fce_m: []const u8 = "FCE:n"; pal.markerWrite(fce_m);
-               var fce_nb: [10]u8 = undefined; var fce_nl = itoa_mod.itoa(node.child_0, fce_nb[0..]); var fce_ns: usize = @intCast(usize, 9) - @intCast(usize, fce_nl); pal.markerWrite(fce_nb[fce_ns..@intCast(usize, 9)]);
-               var fce_sm: []const u8 = "s"; pal.markerWrite(fce_sm);
-               var fce_sb: [10]u8 = undefined; var fce_sl = itoa_mod.itoa(slice_temp, fce_sb[0..]); var fce_ss: usize = @intCast(usize, 9) - @intCast(usize, fce_sl); pal.markerWrite(fce_sb[fce_ss..@intCast(usize, 9)]);
-               var fce_pm: []const u8 = "p"; pal.markerWrite(fce_pm);
-               var fce_pb: [10]u8 = undefined; var fce_pl = itoa_mod.itoa(ptr_temp, fce_pb[0..]); var fce_ps: usize = @intCast(usize, 9) - @intCast(usize, fce_pl); pal.markerWrite(fce_pb[fce_ps..@intCast(usize, 9)]);
-               var fce_nl2: []const u8 = "\n"; pal.markerWrite(fce_nl2);
-               var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
-            var ms_nid = nameMapGet(self, slice_temp);
-            emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
-            emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = @intCast(u32, 1), .result = len_temp } });
-             var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
-            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
-            var cond_bb = createBlock(self);
-            var body_bb = createBlock(self);
-            var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = @intCast(u32, 0) };
-            loopInfoArrayListAppend(&self.loop_stack, loop_info);
-            emitInst(self, LirInst{ .jump = cond_bb });
-            self.current_bb = cond_bb;
-            var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
-            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
-            self.current_bb = body_bb;
-              var item_temp = nextTemp(self, elem_type[0]);
-              emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-              if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.payload, elem_type[0], item_temp); addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); }
-            self.block_terminated = @intCast(u8, 0);
-            var fbt_m: []const u8 = "FBT:"; pal.markerWrite(fbt_m);
-            lowerStmtBody(self, node.child_1);
-            if (self.block_terminated == @intCast(u8, 0)) {
-                var fbi_m: []const u8 = "FBI:n"; pal.markerWrite(fbi_m);
-                var fbi_nb: [10]u8 = undefined; var fbi_nl = itoa_mod.itoa(node.child_1, fbi_nb[0..]); var fbi_ns: usize = @intCast(usize, 9) - @intCast(usize, fbi_nl); pal.markerWrite(fbi_nb[fbi_ns..@intCast(usize, 9)]);
-                var fbi_nl2: []const u8 = "\n"; pal.markerWrite(fbi_nl2);
-                var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
-                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = @intCast(u32, 1), .result = nxt_idx } });
-                idx_temp = nxt_idx;
-                emitInst(self, LirInst{ .jump = cond_bb });
-            }
-            self.current_bb = exit_bb;
-            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-        } else {
-            var start_temp = lowerExpr(self, pattern.child_0);
-            if (node.payload != 0) addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp);
-            var end_temp = lowerExpr(self, pattern.child_1);
+            if (pattern.kind == AstKind.range_exclusive or pattern.kind == AstKind.range_inclusive) {
+                var start_temp = lowerExpr(self, pattern.child_0);
+                if (node.payload != 0) addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp);
+                var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
@@ -2485,9 +2441,43 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = exit_bb;
             self.block_terminated = @intCast(u8, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-        }
-    } else if (node.kind == AstKind.swt_ex) {
-        var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
+        } else {
+            var slice_temp = lowerExpr(self, node.child_0);
+            var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
+            var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
+            var ms_nid = nameMapGet(self, slice_temp);
+            emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
+            emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = @intCast(u32, 1), .result = len_temp } });
+            var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
+            var cond_bb = createBlock(self);
+            var body_bb = createBlock(self);
+            var exit_bb = createBlock(self);
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = @intCast(u32, 0) };
+            loopInfoArrayListAppend(&self.loop_stack, loop_info);
+            emitInst(self, LirInst{ .jump = cond_bb });
+            self.current_bb = cond_bb;
+            var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
+            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+            self.current_bb = body_bb;
+            var item_temp = nextTemp(self, elem_type[0]);
+            emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
+            if (node.payload != @intCast(u32, 0)) { addLocalDecl(self, node.payload, elem_type[0], item_temp); }
+            if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); }
+            self.block_terminated = @intCast(u8, 0);
+            lowerStmtBody(self, node.child_1);
+            if (self.block_terminated == @intCast(u8, 0)) {
+                var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = @intCast(u32, 1), .result = nxt_idx } });
+                idx_temp = nxt_idx;
+                emitInst(self, LirInst{ .jump = cond_bb });
+            }
+            self.current_bb = exit_bb;
+            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+         }
+     } else if (node.kind == AstKind.swt_ex) {
+         var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (cond_ty_id) |ct| {

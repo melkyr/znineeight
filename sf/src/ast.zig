@@ -145,7 +145,7 @@ fn astNodeArrayListAppendInner(items: *[*]AstNode, len: *usize, capacity: *usize
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
-        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 28) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var raw = alloc_mod.sandAlloc(arena, @sizeOf(AstNode) * new_cap, @intCast(usize, 4)) catch unreachable;
         var new_items_p = @ptrCast([*]AstNode, raw);
         for (items.*[0..len.*]) |item, i| {
             new_items_p[i] = item;

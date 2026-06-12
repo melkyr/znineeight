@@ -134,7 +134,7 @@ fn typeRegistryEnsureCapacity(self: *TypeRegistry, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.types_cap * 2) nc = self.types_cap * 2;
     if (nc < 32) nc = 32;
-    var raw = alloc_mod.sandAlloc(self.types_alloc, @intCast(usize, 28) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.types_alloc, @sizeOf(Type) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Type, raw);
     for (self.types_items[0..self.types_len]) |item, i| { new_items[i] = item; }
     self.types_items = new_items;

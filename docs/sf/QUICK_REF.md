@@ -97,6 +97,21 @@ Replace suspect scalar variable with `[1]u32` box array. If behavior unchanged â
 // After:  var un_box: [1]u32 = [1]u32{0};   // use un_box[0] everywhere
 ```
 
+### itoa-based diagnostic markers â€” use palMarkerWriteInt
+```zig
+// BEFORE (15+ local vars, zig0 C89 budget risk):
+var m: []const u8 = "LABEL:n"; pal_mod.markerWrite(m);
+var nb: [10]u8 = undefined; var nl = itoa_mod.itoa(val, nb[0..]);
+var ns: usize = @intCast(usize, 9) - @intCast(usize, nl);
+pal_mod.markerWrite(nb[ns..@intCast(usize, 9)]);
+var e: []const u8 = "\n"; pal_mod.markerWrite(e);
+
+// AFTER (2 local vars, safe everywhere):
+var m: []const u8 = "LABEL:n"; pal_mod.markerWriteInt(m, val);
+```
+palMarkerWriteInt defined at pal.zig:99-106. Uses internal 12-byte buf + itoa_mod.itoa.
+Output: `LABEL:n<value>\n`.
+
 ## Memory Recall (when queries return stale results)
 
 Memory files local: `/workspace/znineeight/.opencode/memory/YYYY-MM-DD.logfmt`
