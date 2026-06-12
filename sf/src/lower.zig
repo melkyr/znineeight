@@ -1970,8 +1970,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var sem_bm: []const u8 = "h"; pal.markerWrite(sem_bm);
          var sem_bb: [10]u8 = undefined; var sem_bl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, se_base)].type_id, sem_bb[0..]); var sem_bs: usize = @intCast(usize, 9) - @intCast(usize, sem_bl); pal.markerWrite(sem_bb[sem_bs..@intCast(usize, 9)]);
          var sem_nl: []const u8 = "\n"; pal.markerWrite(sem_nl);
+         var se_bt_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
          if (se_rt) |st| {
             var se_bt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
+            se_bt_box[0] = se_bt;
             if (se_bt != type_mod.TYPE_UNDEFINED) {
                 var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
                 if (se_bty.kind == type_mod.TypeKind.array_type) {
@@ -1983,8 +1985,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     return se_result;
                 }
             }
-        }
-        return @intCast(u32, 0);
+            if (node.child_2 != @intCast(u32, 0)) {
+                var se_end = lowerExpr(self, node.child_2);
+                var se_ptr = se_base;
+                var se_len = se_end;
+                if (node.child_1 != @intCast(u32, 0)) {
+                    var se_start = lowerExpr(self, node.child_1);
+                    se_ptr = nextTemp(self, se_bt_box[0]);
+                    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_base, .rhs = se_start, .result = se_ptr } });
+                    se_len = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = se_end, .rhs = se_start, .result = se_len } });
+                }
+                var se_result = nextTemp(self, st);
+                emitInst(self, LirInst{ .make_slice = .{ .ptr = se_ptr, .len = se_len, .result = se_result, .type_id = st } });
+                return se_result;
+            }
+         }
+         return @intCast(u32, 0);
     } else if (node.kind == AstKind.add_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
