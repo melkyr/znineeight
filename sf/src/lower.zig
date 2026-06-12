@@ -1359,18 +1359,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
                     result = nextTemp(self, fp.return_type);
                 }
-                 var rt1: []const u8 = "RT1"; pal.markerWrite(rt1);
-                 var call_name: u32 = fp.name_id;
-                 var cn = store.nodes.items[@intCast(usize, node.child_0)];
-                 if (cn.kind == @enumToInt(AstKind.ident_expr)) { call_name = store.identifiers.items[@intCast(usize, cn.payload)]; }
-                 var fnr: []const u8 = "FNR:n"; pal.markerWrite(fnr);
-                 var fnr_nb: [10]u8 = undefined; var fnr_nl = itoa_mod.itoa(call_name, fnr_nb[0..]); var fnr_ns: usize = @intCast(usize, 9) - @intCast(usize, fnr_nl); pal.markerWrite(fnr_nb[fnr_ns..@intCast(usize, 9)]);
-                 var fnr_rm: []const u8 = "r"; pal.markerWrite(fnr_rm);
+                 var fnr_rm: []const u8 = "FNR:r"; pal.markerWrite(fnr_rm);
                  var fnr_rb: [10]u8 = undefined; var fnr_rl = itoa_mod.itoa(fp.return_type, fnr_rb[0..]); var fnr_rs: usize = @intCast(usize, 9) - @intCast(usize, fnr_rl); pal.markerWrite(fnr_rb[fnr_rs..@intCast(usize, 9)]);
                  var fnr_tm: []const u8 = "t"; pal.markerWrite(fnr_tm);
                  var fnr_tb: [10]u8 = undefined; var fnr_tl = itoa_mod.itoa(result, fnr_tb[0..]); var fnr_ts: usize = @intCast(usize, 9) - @intCast(usize, fnr_tl); pal.markerWrite(fnr_tb[fnr_ts..@intCast(usize, 9)]);
                  var fnr_nl2: []const u8 = "\n"; pal.markerWrite(fnr_nl2);
-                 var rt1ni: []const u8 = "ni="; pal.markerWrite(rt1ni); var rt1nb: [10]u8 = undefined; var rt1nl = itoa_mod.itoa(call_name, rt1nb[0..]); var rt1ns: usize = @intCast(usize, 9) - @intCast(usize, rt1nl); pal.markerWrite(rt1nb[rt1ns..@intCast(usize, 9)]); var rt1pf: []const u8 = "fp="; pal.markerWrite(rt1pf); var rt1pb: [10]u8 = undefined; var rt1pl = itoa_mod.itoa(fp.name_id, rt1pb[0..]); var rt1ps: usize = @intCast(usize, 9) - @intCast(usize, rt1pl); pal.markerWrite(rt1pb[rt1ps..@intCast(usize, 9)]); var rt1nl2: []const u8 = " "; pal.markerWrite(rt1nl2);
+                  var call_name: u32 = fp.name_id;
                  emitInst(self, LirInst{ .call_direct = .{
                      .name_id = call_name,
                      .module_id = fp.module_id,

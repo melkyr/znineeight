@@ -2641,9 +2641,10 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var dc2mb: [10]u8 = undefined; var dc2ml = itoa_mod.itoa(c.module_id, dc2mb[0..]); var dc2ms: usize = @intCast(usize, 9) - @intCast(usize, dc2ml); pal.markerWrite(dc2mb[dc2ms..@intCast(usize, 9)]);
             var dc2fn: []const u8 = "f"; pal.markerWrite(dc2fn);
             pal.markerWrite(fn_name);
-            var dc2nl: []const u8 = "\n"; pal.markerWrite(dc2nl);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            if (c.result != 0) {
+             var dc2nl: []const u8 = "\n"; pal.markerWrite(dc2nl);
+             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+             var dcr_m: []const u8 = "DC2:r"; pal.markerWriteInt(dcr_m, c.result);
+             if (c.result != 0) {
                 var result = resolveTempName(emitter, c.result);
                 bufferedWriterWrite(&emitter.writer, result);
                 var s: []const u8 = " = ";
