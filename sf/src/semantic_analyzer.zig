@@ -907,7 +907,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
              while (si < children.len - @intCast(usize, 1)) : (si += 1) {
                  var eblk_sm: []const u8 = "EBLK:S"; pal_mod.markerWriteInt(eblk_sm, @intCast(u32, si));
                  var eblk_cm2: []const u8 = "EBLK:D"; pal_mod.markerWriteInt(eblk_cm2, children[si]);
-                 semanticAnalyzerResolveStmtDepth(self, children[si], @intCast(u32, 0));
+                 semanticAnalyzerResolveStmtIter(self, children[si]);
             }
             var last_child = children[children.len - @intCast(usize, 1)];
             result = semanticAnalyzerResolveExpr(self, last_child);
@@ -1220,9 +1220,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
     var sp: usize = 0;
     stack[0].node_idx = root_node;
     sp = @intCast(usize, 1);
-    while (sp > @intCast(usize, 0)) : (sp -= @intCast(usize, 1)) {
+    while (sp > @intCast(usize, 0)) {
         if (sp > @intCast(usize, 255)) { @panic("resolveStmtIter stack overflow"); }
-        var node_idx = stack[sp - @intCast(usize, 1)].node_idx;
+        sp -= @intCast(usize, 1);
+        var node_idx = stack[sp].node_idx;
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = self.store.nodes.items[@intCast(usize, node_idx)];
         if (node.kind == AstKind.block) {
@@ -1571,5 +1572,5 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
 }
 
 pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void {
-    semanticAnalyzerResolveStmtDepth(self, node_idx, @intCast(u32, 0));
+    semanticAnalyzerResolveStmtIter(self, node_idx);
 }
