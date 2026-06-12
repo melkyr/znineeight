@@ -744,6 +744,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
     if (prongs.len == @intCast(usize, 0)) { self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var unified: u32 = @intCast(u32, 0);
+    var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
     var i: usize = 0;
 
@@ -799,21 +800,23 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             }
         }
         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
-        if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
-            tryRecordCoercion(self, prong.child_0, bt, self.current_fn_return);
-            if (coercion_mod.classifyCoercion(self.registry, bt, self.current_fn_return) != coercion_mod.CoercionKind.none) {
-                bt = self.current_fn_return;
-            }
-        }
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWrite(pct_m); var pct_nb: [10]u8 = undefined; var pct_nl = itoa_mod.itoa(prong.child_0, pct_nb[0..]); var pct_ns: usize = @intCast(usize, 9) - @intCast(usize, pct_nl); pal_mod.markerWrite(pct_nb[pct_ns..@intCast(usize, 9)]); var pct_bm: []const u8 = "b"; pal_mod.markerWrite(pct_bm); var pct_bb: [10]u8 = undefined; var pct_bl = itoa_mod.itoa(bt, pct_bb[0..]); var pct_bs: usize = @intCast(usize, 9) - @intCast(usize, pct_bl); pal_mod.markerWrite(pct_bb[pct_bs..@intCast(usize, 9)]); var pct_fm: []const u8 = "f"; pal_mod.markerWrite(pct_fm); var pct_fb: [10]u8 = undefined; var pct_fl = itoa_mod.itoa(self.current_fn_return, pct_fb[0..]); var pct_fs: usize = @intCast(usize, 9) - @intCast(usize, pct_fl); pal_mod.markerWrite(pct_fb[pct_fs..@intCast(usize, 9)]); var pct_nl2: []const u8 = "\n"; pal_mod.markerWrite(pct_nl2);
         var swpb_m: []const u8 = "SWPB:pi"; pal_mod.markerWrite(swpb_m);
         var swpb_ib: [10]u8 = undefined; var swpb_il = itoa_mod.itoa(@intCast(u32, i), swpb_ib[0..]); var swpb_is: usize = @intCast(usize, 9) - @intCast(usize, swpb_il); pal_mod.markerWrite(swpb_ib[swpb_is..@intCast(usize, 9)]);
         var swpb_tm: []const u8 = ",bt"; pal_mod.markerWrite(swpb_tm);
         var swpb_tb: [10]u8 = undefined; var swpb_tl = itoa_mod.itoa(bt, swpb_tb[0..]); var swpb_ts: usize = @intCast(usize, 9) - @intCast(usize, swpb_tl); pal_mod.markerWrite(swpb_tb[swpb_ts..@intCast(usize, 9)]);
         var swpb_nl: []const u8 = "\n"; pal_mod.markerWrite(swpb_nl);
-        if (i == @intCast(usize, 0)) { unified = bt; }
+        if (i == @intCast(usize, 0)) { unified = bt; unified_node = prong.child_0; }
         else if (bt == type_mod.TYPE_NORETURN) {}
         else if (bt == unified) {}
+        else if (coercion_mod.classifyCoercion(self.registry, bt, unified) != coercion_mod.CoercionKind.none) {
+            tryRecordCoercion(self, prong.child_0, bt, unified);
+        }
+        else if (coercion_mod.classifyCoercion(self.registry, unified, bt) != coercion_mod.CoercionKind.none) {
+            tryRecordCoercion(self, unified_node, unified, bt);
+            unified = bt;
+            unified_node = prong.child_0;
+        }
         else {
             var unum: u32 = @intCast(u32, 0);
             if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
