@@ -1576,15 +1576,24 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
     var lbrace = try parserExpect(self, TokenKind.lbrace);
     var saved_len: usize = self.child_buf_len;
     var local_buf: [64]u32 = undefined;
-    var local_len: usize = @intCast(usize, 0);
-    while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
-        var stmt = try parserParseStatement(self);
-        if (local_len < @intCast(usize, 64)) {
-            local_buf[@intCast(usize, local_len)] = stmt;
-        } else {
-            u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, stmt);
-        }
-        local_len += @intCast(usize, 1);
+     var local_len: usize = @intCast(usize, 0);
+     while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
+         var stmt = try parserParseStatement(self);
+         if (local_len < @intCast(usize, 64)) {
+             local_buf[@intCast(usize, local_len)] = stmt;
+         } else {
+             u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, stmt);
+         }
+          local_len += @intCast(usize, 1);
+          var pk = parserPeek(self);
+          var pbx_sm: []const u8 = "PBX:S"; pal.markerWriteInt(pbx_sm, @intCast(u32, local_len));
+          var pbx_tm: []const u8 = "PBX:T"; pal.markerWriteInt(pbx_tm, @intCast(u32, @enumToInt(pk.kind)));
+          var pbx_km: []const u8 = "PBX:K"; pal.markerWriteInt(pbx_km, @intCast(u32, @enumToInt(self.store.nodes.items[@intCast(usize, stmt)].kind)));
+          if (pk.kind == TokenKind.rbrace or pk.kind == TokenKind.eof) {
+              var pbx_lm: []const u8 = "PBX:L"; pal.markerWriteInt(pbx_lm, @intCast(u32, local_len));
+              var pbx_bm: []const u8 = "PBX:B"; pal.markerWriteInt(pbx_bm, @intCast(u32, saved_len));
+              var pbx_pm: []const u8 = "PBX:P"; pal.markerWriteInt(pbx_pm, lbrace.span_start);
+          }
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
     var payload: u32 = 0;
