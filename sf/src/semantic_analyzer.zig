@@ -296,9 +296,9 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                         if (rtt) |rtv| {
                              var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
                              rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
-                             return fn_ty;
-                         }
-                     }
+                              return fn_ty;
+                }
+            }
                      var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                     return fn_ty;
@@ -450,6 +450,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
     if (ck != coercion_mod.CoercionKind.none) {
         coercion_mod.coercionTableAdd(self.coercion_table, src_node, ck, dst_type);
+        var cor_m: []const u8 = "COR:n"; pal_mod.markerWrite(cor_m); var cor_nb: [10]u8 = undefined; var cor_nl = itoa_mod.itoa(src_node, cor_nb[0..]); var cor_ns: usize = @intCast(usize, 9) - @intCast(usize, cor_nl); pal_mod.markerWrite(cor_nb[cor_ns..@intCast(usize, 9)]); var cor_km: []const u8 = "k"; pal_mod.markerWrite(cor_km); var cor_kb: [10]u8 = undefined; var cor_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ck)), cor_kb[0..]); var cor_ks: usize = @intCast(usize, 9) - @intCast(usize, cor_kl); pal_mod.markerWrite(cor_kb[cor_ks..@intCast(usize, 9)]); var cor_nl2: []const u8 = "\n"; pal_mod.markerWrite(cor_nl2);
     }
 }
 
@@ -729,6 +730,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var se: []const u8 = "SE"; pal_mod.markerWrite(se);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var ent_m: []const u8 = "SWI:n"; pal_mod.markerWrite(ent_m); var ent_nb: [10]u8 = undefined; var ent_nl = itoa_mod.itoa(node_idx, ent_nb[0..]); var ent_ns: usize = @intCast(usize, 9) - @intCast(usize, ent_nl); pal_mod.markerWrite(ent_nb[ent_ns..@intCast(usize, 9)]); var ent_pm: []const u8 = "p"; pal_mod.markerWrite(ent_pm); var ent_pb: [10]u8 = undefined; var ent_pl = itoa_mod.itoa(node.payload, ent_pb[0..]); var ent_ps: usize = @intCast(usize, 9) - @intCast(usize, ent_pl); pal_mod.markerWrite(ent_pb[ent_ps..@intCast(usize, 9)]); var ent_nl2: []const u8 = "\n"; pal_mod.markerWrite(ent_nl2);
     if (node.payload == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
     self.current_switch_cond_tu = @intCast(u32, 0);
@@ -797,6 +799,13 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             }
         }
         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+        if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
+            tryRecordCoercion(self, prong.child_0, bt, self.current_fn_return);
+            if (coercion_mod.classifyCoercion(self.registry, bt, self.current_fn_return) != coercion_mod.CoercionKind.none) {
+                bt = self.current_fn_return;
+            }
+        }
+        var pct_m: []const u8 = "PCT:n"; pal_mod.markerWrite(pct_m); var pct_nb: [10]u8 = undefined; var pct_nl = itoa_mod.itoa(prong.child_0, pct_nb[0..]); var pct_ns: usize = @intCast(usize, 9) - @intCast(usize, pct_nl); pal_mod.markerWrite(pct_nb[pct_ns..@intCast(usize, 9)]); var pct_bm: []const u8 = "b"; pal_mod.markerWrite(pct_bm); var pct_bb: [10]u8 = undefined; var pct_bl = itoa_mod.itoa(bt, pct_bb[0..]); var pct_bs: usize = @intCast(usize, 9) - @intCast(usize, pct_bl); pal_mod.markerWrite(pct_bb[pct_bs..@intCast(usize, 9)]); var pct_fm: []const u8 = "f"; pal_mod.markerWrite(pct_fm); var pct_fb: [10]u8 = undefined; var pct_fl = itoa_mod.itoa(self.current_fn_return, pct_fb[0..]); var pct_fs: usize = @intCast(usize, 9) - @intCast(usize, pct_fl); pal_mod.markerWrite(pct_fb[pct_fs..@intCast(usize, 9)]); var pct_nl2: []const u8 = "\n"; pal_mod.markerWrite(pct_nl2);
         var swpb_m: []const u8 = "SWPB:pi"; pal_mod.markerWrite(swpb_m);
         var swpb_ib: [10]u8 = undefined; var swpb_il = itoa_mod.itoa(@intCast(u32, i), swpb_ib[0..]); var swpb_is: usize = @intCast(usize, 9) - @intCast(usize, swpb_il); pal_mod.markerWrite(swpb_ib[swpb_is..@intCast(usize, 9)]);
         var swpb_tm: []const u8 = ",bt"; pal_mod.markerWrite(swpb_tm);
@@ -809,7 +818,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             var unum: u32 = @intCast(u32, 0);
             if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
             if (unified == type_mod.TYPE_INT_LIT and unum != @intCast(u32, 0)) { unified = bt; }
-            else { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+            else { var mix_m: []const u8 = "MIX:p"; pal_mod.markerWrite(mix_m); var mix_pb: [10]u8 = undefined; var mix_pl = itoa_mod.itoa(@intCast(u32, i), mix_pb[0..]); var mix_ps: usize = @intCast(usize, 9) - @intCast(usize, mix_pl); pal_mod.markerWrite(mix_pb[mix_ps..@intCast(usize, 9)]); var mix_um: []const u8 = "u"; pal_mod.markerWrite(mix_um); var mix_ub: [10]u8 = undefined; var mix_ul = itoa_mod.itoa(unified, mix_ub[0..]); var mix_us: usize = @intCast(usize, 9) - @intCast(usize, mix_ul); pal_mod.markerWrite(mix_ub[mix_us..@intCast(usize, 9)]); var mix_bm: []const u8 = "b"; pal_mod.markerWrite(mix_bm); var mix_bb: [10]u8 = undefined; var mix_bl = itoa_mod.itoa(bt, mix_bb[0..]); var mix_bs: usize = @intCast(usize, 9) - @intCast(usize, mix_bl); pal_mod.markerWrite(mix_bb[mix_bs..@intCast(usize, 9)]); var mix_nl2: []const u8 = "\n"; pal_mod.markerWrite(mix_nl2); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
         }
     }
 
@@ -818,6 +827,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     }
     if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_VOID;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
+    var swu_m: []const u8 = "SWU:n"; pal_mod.markerWrite(swu_m); var swu_nb: [10]u8 = undefined; var swu_nl = itoa_mod.itoa(node_idx, swu_nb[0..]); var swu_ns: usize = @intCast(usize, 9) - @intCast(usize, swu_nl); pal_mod.markerWrite(swu_nb[swu_ns..@intCast(usize, 9)]); var swu_tm: []const u8 = "t"; pal_mod.markerWrite(swu_tm); var swu_tb: [10]u8 = undefined; var swu_tl = itoa_mod.itoa(unified, swu_tb[0..]); var swu_ts: usize = @intCast(usize, 9) - @intCast(usize, swu_tl); pal_mod.markerWrite(swu_tb[swu_ts..@intCast(usize, 9)]); var swu_nl2: []const u8 = "\n"; pal_mod.markerWrite(swu_nl2);
     return unified;
 }
 
@@ -827,6 +837,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (node_idx == @intCast(u32, 0)) return result;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     result = type_mod.TYPE_VOID;
+    if (node.kind == AstKind.swt_ex) {
+        var rx_sw_m: []const u8 = "RXS"; pal_mod.markerWrite(rx_sw_m);
+    }
 
     if (node.kind == AstKind.int_literal) {
         result = type_mod.TYPE_INT_LIT;
@@ -938,7 +951,6 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         }
                     }
                 }
-                tryRecordCoercion(self, node.child_0, result, self.current_fn_return);
             }
         } else {
             result = type_mod.TYPE_VOID;
@@ -1269,6 +1281,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
                         }
                     }
                 }
+                var t2f_m: []const u8 = "T2F:n"; pal_mod.markerWrite(t2f_m); var t2f_nb: [10]u8 = undefined; var t2f_nl = itoa_mod.itoa(node.child_0, t2f_nb[0..]); var t2f_ns: usize = @intCast(usize, 9) - @intCast(usize, t2f_nl); pal_mod.markerWrite(t2f_nb[t2f_ns..@intCast(usize, 9)]); var t2f_rm: []const u8 = "r"; pal_mod.markerWrite(t2f_rm); var t2f_rb: [10]u8 = undefined; var t2f_rl = itoa_mod.itoa(ret_val, t2f_rb[0..]); var t2f_rs: usize = @intCast(usize, 9) - @intCast(usize, t2f_rl); pal_mod.markerWrite(t2f_rb[t2f_rs..@intCast(usize, 9)]); var t2f_fm: []const u8 = "f"; pal_mod.markerWrite(t2f_fm); var t2f_fb: [10]u8 = undefined; var t2f_fl = itoa_mod.itoa(self.current_fn_return, t2f_fb[0..]); var t2f_fs: usize = @intCast(usize, 9) - @intCast(usize, t2f_fl); pal_mod.markerWrite(t2f_fb[t2f_fs..@intCast(usize, 9)]); var t2f_nl2: []const u8 = "\n"; pal_mod.markerWrite(t2f_nl2);
                 tryRecordCoercion(self, node.child_0, ret_val, self.current_fn_return);
             }
         }

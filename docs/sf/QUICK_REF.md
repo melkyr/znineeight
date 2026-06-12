@@ -44,6 +44,59 @@ gcc -m32 -std=c89 -Wno-pointer-sign \
 cd /workspace/znineeight && ./sf/scripts/build_test.sh
 ```
 
+## Debug with GDB on zig1
+
+### Build with debug symbols
+```bash
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+```
+
+### Find function in generated C
+```bash
+grep -n "function_name_part" out_release/semantic_analyzer.c | head -5
+```
+
+### Find line for breakpoint
+```bash
+grep -n "keyword" out_release/semantic_analyzer.c | head -20
+```
+
+### GDB with batch script
+```bash
+cat > /tmp/gdb.txt <<'EOF'
+set pagination off
+break out_release/semantic_analyzer.c:LINENO
+run examples/mud_server/main.zig > /dev/null 2> /dev/null
+print varname
+print another_var
+continue
+quit
+EOF
+gdb -batch -x /tmp/gdb.txt --args ./out_release/zig1 --dump-c89
+```
+
+### Filter output to variable values
+```bash
+gdb -batch ... 2>&1 | grep "^\$"
+```
+
+### Common breakpoints in resolveSwitchExpr (line numbers may shift after edits)
+| Purpose | Approx C Line | Look for |
+|---------|---------------|----------|
+| Function entry | search for `static unsigned int zF_...manticAnalyzerResolveSwitchExpr` | Declaration line + 14 = unified init |
+| Loop start | search for `__loop_0_start` in function body | `if (!(i < prongs.len))` |
+| `unified = bt` (i==0) | ~2225 | `un_box[0] = bt;` or `unified = bt;` |
+| `bt == unified` check | ~2227 | `bt == un_box[0]` or `bt == unified` |
+| TYPE_VOID return | ~2267 | `return zC_..._TYPE_VOID;` |
+| Loop exit | ~2275 | `__loop_0_end:` label |
+
+### Verify zig0 C89 variable corruption theory
+Replace suspect scalar variable with `[1]u32` box array. If behavior unchanged → corruption theory disproven. Example:
+```zig
+// Before: var unified: u32 = 0;
+// After:  var un_box: [1]u32 = [1]u32{0};   // use un_box[0] everywhere
+```
+
 ## Memory Recall (when queries return stale results)
 
 Memory files local: `/workspace/znineeight/.opencode/memory/YYYY-MM-DD.logfmt`
