@@ -974,17 +974,14 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
                     semanticAnalyzerGrowLocalDecls(self);
                 }
                 self.local_decl_names[self.local_decl_count] = pnode.payload;
-                var rtm: []const u8 = "A2:"; pal_mod.markerWrite(rtm);
-                var rt_nb: [20]u8 = undefined; var rt_nl = itoa_mod.itoa(pnode.payload, rt_nb[0..]); var rt_ns: usize = @intCast(usize, 19) - @intCast(usize, rt_nl); pal_mod.markerWrite(rt_nb[rt_ns..@intCast(usize, 19)]);
-                var rt_am: []const u8 = "a"; pal_mod.markerWrite(rt_am);
-                var rt_ab: [20]u8 = undefined; var rt_al = itoa_mod.itoa(pnode.child_0, rt_ab[0..]); var rt_as: usize = @intCast(usize, 19) - @intCast(usize, rt_al); pal_mod.markerWrite(rt_ab[rt_as..@intCast(usize, 19)]);
+                var rtp_m: []const u8 = "RT:P"; pal_mod.markerWriteInt(rtp_m, pnode.payload);
+                var rta_m: []const u8 = "RT:A"; pal_mod.markerWriteInt(rta_m, pnode.child_0);
                 var rt = rtt_mod.resolvedTypeTableGet(self.type_table, pnode.child_0);
                 if (rt) |t| {
-                    var rth_m: []const u8 = "H"; pal_mod.markerWrite(rth_m);
-                    var rth_b: [20]u8 = undefined; var rth_l = itoa_mod.itoa(t, rth_b[0..]); var rth_s: usize = @intCast(usize, 19) - @intCast(usize, rth_l); pal_mod.markerWrite(rth_b[rth_s..@intCast(usize, 19)]);
+                    var rth_m: []const u8 = "RT:T"; pal_mod.markerWriteInt(rth_m, t);
                     self.local_decl_types[self.local_decl_count] = t;
                 } else {
-                    var rtm_m: []const u8 = "M"; pal_mod.markerWrite(rtm_m);
+                    var rtm2: []const u8 = "RT:M\n"; pal_mod.markerWrite(rtm2);
                     self.local_decl_types[self.local_decl_count] = type_mod.TYPE_UNDEFINED;
                 }
                 self.local_decl_count += @intCast(usize, 1);
