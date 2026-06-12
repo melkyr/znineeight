@@ -102,13 +102,11 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
             if (self.local_decl_names[li] == name_id) {
                 var lcl_t = self.local_decl_types[li];
                 var d7m: []const u8 = "D7:Yn"; pal_mod.markerWrite(d7m);
-                var d7nb: [10]u8 = undefined; var d7nl = itoa_mod.itoa(name_id, d7nb[0..]); var d7ns: usize = @intCast(usize, 9) - @intCast(usize, d7nl); pal_mod.markerWrite(d7nb[d7ns..@intCast(usize, 9)]);
-                var d7tm: []const u8 = "t"; pal_mod.markerWrite(d7tm);
-                var d7tb: [10]u8 = undefined; var d7tl = itoa_mod.itoa(lcl_t, d7tb[0..]); var d7ts: usize = @intCast(usize, 9) - @intCast(usize, d7tl); pal_mod.markerWrite(d7tb[d7ts..@intCast(usize, 9)]);
-                var d7sp: []const u8 = " "; pal_mod.markerWrite(d7sp);
+                var d7n_m: []const u8 = "D7:n"; pal_mod.markerWriteInt(d7n_m, name_id);                var d7tm: []const u8 = "t"; pal_mod.markerWrite(d7tm);
+                var d7t_m: []const u8 = "D7"; pal_mod.markerWriteInt(d7t_m, lcl_t);                var d7sp: []const u8 = " "; pal_mod.markerWrite(d7sp);
                 var ri: []const u8 = "R"; pal_mod.markerWrite(ri);
             var id1: []const u8 = "L"; pal_mod.markerWrite(id1);
-            var lcl_b: [20]u8 = undefined; var lcl_l = itoa_mod.itoa(lcl_t, lcl_b[0..]); var lcl_s: usize = @intCast(usize, 19) - @intCast(usize, lcl_l); pal_mod.markerWrite(lcl_b[lcl_s..@intCast(usize, 19)]);
+            var lt_m: []const u8 = "L:t"; pal_mod.markerWriteInt(lt_m, lcl_t);
             return lcl_t;
         }
     }
@@ -122,33 +120,26 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
         var rdt_sv: []const u8 = "SVO"; pal.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
     if (ncg) |t| { var id3: []const u8 = "C2:"; pal_mod.markerWrite(id3); var c2name = interner_mod.stringInternerGet(self.interner, name_id); pal_mod.markerWrite(c2name); var id3n: []const u8 = "\n"; pal_mod.markerWrite(id3n); return t; }
-     var id4: []const u8 = "D8:Nn"; pal_mod.markerWrite(id4);
-     var d8nb: [10]u8 = undefined; var d8nl = itoa_mod.itoa(name_id, d8nb[0..]); var d8ns: usize = @intCast(usize, 9) - @intCast(usize, d8nl); pal_mod.markerWrite(d8nb[d8ns..@intCast(usize, 9)]);
+     var d8n_m: []const u8 = "D8:Nn"; pal_mod.markerWriteInt(d8n_m, name_id);
      var d8cm: []const u8 = "c"; pal_mod.markerWrite(d8cm);
-     var d8cb: [10]u8 = undefined; var d8cl = itoa_mod.itoa(@intCast(u32, self.local_decl_count), d8cb[0..]); var d8cs: usize = @intCast(usize, 9) - @intCast(usize, d8cl); pal_mod.markerWrite(d8cb[d8cs..@intCast(usize, 9)]);
-     if (self.local_decl_count > @intCast(usize, 0)) {
-         var d8fm: []const u8 = "f"; pal_mod.markerWrite(d8fm);
-         var d8fb: [10]u8 = undefined; var d8fl = itoa_mod.itoa(self.local_decl_names[@intCast(usize, 0)], d8fb[0..]); var d8fs: usize = @intCast(usize, 9) - @intCast(usize, d8fl); pal_mod.markerWrite(d8fb[d8fs..@intCast(usize, 9)]);
-         var d8lm: []const u8 = "l"; pal_mod.markerWrite(d8lm);
-         var d8lb: [10]u8 = undefined; var d8ll = itoa_mod.itoa(self.local_decl_names[self.local_decl_count - @intCast(usize, 1)], d8lb[0..]); var d8ls: usize = @intCast(usize, 9) - @intCast(usize, d8ll); pal_mod.markerWrite(d8lb[d8ls..@intCast(usize, 9)]);
+     var d8c_m: []const u8 = "D8:C"; pal_mod.markerWriteInt(d8c_m, @intCast(u32, self.local_decl_count));
+      if (self.local_decl_count > @intCast(usize, 0)) {
+          var d8f_m: []const u8 = "D8:F"; pal_mod.markerWriteInt(d8f_m, self.local_decl_names[@intCast(usize, 0)]);
+          var d8l_m: []const u8 = "D8:L"; pal_mod.markerWriteInt(d8l_m, self.local_decl_names[self.local_decl_count - @intCast(usize, 1)]);
      }
-     if (self.local_decl_count > @intCast(usize, 4)) {
-         var d8x: []const u8 = "x"; pal_mod.markerWrite(d8x);
-         var d8x5: [10]u8 = undefined; var d8x5l = itoa_mod.itoa(self.local_decl_names[@intCast(usize, 4)], d8x5[0..]); var d8x5s: usize = @intCast(usize, 9) - @intCast(usize, d8x5l); pal_mod.markerWrite(d8x5[d8x5s..@intCast(usize, 9)]);
+      if (self.local_decl_count > @intCast(usize, 4)) {
+          var d8x_m: []const u8 = "D8:X"; pal_mod.markerWriteInt(d8x_m, self.local_decl_names[@intCast(usize, 4)]);
      }
-     var d8sp: []const u8 = "i"; pal_mod.markerWrite(d8sp);
-     var d8ib: [10]u8 = undefined; var d8il = itoa_mod.itoa(node_idx, d8ib[0..]); var d8is: usize = @intCast(usize, 9) - @intCast(usize, d8il); pal_mod.markerWrite(d8ib[d8is..@intCast(usize, 9)]);
+      var d8i_m: []const u8 = "D8:I"; pal_mod.markerWriteInt(d8i_m, node_idx);
       var d8nll: []const u8 = " "; pal_mod.markerWrite(d8nll);
-       if (node_idx >= @intCast(u32, 450) and node_idx <= @intCast(u32, 660)) {
-           var cname = interner_mod.stringInternerGet(self.interner, name_id);
-           pal_mod.markerWrite(cname);
-           var d8kn: []const u8 = " k="; pal_mod.markerWrite(d8kn);
-          var cnode = self.store.nodes.items[@intCast(usize, node_idx)];
-          var d8kb: [10]u8 = undefined; var d8kl = itoa_mod.itoa(@intCast(u32, @enumToInt(cnode.kind)), d8kb[0..]); var d8ks: usize = @intCast(usize, 9) - @intCast(usize, d8kl); pal_mod.markerWrite(d8kb[d8ks..@intCast(usize, 9)]);
-          var d8rt: []const u8 = "r"; pal_mod.markerWrite(d8rt);
-          var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node_idx);
-          if (rt) |t| { var d8tb: [10]u8 = undefined; var d8tl = itoa_mod.itoa(t, d8tb[0..]); var d8ts: usize = @intCast(usize, 9) - @intCast(usize, d8tl); pal_mod.markerWrite(d8tb[d8ts..@intCast(usize, 9)]); }
-          else { var d8z: []const u8 = "Z"; pal_mod.markerWrite(d8z); }
+        if (node_idx >= @intCast(u32, 450) and node_idx <= @intCast(u32, 660)) {
+            var cname = interner_mod.stringInternerGet(self.interner, name_id);
+            pal_mod.markerWrite(cname);
+           var cnode = self.store.nodes.items[@intCast(usize, node_idx)];
+           var d8k_m: []const u8 = "D8"; pal_mod.markerWriteInt(d8k_m, @intCast(u32, @enumToInt(cnode.kind)));
+           var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node_idx);
+           if (rt) |t| { var d8t_m: []const u8 = "D8:T"; pal_mod.markerWriteInt(d8t_m, t); }
+           else { var d8z_m: []const u8 = "D8:Z"; pal_mod.markerWrite(d8z_m); }
           var d8nl2: []const u8 = "\n"; pal_mod.markerWrite(d8nl2);
       }
     if (name_id == self._stub_0) {
@@ -162,8 +153,8 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var base_node = self.store.nodes.items[@intCast(usize, node.child_0)];
     var field_name_id = node.payload;
-    var pfa_bk: [20]u8 = undefined; var pfa_bkl = itoa_mod.itoa(@intCast(u32, @enumToInt(base_node.kind)), pfa_bk[0..]); var pfa_bks: usize = @intCast(usize, 19) - @intCast(usize, pfa_bkl); var pfa_bm: []const u8 = "BK"; pal_mod.markerWrite(pfa_bm); pal_mod.markerWrite(pfa_bk[pfa_bks..@intCast(usize, 19)]);
-    var pfa_fn: [20]u8 = undefined; var pfa_fnl = itoa_mod.itoa(field_name_id, pfa_fn[0..]); var pfa_fns: usize = @intCast(usize, 19) - @intCast(usize, pfa_fnl); var pfa_fm: []const u8 = "FN"; pal_mod.markerWrite(pfa_fm); pal_mod.markerWrite(pfa_fn[pfa_fns..@intCast(usize, 19)]);
+    var pfa_bkm: []const u8 = "PFA:BK"; pal_mod.markerWriteInt(pfa_bkm, @intCast(u32, @enumToInt(base_node.kind)));
+    var pfa_fnm: []const u8 = "PFA:FN"; pal_mod.markerWriteInt(pfa_fnm, field_name_id);
 
     if (base_node.kind == AstKind.ident_expr) {
         _ = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -191,15 +182,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var target_mod = s.module_id;
                 var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, target_mod, field_name_id);
                 if (field_sym) |fs| {
-                    var q1m: []const u8 = "Q1:fl="; pal_mod.markerWrite(q1m);
-                    var q1fb: [10]u8 = undefined; var q1fl = itoa_mod.itoa(@intCast(u32, fs.flags), q1fb[0..]); var q1fs: usize = @intCast(usize, 9) - @intCast(usize, q1fl); pal_mod.markerWrite(q1fb[q1fs..@intCast(usize, 9)]);
-                    var q1km: []const u8 = ",ki="; pal_mod.markerWrite(q1km);
-                    var q1kb: [10]u8 = undefined; var q1kl = itoa_mod.itoa(@intCast(u32, @enumToInt(fs.kind)), q1kb[0..]); var q1ks: usize = @intCast(usize, 9) - @intCast(usize, q1kl); pal_mod.markerWrite(q1kb[q1ks..@intCast(usize, 9)]);
-                    var q1tm: []const u8 = ",ti="; pal_mod.markerWrite(q1tm);
-                    var q1tb: [10]u8 = undefined; var q1tl = itoa_mod.itoa(fs.type_id, q1tb[0..]); var q1ts: usize = @intCast(usize, 9) - @intCast(usize, q1tl); pal_mod.markerWrite(q1tb[q1ts..@intCast(usize, 9)]);
-                    var q1nm: []const u8 = ",fn="; pal_mod.markerWrite(q1nm);
-                    var q1nb: [10]u8 = undefined; var q1nbl = itoa_mod.itoa(field_name_id, q1nb[0..]); var q1nbs: usize = @intCast(usize, 9) - @intCast(usize, q1nbl); pal_mod.markerWrite(q1nb[q1nbs..@intCast(usize, 9)]);
-                    var q1x: []const u8 = "\n"; pal_mod.markerWrite(q1x);
+                    var q1fl_m: []const u8 = "Q1:FL"; pal_mod.markerWriteInt(q1fl_m, @intCast(u32, fs.flags));
+                    var q1kl_m: []const u8 = "Q1:KL"; pal_mod.markerWriteInt(q1kl_m, @intCast(u32, @enumToInt(fs.kind)));
+                    var q1tl_m: []const u8 = "Q1:TL"; pal_mod.markerWriteInt(q1tl_m, fs.type_id);
+                    var q1fn_m: []const u8 = "Q1:FN"; pal_mod.markerWriteInt(q1fn_m, field_name_id);
                     if ((fs.flags & @intCast(u16, 2)) != @intCast(u16, 0)) {
                         if (fs.kind == sym_mod.SymbolKind.type_alias) {
                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fs.type_id);
@@ -229,9 +215,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                         }
                     }
                 }
-                var q1vf: []const u8 = "Q1VF:fn"; pal_mod.markerWrite(q1vf);
-                var q1vfb: [10]u8 = undefined; var q1vfl = itoa_mod.itoa(field_name_id, q1vfb[0..]); var q1vfs: usize = @intCast(usize, 9) - @intCast(usize, q1vfl); pal_mod.markerWrite(q1vfb[q1vfs..@intCast(usize, 9)]);
-                var q1vfnl: []const u8 = "\n"; pal_mod.markerWrite(q1vfnl);
+                var q1v_m: []const u8 = "Q1VF:FN"; pal_mod.markerWriteInt(q1v_m, field_name_id);
                 rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
                 return type_mod.TYPE_VOID;
             }
@@ -252,10 +236,8 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var pre_kind = base_ty.kind;
         base_type_id = self.registry.ptr_items[@intCast(usize, base_ty.payload_idx)].base;
         base_ty = self.registry.types_items[@intCast(usize, base_type_id)];
-        var fapr_m: []const u8 = "FAPR:ok"; pal_mod.markerWrite(fapr_m);
-        var fapr_ob: [10]u8 = undefined; var fapr_ol = itoa_mod.itoa(@intCast(u32, @enumToInt(pre_kind)), fapr_ob[0..]); var fapr_os: usize = @intCast(usize, 9) - @intCast(usize, fapr_ol); pal_mod.markerWrite(fapr_ob[fapr_os..@intCast(usize, 9)]);
-        var fapr_dm: []const u8 = "dk"; pal_mod.markerWrite(fapr_dm);
-        var fapr_db: [10]u8 = undefined; var fapr_dl = itoa_mod.itoa(@intCast(u32, @enumToInt(base_ty.kind)), fapr_db[0..]); var fapr_ds: usize = @intCast(usize, 9) - @intCast(usize, fapr_dl); pal_mod.markerWrite(fapr_db[fapr_ds..@intCast(usize, 9)]);
+        var fapr_ok_m: []const u8 = "FAPR:OK"; pal_mod.markerWriteInt(fapr_ok_m, @intCast(u32, @enumToInt(pre_kind)));
+        var fapr_dk_m: []const u8 = "FAPR:DK"; pal_mod.markerWriteInt(fapr_dk_m, @intCast(u32, @enumToInt(base_ty.kind)));
         var fapr_nl: []const u8 = "\n"; pal_mod.markerWrite(fapr_nl);
     }
     if (base_ty.kind == type_mod.TypeKind.struct_type) {
@@ -290,7 +272,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var dn = self.store.nodes.items[@intCast(usize, mfs.decl_node)];
                 if (dn.kind == AstKind.fn_decl) {
                     var proto = self.store.fn_protos.items[@intCast(usize, dn.payload)];
-                    var mfp_buf: [20]u8 = undefined; var mfp_len = itoa_mod.itoa(@intCast(u32, proto.params_start), mfp_buf[0..]); var mfp_s: usize = @intCast(usize, 19) - @intCast(usize, mfp_len); var mfp_m: []const u8 = "MFP"; pal_mod.markerWrite(mfp_m); pal_mod.markerWrite(mfp_buf[mfp_s..@intCast(usize, 19)]);
+                    var mfp_m: []const u8 = "MFP"; pal_mod.markerWriteInt(mfp_m, @intCast(u32, proto.params_start));
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rtt) |rtv| {
@@ -304,8 +286,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     return fn_ty;
                 }
             }
-            var mf2: []const u8 = "MF2"; pal_mod.markerWrite(mf2);
-            var mf2_k: [20]u8 = undefined; var mf2_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(mfs.kind)), mf2_k[0..]); var mf2_ks: usize = @intCast(usize, 19) - @intCast(usize, mf2_kl); pal_mod.markerWrite(mf2_k[mf2_ks..@intCast(usize, 19)]);
+            var mf2_m: []const u8 = "MF2"; pal_mod.markerWriteInt(mf2_m, @intCast(u32, @enumToInt(mfs.kind)));
         } else {
             var mf3: []const u8 = "MF3"; pal_mod.markerWrite(mf3);
         }
@@ -346,7 +327,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             }
             if (base_ty.kind == type_mod.TypeKind.tagged_union_type) { result = base_type_id; }
             var ff: []const u8 = "FF:"; pal_mod.markerWrite(ff);
-            var ff_b: [20]u8 = undefined; var ff_l = itoa_mod.itoa(result, ff_b[0..]); var ff_s: usize = @intCast(usize, 19) - @intCast(usize, ff_l); pal_mod.markerWrite(ff_b[ff_s..@intCast(usize, 19)]);
+            var ff_m: []const u8 = "FF"; pal_mod.markerWriteInt(ff_m, result);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
             return result;
         }
@@ -354,7 +335,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     }
 
     var fnf2: []const u8 = "NF"; pal_mod.markerWrite(fnf2);
-    var ff2_m: []const u8 = "FF2:n"; pal_mod.markerWrite(ff2_m); var ff2_nb: [10]u8 = undefined; var ff2_nl = itoa_mod.itoa(node_idx, ff2_nb[0..]); var ff2_ns: usize = @intCast(usize, 9) - @intCast(usize, ff2_nl); pal_mod.markerWrite(ff2_nb[ff2_ns..@intCast(usize, 9)]); var ff2_fm: []const u8 = "f"; pal_mod.markerWrite(ff2_fm); var ff2_fb: [10]u8 = undefined; var ff2_fl = itoa_mod.itoa(field_name_id, ff2_fb[0..]); var ff2_fs: usize = @intCast(usize, 9) - @intCast(usize, ff2_fl); pal_mod.markerWrite(ff2_fb[ff2_fs..@intCast(usize, 9)]); var ff2_bm: []const u8 = "b"; pal_mod.markerWrite(ff2_bm); var ff2_bb: [10]u8 = undefined; var ff2_bl = itoa_mod.itoa(base_type_id, ff2_bb[0..]); var ff2_bs: usize = @intCast(usize, 9) - @intCast(usize, ff2_bl); pal_mod.markerWrite(ff2_bb[ff2_bs..@intCast(usize, 9)]);     var ff2e: []const u8 = "\n"; pal_mod.markerWrite(ff2e);
+    var ff2n_m: []const u8 = "FF2:N"; pal_mod.markerWriteInt(ff2n_m, node_idx); var ff2f_m: []const u8 = "FF2:F"; pal_mod.markerWriteInt(ff2f_m, field_name_id); var ff2b_m: []const u8 = "FF2:B"; pal_mod.markerWriteInt(ff2b_m, base_type_id);
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
     return type_mod.TYPE_VOID;
 }
@@ -444,19 +425,15 @@ fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) void {
-    var coe_m: []const u8 = "COE:n"; pal_mod.markerWrite(coe_m);
-    var coe_nb: [10]u8 = undefined; var coe_nl2 = itoa_mod.itoa(src_node, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl2); pal_mod.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
-    var coe_sm: []const u8 = "s"; pal_mod.markerWrite(coe_sm);
-    var coe_sb: [10]u8 = undefined; var coe_sl = itoa_mod.itoa(src_type, coe_sb[0..]); var coe_ss: usize = @intCast(usize, 9) - @intCast(usize, coe_sl); pal_mod.markerWrite(coe_sb[coe_ss..@intCast(usize, 9)]);
-    var coe_tm: []const u8 = "d"; pal_mod.markerWrite(coe_tm);
-    var coe_tb: [10]u8 = undefined; var coe_tl = itoa_mod.itoa(dst_type, coe_tb[0..]); var coe_ts: usize = @intCast(usize, 9) - @intCast(usize, coe_tl); pal_mod.markerWrite(coe_tb[coe_ts..@intCast(usize, 9)]);
-    var coe_nl: []const u8 = "\n"; pal_mod.markerWrite(coe_nl);
+    var coe_nm: []const u8 = "COE:N"; pal_mod.markerWriteInt(coe_nm, src_node);
+    var coe_sm: []const u8 = "COE:S"; pal_mod.markerWriteInt(coe_sm, src_type);
+    var coe_dm: []const u8 = "COE:D"; pal_mod.markerWriteInt(coe_dm, dst_type);
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
     if (ck != coercion_mod.CoercionKind.none) {
         coercion_mod.coercionTableAdd(self.coercion_table, src_node, ck, dst_type);
-        var cor_m: []const u8 = "COR:n"; pal_mod.markerWrite(cor_m); var cor_nb: [10]u8 = undefined; var cor_nl = itoa_mod.itoa(src_node, cor_nb[0..]); var cor_ns: usize = @intCast(usize, 9) - @intCast(usize, cor_nl); pal_mod.markerWrite(cor_nb[cor_ns..@intCast(usize, 9)]); var cor_km: []const u8 = "k"; pal_mod.markerWrite(cor_km); var cor_kb: [10]u8 = undefined; var cor_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ck)), cor_kb[0..]); var cor_ks: usize = @intCast(usize, 9) - @intCast(usize, cor_kl); pal_mod.markerWrite(cor_kb[cor_ks..@intCast(usize, 9)]); var cor_nl2: []const u8 = "\n"; pal_mod.markerWrite(cor_nl2);
+        var cor_nm: []const u8 = "COR:N"; pal_mod.markerWriteInt(cor_nm, src_node); var cor_km: []const u8 = "COR:K"; pal_mod.markerWriteInt(cor_km, @intCast(u32, @enumToInt(ck)));
     }
 }
 
@@ -501,7 +478,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     }
     if (direct_ret != @intCast(u32, 0)) {
         var fn1: []const u8 = "FN1"; pal_mod.markerWrite(fn1);
-        var fn1_rb: [20]u8 = undefined; var fn1_rl = itoa_mod.itoa(direct_ret, fn1_rb[0..]); var fn1_rs: usize = @intCast(usize, 19) - @intCast(usize, fn1_rl); var fn1_rm: []const u8 = "R"; pal_mod.markerWrite(fn1_rm); pal_mod.markerWrite(fn1_rb[fn1_rs..@intCast(usize, 19)]);
+        var fn1r_m: []const u8 = "FN1:R"; pal_mod.markerWriteInt(fn1r_m, direct_ret);
         var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         if (decl_cap != 0) {
             var ft = rtt_mod.resolvedTypeTableGet(self.type_table, decl_cap);
@@ -1085,12 +1062,10 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
     if (depth > @intCast(u32, 16)) return;
     if (node_idx == @intCast(u32, 0)) return;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    if (node.kind == AstKind.block) {
-         var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-         var blkm: []const u8 = "BLK:ni="; pal_mod.markerWrite(blkm);
-         var blkb: [20]u8 = undefined; var blkl = itoa_mod.itoa(node_idx, blkb[0..]); var blks: usize = @intCast(usize, 19) - @intCast(usize, blkl); pal_mod.markerWrite(blkb[blks..@intCast(usize, 19)]);
-         var blkc: []const u8 = "c="; pal_mod.markerWrite(blkc);
-         var blkcb: [10]u8 = undefined; var blkcl = itoa_mod.itoa(@intCast(u32, children.len), blkcb[0..]); var blkcs: usize = @intCast(usize, 9) - @intCast(usize, blkcl); pal_mod.markerWrite(blkcb[blkcs..@intCast(usize, 9)]);
+     if (node.kind == AstKind.block) {
+          var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+          var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
+          var blk_cm: []const u8 = "BLK:C"; pal_mod.markerWriteInt(blk_cm, @intCast(u32, children.len));
          var blkk: []const u8 = "k=["; pal_mod.markerWrite(blkk);
          var i: usize = 0;
          while (i < children.len) : (i += 1) {
