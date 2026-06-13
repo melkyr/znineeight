@@ -332,9 +332,10 @@ fn resolveAllFnTypes(ctx: *CompilerContext) void {
                         resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_proto.return_type_node, rft_rtype);
                     }
                 }
+                var rft_is_ext: u8 = @intCast(u8, 0); if ((rft_decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { rft_is_ext = @intCast(u8, 1); }
+                var rft_fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
                 if (rft_proto.params_count > @intCast(u16, 0)) {
                     var rft_p_payload = (@intCast(u32, rft_proto.params_start) << @intCast(u32, 16)) | @intCast(u32, rft_proto.params_count);
-                    var rft_fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
                     var rft_pnodes = ast_mod.astStoreGetExtraChildren(ctx.store, rft_p_payload);
                     var rft_pi: usize = 0;
                     while (rft_pi < rft_pnodes.len) : (rft_pi += 1) {
@@ -349,9 +350,12 @@ fn resolveAllFnTypes(ctx: *CompilerContext) void {
                             type_mod.xtAppend(ctx.typereg, type_mod.TYPE_VOID);
                         }
                     }
-                    var rft_is_ext: u8 = @intCast(u8, 0); if ((rft_decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { rft_is_ext = @intCast(u8, 1); }
-                    var rft_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, rft_proto.name_id, rft_mods[rft_mi].id, rft_is_ext, rft_fn_start, rft_proto.params_count, rft_rt_box[0]);
-                    resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decls[rft_di], rft_tid);
+                }
+                var rft_tid = type_mod.typeRegistryGetOrCreateFn(ctx.typereg, rft_proto.name_id, rft_mods[rft_mi].id, rft_is_ext, rft_fn_start, rft_proto.params_count, rft_rt_box[0]);
+                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_decls[rft_di], rft_tid);
+                var rft_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, rft_mods[rft_mi].id, rft_proto.name_id);
+                if (rft_sym) |sp| {
+                    sp.type_id = rft_tid;
                 }
             } else if (rft_decl.kind == AstKind.var_decl and rft_decl.child_0 != 0) {
                 var rft_vtype = resolveTypeExpr(ctx, rft_decl.child_0);

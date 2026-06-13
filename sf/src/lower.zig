@@ -1305,8 +1305,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          if (callee_rt) |crt| {
             var crt_ty = self.ctx.registry.types_items[@intCast(usize, crt)];
             if (crt_ty.kind == type_mod.TypeKind.fn_type) {
-                var fp = self.ctx.registry.fn_items[@intCast(usize, crt_ty.payload_idx)];
-                  if (fp.name_id == self.print_fn_id and ec.len >= @intCast(usize, 2)) {
+                 var fp = self.ctx.registry.fn_items[@intCast(usize, crt_ty.payload_idx)];
+                  var fnt_nm: []const u8 = "FNT:N"; pal.markerWriteInt(fnt_nm, fp.name_id);
+                  var fnt_rm: []const u8 = "FNT:R"; pal.markerWriteInt(fnt_rm, fp.return_type);
+                   if (fp.name_id == self.print_fn_id and ec.len >= @intCast(usize, 2)) {
                       var prn_m: []const u8 = "PRN:c"; pal.markerWrite(prn_m);
                       var prn_cb: [10]u8 = undefined; var prn_cl = itoa_mod.itoa(@intCast(u32, ec.len), prn_cb[0..]); var prn_cs: usize = @intCast(usize, 9) - @intCast(usize, prn_cl); pal.markerWrite(prn_cb[prn_cs..@intCast(usize, 9)]);
                       var prn_nm: []const u8 = "n"; pal.markerWrite(prn_nm);
@@ -1359,11 +1361,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
                     result = nextTemp(self, fp.return_type);
                 }
-                 var fnr_rm: []const u8 = "FNR:r"; pal.markerWrite(fnr_rm);
-                 var fnr_rb: [10]u8 = undefined; var fnr_rl = itoa_mod.itoa(fp.return_type, fnr_rb[0..]); var fnr_rs: usize = @intCast(usize, 9) - @intCast(usize, fnr_rl); pal.markerWrite(fnr_rb[fnr_rs..@intCast(usize, 9)]);
-                 var fnr_tm: []const u8 = "t"; pal.markerWrite(fnr_tm);
-                 var fnr_tb: [10]u8 = undefined; var fnr_tl = itoa_mod.itoa(result, fnr_tb[0..]); var fnr_ts: usize = @intCast(usize, 9) - @intCast(usize, fnr_tl); pal.markerWrite(fnr_tb[fnr_ts..@intCast(usize, 9)]);
-                 var fnr_nl2: []const u8 = "\n"; pal.markerWrite(fnr_nl2);
+                 var fnr_rm: []const u8 = "FNR:R"; pal.markerWriteInt(fnr_rm, fp.return_type);
+                 var fnr_tm: []const u8 = "FNR:T"; pal.markerWriteInt(fnr_tm, result);
                   var call_name: u32 = fp.name_id;
                  emitInst(self, LirInst{ .call_direct = .{
                      .name_id = call_name,

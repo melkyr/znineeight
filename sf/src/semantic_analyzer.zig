@@ -445,6 +445,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, callee_node.payload)]);
         if (sym) |s| { var xf: []const u8 = "XF\n"; pal_mod.markerWrite(xf);
             decl_cap = s.decl_node;
+            if (s.type_id != @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, s.type_id); }
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
                 var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
                 if (dn.kind == AstKind.fn_decl) {

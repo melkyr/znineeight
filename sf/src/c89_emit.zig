@@ -2635,13 +2635,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
              if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
-            var dc2m: []const u8 = "DC2:n"; pal.markerWrite(dc2m);
-            var dc2b: [10]u8 = undefined; var dc2l = itoa_mod.itoa(c.name_id, dc2b[0..]); var dc2s: usize = @intCast(usize, 9) - @intCast(usize, dc2l); pal.markerWrite(dc2b[dc2s..@intCast(usize, 9)]);
-            var dc2mm: []const u8 = "m"; pal.markerWrite(dc2mm);
-            var dc2mb: [10]u8 = undefined; var dc2ml = itoa_mod.itoa(c.module_id, dc2mb[0..]); var dc2ms: usize = @intCast(usize, 9) - @intCast(usize, dc2ml); pal.markerWrite(dc2mb[dc2ms..@intCast(usize, 9)]);
-            var dc2fn: []const u8 = "f"; pal.markerWrite(dc2fn);
-            pal.markerWrite(fn_name);
-             var dc2nl: []const u8 = "\n"; pal.markerWrite(dc2nl);
+             var dc2_nm: []const u8 = "DC2:N"; pal.markerWriteInt(dc2_nm, c.name_id);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              var dcr_m: []const u8 = "DC2:r"; pal.markerWriteInt(dcr_m, c.result);
              if (c.result != 0) {

@@ -38,6 +38,24 @@ gcc -m32 -std=c89 -Wno-pointer-sign \
   -o app
 ```
 
+## Build mud_server (full cycle)
+
+```bash
+cd /workspace/znineeight
+rm -rf out_release && mkdir -p out_release
+./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud.c
+gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
+  /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c \
+  sf/src/include/net_runtime.c -o /tmp/mud
+```
+
+Check error count:
+```bash
+gcc ... 2>&1 | grep -c "error:"
+```
+
 ## Build and Run Tests
 
 ```bash
