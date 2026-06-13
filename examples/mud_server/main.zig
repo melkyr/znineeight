@@ -226,8 +226,7 @@ pub fn main() !void {
 fn processCommand(player: *Player, cmd: Command) []const u8 {
     return switch (cmd) {
         .Look => {
-            const room = rooms[player.room_id];
-            return room.desc;
+            return rooms[player.room_id].desc;
         },
         .Go => |dir| {
             var new_room = player.room_id;

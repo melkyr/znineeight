@@ -1144,6 +1144,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     if (is_main == @intCast(u8, 1) and lir_fn.is_pub == @intCast(u8, 1)) {
         var mn: []const u8 = "main";
         fn_name = mn;
+        lir_fn.return_type = type_mod.TYPE_I32;
     }
     var sc: []const u8 = "/* ";
     bufferedWriterWrite(&emitter.writer, sc);
@@ -2638,7 +2639,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
              var dc2_nm: []const u8 = "DC2:N"; pal.markerWriteInt(dc2_nm, c.name_id);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
              var dcr_m: []const u8 = "DC2:r"; pal.markerWriteInt(dcr_m, c.result);
-             if (c.result != 0) {
+              if (c.return_type != type_mod.TYPE_VOID) {
                 var result = resolveTempName(emitter, c.result);
                 bufferedWriterWrite(&emitter.writer, result);
                 var s: []const u8 = " = ";
