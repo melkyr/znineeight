@@ -1323,13 +1323,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, ec[0])].payload)], e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
                       var e0nl: []const u8 = "\n"; pal.markerWrite(e0nl);
                       }
-                      var dsi: usize = @intCast(usize, 1);
-                     while (dsi + @intCast(usize, 1) < ec.len) : (dsi += @intCast(usize, 1)) {
+                      var dsi: usize = @intCast(usize, 0);
+                      while (dsi + @intCast(usize, 1) < ec.len) : (dsi += @intCast(usize, 1)) {
                          var dsp = store.nodes.items[@intCast(usize, ec[dsi])];
                           var pst_m: []const u8 = "PST:s"; pal.markerWrite(pst_m);
                           var pst_sb: [10]u8 = undefined; var pst_sl = itoa_mod.itoa(dsp.payload, pst_sb[0..]); var pst_ss: usize = @intCast(usize, 9) - @intCast(usize, pst_sl); pal.markerWrite(pst_sb[pst_ss..@intCast(usize, 9)]);
                           var pst_xl: []const u8 = "\n"; pal.markerWrite(pst_xl);
-                          emitInst(self, LirInst{ .print_str = .{ .string_id = dsp.payload } });
+                          var str_id = store.string_values.items[@intCast(usize, dsp.payload)];
+                          emitInst(self, LirInst{ .print_str = .{ .string_id = str_id } });
                      }
                      var args_node = store.nodes.items[@intCast(usize, ec[ec.len - @intCast(usize, 1)])];
                      var arg_ec = ast_mod.astStoreGetExtraChildren(store, args_node.payload);
