@@ -223,9 +223,10 @@ pub const LirLowerer = struct {
     block_terminated: u8,
     module_id: u32,
     module_reg: *ModuleRegistry,
-     intcast_name_id: u32,
-     inttofloat_name_id: u32,
-     print_fn_id: u32,
+    intcast_name_id: u32,
+    inttofloat_name_id: u32,
+    print_fn_id: u32,
+    ptrcast_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -244,6 +245,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
      var inttofloat_id = si_mod.stringInternerIntern(ctx.registry.interner, inttofloat_s);
      var print_s: []const u8 = "print";
      var print_id = si_mod.stringInternerIntern(ctx.registry.interner, print_s);
+    var ptrcast_s: []const u8 = "@ptrCast";
+    var ptrcast_id = si_mod.stringInternerIntern(ctx.registry.interner, ptrcast_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -261,6 +264,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .intcast_name_id = intcast_id,
          .inttofloat_name_id = inttofloat_id,
          .print_fn_id = print_id,
+         .ptrcast_name_id = ptrcast_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -1577,11 +1581,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var elm: []const u8 = "B"; pal.markerWrite(elm);
         if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
+        else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
         else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
         var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
         var ty_node = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
         t_target = type_mod.TYPE_U32;
-        if (ty_node.kind == AstKind.ident_expr) {
+        if (ty_node.kind == AstKind.ptr_type) {
+            var pt_base = store.nodes.items[@intCast(usize, ty_node.child_0)];
+            if (pt_base.kind == AstKind.ident_expr) {
+                var tn_id = store.identifiers.items[@intCast(usize, pt_base.payload)];
+                var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
+                if (tn) |t| { t_target = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, t, false); }
+            }
+        } else if (ty_node.kind == AstKind.many_ptr_type) {
+            var pt_base = store.nodes.items[@intCast(usize, ty_node.child_0)];
+            if (pt_base.kind == AstKind.ident_expr) {
+                var tn_id = store.identifiers.items[@intCast(usize, pt_base.payload)];
+                var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
+                if (tn) |t| { t_target = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, t, false); }
+            }
+        } else if (ty_node.kind == AstKind.ident_expr) {
             var tn_id = store.identifiers.items[@intCast(usize, ty_node.payload)];
             var tn = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
             if (tn) |t| { t_target = t; var tt: []const u8 = "T"; pal.markerWrite(tt); }
@@ -1595,6 +1614,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             } });
         } else if (node.child_0 == self.inttofloat_name_id) {
             emitInst(self, LirInst{ .int_to_float = .{
+                .value = val_temp, .target = t_target, .result = result,
+            } });
+        } else if (node.child_0 == self.ptrcast_name_id) {
+            emitInst(self, LirInst{ .ptr_cast = .{
                 .value = val_temp, .target = t_target, .result = result,
             } });
         }

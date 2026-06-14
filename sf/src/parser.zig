@@ -45,6 +45,9 @@ pub const Parser = struct {
     case_buf_items: [*]u32,
     case_buf_len: usize,
     case_buf_capacity: usize,
+    decl_buf_items: [*]u32,
+    decl_buf_len: usize,
+    decl_buf_capacity: usize,
     builtin_import_id: u32,
     catch_capture: u32,
     expr_depth: u32,
@@ -74,6 +77,9 @@ pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, i
         .case_buf_items = undefined,
         .case_buf_len = @intCast(usize, 0),
         .case_buf_capacity = @intCast(usize, 0),
+        .decl_buf_items = undefined,
+        .decl_buf_len = @intCast(usize, 0),
+        .decl_buf_capacity = @intCast(usize, 0),
         .catch_capture = @intCast(u32, 0),
         .expr_depth = @intCast(u32, 0),
         .builtin_import_id = import_id,
@@ -288,7 +294,12 @@ pub fn parserParsePostfixChain(self: *Parser, base: u32) ParserError!u32 {
     var node = base;
     while (true) {
         var tok = parserPeek(self);
-        if (tok.kind == TokenKind.dot) {
+        if (tok.kind == TokenKind.dot_star) {
+            _ = parserAdvance(self);
+            node = ast_mod.astStoreAddNode(self.store, AstKind.deref, 0,
+                tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+                node, 0, 0, 0);
+        } else if (tok.kind == TokenKind.dot) {
             node = try parserParseDotAccess(self, node);
         } else if (tok.kind == TokenKind.lbracket) {
             node = try parserParseIndexOrSlice(self, node);
@@ -1097,8 +1108,7 @@ pub fn parserEmitErrorNode(self: *Parser, tok: Token, msg: []const u8) u32 {
 }
 
 pub fn parserParseModuleRoot(self: *Parser) ParserError!u32 {
-    var decl_buf: [64]u32 = undefined;
-    var decl_count: usize = 0;
+    self.decl_buf_len = @intCast(usize, 0);
 
     while (parserPeek(self).kind != TokenKind.eof) {
         var decl = parserParseStatement(self) catch {
@@ -1106,18 +1116,16 @@ pub fn parserParseModuleRoot(self: *Parser) ParserError!u32 {
             var err_msg: []const u8 = "unexpected token";
             var err = parserEmitErrorNode(self, tok, err_msg);
             parserSynchronize(self);
-            decl_buf[decl_count] = err;
-            decl_count += 1;
+            u32ArrayListAppendInner(&self.decl_buf_items, &self.decl_buf_len, &self.decl_buf_capacity, self.allocator, err);
             while (parserPeek(self).kind == TokenKind.semicolon) _ = parserAdvance(self);
             continue;
         };
-        decl_buf[decl_count] = decl;
-        decl_count += 1;
+        u32ArrayListAppendInner(&self.decl_buf_items, &self.decl_buf_len, &self.decl_buf_capacity, self.allocator, decl);
     }
 
     var payload: u32 = 0;
-    if (decl_count > 0) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, decl_buf[0..decl_count]);
+    if (self.decl_buf_len > @intCast(usize, 0)) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.decl_buf_items[0..self.decl_buf_len]);
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.module_root, 0, 0, 0, 0, 0, 0, payload);
 }

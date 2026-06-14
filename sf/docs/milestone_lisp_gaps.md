@@ -8,24 +8,26 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 ## 2. Gap Inventory
 
-| # | Subsystem | File | Gap | Severity |
-|---|-----------|------|-----|----------|
-| A1 | Import | `import_resolver.zig:66` | moduleRegistryResolveImports segfault — corrupted shared_store.nodes.items at module 7 | Critical |
-| B1 | Sema | `semantic_analyzer.zig:838` | @ptrCast builtin_call → no name dispatch | High |
-| B2 | Sema | `semantic_analyzer.zig:853` | catch |err| capture not registered | High |
-| C1 | Lowerer | `lower.zig:1576` | @ptrCast builtin_call → no name dispatch | High |
-| C2 | Lowerer | `lower.zig:1622` | catch |err| addLocalDecl missing | High |
-| P0 | Parser | `parser.zig:239` | catch_capture ISOLATED in Parser field, not stored in catch_expr AST node | High |
-| D1 | c89_emit | `c89_emit.zig:2834` | check_error LIR → no C code | Critical |
-| D2 | c89_emit | `c89_emit.zig:2834` | unwrap_error_payload LIR → no C code | Critical |
-| D3 | c89_emit | `c89_emit.zig:2834` | unwrap_error_code LIR → no C code | Medium |
-| D4 | c89_emit | `c89_emit.zig:2834` | check_optional LIR → no C code | Medium |
-| D5 | c89_emit | `c89_emit.zig:2834` | unwrap_optional LIR → no C code | Medium |
-| D6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok LIR → no C code | High |
-| D7 | c89_emit | `c89_emit.zig:2834` | wrap_error_err LIR → no C code | High |
-| D8 | c89_emit | `c89_emit.zig:2834` | ptr_cast LIR → no C code | High |
-| D9 | c89_emit | `c89_emit.zig:2834` | ptr_to_int LIR → no C code | Medium |
-| D10 | c89_emit | `c89_emit.zig:2834` | int_to_ptr LIR → no C code | Medium |
+| # | Subsystem | File | Gap | Severity | Status |
+|---|-----------|------|-----|----------|--------|
+| A1 | Import/Parser | `parser.zig:1100` | decl_buf[64] overflow → AST shared_store corruption | Critical | ✅ |
+| P1 | Parser | `main.zig:29` | Parse error cascade (256), first at `*mod.Type` param | Critical | ❌ |
+| T1.5 | Parser | `parser.zig:1218-1232` | `*Module.Type` not parsed in fn param position | Critical | ❌ |
+| B1 | Sema | `semantic_analyzer.zig:838` | @ptrCast builtin_call → no name dispatch | High | ❌ |
+| B2 | Sema | `semantic_analyzer.zig:853` | catch |err| capture not registered | High | ❌ |
+| C1 | Lowerer | `lower.zig:1576` | @ptrCast builtin_call → no name dispatch | High | ❌ |
+| C2 | Lowerer | `lower.zig:1622` | catch |err| addLocalDecl missing | High | ❌ |
+| P0 | Parser | `parser.zig:239` | catch_capture ISOLATED in Parser field, not stored in catch_expr AST node | High | ❌ |
+| D1 | c89_emit | `c89_emit.zig:2834` | check_error LIR → no C code | Critical | ❌ |
+| D2 | c89_emit | `c89_emit.zig:2834` | unwrap_error_payload LIR → no C code | Critical | ❌ |
+| D3 | c89_emit | `c89_emit.zig:2834` | unwrap_error_code LIR → no C code | Medium | ❌ |
+| D4 | c89_emit | `c89_emit.zig:2834` | check_optional LIR → no C code | Medium | ❌ |
+| D5 | c89_emit | `c89_emit.zig:2834` | unwrap_optional LIR → no C code | Medium | ❌ |
+| D6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok LIR → no C code | High | ❌ |
+| D7 | c89_emit | `c89_emit.zig:2834` | wrap_error_err LIR → no C code | High | ❌ |
+| D8 | c89_emit | `c89_emit.zig:2834` | ptr_cast LIR → no C code | High | ❌ |
+| D9 | c89_emit | `c89_emit.zig:2834` | ptr_to_int LIR → no C code | Medium | ❌ |
+| D10 | c89_emit | `c89_emit.zig:2834` | int_to_ptr LIR → no C code | Medium | ❌ |
 
 ## 3. Task Details
 
@@ -33,26 +35,98 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 ### T1: Fix Import Resolution Segfault
 
-**File:** `sf/src/import_resolver.zig` (moduleRegistryResolveImports)
+**File:** `sf/src/parser.zig` (parserParseModuleRoot), `sf/src/import_resolver.zig` (moduleRegistryResolveImports)
 
-**Root cause (verified 2026-06-14):** GDB shows SIGSEGV at `import_resolver.c:626` — `shared_store->nodes.items[(usize)decls.ptr[di2]]` during phase_SymbolRegistration for module 7 (builtins.zig, 4848 bytes source, 1208 declarations). Crash is in `moduleRegistryResolveImports`, called from `phase_ImportResolution`. 0 lines C output produced. mud_server works (1505 lines).
+**Root cause (verified 2026-06-14):** `parserParseModuleRoot` (parser.zig:1100) used a fixed-size `[64]u32` stack buffer (`decl_buf`) for top-level declarations. Lisp eval.zig (469 lines, 18684 bytes) has >64 top-level declarations → buffer overflowed, writing node indices past the stack array into adjacent stack variables (return addresses, other locals). These garbage values were stored in `extra_children[1733]` → later read by `registerModuleSymbols` as `decls.ptr[67]` = 0xFFA72268 (stack pointer) → crash at `registerDecl` accessing `nodes.items[garbage]`.
 
-The `p_arena_buf` is 4096 bytes per import, reset each iteration. Not an arena size issue.
+**Fix applied:**
+1. Migrated `import_resolver.zig` markers to `markerWriteInt` (removed crash-in-marker at line 626 — `nodes.items[decls[di2]]` was marker debug code, not logic)
+2. Replaced `decl_buf[64]` with dynamic `decl_buf_items/len/capacity` on Parser struct (same pattern as `child_buf_items`, allocates via parser scratch arena)
+3. Moved `registerModuleSymbols` marker code to use `markerWriteInt` (prints node index only, skips `nodes.items` lookup)
 
-**Possible causes:**
-1. `decls.ptr[di2=67]` contains an out-of-bounds node index → `nodes.items[bad_index]` segfaults
-2. `shared_store.nodes.items` pointer corrupted by prior module parsing using same shared store
-3. Multi-module shared AST store state leak between import iterations
+**Verification:** Lisp no longer crashes (EXIT=2 = diagnostics, not segfault). Mud_server: 0 errors, 1505 lines. No file-size limit on top-level declarations.
+
+**Status:** ✅
+
+---
+
+### P1: Diagnose Parse Errors in eval.zig
+
+**File:** `examples/lisp_interpreter_curr/eval.zig`
+
+**Current state (2026-06-14):** After T1 fix, lisp produces 256 diagnostic errors (cap). The very first error is at `main.zig:29:13: error[2000]: bad tok` — parser cannot handle `fn print_value(v: *value_mod.Value) void {`. 9 of 10 lisp files share this failure pattern (only `print_str` with simple `[]const u8` parameter succeeds). No code reaches sema, lowerer, or c89_emit. T2-T8 are blocked until parser succeeds.
 
 **Plan:**
-1. GDB break at `import_resolver.c:626` → print `decls.ptr[67]` value + `shared_store->nodes` state
-2. Check if `decls.ptr[67]` is a valid node index (< nodes.len)
-3. If valid: trace which prior module corrupted `nodes.items` pointer
-4. If invalid: trace how bad node index got into extra_children
+1. Read `eval.zig` at line 69 → identify what token/syntax causes "unexpected token"
+2. Check if the syntax is valid Z98 (e.g., `const`, `try`, `switch`, `@ptrCast`) or lisp-specific (e.g., custom tagged union patterns)
+3. If valid Z98 but parser rejects: fix parser gap
+4. If not in Z98 subset: document as lisp source issue
+5. Repeat for next error until parser produces 0 syntax errors (or meaningful sema errors)
+6. Once parse succeeds, T2-T8 validation can begin
 
-**Reference:** sf/docs/memory_audit_m0.md (shared store pattern), sf/docs/zig0_bootstrap_manual.md §13 (import patterns)
+**Likely offenders (by frequency in lisp source):**
+| Syntax | Count | In Z98 subset? | Parser handling |
+|--------|-------|-----------------|-----------------|
+| `const` | 143x | YES (from b71 parser audit) | `parserParseStatement` routes to `parserParseVarDecl` |
+| `try` | 73x | YES (from b71) | `parserParsePrimary` → `parserParseTryExpr` |
+| `@ptrCast` | 17x | YES (from b71) | `parserParsePrimary` → builtin_call |
+| `switch` | 56x | YES (from b71) | `parserParseSwitchExpr` |
+| `?T` optional type | — | YES (from b71) | `parserParseOptionalType` |
+| `!T` error union type | — | YES | `parserParseType` |
 
-**Status:** ❌
+**Priority:** Critical — blocks all downstream tasks.
+
+**Status:** ❌ (New)
+
+---
+
+### T1.5: Diagnose + Fix `*Module.Type` Parser Gap
+
+**File:** `sf/src/parser.zig` (parserParseFnDecl, parserParseType, parserParseTypeName)
+
+**Root cause (hypothesis, 2026-06-14):** After T1 fix, all 10 lisp files produce 256 parse errors. First error at `main.zig:29:13` — `fn print_value(v: *value_mod.Value) void {`. The parser successfully handles:
+- `fn print_str(s: []const u8) void {` — simple slice type (line 17, works)
+- `const value_mod = @import("value.zig")` — module imports (line 2, works)
+
+But fails at `*value_mod.Value` — pointer-to-module-qualified-name as parameter type. The `parserParseType` chain (`*` → `parserParsePtrType` → `parserParseType` → `parserParseTypeName` → `value_mod`+`.Value` field access) and `parserParseFnDecl` param loop look correct in source. Suspicion: either a subtle interaction between `child_buf` save/restore and nested type parsing, or the `parserParseType`→`parserParseTypeName`→`dot`→`field_access` chain drops a token at the wrong position causing `parserParseFnDecl` line 1232 `parserExpect(rparen)` to see wrong token.
+
+**Cross-reference:** The `switch (v.*)` at line 29 body uses `.*` deref. The dot-star fix (parser.zig:315 `@intCast(u32, @enumToInt(tok.kind)) == ...`) is already applied but rarely tested with `switch` expressions — could be a separate latent gap.
+
+**Objectives:**
+1. GDB at `parserParseFnDecl` line 1221 → verify `parserPeek(self).kind` before/after `parserParseType` on `*value_mod.Value`
+2. Trace parser position through `parserParsePtrType` → `parserParseTypeName` → back to while loop
+3. Identify the exact token that fails at line 1230/1231 (comma skip or rparen exit)
+4. Fix: if in `parserParseType` chain, correct token consumption; if in `parserParseFnDecl` loop, correct exit condition
+
+**Zig0/GDB constraints:**
+- Build: `gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1_dbg`
+- Break method: `break parser.c:LINENO` (find generated C lines via grep)
+- Print token: `p self->pos`, `p tok.kind`, `p self->source_ptr[self->pos]`
+- Minimal reproduction: `fn foo(x: *mod.Type) void {}` (single file, 0 imports)
+
+**Test plan:**
+```bash
+# Build debug
+rm -rf out_release && mkdir -p out_release
+./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1_dbg
+
+# Test: Create minimal file with only the failing pattern
+echo 'const m = @import("module"); fn f(x: *m.T) void {}' > /tmp/t15.zig
+./out_release/zig1 --dump-c89 /tmp/t15.zig 2>&1 | head -20
+# Expected: 0 errors or single parse error on the correct token
+
+# Full lisp test after fix
+./out_release/zig1 --dump-c89 examples/lisp_interpreter_curr/main.zig 2>/tmp/lisp_err.txt
+grep -c "error\[2000\]" /tmp/lisp_err.txt
+# Expected: < 256 (fewer, ideally 0, parse errors)
+
+# Regression
+./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud.c
+gcc -m32 -std=c89 ... 2>&1 | grep -c "error:"  # expect 0
+```
+
+**Status:** ❌ (New)
 
 ---
 
@@ -489,7 +563,8 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 
 | Task | Description | Files | Status |
 |------|-------------|-------|--------|
-| T1 | Parser scratch arena 64→256 | `parser.zig` | ✅ |
+| T1 | Parser decl_buf overflow → shared_store corruption | `parser.zig`, `import_resolver.zig` | ✅ |
+| T1.5 | Diagnose + fix `*Module.Type` fn param parse gap | `parser.zig` | ❌ |
 | T2 | @ptrCast end-to-end | `sema.zig`, `lower.zig`, `c89_emit.zig` | ❌ |
 | T3 | check_error + unwrap_error_payload + unwrap_error_code | `c89_emit.zig` | ❌ |
 | T4 | wrap_error_ok + wrap_error_err | `c89_emit.zig` | ❌ |
