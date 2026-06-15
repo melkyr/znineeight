@@ -10,29 +10,23 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 | # | Subsystem | File | Gap | Severity | Status |
 |---|-----------|------|-----|----------|--------|
-| A1 | Import/Parser | `parser.zig:1100` | decl_buf[64] overflow → AST shared_store corruption | Critical | ✅ |
-| P1 | Parser | `main.zig:29` | Parse error cascade (256), root: `.*` deref → dot_star token gap | Critical | ✅ |
-| T1.5 | Parser | `parser.zig:297-301` | dot_star token not handled in postfix chain → `x.*` universal failure | Critical | ✅ |
-| B1 | Sema | `semantic_analyzer.zig:838` | @ptrCast builtin_call → name dispatch + type resolution | High | ✅ |
-| B2 | Sema | `semantic_analyzer.zig:853` | catch \|err\| capture not registered | High | ❌ |
-| C1 | Lowerer | `lower.zig:1576` | @ptrCast builtin_call → name dispatch + ptr_cast LIR + ptr_type resolution | High | ✅ |
-| C2 | Lowerer | `lower.zig:1622` | catch \|err\| addLocalDecl missing | High | ❌ |
-| C3 | Parser | `parser.zig:381` | catch_capture not save/restored → nested catch corruption | Medium | ❌ |
-| P0 | Parser | `parser.zig:239` | catch_capture ISOLATED in Parser field, not stored in catch_expr AST node | High | ❌ |
-| P2 | Parser | `parser.zig:1221` | `!T` error union as fn return type (fn foo() !void {) | High | ❌ |
-| D1 | c89_emit | `c89_emit.zig:2834` | check_error LIR → no C code | Critical | ✅ |
-| D2 | c89_emit | `c89_emit.zig:2834` | unwrap_error_payload LIR → no C code | Critical | ✅ |
-| D3 | c89_emit | `c89_emit.zig:2834` | unwrap_error_code LIR → no C code | Medium | ✅ |
-| D4 | c89_emit | `c89_emit.zig:2834` | check_optional LIR → no C code | Medium | ✅ |
-| D5 | c89_emit | `c89_emit.zig:2834` | unwrap_optional LIR → no C code | Medium | ✅ |
-| D6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok LIR → no C code | High | ✅ |
-| D7 | c89_emit | `c89_emit.zig:2834` | wrap_error_err LIR → no C code | High | ✅ |
-| D8 | c89_emit | `c89_emit.zig:2834` | ptr_cast LIR → no C code | High | ✅ |
-| D9 | c89_emit/sema/lowerer | `c89_emit.zig:2834` | ptr_to_int LIR — missing 3-layer pipeline (sema+lowerer+c89) | Medium | ✅ |
-| D10 | c89_emit/sema/lowerer | `c89_emit.zig:2834` | int_to_ptr LIR — missing 3-layer pipeline (sema+lowerer+c89) | Medium | ✅ |
-| E1 | c89_emit | `c89_emit.zig:1264-1278` | Single-file --dump-c89 output duplication (module emitted 2×) | High | ❌ |
+| G1 | Parser | `parser.zig:1100` | decl_buf[64] overflow → AST shared_store corruption | Critical | ✅ |
+| G2 | Parser | `parser.zig:297-301` | dot_star token not handled in postfix chain → `x.*` universal failure | Critical | ✅ |
+| G3 | Sema+Lowerer | `sema.zig:838`, `lower.zig:1576` | @ptrCast builtin_call → name dispatch + type resolution + ptr_cast LIR | High | ✅ |
+| G4 | Parser+Sema+Lowerer | `parser.zig:239`, `sema.zig:853`, `lower.zig:1622` | catch \|err\| capture + nested save/restore + addLocalDecl | High | ✅ |
+| G5 | c89_emit | `c89_emit.zig:2834` | check_error + unwrap_error_payload + unwrap_error_code → no C code | Critical | ✅ |
+| G6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok + wrap_error_err → no C code | High | ✅ |
+| G7 | c89_emit | `c89_emit.zig:2834` | check_optional + unwrap_optional → no C code | Medium | ✅ |
+| G8 | c89_emit | `c89_emit.zig:2834` | ptr_cast → no C code | High | ✅ |
+| G9 | Sema+Lowerer+c89 | `sema.zig:873`, `lower.zig:1590`, `c89_emit.zig:2965` | ptr_to_int + int_to_ptr — missing 3-layer pipeline | Medium | ✅ |
+| G10 | c89_emit | `c89_emit.zig:1264` | Single-file --dump-c89 output duplication (module emitted 2×) | High | ❌ |
+| G11 | Parser | `parser.zig:829` | Infix `!` in type parser (T!U, e.g., `LispError!*Value`) | Critical | ❌ |
+| G12 | Parser | `parser.zig:601` | `error{}` in expression position — parserParseErrorLiteral expects `.Foo`, needs `{` delegation | Critical | ❌ |
+| G13 | Parser/Sema | `parser.zig:601` | `error.Foo` literal — parsed end-to-end but needs error set context for sema resolution | High | ❌ |
 
 ## 3. Task Details
+
+**NOTE: Task IDs were renumbered on 2026-06-14. Section headers (T1, T2, T1.5) are legacy. See §5 Progress Tracking for canonical IDs (T1–T11).**
 
 ---
 
@@ -55,81 +49,17 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 ### P1: Diagnose Parse Errors in eval.zig
 
-**File:** `examples/lisp_interpreter_curr/eval.zig`
+**Status: ✅ (Resolved by T2 — dot-star fix)**
 
-**Current state (2026-06-14):** After T1 fix, lisp produces 256 diagnostic errors (cap). The very first error is at `main.zig:29:13: error[2000]: bad tok` — parser cannot handle `fn print_value(v: *value_mod.Value) void {`. 9 of 10 lisp files share this failure pattern (only `print_str` with simple `[]const u8` parameter succeeds). No code reaches sema, lowerer, or c89_emit. T2-T8 are blocked until parser succeeds.
-
-**Plan:**
-1. Read `eval.zig` at line 69 → identify what token/syntax causes "unexpected token"
-2. Check if the syntax is valid Z98 (e.g., `const`, `try`, `switch`, `@ptrCast`) or lisp-specific (e.g., custom tagged union patterns)
-3. If valid Z98 but parser rejects: fix parser gap
-4. If not in Z98 subset: document as lisp source issue
-5. Repeat for next error until parser produces 0 syntax errors (or meaningful sema errors)
-6. Once parse succeeds, T2-T8 validation can begin
-
-**Likely offenders (by frequency in lisp source):**
-| Syntax | Count | In Z98 subset? | Parser handling |
-|--------|-------|-----------------|-----------------|
-| `const` | 143x | YES (from b71 parser audit) | `parserParseStatement` routes to `parserParseVarDecl` |
-| `try` | 73x | YES (from b71) | `parserParsePrimary` → `parserParseTryExpr` |
-| `@ptrCast` | 17x | YES (from b71) | `parserParsePrimary` → builtin_call |
-| `switch` | 56x | YES (from b71) | `parserParseSwitchExpr` |
-| `?T` optional type | — | YES (from b71) | `parserParseOptionalType` |
-| `!T` error union type | — | YES | `parserParseType` |
-
-**Priority:** Critical — blocks all downstream tasks.
-
-**Status:** ❌ (New)
+**[Removed — covered by T2 below]**
 
 ---
 
 ### T1.5: Diagnose + Fix `*Module.Type` Parser Gap
 
-**File:** `sf/src/parser.zig` (parserParseFnDecl, parserParseType, parserParseTypeName)
+**Status: ✅ (Resolved — root cause was dot_star lexer token, not *Module.Type)**
 
-**Root cause (hypothesis, 2026-06-14):** After T1 fix, all 10 lisp files produce 256 parse errors. First error at `main.zig:29:13` — `fn print_value(v: *value_mod.Value) void {`. The parser successfully handles:
-- `fn print_str(s: []const u8) void {` — simple slice type (line 17, works)
-- `const value_mod = @import("value.zig")` — module imports (line 2, works)
-
-But fails at `*value_mod.Value` — pointer-to-module-qualified-name as parameter type. The `parserParseType` chain (`*` → `parserParsePtrType` → `parserParseType` → `parserParseTypeName` → `value_mod`+`.Value` field access) and `parserParseFnDecl` param loop look correct in source. Suspicion: either a subtle interaction between `child_buf` save/restore and nested type parsing, or the `parserParseType`→`parserParseTypeName`→`dot`→`field_access` chain drops a token at the wrong position causing `parserParseFnDecl` line 1232 `parserExpect(rparen)` to see wrong token.
-
-**Cross-reference:** The `switch (v.*)` at line 29 body uses `.*` deref. The dot-star fix (parser.zig:315 `@intCast(u32, @enumToInt(tok.kind)) == ...`) is already applied but rarely tested with `switch` expressions — could be a separate latent gap.
-
-**Objectives:**
-1. GDB at `parserParseFnDecl` line 1221 → verify `parserPeek(self).kind` before/after `parserParseType` on `*value_mod.Value`
-2. Trace parser position through `parserParsePtrType` → `parserParseTypeName` → back to while loop
-3. Identify the exact token that fails at line 1230/1231 (comma skip or rparen exit)
-4. Fix: if in `parserParseType` chain, correct token consumption; if in `parserParseFnDecl` loop, correct exit condition
-
-**Zig0/GDB constraints:**
-- Build: `gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1_dbg`
-- Break method: `break parser.c:LINENO` (find generated C lines via grep)
-- Print token: `p self->pos`, `p tok.kind`, `p self->source_ptr[self->pos]`
-- Minimal reproduction: `fn foo(x: *mod.Type) void {}` (single file, 0 imports)
-
-**Test plan:**
-```bash
-# Build debug
-rm -rf out_release && mkdir -p out_release
-./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1_dbg
-
-# Test: Create minimal file with only the failing pattern
-echo 'const m = @import("module"); fn f(x: *m.T) void {}' > /tmp/t15.zig
-./out_release/zig1 --dump-c89 /tmp/t15.zig 2>&1 | head -20
-# Expected: 0 errors or single parse error on the correct token
-
-# Full lisp test after fix
-./out_release/zig1 --dump-c89 examples/lisp_interpreter_curr/main.zig 2>/tmp/lisp_err.txt
-grep -c "error\[2000\]" /tmp/lisp_err.txt
-# Expected: < 256 (fewer, ideally 0, parse errors)
-
-# Regression
-./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud.c
-gcc -m32 -std=c89 ... 2>&1 | grep -c "error:"  # expect 0
-```
-
-**Status:** ❌ (New)
+**[Removed — covered by T2 below]**
 
 ---
 
@@ -599,53 +529,7 @@ grep "unsigned int" /tmp/t6a.c
 # Expect: zT_N = (unsigned int)zT_M;
 ```
 
-**Status:** ❌ (New)
-
-### T7: catch |err| Capture
-
-**Files:** `sf/src/parser.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`
-
-**Root cause:** Parser stores `payload_capture` node in `self.catch_capture` (parser field, line 49) but NEVER copies it into the `catch_expr` AST node. parserAddBinary (line 239) creates catch_expr with `child_0=lhs, child_1=rhs, child_2=0`. The capture is isolated in the parser struct and overwritten by next catch.
-
-**Plan T7a — Parser fix (parser.zig parserAddBinary line 228-239):**
-```zig
-// In parserAddBinary, for catch_expr case:
-TokenKind.kw_catch => { kind = AstKind.catch_expr; found = 1; },
-// ...
-// At line 239, instead of hardcoded 0 for child_2:
-if (kind == AstKind.catch_expr) {
-    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, self.catch_capture, 0);
-} else {
-    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, 0, 0);
-}
-```
-This stores `child_2 = payload_capture_node` (0 if no `|err|` syntax).
-
-**Plan T7b — Sema fix (sema.zig catch_expr handler line 853):**
-```zig
-// resolveExpr catch_expr handler (line 853), after resolving child_0:
-result = semanticAnalyzerResolveExpr(self, node.child_0);
-// NEW: check for capture
-if (node.child_2 != 0) {
-    var capture_node = self.store.nodes.items[@intCast(usize, node.child_2)];
-    // capture_node.payload = name_id
-    // Register as local_decl — error codes are u32 in Z98 subset
-    if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-    self.local_decl_names[self.local_decl_count] = capture_node.payload;
-    self.local_decl_types[self.local_decl_count] = type_mod.TYPE_U32;
-    self.local_decl_count += @intCast(usize, 1);
-}
-```
-
-**Plan T7c — Lowerer fix (lower.zig catch_expr handler line 1622):**
-```zig
-// After lhs_temp = lowerExpr(child_0), before check_error:
-if (node.child_2 != 0) {
-    var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
-    // Register capture in lowerer locals (same as for/switch capture)
-    addLocalDecl(self, capture_node.payload, TYPE_U32, 0, 0); // error code type = u32
-}
-```
+**Status:** ✅ (Fixed incidentally — single-file compilation no longer produces duplicates. Verified with empty + var_decl tests: int main(void) appears 1×, Module: output appears 1×.)
 
 ---
 
@@ -751,6 +635,127 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/mud_t75.
 
 ---
 
+### T10: Remaining Lisp Parse Gaps (G11, G12, G13)
+
+**Files:** `sf/src/parser.zig`, `sf/src/token.zig`, `sf/src/ast.zig`
+
+**Root cause (2026-06-14):** After T1-T8, 160 parse errors remain across all 10 lisp files. All are parser-level `error[2000]`. Three distinct parse gaps:
+
+| Gap | Source pattern | Example | Files affected |
+|:---|:---|:---|:---|
+| G11 | `!T` error union fn return type | `fn foo() util.LispError!*Value {` | 8/10 files |
+| G12 | `error {}` error set declaration | `pub const LispError = error { OutOfMemory, ... }` | util.zig:1 |
+| G13 | `error.Foo` error set member literal | `return error.NotAnInt;` | 6+ files (73 uses) |
+
+**Execution order:** G12 first (LispError must exist), then G11 (all functions need it), then G13 (return statements need it).
+
+---
+
+**Plan T10a — G12: Error set declaration (`parser.zig`, `parserParseErrorLiteral` line 601)**
+
+**Prerequisites (all verified ✅):**
+- `TokenKind.kw_error` exists at token.zig:82
+- `AstKind.error_set_decl` exists at ast.zig:11
+- `parserParseErrorSetDecl` (parser.zig:931) parses `error { A, B }` → `error_set_decl` AST node with member name_ids in `payload`
+- `parserParseErrorLiteral` (parser.zig:601) currently expects `error.Foo` form → creates `error_literal` node
+
+**Root cause:** In expression context (`const X = error { ... }`), `parserParsePrimary` (line 272) dispatches `kw_error` → `parserParseErrorLiteral`. This function always expects `.identifier` next (line 603: `try parserExpect(self, TokenKind.dot)`). When `error` is followed by `{` (error set declaration in expression position), the dot expectation fails → parse error.
+
+**Fix (parser.zig:601):** In `parserParseErrorLiteral`, BEFORE `parserExpect(TokenKind.dot)`, add:
+```zig
+if (parserPeek(self).kind == TokenKind.lbrace) {
+    return parserParseErrorSetDecl(self);
+}
+```
+This delegates `error { ... }` to the existing `parserParseErrorSetDecl` handler. After this change, `parserParseErrorLiteral` handles both `error.Foo` (existing) and `error { ... }` (via delegation).
+
+**Resolution:** `const LispError = error { ... }` — the `error_set_decl` AST node flows through `resolveExpr` (sema.zig:920) which returns `TYPE_TYPE` for type-expression nodes. `resolveAllFnTypes` (main.zig) resolves the named type via `typeRegistryRegisterNamedType` → type registry gets `error_set_type` entry. Downstream sema/lowerer already handle `error_set_decl` and `error_set_type`.
+
+---
+
+**Plan T10b — G11: Infix `!` error union return type (`parser.zig`, `parserParseType` line 817)**
+
+**Prerequisites (all verified ✅):**
+- `TokenKind.bang` (`!`) exists at token.zig:25
+- `AstKind.error_union_type` exists at ast.zig:91
+- `parserParseErrorUnionType` (parser.zig:890) handles PREFIX `!T` form only — advances `!`, calls `parserParseType`, wraps in `error_union_type` with `child_0 = payload_type`
+- `parserParseType` (parser.zig:817-829) dispatches prefix operators (`*`, `[]`, `?`, `!`, `fn`, `error`, `struct`, `enum`, `union`) then falls through to `parserParseTypeName`
+
+**Root cause:** The `!` in `util.LispError!*Value` appears AFTER the error set type (INFIX), not before (PREFIX). `parserParseType` parses `util.LispError` via `parserParseTypeName` and returns. The `!` is left as the next unconsumed token. `parserParseFnDecl` expects `;` or `{` next → sees `!` → parse error.
+
+**Fix (parser.zig:829, after parserParseTypeName):** Add infix `!` handling. After parsing the base type (via `parserParseTypeName`), if the next token is `bang`, consume it, parse the payload type, and wrap both in `error_union_type`:
+```zig
+pub fn parserParseType(self: *Parser) ParserError!u32 {
+    // ... existing prefix checks (lines 819-828) ...
+    var base = try parserParseTypeName(self);
+    if (parserPeek(self).kind == TokenKind.bang) {
+        _ = parserAdvance(self);
+        var payload = try parserParseType(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+            base, payload, 0, 0);
+        // child_0 = error_set_type (e.g. util.LispError)
+        // child_1 = payload_type    (e.g. *value_mod.Value)
+    }
+    return base;
+}
+```
+
+**Node structure change:** `error_union_type` currently uses only `child_0 = payload_type`. After this change:
+- `child_0` = error set type expression (the left side of `!`)
+- `child_1` = payload type expression (the right side of `!`)
+- `resolveTypeExprDepth` (main.zig:575) must be updated to resolve the error union via `typeRegistryGetOrCreateErrorUnion(child_0_resolved_type, child_1_resolved_type)` instead of just returning `child_0` stripped
+
+This handles `!` in ALL type positions — return types, parameters, var annotations, not just fn return position.
+
+---
+
+**Plan T10c — G13: `error.Foo` error set member literal (`parser.zig`, `semantic_analyzer.zig`, `lower.zig`)**
+
+**Prerequisites (all verified ✅):**
+- `AstKind.error_literal` exists at ast.zig:21
+- `parserParseErrorLiteral` (parser.zig:601) parses `error.Foo` → `error_literal` node with `payload = name_id`
+- Sema handles `error_literal` at sema.zig:817
+- Lowerer handles `error_literal` at lower.zig:597
+
+**Root cause analysis:** `error.Foo` IS already parsed end-to-end. The `parserParseErrorLiteral` function reads `error`, expects `.`, reads identifier, creates `error_literal` node. Sema and lowerer both have handlers. However, whether `error.NotAnInt` correctly resolves to the error set TYPE depends on whether `LispError` (the `error {}` declaration from G12) is registered in the type registry BEFORE any `error.NotAnInt` usage is resolved.
+
+**Execution order matters:** G12 (error set declaration) MUST complete first so the error set type exists in the registry. Then `error.NotAnInt` expressions can resolve the `.NotAnInt` variant against that error set's field list. The sema `error_literal` handler may need to look up which error set type the `error` keyword refers to — this likely requires passing context (the function's return type tells you which error set is expected).
+
+**Potential secondary fix (after G12+G11):** If `error.NotAnInt` doesn't resolve automatically, the sema may need the same `current_switch_cond_tu` pattern used for tagged union switch prong enum_literals: in a function whose return type is `LispError!T`, set `current_error_set = LispError` so `error.NotAnInt` resolves to the variant index within `LispError`.
+
+---
+
+**Test plan:**
+```bash
+# G12: error set declaration (expression context)
+echo 'error { OutOfMemory, NotAnInt };' > /tmp/t10a.zig
+./out_release/zig1 --dump-c89 /tmp/t10a.zig 2>&1 | grep -c "error\[2000\]"  # expect 0
+
+# G12: error set as const init
+echo 'const E = error { A, B };' > /tmp/t10a2.zig
+./out_release/zig1 --dump-c89 /tmp/t10a2.zig 2>&1 | grep -c "error\[2000\]"  # expect 0
+
+# G11: infix !T return type
+echo 'const E = error { A, B }; fn f() E!void {}' > /tmp/t10b.zig
+./out_release/zig1 --dump-c89 /tmp/t10b.zig 2>&1 | grep -c "error\[2000\]"  # expect 0 (after G12+G11 fix)
+
+# G13: error.Foo literal
+echo 'const E = error { A, B }; fn f() void { _ = error.A; }' > /tmp/t10c.zig
+./out_release/zig1 --dump-c89 /tmp/t10c.zig 2>&1 | grep -c "error\[2000\]"  # expect 0 (after G12 only)
+
+# Full lisp regression
+./out_release/zig1 --dump-c89 examples/lisp_interpreter_curr/main.zig 2>&1 | grep -c "error\[2000\]"
+# Target: < 160 (some parse errors eliminated, maybe sema/lowerer errors appear)
+
+# mud/man/gol regression
+./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud.c
+gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c sf/src/include/net_runtime.c -o /tmp/mud_app 2>&1 | grep -c "error:"  # must be 0
+```
+
+**Status:** ❌ (Planned — prerequisites verified, design complete. Execution order: G12→G11→G13)
+
+---
+
 ### T8: Integration Test
 
 **Target:** Lisp interpreter compiles (0 errors), runs (produces output), mud_server regression (0 errors).
@@ -818,14 +823,15 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | Task | Description | Files | Status |
 |------|-------------|-------|--------|
 | T1 | Parser decl_buf overflow → shared_store corruption | `parser.zig`, `import_resolver.zig` | ✅ |
-| T1.5 | Dot-star parser gap → `switch(v.*)` and `.*` deref universal failure | `parser.zig` | ✅ |
-| T2 | @ptrCast end-to-end (sema dispatch + lowerer LIR + c89_emit codegen) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
-| T3 | check_error + unwrap_error_payload + unwrap_error_code handlers | `c89_emit.zig` | ✅ |
-| T4 | wrap_error_ok + wrap_error_err | `c89_emit.zig` | ❌ |
-| T5 | check_optional + unwrap_optional | `c89_emit.zig` | ❌ |
-| T6 | @ptrToInt/@intToPtr end-to-end (sema+lowerer+c89) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
-| T7 | catch \|err\| capture + nested save/restore | `parser.zig`, `sema.zig`, `lower.zig` | ❌ |
-| T7.5 | Fix single-file --dump-c89 output duplication | `c89_emit.zig` | ❌ |
-| T8 | Integration test (lisp + mud/man/gol regression) | All | ❌ |
+| T2 | Dot-star parser gap → `switch(v.*)` and `.*` deref universal failure | `parser.zig` | ✅ |
+| T3 | @ptrCast end-to-end (sema dispatch + lowerer LIR + c89_emit codegen) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
+| T4 | check_error + unwrap_error_payload + unwrap_error_code handlers | `c89_emit.zig` | ✅ |
+| T5 | wrap_error_ok + wrap_error_err handlers | `c89_emit.zig` | ✅ |
+| T6 | check_optional + unwrap_optional handlers | `c89_emit.zig` | ✅ |
+| T7 | @ptrToInt/@intToPtr end-to-end (sema+lowerer+c89) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
+| T8 | catch \|err\| capture + nested save/restore | `parser.zig`, `sema.zig`, `lower.zig` | ✅ |
+| T9 | Fix single-file --dump-c89 output duplication | `c89_emit.zig` | ✅ |
+| T10 | Remaining lisp parse gaps: `!T` return type, `error{}` decl, `error.Foo` literal | `parser.zig`, `token.zig`, `ast.zig` | ❌ |
+| T11 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing
