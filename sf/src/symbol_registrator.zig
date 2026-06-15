@@ -209,11 +209,12 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         var rf_msg: []const u8 = "Rf"; pal_mod.markerWrite(rf_msg);
                     }
                 }
-                if (init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.enum_decl or init_node.kind == AstKind.union_decl) {
+                if (init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.enum_decl or init_node.kind == AstKind.union_decl or init_node.kind == AstKind.error_set_decl) {
                     var type_kind: TypeKind = switch (init_node.kind) {
                         AstKind.struct_decl => TypeKind.struct_type,
                         AstKind.enum_decl => TypeKind.enum_type,
                         AstKind.union_decl => if ((@intCast(u16, init_node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
+                        AstKind.error_set_decl => TypeKind.error_set_type,
                         else => TypeKind.void_type,
                     };
                     sym_type_id = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);

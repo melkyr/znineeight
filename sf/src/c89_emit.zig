@@ -444,11 +444,11 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "signed char"; return s; }
     if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "short"; return s; }
     if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "int"; return s; }
-    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "z64"; return s; }
+    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "long long"; return s; }
     if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char"; return s; }
     if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "unsigned short"; return s; }
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int"; return s; }
-    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "zu64"; return s; }
+    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "unsigned long long"; return s; }
     if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }

@@ -1646,52 +1646,80 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             return result;
     } else if (node.kind == AstKind.try_expr) {
         var inner_temp = lowerExpr(self, node.child_0);
-        var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
-        emitInst(self, LirInst{ .check_error = .{ .value = inner_temp, .result = is_err_temp } });
-        var err_bb = createBlock(self);
-        var ok_bb = createBlock(self);
-        var join_bb = createBlock(self);
-        emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
-        self.current_bb = err_bb;
-        expandDefers(self, @intCast(u32, 0), @intCast(u8, 1));
-        emitInst(self, LirInst{ .ret = inner_temp });
-        self.block_terminated = @intCast(u8, 1);
-        self.current_bb = ok_bb;
-        var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
-        emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = inner_temp, .result = result } });
-        if (self.block_terminated == @intCast(u8, 0)) {
-            emitInst(self, LirInst{ .jump = join_bb });
+        var eu_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+        {
+            var eu_type = getTempType(self, inner_temp);
+            if (eu_type != type_mod.TYPE_UNDEFINED) {
+                var ty = self.ctx.registry.types_items[@intCast(usize, eu_type)];
+                if (ty.kind == type_mod.TypeKind.error_union_type) {
+                    eu_box[0] = eu_type;
+                }
+            }
         }
-        self.current_bb = join_bb;
-        return result;
+        if (eu_box[0] != type_mod.TYPE_UNDEFINED) {
+            var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
+            emitInst(self, LirInst{ .check_error = .{ .value = inner_temp, .result = is_err_temp } });
+            var err_bb = createBlock(self);
+            var ok_bb = createBlock(self);
+            var join_bb = createBlock(self);
+            emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
+            self.current_bb = err_bb;
+            expandDefers(self, @intCast(u32, 0), @intCast(u8, 1));
+            emitInst(self, LirInst{ .ret = inner_temp });
+            self.block_terminated = @intCast(u8, 1);
+            self.current_bb = ok_bb;
+            var result = nextTemp(self, eu_box[0]);
+            emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = inner_temp, .result = result } });
+            if (self.block_terminated == @intCast(u8, 0)) {
+                emitInst(self, LirInst{ .jump = join_bb });
+            }
+            self.current_bb = join_bb;
+            return result;
+        } else {
+            return inner_temp;
+        }
     } else if (node.kind == AstKind.catch_expr) {
         var lhs_temp = lowerExpr(self, node.child_0);
         if (node.child_2 != 0) {
             var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
             addLocalDecl(self, capture_node.payload, type_mod.TYPE_U32, @intCast(u32, 0));
         }
-        var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
-        emitInst(self, LirInst{ .check_error = .{ .value = lhs_temp, .result = is_err_temp } });
-        var err_bb = createBlock(self);
-        var ok_bb = createBlock(self);
-        var join_bb = createBlock(self);
-        emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
-        var join_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
-        self.current_bb = err_bb;
-        var err_val = lowerExpr(self, node.child_1);
-        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
-        if (self.block_terminated == @intCast(u8, 0)) {
-            emitInst(self, LirInst{ .jump = join_bb });
+        var eu_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+        {
+            var eu_type_catch = getTempType(self, lhs_temp);
+            if (eu_type_catch != type_mod.TYPE_UNDEFINED) {
+                var ty_c = self.ctx.registry.types_items[@intCast(usize, eu_type_catch)];
+                if (ty_c.kind == type_mod.TypeKind.error_union_type) {
+                    eu_box[0] = eu_type_catch;
+                }
+            }
         }
-        self.current_bb = ok_bb;
-        var ok_val = nextTemp(self, type_mod.TYPE_UNDEFINED);
-        emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
-        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = ok_val } });
-        if (self.block_terminated == @intCast(u8, 0)) {
-            emitInst(self, LirInst{ .jump = join_bb });
+        if (eu_box[0] != type_mod.TYPE_UNDEFINED) {
+            var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
+            emitInst(self, LirInst{ .check_error = .{ .value = lhs_temp, .result = is_err_temp } });
+            var err_bb = createBlock(self);
+            var ok_bb = createBlock(self);
+            var join_bb = createBlock(self);
+            emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
+            var join_temp = nextTemp(self, eu_box[0]);
+            self.current_bb = err_bb;
+            var err_val = lowerExpr(self, node.child_1);
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
+            if (self.block_terminated == @intCast(u8, 0)) {
+                emitInst(self, LirInst{ .jump = join_bb });
+            }
+            self.current_bb = ok_bb;
+            var ok_val = nextTemp(self, eu_box[0]);
+            emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = ok_val } });
+            if (self.block_terminated == @intCast(u8, 0)) {
+                emitInst(self, LirInst{ .jump = join_bb });
+            }
+            self.current_bb = join_bb;
+            return join_temp;
+        } else {
+            return lhs_temp;
         }
-        self.current_bb = join_bb;
-        return join_temp;
     } else if (node.kind == AstKind.orelse_expr) {
         var lhs_temp = lowerExpr(self, node.child_0);
         var has_val_temp = nextTemp(self, type_mod.TYPE_U8);

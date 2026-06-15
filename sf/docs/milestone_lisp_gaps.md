@@ -28,6 +28,8 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 | G16 | Lowerer/c89 | `lower.zig`/`c89_emit.zig:2999` | `decl_local` LIR not emitted for all `addLocalDecl` names → 94 undeclared C identifiers | High | ❌ |
 | G17 | c89_emit | `c89_emit.zig:350-438` | `i64`/`u64` types emit as `z64`/`zu64` → unknown type name in C89 | Medium | ❌ |
 | G18 | Sema/Lowerer | `sema.zig`/`lower.zig` | Coercion chain missing for error union patterns (`return try`, `return error.Foo`) | High | ❌ |
+| G19 | c89_emit | `c89_emit.zig:1264` | Multi-module output duplication — functions emitted 2-3× (T9 regression) | Critical | ❌ |
+| G20 | Lowerer | `lower.zig:3117` | Lowerer `func.return_type` still TYPE_VOID despite RTT having error union TypeId | Critical | ❌ |
 
 ## 3. Task Details
 
@@ -787,7 +789,7 @@ echo 'const E = error { A, B }; fn f() E!void {}' > /tmp/t11.zig
 ./out_release/zig1 --dump-c89 /tmp/t11.zig 2>/dev/null | grep "void f"  # should see return type as error_union struct, not void
 ```
 
-**Status:** ❌
+**Status:** ✅ (Completed 2026-06-14. Two fixes: resolveTypeExprDepth resolves child_0+child_1 → getOrCreateErrorUnion; symbol_registrator.zig added error_set_decl to named-type registration. RTR:n5t22 confirms TypeId resolves. Lisp: 0→2505 GCC errors — cascade exposes T12-T18. Mud/man/gol: 0 regressions.)
 
 ---
 
@@ -1009,11 +1011,13 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T8 | catch \|err\| capture + nested save/restore | `parser.zig`, `sema.zig`, `lower.zig` | ✅ |
 | T9 | Fix single-file --dump-c89 output duplication | `c89_emit.zig` | ✅ |
 | T10 | Remaining lisp parse gaps: `!T` return type, `error{}` decl, `error.Foo` literal | `parser.zig`, `token.zig`, `ast.zig` | ✅ |
-| T11 | Error union fn return type via resolveAllFnTypes (G14) | `main.zig` | ❌ |
+| T11 | Error union fn return type via resolveAllFnTypes + symbol_reg error_set_decl (G14) | `main.zig`, `symbol_registrator.zig` | ✅ |
 | T12 | Lowerer error union type propagation for try/catch (G15) | `lower.zig` | ❌ |
 | T13 | decl_local emission pipeline — named locals in error union fns (G16) | `lower.zig`, `c89_emit.zig` | ❌ |
 | T14 | i64/u64 C89 typedefs — z64/zu64 → long long (G17) | `c89_emit.zig` | ❌ |
 | T15 | Coercion chain for error union patterns (G18) | `sema.zig` | ❌ |
 | T16 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
+| T17 | Multi-module output duplication — functions emitted 2-3× (G19, T9 regression) | `c89_emit.zig` | ❌ |
+| T18 | Lowerer `func.return_type` not propagated — still TYPE_VOID (G20) | `lower.zig` | ❌ |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing

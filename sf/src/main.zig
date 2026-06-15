@@ -327,6 +327,8 @@ fn resolveAllFnTypes(ctx: *CompilerContext) void {
                 var rft_rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
                 if (rft_proto.return_type_node != 0) {
                     var rft_rtype = resolveTypeExpr(ctx, rft_proto.return_type_node);
+                    var rtrm: []const u8 = "RTR:n"; pal.markerWriteInt(rtrm, rft_proto.return_type_node);
+                    var rtrtm: []const u8 = "t"; pal.markerWriteInt(rtrtm, rft_rtype);
                     if (rft_rtype != type_mod.TYPE_UNDEFINED) {
                         rft_rt_box[0] = rft_rtype;
                         resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_proto.return_type_node, rft_rtype);
@@ -573,7 +575,10 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
             return child_type;
         }
         if (node.kind == AstKind.error_union_type) {
-            return child_type;
+            var err_set_type = resolveTypeExpr(ctx, node.child_0);
+            var payload_type = resolveTypeExpr(ctx, node.child_1);
+            if (err_set_type == type_mod.TYPE_UNDEFINED or payload_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+            return type_mod.typeRegistryGetOrCreateErrorUnion(ctx.typereg, payload_type, err_set_type);
         }
         if (node.kind == AstKind.array_type) {
             var t0m: []const u8 = "T0"; pal.markerWrite(t0m);
