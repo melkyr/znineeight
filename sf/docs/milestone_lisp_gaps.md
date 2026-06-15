@@ -19,10 +19,15 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 | G7 | c89_emit | `c89_emit.zig:2834` | check_optional + unwrap_optional → no C code | Medium | ✅ |
 | G8 | c89_emit | `c89_emit.zig:2834` | ptr_cast → no C code | High | ✅ |
 | G9 | Sema+Lowerer+c89 | `sema.zig:873`, `lower.zig:1590`, `c89_emit.zig:2965` | ptr_to_int + int_to_ptr — missing 3-layer pipeline | Medium | ✅ |
-| G10 | c89_emit | `c89_emit.zig:1264` | Single-file --dump-c89 output duplication (module emitted 2×) | High | ❌ |
-| G11 | Parser | `parser.zig:829` | Infix `!` in type parser (T!U, e.g., `LispError!*Value`) | Critical | ❌ |
-| G12 | Parser | `parser.zig:601` | `error{}` in expression position — parserParseErrorLiteral expects `.Foo`, needs `{` delegation | Critical | ❌ |
-| G13 | Parser/Sema | `parser.zig:601` | `error.Foo` literal — parsed end-to-end but needs error set context for sema resolution | High | ❌ |
+| G10 | c89_emit | `c89_emit.zig:1264` | Single-file --dump-c89 output duplication (module emitted 2×) | High | ✅ |
+| G11 | Parser | `parser.zig:829` | Infix `!` in type parser (T!U, e.g., `LispError!*Value`) | Critical | ✅ |
+| G12 | Parser | `parser.zig:601` | `error{}` in expression position — parserParseErrorLiteral expects `.Foo`, needs `{` delegation | Critical | ✅ |
+| G13 | Parser/Sema | `parser.zig:601` | `error.Foo` literal — parsed end-to-end but needs error set context for sema resolution | High | ✅ |
+| G14 | Sema | `main.zig:575` | `resolveAllFnTypes` strips error union → fn return type is `void` not `!T` | Critical | ❌ |
+| G15 | Lowerer | `lower.zig:1602-1621` | `try`/`catch` error union temps get `TYPE_VOID` — coercion chain broken | Critical | ❌ |
+| G16 | Lowerer/c89 | `lower.zig`/`c89_emit.zig:2999` | `decl_local` LIR not emitted for all `addLocalDecl` names → 94 undeclared C identifiers | High | ❌ |
+| G17 | c89_emit | `c89_emit.zig:350-438` | `i64`/`u64` types emit as `z64`/`zu64` → unknown type name in C89 | Medium | ❌ |
+| G18 | Sema/Lowerer | `sema.zig`/`lower.zig` | Coercion chain missing for error union patterns (`return try`, `return error.Foo`) | High | ❌ |
 
 ## 3. Task Details
 
@@ -752,11 +757,183 @@ echo 'const E = error { A, B }; fn f() void { _ = error.A; }' > /tmp/t10c.zig
 gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c sf/src/include/net_runtime.c -o /tmp/mud_app 2>&1 | grep -c "error:"  # must be 0
 ```
 
-**Status:** ❌ (Planned — prerequisites verified, design complete. Execution order: G12→G11→G13)
+**Status:** ✅ (Completed 2026-06-14 — 0 parse errors across all 10 lisp files, 3 regressions clean)
 
 ---
 
-### T8: Integration Test
+### T11: Error union fn return type — resolveAllFnTypes (G14, contributes to C2+C1)
+
+**Files:** `sf/src/main.zig` (resolveAllFnTypes, resolveTypeExprDepth)
+
+**Root cause:** `resolveTypeExprDepth` (main.zig:575) handles `error_union_type` by returning only `child_type` (child_0 = payload). This discards the error set from `T!U` → function return type resolves to `U` only, not the error union. Downstream: sema `resolveFnCall` return type, lowerer `func.return_type`, and c89_emit all see `void`/`u8` instead of `error_union_type`.
+
+**Prerequisites verified:**
+- `AstKind.error_union_type` stores `child_0` = error set type expr, `child_1` = payload type expr (from T10b fix)
+- `typeRegistryGetOrCreateErrorUnion` exists at type_registry.zig:393 — creates `error_union_type` TypeId with `EuPayload{payload, error_set}`
+
+**Fix (main.zig:575):**
+```zig
+if (node.kind == AstKind.error_union_type) {
+    var err_set_type = resolveTypeExpr(ctx, node.child_0);
+    var payload_type = resolveTypeExpr(ctx, node.child_1);
+    return type_mod.typeRegistryGetOrCreateErrorUnion(ctx.typereg, payload_type, err_set_type);
+}
+```
+Currently it does `return child_type` where `child_type = resolveTypeExpr(child_0)` — that's the PAYLOAD when old node structure had `child_0 = payload` only. After T10b, `child_0 = error_set, child_1 = payload`. Must resolve both and call `getOrCreateErrorUnion`.
+
+**Verification:**
+```bash
+echo 'const E = error { A, B }; fn f() E!void {}' > /tmp/t11.zig
+./out_release/zig1 --dump-c89 /tmp/t11.zig 2>/dev/null | grep "void f"  # should see return type as error_union struct, not void
+```
+
+**Status:** ❌
+
+---
+
+### T12: Lowerer error union type propagation (G15, contributes to C1+C7)
+
+**Files:** `sf/src/lower.zig` (try_expr, catch_expr handlers)
+
+**Root cause:** `try_expr` (lower.zig:1602) and `catch_expr` (lower.zig:1667) emit `check_error`/`unwrap_error_payload` on the inner value but the result temps are created with `TYPE_UNDEFINED` or wrong types. The error union type from sema's RTT is not propagated to the hoisted temps. c89_emit handlers (from T4) see wrong base type → emit `.is_error`/`.data` on non-error-union struct → 54+54 GCC errors.
+
+**Prerequisites verified:**
+- T4: c89_emit handlers for `check_error`, `unwrap_error_payload`, `unwrap_error_code` exist ✅
+- T5: `wrap_error_ok`, `wrap_error_err` handlers exist ✅
+- T11: `resolveAllFnTypes` returns correct error union TypeId (pending)
+- `LirInst` types: `.check_error`, `.unwrap_error_payload`, `.unwrap_error_code` in lir.zig
+
+**Fix (lower.zig:1602, try_expr):**
+```zig
+// After inner_temp = lowerExpr(child_0), determine error union base type:
+var eu_type = getTempType(self, inner_temp);
+var err_base: u32 = type_mod.TYPE_U8;  // fallback for non-error-union
+if (eu_type != type_mod.TYPE_UNDEFINED) {
+    var ty = self.ctx.registry.types_items[@intCast(usize, eu_type)];
+    if (ty.kind == type_mod.TypeKind.error_union_type) {
+        err_base = eu_type;
+    }
+}
+var is_err_temp = nextTemp(self, err_base);
+emitInst(self, LirInst{ .check_error = .{ .value = lhs_temp, .result = is_err_temp } });
+// ... branch, err BB ...
+self.current_bb = ok_bb;
+var ok_val = nextTemp(self, err_base);  // SAME type for unwrap result
+emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
+```
+Same pattern for catch_expr at line 1667 — both `is_err_temp` AND `ok_val` must get `err_base` (error_union_type from inner_temp), not TYPE_U8/TYPE_UNDEFINED. The c89_emit handlers read the base temp's hoisted type to determine struct layout — if the temp has TYPE_U8 (primitive), `is_error`/`data` field access fails with "request for member in something not a structure or union".
+
+**Verification:**
+```bash
+echo 'const E = error { A, B }; fn f() E!void { return error.A; }' > /tmp/t12.zig
+./out_release/zig1 --dump-c89 /tmp/t12.zig > /tmp/t12.c
+gcc -m32 -std=c89 -Wno-pointer-sign ... /tmp/t12.c ... -o /tmp/t12 2>&1 | grep -c "is_error\|data"
+# Target: 0 (no struct field complaints on non-struct)
+```
+
+**Status:** ❌
+
+---
+
+### T13: decl_local emission pipeline for named locals (G16, contributes to C3)
+
+**Files:** `sf/src/lower.zig` (addLocalDecl), `sf/src/c89_emit.zig` (emitFunctionBody, emitHoistedDecls)
+
+**Root cause:** 94 undeclared C identifiers (names like `val`, `data`, `s`, `car`, `cdr`). Two possible upstream sources:
+
+1. **Sema never registers the local.** `resolveStmtDepth` var_decl handler (sema.zig:1080-1085) stores `local_decl_names[count] = name_id` and `local_decl_types[count] = type_id`. If the var_decl's resolved type is TYPE_VOID, the local_decl is registered but the type is void → lowerer `addLocalDecl` still fires → `decl_local` LIR emitted → c89_emit sees TYPE_VOID → emits `void car;` → GCC error.
+
+2. **`addLocalDecl` skipped or emits wrong type.** The lowerer's `addLocalDecl` (lower.zig) emits `.decl_local` LIR with `name_id` and `type_id`. If the type_id is TYPE_VOID or TYPE_UNDEFINED, c89_emit produces `void zT_N;` or skips the declaration.
+
+**What's already correct:**
+- `dedup_count = 0` reset per-function at c89_emit.zig:3005 ✅
+- `dedup_names[128]` overwritten per-function (dedup_count resets logical length) ✅
+- `dl_hoisted = 0` reset per-function at line 1274 ✅
+
+**Diagnostic approach (before fix):**
+1. Add marker at sema `resolveStmtDepth` var_decl handler (line 1080) printing name_id + type_id for every registered local
+2. Add marker at lowerer `addLocalDecl` printing name_id + type_id
+3. Add marker at c89_emit `emitFunctionBody` decl_local handler printing name_id + type_id
+4. Cross-reference: for each undeclared C name, check (1) was it registered in sema? (2) did addLocalDecl fire? (3) did decl_local handler fire?
+5. If (1) fires but (2) doesn't → gap in sema→lowerer pipeline (local_decl_names not read by lowerer for error union functions)
+6. If (1)+(2) fire but (3) doesn't → gap in lowerer→c89_emit (decl_local not emitted or dedup skipped)
+7. If (1) fires with TYPE_VOID → gap in sema type resolution (error union var_decl type not resolved)
+
+```bash
+echo 'const E = error {A, B}; fn f() E!void { var x: u32 = 1; _ = x; }' > /tmp/t13.zig
+./out_release/zig1 --markers --dump-c89 /tmp/t13.zig > /tmp/t13.c 2>/tmp/t13_m.txt
+grep -a "^VDC:\|^ADL:\|^DCL:" /tmp/t13_m.txt  # Trace local through all 3 layers
+```
+
+**Status:** ❌
+
+---
+
+### T14: i64/u64 C89 typedefs (G17, contributes to C5)
+
+**Files:** `sf/src/c89_emit.zig` (getCTypeName)
+
+**Root cause:** Lisp uses `i64` (27 uses) and `u64` (3 uses) for atom table indices. `getCTypeName` has no entries for `TypeKind.i64_type` or `TypeKind.u64_type` — falls through to mangled name fallback at lines 517-518 → emits `z64`/`zu64` as type names → GCC: "unknown type name 'z64'".
+
+**Fix (c89_emit.zig, in getCTypeName):**
+```zig
+if (ty.kind == TypeKind.i64_type) return "long long";
+if (ty.kind == TypeKind.u64_type) return "unsigned long long";
+```
+Add after existing i32/u32 entries (~line 372). These are standard C89 types.
+
+**Unresolved mystery (2026-06-14):** `zig_compat.h` defines `typedef long long z64` on line 12 and `typedef unsigned long long zu64` on line 13. The header guard `ZIG_COMPAT_H` is confirmed defined. Yet GCC preprocessing (`-E`) shows `z64`/`zu64` surviving unexpanded in 54 locations, while `i64`/`u64` (from `zig_runtime.h`) ARE correctly expanded to `long long`. This suggests either:
+1. An include order issue where `zig_compat.h` content is processed but the `#else` branch (lines 12-13) is skipped due to a stray preprocessor define
+2. The second `#include "zig_compat.h"` at line 4 of lisp.c output includes a different file or an empty expansion
+3. A custom-emitted `zig_compat.h` content inside the module output that lacks the typedefs
+
+**Two-phase approach:**
+- **Phase A:** Apply the `getCTypeName` fix anyway (remove dependency on `z64`/`zu64` typedefs — emit `long long` directly). This is correct regardless of the mystery.
+- **Phase B:** If errors persist, investigate the preprocessor issue via `gcc -E -dM` and `grep z64/zu64` at each include boundary.
+
+**Verification:**
+```bash
+echo 'fn main() void { var x: i64 = 0; _ = x; }' > /tmp/t14.zig
+./out_release/zig1 --dump-c89 /tmp/t14.zig > /tmp/t14.c
+grep "long long" /tmp/t14.c  # should see "long long" for i64 type
+gcc -m32 -std=c89 ... /tmp/t14.c ... -o /tmp/t14 2>&1 | grep -c "error:"
+```
+
+**Status:** ❌
+
+---
+
+### T15: Coercion chain for error union patterns (G18, contributes to C4)
+
+**Files:** `sf/src/semantic_analyzer.zig` (return_stmt, resolveFnCall, resolveAssign)
+
+**Root cause:** After T11+T12+T13, error union types will reach the lowerer but coercion between error union value and unwrapped payload may not be recorded. Patterns like `return try expr` (error union → unwrapped → return), `x = try expr` (unwrapped → local), `return error.Foo` (error literal → error union) need `tryRecordCoercion` or equivalent type unification.
+
+**Existing infrastructure:** `tryRecordCoercion` (sema.zig:434) records `(node_idx, source_type, target_type)` → coercionTable → lowerer `applyCoercion`. Already used for:
+- `resolveAssign` (line 721) — `var x: T = expr`
+- `resolveFnCall` (lines 512, 564) — argument passing
+- `resolveStructInit` (lines 675, 701) — field initialization
+- `return_stmt` (lines 936, 1266) — return value coercion
+
+**Missing patterns (need verification):**
+1. `return try expr` — return_stmt resolves child (try_expr → resolves inner → unwrapped type). May mismatch fn return (error_union).
+2. `return error.Foo` — return_stmt resolves child (error_literal → TYPE_U32 or error_set). Must coerce to fn return type.
+3. `x = try expr` — resolveAssign resolves rhs (try_expr → unwrapped). Must coerce to x's declared type.
+
+**Fix approach:** Add marker at return_stmt handler to log child_resolved_type vs current_fn_return, and at resolveAssign to log rhs_type vs lhs_type. If mismatches exist where they shouldn't, add tryRecordCoercion calls. This is a diagnostic + targeted-fix task — range may be 0-3 call sites.
+
+**Verification:**
+```bash
+echo 'const E = error { A, B }; fn f() E!u32 { return error.A; }' > /tmp/t15.zig
+./out_release/zig1 --markers --dump-c89 /tmp/t15.zig > /tmp/t15.c 2>/tmp/t15_m.txt
+grep -a "^RET:\|^COE:\|^COR:" /tmp/t15_m.txt  # Verify coercion recorded for error.Foo → !u32
+```
+
+**Status:** ❌
+
+---
+
+### T16: Integration Test
 
 **Target:** Lisp interpreter compiles (0 errors), runs (produces output), mud_server regression (0 errors).
 
@@ -831,7 +1008,12 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T7 | @ptrToInt/@intToPtr end-to-end (sema+lowerer+c89) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
 | T8 | catch \|err\| capture + nested save/restore | `parser.zig`, `sema.zig`, `lower.zig` | ✅ |
 | T9 | Fix single-file --dump-c89 output duplication | `c89_emit.zig` | ✅ |
-| T10 | Remaining lisp parse gaps: `!T` return type, `error{}` decl, `error.Foo` literal | `parser.zig`, `token.zig`, `ast.zig` | ❌ |
-| T11 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
+| T10 | Remaining lisp parse gaps: `!T` return type, `error{}` decl, `error.Foo` literal | `parser.zig`, `token.zig`, `ast.zig` | ✅ |
+| T11 | Error union fn return type via resolveAllFnTypes (G14) | `main.zig` | ❌ |
+| T12 | Lowerer error union type propagation for try/catch (G15) | `lower.zig` | ❌ |
+| T13 | decl_local emission pipeline — named locals in error union fns (G16) | `lower.zig`, `c89_emit.zig` | ❌ |
+| T14 | i64/u64 C89 typedefs — z64/zu64 → long long (G17) | `c89_emit.zig` | ❌ |
+| T15 | Coercion chain for error union patterns (G18) | `sema.zig` | ❌ |
+| T16 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing

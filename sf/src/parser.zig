@@ -600,6 +600,9 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
 
 fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        return parserParseErrorSetDeclBody(self, kw);
+    }
     _ = try parserExpect(self, TokenKind.dot);
     var name_tok = try parserExpect(self, TokenKind.identifier);
     var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
@@ -826,7 +829,15 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
     if (tok.kind == TokenKind.kw_anytype) { _ = parserAdvance(self); var z: u32 = @intCast(u32, 0); return z; }
-    return parserParseTypeName(self);
+    var base = try parserParseTypeName(self);
+    if (parserPeek(self).kind == TokenKind.bang) {
+        _ = parserAdvance(self);
+        var payload = try parserParseType(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+            tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+            base, payload, 0, 0);
+    }
+    return base;
 }
 
 fn parserParsePtrType(self: *Parser) ParserError!u32 {
@@ -930,6 +941,10 @@ fn parserParseFnType(self: *Parser) ParserError!u32 {
 
 fn parserParseErrorSetDecl(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
+    return parserParseErrorSetDeclBody(self, tok);
+}
+
+fn parserParseErrorSetDeclBody(self: *Parser, kw: Token) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.lbrace);
     var member_buf: [64]u32 = undefined;
     var member_count: usize = 0;
@@ -949,7 +964,7 @@ fn parserParseErrorSetDecl(self: *Parser) ParserError!u32 {
         payload = ast_mod.astStoreAddExtraChildren(self.store, member_buf[0..member_count]);
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.error_set_decl, 0,
-        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        kw.span_start, kw.span_start + @intCast(u32, kw.span_len),
         0, 0, 0, payload);
 }
 
