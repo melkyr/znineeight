@@ -2879,6 +2879,89 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s2: []const u8 = ".data.err;\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
+        .wrap_error_ok => |w| {
+            var dst = resolveTempName(emitter, w.result);
+            var src = resolveTempName(emitter, w.value);
+            var eu_ty = emitter.registry.types_items[@intCast(usize, w.type_id)];
+            var eu = emitter.registry.eu_items[@intCast(usize, eu_ty.payload_idx)];
+            var pay_ty = emitter.registry.types_items[@intCast(usize, eu.payload)];
+            if (pay_ty.kind == type_mod.TypeKind.void_type) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l1: []const u8 = ".err = 0;\n";
+                bufferedWriterWrite(&emitter.writer, l1);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l2: []const u8 = ".is_error = 0;\n";
+                bufferedWriterWrite(&emitter.writer, l2);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l1: []const u8 = ".data.payload = ";
+                bufferedWriterWrite(&emitter.writer, l1);
+                bufferedWriterWrite(&emitter.writer, src);
+                var semi1: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi1);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l2: []const u8 = ".is_error = 0;\n";
+                bufferedWriterWrite(&emitter.writer, l2);
+            }
+        },
+        .wrap_error_err => |w| {
+            var dst = resolveTempName(emitter, w.result);
+            var src = resolveTempName(emitter, w.value);
+            var eu_ty = emitter.registry.types_items[@intCast(usize, w.type_id)];
+            var eu = emitter.registry.eu_items[@intCast(usize, eu_ty.payload_idx)];
+            var pay_ty = emitter.registry.types_items[@intCast(usize, eu.payload)];
+            if (pay_ty.kind == type_mod.TypeKind.void_type) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l1: []const u8 = ".err = ";
+                bufferedWriterWrite(&emitter.writer, l1);
+                bufferedWriterWrite(&emitter.writer, src);
+                var semi1: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi1);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l2: []const u8 = ".is_error = 1;\n";
+                bufferedWriterWrite(&emitter.writer, l2);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l1: []const u8 = ".data.err = ";
+                bufferedWriterWrite(&emitter.writer, l1);
+                bufferedWriterWrite(&emitter.writer, src);
+                var semi1: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi1);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l2: []const u8 = ".is_error = 1;\n";
+                bufferedWriterWrite(&emitter.writer, l2);
+            }
+        },
+        .check_optional => |e| {
+            var dst = resolveTempName(emitter, e.result);
+            var src = resolveTempName(emitter, e.value);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s2: []const u8 = ".has_value;\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+        },
+        .unwrap_optional => |e| {
+            var dst = resolveTempName(emitter, e.result);
+            var src = resolveTempName(emitter, e.value);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s2: []const u8 = ".value;\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+        },
         else => {},
     }
 }

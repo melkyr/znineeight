@@ -11,23 +11,24 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 | # | Subsystem | File | Gap | Severity | Status |
 |---|-----------|------|-----|----------|--------|
 | A1 | Import/Parser | `parser.zig:1100` | decl_buf[64] overflow → AST shared_store corruption | Critical | ✅ |
-| P1 | Parser | `main.zig:29` | Parse error cascade (256), first at `*mod.Type` param | Critical | ❌ |
-| T1.5 | Parser | `parser.zig:1218-1232` | `*Module.Type` not parsed in fn param position | Critical | ❌ |
-| B1 | Sema | `semantic_analyzer.zig:838` | @ptrCast builtin_call → no name dispatch | High | ❌ |
-| B2 | Sema | `semantic_analyzer.zig:853` | catch |err| capture not registered | High | ❌ |
-| C1 | Lowerer | `lower.zig:1576` | @ptrCast builtin_call → no name dispatch | High | ❌ |
-| C2 | Lowerer | `lower.zig:1622` | catch |err| addLocalDecl missing | High | ❌ |
+| P1 | Parser | `main.zig:29` | Parse error cascade (256), root: `.*` deref → dot_star token gap | Critical | ✅ |
+| T1.5 | Parser | `parser.zig:297-301` | dot_star token not handled in postfix chain → `x.*` universal failure | Critical | ✅ |
+| B1 | Sema | `semantic_analyzer.zig:838` | @ptrCast builtin_call → name dispatch + type resolution | High | ✅ |
+| B2 | Sema | `semantic_analyzer.zig:853` | catch \|err\| capture not registered | High | ❌ |
+| C1 | Lowerer | `lower.zig:1576` | @ptrCast builtin_call → name dispatch + ptr_cast LIR + ptr_type resolution | High | ✅ |
+| C2 | Lowerer | `lower.zig:1622` | catch \|err\| addLocalDecl missing | High | ❌ |
 | P0 | Parser | `parser.zig:239` | catch_capture ISOLATED in Parser field, not stored in catch_expr AST node | High | ❌ |
-| D1 | c89_emit | `c89_emit.zig:2834` | check_error LIR → no C code | Critical | ❌ |
-| D2 | c89_emit | `c89_emit.zig:2834` | unwrap_error_payload LIR → no C code | Critical | ❌ |
-| D3 | c89_emit | `c89_emit.zig:2834` | unwrap_error_code LIR → no C code | Medium | ❌ |
+| D1 | c89_emit | `c89_emit.zig:2834` | check_error LIR → no C code | Critical | ✅ |
+| D2 | c89_emit | `c89_emit.zig:2834` | unwrap_error_payload LIR → no C code | Critical | ✅ |
+| D3 | c89_emit | `c89_emit.zig:2834` | unwrap_error_code LIR → no C code | Medium | ✅ |
 | D4 | c89_emit | `c89_emit.zig:2834` | check_optional LIR → no C code | Medium | ❌ |
 | D5 | c89_emit | `c89_emit.zig:2834` | unwrap_optional LIR → no C code | Medium | ❌ |
 | D6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok LIR → no C code | High | ❌ |
 | D7 | c89_emit | `c89_emit.zig:2834` | wrap_error_err LIR → no C code | High | ❌ |
-| D8 | c89_emit | `c89_emit.zig:2834` | ptr_cast LIR → no C code | High | ❌ |
+| D8 | c89_emit | `c89_emit.zig:2834` | ptr_cast LIR → no C code | High | ✅ |
 | D9 | c89_emit | `c89_emit.zig:2834` | ptr_to_int LIR → no C code | Medium | ❌ |
 | D10 | c89_emit | `c89_emit.zig:2834` | int_to_ptr LIR → no C code | Medium | ❌ |
+| E1 | c89_emit | `c89_emit.zig:1264-1278` | Single-file --dump-c89 output duplication (module emitted 2×) | High | ❌ |
 
 ## 3. Task Details
 
@@ -301,64 +302,115 @@ var ptrcast_s: []const u8 = "@ptrCast";
 
 **File:** `sf/src/c89_emit.zig`
 
-**Design reference:** `c89_emit.zig:2705-2719` — `.wrap_optional` emits two-field assignment pattern. Follow this EXACTLY.
+**Design reference:** 
+- `c89_emit.zig:2705-2719` — `.wrap_optional` emits two-field assignment pattern. Follow this EXACTLY.
+- `c89_emit.zig:1073-1115` — `emitErrorUnionType` generates TWO C struct layouts:
+  - **Void payload:** `typedef struct { int err; int is_error; } EU_Name;` (NO `.data` field)
+  - **Non-void payload:** `typedef struct { union { T payload; int err; } data; int is_error; } EU_Name;` (HAS `.data.payload` / `.data.err`)
+- `type_registry.zig:68` — `EUPayload = struct { payload: TypeId, error_set: TypeId }` — use `.payload` field to check void.
 
 **Lowerer flow** (`applyCoercion`, lower.zig:2979-2986):
 - `wrap_error_success` → emits `wrap_error_ok{value, result, type_id}`
 - `wrap_error_err` → emits `wrap_error_err{value, result, type_id}`
+
+**LIR instruction** (`lir.zig:48-49`):
+- `wrap_error_ok: struct { value: u32, result: u32, type_id: TypeId }`
+- `wrap_error_err: struct { value: u32, result: u32, type_id: TypeId }`
+
+**CRITICAL — Void payload check:** Both handlers MUST look up `w.type_id` → `eu_items[payload_idx].payload` → check `kind == void_type` → use different field paths for void vs non-void error unions. Without this check, `wrap_error_ok` emits `.data.payload` on a `!void` struct with no `.data` field → GCC "has no member named 'data'" error.
+
+---
 
 **Plan D6 — `.wrap_error_ok` handler:**
 ```zig
 .wrap_error_ok => |w| {
     var dst = resolveTempName(emitter, w.result);
     var src = resolveTempName(emitter, w.value);
-    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    bufferedWriterWrite(&emitter.writer, dst);
-    var l1: []const u8 = ".data.payload = ";
-    bufferedWriterWrite(&emitter.writer, l1);
-    bufferedWriterWrite(&emitter.writer, src);
-    var semi1: []const u8 = ";\n";
-    bufferedWriterWrite(&emitter.writer, semi1);
-    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    bufferedWriterWrite(&emitter.writer, dst);
-    var l2: []const u8 = ".is_error = 0;\n";
-    bufferedWriterWrite(&emitter.writer, l2);
+    var eu_ty = emitter.registry.types_items[@intCast(usize, w.type_id)];
+    var eu = emitter.registry.eu_items[@intCast(usize, eu_ty.payload_idx)];
+    var pay_ty = emitter.registry.types_items[@intCast(usize, eu.payload)];
+    var is_void: u8 = @intCast(u8, if (pay_ty.kind == type_mod.TypeKind.void_type) @as(u8, 1) else @as(u8, 0));
+    if (is_void != @intCast(u8, 0)) {
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l1: []const u8 = ".err = 0;\n"; bufferedWriterWrite(&emitter.writer, l1);
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l2: []const u8 = ".is_error = 0;\n"; bufferedWriterWrite(&emitter.writer, l2);
+    } else {
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l1: []const u8 = ".data.payload = "; bufferedWriterWrite(&emitter.writer, l1);
+        bufferedWriterWrite(&emitter.writer, src);
+        var semi1: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, semi1);
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l2: []const u8 = ".is_error = 0;\n"; bufferedWriterWrite(&emitter.writer, l2);
+    }
 },
 ```
-**C output:**
+**C output (void):**
+```
+zT_N.err = 0;
+zT_N.is_error = 0;
+```
+**C output (non-void):**
 ```
 zT_N.data.payload = zT_M;
 zT_N.is_error = 0;
 ```
+
+---
 
 **Plan D7 — `.wrap_error_err` handler:**
 ```zig
 .wrap_error_err => |w| {
     var dst = resolveTempName(emitter, w.result);
     var src = resolveTempName(emitter, w.value);
-    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    bufferedWriterWrite(&emitter.writer, dst);
-    var l1: []const u8 = ".data.err = ";
-    bufferedWriterWrite(&emitter.writer, l1);
-    bufferedWriterWrite(&emitter.writer, src);
-    var semi1: []const u8 = ";\n";
-    bufferedWriterWrite(&emitter.writer, semi1);
-    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    bufferedWriterWrite(&emitter.writer, dst);
-    var l2: []const u8 = ".is_error = 1;\n";
-    bufferedWriterWrite(&emitter.writer, l2);
+    var eu_ty = emitter.registry.types_items[@intCast(usize, w.type_id)];
+    var eu = emitter.registry.eu_items[@intCast(usize, eu_ty.payload_idx)];
+    var pay_ty = emitter.registry.types_items[@intCast(usize, eu.payload)];
+    var is_void: u8 = @intCast(u8, if (pay_ty.kind == type_mod.TypeKind.void_type) @as(u8, 1) else @as(u8, 0));
+    if (is_void != @intCast(u8, 0)) {
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l1: []const u8 = ".err = "; bufferedWriterWrite(&emitter.writer, l1);
+        bufferedWriterWrite(&emitter.writer, src);
+        var semi1: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, semi1);
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l2: []const u8 = ".is_error = 1;\n"; bufferedWriterWrite(&emitter.writer, l2);
+    } else {
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l1: []const u8 = ".data.err = "; bufferedWriterWrite(&emitter.writer, l1);
+        bufferedWriterWrite(&emitter.writer, src);
+        var semi1: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, semi1);
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, dst);
+        var l2: []const u8 = ".is_error = 1;\n"; bufferedWriterWrite(&emitter.writer, l2);
+    }
 },
 ```
-**C output:**
+**C output (void):**
+```
+zT_N.err = zT_M;
+zT_N.is_error = 1;
+```
+**C output (non-void):**
 ```
 zT_N.data.err = zT_M;
 zT_N.is_error = 1;
 ```
 
+---
+
 **Zig0 constraints for T4:**
 - Same two-line pattern as `.wrap_optional` at line 2705 (proven working)
 - All strings in named variables (quirk §9.3)
 - Indent must be explicitly written per line (not auto-indented by bufferedWriter)
+- Void check uses `emitter.registry` (available as `*TypeRegistry` in emitter struct) and `type_mod.TypeKind.void_type` (imported via `const type_mod = @import("type_registry.zig")`)
+- Lisp interpreter uses `!*value_mod.Value` (non-void) — void branch won't be exercised by T8, but must be correct for completeness
 
 ---
 
@@ -497,6 +549,72 @@ if (node.child_2 != 0) {
 
 ---
 
+### T7.5: Fix Single-File `--dump-c89` Output Duplication
+
+**Files:** `sf/src/c89_emit.zig`
+
+**Symptom:** Single-file programs with `pub fn main()` (and no `@import`) produce duplicated C output — the module header, includes, forward declarations, function signature, hoisted temps, and function body are emitted twice. Multi-module projects (mud_server, mandelbrot, GOL) produce correct output. The duplicated output causes C89 compilation failures for standalone test programs.
+
+**Evidence from output analysis:** C output shows two complete copies:
+```
+[copy 1] zig_compat.h + zig_runtime.h + Module: output + includes + forward decls + int main(void) { temps } + body + EOF
+[copy 2] Module: output + includes + forward decls + int main(void) { indented temps + body + EOF
+```
+Copy 1 has hoisted temps at indent 0 (wrong — `emitFunctionSignature` increments indent to 1 before `emitHoistedDecls`). Copy 2 has correct indentation. `zig_runtime.h` appears 2× but `emitIncludes` (sole writer of `zig_runtime.h`) is called once at main.zig:806. `emitModule` is called once at main.zig:809. `emitModuleHeader` is called once from `emitModule:1266`.
+
+**Hypotheses (ranked by likelihood):**
+1. **`emitter.dl_hoisted = 0` at line 1274** — resets dedup flag after `emitHoistedDecls`, causing `emitFunctionBody:2893` to re-emit all `decl_local` LIR instructions as a second variable-declaration pass. Combined with some other write path that also emits module-level content.
+2. **`BufferedWriter` buffer aliasing** — `cwriter` and `emitter.writer` are separate structs but both flush to stdout. If buffer pointers overlap in C89 codegen, one flush may re-emit stale buffer content.
+3. **`emitSpecialTypes` writes module-level content** — `tstTopologicalSort` + type emission loop at lines 702-758 may emit type definitions that include `zig_compat.h` or module header text when certain type patterns exist.
+
+**Diagnostic plan:**
+```zig
+// In emitModule (line 1264), add compact markers at each phase:
+pal_markerWriteInt("MDL:e", fns.len);              // entry
+// after emitSpecialTypes:
+pal_markerWrite("SPC:D\n");                        // special types done
+// after emitModuleHeader:
+pal_markerWrite("HDR:D\n");                        // header done
+// on each function in loop:
+pal_markerWriteInt("FNP:n", func.name_id);         // function emitted
+// before emitModuleFooter:
+pal_markerWrite("FTR:D\n");                        // footer done
+```
+
+**Trace:** Count marker occurrences. If `HDR` fires 2× → `emitModuleHeader` called twice (chase upstream). If `FNP` fires 2× → duplicate LIR functions (chase lowerer). If `MDL` fires 2× → `emitModule` called twice (chase main.zig).
+
+**Fix candidates (apply after root cause confirmed):**
+- **Fix A:** Remove `emitter.dl_hoisted = 0` at line 1274 → restores correct single-emission behavior for hoisted declarations (set `emitter.dl_hoisted = 1` after `emitHoistedDecls`).
+- **Fix B:** If `emitModuleHeader` called twice → audit callers and deduplicate.
+- **Fix C:** If `fns` has duplicate entries → fix lowerer to not duplicate functions in `lir_fns` for single-module programs.
+
+**Test plan:**
+```bash
+# Diagnostic build
+rm -rf out_release && mkdir out_release
+./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1_dbg
+
+# Trace markers
+echo 'pub fn main() void {}' > /tmp/t75_empty.zig
+./out_release/zig1_dbg --markers --dump-c89 /tmp/t75_empty.zig > /tmp/t75_empty.c 2>/tmp/t75_markers.txt
+grep -a "^MDL:\|^SPC\|^HDR\|^FNP:\|^FTR\|^FLUSH:" /tmp/t75_markers.txt
+
+# Verify fix
+echo 'pub fn main() void {}' > /tmp/t75_test.zig
+./out_release/zig1 --dump-c89 /tmp/t75_test.zig > /tmp/t75_test.c
+grep -c "int main(void)" /tmp/t75_test.c    # must be 1
+grep -c "Module: output" /tmp/t75_test.c    # must be 1
+
+# Regression
+./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud_t75.c
+gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/mud_t75.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c sf/src/include/net_runtime.c -o /tmp/mud_t75 2>&1 | grep -c "error:"  # must be 0
+```
+
+**Status:** ❌ (New)
+
+---
+
 ### T8: Integration Test
 
 **Target:** Lisp interpreter compiles (0 errors), runs (produces output), mud_server regression (0 errors).
@@ -564,13 +682,14 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | Task | Description | Files | Status |
 |------|-------------|-------|--------|
 | T1 | Parser decl_buf overflow → shared_store corruption | `parser.zig`, `import_resolver.zig` | ✅ |
-| T1.5 | Diagnose + fix `*Module.Type` fn param parse gap | `parser.zig` | ❌ |
-| T2 | @ptrCast end-to-end | `sema.zig`, `lower.zig`, `c89_emit.zig` | ❌ |
-| T3 | check_error + unwrap_error_payload + unwrap_error_code | `c89_emit.zig` | ❌ |
+| T1.5 | Dot-star parser gap → `switch(v.*)` and `.*` deref universal failure | `parser.zig` | ✅ |
+| T2 | @ptrCast end-to-end (sema dispatch + lowerer LIR + c89_emit codegen) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
+| T3 | check_error + unwrap_error_payload + unwrap_error_code handlers | `c89_emit.zig` | ✅ |
 | T4 | wrap_error_ok + wrap_error_err | `c89_emit.zig` | ❌ |
 | T5 | check_optional + unwrap_optional | `c89_emit.zig` | ❌ |
 | T6 | ptr_to_int + int_to_ptr | `c89_emit.zig` | ❌ |
-| T7 | catch |err| capture | `parser.zig`, `sema.zig`, `lower.zig` | ❌ |
+| T7 | catch \|err\| capture | `parser.zig`, `sema.zig`, `lower.zig` | ❌ |
+| T7.5 | Fix single-file --dump-c89 output duplication | `c89_emit.zig` | ❌ |
 | T8 | Integration test (lisp + mud/man/gol regression) | All | ❌ |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing
