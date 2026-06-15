@@ -237,6 +237,9 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
         return error.UnexpectedToken;
     }
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    if (kind == AstKind.catch_expr) {
+        return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, self.catch_capture, 0);
+    }
     var bok: []const u8 = "BOP:tk"; pal.markerWrite(bok);
     var bokb: [10]u8 = undefined; var bokl = itoa_mod.itoa(@enumToInt(tok.kind), bokb[0..]); var boks: usize = @intCast(usize, 9) - @intCast(usize, bokl); pal.markerWrite(bokb[boks..@intCast(usize, 9)]);
     var bokk: []const u8 = "ak"; pal.markerWrite(bokk);
@@ -378,6 +381,7 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
 }
 
 fn parserParseCatchRHS(self: *Parser, next_min: Prec) ParserError!u32 {
+    var saved_capture = self.catch_capture;
     self.catch_capture = @intCast(u32, 0);
     var ptok = parserPeek(self);
     if (ptok.kind == TokenKind.pipe) {
@@ -390,11 +394,14 @@ fn parserParseCatchRHS(self: *Parser, next_min: Prec) ParserError!u32 {
             name_raw2.span_start, name_raw2.span_start + @intCast(u32, name_raw2.span_len),
             0, 0, 0, name_id);
     }
+    var result: u32 = undefined;
     if (parserPeek(self).kind == TokenKind.lbrace) {
-        var block_node = try parserParseBlock(self);
-        return block_node;
+        result = try parserParseBlock(self);
+    } else {
+        result = try parserParseExprPrec(self, next_min);
     }
-    return parserParseExprPrec(self, next_min);
+    self.catch_capture = saved_capture;
+    return result;
 }
 
 fn parserParseOrelseRHS(self: *Parser, next_min: Prec) ParserError!u32 {

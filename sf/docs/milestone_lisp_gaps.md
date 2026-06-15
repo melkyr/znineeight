@@ -17,17 +17,19 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 | B2 | Sema | `semantic_analyzer.zig:853` | catch \|err\| capture not registered | High | ❌ |
 | C1 | Lowerer | `lower.zig:1576` | @ptrCast builtin_call → name dispatch + ptr_cast LIR + ptr_type resolution | High | ✅ |
 | C2 | Lowerer | `lower.zig:1622` | catch \|err\| addLocalDecl missing | High | ❌ |
+| C3 | Parser | `parser.zig:381` | catch_capture not save/restored → nested catch corruption | Medium | ❌ |
 | P0 | Parser | `parser.zig:239` | catch_capture ISOLATED in Parser field, not stored in catch_expr AST node | High | ❌ |
+| P2 | Parser | `parser.zig:1221` | `!T` error union as fn return type (fn foo() !void {) | High | ❌ |
 | D1 | c89_emit | `c89_emit.zig:2834` | check_error LIR → no C code | Critical | ✅ |
 | D2 | c89_emit | `c89_emit.zig:2834` | unwrap_error_payload LIR → no C code | Critical | ✅ |
 | D3 | c89_emit | `c89_emit.zig:2834` | unwrap_error_code LIR → no C code | Medium | ✅ |
-| D4 | c89_emit | `c89_emit.zig:2834` | check_optional LIR → no C code | Medium | ❌ |
-| D5 | c89_emit | `c89_emit.zig:2834` | unwrap_optional LIR → no C code | Medium | ❌ |
-| D6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok LIR → no C code | High | ❌ |
-| D7 | c89_emit | `c89_emit.zig:2834` | wrap_error_err LIR → no C code | High | ❌ |
+| D4 | c89_emit | `c89_emit.zig:2834` | check_optional LIR → no C code | Medium | ✅ |
+| D5 | c89_emit | `c89_emit.zig:2834` | unwrap_optional LIR → no C code | Medium | ✅ |
+| D6 | c89_emit | `c89_emit.zig:2834` | wrap_error_ok LIR → no C code | High | ✅ |
+| D7 | c89_emit | `c89_emit.zig:2834` | wrap_error_err LIR → no C code | High | ✅ |
 | D8 | c89_emit | `c89_emit.zig:2834` | ptr_cast LIR → no C code | High | ✅ |
-| D9 | c89_emit | `c89_emit.zig:2834` | ptr_to_int LIR → no C code | Medium | ❌ |
-| D10 | c89_emit | `c89_emit.zig:2834` | int_to_ptr LIR → no C code | Medium | ❌ |
+| D9 | c89_emit/sema/lowerer | `c89_emit.zig:2834` | ptr_to_int LIR — missing 3-layer pipeline (sema+lowerer+c89) | Medium | ✅ |
+| D10 | c89_emit/sema/lowerer | `c89_emit.zig:2834` | int_to_ptr LIR — missing 3-layer pipeline (sema+lowerer+c89) | Medium | ✅ |
 | E1 | c89_emit | `c89_emit.zig:1264-1278` | Single-file --dump-c89 output duplication (module emitted 2×) | High | ❌ |
 
 ## 3. Task Details
@@ -456,13 +458,100 @@ zT_N.is_error = 1;
 
 ---
 
-### T6: Int/Ptr Casts (D9, D10)
+### T6: @ptrToInt / @intToPtr End-to-End (D9, D10)
 
-**File:** `sf/src/c89_emit.zig`
+**Files:** `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`
 
-**Design reference:** `.int_cast` at line 2720 — uses `getCTypeName` + `(ctype)src`.
+**Problem:** `emitHoistedDecls` has type-tracking for `ptr_to_int`→`TYPE_USIZE` and `int_to_ptr`→`itp.target` (c89_emit.zig:1620-1637) but these handlers are **dead code** — never reached. The lowerer never emits `ptr_to_int` or `int_to_ptr` LIR because there is no sema dispatch and no lowerer dispatch for `@ptrToInt`/`@intToPtr` builtins. Three layers are missing.
 
-**Plan D9 — `.ptr_to_int` handler:**
+**Pattern reference:** `@ptrCast` (T2, completed) — same 3-layer pipeline: sema name_ids + dispatch → lowerer name_ids + LIR emission → c89 emitInst handlers.
+
+---
+
+**Plan T6a — Sema (`semantic_analyzer.zig`, ~7 lines):**
+
+1. Add fields to `SemanticAnalyzer` struct (~L45):
+```zig
+ptrtoint_name_id: u32,
+inttoptr_name_id: u32,
+```
+
+2. Intern name strings in `semanticAnalyzerInit` (~L75):
+```zig
+var pti_s: []const u8 = "@ptrToInt";
+var ptin_id = si_mod.stringInternerIntern(interner, pti_s);
+var itp_s: []const u8 = "@intToPtr";
+var itp_id = si_mod.stringInternerIntern(interner, itp_s);
+// ... in return struct:
+.ptrtoint_name_id = ptin_id,
+.inttoptr_name_id = itp_id,
+```
+
+3. Dispatch in `resolveExpr` builtin_call handler (~L845, after ptrcast branch):
+```zig
+} else if (node.child_0 == self.ptrtoint_name_id) {
+    var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+    if (ec.len >= 1) { _ = semanticAnalyzerResolveExpr(self, ec[0]); }
+    result = type_mod.TYPE_USIZE;
+} else if (node.child_0 == self.inttoptr_name_id) {
+    var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+    if (ec.len >= 1) { _ = semanticAnalyzerResolveExpr(self, ec[0]); }
+    var target_type = semanticAnalyzerResolveTypeFromNode(self, ec[0]);
+    result = if (target_type != type_mod.TYPE_UNDEFINED) target_type else type_mod.TYPE_VOID;
+```
+**Type resolution for intToPtr:** Must parse `@intToPtr(*T, val)` — target type from first AST arg. Follows `@ptrCast` pattern.
+
+---
+
+**Plan T6b — Lowerer (`lower.zig`, ~20 lines):**
+
+1. Add fields to `LirLowerer` struct (~L230):
+```zig
+ptrtoint_name_id: u32,
+inttoptr_name_id: u32,
+```
+
+2. Intern in `lowererInit` (~L265):
+```zig
+var pti_s: []const u8 = "@ptrToInt";
+var ptin_id = si_mod.stringInternerIntern(ctx.registry.interner, pti_s);
+var itp_s: []const u8 = "@intToPtr";
+var itp_id = si_mod.stringInternerIntern(ctx.registry.interner, itp_s);
+// ... in return struct:
+.ptrtoint_name_id = ptin_id,
+.inttoptr_name_id = itp_id,
+```
+
+3. Dispatch in `lowerExprImpl` builtin_call handler (~L1584, after ptrcast branch):
+```zig
+} else if (node.child_0 == self.ptrtoint_name_id) {
+    var ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
+    var arg_val = if (ec.len >= 1) lowerExpr(self, ec[0]) else nextTemp(self, type_mod.TYPE_UNDEFINED);
+    var result = nextTemp(self, type_mod.TYPE_USIZE);
+    emitInst(self, LirInst{ .ptr_to_int = .{ .value = arg_val, .result = result } });
+    return result;
+} else if (node.child_0 == self.inttoptr_name_id) {
+    var ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
+    var arg_val = if (ec.len >= 2) lowerExpr(self, ec[1]) else nextTemp(self, type_mod.TYPE_UNDEFINED);
+    var target_type = type_mod.TYPE_USIZE;
+    if (ec.len >= 1) {
+        // Resolve target type from AST (same pattern as @ptrCast)
+        var type_node_idx = ec[0];
+        var rtt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, type_node_idx);
+        if (rtt) |t| { target_type = t; }
+    }
+    var result = nextTemp(self, target_type);
+    emitInst(self, LirInst{ .int_to_ptr = .{ .value = arg_val, .target = target_type, .result = result } });
+    return result;
+```
+**Note for @intToPtr:** Second arg is the integer value to cast. `@ptrCast(*T, val)` takes first-arg-type, second-arg-value; but `@intToPtr(*T, val)` might use the same convention. Verify lisp usage in `util.zig:52-53` — `@ptrToInt(ptr)` is single-arg (ptr→usize). `@intToPtr` not used in lisp but define for completeness.
+
+---
+
+**Plan T6c — c89 emitInst (`c89_emit.zig`, ~30 lines):**
+
+Design reference: `.int_cast` at line 2720 — uses `getCTypeName` + `(ctype)src`.
+
 ```zig
 .ptr_to_int => |c| {
     var dst = resolveTempName(emitter, c.result);
@@ -478,7 +567,6 @@ zT_N.is_error = 1;
 ```
 **C output:** `zT_N = (unsigned int)zT_M;`
 
-**Plan D10 — `.int_to_ptr` handler:**
 ```zig
 .int_to_ptr => |c| {
     var dst = resolveTempName(emitter, c.result);
@@ -499,6 +587,19 @@ zT_N.is_error = 1;
 **C output:** `zT_N = (zT_TypeName)(unsigned int)zT_M;`
 
 ---
+
+**Lisp usage context:** `@ptrToInt` used 2× in `util.zig:52-53` (single-arg `@ptrToInt(ptr)` → usize). `@intToPtr` unused but implement for completeness.
+
+**Verification:**
+```bash
+# Minimal ptrToInt test
+echo 'extern fn get_ptr() *u8; fn main() void { _ = @ptrToInt(get_ptr()); }' > /tmp/t6a.zig
+./out_release/zig1 --dump-c89 /tmp/t6a.zig > /tmp/t6a.c
+grep "unsigned int" /tmp/t6a.c
+# Expect: zT_N = (unsigned int)zT_M;
+```
+
+**Status:** ❌ (New)
 
 ### T7: catch |err| Capture
 
@@ -528,12 +629,11 @@ result = semanticAnalyzerResolveExpr(self, node.child_0);
 if (node.child_2 != 0) {
     var capture_node = self.store.nodes.items[@intCast(usize, node.child_2)];
     // capture_node.payload = name_id
-    // Register as local_decl with error set type
+    // Register as local_decl — error codes are u32 in Z98 subset
     if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-    self.local_decl_name_map.put(capture_node.payload, self.local_decl_count); // use nameMap if hash-based
     self.local_decl_names[self.local_decl_count] = capture_node.payload;
-    self.local_decl_types[self.local_decl_count] = TYPE_U32; // error code is u32
-    self.local_decl_count += 1;
+    self.local_decl_types[self.local_decl_count] = type_mod.TYPE_U32;
+    self.local_decl_count += @intCast(usize, 1);
 }
 ```
 
@@ -548,6 +648,42 @@ if (node.child_2 != 0) {
 ```
 
 ---
+
+**Plan T7d — Nested catch save/restore (parser.zig parserParseCatchRHS line 381):**
+
+`parserParseCatchRHS` clears `self.catch_capture = 0` unconditionally at entry. This overwrites the outer catch's capture in nested `catch` expressions:
+```
+try fn() catch |outer| { try fn2() catch |inner| { ... } }
+```
+After inner catch finishes, `self.catch_capture` holds inner capture — outer `parserAddBinary` reads wrong value.
+
+**Fix:** Save/restore `catch_capture` around `parserParseCatchRHS` body:
+```zig
+fn parserParseCatchRHS(self: *Parser, next_min: Prec) ParserError!u32 {
+    var saved_capture = self.catch_capture;   // save outer
+    self.catch_capture = @intCast(u32, 0);
+    var ptok = parserPeek(self);
+    if (ptok.kind == TokenKind.pipe) {
+        _ = parserAdvance(self);
+        var name_raw2 = parserPeek(self);
+        _ = try parserExpect(self, TokenKind.identifier);
+        _ = try parserExpect(self, TokenKind.pipe);
+        var name_id = name_raw2.value.string_id;
+        self.catch_capture = ast_mod.astStoreAddNode(self.store, AstKind.payload_capture, 0,
+            name_raw2.span_start, name_raw2.span_start + @intCast(u32, name_raw2.span_len),
+            0, 0, 0, name_id);
+    }
+    // ... existing body parsing ...
+    var result = if (parserPeek(self).kind == TokenKind.lbrace)
+        try parserParseBlock(self)
+    else
+        try parserParseExprPrec(self, next_min);
+    self.catch_capture = saved_capture;       // restore outer
+    return result;
+```
+2 lines added: save at top, restore before return. Prevents nested catch corruption.
+
+**Status:** ❌ (New)
 
 ### T7.5: Fix Single-File `--dump-c89` Output Duplication
 
@@ -687,8 +823,8 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T3 | check_error + unwrap_error_payload + unwrap_error_code handlers | `c89_emit.zig` | ✅ |
 | T4 | wrap_error_ok + wrap_error_err | `c89_emit.zig` | ❌ |
 | T5 | check_optional + unwrap_optional | `c89_emit.zig` | ❌ |
-| T6 | ptr_to_int + int_to_ptr | `c89_emit.zig` | ❌ |
-| T7 | catch \|err\| capture | `parser.zig`, `sema.zig`, `lower.zig` | ❌ |
+| T6 | @ptrToInt/@intToPtr end-to-end (sema+lowerer+c89) | `sema.zig`, `lower.zig`, `c89_emit.zig` | ✅ |
+| T7 | catch \|err\| capture + nested save/restore | `parser.zig`, `sema.zig`, `lower.zig` | ❌ |
 | T7.5 | Fix single-file --dump-c89 output duplication | `c89_emit.zig` | ❌ |
 | T8 | Integration test (lisp + mud/man/gol regression) | All | ❌ |
 

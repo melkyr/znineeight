@@ -227,6 +227,8 @@ pub const LirLowerer = struct {
     inttofloat_name_id: u32,
     print_fn_id: u32,
     ptrcast_name_id: u32,
+    ptrtoint_name_id: u32,
+    inttoptr_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -247,6 +249,10 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
      var print_id = si_mod.stringInternerIntern(ctx.registry.interner, print_s);
     var ptrcast_s: []const u8 = "@ptrCast";
     var ptrcast_id = si_mod.stringInternerIntern(ctx.registry.interner, ptrcast_s);
+    var pti_s: []const u8 = "@ptrToInt";
+    var ptin_id = si_mod.stringInternerIntern(ctx.registry.interner, pti_s);
+    var itp_s: []const u8 = "@intToPtr";
+    var itp_id = si_mod.stringInternerIntern(ctx.registry.interner, itp_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -265,6 +271,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .inttofloat_name_id = inttofloat_id,
          .print_fn_id = print_id,
          .ptrcast_name_id = ptrcast_id,
+         .ptrtoint_name_id = ptin_id,
+         .inttoptr_name_id = itp_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -1577,13 +1585,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             .result = result,
         } });
         return result;
-    } else if (node.kind == AstKind.builtin_call) {
-        var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
-        var elm: []const u8 = "B"; pal.markerWrite(elm);
-        if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
-        else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
-        else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
-        var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
+        } else if (node.kind == AstKind.builtin_call) {
+            var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+            if (node.child_0 == self.ptrtoint_name_id) {
+                if (ec.len >= 1) {
+                    var arg_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    var result2 = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .ptr_to_int = .{ .value = arg_val, .result = result2 } });
+                    return result2;
+                } else {
+                    return nextTemp(self, type_mod.TYPE_USIZE);
+                }
+            }
+            var elm: []const u8 = "B"; pal.markerWrite(elm);
+            if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
+            else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
+            else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
+            var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
         var ty_node = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
         t_target = type_mod.TYPE_U32;
         if (ty_node.kind == AstKind.ptr_type) {
@@ -1616,12 +1634,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .int_to_float = .{
                 .value = val_temp, .target = t_target, .result = result,
             } });
-        } else if (node.child_0 == self.ptrcast_name_id) {
-            emitInst(self, LirInst{ .ptr_cast = .{
-                .value = val_temp, .target = t_target, .result = result,
-            } });
-        }
-        return result;
+            } else if (node.child_0 == self.ptrcast_name_id) {
+                emitInst(self, LirInst{ .ptr_cast = .{
+                    .value = val_temp, .target = t_target, .result = result,
+                } });
+            } else if (node.child_0 == self.inttoptr_name_id) {
+                emitInst(self, LirInst{ .int_to_ptr = .{
+                    .value = val_temp, .target = t_target, .result = result,
+                } });
+            }
+            return result;
     } else if (node.kind == AstKind.try_expr) {
         var inner_temp = lowerExpr(self, node.child_0);
         var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
@@ -1644,6 +1666,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return result;
     } else if (node.kind == AstKind.catch_expr) {
         var lhs_temp = lowerExpr(self, node.child_0);
+        if (node.child_2 != 0) {
+            var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
+            addLocalDecl(self, capture_node.payload, type_mod.TYPE_U32, @intCast(u32, 0));
+        }
         var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
         emitInst(self, LirInst{ .check_error = .{ .value = lhs_temp, .result = is_err_temp } });
         var err_bb = createBlock(self);

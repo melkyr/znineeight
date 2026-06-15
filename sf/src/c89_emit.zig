@@ -2962,6 +2962,36 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s2: []const u8 = ".value;\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
+        .int_to_ptr => |c| {
+            var dst = resolveTempName(emitter, c.result);
+            var src = resolveTempName(emitter, c.value);
+            var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, ctype);
+            var s2: []const u8 = ")(unsigned int)";
+            bufferedWriterWrite(&emitter.writer, s2);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s3: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s3);
+        },
+        .ptr_to_int => |c| {
+            var dst = resolveTempName(emitter, c.result);
+            var src = resolveTempName(emitter, c.value);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            var dst_type = getCTypeName(emitter.registry, emitter.mangler, type_mod.TYPE_USIZE);
+            bufferedWriterWrite(&emitter.writer, dst_type);
+            var s2: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, s2);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s3: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s3);
+        },
         else => {},
     }
 }

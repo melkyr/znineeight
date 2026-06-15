@@ -44,6 +44,8 @@ pub const SemanticAnalyzer = struct {
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
     ptrcast_name_id: u32,
+    ptrtoint_name_id: u32,
+    inttoptr_name_id: u32,
 };
 
 pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
@@ -51,6 +53,10 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     var pc_text: []const u8 = "@ptrCast";
     var pc_name_id = interner_mod.stringInternerIntern(interner, pc_text);
+    var pti_s: []const u8 = "@ptrToInt";
+    var ptin_id = interner_mod.stringInternerIntern(interner, pti_s);
+    var itp_s: []const u8 = "@intToPtr";
+    var itp_id = interner_mod.stringInternerIntern(interner, itp_s);
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -77,6 +83,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .call_param_map = cp_map,
         .interner = interner,
         .ptrcast_name_id = pc_name_id,
+        .ptrtoint_name_id = ptin_id,
+        .inttoptr_name_id = itp_id,
     };
 }
 
@@ -842,7 +850,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         if (ec.len >= @intCast(usize, 2)) {
-            if (node.child_0 == self.ptrcast_name_id) {
+            if (node.child_0 == self.ptrcast_name_id or node.child_0 == self.inttoptr_name_id) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
                 var ty_node = self.store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
                 if (ty_node.kind == AstKind.ptr_type) {
@@ -862,6 +870,10 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         else { result = type_mod.TYPE_VOID; }
                     } else { result = type_mod.TYPE_VOID; }
                 } else { result = type_mod.TYPE_VOID; }
+            } else if (node.child_0 == self.ptrtoint_name_id) {
+                var ec2 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+                if (ec2.len >= 1) { _ = semanticAnalyzerResolveExpr(self, ec2[0]); }
+                result = type_mod.TYPE_USIZE;
             } else {
                 result = semanticAnalyzerResolveExpr(self, ec[0]);
             }
@@ -880,6 +892,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveTryExpr(self, node_idx);
     } else if (node.kind == AstKind.catch_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (node.child_2 != 0) {
+            var capture_node = self.store.nodes.items[@intCast(usize, node.child_2)];
+            if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
+            self.local_decl_names[self.local_decl_count] = capture_node.payload;
+            self.local_decl_types[self.local_decl_count] = type_mod.TYPE_U32;
+            self.local_decl_count += @intCast(usize, 1);
+        }
     } else if (node.kind == AstKind.orelse_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.if_expr) {
