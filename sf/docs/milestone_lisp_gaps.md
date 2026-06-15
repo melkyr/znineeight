@@ -871,37 +871,74 @@ grep -a "^VDC:\|^ADL:\|^DCL:" /tmp/t13_m.txt  # Trace local through all 3 layers
 
 ---
 
-### T14: i64/u64 C89 typedefs (G17, contributes to C5)
+### T14: i64/u64 C89 typedefs — short-term fix (G17, contributes to C5)
 
-**Files:** `sf/src/c89_emit.zig` (getCTypeName)
+**Files:** `sf/src/c89_emit.zig` (getCTypeName lines 447, 451)
 
-**Root cause:** Lisp uses `i64` (27 uses) and `u64` (3 uses) for atom table indices. `getCTypeName` has no entries for `TypeKind.i64_type` or `TypeKind.u64_type` — falls through to mangled name fallback at lines 517-518 → emits `z64`/`zu64` as type names → GCC: "unknown type name 'z64'".
+**Root cause:** `getCTypeName` returned raw strings `"z64"`/`"zu64"` for `i64_type`/`u64_type`, bypassing the name-mangling pipeline. This was ALWAYS a shortcut — primitives should use the same backend-independent mangled-name pattern as user-defined types.
 
-**Fix (c89_emit.zig, in getCTypeName):**
+**Fix applied (2026-06-14):** Replaced `"z64"`→`"long long"` and `"zu64"`→`"unsigned long long"`. Works (C5 eliminated, −99 errors), but **architecturally wrong** — ties type names to C89 backend.
+
+**Status:** ⚠️ (Partial — escalated to T14.5 for proper architectural fix)
+
+---
+
+### T14.5: i64/u64 — back-end-independent type names (G17, replaces T14)
+
+**Architectural problem:** T14 hardcoded C89 strings in `getCTypeName`. If back-end changes (e.g., 16-bit MSVC, WASM, Lisp), must find+replace all `"long long"` occurrences in code. The codebase already has the correct pattern: type names go through `nameManglerMangle` → `stringInternerGet` (backend-independent), and C89 content goes through `emitTypeDefinition` → `emitSpecialTypes` (single backend-specific location). All other named types (struct, enum, tagged_union, array) follow this pattern.
+
+**Part A — getCTypeName (c89_emit.zig:447,451):** Replace hardcoded strings with mangled-name pattern:
 ```zig
-if (ty.kind == TypeKind.i64_type) return "long long";
-if (ty.kind == TypeKind.u64_type) return "unsigned long long";
+if (ty.kind == TypeKind.i64_type) {
+    var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    return interner_mod.stringInternerGet(mangler.interner, mid);
+}
+if (ty.kind == TypeKind.u64_type) {
+    var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    return interner_mod.stringInternerGet(mangler.interner, mid);
+}
 ```
-Add after existing i32/u32 entries (~line 372). These are standard C89 types.
 
-**Unresolved mystery (2026-06-14):** `zig_compat.h` defines `typedef long long z64` on line 12 and `typedef unsigned long long zu64` on line 13. The header guard `ZIG_COMPAT_H` is confirmed defined. Yet GCC preprocessing (`-E`) shows `z64`/`zu64` surviving unexpanded in 54 locations, while `i64`/`u64` (from `zig_runtime.h`) ARE correctly expanded to `long long`. This suggests either:
-1. An include order issue where `zig_compat.h` content is processed but the `#else` branch (lines 12-13) is skipped due to a stray preprocessor define
-2. The second `#include "zig_compat.h"` at line 4 of lisp.c output includes a different file or an empty expansion
-3. A custom-emitted `zig_compat.h` content inside the module output that lacks the typedefs
+**Part B — emitTypeDefinition (c89_emit.zig, in emitTypeDefinition switch):** Add cases for `i64_type`/`u64_type` to emit typedefs using the same mangled name as getCTypeName:
+```zig
+if (ty.kind == TypeKind.i64_type) {
+    var tn = interner_mod.stringInternerGet(mangler.interner, mid);
+    bufferedWriterWriteIndent(writer, indent);
+    var pre: []const u8 = "typedef long long ";
+    bufferedWriterWrite(writer, pre);
+    bufferedWriterWrite(writer, tn);
+    var semi: []const u8 = ";\n";
+    bufferedWriterWrite(writer, semi);
+    return;
+}
+if (ty.kind == TypeKind.u64_type) {
+    var tn = interner_mod.stringInternerGet(mangler.interner, mid);
+    bufferedWriterWriteIndent(writer, indent);
+    var pre: []const u8 = "typedef unsigned long long ";
+    bufferedWriterWrite(writer, pre);
+    bufferedWriterWrite(writer, tn);
+    var semi: []const u8 = ";\n";
+    bufferedWriterWrite(writer, semi);
+    return;
+}
+```
 
-**Two-phase approach:**
-- **Phase A:** Apply the `getCTypeName` fix anyway (remove dependency on `z64`/`zu64` typedefs — emit `long long` directly). This is correct regardless of the mystery.
-- **Phase B:** If errors persist, investigate the preprocessor issue via `gcc -E -dM` and `grep z64/zu64` at each include boundary.
-
-**Verification:**
+**Test plan:**
 ```bash
-echo 'fn main() void { var x: i64 = 0; _ = x; }' > /tmp/t14.zig
-./out_release/zig1 --dump-c89 /tmp/t14.zig > /tmp/t14.c
-grep "long long" /tmp/t14.c  # should see "long long" for i64 type
-gcc -m32 -std=c89 ... /tmp/t14.c ... -o /tmp/t14 2>&1 | grep -c "error:"
+echo 'fn main() void { var x: i64 = 0; _ = x; }' > /tmp/t14r.zig
+./out_release/zig1 --dump-c89 /tmp/t14r.zig > /tmp/t14r.c
+grep "typedef.*long long" /tmp/t14r.c  # should show typedef for i64 mangled name
+grep -c "long long" /tmp/t14r.c        # appears in typedef + variable decl
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Iinclude ... -o /tmp/t14r 2>&1
+
+# Lisp regression
+./out_release/zig1 --dump-c89 examples/lisp_interpreter_curr/main.zig > /tmp/lisp_t14r.c
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/lisp_t14r.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/lisp_t14r 2>&1 | grep -c "error:"  # must be ≤ 428
+
+# mud/man/gol regression
 ```
 
-**Status:** ❌
+**Status:** ❌ (New)
 
 ---
 
@@ -1014,10 +1051,11 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T11 | Error union fn return type via resolveAllFnTypes + symbol_reg error_set_decl (G14) | `main.zig`, `symbol_registrator.zig` | ✅ |
 | T12 | Lowerer error union type propagation for try/catch (G15) | `lower.zig` | ❌ |
 | T13 | decl_local emission pipeline — named locals in error union fns (G16) | `lower.zig`, `c89_emit.zig` | ❌ |
-| T14 | i64/u64 C89 typedefs — z64/zu64 → long long (G17) | `c89_emit.zig` | ❌ |
+| T14 | i64/u64 C89 typedefs — short-term `"long long"` fix (G17) | `c89_emit.zig` | ⚠️ |
+| T14.5 | i64/u64 back-end-independent type names via mangled-name pipeline (G17) | `c89_emit.zig` | ❌ |
 | T15 | Coercion chain for error union patterns (G18) | `sema.zig` | ❌ |
 | T16 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
 | T17 | Multi-module output duplication — functions emitted 2-3× (G19, T9 regression) | `c89_emit.zig` | ❌ |
-| T18 | Lowerer `func.return_type` not propagated — still TYPE_VOID (G20) | `lower.zig` | ❌ |
+| T18 | Lowerer `func.return_type` still TYPE_VOID despite RTT having error union TypeId (G20) | `lower.zig` | ❌ |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing

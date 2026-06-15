@@ -444,11 +444,17 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "signed char"; return s; }
     if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "short"; return s; }
     if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "int"; return s; }
-    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "long long"; return s; }
+    if (ty.kind == TypeKind.i64_type) {
+        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
     if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char"; return s; }
     if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "unsigned short"; return s; }
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int"; return s; }
-    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "unsigned long long"; return s; }
+    if (ty.kind == TypeKind.u64_type) {
+        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
     if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
@@ -971,6 +977,8 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.struct_type) { emitStructType(emitter, tid); return; }
     if (ty.kind == TypeKind.union_type) { emitStructType(emitter, tid); return; }
     if (ty.kind == TypeKind.array_type) { emitArrayType(emitter, tid); return; }
+    if (ty.kind == TypeKind.i64_type) { emitInt64Type(emitter, tid); return; }
+    if (ty.kind == TypeKind.u64_type) { emitUint64Type(emitter, tid); return; }
 }
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
@@ -996,6 +1004,24 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
         var d: []const u8 = "0\n"; bufferedWriterWrite(&emitter.writer, d);
     }
     var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
+}
+
+fn emitInt64Type(emitter: *C89Emitter, tid: u32) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var td: []const u8 = "typedef long long "; bufferedWriterWrite(&emitter.writer, td);
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
+}
+
+fn emitUint64Type(emitter: *C89Emitter, tid: u32) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var td: []const u8 = "typedef unsigned long long "; bufferedWriterWrite(&emitter.writer, td);
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
 }
 
 fn emitSliceType(emitter: *C89Emitter, tid: u32) void {
