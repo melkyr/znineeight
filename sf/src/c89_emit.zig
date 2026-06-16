@@ -520,6 +520,24 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var slice_mid2 = nameManglerMangle(mangler, slice_nid2, @intCast(u8, 2), @intCast(u32, 0));
         return interner_mod.stringInternerGet(mangler.interner, slice_mid2);
     }
+    if (ty.c_name_id != 0) {
+        return interner_mod.stringInternerGet(mangler.interner, ty.c_name_id);
+    }
+    if (ty.kind == TypeKind.error_union_type) {
+        var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
+        var pay_cname = getCTypeName(reg, mangler, ep.payload);
+        var buf: [64]u8 = undefined;
+        var p: usize = @intCast(usize, 0);
+        var pref: []const u8 = "EU_";
+        var pi: usize = @intCast(usize, 0);
+        while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
+        var ci: usize = @intCast(usize, 0);
+        while (ci < pay_cname.len and p < @intCast(usize, 63)) : (ci += @intCast(usize, 1)) { buf[p] = pay_cname[ci]; p += @intCast(usize, 1); }
+        if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
+        var eu_nid = interner_mod.stringInternerIntern(mangler.interner, buf[0..p]);
+        var eu_mid = nameManglerMangle(mangler, eu_nid, @intCast(u8, 2), @intCast(u32, 0));
+        return interner_mod.stringInternerGet(mangler.interner, eu_mid);
+    }
     var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
@@ -1138,6 +1156,7 @@ fn emitErrorUnionType(emitter: *C89Emitter, tid: u32) void {
         var s3: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, s3);
     }
+    reg.types_items[@intCast(usize, tid)].c_name_id = interner_mod.stringInternerIntern(emitter.interner, mangled_c_name);
 }
 
 fn mangleLocalName(mangler: *NameMangler, interner: *StringInterner, name_id: u32) []const u8 {

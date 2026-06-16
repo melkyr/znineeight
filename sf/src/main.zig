@@ -326,6 +326,7 @@ fn resolveAllFnTypes(ctx: *CompilerContext) void {
                 var rft_proto = ctx.store.fn_protos.items[@intCast(usize, rft_decl.payload)];
                 var rft_rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
                 if (rft_proto.return_type_node != 0) {
+                    var fnr_m: []const u8 = "FNR:y"; pal.markerWriteInt(fnr_m, rft_decls[rft_di]);
                     var rft_rtype = resolveTypeExpr(ctx, rft_proto.return_type_node);
                     var rtrm: []const u8 = "RTR:n"; pal.markerWriteInt(rtrm, rft_proto.return_type_node);
                     var rtrtm: []const u8 = "t"; pal.markerWriteInt(rtrtm, rft_rtype);
@@ -333,6 +334,8 @@ fn resolveAllFnTypes(ctx: *CompilerContext) void {
                         rft_rt_box[0] = rft_rtype;
                         resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, rft_proto.return_type_node, rft_rtype);
                     }
+                } else {
+                    var fnr_nm: []const u8 = "FNR:n"; pal.markerWriteInt(fnr_nm, rft_decls[rft_di]);
                 }
                 var rft_is_ext: u8 = @intCast(u8, 0); if ((rft_decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { rft_is_ext = @intCast(u8, 1); }
                 var rft_fn_start: u16 = @intCast(u16, ctx.typereg.xt_len);
@@ -518,6 +521,7 @@ fn resolveTypeExpr(ctx: *CompilerContext, node_idx: u32) type_mod.TypeId {
 fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_mod.TypeId {
     if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var rtd_nm: []const u8 = "RTD:n"; pal.markerWriteInt(rtd_nm, node_idx); var rtd_km: []const u8 = "RTD:k"; pal.markerWriteInt(rtd_km, @intCast(u32, @enumToInt(node.kind)));
     if (node.kind == AstKind.ident_expr) {
         var name_id = ctx.store.identifiers.items[@intCast(usize, node.payload)];
         var tid = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, name_id));
@@ -531,6 +535,50 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         }
         var n2: []const u8 = "N2"; pal.markerWrite(n2);
         return type_mod.TYPE_UNDEFINED;
+    }
+    if (node.kind == AstKind.field_access) {
+        var fah_matched: u8 = @intCast(u8, 0);
+        var base_type = resolveTypeExprDepth(ctx, node.child_0, depth + @intCast(u32, 1));
+        if (base_type == type_mod.TYPE_UNDEFINED) {
+            var base_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
+            if (base_node.kind == AstKind.ident_expr) {
+                var base_name_id = ctx.store.identifiers.items[@intCast(usize, base_node.payload)];
+                var smi: usize = 0;
+                while (smi < @intCast(usize, ctx.symbol_reg.tables_len)) : (smi += 1) {
+                    var base_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, @intCast(u32, smi), base_name_id);
+                    if (base_sym) |bs| {
+                        if (bs.kind == sym_mod.SymbolKind.module) {
+                            var mod_id = bs.module_id;
+                            var payload_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mod_id, node.payload);
+                            if (payload_sym) |ps| {
+                                if (ps.type_id != @intCast(u32, 0)) {
+                                    fah_matched = @intCast(u8, 1);
+                                    var fam: []const u8 = "FAH:r"; pal.markerWriteInt(fam, ps.type_id);
+                                    return ps.type_id;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            var fam_m: []const u8 = "FAH:m"; pal.markerWriteInt(fam_m, node.child_0);
+            return type_mod.TYPE_UNDEFINED;
+        }
+        var base_ty = ctx.typereg.types_items[@intCast(usize, base_type)];
+        if (base_ty.kind == type_mod.TypeKind.module_type) {
+            var mod_id = base_ty.module_id;
+            var sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mod_id, node.payload);
+            if (sym) |s| {
+                if (s.type_id != @intCast(u32, 0)) {
+                    fah_matched = @intCast(u8, 1);
+                    var fam: []const u8 = "FAH:r"; pal.markerWriteInt(fam, s.type_id);
+                    return s.type_id;
+                }
+            }
+        }
+        if (fah_matched == @intCast(u8, 0)) {
+            var fnm: []const u8 = "FAH:N"; pal.markerWriteInt(fnm, node_idx);
+        }
     }
     if (node.child_0 != 0) {
         var child_type = resolveTypeExprDepth(ctx, node.child_0, depth + @intCast(u32, 1));
@@ -634,6 +682,8 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
             return type_mod.TYPE_UNDEFINED;
         }
     }
+    var und_nm2: []const u8 = "UND:n"; pal.markerWriteInt(und_nm2, node_idx);
+    var und_km: []const u8 = "UND:k"; pal.markerWriteInt(und_km, @intCast(u32, @enumToInt(node.kind)));
     return type_mod.TYPE_UNDEFINED;
 }
 

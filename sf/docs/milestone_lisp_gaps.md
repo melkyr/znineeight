@@ -28,8 +28,9 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 | G16 | Lowerer/c89 | `lower.zig`/`c89_emit.zig:2999` | `decl_local` LIR not emitted for all `addLocalDecl` names → 94 undeclared C identifiers | High | ❌ |
 | G17 | c89_emit | `c89_emit.zig:350-438` | `i64`/`u64` types emit as `z64`/`zu64` → unknown type name in C89 | Medium | ❌ |
 | G18 | Sema/Lowerer | `sema.zig`/`lower.zig` | Coercion chain missing for error union patterns (`return try`, `return error.Foo`) | High | ❌ |
-| G19 | c89_emit | `c89_emit.zig:1264` | Multi-module output duplication — functions emitted 2-3× (T9 regression) | Critical | ❌ |
-| G20 | Lowerer | `lower.zig:3117` | Lowerer `func.return_type` still TYPE_VOID despite RTT having error union TypeId | Critical | ❌ |
+| G19 | c89_emit | `c89_emit.zig:1264` | Multi-module output duplication — functions emitted 2-3× (T9 regression) | Critical | ✅ |
+| G20 | main.zig | `main.zig:535` | resolveTypeExprDepth missing field_access handler — cross-module qualified types return UNDEFINED | Critical | ❌ |
+| G21 | c89_emit | `c89_emit.zig:517` | Error union type name mismatch — getCTypeName ≠ emitErrorUnionType mangling | Medium | ❌ |
 
 ## 3. Task Details
 
@@ -968,6 +969,78 @@ echo 'const E = error { A, B }; fn f() E!u32 { return error.A; }' > /tmp/t15.zig
 grep -a "^RET:\|^COE:\|^COR:" /tmp/t15_m.txt  # Verify coercion recorded for error.Foo → !u32
 ```
 
+**Status:** ✅ (Verified 2026-06-14. T2F/COE/COR/RET markers all fire correctly. Coercion chain already working. The 428 lisp errors are from T18 (resolveTypeExprDepth missing field_access) + T19 (c89_emit name mismatch). 0 regressions.)
+
+---
+
+### T17: Multi-module output duplication (G19)
+
+**Status:** ✅ (Obsolete 2026-06-14. Zero redefinition errors in current 428 GCC output. Original appearance was cascade from T18 void signatures. Fixed incidentally by T12+T14.)
+
+---
+
+### T18: resolveTypeExprDepth field_access handler (G20)
+
+**Files:** `sf/src/main.zig` (resolveTypeExprDepth line 535)
+
+**Root cause (proven by diagnostic markers 2026-06-14):** FNR:y=48, FNR:n=0 — all 48 functions have `return_type_node != 0`. UND:n=1, UND:k25=0 — only 1 node hits the fallthrough (not field_access). The 43 RTT misses come from explicit `return TYPE_UNDEFINED` guards at lines 537 and 580: `resolveTypeExpr(child_0)` on the error set expression (`util.LispError`) returns UNDEFINED because `resolveTypeExprDepth` has no `field_access` handler for cross-module qualified types.
+
+**Missing handler pattern:**
+```zig
+if (node.kind == AstKind.field_access) {
+    // child_0 = base (module reference → ident_expr → module_type)
+    // child_1 = field_name_id
+    var base_type = resolveTypeExprDepth(ctx, node.child_0, depth + 1);
+    if (base_type == TYPE_UNDEFINED) return TYPE_UNDEFINED;
+    var base_ty = ctx.typereg.types_items[base_type];
+    if (base_ty.kind == TypeKind.module_type) {
+        var mod_id = base_ty.module_id;
+        var name_id = node.payload;
+        var sym = symbolRegistryQualifiedLookup(ctx.symbol_reg, mod_id, name_id);
+        if (sym) |s| {
+            if (s.type_id != 0) return s.type_id;
+        }
+    }
+    return TYPE_UNDEFINED;
+}
+```
+
+Same pattern as `semanticAnalyzerResolveFieldAccess` (sema.zig:267-307) for module-qualified symbol lookup. Fixes ALL cross-module qualified types (`util.LispError`, `value_mod.Value`) — not just error sets.
+
+**Verification:**
+```bash
+./out_release/zig1 --markers --dump-c89 examples/lisp_interpreter_curr/main.zig > /tmp/lisp.c 2>/tmp/m.txt
+grep -ac "HR" /tmp/m.txt   # expect HR:48 (all functions get RTT)
+grep -ac "MR" /tmp/m.txt   # expect MR:0
+./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud.c
+gcc -m32 -std=c89 ... /tmp/mud.c ... 2>&1 | grep -c "error:"  # expect 0
+```
+
+**Status:** ❌ (Redefined 2026-06-14 after diagnostic markers disproved lowerer theory)
+
+---
+
+### T19: c89_emit error union name mismatch (G21)
+
+**Files:** `sf/src/c89_emit.zig` (emitErrorUnionType line 1093, getCTypeName line 517), `sf/src/type_registry.zig` (Type.c_name_id)
+
+**Root cause:** `getCTypeName` and `emitErrorUnionType` generate different mangled C names for the same error union TypeId. `getCTypeName` uses `ty.name_id` → `nameManglerMangle` producing e.g. `zT_811C9DC5_`. `emitErrorUnionType` synthesizes `EU_<payload_mangled>` as an intermediate name, then mangles THAT → `zT_88EC7F60_EU_zT_05F374B1_u32`. The C output has `typedef zT_88EC7F60_...` but forward declarations use `zT_811C9DC5_` → GCC: unknown type.
+
+**Fix:** `Type.c_name_id` field already exists on the Type struct (type_registry.zig). Two-step fix:
+1. **emitErrorUnionType** (c89_emit.zig:1124): after computing `mangled_c_name`, intern it and write `reg.types_items[tid].c_name_id = interner_mod.stringInternerIntern(emitter.interner, mangled_c_name)`.
+2. **getCTypeName** (c89_emit.zig:431): after the `if (ty.kind == ...)` chain and before the fallback, add: `if (ty.c_name_id != 0) { return interner_mod.stringInternerGet(mangler.interner, ty.c_name_id); }`.
+
+This eliminates the 5 `unknown type zT_811C9DC5_` errors in lisp (GCC error category from classification). Same pattern as struct/enum/tagged_union types which already store their emitted names.
+
+**Test plan:**
+```bash
+echo 'const E = error { A, B }; fn f() E!u32 { return error.A; }' > /tmp/t19.zig
+./out_release/zig1 --dump-c89 /tmp/t19.zig > /tmp/t19.c 2>/dev/null
+gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/t19.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/t19 2>&1 | grep -c "unknown type"
+# Expect 0
+grep -c "zT_811C9DC5_" /tmp/t19.c  # Expect 0 — no stale name
+```
+
 **Status:** ❌
 
 ---
@@ -1053,9 +1126,10 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T13 | decl_local emission pipeline — named locals in error union fns (G16) | `lower.zig`, `c89_emit.zig` | ❌ |
 | T14 | i64/u64 C89 typedefs — short-term `"long long"` fix (G17) | `c89_emit.zig` | ⚠️ |
 | T14.5 | i64/u64 back-end-independent type names via mangled-name pipeline (G17) | `c89_emit.zig` | ❌ |
-| T15 | Coercion chain for error union patterns (G18) | `sema.zig` | ❌ |
+| T15 | Coercion chain for error union patterns (G18) | `sema.zig` | ✅ |
 | T16 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
-| T17 | Multi-module output duplication — functions emitted 2-3× (G19, T9 regression) | `c89_emit.zig` | ❌ |
-| T18 | Lowerer `func.return_type` still TYPE_VOID despite RTT having error union TypeId (G20) | `lower.zig` | ❌ |
+| T17 | Multi-module output duplication — functions emitted 2-3× (G19, T9 regression) | `c89_emit.zig` | ✅ |
+| T18 | resolveTypeExprDepth field_access handler — cross-module qualified types (G20) | `main.zig` | ❌ |
+| T19 | c89_emit error union name mismatch — getCTypeName ≠ emitErrorUnionType (G21) | `c89_emit.zig` | ✅ (partial) |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing
