@@ -30,7 +30,12 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 | G18 | Sema/Lowerer | `sema.zig`/`lower.zig` | Coercion chain missing for error union patterns (`return try`, `return error.Foo`) | High | ❌ |
 | G19 | c89_emit | `c89_emit.zig:1264` | Multi-module output duplication — functions emitted 2-3× (T9 regression) | Critical | ✅ |
 | G20 | main.zig | `main.zig:535` | resolveTypeExprDepth missing field_access handler — cross-module qualified types return UNDEFINED | Critical | ❌ |
-| G21 | c89_emit | `c89_emit.zig:517` | Error union type name mismatch — getCTypeName ≠ emitErrorUnionType mangling | Medium | ❌ |
+| G21 | c89_emit | `c89_emit.zig:525` | getCTypeName EU handler — self-reliant, no c_name_id dependency | Medium | ✅ |
+| G22 | c89_emit | `c89_emit.zig:528` | ptr_type getCTypeName all returns 'unsigned char*' → EU name dedup collision | High | ❌ |
+| G23 | c89_emit | `c89_emit.zig:754` | EnvNode struct typedef missing — unnamed guard skips struct_type | High | ❌ |
+| G24 | c89_emit | `c89_emit.zig:529` | Non-deterministic EU name — same payload different hash prefix | Medium | ❌ |
+| G25 | Lowerer | `lower.zig:3117` | func.return_type TYPE_VOID persists — RTT lookup fails for some functions | High | ❌ |
+| G26 | c89_emit/lowerer | `emitHoistedDecls` | Undeclared locals in void-return functions — cascade from G25 | Medium | ❌ |
 
 ## 3. Task Details
 
@@ -1041,6 +1046,86 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include /tmp/t19.c sf
 grep -c "zT_811C9DC5_" /tmp/t19.c  # Expect 0 — no stale name
 ```
 
+**Status:** ✅ (Completed 2026-06-16. Self-reliant EU handler in getCTypeName computes EU_+payload_cname inline. No dependency on emitSpecialTypes ordering. −39 errors, 5 EU typedefs. Remaining 577 from T20-T25.)
+
+---
+
+### T20: E1 — ptr_type EU name dedup collision (181 errors, G22)
+
+**Where:** `c89_emit.zig:528` (getCTypeName EU handler), `:2315` (emitSpecialTypes dedup)
+
+**Theory:** EU handler computes `EU_` + `getCTypeName(payload)`. For pointer payloads (`*Value`), `getCTypeName` returns `unsigned char*` — identical for ALL pointer types. Second EU with pointer payload gets same getCTypeName string → same dedup hash → `emitted_type_set.Put` skips ↔ typedef never emitted → `zT_B69C4BFB_EU_zT_D147F96A_Valu` unknown type.
+
+**Investigation:** GDB at emitSpecialTypes pass 2 for `LispError!*Value` TypeId. Break on `hash_mod.u32ToU32MapPut(&emitter.emitted_type_set, dedup_key)` — verify dedup_key collision with already-emitted `EU_unsigned_char_ptr`.
+
+**Fix candidate:** `getCTypeName` for ptr_type must return a DISTINCT string per pointee type, not the raw C pointer type. Use `nameManglerMangle(ty.name_id, ...)` for ptr_type too (same pattern as struct_type).
+
+**Status:** ❌
+
+---
+
+### T21: E2 — EnvNode struct typedef missing (30 errors, G23)
+
+**Where:** `c89_emit.zig:754-761` (unnamed whitelist)
+
+**Theory:** EnvNode struct has `name_id==0` (unnamed by construction?). `emitSpecialTypes` pass 2 unnamed guard at line 754 skips unnamed types NOT in whitelist. Whitelist at line 757: `error_union_type, optional_type, array_type, slice_type, fn_type` — struct_type is EXCLUDED. EnvNode never emitted → `zT_267BF390_EnvNode` unknown type.
+
+**Investigation:** GDB at emitSpecialTypes pass 2 for EnvNode TypeId. Print `ty.name_id`. If 0 → check whitelist bypass. If non-zero → issue is elsewhere (dedup collision with another struct).
+
+**Fix candidate:** Add `TypeKind.struct_type` (and possibly `tagged_union_type`, `union_type`) to whitelist. Guard already exists for unnamed named types — safe.
+
+**Status:** ❌
+
+---
+
+### T22: E3 — non-deterministic EU name hash (5 errors, G24)
+
+**Where:** `c89_emit.zig:529-534` (EU handler buf construction)
+
+**Theory:** Same payload Token produces two different EU hashes: `zT_1530EB8C_EU_zT_3A355BD2_Toke` (typedef exists) and `zT_C262C708_EU_zT_3A355BD2_Toke` (unknown type). The buf used to construct `EU_<pay_cname>` may have uninitialized trailing bytes that participate in interner string hash → non-deterministic interned ID → different mangled names.
+
+**Investigation:** Read EU handler at lines 526-535. Check if `buf[0..p]` is fully written (all bytes initialized) before `stringInternerIntern`. Check if `p` accurately represents the written length.
+
+**Fix candidate:** Ensure buf is zero-initialized before write, or use exact-length slice.
+
+**Status:** ❌
+
+---
+
+### T23: E4 — lowerer func.return_type TYPE_VOID (112 errors, G25)
+
+**Where:** `lower.zig:3117` (lowerFn reads RTT for proto.return_type_node)
+
+**Theory:** T18 fixed field_access in resolveTypeExprDepth but some functions still have void return type. Lowerer at line 3117 reads `resolvedTypeTableGet(resolved_types, proto.return_type_node)` → may still return null for edge cases → `func.return_type = TYPE_VOID` → `nextTemp(self, TYPE_VOID)` → void temps → `is_error` on void struct.
+
+**Investigation:** GDB at lowerFn for a void-return function. Break on RTT lookup — print proto.return_type_node and resolved_types entry. Identify WHY lookup fails despite T18 fix.
+
+**Fix candidate:** If RTT lookup returns null and fn_type HAS an error union return type, use `fn_type.return_type_id` directly (available from fn_type struct in type_registry).
+
+**Status:** ❌
+
+---
+
+### T24: E5 — undeclared locals in void functions (22 errors, G26)
+
+**Where:** `c89_emit.zig:emitHoistedDecls` / `lower.zig:addLocalDecl`
+
+**Theory:** Inside void-return functions (T23), `addLocalDecl` fires but the `decl_local` LIR instruction may be skipped during emission. Or the locals are declared with TYPE_VOID and getCTypeName returns "void" → GCC rejects them.
+
+**Expected:** Fixed as cascade from T23. Only investigate independently if E5 persists after T23.
+
+**Status:** ❌
+
+---
+
+### T25: E6 — type mismatches cascade (215 errors)
+
+**Where:** No investigation needed — cascade from T20-T24.
+
+**Theory:** 215 Slice/int/pointer assign mismatches, aggregate-as-integer, subscript failures. All disappear when typedefs exist and function return types are correct.
+
+**Fix:** Verify after T20-T24. If errors remain → classify independently.
+
 **Status:** ❌
 
 ---
@@ -1130,6 +1215,12 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T16 | Integration test (lisp compiles + runs + mud/man/gol regression) | All | ❌ |
 | T17 | Multi-module output duplication — functions emitted 2-3× (G19, T9 regression) | `c89_emit.zig` | ✅ |
 | T18 | resolveTypeExprDepth field_access handler — cross-module qualified types (G20) | `main.zig` | ❌ |
-| T19 | c89_emit error union name mismatch — getCTypeName ≠ emitErrorUnionType (G21) | `c89_emit.zig` | ✅ (partial) |
+| T19 | c89_emit error union name mismatch — self-reliant getCTypeName EU handler (G21) | `c89_emit.zig` | ✅ |
+| T20 | E1: ptr_type EU name collision — all ptr types→same 'unsigned char*' → dedup skips (G22) | `c89_emit.zig:528,2315` | ❌ |
+| T21 | E2: EnvNode struct typedef missing — unnamed guard skips struct_type (G23) | `c89_emit.zig:754-761` | ❌ |
+| T22 | E3: Non-deterministic EU name hash — same payload different prefix (G24) | `c89_emit.zig:529-534` | ❌ |
+| T23 | E4: is_error/data on non-struct — T18 void return (lowerer func.return_type) (G25) | `lower.zig:3117` | ❌ |
+| T24 | E5: Undeclared locals (val/data/s/name) — cascade from T23 (G26) | `c89_emit.zig:emitHoistedDecls` | ❌ |
+| T25 | E6: Type mismatches (Slice/int/pointer assign) — cascade from T20-T24 | — | ❌ |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing

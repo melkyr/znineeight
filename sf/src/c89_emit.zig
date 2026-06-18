@@ -33,19 +33,13 @@ pub fn bufferedWriterInit() BufferedWriter {
 
 pub fn bufferedWriterFlush(self: *BufferedWriter) void {
     if (self.pos == @intCast(usize, 0)) return;
-    var fp_m: []const u8 = "FLUSH:p"; pal.markerWrite(fp_m);
-    var fp_pb: [10]u8 = undefined; var fp_pl = itoa_mod.itoa(@intCast(u32, self.pos), fp_pb[0..]); var fp_ps: usize = @intCast(usize, 9) - @intCast(usize, fp_pl); pal.markerWrite(fp_pb[fp_ps..@intCast(usize, 9)]);
-    var fp_nl: []const u8 = "\n"; pal.markerWrite(fp_nl);
+    var fp_m: []const u8 = "FL:p"; pal.markerWriteInt(fp_m, @intCast(u32, self.pos));
     pal.stdout_write(self.buf[0..self.pos]);
     self.pos = @intCast(usize, 0);
-    var fe_m: []const u8 = "FEND\n"; pal.markerWrite(fe_m);
+    var fe_m: []const u8 = "FE:p"; pal.markerWriteInt(fe_m, @intCast(u32, self.pos));
 }
 
  pub fn bufferedWriterWrite(self: *BufferedWriter, data: []const u8) void {
-    pal.stderr_write(data);
-    var wr_m: []const u8 = "WRT:l"; pal.markerWrite(wr_m);
-    var wr_lb: [10]u8 = undefined; var wr_ll = itoa_mod.itoa(@intCast(u32, data.len), wr_lb[0..]); var wr_ls: usize = @intCast(usize, 9) - @intCast(usize, wr_ll); pal.markerWrite(wr_lb[wr_ls..@intCast(usize, 9)]);
-    var wr_nl: []const u8 = "\n"; pal.markerWrite(wr_nl);
     var remaining = data;
     while (remaining.len > @intCast(usize, 0)) {
         var space = 4096 - self.pos;
@@ -525,18 +519,21 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     }
     if (ty.kind == TypeKind.error_union_type) {
         var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
-        var pay_cname = getCTypeName(reg, mangler, ep.payload);
         var buf: [64]u8 = undefined;
         var p: usize = @intCast(usize, 0);
         var pref: []const u8 = "EU_";
         var pi: usize = @intCast(usize, 0);
         while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
-        var ci: usize = @intCast(usize, 0);
-        while (ci < pay_cname.len and p < @intCast(usize, 63)) : (ci += @intCast(usize, 1)) { buf[p] = pay_cname[ci]; p += @intCast(usize, 1); }
-        if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
-        var eu_nid = interner_mod.stringInternerIntern(mangler.interner, buf[0..p]);
-        var eu_mid = nameManglerMangle(mangler, eu_nid, @intCast(u8, 2), @intCast(u32, 0));
-        return interner_mod.stringInternerGet(mangler.interner, eu_mid);
+        var pl = ep.payload;
+        var di: usize = p;
+        while (pl > @intCast(u32, 0) or di == p) : (di += @intCast(usize, 1)) {
+            buf[di] = @intCast(u8, @intCast(u32, '0') + (pl % @intCast(u32, 10)));
+            pl = pl / @intCast(u32, 10);
+            if (di >= @intCast(usize, 63)) break;
+        }
+        p = di;
+        var eu_nid = nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
+        return interner_mod.stringInternerGet(mangler.interner, eu_nid);
     }
     var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
@@ -941,6 +938,7 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var es4: []const u8 = "} "; bufferedWriterWrite(&emitter.writer, es4);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var es5: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es5);
+    var es_m: []const u8 = "ES:n"; pal.markerWriteInt(es_m, mangled_id);
 }
 
 fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
@@ -1113,33 +1111,8 @@ fn emitErrorUnionType(emitter: *C89Emitter, tid: u32) void {
     var ty = reg.types_items[@intCast(usize, tid)];
     var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
     var pay_ty = reg.types_items[@intCast(usize, ep.payload)];
-    var buf: [64]u8 = undefined;
-    var p: usize = @intCast(usize, 0);
-    var pref: []const u8 = "EU_";
-    var pi: usize = @intCast(usize, 0);
-    while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) {
-        buf[p] = pref[pi]; p += @intCast(usize, 1);
-    }
-    var pay_c_name: []const u8 = undefined;
-    if (pay_ty.kind == TypeKind.void_type) {
-        var vp: []const u8 = "void";
-        var vi: usize = @intCast(usize, 0);
-        while (vi < vp.len and p < @intCast(usize, 63)) : (vi += @intCast(usize, 1)) {
-            buf[p] = vp[vi]; p += @intCast(usize, 1);
-        }
-    } else {
-        pay_c_name = getCTypeName(reg, emitter.mangler, ep.payload);
-        var pay_mid = nameManglerMangle(emitter.mangler, pay_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
-        var pay_mangled = interner_mod.stringInternerGet(emitter.interner, pay_mid);
-        var ei: usize = @intCast(usize, 0);
-        while (ei < pay_mangled.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) {
-            buf[p] = pay_mangled[ei]; p += @intCast(usize, 1);
-        }
-    }
-    if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
-    var eu_nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
-    var mangled_id = nameManglerMangle(emitter.mangler, eu_nid, @intCast(u8, 2), @intCast(u32, 0));
-    var mangled_c_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var pay_c_name = getCTypeName(reg, emitter.mangler, ep.payload);
+    var mangled_c_name = getCTypeName(reg, emitter.mangler, tid);
     if (pay_ty.kind == TypeKind.void_type) {
         var s1: []const u8 = "typedef struct { int err; int is_error; } ";
         bufferedWriterWrite(&emitter.writer, s1);
