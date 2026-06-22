@@ -446,6 +446,17 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     }
 }
 
+fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, ret_val: u32) u32 {
+    var rn = self.store.nodes.items[@intCast(usize, child_0)];
+    if (rn.kind == AstKind.error_literal) {
+        var frt = self.registry.types_items[@intCast(usize, self.current_fn_return)];
+        if (frt.kind == type_mod.TypeKind.error_union_type) {
+            return self.registry.eu_items[@intCast(usize, frt.payload_idx)].error_set;
+        }
+    }
+    return ret_val;
+}
+
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fne: []const u8 = "FNE\n"; pal_mod.markerWrite(fne);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
@@ -1232,7 +1243,7 @@ pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, 
                 var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
                 var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
                 var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-                tryRecordCoercion(self, node.child_0, ret_val, self.current_fn_return);
+                tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, ret_val), self.current_fn_return);
             }
         }
     } else if (node.kind == AstKind.plain_assign or
@@ -1467,7 +1478,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
                     var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
                     var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-                    tryRecordCoercion(self, node.child_0, ret_val, self.current_fn_return);
+                    tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, ret_val), self.current_fn_return);
                 }
             }
         } else if (node.kind == AstKind.plain_assign or
