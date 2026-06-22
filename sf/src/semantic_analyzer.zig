@@ -769,8 +769,8 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
          var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
-        if (i == @intCast(usize, 0)) { unified = bt; unified_node = prong.child_0; }
-        else if (bt == type_mod.TYPE_NORETURN) {}
+        if (bt == type_mod.TYPE_NORETURN) {}
+        else if (unified == @intCast(u32, 0)) { unified = bt; unified_node = prong.child_0; }
         else if (bt == unified) {}
         else if (coercion_mod.classifyCoercion(self.registry, bt, unified) != coercion_mod.CoercionKind.none) {
             tryRecordCoercion(self, prong.child_0, bt, unified);
@@ -949,10 +949,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         }
                     }
                 }
+                tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, result), self.current_fn_return);
             }
         } else {
             result = type_mod.TYPE_VOID;
         }
+        result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.expr_stmt) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.import_expr) {
