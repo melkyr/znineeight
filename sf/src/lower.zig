@@ -408,6 +408,18 @@ fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
 }
 
+fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
+    var ty = self.ctx.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.error_union_type) {
+        var pay = self.ctx.registry.eu_items[@intCast(usize, ty.payload_idx)].payload;
+        var payk = self.ctx.registry.types_items[@intCast(usize, pay)].kind;
+        if (payk != type_mod.TypeKind.void_type) {
+            return pay;
+        }
+    }
+    return tid;
+}
+
 fn nameMapGet(self: *LirLowerer, temp_id: u32) u32 {
     var result = hash_mod.u32ToU32MapGet(&self.local_decl_name_map, temp_id);
     if (result) |v| return v;
@@ -1667,7 +1679,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .ret = inner_temp });
             self.block_terminated = @intCast(u8, 1);
             self.current_bb = ok_bb;
-            var result = nextTemp(self, eu_box[0]);
+            var result = nextTemp(self, euPayloadOf(self, eu_box[0]));
             emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = inner_temp, .result = result } });
             if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = join_bb });
@@ -1700,7 +1712,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var ok_bb = createBlock(self);
             var join_bb = createBlock(self);
             emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
-            var join_temp = nextTemp(self, eu_box[0]);
+            var join_temp = nextTemp(self, euPayloadOf(self, eu_box[0]));
             self.current_bb = err_bb;
             var err_val = lowerExpr(self, node.child_1);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
@@ -1708,7 +1720,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .jump = join_bb });
             }
             self.current_bb = ok_bb;
-            var ok_val = nextTemp(self, eu_box[0]);
+            var ok_val = nextTemp(self, euPayloadOf(self, eu_box[0]));
             emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = ok_val } });
             if (self.block_terminated == @intCast(u8, 0)) {
