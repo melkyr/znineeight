@@ -457,6 +457,31 @@ fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, ret_val: u32) u32 {
     return ret_val;
 }
 
+fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.child_0 != @intCast(u32, 0)) {
+        var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
+            if (ret_val != self.current_fn_return) {
+                var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
+                if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                    var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+                    if (ret_node.kind == AstKind.enum_literal) {
+                        var old_tu = self.current_switch_cond_tu;
+                        self.current_switch_cond_tu = self.current_fn_return;
+                        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+                        self.current_switch_cond_tu = old_tu;
+                    }
+                }
+            }
+            var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
+            var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
+            var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
+            tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, ret_val), self.current_fn_return);
+        }
+    }
+}
+
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fne: []const u8 = "FNE\n"; pal_mod.markerWrite(fne);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
@@ -933,27 +958,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.paren_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
     } else if (node.kind == AstKind.return_stmt) {
-        if (node.child_0 != @intCast(u32, 0)) {
-            result = semanticAnalyzerResolveExpr(self, node.child_0);
-            if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
-                if (result != self.current_fn_return) {
-                    var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
-                    if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                        var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
-                        if (ret_node.kind == AstKind.enum_literal) {
-                            var old_tu = self.current_switch_cond_tu;
-                            self.current_switch_cond_tu = self.current_fn_return;
-                            var elv_res = semanticAnalyzerResolveExpr(self, node.child_0);
-                            self.current_switch_cond_tu = old_tu;
-                            result = elv_res;
-                        }
-                    }
-                }
-                tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, result), self.current_fn_return);
-            }
-        } else {
-            result = type_mod.TYPE_VOID;
-        }
+        resolveReturnStmt(self, node_idx);
         result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.expr_stmt) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1057,219 +1062,6 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     var evcap = self.enum_value_table.capacity; var evcnt = self.enum_value_table.count;
     var vm: []const u8 = "EVC:N"; pal_mod.markerWriteInt(vm, @intCast(u32, evcnt));
     var vcm: []const u8 = "EVC:C"; pal_mod.markerWriteInt(vcm, @intCast(u32, evcap));
-}
-
-pub fn semanticAnalyzerResolveStmtDepth(self: *SemanticAnalyzer, node_idx: u32, depth: u32) void {
-    var dst_nm: []const u8 = "DST:N"; pal_mod.markerWriteInt(dst_nm, node_idx);
-    var dst_dm: []const u8 = "DST:D"; pal_mod.markerWriteInt(dst_dm, depth);
-    if (depth > @intCast(u32, 32)) {
-        @panic("resolveStmtDepth depth > 32");
-    }
-    if (node_idx == @intCast(u32, 0)) return;
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
-     if (node.kind == AstKind.block) {
-          var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-          var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
-          var blk_cm: []const u8 = "BLK:C"; pal_mod.markerWriteInt(blk_cm, @intCast(u32, children.len));
-          var i: usize = 0;
-          while (i < children.len) : (i += 1) {
-              var bc_m: []const u8 = "BCK:B"; pal_mod.markerWriteInt(bc_m, node_idx);
-              var bc_im: []const u8 = "BCK:I"; pal_mod.markerWriteInt(bc_im, @intCast(u32, i));
-              var bc_nm: []const u8 = "BCK:N"; pal_mod.markerWriteInt(bc_nm, children[i]);
-              var cnode_k = self.store.nodes.items[@intCast(usize, children[i])].kind;
-              var bc_km: []const u8 = "BCK:K"; pal_mod.markerWriteInt(bc_km, @intCast(u32, @enumToInt(cnode_k)));
-              semanticAnalyzerResolveStmtDepth(self, children[i], depth + @intCast(u32, 1));
-         }
-         var bcej: []const u8 = "]\n"; pal_mod.markerWrite(bcej);
-     } else if (node.kind == AstKind.var_decl) {
-        if (node.payload == @intCast(u32, 55)) {
-            var d10n_m: []const u8 = "D10:C0"; pal_mod.markerWriteInt(d10n_m, node.child_0);
-            var d10c_m: []const u8 = "D10:C1"; pal_mod.markerWriteInt(d10c_m, node.child_1);
-            if (node.child_1 != @intCast(u32, 0)) {
-                var inode = self.store.nodes.items[@intCast(usize, node.child_1)];
-                var d10k_m: []const u8 = "D10:IK"; pal_mod.markerWriteInt(d10k_m, @intCast(u32, @enumToInt(inode.kind)));
-            }
-        }
-        var vd_m: []const u8 = "VD:N"; pal_mod.markerWriteInt(vd_m, node.payload);
-        var vd2_m: []const u8 = "VD:C"; pal_mod.markerWriteInt(vd2_m, @intCast(u32, self.local_decl_count));
-        var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
-        if (node.child_0 != @intCast(u32, 0)) {
-            var ann = self.store.nodes.items[@intCast(usize, node.child_0)];
-            if (ann.kind == AstKind.ident_expr) { decl_type = semanticAnalyzerResolveExpr(self, node.child_0); }
-            else {
-                var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
-                if (rt) |t| { decl_type = t; }
-            }
-        }
-        if (node.child_1 != @intCast(u32, 0)) {
-            var init_node = self.store.nodes.items[@intCast(usize, node.child_1)];
-            var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
-            var it = semanticAnalyzerResolveExpr(self, node.child_1);
-            if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
-                var ck = coercion_mod.classifyCoercion(self.registry, it, decl_type);
-                if (ck != coercion_mod.CoercionKind.none) {
-                    coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
-                }
-            }
-            if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
-            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
-        }
-        if (self.local_decl_count >= self.local_decl_cap) {
-            semanticAnalyzerGrowLocalDecls(self);
-        }
-        self.local_decl_names[self.local_decl_count] = node.payload;
-        self.local_decl_types[self.local_decl_count] = decl_type;
-        self.local_decl_count += @intCast(usize, 1);
-        var d4v: []const u8 = "D4:N"; pal_mod.markerWriteInt(d4v, node.payload);
-        var d4v2: []const u8 = "D4:T"; pal_mod.markerWriteInt(d4v2, decl_type);
-    } else if (node.kind == AstKind.if_stmt) {
-         _ = semanticAnalyzerResolveExpr(self, node.child_0);
-         var ifs_b: [1]u32 = [1]u32{node.child_1};
-         var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
-         if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = self.store.nodes.items[@intCast(usize, ifs_b[0])]; ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
-          var ifst_nm: []const u8 = "IFST:N"; pal_mod.markerWriteInt(ifst_nm, node_idx);
-          var ifst_cm: []const u8 = "IFST:C"; pal_mod.markerWriteInt(ifst_cm, ifs_b[0]);
-          var ifst_km: []const u8 = "IFST:K"; pal_mod.markerWriteInt(ifst_km, ifs_k[0]);
-          var ifst_c2m: []const u8 = "IFST:2"; pal_mod.markerWriteInt(ifst_c2m, node.child_2);
-          var ifs_k2: [1]u32 = [1]u32{@intCast(u32, 0)};
-          if (node.child_2 != @intCast(u32, 0)) { var ifs_cn2 = self.store.nodes.items[@intCast(usize, node.child_2)]; ifs_k2[0] = @intCast(u32, @enumToInt(ifs_cn2.kind)); }
-          var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
-         semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
-        if (node.child_2 != @intCast(u32, 0)) {
-            semanticAnalyzerResolveStmtDepth(self, node.child_2, depth + @intCast(u32, 1));
-        }
-      } else if (node.kind == AstKind.while_stmt) {
-         if (node.child_1 != @intCast(u32, 0)) {
-             var ws_node = self.store.nodes.items[@intCast(usize, node.child_1)];
-             var wst_nm: []const u8 = "WST:N"; pal_mod.markerWriteInt(wst_nm, node_idx);
-             var wst_km: []const u8 = "WST:K"; pal_mod.markerWriteInt(wst_km, @intCast(u32, @enumToInt(ws_node.kind)));
-             var wst_dm: []const u8 = "WST:D"; pal_mod.markerWriteInt(wst_dm, depth);
-         }
-        _ = semanticAnalyzerResolveExpr(self, node.child_0);
-        semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
-    } else if (node.kind == AstKind.for_stmt) {
-         _ = semanticAnalyzerResolveExpr(self, node.child_0);
-         var fs_c_m: []const u8 = "FS:C"; pal_mod.markerWriteInt(fs_c_m, node.child_0);
-         var cnode = self.store.nodes.items[@intCast(usize, node.child_0)];
-         var fs_ck_m: []const u8 = "FS:CK"; pal_mod.markerWriteInt(fs_ck_m, @intCast(u32, @enumToInt(cnode.kind)));
-         var it_tid = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
-         if (it_tid) |tid| {
-             var fs_tid_m: []const u8 = "FS:T"; pal_mod.markerWriteInt(fs_tid_m, tid);
-             var ty = self.registry.types_items[@intCast(usize, tid)];
-             var elem_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-             if (ty.kind == type_mod.TypeKind.slice_type) {
-                 elem_box[0] = self.registry.slice_items[@intCast(usize, ty.payload_idx)].elem;
-             } else if (ty.kind == type_mod.TypeKind.array_type) {
-                 elem_box[0] = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem;
-             }
-             if (node.payload != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
-                 var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, node.payload);
-                 var fs_e_m: []const u8 = "FS:E"; pal_mod.markerWriteInt(fs_e_m, elem_box[0]);
-                 if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-                 self.local_decl_names[self.local_decl_count] = node.payload; self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_count += @intCast(usize, 1);
-                 var d4f_n: []const u8 = "D4F:N"; pal_mod.markerWriteInt(d4f_n, node.payload);
-                 var d4f_t: []const u8 = "D4F:T"; pal_mod.markerWriteInt(d4f_t, elem_box[0]);
-             }
-         } else {
-             var a5_m: []const u8 = "FS:M\n"; pal_mod.markerWrite(a5_m);
-         }
-         if (node.child_2 != @intCast(u32, 0)) {
-             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-             self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_count += @intCast(usize, 1);
-             var f2_m: []const u8 = "FIX2:LN"; pal_mod.markerWriteInt(f2_m, node.child_2);
-         }
-        semanticAnalyzerResolveStmtDepth(self, node.child_1, depth + @intCast(u32, 1));
-    } else if (node.kind == AstKind.swt_ex) {
-        var sw: []const u8 = "SW"; pal_mod.markerWrite(sw);
-        _ = semanticAnalyzerResolveExpr(self, node_idx);
-        if (node.payload != @intCast(u32, 0)) {
-            var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-            var pi: usize = 0;
-            while (pi < prongs.len) : (pi += 1) {
-                var prong_node = self.store.nodes.items[@intCast(usize, prongs[pi])];
-                var flgm: []const u8 = "FLG:F"; pal_mod.markerWriteInt(flgm, @intCast(u32, prong_node.flags));
-                var flgpm: []const u8 = "FLG:C1"; pal_mod.markerWriteInt(flgpm, prong_node.child_1);
-                if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
-                    var capture_name = prong_node.child_1;
-                    var cond_rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
-                    if (cond_rt) |cond_type| {
-                        var crtm: []const u8 = "CRT:T"; pal_mod.markerWriteInt(crtm, cond_type);
-                        if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
-                            var tu_ty = self.registry.types_items[@intCast(usize, cond_type)];
-                            if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                                var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
-                                var case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong_node.payload);
-                                var cecm: []const u8 = "CEC:L"; pal_mod.markerWriteInt(cecm, @intCast(u32, case_ec.len));
-                                if (case_ec.len > @intCast(usize, 0)) {
-                                    var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
-                                    if (ev) |idx| {
-                                        var evtm: []const u8 = "EVT:I"; pal_mod.markerWriteInt(evtm, idx);
-                                        var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
-                                        if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-                                        self.local_decl_names[self.local_decl_count] = capture_name;
-                                        self.local_decl_types[self.local_decl_count] = fe.type_id;
-                                        self.local_decl_count += @intCast(usize, 1);
-                                        var sca_m: []const u8 = "SCA:N"; pal_mod.markerWriteInt(sca_m, capture_name);
-                                        var sca_tm: []const u8 = "SCA:T"; pal_mod.markerWriteInt(sca_tm, fe.type_id);
-                                    } else {
-                                        var evt_nul: []const u8 = "EVT:NULL\n"; pal_mod.markerWrite(evt_nul);
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        var crt_nul: []const u8 = "CRT:NULL\n"; pal_mod.markerWrite(crt_nul);
-                    }
-                }
-                if (prong_node.child_0 != @intCast(u32, 0)) {
-                    semanticAnalyzerResolveStmtDepth(self, prong_node.child_0, depth + @intCast(u32, 1));
-                }
-            }
-        }
-    } else if (node.kind == AstKind.return_stmt) {
-        if (node.child_0 != @intCast(u32, 0)) {
-            var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
-            if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
-                if (ret_val != self.current_fn_return) {
-                    var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
-                    if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                        var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
-                        if (ret_node.kind == AstKind.enum_literal) {
-                            var old_tu = self.current_switch_cond_tu;
-                            self.current_switch_cond_tu = self.current_fn_return;
-                            _ = semanticAnalyzerResolveExpr(self, node.child_0);
-                            self.current_switch_cond_tu = old_tu;
-                        }
-                    }
-                }
-                var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
-                var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
-                var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-                tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, ret_val), self.current_fn_return);
-            }
-        }
-    } else if (node.kind == AstKind.plain_assign or
-               node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
-               node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
-               node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
-               node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
-               node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign) {
-        _ = semanticAnalyzerResolveExpr(self, node_idx);
-    } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
-        semanticAnalyzerResolveStmtDepth(self, node.child_0, depth + @intCast(u32, 1));
-    } else if (node.kind == AstKind.break_stmt) {
-    } else if (node.kind == AstKind.continue_stmt) {
-    } else {
-        _ = semanticAnalyzerResolveExpr(self, node_idx);
-    }
-    if (node.child_0 != @intCast(u32, 0)) {
-        var nc = self.store.nodes.items[@intCast(usize, node.child_0)];
-        if (nc.kind == AstKind.fn_decl) return;
-    }
-    if (node.child_1 != @intCast(u32, 0)) {
-        var nc = self.store.nodes.items[@intCast(usize, node.child_1)];
-        if (nc.kind == AstKind.fn_decl) return;
-    }
 }
 
 const StmtWorkItem = struct {
@@ -1462,27 +1254,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 }
             }
         } else if (node.kind == AstKind.return_stmt) {
-            if (node.child_0 != @intCast(u32, 0)) {
-                var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
-                if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
-                    if (ret_val != self.current_fn_return) {
-                        var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
-                        if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                            var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
-                            if (ret_node.kind == AstKind.enum_literal) {
-                                var old_tu = self.current_switch_cond_tu;
-                                self.current_switch_cond_tu = self.current_fn_return;
-                                _ = semanticAnalyzerResolveExpr(self, node.child_0);
-                                self.current_switch_cond_tu = old_tu;
-                            }
-                        }
-                    }
-                    var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
-                    var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
-                    var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-                    tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, ret_val), self.current_fn_return);
-                }
-            }
+            resolveReturnStmt(self, node_idx);
         } else if (node.kind == AstKind.plain_assign or
                    node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
                    node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
