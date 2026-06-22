@@ -17,7 +17,7 @@ fn tokenArrayEnsureCapacity(items: *[*]Token, len: *usize, cap: *usize, alloc: *
     var nc = new_cap;
     if (nc < cap.* * 2) nc = cap.* * 2;
     if (nc < @intCast(usize, 64)) nc = @intCast(usize, 64);
-    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 24) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(Token)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Token, raw);
     for (items.*[0..len.*]) |item, i| { new_items[i] = item; }
     items.* = new_items;

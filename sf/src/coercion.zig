@@ -42,7 +42,7 @@ fn coercionTableEnsureCapacity(self: *CoercionTable, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.entries_cap * 2) nc = self.entries_cap * 2;
     if (nc < 8) nc = 8;
-    var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, 12) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, @sizeOf(CoercionEntry)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]CoercionEntry, raw);
     for (self.entries_items[0..self.entries_len]) |item, i| { new_items[i] = item; }
     self.entries_items = new_items;

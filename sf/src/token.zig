@@ -130,7 +130,7 @@ pub var keyword_table: []KeywordEntry = undefined;
 pub var keyword_count: usize = 0;
 
 pub fn initKeywordTable(alloc: *Sand) void {
-    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 12) * @intCast(usize, 36), @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(KeywordEntry)) * @intCast(usize, 36), @intCast(usize, 4)) catch unreachable;
     var table = @ptrCast([*]KeywordEntry, raw);
     var i: usize = 0;
     var s_const: []const u8 = "const"; table[i] = KeywordEntry{ .name = s_const, .kind = TokenKind.kw_const }; i += 1;

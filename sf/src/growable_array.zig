@@ -112,7 +112,7 @@ pub fn astNodeArrayListEnsureCapacity(self: *AstNodeArrayList, new_capacity: usi
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 24) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(AstNode)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]AstNode, raw);
     for (self.items[0..self.len]) |item, i| {
         new_items[i] = item;
@@ -240,7 +240,7 @@ pub fn fnProtoArrayListEnsureCapacity(self: *FnProtoArrayList, new_capacity: usi
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 12) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(FnProto)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]FnProto, raw);
     for (self.items[0..self.len]) |item, i| {
         new_items[i] = item;

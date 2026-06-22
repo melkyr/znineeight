@@ -321,7 +321,7 @@ pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
     var nc = new_cap;
     if (nc < ctx.defer_queue_cap * 2) nc = ctx.defer_queue_cap * 2;
     if (nc < 8) nc = 8;
-    var raw = alloc_mod.sandAlloc(ctx.defer_queue_alloc, @intCast(usize, 12) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(ctx.defer_queue_alloc, @intCast(usize, @sizeOf(DeferEntry)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]DeferEntry, raw);
     var i: usize = 0;
     while (i < ctx.defer_queue_len) : (i += 1) { new_items[i] = ctx.defer_queue_items[i]; }

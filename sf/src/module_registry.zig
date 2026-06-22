@@ -51,7 +51,7 @@ pub fn moduleEntryArrayListEnsureCapacity(self: *ModuleEntryArrayList, new_capac
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 32) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(ModuleEntry)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]ModuleEntry, raw);
     for (self.items[0..self.len]) |item, i| {
         new_items[i] = item;

@@ -42,7 +42,7 @@ fn symbolTableEnsureCapacity(self: *SymbolTable, new_capacity: usize) void {
     var nc = new_capacity;
     if (nc < self.capacity * 2) nc = self.capacity * 2;
     if (nc < 8) nc = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 24) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(Symbol)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Symbol, raw);
     for (self.items[0..self.len]) |item, i| { new_items[i] = item; }
     self.items = new_items;
@@ -82,7 +82,7 @@ fn symbolRegistryEnsureCapacity(self: *SymbolRegistry, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.tables_cap * 2) nc = self.tables_cap * 2;
     if (nc < 8) nc = 8;
-    var raw = alloc_mod.sandAlloc(self.tables_alloc, @intCast(usize, 16) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.tables_alloc, @intCast(usize, @sizeOf(SymbolTable)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]SymbolTable, raw);
     for (self.tables_items[0..self.tables_len]) |item, i| { new_items[i] = item; }
     self.tables_items = new_items;

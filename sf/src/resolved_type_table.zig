@@ -39,7 +39,7 @@ fn resolvedTypeTableEnsureCapacity(self: *ResolvedTypeTable, new_cap: usize) voi
     var nc = new_cap;
     if (nc < self.entries_cap * 2) nc = self.entries_cap * 2;
     if (nc < @intCast(usize, 8)) nc = @intCast(usize, 8);
-    var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, 8) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, @sizeOf(TypeTableEntry)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]TypeTableEntry, raw);
     for (self.entries_items[0..self.entries_len]) |item, i| {
         new_items[i] = item;

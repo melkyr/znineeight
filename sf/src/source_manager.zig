@@ -32,7 +32,7 @@ fn sourceFileArrayListEnsureCapacity(self: *SourceFileArrayList, new_capacity: u
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
-    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 20) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(SourceFile)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]SourceFile, raw);
     for (self.items[0..self.len]) |item, i| {
         new_items[i] = item;
