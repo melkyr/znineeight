@@ -536,6 +536,58 @@ fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_m
         var n2: []const u8 = "N2"; pal.markerWrite(n2);
         return type_mod.TYPE_UNDEFINED;
     }
+    if (node.kind == AstKind.struct_decl) {
+        var sd_id: [12]u8 = undefined;
+        var sd_idl = itoa_mod.itoa(node_idx, sd_id[0..]);
+        var sd_ids: usize = @intCast(usize, 11) - @intCast(usize, sd_idl);
+        var sd_nm: [24]u8 = undefined;
+        sd_nm[0] = @intCast(u8, 97); sd_nm[1] = @intCast(u8, 110); sd_nm[2] = @intCast(u8, 111); sd_nm[3] = @intCast(u8, 110); sd_nm[4] = @intCast(u8, 95);
+        var sd_di: usize = 0;
+        while (sd_di < @intCast(usize, sd_idl)) : (sd_di += 1) {
+            sd_nm[@intCast(usize, 5) + sd_di] = sd_id[sd_ids + sd_di];
+        }
+        var sd_namelen: usize = @intCast(usize, 5) + @intCast(usize, sd_idl);
+        var sd_name_id = interner_mod.stringInternerIntern(ctx.interner, sd_nm[0..sd_namelen]);
+        var sd_existing = type_mod.nameCacheGet(ctx.typereg, @intCast(u64, sd_name_id));
+        if (sd_existing) |se| return se;
+        var sd_tid = type_mod.typeRegistryRegisterNamedType(ctx.typereg, @intCast(u32, 0), sd_name_id, type_mod.TypeKind.struct_type);
+        if (node.payload != 0) {
+            var sd_children = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+            var sd_fty: [32]u32 = undefined;
+            var sd_fnm: [32]u32 = undefined;
+            var sd_fc: usize = 0;
+            var sd_i: usize = 0;
+            while (sd_i < sd_children.len and sd_fc < @intCast(usize, 32)) : (sd_i += 1) {
+                var sd_fd = ctx.store.nodes.items[@intCast(usize, sd_children[sd_i])];
+                if (sd_fd.kind == AstKind.field_decl) {
+                    var sd_ft = resolveTypeExprDepth(ctx, sd_fd.child_0, depth + @intCast(u32, 1));
+                    sd_fty[sd_fc] = sd_ft;
+                    sd_fnm[sd_fc] = sd_fd.payload;
+                    sd_fc += 1;
+                }
+            }
+            if (sd_fc > @intCast(usize, 0)) {
+                var sd_fstart: u32 = @intCast(u32, ctx.typereg.fe_len);
+                var sd_j: usize = 0;
+                while (sd_j < sd_fc) : (sd_j += 1) {
+                    type_mod.feAppend(ctx.typereg, type_mod.FieldEntry{
+                        .name_id = sd_fnm[sd_j],
+                        .type_id = sd_fty[sd_j],
+                        .offset = @intCast(u32, 0),
+                    });
+                }
+                type_mod.stAppend(ctx.typereg, type_mod.StructPayload{
+                    .fields_start = @intCast(u16, sd_fstart),
+                    .fields_count = @intCast(u16, sd_fc),
+                });
+                var sd_st_idx: u32 = @intCast(u32, ctx.typereg.st_len - @intCast(usize, 1));
+                var sd_ty = ctx.typereg.types_items[@intCast(usize, sd_tid)];
+                sd_ty.payload_idx = sd_st_idx;
+                ctx.typereg.types_items[@intCast(usize, sd_tid)] = sd_ty;
+            }
+        }
+        return sd_tid;
+    }
     if (node.kind == AstKind.field_access) {
         var fah_matched: u8 = @intCast(u8, 0);
         var base_type = resolveTypeExprDepth(ctx, node.child_0, depth + @intCast(u32, 1));
