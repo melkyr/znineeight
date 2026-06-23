@@ -583,7 +583,8 @@ fn tstEmitPrimitiveKind(kind: TypeKind) bool {
            k == @enumToInt(TypeKind.c_char_type) or k == @enumToInt(TypeKind.f32_type) or
            k == @enumToInt(TypeKind.f64_type) or k == @enumToInt(TypeKind.bool_type) or
            k == @enumToInt(TypeKind.void_type) or k == @enumToInt(TypeKind.noreturn_type) or
-           k == @enumToInt(TypeKind.enum_type) or k == @enumToInt(TypeKind.error_set_type);
+           k == @enumToInt(TypeKind.enum_type) or k == @enumToInt(TypeKind.error_set_type) or
+           k == @enumToInt(TypeKind.ptr_type) or k == @enumToInt(TypeKind.many_ptr_type);
 }
 
 fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
@@ -661,6 +662,7 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
 
 fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
     var ty = reg.types_items[@intCast(usize, ti)];
+    if (tstEmitPrimitiveKind(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
     if (ty.kind == TypeKind.struct_type) {
         var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
