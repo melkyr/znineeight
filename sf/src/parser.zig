@@ -42,9 +42,6 @@ pub const Parser = struct {
     child_buf_len: usize,
     child_buf_capacity: usize,
     last_end: u32,
-    case_buf_items: [*]u32,
-    case_buf_len: usize,
-    case_buf_capacity: usize,
     decl_buf_items: [*]u32,
     decl_buf_len: usize,
     decl_buf_capacity: usize,
@@ -74,9 +71,6 @@ pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, i
         .child_buf_len = @intCast(usize, 0),
         .child_buf_capacity = @intCast(usize, 0),
         .last_end = @intCast(u32, 0),
-        .case_buf_items = undefined,
-        .case_buf_len = @intCast(usize, 0),
-        .case_buf_capacity = @intCast(usize, 0),
         .decl_buf_items = undefined,
         .decl_buf_len = @intCast(usize, 0),
         .decl_buf_capacity = @intCast(usize, 0),
@@ -738,13 +732,17 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
 
 fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
     var start_tok = parserPeek(self);
-    self.case_buf_len = @intCast(usize, 0);
+    var case_items: [*]u32 = undefined;
+    var case_len: usize = 0;
+    var case_cap: usize = 0;
     var is_else: u8 = 0;
 
     if (parserPeek(self).kind == TokenKind.kw_else) {
+        var pcb_tm: []const u8 = "PCB:T"; pal.markerWriteInt(pcb_tm, @intCast(u32, @enumToInt(parserPeek(self).kind)));
         _ = parserAdvance(self);
         is_else = 1;
     } else {
+        var pcb_em: []const u8 = "PCB:E"; pal.markerWrite(pcb_em);
         while (true) {
             var item: u32 = try parserParseExprPrec(self, Prec.assignment);
             var range_kind: AstKind = AstKind.err;
@@ -762,9 +760,10 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
                 var range_node = ast_mod.astStoreAddNode(self.store, range_kind, 0,
                     start_tok.span_start, start_tok.span_start + @intCast(u32, start_tok.span_len),
                     item, end_item, 0, 0);
-                u32ArrayListAppendInner(&self.case_buf_items, &self.case_buf_len, &self.case_buf_capacity, self.allocator, range_node);
+                u32ArrayListAppendInner(&case_items, &case_len, &case_cap, self.allocator, range_node);
             } else {
-                u32ArrayListAppendInner(&self.case_buf_items, &self.case_buf_len, &self.case_buf_capacity, self.allocator, item);
+                u32ArrayListAppendInner(&case_items, &case_len, &case_cap, self.allocator, item);
+                var pcb2_m: []const u8 = "PCB:B"; pal.markerWriteInt(pcb2_m, @intCast(u32, case_len));
             }
             if (parserPeek(self).kind != TokenKind.comma) break;
             if (parserPeekN(self, 1).kind == TokenKind.fat_arrow) break;
@@ -804,11 +803,12 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
     }
 
     var pcb_m: []const u8 = "PCB:n"; pal.markerWrite(pcb_m);
-    var pcb_nb: [10]u8 = undefined; var pcb_nl = itoa_mod.itoa(@intCast(u32, self.case_buf_len), pcb_nb[0..]); var pcb_ns: usize = @intCast(usize, 9) - @intCast(usize, pcb_nl); pal.markerWrite(pcb_nb[pcb_ns..@intCast(usize, 9)]);
+    var pcb_nb: [10]u8 = undefined; var pcb_nl = itoa_mod.itoa(@intCast(u32, case_len), pcb_nb[0..]); var pcb_ns: usize = @intCast(usize, 9) - @intCast(usize, pcb_nl); pal.markerWrite(pcb_nb[pcb_ns..@intCast(usize, 9)]);
     var pcb_pm: []const u8 = "p="; pal.markerWrite(pcb_pm);
     var pcb_pb: [10]u8 = undefined; var pcb_pl = itoa_mod.itoa(flags, pcb_pb[0..]); var pcb_ps: usize = @intCast(usize, 9) - @intCast(usize, pcb_pl); pal.markerWrite(pcb_pb[pcb_ps..@intCast(usize, 9)]);
     var pcb_n: []const u8 = "\n"; pal.markerWrite(pcb_n);
-    var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, self.case_buf_items[0..self.case_buf_len]);
+    var pcb_sm: []const u8 = "PCB:S"; pal.markerWriteInt(pcb_sm, @intCast(u32, case_len));
+    var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, case_items[0..case_len]);
     var ppl_m: []const u8 = "PPL:n"; pal.markerWrite(ppl_m);
     var ppl_pb: [10]u8 = undefined; var ppl_pl = itoa_mod.itoa(items_payload, ppl_pb[0..]); var ppl_ps: usize = @intCast(usize, 9) - @intCast(usize, ppl_pl); pal.markerWrite(ppl_pb[ppl_ps..@intCast(usize, 9)]);
     var ppl_n: []const u8 = "\n"; pal.markerWrite(ppl_n);
