@@ -390,6 +390,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      d4_t2p: [*]u32,
      dl_hoisted: u8,
      emitted_type_set: U32ToU32Map,
+     fwd_decl_set: U32ToU32Map,
      dedup_names: [128]u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
@@ -414,6 +415,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_t2p = undefined,
          .dl_hoisted = @intCast(u8, 0),
          .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
+         .fwd_decl_set = hash_mod.u32ToU32MapInit(alloc),
           .dedup_names = undefined,
           .dedup_count = @intCast(u32, 0),
            .fl_name_ids = undefined,
@@ -734,10 +736,13 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
                 while (h_ci < cname.len) : (h_ci += 1) {
                     dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
                 }
-                if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key) == null) {
-                    var pre_s: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, pre_s);
+                if (hash_mod.u32ToU32MapGet(&emitter.fwd_decl_set, dedup_key) == null) {
+                    var pre_s: []const u8 = "typedef struct "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    bufferedWriterWrite(&emitter.writer, cname);
+                    var pre_s2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, pre_s2);
                     bufferedWriterWrite(&emitter.writer, cname);
                     var pre_s3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, pre_s3);
+                    hash_mod.u32ToU32MapPut(&emitter.fwd_decl_set, dedup_key, @intCast(u32, 1));
                 }
             }
         }
@@ -857,7 +862,9 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         var sd: []const u8 = "\n";
         bufferedWriterWrite(&emitter.writer, sd);
     }
-    var t0: []const u8 = "typedef struct {\n"; bufferedWriterWrite(&emitter.writer, t0);
+    var t0a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, t0a);
+    bufferedWriterWrite(&emitter.writer, base_str);
+    var t0: []const u8 = " {\n"; bufferedWriterWrite(&emitter.writer, t0);
     var t1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, t1);
     var tag_ctype = getCTypeName(reg, emitter.mangler, tp.tag_type);
     bufferedWriterWrite(&emitter.writer, tag_ctype);
@@ -887,7 +894,9 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         if (dp < 127) { def_buf[dp] = '\n'; dp += 1; }
         bufferedWriterWrite(&emitter.writer, def_buf[0..dp]);
     }
-    var t5: []const u8 = "typedef struct {\n"; bufferedWriterWrite(&emitter.writer, t5);
+    var t5a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, t5a);
+    bufferedWriterWrite(&emitter.writer, base_str);
+    var t5: []const u8 = " {\n"; bufferedWriterWrite(&emitter.writer, t5);
     var t6: []const u8 = "\tunsigned int tag;\n"; bufferedWriterWrite(&emitter.writer, t6);
     var t7: []const u8 = "\tunion {\n"; bufferedWriterWrite(&emitter.writer, t7);
     var t8: []const u8 = "\t\tchar _dummy;\n"; bufferedWriterWrite(&emitter.writer, t8);
@@ -910,9 +919,7 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         }
     }
     var sp1: []const u8 = "\t} payload;\n"; bufferedWriterWrite(&emitter.writer, sp1);
-    var sp2: []const u8 = "} "; bufferedWriterWrite(&emitter.writer, sp2);
-    bufferedWriterWrite(&emitter.writer, base_str);
-    var sp3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sp3);
+    var sp2: []const u8 = "};\n"; bufferedWriterWrite(&emitter.writer, sp2);
 }
 
 fn emitStructType(emitter: *C89Emitter, tid: u32) void {
@@ -923,7 +930,9 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
     var fstart: usize = @intCast(usize, sp.fields_start);
     var fcount: usize = @intCast(usize, sp.fields_count);
-    var es0: []const u8 = "typedef struct {\n"; bufferedWriterWrite(&emitter.writer, es0);
+    var es0a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, es0a);
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    var es0: []const u8 = " {\n"; bufferedWriterWrite(&emitter.writer, es0);
     var i: usize = @intCast(usize, 0);
     while (i < fcount) : (i += @intCast(usize, 1)) {
         var fe = reg.fe_items[fstart + i];
@@ -935,9 +944,7 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
         bufferedWriterWrite(&emitter.writer, fname);
         var es3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es3);
     }
-    var es4: []const u8 = "} "; bufferedWriterWrite(&emitter.writer, es4);
-    bufferedWriterWrite(&emitter.writer, mangled_name);
-    var es5: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es5);
+    var es4: []const u8 = "};\n"; bufferedWriterWrite(&emitter.writer, es4);
     var es_m: []const u8 = "ES:n"; pal.markerWriteInt(es_m, mangled_id);
 }
 
