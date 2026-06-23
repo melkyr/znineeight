@@ -614,6 +614,9 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
     } else if (ty.kind == TypeKind.ptr_type) {
         var pt = reg.ptr_items[@intCast(usize, ty.payload_idx)].base;
         if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) c += 1;
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
     }
     return c;
 }
@@ -657,6 +660,11 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) {
             tgt[@intCast(usize, off)] = pt; off += 1;
         }
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
+        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
+            tgt[@intCast(usize, off)] = eup; off += 1;
+        }
     }
 }
 
@@ -682,6 +690,8 @@ fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
         if (reg.slice_items[@intCast(usize, ty.payload_idx)].elem == target) return true;
     } else if (ty.kind == TypeKind.ptr_type) {
         if (reg.ptr_items[@intCast(usize, ty.payload_idx)].base == target) return true;
+    } else if (ty.kind == TypeKind.error_union_type) {
+        if (reg.eu_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
     }
     return false;
 }

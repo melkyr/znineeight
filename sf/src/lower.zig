@@ -2560,12 +2560,15 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
          }
      } else if (node.kind == AstKind.swt_ex) {
          var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
-        var cond_temp = lowerExpr(self, node.child_0);
-        var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-        if (cond_ty_id) |ct| {
-            var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
-            if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+         var cond_temp = lowerExpr(self, node.child_0);
+         var tu_base_box2: [1]u32 = [1]u32{cond_temp};
+         var tu_type_box2: [1]u32 = [1]u32{@intCast(u32, 0)};
+         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+         if (cond_ty_id) |ct| {
+             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+             if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                 tu_type_box2[0] = ct;
+                 var tag_temp = nextTemp(self, type_mod.TYPE_U32);
                 var tgn2 = nameMapGet(self, cond_temp);
                emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
                 cond_temp = tag_temp;
@@ -2623,11 +2626,31 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
-            var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
-            var prong_bb_id = prong_start + @intCast(u32, pi);
-            self.current_bb = prong_bb_id;
-            self.block_terminated = @intCast(u8, 0);
-            lowerStmtBody(self, prong_node.child_0);
+             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
+             var prong_bb_id = prong_start + @intCast(u32, pi);
+             self.current_bb = prong_bb_id;
+             self.block_terminated = @intCast(u8, 0);
+             if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
+                 var capture_name = prong_node.child_1;
+                 if (tu_type_box2[0] != @intCast(u32, 0)) {
+                     var scap2_n: []const u8 = "SCAP2:n"; pal.markerWriteInt(scap2_n, capture_name);
+                     var tu_ty2 = self.ctx.registry.types_items[@intCast(usize, tu_type_box2[0])];
+                     var tp2 = self.ctx.registry.tu_items[@intCast(usize, tu_ty2.payload_idx)];
+                     var case_ec2 = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
+                     if (case_ec2.len > @intCast(usize, 0)) {
+                         var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec2[0]);
+                         if (ev4) |idx| {
+                             var fe2: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp2.fields_start) + @intCast(usize, idx)];
+                             var payload_temp2 = nextTemp(self, fe2.type_id);
+                             _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
+                             emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = @intCast(u32, 1), .result = payload_temp2 } });
+                             addLocalDecl(self, capture_name, fe2.type_id, payload_temp2);
+                             var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
+                         }
+                     }
+                 }
+             }
+             lowerStmtBody(self, prong_node.child_0);
             if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
