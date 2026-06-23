@@ -387,8 +387,9 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         if (ast_root == @intCast(u32, 0)) { var mz: []const u8 = "MZ"; pal.markerWrite(mz); continue; }
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
-        var ad: []const u8 = "AD"; pal.markerWrite(ad);
-        var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map);
+         var ad: []const u8 = "AD"; pal.markerWrite(ad);
+         var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, ctx.coercion_table, &ctx.enum_value_table, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -425,24 +426,35 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                                     var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
                                     var b2_tn: []const u8 = "t"; pal.markerWrite(b2_tn);
                                     var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
-                                    if (ft != type_mod.TYPE_UNDEFINED) {
-                                        ctx.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
+                                     if (ft != type_mod.TYPE_UNDEFINED) {
+                                         ctx.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
+                                         var fsw_nm: []const u8 = "FSW:n"; pal.markerWriteInt(fsw_nm, @intCast(u32, @intCast(usize, sp.fields_start) + fi2));
+                                         var fsw_tm: []const u8 = "FSW:t"; pal.markerWriteInt(fsw_tm, ft);
                                     }
                                 }
                             }
                         } else if (sty.kind == type_mod.TypeKind.tagged_union_type) {
-                            var tp = ctx.typereg.tu_items[@intCast(usize, sty.payload_idx)];
-                            while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += 1) {
+                             var tp = ctx.typereg.tu_items[@intCast(usize, sty.payload_idx)];
+                             var tui_fsm: []const u8 = "TUI:fs"; pal.markerWriteInt(tui_fsm, @intCast(u32, tp.fields_start));
+                             var tui_fcm: []const u8 = "TUI:fc"; pal.markerWriteInt(tui_fcm, @intCast(u32, tp.fields_count));
+                             while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += 1) {
                                 var fd = ctx.store.nodes.items[@intCast(usize, fchildren[fi2])];
                                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
-                                    var ft = resolveTypeExpr(ctx, fd.child_0);
-                                    var b2_pn: []const u8 = "B2:p"; pal.markerWrite(b2_pn);
-                                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
-                                    var b2_tn: []const u8 = "t"; pal.markerWrite(b2_tn);
-                                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
-                                    if (ft != type_mod.TYPE_UNDEFINED) {
-                                        ctx.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
-                                    }
+                                     var ft = resolveTypeExpr(ctx, fd.child_0);
+                                     var dft_nm: []const u8 = "DFT:n"; pal.markerWriteInt(dft_nm, @intCast(u32, fi2));
+                                     var dft_tm: []const u8 = "DFT:t"; pal.markerWriteInt(dft_tm, ft);
+                                     var b2_pn: []const u8 = "B2:p"; pal.markerWrite(b2_pn);
+                                     var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                                     var b2_tn: []const u8 = "t"; pal.markerWrite(b2_tn);
+                                     var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
+                                      var dtwr_m: []const u8 = "DTWR\n"; pal.markerWrite(dtwr_m);
+                                      if (ft != type_mod.TYPE_UNDEFINED) {
+                                          ctx.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
+                                          var ftw_nm: []const u8 = "FTW:n"; pal.markerWriteInt(ftw_nm, @intCast(u32, @intCast(usize, tp.fields_start) + fi2));
+                                          var ftw_tm: []const u8 = "FTW:t"; pal.markerWriteInt(ftw_tm, ft);
+                                     } else {
+                                          var dtsk_m: []const u8 = "DTSK\n"; pal.markerWrite(dtsk_m);
+                                     }
                                 }
                             }
                         }

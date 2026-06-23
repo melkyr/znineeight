@@ -1,5 +1,6 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
+const pal_mod = @import("pal.zig");
 const TypeRegistry = @import("type_registry.zig").TypeRegistry;
 const TypeKind = @import("type_registry.zig").TypeKind;
 const TypeId = @import("type_registry.zig").TypeId;
@@ -131,16 +132,18 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         ty.alignment = max_align;
         if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
         self.registry.types_items[idx] = ty;
-    } else if (ty.kind == TypeKind.tagged_union_type) {
-        var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
-        var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];
-        var fstart: usize = @intCast(usize, tp.fields_start);
-        var fcount: usize = @intCast(usize, tp.fields_count);
-        var max_ps: u32 = 0;
-        var max_pa: u32 = 1;
-        var fi: usize = 0;
-        while (fi < fcount) : (fi += 1) {
-            var fe = self.registry.fe_items[fstart + fi];
+     } else if (ty.kind == TypeKind.tagged_union_type) {
+         var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+         var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];
+         var fstart: usize = @intCast(usize, tp.fields_start);
+         var fcount: usize = @intCast(usize, tp.fields_count);
+         var max_ps: u32 = 0;
+         var max_pa: u32 = 1;
+         var fi: usize = 0;
+         while (fi < fcount) : (fi += 1) {
+             var fe = self.registry.fe_items[fstart + fi];
+             var fer_nm: []const u8 = "FER:n"; pal_mod.markerWriteInt(fer_nm, @intCast(u32, fstart + fi));
+             var fer_tm: []const u8 = "FER:t"; pal_mod.markerWriteInt(fer_tm, fe.type_id);
             var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
             if (ft.kind != TypeKind.void_type) {
                 if (ft.size > max_ps) max_ps = ft.size;

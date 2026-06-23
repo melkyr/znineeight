@@ -400,8 +400,11 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     var adym: []const u8 = "Y"; pal.markerWrite(adym);
     var adyb: [10]u8 = undefined; var adyl = itoa_mod.itoa(type_id, adyb[0..]); var adys: usize = @intCast(usize, 9) - @intCast(usize, adyl); pal.markerWrite(adyb[adys..@intCast(usize, 9)]);
     var adcm: []const u8 = "c"; pal.markerWrite(adcm);
-    var adcb: [10]u8 = undefined; var adcl = itoa_mod.itoa(@intCast(u32, self.local_decl_count), adcb[0..]); var adcs: usize = @intCast(usize, 9) - @intCast(usize, adcl); pal.markerWrite(adcb[adcs..@intCast(usize, 9)]);
-    var adnl2: []const u8 = "\n"; pal.markerWrite(adnl2);
+    var adc_nm: []const u8 = "ADC:n"; pal.markerWrite(adc_nm);
+    var adc_nb: [10]u8 = undefined; var adc_nl = itoa_mod.itoa(name_id, adc_nb[0..]); var adc_ns: usize = @intCast(usize, 9) - @intCast(usize, adc_nl); pal.markerWrite(adc_nb[adc_ns..@intCast(usize, 9)]);
+    var adc_tm: []const u8 = "t"; pal.markerWrite(adc_tm);
+    var adc_tb: [10]u8 = undefined; var adc_tl = itoa_mod.itoa(type_id, adc_tb[0..]); var adc_ts: usize = @intCast(usize, 9) - @intCast(usize, adc_tl); pal.markerWrite(adc_tb[adc_ts..@intCast(usize, 9)]);
+    var adc_nl2: []const u8 = "\n"; pal.markerWrite(adc_nl2);
 }
 
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {

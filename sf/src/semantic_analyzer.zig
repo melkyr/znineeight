@@ -110,6 +110,8 @@ fn registerLocalDecl(self: *SemanticAnalyzer, name_id: u32, type_id: u32) void {
     if (self.local_decl_count >= self.local_decl_cap) {
         semanticAnalyzerGrowLocalDecls(self);
     }
+    var sct_nm: []const u8 = "SCT:n"; pal_mod.markerWriteInt(sct_nm, name_id);
+    var sct_tm: []const u8 = "SCT:t"; pal_mod.markerWriteInt(sct_tm, type_id);
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_types[self.local_decl_count] = type_id;
     self.local_decl_count += @intCast(usize, 1);
@@ -788,11 +790,15 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
                         var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
                         var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                        var scfe_nm: []const u8 = "SCFE:n"; pal_mod.markerWriteInt(scfe_nm, cap_name);
+                        var scfe_tm: []const u8 = "SCFE:t"; pal_mod.markerWriteInt(scfe_tm, fe.type_id);
+                        var scfe_km: []const u8 = "SCFE:k"; pal_mod.markerWriteInt(scfe_km, @intCast(u32, @enumToInt(tu_ty.kind)));
                         if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                         self.local_decl_names[self.local_decl_count] = cap_name;
                         self.local_decl_types[self.local_decl_count] = fe.type_id;
                         self.local_decl_count += @intCast(usize, 1);
                         var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
+                        var scax_tm: []const u8 = "SCAX:T"; pal_mod.markerWriteInt(scax_tm, fe.type_id);
                     }
                 } else {
                     var sce_rm: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm, cap_name);
@@ -1253,7 +1259,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                                         var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
                                         if (ev) |idx| {
                                             var evtm: []const u8 = "EVT:I"; pal_mod.markerWriteInt(evtm, idx);
-                                            var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                        var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                        var scfe2_nm: []const u8 = "SCFE2:n"; pal_mod.markerWriteInt(scfe2_nm, capture_name);
+                        var scfe2_tm: []const u8 = "SCFE2:t"; pal_mod.markerWriteInt(scfe2_tm, fe.type_id);
+                        var scfe2_km: []const u8 = "SCFE2:k"; pal_mod.markerWriteInt(scfe2_km, @intCast(u32, @enumToInt(tu_ty.kind)));
                                             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                                             self.local_decl_names[self.local_decl_count] = capture_name;
                                             self.local_decl_types[self.local_decl_count] = fe.type_id;
