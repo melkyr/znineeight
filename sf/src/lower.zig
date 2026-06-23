@@ -1114,6 +1114,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         var arr_temp: u32 = findLocalTemp(self, name_id);
+        var fnd_m: []const u8 = "FND:n"; pal.markerWrite(fnd_m);
+        var fnd_nb: [10]u8 = undefined; var fnd_nl = itoa_mod.itoa(name_id, fnd_nb[0..]); var fnd_ns: usize = @intCast(usize, 9) - @intCast(usize, fnd_nl); pal.markerWrite(fnd_nb[fnd_ns..@intCast(usize, 9)]);
+        var fnd_rm: []const u8 = "r"; pal.markerWrite(fnd_rm);
+        var fnd_rb: [10]u8 = undefined; var fnd_rl = itoa_mod.itoa(arr_temp, fnd_rb[0..]); var fnd_rs: usize = @intCast(usize, 9) - @intCast(usize, fnd_rl); pal.markerWrite(fnd_rb[fnd_rs..@intCast(usize, 9)]);
+        var fnd_nl2: []const u8 = "\n"; pal.markerWrite(fnd_nl2);
         var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var lrb_m: []const u8 = "LRB:n"; pal.markerWrite(lrb_m);
         var lrb_nb: [10]u8 = undefined; var lrb_nl = itoa_mod.itoa(node_idx, lrb_nb[0..]); var lrb_ns: usize = @intCast(usize, 9) - @intCast(usize, lrb_nl); pal.markerWrite(lrb_nb[lrb_ns..@intCast(usize, 9)]);
@@ -1154,11 +1159,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var lds_rb: [10]u8 = undefined; var lds_rl = itoa_mod.itoa(self.local_decl_temps[li], lds_rb[0..]); var lds_rs: usize = @intCast(usize, 9) - @intCast(usize, lds_rl); pal.markerWrite(lds_rb[lds_rs..@intCast(usize, 9)]);
                     var lds_km: []const u8 = "k"; pal.markerWrite(lds_km);
                     var lds_kb: [10]u8 = undefined; var lds_kl = itoa_mod.itoa(@intCast(u32, self.local_decl_kinds[li]), lds_kb[0..]); var lds_ks: usize = @intCast(usize, 9) - @intCast(usize, lds_kl); pal.markerWrite(lds_kb[lds_ks..@intCast(usize, 9)]);
-                    var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
-                    break;
-                }
-            }
-        }
+                     var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
+                     break;
+                 }
+             }
+         }
+         var a3r_m: []const u8 = "A3R:r"; pal.markerWrite(a3r_m);
+         var a3r_rb: [10]u8 = undefined; var a3r_rl = itoa_mod.itoa(arr_temp, a3r_rb[0..]); var a3r_rs: usize = @intCast(usize, 9) - @intCast(usize, a3r_rl); pal.markerWrite(a3r_rb[a3r_rs..@intCast(usize, 9)]);
+         var a3r_km: []const u8 = "k"; pal.markerWrite(a3r_km);
+         var a3r_kb: [10]u8 = undefined; var a3r_kl = itoa_mod.itoa(@intCast(u32, arr_kind), a3r_kb[0..]); var a3r_ks: usize = @intCast(usize, 9) - @intCast(usize, a3r_kl); pal.markerWrite(a3r_kb[a3r_ks..@intCast(usize, 9)]);
+         var a3r_tm: []const u8 = "t"; pal.markerWrite(a3r_tm);
+         var a3r_tb: [10]u8 = undefined; var a3r_tl = itoa_mod.itoa(arr_tid, a3r_tb[0..]); var a3r_ts: usize = @intCast(usize, 9) - @intCast(usize, a3r_tl); pal.markerWrite(a3r_tb[a3r_ts..@intCast(usize, 9)]);
+         var a3r_nl: []const u8 = "\n"; pal.markerWrite(a3r_nl);
         var parm_m: []const u8 = "PARM:n"; pal.markerWrite(parm_m);
         var parm_nb: [10]u8 = undefined; var parm_nl = itoa_mod.itoa(name_id, parm_nb[0..]); var parm_ns: usize = @intCast(usize, 9) - @intCast(usize, parm_nl); pal.markerWrite(parm_nb[parm_ns..@intCast(usize, 9)]);
         var parm_tm: []const u8 = "t"; pal.markerWrite(parm_tm);
@@ -2010,10 +2022,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
                         emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = @intCast(u32, 1), .result = payload_temp } });
                         addLocalDecl(self, capture_name, fe.type_id, payload_temp);
+                        emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe.type_id, .temp = payload_temp } });
                     }
+                     } else {
+                         addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0]);
+                         emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = tu_base_box[0] } });
+                     }
                 }
             }
-        }
         var prong_bb_id: u32 = prong_start + @intCast(u32, pi);
             self.current_bb = prong_bb_id;
             self.block_terminated = @intCast(u8, 0);
@@ -2560,21 +2576,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
          }
      } else if (node.kind == AstKind.swt_ex) {
          var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
-         var cond_temp = lowerExpr(self, node.child_0);
-         var tu_base_box2: [1]u32 = [1]u32{cond_temp};
-         var tu_type_box2: [1]u32 = [1]u32{@intCast(u32, 0)};
-         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-         if (cond_ty_id) |ct| {
-             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
-             if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                 tu_type_box2[0] = ct;
+         var swtn_m: []const u8 = "SWT:n"; pal.markerWriteInt(swtn_m, node_idx);
+          var cond_temp = lowerExpr(self, node.child_0);
+          var tu_base_box2: [1]u32 = [1]u32{cond_temp};
+          var tu_type_box2: [1]u32 = [1]u32{@intCast(u32, 0)};
+          var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+          if (cond_ty_id) |ct| {
+              var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+              if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                  tu_type_box2[0] = ct;
                  var tag_temp = nextTemp(self, type_mod.TYPE_U32);
                 var tgn2 = nameMapGet(self, cond_temp);
                emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
                 cond_temp = tag_temp;
             }
-        }
-        var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+         }
+         var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
         var pi: usize = 0;
@@ -2644,13 +2661,17 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                              var payload_temp2 = nextTemp(self, fe2.type_id);
                              _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
                              emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = @intCast(u32, 1), .result = payload_temp2 } });
-                             addLocalDecl(self, capture_name, fe2.type_id, payload_temp2);
-                             var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
-                         }
-                     }
-                 }
-             }
-             lowerStmtBody(self, prong_node.child_0);
+                              addLocalDecl(self, capture_name, fe2.type_id, payload_temp2);
+                              emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
+                              var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
+                          }
+                      } else {
+                          addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0]);
+                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = tu_base_box2[0] } });
+                      }
+                  }
+              }
+              lowerStmtBody(self, prong_node.child_0);
             if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = exit_bb });
             }

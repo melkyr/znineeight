@@ -106,6 +106,15 @@ fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
     self.local_decl_cap = new_cap;
 }
 
+fn registerLocalDecl(self: *SemanticAnalyzer, name_id: u32, type_id: u32) void {
+    if (self.local_decl_count >= self.local_decl_cap) {
+        semanticAnalyzerGrowLocalDecls(self);
+    }
+    self.local_decl_names[self.local_decl_count] = name_id;
+    self.local_decl_types[self.local_decl_count] = type_id;
+    self.local_decl_count += @intCast(usize, 1);
+}
+
 pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, name_id: u32, node_idx: u32) u32 {
     var ide: []const u8 = "IDE\n"; pal_mod.markerWrite(ide);
     var li = self.local_decl_count;
@@ -771,6 +780,8 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             }
             if ((prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                 var cap_name = prong.child_1;
+                var sce_pm: []const u8 = "SCE:p"; pal_mod.markerWriteInt(sce_pm, cap_name);
+                var sce_lm: []const u8 = "SCE:l"; pal_mod.markerWriteInt(sce_lm, @intCast(u32, case_ec.len));
                 if (case_ec.len > @intCast(usize, 0)) {
                     var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
                     if (ev) |idx| {
@@ -783,6 +794,9 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                         self.local_decl_count += @intCast(usize, 1);
                         var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
                     }
+                } else {
+                    var sce_rm: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm, cap_name);
+                    registerLocalDecl(self, cap_name, self.current_switch_cond_tu);
                 }
             }
         }
@@ -809,7 +823,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             var unum: u32 = @intCast(u32, 0);
             if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
             if (unified == type_mod.TYPE_INT_LIT and unum != @intCast(u32, 0)) { unified = bt; }
-            else { var mix_pm: []const u8 = "MIX:P"; pal_mod.markerWriteInt(mix_pm, @intCast(u32, i)); var mix_um: []const u8 = "MIX:U"; pal_mod.markerWriteInt(mix_um, unified); var mix_bm: []const u8 = "MIX:B"; pal_mod.markerWriteInt(mix_bm, bt); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+            else { var mix_pm: []const u8 = "MIX:P"; pal_mod.markerWriteInt(mix_pm, @intCast(u32, i)); var mix_um: []const u8 = "MIX:U"; pal_mod.markerWriteInt(mix_um, unified); var mix_bm: []const u8 = "MIX:B"; pal_mod.markerWriteInt(mix_bm, bt); var mix_tk_m: []const u8 = "MIX:tk"; var mix_tk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, bt)].kind)); pal_mod.markerWriteInt(mix_tk_m, mix_tk_v); var mix_uk_m: []const u8 = "MIX:uk"; var mix_uk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, unified)].kind)); pal_mod.markerWriteInt(mix_uk_m, mix_uk_v); var mix_cd_m: []const u8 = "MIX:cd"; pal_mod.markerWriteInt(mix_cd_m, node.child_0); var mix_b_m: []const u8 = "MIX:b"; pal_mod.markerWriteInt(mix_b_m, prong.child_0); var mix_pf_m: []const u8 = "MIX:pf"; pal_mod.markerWriteInt(mix_pf_m, @intCast(u32, prong.flags)); var mix_pn_m: []const u8 = "MIX:pn"; pal_mod.markerWriteInt(mix_pn_m, @intCast(u32, prongs.len)); var mix_ni_m: []const u8 = "MIX:ni"; pal_mod.markerWriteInt(mix_ni_m, node_idx); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
         }
     }
 
@@ -830,6 +844,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     result = type_mod.TYPE_VOID;
     if (node.kind == AstKind.swt_ex) {
         var rx_sw_m: []const u8 = "RXS"; pal_mod.markerWrite(rx_sw_m);
+        var rxs_nm: []const u8 = "RXS:n"; pal_mod.markerWriteInt(rxs_nm, node_idx);
     }
 
     if (node.kind == AstKind.int_literal) {
@@ -937,9 +952,15 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         }
     } else if (node.kind == AstKind.orelse_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
-    } else if (node.kind == AstKind.if_expr) {
-        result = semanticAnalyzerResolveIfExpr(self, node_idx);
-    } else if (node.kind == AstKind.swt_ex) {
+     } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
+         result = type_mod.TYPE_VOID;
+     } else if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
+         result = semanticAnalyzerResolveIfExpr(self, node_idx);
+     } else if (node.kind == AstKind.while_stmt or node.kind == AstKind.for_stmt) {
+         _ = semanticAnalyzerResolveExpr(self, node.child_0);
+         if (node.child_1 != 0) { semanticAnalyzerResolveStmtIter(self, node.child_1); }
+         result = type_mod.TYPE_VOID;
+     } else if (node.kind == AstKind.swt_ex) {
         result = semanticAnalyzerResolveSwitchExpr(self, node_idx);
     } else if (node.kind == AstKind.tuple_literal) {
         result = semanticAnalyzerResolveTupleLiteral(self, node_idx);
@@ -1001,11 +1022,11 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
                node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign) {
         result = semanticAnalyzerResolveAssign(self, node_idx);
-    } else {
-         var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
-         var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
-         result = type_mod.TYPE_VOID;
-    }
+     } else {
+          var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
+          var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
+          @panic("resolveExpr: unhandled node kind");
+     }
 
     var stx_m: []const u8 = "STX:n"; pal_mod.markerWriteInt(stx_m, node_idx);
     var stx_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var stx_km: []const u8 = "STX:k"; pal_mod.markerWriteInt(stx_km, stx_kv);
@@ -1079,6 +1100,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
         var node_idx = stack[sp].node_idx;
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = self.store.nodes.items[@intCast(usize, node_idx)];
+        var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, sp));
         if (node.kind == AstKind.block) {
             var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
             var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
@@ -1216,6 +1238,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var flgpm: []const u8 = "FLG:C1"; pal_mod.markerWriteInt(flgpm, prong_node.child_1);
                     if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                         var capture_name = prong_node.child_1;
+                        var sce_pm2: []const u8 = "SCE:p"; pal_mod.markerWriteInt(sce_pm2, capture_name);
                         var cond_rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                         if (cond_rt) |cond_type| {
                             var crtm: []const u8 = "CRT:T"; pal_mod.markerWriteInt(crtm, cond_type);
@@ -1225,6 +1248,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                                     var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
                                     var case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong_node.payload);
                                     var cecm: []const u8 = "CEC:L"; pal_mod.markerWriteInt(cecm, @intCast(u32, case_ec.len));
+                                    var sce_lm2: []const u8 = "SCE:l"; pal_mod.markerWriteInt(sce_lm2, @intCast(u32, case_ec.len));
                                     if (case_ec.len > @intCast(usize, 0)) {
                                         var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
                                         if (ev) |idx| {
@@ -1239,6 +1263,9 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                                         } else {
                                             var evt_nul: []const u8 = "EVT:NULL\n"; pal_mod.markerWrite(evt_nul);
                                         }
+                                    } else {
+                                        var sce_rm2: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm2, capture_name);
+                                        registerLocalDecl(self, capture_name, cond_type);
                                     }
                                 }
                             }
@@ -1271,6 +1298,9 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
         } else if (node.kind == AstKind.break_stmt) {
         } else if (node.kind == AstKind.continue_stmt) {
         } else {
+            var els_nm: []const u8 = "ELS:n"; pal_mod.markerWriteInt(els_nm, node_idx);
+            var els_km: []const u8 = "ELS:k"; pal_mod.markerWriteInt(els_km, @intCast(u32, @enumToInt(node.kind)));
+            if (node.child_0 != @intCast(u32, 0)) { var els_c0m: []const u8 = "ELS:c"; pal_mod.markerWriteInt(els_c0m, node.child_0); }
             _ = semanticAnalyzerResolveExpr(self, node_idx);
         }
         if (node.child_0 != @intCast(u32, 0)) {
