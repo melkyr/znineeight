@@ -545,6 +545,10 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         emitInst(self, LirInst{ .unwrap_optional = .{ .value = cond_temp, .result = unwrapped } });
         cap_type = opt_pay;
         cap_temp = unwrapped;
+    } else {
+        var bound = nextTemp(self, cond_ty);
+        emitInst(self, LirInst{ .assign = .{ .dst = bound, .src = cond_temp, .name_id = cap_name } });
+        cap_temp = bound;
     }
     addLocalDecl(self, cap_name, cap_type, cap_temp);
     emitInst(self, LirInst{ .decl_local = .{ .name_id = cap_name, .type_id = cap_type, .temp = cap_temp } });
