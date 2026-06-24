@@ -400,7 +400,6 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
     var rs: []const u8 = "RS"; pal.markerWrite(rs);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
-    var tr_env = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner };
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
         var ast_root = mods[mi].ast_root;
@@ -430,9 +429,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
             }
             if (decl.kind == AstKind.var_decl and decl.child_1 != 0) {
                 var init = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
-                if (init.kind == AstKind.struct_decl or init.kind == AstKind.union_decl) {
-                    type_resolver.resolveDeclAggregateFieldTypes(&tr_env, mods[mi].id, decls[di]);
-                } else {
+                if (init.kind != AstKind.struct_decl and init.kind != AstKind.union_decl) {
                     var v2m: []const u8 = "V2:"; pal.markerWrite(v2m);
                     var init_type = sa_mod.semanticAnalyzerResolveExpr(&sa, decl.child_1);
                     var v2tb: [20]u8 = undefined; var v2tl = itoa_mod.itoa(init_type, v2tb[0..]); var v2ts: usize = @intCast(usize, 19) - @intCast(usize, v2tl); pal.markerWrite(v2tb[v2ts..@intCast(usize, 19)]);
