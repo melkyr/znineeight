@@ -17,6 +17,7 @@ const hash_mod = @import("util/hash.zig");
 const pal_mod = @import("pal.zig");
 const itoa_mod = @import("util/itoa.zig");
 const interner_mod = @import("string_interner.zig");
+const type_resolver = @import("type_resolver.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -909,24 +910,8 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (ec.len >= @intCast(usize, 2)) {
             if (node.child_0 == self.ptrcast_name_id or node.child_0 == self.inttoptr_name_id) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-                var ty_node = self.store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
-                if (ty_node.kind == AstKind.ptr_type) {
-                    var pt_base = self.store.nodes.items[@intCast(usize, ty_node.child_0)];
-                    if (pt_base.kind == AstKind.ident_expr) {
-                        var tn_id = self.store.identifiers.items[@intCast(usize, pt_base.payload)];
-                        var tn = type_mod.nameCacheGet(self.registry, @intCast(u64, tn_id));
-                        if (tn) |t| { result = type_mod.typeRegistryGetOrCreatePtr(self.registry, t, false); }
-                        else { result = type_mod.TYPE_VOID; }
-                    } else { result = type_mod.TYPE_VOID; }
-                } else if (ty_node.kind == AstKind.many_ptr_type) {
-                    var pt_base = self.store.nodes.items[@intCast(usize, ty_node.child_0)];
-                    if (pt_base.kind == AstKind.ident_expr) {
-                        var tn_id = self.store.identifiers.items[@intCast(usize, pt_base.payload)];
-                        var tn = type_mod.nameCacheGet(self.registry, @intCast(u64, tn_id));
-                        if (tn) |t| { result = type_mod.typeRegistryGetOrCreateManyPtr(self.registry, t, false); }
-                        else { result = type_mod.TYPE_VOID; }
-                    } else { result = type_mod.TYPE_VOID; }
-                } else { result = type_mod.TYPE_VOID; }
+                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
+                result = type_resolver.resolveTypeExprFull(&tre_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             } else if (node.child_0 == self.ptrtoint_name_id) {
                 var ec2 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
                 if (ec2.len >= 1) { _ = semanticAnalyzerResolveExpr(self, ec2[0]); }
