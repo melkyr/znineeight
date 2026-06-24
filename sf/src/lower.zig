@@ -532,10 +532,22 @@ fn emitTaggedUnionInit(self: *LirLowerer, tu_type_id: u32, variant_index: u32) u
     return struct_tid;
 }
 
-fn addLoopCapture(self: *LirLowerer, capture_node: u32, item_temp: u32) void {
+fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) void {
     var cap = self.ctx.store.nodes.items[@intCast(usize, capture_node)];
-    var l5s: []const u8 = "L5:1\n"; pal.markerWrite(l5s);
-    addLocalDecl(self, cap.payload, type_mod.TYPE_U32, item_temp);
+    var cap_name = cap.payload;
+    var cond_ty = getTempType(self, cond_temp);
+    var cap_type = cond_ty;
+    var cap_temp = cond_temp;
+    var ct = self.ctx.registry.types_items[@intCast(usize, cond_ty)];
+    if (ct.kind == type_mod.TypeKind.optional_type) {
+        var opt_pay = self.ctx.registry.opt_items[@intCast(usize, ct.payload_idx)].payload;
+        var unwrapped = nextTemp(self, opt_pay);
+        emitInst(self, LirInst{ .unwrap_optional = .{ .value = cond_temp, .result = unwrapped } });
+        cap_type = opt_pay;
+        cap_temp = unwrapped;
+    }
+    addLocalDecl(self, cap_name, cap_type, cap_temp);
+    emitInst(self, LirInst{ .decl_local = .{ .name_id = cap_name, .type_id = cap_type, .temp = cap_temp } });
 }
 
 fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
@@ -2452,6 +2464,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = fallthrough } });
         self.current_bb = then_bb;
         self.block_terminated = @intCast(u8, 0);
+        if (node.payload != @intCast(u32, 0)) {
+            var icapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
+            if (icapn.kind == AstKind.if_capture) {
+                bindOptionalCapture(self, node.payload, cond_temp);
+            }
+        }
         var ifb_m: []const u8 = "IFB:b"; pal.markerWrite(ifb_m);
         var ifb_bb: [10]u8 = undefined; var ifb_bl = itoa_mod.itoa(node.child_1, ifb_bb[0..]); var ifb_bs: usize = @intCast(usize, 9) - @intCast(usize, ifb_bl); pal.markerWrite(ifb_bb[ifb_bs..@intCast(usize, 9)]);
         var ifb_nl: []const u8 = "\n"; pal.markerWrite(ifb_nl);
@@ -2506,6 +2524,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
         self.current_bb = body_bb;
         self.block_terminated = @intCast(u8, 0);
+        if (node.payload != @intCast(u32, 0)) {
+            var wcapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
+            if (wcapn.kind == AstKind.while_capture) {
+                bindOptionalCapture(self, node.payload, cond_temp);
+            }
+        }
         var wbt_m: []const u8 = "WBT:"; pal.markerWrite(wbt_m);
         lowerStmtBody(self, node.child_1);
         var wbk_m: []const u8 = "WBK:"; pal.markerWrite(wbk_m);
