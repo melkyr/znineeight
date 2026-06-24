@@ -533,7 +533,8 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
 }
 
 fn resolveTypeExpr(ctx: *CompilerContext, node_idx: u32) type_mod.TypeId {
-    return resolveTypeExprDepth(ctx, node_idx, @intCast(u32, 0));
+    var env = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner };
+    return type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
 }
 
 fn resolveTypeExprDepth(ctx: *CompilerContext, node_idx: u32, depth: u32) type_mod.TypeId {

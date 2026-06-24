@@ -11,6 +11,19 @@ const DepEdge = sym_reg.DepEdge;
 const AstStore = @import("ast.zig").AstStore;
 const AstKind = @import("ast.zig").AstKind;
 const type_mod = @import("type_registry.zig");
+const itoa_mod = @import("util/itoa.zig");
+const interner_mod = @import("string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
+const sym_mod = @import("symbol_table.zig");
+const SymbolRegistry = sym_mod.SymbolRegistry;
+const ast_mod = @import("ast.zig");
+
+pub const TypeResolveEnv = struct {
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    interner: *StringInterner,
+};
 
 pub const TypeResolver = struct {
     registry: *TypeRegistry,
@@ -374,4 +387,246 @@ pub fn typeResolverResolveTypeExpr(self: *TypeResolver, store: *AstStore, depth:
 
 pub fn typeResolverGetSorted(self: *TypeResolver) []u32 {
     return self.sorted_items[0..self.sorted_len];
+}
+
+pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
+    var node = env.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.kind == AstKind.int_literal) {
+        return @intCast(u32, env.store.int_values.items[@intCast(usize, node.payload)]);
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = env.store.identifiers.items[@intCast(usize, node.payload)];
+        var c_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, 0), name_id);
+        if (c_sym) |cs| {
+            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                var c_decl = env.store.nodes.items[@intCast(usize, cs.decl_node)];
+                if (c_decl.child_1 != 0) {
+                    return evalConstU32Full(env, c_decl.child_1);
+                }
+            }
+        }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type_mod.TypeId {
+    if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
+    var node = env.store.nodes.items[@intCast(usize, node_idx)];
+    var rtd_nm: []const u8 = "RTD:n"; pal_mod.markerWriteInt(rtd_nm, node_idx); var rtd_km: []const u8 = "RTD:k"; pal_mod.markerWriteInt(rtd_km, @intCast(u32, @enumToInt(node.kind)));
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = env.store.identifiers.items[@intCast(usize, node.payload)];
+        var tid = type_mod.nameCacheGet(env.typereg, @intCast(u64, name_id));
+        if (tid) |t| return t;
+        var nf: []const u8 = "NF"; pal_mod.markerWrite(nf);
+        var mi: usize = 0;
+        while (mi < @intCast(usize, env.symbol_reg.tables_len)) : (mi += 1) {
+            var ck: u64 = @intCast(u64, mi) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+            var tc = type_mod.nameCacheGet(env.typereg, ck);
+            if (tc) |t| return t;
+        }
+        var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
+        return type_mod.TYPE_UNDEFINED;
+    }
+    if (node.kind == AstKind.struct_decl) {
+        var sd_id: [12]u8 = undefined;
+        var sd_idl = itoa_mod.itoa(node_idx, sd_id[0..]);
+        var sd_ids: usize = @intCast(usize, 11) - @intCast(usize, sd_idl);
+        var sd_nm: [24]u8 = undefined;
+        sd_nm[0] = @intCast(u8, 97); sd_nm[1] = @intCast(u8, 110); sd_nm[2] = @intCast(u8, 111); sd_nm[3] = @intCast(u8, 110); sd_nm[4] = @intCast(u8, 95);
+        var sd_di: usize = 0;
+        while (sd_di < @intCast(usize, sd_idl)) : (sd_di += 1) {
+            sd_nm[@intCast(usize, 5) + sd_di] = sd_id[sd_ids + sd_di];
+        }
+        var sd_namelen: usize = @intCast(usize, 5) + @intCast(usize, sd_idl);
+        var sd_name_id = interner_mod.stringInternerIntern(env.interner, sd_nm[0..sd_namelen]);
+        var sd_existing = type_mod.nameCacheGet(env.typereg, @intCast(u64, sd_name_id));
+        if (sd_existing) |se| return se;
+        var sd_tid = type_mod.typeRegistryRegisterNamedType(env.typereg, @intCast(u32, 0), sd_name_id, type_mod.TypeKind.struct_type);
+        if (node.payload != 0) {
+            var sd_children = ast_mod.astStoreGetExtraChildren(env.store, node.payload);
+            var sd_fty: [32]u32 = undefined;
+            var sd_fnm: [32]u32 = undefined;
+            var sd_fc: usize = 0;
+            var sd_i: usize = 0;
+            while (sd_i < sd_children.len and sd_fc < @intCast(usize, 32)) : (sd_i += 1) {
+                var sd_fd = env.store.nodes.items[@intCast(usize, sd_children[sd_i])];
+                if (sd_fd.kind == AstKind.field_decl) {
+                    var sd_ft = resolveTypeExprFull(env, sd_fd.child_0, depth + @intCast(u32, 1));
+                    sd_fty[sd_fc] = sd_ft;
+                    sd_fnm[sd_fc] = sd_fd.payload;
+                    sd_fc += 1;
+                }
+            }
+            if (sd_fc > @intCast(usize, 0)) {
+                var sd_fstart: u32 = @intCast(u32, env.typereg.fe_len);
+                var sd_j: usize = 0;
+                while (sd_j < sd_fc) : (sd_j += 1) {
+                    type_mod.feAppend(env.typereg, type_mod.FieldEntry{
+                        .name_id = sd_fnm[sd_j],
+                        .type_id = sd_fty[sd_j],
+                        .offset = @intCast(u32, 0),
+                    });
+                }
+                type_mod.stAppend(env.typereg, type_mod.StructPayload{
+                    .fields_start = @intCast(u16, sd_fstart),
+                    .fields_count = @intCast(u16, sd_fc),
+                });
+                var sd_st_idx: u32 = @intCast(u32, env.typereg.st_len - @intCast(usize, 1));
+                var sd_ty = env.typereg.types_items[@intCast(usize, sd_tid)];
+                sd_ty.payload_idx = sd_st_idx;
+                env.typereg.types_items[@intCast(usize, sd_tid)] = sd_ty;
+            }
+        }
+        return sd_tid;
+    }
+    if (node.kind == AstKind.field_access) {
+        var fah_matched: u8 = @intCast(u8, 0);
+        var base_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+        if (base_type == type_mod.TYPE_UNDEFINED) {
+            var base_node = env.store.nodes.items[@intCast(usize, node.child_0)];
+            if (base_node.kind == AstKind.ident_expr) {
+                var base_name_id = env.store.identifiers.items[@intCast(usize, base_node.payload)];
+                var smi: usize = 0;
+                while (smi < @intCast(usize, env.symbol_reg.tables_len)) : (smi += 1) {
+                    var base_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, smi), base_name_id);
+                    if (base_sym) |bs| {
+                        if (bs.kind == sym_mod.SymbolKind.module) {
+                            var mod_id = bs.module_id;
+                            var payload_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, node.payload);
+                            if (payload_sym) |ps| {
+                                if (ps.type_id != @intCast(u32, 0)) {
+                                    fah_matched = @intCast(u8, 1);
+                                    var fam: []const u8 = "FAH:r"; pal_mod.markerWriteInt(fam, ps.type_id);
+                                    return ps.type_id;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            var fam_m: []const u8 = "FAH:m"; pal_mod.markerWriteInt(fam_m, node.child_0);
+            return type_mod.TYPE_UNDEFINED;
+        }
+        var base_ty = env.typereg.types_items[@intCast(usize, base_type)];
+        if (base_ty.kind == type_mod.TypeKind.module_type) {
+            var mod_id = base_ty.module_id;
+            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, node.payload);
+            if (sym) |s| {
+                if (s.type_id != @intCast(u32, 0)) {
+                    fah_matched = @intCast(u8, 1);
+                    var fam: []const u8 = "FAH:r"; pal_mod.markerWriteInt(fam, s.type_id);
+                    return s.type_id;
+                }
+            }
+        }
+        if (fah_matched == @intCast(u8, 0)) {
+            var fnm: []const u8 = "FAH:N"; pal_mod.markerWriteInt(fnm, node_idx);
+        }
+    }
+    if (node.child_0 != 0) {
+        var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+        if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type) {
+            var ptm: []const u8 = "PTR:i"; pal_mod.markerWrite(ptm);
+            var ptib: [10]u8 = undefined; var ptil = itoa_mod.itoa(node_idx, ptib[0..]); var ptis: usize = @intCast(usize, 9) - @intCast(usize, ptil); pal_mod.markerWrite(ptib[ptis..@intCast(usize, 9)]);
+            var ptkm: []const u8 = "k"; pal_mod.markerWrite(ptkm);
+            var ptkb: [10]u8 = undefined; var ptkl = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), ptkb[0..]); var ptks: usize = @intCast(usize, 9) - @intCast(usize, ptkl); pal_mod.markerWrite(ptkb[ptks..@intCast(usize, 9)]);
+            var ptcm: []const u8 = "c"; pal_mod.markerWrite(ptcm);
+            var ptcb: [10]u8 = undefined; var ptcl = itoa_mod.itoa(child_type, ptcb[0..]); var ptcs: usize = @intCast(usize, 9) - @intCast(usize, ptcl); pal_mod.markerWrite(ptcb[ptcs..@intCast(usize, 9)]);
+            var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+            if (node.kind == AstKind.ptr_type) {
+                var ptr_tid = type_mod.typeRegistryGetOrCreatePtr(env.typereg, child_type, is_const);
+                var ppm: []const u8 = "P"; pal_mod.markerWrite(ppm);
+                var ppb: [10]u8 = undefined; var ppl = itoa_mod.itoa(ptr_tid, ppb[0..]); var pps: usize = @intCast(usize, 9) - @intCast(usize, ppl); pal_mod.markerWrite(ppb[pps..@intCast(usize, 9)]);
+                var pnl: []const u8 = "\n"; pal_mod.markerWrite(pnl);
+                return ptr_tid;
+            } else {
+                var ptr_tid2 = type_mod.typeRegistryGetOrCreateManyPtr(env.typereg, child_type, is_const);
+                var ppm2: []const u8 = "M"; pal_mod.markerWrite(ppm2);
+                var ppb2: [10]u8 = undefined; var ppl2 = itoa_mod.itoa(ptr_tid2, ppb2[0..]); var pps2: usize = @intCast(usize, 9) - @intCast(usize, ppl2); pal_mod.markerWrite(ppb2[pps2..@intCast(usize, 9)]);
+                var pnl2: []const u8 = "\n"; pal_mod.markerWrite(pnl2);
+                return ptr_tid2;
+            }
+        }
+        if (node.kind == AstKind.slice_type) {
+            var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+            var sl_tid = type_mod.typeRegistryGetOrCreateSlice(env.typereg, child_type, is_const);
+            var sl_e: [20]u8 = undefined;
+            var sl_el = itoa_mod.itoa(child_type, sl_e[0..]);
+            var sl_es: usize = @intCast(usize, 19) - @intCast(usize, sl_el);
+            var sm: []const u8 = "SL:e"; pal_mod.markerWrite(sm); pal_mod.markerWrite(sl_e[sl_es..@intCast(usize, 19)]);
+            var sl_r: [20]u8 = undefined;
+            var sl_rl = itoa_mod.itoa(sl_tid, sl_r[0..]);
+            var sl_rs: usize = @intCast(usize, 19) - @intCast(usize, sl_rl);
+            var s2: []const u8 = "s"; pal_mod.markerWrite(s2); pal_mod.markerWrite(sl_r[sl_rs..@intCast(usize, 19)]);
+            var s3: []const u8 = "\n"; pal_mod.markerWrite(s3);
+            return sl_tid;
+        }
+        if (node.kind == AstKind.optional_type) {
+            return child_type;
+        }
+        if (node.kind == AstKind.error_union_type) {
+            var err_set_type = resolveTypeExprFull(env, node.child_0, @intCast(u32, 0));
+            var payload_type = resolveTypeExprFull(env, node.child_1, @intCast(u32, 0));
+            if (err_set_type == type_mod.TYPE_UNDEFINED or payload_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+            return type_mod.typeRegistryGetOrCreateErrorUnion(env.typereg, payload_type, err_set_type);
+        }
+        if (node.kind == AstKind.array_type) {
+            var t0m: []const u8 = "T0"; pal_mod.markerWrite(t0m);
+            var t1m: []const u8 = "T1e"; pal_mod.markerWrite(t1m);
+            var t1b: [20]u8 = undefined;
+            var t1l = itoa_mod.itoa(child_type, t1b[0..]);
+            var t1s: usize = @intCast(usize, 19) - @intCast(usize, t1l);
+            pal_mod.markerWrite(t1b[t1s..@intCast(usize, 19)]);
+            if (node.child_1 != 0) {
+                var sz_node = env.store.nodes.items[@intCast(usize, node.child_1)];
+                var arr_len: u32 = @intCast(u32, 0);
+                if (sz_node.kind == AstKind.int_literal) {
+                    arr_len = @intCast(u32, env.store.int_values.items[@intCast(usize, sz_node.payload)]);
+                } else if (sz_node.kind == AstKind.add or sz_node.kind == AstKind.sub) {
+                    var lhs = evalConstU32Full(env, sz_node.child_0);
+                    var rhs = evalConstU32Full(env, sz_node.child_1);
+                    if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF)) {
+                        if (sz_node.kind == AstKind.add) arr_len = lhs + rhs;
+                        else arr_len = lhs - rhs;
+                    }
+                } else if (sz_node.kind == AstKind.ident_expr) {
+                    var c_name_id = env.store.identifiers.items[@intCast(usize, sz_node.payload)];
+                    var c_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, 0), c_name_id);
+                    if (c_sym) |cs| {
+                         if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                            var c_decl = env.store.nodes.items[@intCast(usize, cs.decl_node)];
+                            if (c_decl.child_1 != 0) {
+                                var c_init = env.store.nodes.items[@intCast(usize, c_decl.child_1)];
+                                if (c_init.kind == AstKind.int_literal) {
+                                    arr_len = @intCast(u32, env.store.int_values.items[@intCast(usize, c_init.payload)]);
+                                }
+                            }
+                        }
+                    }
+                }
+                var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m);
+                var t2b: [20]u8 = undefined;
+                var t2l = itoa_mod.itoa(arr_len, t2b[0..]);
+                var t2s: usize = @intCast(usize, 19) - @intCast(usize, t2l);
+                pal_mod.markerWrite(t2b[t2s..@intCast(usize, 19)]);
+                if (arr_len != @intCast(u32, 0)) {
+                    var at = type_mod.typeRegistryGetOrCreateArray(env.typereg, child_type, arr_len);
+                    var t3m: []const u8 = "T3a"; pal_mod.markerWrite(t3m);
+                    var t3b: [20]u8 = undefined;
+                    var t3l = itoa_mod.itoa(at, t3b[0..]);
+                    var t3s: usize = @intCast(usize, 19) - @intCast(usize, t3l);
+                    pal_mod.markerWrite(t3b[t3s..@intCast(usize, 19)]);
+                    if (at != type_mod.TYPE_UNDEFINED) { var am: []const u8 = "A"; pal_mod.markerWrite(am); }
+                    else { var am: []const u8 = "a"; pal_mod.markerWrite(am); }
+                    return at;
+                }
+            }
+            return type_mod.TYPE_UNDEFINED;
+        }
+    }
+    var und_nm2: []const u8 = "UND:n"; pal_mod.markerWriteInt(und_nm2, node_idx);
+    var und_km: []const u8 = "UND:k"; pal_mod.markerWriteInt(und_km, @intCast(u32, @enumToInt(node.kind)));
+    return type_mod.TYPE_UNDEFINED;
 }
