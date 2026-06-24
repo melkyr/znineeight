@@ -630,3 +630,56 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
     var und_km: []const u8 = "UND:k"; pal_mod.markerWriteInt(und_km, @intCast(u32, @enumToInt(node.kind)));
     return type_mod.TYPE_UNDEFINED;
 }
+
+pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_idx: u32) void {
+    var decl = env.store.nodes.items[@intCast(usize, decl_idx)];
+    var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
+    var spid = type_mod.nameCacheGet(env.typereg, (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, decl.payload));
+    if (spid) |stid| {
+        var sty = env.typereg.types_items[@intCast(usize, stid)];
+        var fchildren = ast_mod.astStoreGetExtraChildren(env.store, init.payload);
+        var fi2: usize = 0;
+        if (sty.kind == type_mod.TypeKind.struct_type) {
+            var sp = env.typereg.st_items[@intCast(usize, sty.payload_idx)];
+            while (fi2 < @intCast(usize, sp.fields_count)) : (fi2 += 1) {
+                var fd = env.store.nodes.items[@intCast(usize, fchildren[fi2])];
+                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                    var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
+                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
+                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
+                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        env.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
+                        var fsw_nm: []const u8 = "FSW:n"; pal_mod.markerWriteInt(fsw_nm, @intCast(u32, @intCast(usize, sp.fields_start) + fi2));
+                        var fsw_tm: []const u8 = "FSW:t"; pal_mod.markerWriteInt(fsw_tm, ft);
+                    }
+                }
+            }
+        } else if (sty.kind == type_mod.TypeKind.tagged_union_type) {
+            var tp = env.typereg.tu_items[@intCast(usize, sty.payload_idx)];
+            var tui_fsm: []const u8 = "TUI:fs"; pal_mod.markerWriteInt(tui_fsm, @intCast(u32, tp.fields_start));
+            var tui_fcm: []const u8 = "TUI:fc"; pal_mod.markerWriteInt(tui_fcm, @intCast(u32, tp.fields_count));
+            while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += 1) {
+                var fd = env.store.nodes.items[@intCast(usize, fchildren[fi2])];
+                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                    var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
+                    var dft_nm: []const u8 = "DFT:n"; pal_mod.markerWriteInt(dft_nm, @intCast(u32, fi2));
+                    var dft_tm: []const u8 = "DFT:t"; pal_mod.markerWriteInt(dft_tm, ft);
+                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
+                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
+                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
+                    var dtwr_m: []const u8 = "DTWR\n"; pal_mod.markerWrite(dtwr_m);
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        env.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
+                        var ftw_nm: []const u8 = "FTW:n"; pal_mod.markerWriteInt(ftw_nm, @intCast(u32, @intCast(usize, tp.fields_start) + fi2));
+                        var ftw_tm: []const u8 = "FTW:t"; pal_mod.markerWriteInt(ftw_tm, ft);
+                    } else {
+                        var dtsk_m: []const u8 = "DTSK\n"; pal_mod.markerWrite(dtsk_m);
+                    }
+                }
+            }
+        }
+    }
+}
