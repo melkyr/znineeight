@@ -118,6 +118,15 @@ fn registerLocalDecl(self: *SemanticAnalyzer, name_id: u32, type_id: u32) void {
     self.local_decl_count += @intCast(usize, 1);
 }
 
+fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32) u32 {
+    if (cond_type == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+    var capt_ty = self.registry.types_items[@intCast(usize, cond_type)];
+    if (capt_ty.kind == type_mod.TypeKind.optional_type) {
+        return self.registry.opt_items[@intCast(usize, capt_ty.payload_idx)].payload;
+    }
+    return cond_type;
+}
+
 pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, name_id: u32, node_idx: u32) u32 {
     var ide: []const u8 = "IDE\n"; pal_mod.markerWrite(ide);
     var li = self.local_decl_count;
@@ -617,6 +626,14 @@ fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    if (node.payload != 0) {
+        var icap_node = self.store.nodes.items[@intCast(usize, node.payload)];
+        if (icap_node.kind == AstKind.if_capture) {
+            var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
+            var icap_ty = semanticAnalyzerCaptureType(self, icond_t);
+            registerLocalDecl(self, icap_node.payload, icap_ty);
+        }
+    }
     var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
     if (node.child_2 == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
@@ -948,7 +965,16 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
      } else if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
          result = semanticAnalyzerResolveIfExpr(self, node_idx);
      } else if (node.kind == AstKind.while_stmt or node.kind == AstKind.for_stmt) {
-         _ = semanticAnalyzerResolveExpr(self, node.child_0);
+         var while_cond_t = semanticAnalyzerResolveExpr(self, node.child_0);
+         if (node.kind == AstKind.while_stmt) {
+             if (node.payload != 0) {
+                 var wcap_node = self.store.nodes.items[@intCast(usize, node.payload)];
+                 if (wcap_node.kind == AstKind.while_capture) {
+                     var wcap_ty = semanticAnalyzerCaptureType(self, while_cond_t);
+                     registerLocalDecl(self, wcap_node.payload, wcap_ty);
+                 }
+             }
+         }
          if (node.child_1 != 0) { semanticAnalyzerResolveStmtIter(self, node.child_1); }
          result = type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.swt_ex) {
@@ -1151,7 +1177,13 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var d4v: []const u8 = "D4:N"; pal_mod.markerWriteInt(d4v, node.payload);
             var d4v2: []const u8 = "D4:T"; pal_mod.markerWriteInt(d4v2, decl_type);
         } else if (node.kind == AstKind.if_stmt) {
-             _ = semanticAnalyzerResolveExpr(self, node.child_0);
+             var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
+             if (node.payload != @intCast(u32, 0)) {
+                 var icap_node = self.store.nodes.items[@intCast(usize, node.payload)];
+                 if (icap_node.kind == AstKind.if_capture) {
+                     registerLocalDecl(self, icap_node.payload, semanticAnalyzerCaptureType(self, icond_t));
+                 }
+             }
              var ifs_b: [1]u32 = [1]u32{node.child_1};
              var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
              if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = self.store.nodes.items[@intCast(usize, ifs_b[0])]; ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
@@ -1178,7 +1210,13 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                  var wst_nm: []const u8 = "WST:N"; pal_mod.markerWriteInt(wst_nm, node_idx);
                  var wst_km: []const u8 = "WST:K"; pal_mod.markerWriteInt(wst_km, @intCast(u32, @enumToInt(ws_node.kind)));
              }
-            _ = semanticAnalyzerResolveExpr(self, node.child_0);
+            var wcond_t = semanticAnalyzerResolveExpr(self, node.child_0);
+            if (node.payload != @intCast(u32, 0)) {
+                var wcap_node = self.store.nodes.items[@intCast(usize, node.payload)];
+                if (wcap_node.kind == AstKind.while_capture) {
+                    registerLocalDecl(self, wcap_node.payload, semanticAnalyzerCaptureType(self, wcond_t));
+                }
+            }
             if (node.child_1 != @intCast(u32, 0)) {
                 if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
                 stack[sp].node_idx = node.child_1;
