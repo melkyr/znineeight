@@ -287,6 +287,25 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
         symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
     }
     resolveAllFnTypes(ctx);
+    var fw_env = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner };
+    var fw_mi: usize = 0;
+    while (fw_mi < mods.len) : (fw_mi += 1) {
+        var fw_root = mods[fw_mi].ast_root;
+        if (fw_root != @intCast(u32, 0)) {
+            var fw_rnode = ctx.store.nodes.items[@intCast(usize, fw_root)];
+            var fw_decls = ast_mod.astStoreGetExtraChildren(ctx.store, fw_rnode.payload);
+            var fw_di: usize = 0;
+            while (fw_di < fw_decls.len) : (fw_di += 1) {
+                var fw_decl = ctx.store.nodes.items[@intCast(usize, fw_decls[fw_di])];
+                if (fw_decl.kind == AstKind.var_decl and fw_decl.child_1 != 0) {
+                    var fw_init = ctx.store.nodes.items[@intCast(usize, fw_decl.child_1)];
+                    if (fw_init.kind == AstKind.struct_decl or fw_init.kind == AstKind.union_decl) {
+                        type_resolver.resolveDeclAggregateFieldTypes(&fw_env, mods[fw_mi].id, fw_decls[fw_di]);
+                    }
+                }
+            }
+        }
+    }
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
