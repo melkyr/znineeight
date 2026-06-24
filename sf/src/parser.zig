@@ -623,7 +623,6 @@ fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
             dot.span_start, self.last_end, 0, 0, 0, payload);
     }
     var saved_child_len = self.child_buf_len;
-    self.child_buf_len = 0;
     while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
         var val = try parserParseExprPrec(self, Prec.none);
         u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len,
@@ -632,8 +631,8 @@ fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
     var payload: u32 = 0;
-    if (self.child_buf_len > 0) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
+    if (self.child_buf_len > saved_child_len) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_child_len..self.child_buf_len]);
     }
     self.child_buf_len = saved_child_len;
     return ast_mod.astStoreAddNode(self.store, AstKind.tuple_literal, 0,
@@ -659,7 +658,6 @@ fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
     }
     _ = parserAdvance(self);
     var saved_child_len = self.child_buf_len;
-    self.child_buf_len = 0;
     while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
         var val = try parserParseExprPrec(self, Prec.none);
         u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len,
@@ -670,9 +668,9 @@ fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
     var gap: []const u8 = "";
     _ = gap;
     var payload: u32 = 0;
-    if (self.child_buf_len > 0) {
+    if (self.child_buf_len > saved_child_len) {
         payload = ast_mod.astStoreAddExtraChildren(self.store,
-            self.child_buf_items[0..self.child_buf_len]);
+            self.child_buf_items[saved_child_len..self.child_buf_len]);
     }
     self.child_buf_len = saved_child_len;
     return ast_mod.astStoreAddNode(self.store, AstKind.array_init, 0,

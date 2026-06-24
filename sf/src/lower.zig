@@ -355,6 +355,62 @@ fn lowerPrintCall(self: *LirLowerer, ec: []const u32) u32 {
     return @intCast(u32, 0);
 }
 
+fn lowerPrintFmt(self: *LirLowerer, fmt: []const u8, arg_ec: []const u32) void {
+    var seg_start: usize = @intCast(usize, 0);
+    var ai: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < fmt.len) : (i += @intCast(usize, 1)) {
+        var c = fmt[i];
+        var ip1: usize = i + @intCast(usize, 1);
+        var nxt: u8 = @intCast(u8, 0);
+        if (ip1 < fmt.len) { nxt = fmt[ip1]; }
+        if (c == @intCast(u8, '{')) {
+            if (nxt == @intCast(u8, '{')) {
+                if (ip1 > seg_start) {
+                    var sg1 = fmt[seg_start..ip1];
+                    var sid1 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg1);
+                    emitInst(self, LirInst{ .print_str = .{ .string_id = sid1 } });
+                }
+                seg_start = i + @intCast(usize, 2);
+                i += @intCast(usize, 1);
+            } else {
+                if (i > seg_start) {
+                    var sg2 = fmt[seg_start..i];
+                    var sid2 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg2);
+                    emitInst(self, LirInst{ .print_str = .{ .string_id = sid2 } });
+                }
+                if (ai < arg_ec.len) {
+                    var pv = lowerExpr(self, arg_ec[ai]);
+                    var pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
+                    emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = @intCast(u8, 'd') } });
+                    ai += @intCast(usize, 1);
+                }
+                var j: usize = i + @intCast(usize, 1);
+                while (j < fmt.len) : (j += @intCast(usize, 1)) {
+                    if (fmt[j] == @intCast(u8, '}')) break;
+                }
+                seg_start = j + @intCast(usize, 1);
+                i = j;
+            }
+        } else if (c == @intCast(u8, '}')) {
+            if (nxt == @intCast(u8, '}')) {
+                if (ip1 > seg_start) {
+                    var sg3 = fmt[seg_start..ip1];
+                    var sid3 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg3);
+                    emitInst(self, LirInst{ .print_str = .{ .string_id = sid3 } });
+                }
+                seg_start = i + @intCast(usize, 2);
+                i += @intCast(usize, 1);
+            }
+        }
+    }
+    if (fmt.len > seg_start) {
+        var sg4 = fmt[seg_start..fmt.len];
+        var sid4 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg4);
+        emitInst(self, LirInst{ .print_str = .{ .string_id = sid4 } });
+    }
+}
+
 pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
     var lex_node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var lex_m: []const u8 = "LEX:n"; pal.markerWrite(lex_m);
@@ -1362,27 +1418,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, ec[0])].payload)], e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
                       var e0nl: []const u8 = "\n"; pal.markerWrite(e0nl);
                       }
-                      var dsi: usize = @intCast(usize, 0);
-                      while (dsi + @intCast(usize, 1) < ec.len) : (dsi += @intCast(usize, 1)) {
-                         var dsp = store.nodes.items[@intCast(usize, ec[dsi])];
-                          var pst_m: []const u8 = "PST:s"; pal.markerWrite(pst_m);
-                          var pst_sb: [10]u8 = undefined; var pst_sl = itoa_mod.itoa(dsp.payload, pst_sb[0..]); var pst_ss: usize = @intCast(usize, 9) - @intCast(usize, pst_sl); pal.markerWrite(pst_sb[pst_ss..@intCast(usize, 9)]);
-                          var pst_xl: []const u8 = "\n"; pal.markerWrite(pst_xl);
-                           emitInst(self, LirInst{ .print_str = .{ .string_id = dsp.payload } });
-                     }
-                     var args_node = store.nodes.items[@intCast(usize, ec[ec.len - @intCast(usize, 1)])];
-                     var arg_ec = ast_mod.astStoreGetExtraChildren(store, args_node.payload);
-                     var dai: usize = @intCast(usize, 0);
-                     while (dai < arg_ec.len) : (dai += @intCast(usize, 1)) {
-                         var dval = lowerExpr(self, arg_ec[dai]);
-                          var pvc_m: []const u8 = "PVC:v"; pal.markerWrite(pvc_m);
-                          var pvc_vb: [10]u8 = undefined; var pvc_vl = itoa_mod.itoa(dval, pvc_vb[0..]); var pvc_vs: usize = @intCast(usize, 9) - @intCast(usize, pvc_vl); pal.markerWrite(pvc_vb[pvc_vs..@intCast(usize, 9)]);
-                          var pvc_tm: []const u8 = "t"; pal.markerWrite(pvc_tm);
-                          var pvc_tb: [10]u8 = undefined; var pvc_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, dval)].type_id, pvc_tb[0..]); var pvc_ts: usize = @intCast(usize, 9) - @intCast(usize, pvc_tl); pal.markerWrite(pvc_tb[pvc_ts..@intCast(usize, 9)]);
-                          var pvc_xl: []const u8 = "\n"; pal.markerWrite(pvc_xl);
-                          emitInst(self, LirInst{ .print_val = .{ .value = dval, .type_id = self.hoisted_temps.items[@intCast(usize, dval)].type_id, .fmt = @intCast(u8, 'd') } });
-                     }
-                     return @intCast(u32, 0);
+                       var pfmtn = store.nodes.items[@intCast(usize, ec[0])];
+                       if (pfmtn.kind == AstKind.string_literal) {
+                           var pfsid: u32 = pfmtn.payload;
+                           if (@intCast(usize, pfmtn.payload) < store.string_values.len) { pfsid = store.string_values.items[@intCast(usize, pfmtn.payload)]; }
+                           var pfbytes = si_mod.stringInternerGet(self.ctx.registry.interner, pfsid);
+                           var pan = store.nodes.items[@intCast(usize, ec[ec.len - @intCast(usize, 1)])];
+                           var pae = ast_mod.astStoreGetExtraChildren(store, pan.payload);
+                           lowerPrintFmt(self, pfbytes, pae);
+                       }
+                       return @intCast(u32, 0);
                  }
                       var args_start = self.temp_counter;
                       var ai: usize = 0;
