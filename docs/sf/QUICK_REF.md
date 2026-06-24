@@ -195,6 +195,21 @@ Theories that were investigated and ruled out. Do NOT re-investigate.
 | **TokenKind value mismatch between zig0 and C header** | C header enum values match Z98 enum order exactly (kw_var=54, kw_const=53, kw_return=68, kw_if=63). Verified via GDB + C define grep. | 2026-06-12 |
 | **`strings` vs `grep -a`** — `strings` silently drops marker entries | Confirmed: `strings` strips null bytes. Use `grep -a "^PREFIX:" /tmp/markers.bin` instead. | 2026-06-12 |
 
+## Non-Issues: Warnings That Are NOT Bugs or Blockers
+
+Symptoms that look like failures but are EXPECTED. Do NOT treat them as
+regressions, do NOT open blockers for them, and do NOT spend investigation
+time chasing them.
+
+| Symptom | Why it is NOT a bug | What to actually check |
+|---------|---------------------|------------------------|
+| **game_of_life: literal ANSI / terminal-clear escape codes appear in the output** | `system("clear")` writes terminal escape sequences to stdout. When output is piped or captured (not a live TTY), those sequences show up as literal bytes. **Both zig0 AND zig1 behave this way** — it is terminal behavior, not codegen. | Whether the patterns (glider, blinker, block, beehive, LWSS) and the `Generation: N` lines render correctly. The presence of escape codes is irrelevant. |
+| **gcc *warnings* (as opposed to errors)** | Build commands intentionally suppress noise via `-Wno-long-long`, `-Wno-pointer-sign`, `-Wno-implicit-function-declaration`. Any remaining gcc *warnings* do not affect correctness of the produced binary. | Only the `error:` count matters. Gate builds on `gcc ... 2>&1 \| grep -c "error:"` equal to `0`. |
+
+**Differential rule:** `zig0` is the reference oracle. A `zig1`-compiled
+example is "correct" when its runtime output matches `zig0`'s output, modulo
+the terminal-clear artifact described above.
+
 ## Memory Recall (when queries return stale results)
 
 Memory files local: `/workspace/znineeight/.opencode/memory/YYYY-MM-DD.logfmt`
