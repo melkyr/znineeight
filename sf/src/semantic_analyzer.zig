@@ -47,6 +47,10 @@ pub const SemanticAnalyzer = struct {
     ptrcast_name_id: u32,
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
+    intcast_name_id: u32,
+    floatcast_name_id: u32,
+    inttofloat_name_id: u32,
+    inttoenum_name_id: u32,
 };
 
 pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
@@ -58,6 +62,14 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var ptin_id = interner_mod.stringInternerIntern(interner, pti_s);
     var itp_s: []const u8 = "@intToPtr";
     var itp_id = interner_mod.stringInternerIntern(interner, itp_s);
+    var ic_s: []const u8 = "@intCast";
+    var ic_id = interner_mod.stringInternerIntern(interner, ic_s);
+    var fc_s: []const u8 = "@floatCast";
+    var fc_id = interner_mod.stringInternerIntern(interner, fc_s);
+    var if_s: []const u8 = "@intToFloat";
+    var if_id = interner_mod.stringInternerIntern(interner, if_s);
+    var ie_s: []const u8 = "@intToEnum";
+    var ie_id = interner_mod.stringInternerIntern(interner, ie_s);
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -86,7 +98,21 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .ptrcast_name_id = pc_name_id,
         .ptrtoint_name_id = ptin_id,
         .inttoptr_name_id = itp_id,
+        .intcast_name_id = ic_id,
+        .floatcast_name_id = fc_id,
+        .inttofloat_name_id = if_id,
+        .inttoenum_name_id = ie_id,
     };
+}
+
+fn semanticAnalyzerIsTypeValueCast(self: *SemanticAnalyzer, name_id: u32) bool {
+    if (name_id == self.ptrcast_name_id) return true;
+    if (name_id == self.inttoptr_name_id) return true;
+    if (name_id == self.intcast_name_id) return true;
+    if (name_id == self.floatcast_name_id) return true;
+    if (name_id == self.inttofloat_name_id) return true;
+    if (name_id == self.inttoenum_name_id) return true;
+    return false;
 }
 
 fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
@@ -925,7 +951,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         if (ec.len >= @intCast(usize, 2)) {
-            if (node.child_0 == self.ptrcast_name_id or node.child_0 == self.inttoptr_name_id) {
+            if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
                 var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
                 result = type_resolver.resolveTypeExprFull(&tre_env, ec[@intCast(usize, 0)], @intCast(u32, 0));

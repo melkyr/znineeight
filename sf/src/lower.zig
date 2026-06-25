@@ -506,7 +506,12 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
         var bt_id = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
         if (bt_id != type_mod.TYPE_UNDEFINED) {
             var bt_ty = self.ctx.registry.types_items[@intCast(usize, bt_id)];
-            if (bt_ty.kind == type_mod.TypeKind.slice_type) { slice_tid_box[0] = bt_id; var msts: []const u8 = "MST:1\n"; pal.markerWrite(msts); }
+            if (bt_ty.kind == type_mod.TypeKind.slice_type) {
+                slice_tid_box[0] = bt_id;
+                var a1fb_m: []const u8 = "A1FB:n"; pal.markerWrite(a1fb_m);
+                var a1fb_b: [10]u8 = undefined; var a1fb_l = itoa_mod.itoa(base_node, a1fb_b[0..]); var a1fb_s: usize = @intCast(usize, 9) - @intCast(usize, a1fb_l); pal.markerWrite(a1fb_b[a1fb_s..@intCast(usize, 9)]);
+                var a1fb_nl: []const u8 = "\n"; pal.markerWrite(a1fb_nl);
+            }
         }
     }
     if (slice_tid_box[0] != type_mod.TYPE_UNDEFINED) {
@@ -879,7 +884,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var val = lowerExpr(self, node.child_0);
         var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ng_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } }
+        if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } } else { var rtm_ng: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ng); var rtmb_ng: [10]u8 = undefined; var rtml_ng = itoa_mod.itoa(node_idx, rtmb_ng[0..]); var rtms_ng: usize = @intCast(usize, 9) - @intCast(usize, rtml_ng); pal.markerWrite(rtmb_ng[rtms_ng..@intCast(usize, 9)]); var rtmnl_ng: []const u8 = "\n"; pal.markerWrite(rtmnl_ng); }
         var tid = nextTemp(self, ng_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_NEG, .operand = val, .result = tid } });
         return tid;
@@ -1000,7 +1005,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ptr_temp = lowerExpr(self, node.child_0);
         var rt_dr = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var dr_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        if (rt_dr) |t| { if (t != type_mod.TYPE_UNDEFINED) { dr_box[0] = t; } }
+        if (rt_dr) |t| { if (t != type_mod.TYPE_UNDEFINED) { dr_box[0] = t; } } else { var rtm_dr: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_dr); var rtmb_dr: [10]u8 = undefined; var rtml_dr = itoa_mod.itoa(node_idx, rtmb_dr[0..]); var rtms_dr: usize = @intCast(usize, 9) - @intCast(usize, rtml_dr); pal.markerWrite(rtmb_dr[rtms_dr..@intCast(usize, 9)]); var rtmnl_dr: []const u8 = "\n"; pal.markerWrite(rtmnl_dr); }
         var tid = nextTemp(self, dr_box[0]);
         emitInst(self, LirInst{ .load = .{ .ptr = ptr_temp, .result = tid } });
         return tid;
@@ -1012,7 +1017,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var idx_temp = lowerExpr(self, child_node.child_1);
             var rt_aoi = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
             var aoi_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-            if (rt_aoi) |t| { if (t != type_mod.TYPE_UNDEFINED) { aoi_box[0] = t; } }
+            if (rt_aoi) |t| { if (t != type_mod.TYPE_UNDEFINED) { aoi_box[0] = t; } } else { var rtm_aoi: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_aoi); var rtmb_aoi: [10]u8 = undefined; var rtml_aoi = itoa_mod.itoa(node_idx, rtmb_aoi[0..]); var rtms_aoi: usize = @intCast(usize, 9) - @intCast(usize, rtml_aoi); pal.markerWrite(rtmb_aoi[rtms_aoi..@intCast(usize, 9)]); var rtmnl_aoi: []const u8 = "\n"; pal.markerWrite(rtmnl_aoi); }
             var tid = nextTemp(self, aoi_box[0]);
             emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
             return tid;
@@ -1020,7 +1025,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var operand_temp = lowerExpr(self, node.child_0);
         var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-        if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } }
+        if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
         var tid = nextTemp(self, ao_box[0]);
         emitInst(self, LirInst{ .addr_of = .{ .operand = operand_temp, .result = tid } });
         return tid;
@@ -1347,7 +1352,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.markerWrite(f4s); } else { var f4m_f: []const u8 = "F4:Mf"; pal.markerWrite(f4m_f); var f4m_fb: [10]u8 = undefined; var f4m_fl = itoa_mod.itoa(node_idx, f4m_fb[0..]); var f4m_fs: usize = @intCast(usize, 9) - @intCast(usize, f4m_fl); pal.markerWrite(f4m_fb[f4m_fs..@intCast(usize, 9)]); var f4m_bm: []const u8 = "b"; pal.markerWrite(f4m_bm); var f4m_bb: [10]u8 = undefined; var f4m_bl = itoa_mod.itoa(node.child_0, f4m_bb[0..]); var f4m_bs: usize = @intCast(usize, 9) - @intCast(usize, f4m_bl); pal.markerWrite(f4m_bb[f4m_bs..@intCast(usize, 9)]); var f4mnl2: []const u8 = "\n"; pal.markerWrite(f4mnl2); }
         var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } }
+        if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } } else { var rtm_fa: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_fa); var rtmb_fa: [10]u8 = undefined; var rtml_fa = itoa_mod.itoa(node_idx, rtmb_fa[0..]); var rtms_fa: usize = @intCast(usize, 9) - @intCast(usize, rtml_fa); pal.markerWrite(rtmb_fa[rtms_fa..@intCast(usize, 9)]); var rtmnl_fa: []const u8 = "\n"; pal.markerWrite(rtmnl_fa); }
         var d1f: []const u8 = "D1:FADr"; pal.markerWrite(d1f);
         var d1fb: [20]u8 = undefined;
         if (rt_fa) |d1t| { var d1fl = itoa_mod.itoa(d1t, d1fb[0..]); var d1fs: usize = @intCast(usize, 19) - @intCast(usize, d1fl); pal.markerWrite(d1fb[d1fs..@intCast(usize, 19)]); }
