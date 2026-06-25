@@ -464,6 +464,62 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         }
         return type_mod.typeRegistryGetOrCreateErrorUnion(env.typereg, eu_payload_type, eu_es_box[0]);
     }
+    if (node.kind == AstKind.fn_type) {
+        var fnt_ret_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+        fnt_ret_box[0] = type_mod.TYPE_VOID;
+        if (node.child_0 != 0) {
+            fnt_ret_box[0] = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+            if (fnt_ret_box[0] == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        }
+        var fnt_ptypes: [16]u32 = undefined;
+        var fnt_pc: usize = @intCast(usize, 0);
+        if (node.payload != 0) {
+            var fnt_extra = ast_mod.astStoreGetExtraChildren(env.store, node.payload);
+            var fnt_i: usize = @intCast(usize, 0);
+            while (fnt_i < fnt_extra.len and fnt_pc < @intCast(usize, 16)) : (fnt_i += @intCast(usize, 1)) {
+                var fnt_pt = resolveTypeExprFull(env, fnt_extra[fnt_i], depth + @intCast(u32, 1));
+                if (fnt_pt == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+                fnt_ptypes[fnt_pc] = fnt_pt;
+                fnt_pc += @intCast(usize, 1);
+            }
+        }
+        var fnt_nb: [96]u8 = undefined;
+        var fnt_np: usize = @intCast(usize, 0);
+        var fnt_pre: []const u8 = "fnt_";
+        var fnt_pri: usize = @intCast(usize, 0);
+        while (fnt_pri < fnt_pre.len and fnt_np < @intCast(usize, 95)) : (fnt_pri += @intCast(usize, 1)) {
+            fnt_nb[fnt_np] = fnt_pre[fnt_pri];
+            fnt_np += @intCast(usize, 1);
+        }
+        var fnt_rb: [12]u8 = undefined;
+        var fnt_rl = itoa_mod.itoa(fnt_ret_box[0], fnt_rb[0..]);
+        var fnt_rs: usize = @intCast(usize, 11) - @intCast(usize, fnt_rl);
+        while (fnt_rs < @intCast(usize, 11) and fnt_np < @intCast(usize, 95)) : (fnt_rs += @intCast(usize, 1)) {
+            fnt_nb[fnt_np] = fnt_rb[fnt_rs];
+            fnt_np += @intCast(usize, 1);
+        }
+        var fnt_k: usize = @intCast(usize, 0);
+        while (fnt_k < fnt_pc and fnt_np < @intCast(usize, 95)) : (fnt_k += @intCast(usize, 1)) {
+            if (fnt_np < @intCast(usize, 95)) {
+                fnt_nb[fnt_np] = @intCast(u8, 95);
+                fnt_np += @intCast(usize, 1);
+            }
+            var fnt_pb: [12]u8 = undefined;
+            var fnt_pl = itoa_mod.itoa(fnt_ptypes[fnt_k], fnt_pb[0..]);
+            var fnt_ps: usize = @intCast(usize, 11) - @intCast(usize, fnt_pl);
+            while (fnt_ps < @intCast(usize, 11) and fnt_np < @intCast(usize, 95)) : (fnt_ps += @intCast(usize, 1)) {
+                fnt_nb[fnt_np] = fnt_pb[fnt_ps];
+                fnt_np += @intCast(usize, 1);
+            }
+        }
+        var fnt_name_id = interner_mod.stringInternerIntern(env.interner, fnt_nb[0..fnt_np]);
+        var fnt_pstart: u32 = @intCast(u32, env.typereg.xt_len);
+        var fnt_a: usize = @intCast(usize, 0);
+        while (fnt_a < fnt_pc) : (fnt_a += @intCast(usize, 1)) {
+            type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
+        }
+        return type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
+    }
     if (node.child_0 != 0) {
         var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
         if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
