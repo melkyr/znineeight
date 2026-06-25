@@ -2888,7 +2888,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var src = resolveTempName(emitter, e.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
-            var s1: []const u8 = " = !";
+            var s1: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s1);
             bufferedWriterWrite(&emitter.writer, src);
             var s2: []const u8 = ".is_error;\n";
