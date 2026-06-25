@@ -537,6 +537,52 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var eu_nid = nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
         return interner_mod.stringInternerGet(mangler.interner, eu_nid);
     }
+    if (ty.kind == TypeKind.fn_type) {
+        var fpp = reg.fn_items[@intCast(usize, ty.payload_idx)];
+        var fbuf: [96]u8 = undefined;
+        var fpos: usize = @intCast(usize, 0);
+        var fpre: []const u8 = "FP_";
+        var fprei: usize = @intCast(usize, 0);
+        while (fprei < fpre.len and fpos < @intCast(usize, 95)) : (fprei += @intCast(usize, 1)) {
+            fbuf[fpos] = fpre[fprei];
+            fpos += @intCast(usize, 1);
+        }
+        var fret_c = getCTypeName(reg, mangler, fpp.return_type);
+        var fri: usize = @intCast(usize, 0);
+        while (fri < fret_c.len and fpos < @intCast(usize, 95)) : (fri += @intCast(usize, 1)) {
+            var fc = fret_c[fri];
+            if (fc == @intCast(u8, 32) or fc == @intCast(u8, 42)) {
+                fc = @intCast(u8, 95);
+            }
+            fbuf[fpos] = fc;
+            fpos += @intCast(usize, 1);
+        }
+        var fpcnt: u16 = fpp.params_count;
+        var fpend: usize = @intCast(usize, fpp.params_start) + @intCast(usize, fpcnt);
+        if (fpend <= reg.xt_len) {
+            var fpcur: usize = @intCast(usize, fpp.params_start);
+            while (fpcur < fpend and fpos < @intCast(usize, 95)) : (fpcur += @intCast(usize, 1)) {
+                if (fpos < @intCast(usize, 95)) {
+                    fbuf[fpos] = @intCast(u8, 95);
+                    fpos += @intCast(usize, 1);
+                }
+                var fptid = reg.xt_items[fpcur];
+                var fp_c = getCTypeName(reg, mangler, fptid);
+                var fpj: usize = @intCast(usize, 0);
+                while (fpj < fp_c.len and fpos < @intCast(usize, 95)) : (fpj += @intCast(usize, 1)) {
+                    var fc2 = fp_c[fpj];
+                    if (fc2 == @intCast(u8, 32) or fc2 == @intCast(u8, 42)) {
+                        fc2 = @intCast(u8, 95);
+                    }
+                    fbuf[fpos] = fc2;
+                    fpos += @intCast(usize, 1);
+                }
+            }
+        }
+        var fp_nid = interner_mod.stringInternerIntern(mangler.interner, fbuf[0..fpos]);
+        var fp_mid = nameManglerMangle(mangler, fp_nid, @intCast(u8, 2), @intCast(u32, 0));
+        return interner_mod.stringInternerGet(mangler.interner, fp_mid);
+    }
     var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
@@ -786,7 +832,8 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
                 ty.kind != TypeKind.error_union_type and
                 ty.kind != TypeKind.tagged_union_type and
                 ty.kind != TypeKind.union_type and
-                ty.kind != TypeKind.array_type)
+                ty.kind != TypeKind.array_type and
+                ty.kind != TypeKind.fn_type)
                 continue;
         }
         var cname = getCTypeName(reg, emitter.mangler, tid);
@@ -1014,6 +1061,41 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.array_type) { emitArrayType(emitter, tid); return; }
     if (ty.kind == TypeKind.i64_type) { emitInt64Type(emitter, tid); return; }
     if (ty.kind == TypeKind.u64_type) { emitUint64Type(emitter, tid); return; }
+    if (ty.kind == TypeKind.fn_type) {
+        if ((ty.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { emitFnPtrType(emitter, tid); }
+        return;
+    }
+}
+
+fn emitFnPtrType(emitter: *C89Emitter, tid: u32) void {
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var fp = reg.fn_items[@intCast(usize, ty.payload_idx)];
+    var s_td: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, s_td);
+    var ret_c = getCTypeName(reg, emitter.mangler, fp.return_type);
+    bufferedWriterWrite(&emitter.writer, ret_c);
+    var s_op: []const u8 = " (*"; bufferedWriterWrite(&emitter.writer, s_op);
+    var name_c = getCTypeName(reg, emitter.mangler, tid);
+    bufferedWriterWrite(&emitter.writer, name_c);
+    var s_cp: []const u8 = ")("; bufferedWriterWrite(&emitter.writer, s_cp);
+    var fpc: u16 = fp.params_count;
+    var fpend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fpc);
+    if (fpc == @intCast(u16, 0) or fpend > reg.xt_len) {
+        var s_v: []const u8 = "void"; bufferedWriterWrite(&emitter.writer, s_v);
+    } else {
+        var pi: usize = @intCast(usize, fp.params_start);
+        var firstp: u8 = @intCast(u8, 1);
+        while (pi < fpend) : (pi += @intCast(usize, 1)) {
+            if (firstp == @intCast(u8, 0)) {
+                var s_cm: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, s_cm);
+            }
+            firstp = @intCast(u8, 0);
+            var ptid = reg.xt_items[pi];
+            var pcn = getCTypeName(reg, emitter.mangler, ptid);
+            bufferedWriterWrite(&emitter.writer, pcn);
+        }
+    }
+    var s_end: []const u8 = ");\n"; bufferedWriterWrite(&emitter.writer, s_end);
 }
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
@@ -3028,6 +3110,18 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, src);
             var s3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s3);
+        },
+        .func_ref => |fr| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var fr_result = resolveTempName(emitter, fr.result);
+            bufferedWriterWrite(&emitter.writer, fr_result);
+            var fr_eq: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, fr_eq);
+            var fr_mangled = nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
+            var fr_name = interner_mod.stringInternerGet(emitter.interner, fr_mangled);
+            bufferedWriterWrite(&emitter.writer, fr_name);
+            var fr_semi: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, fr_semi);
         },
         else => {},
     }

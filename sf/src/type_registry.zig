@@ -492,6 +492,10 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems
     return tid;
 }
 
+pub fn typeRegistryMarkFnPtrUsed(self: *TypeRegistry, tid: u32) void {
+    self.types_items[@intCast(usize, tid)].flags = self.types_items[@intCast(usize, tid)].flags | @intCast(u8, 1);
+}
+
 pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u16, tags_count: u16) u32 {
     esAppend(self, ErrorSetPayload{ .tags_start = tags_start, .tags_count = tags_count });
     return typeRegistryAppend(self, Type{

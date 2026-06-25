@@ -1349,7 +1349,31 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var d1fnb: [20]u8 = undefined; var d1fnl = itoa_mod.itoa(field_name_id, d1fnb[0..]); var d1fns: usize = @intCast(usize, 19) - @intCast(usize, d1fnl); pal.markerWrite(d1fnb[d1fns..@intCast(usize, 19)]);
         var d1nl: []const u8 = " "; pal.markerWrite(d1nl);
         var fa_ty = self.ctx.registry.types_items[@intCast(usize, fa_box[0])];
-        if (fa_ty.kind == type_mod.TypeKind.fn_type or fa_ty.kind == type_mod.TypeKind.module_type) {
+        if (fa_ty.kind == type_mod.TypeKind.fn_type) {
+            if (base_node.kind == AstKind.ident_expr and self.ctx.has_symbols != @intCast(u8, 0)) {
+                var fr_base_name = store.identifiers.items[@intCast(usize, base_node.payload)];
+                var fr_base_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, fr_base_name);
+                if (fr_base_sym) |frbsym| {
+                    if (frbsym.module_id != @intCast(u32, 0) and frbsym.module_id != self.module_id) {
+                        var fr_tmod = frbsym.module_id;
+                        var fr_fsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, fr_tmod, field_name_id);
+                        if (fr_fsym) |frfsym| {
+                            if (frfsym.kind == @intCast(u8, 3)) {
+                                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fa_box[0]);
+                                var fr_res = nextTemp(self, fa_box[0]);
+                                emitInst(self, LirInst{ .func_ref = .{ .name_id = frfsym.name_id, .module_id = fr_tmod, .result = fr_res } });
+                                var frm_m: []const u8 = "FREF:n"; pal.markerWrite(frm_m);
+                                var frm_b: [10]u8 = undefined; var frm_l = itoa_mod.itoa(frfsym.name_id, frm_b[0..]); var frm_s: usize = @intCast(usize, 9) - @intCast(usize, frm_l); pal.markerWrite(frm_b[frm_s..@intCast(usize, 9)]);
+                                var frm_nl: []const u8 = "\n"; pal.markerWrite(frm_nl);
+                                return fr_res;
+                            }
+                        }
+                    }
+                }
+            }
+            return @intCast(u32, 0);
+        }
+        if (fa_ty.kind == type_mod.TypeKind.module_type) {
             return @intCast(u32, 0);
         }
         var fas_m: []const u8 = "FAS:n"; pal.markerWrite(fas_m);
