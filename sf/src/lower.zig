@@ -502,18 +502,6 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
         var mg1s: []const u8 = "MS:1\n"; pal.markerWrite(mg1s);
         if (rt_ty.kind == type_mod.TypeKind.slice_type) { slice_tid_box[0] = rt; }
     }
-    if (slice_tid_box[0] == type_mod.TYPE_UNDEFINED) {
-        var bt_id = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
-        if (bt_id != type_mod.TYPE_UNDEFINED) {
-            var bt_ty = self.ctx.registry.types_items[@intCast(usize, bt_id)];
-            if (bt_ty.kind == type_mod.TypeKind.slice_type) {
-                slice_tid_box[0] = bt_id;
-                var a1fb_m: []const u8 = "A1FB:n"; pal.markerWrite(a1fb_m);
-                var a1fb_b: [10]u8 = undefined; var a1fb_l = itoa_mod.itoa(base_node, a1fb_b[0..]); var a1fb_s: usize = @intCast(usize, 9) - @intCast(usize, a1fb_l); pal.markerWrite(a1fb_b[a1fb_s..@intCast(usize, 9)]);
-                var a1fb_nl: []const u8 = "\n"; pal.markerWrite(a1fb_nl);
-            }
-        }
-    }
     if (slice_tid_box[0] != type_mod.TYPE_UNDEFINED) {
             var sp_ty = self.ctx.registry.types_items[@intCast(usize, slice_tid_box[0])];
             var sp = self.ctx.registry.slice_items[@intCast(usize, sp_ty.payload_idx)];
