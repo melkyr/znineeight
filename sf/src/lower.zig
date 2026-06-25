@@ -569,63 +569,6 @@ fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
     return tid;
 }
 
-fn lowerCalleeIsDirectFunction(self: *LirLowerer, callee_idx: u32) bool {
-    var cnode = self.ctx.store.nodes.items[@intCast(usize, callee_idx)];
-    if (cnode.kind == AstKind.ident_expr) {
-        var cname = self.ctx.store.identifiers.items[@intCast(usize, cnode.payload)];
-        var li: usize = @intCast(usize, 0);
-        while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
-            if (self.local_decl_names[li] == cname) { return false; }
-        }
-        var isym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, cname);
-        if (isym) |ism| {
-            if (ism.kind == @intCast(u8, 3) or ism.kind == @intCast(u8, 2)) { return true; }
-        }
-        return false;
-    }
-    if (cnode.kind == AstKind.field_access) {
-        var dbnode = self.ctx.store.nodes.items[@intCast(usize, cnode.child_0)];
-        var dfield_id: u32 = cnode.payload;
-        if (dbnode.kind == AstKind.field_access) {
-            var dchain: [4]u32 = undefined;
-            var dclen: u32 = @intCast(u32, 0);
-            dchain[@intCast(usize, dclen)] = cnode.payload; dclen += @intCast(u32, 1);
-            var dcw = dbnode;
-            while (dcw.kind == AstKind.field_access) {
-                if (dclen >= @intCast(u32, 4)) { return false; }
-                dchain[@intCast(usize, dclen)] = dcw.payload; dclen += @intCast(u32, 1);
-                dcw = self.ctx.store.nodes.items[@intCast(usize, dcw.child_0)];
-            }
-            if (dcw.kind != AstKind.ident_expr) { return false; }
-            dbnode = dcw;
-            dfield_id = dchain[@intCast(usize, 0)];
-            var dcmod: u32 = self.module_id;
-            var dci: u32 = dclen;
-            while (dci > @intCast(u32, 1)) {
-                dci -= @intCast(u32, 1);
-                var dcf = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, dcmod, dchain[@intCast(usize, dci)]);
-                if (dcf) |dcfs| {
-                    if (dcfs.module_id != @intCast(u32, 0)) { dcmod = dcfs.module_id; }
-                    else { return false; }
-                } else { return false; }
-            }
-        }
-        if (dbnode.kind != AstKind.ident_expr) { return false; }
-        var dbname = self.ctx.store.identifiers.items[@intCast(usize, dbnode.payload)];
-        var dbsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, dbname);
-        if (dbsym) |dbsm| {
-            if (dbsm.module_id != @intCast(u32, 0) and dbsm.module_id != self.module_id) {
-                var dtmod = dbsm.module_id;
-                var dfsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, dtmod, dfield_id);
-                if (dfsym) |dfs| {
-                    if (dfs.kind == @intCast(u8, 3)) { return true; }
-                }
-            }
-        }
-        return false;
-    }
-    return false;
-}
 
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     self._ctx_node_idx = node_idx;
@@ -1535,9 +1478,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                            lowerPrintFmt(self, pfbytes, pae);
                        }
                         return @intCast(u32, 0);
-                  }
-                  if (lowerCalleeIsDirectFunction(self, node.child_0)) {
-                       var args_start = self.temp_counter;
+                   }
+                        var args_start = self.temp_counter;
                       var ai: usize = 0;
                       while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                       ai = 0;
@@ -1565,30 +1507,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     .return_type = fp.return_type,
                      .is_extern = fp.is_extern,
                 } });
-                return result;
-                  } else {
-                       var ind_callee = lowerExpr(self, node.child_0);
-                       var ind_args_start = self.temp_counter;
-                       var iai: usize = @intCast(usize, 0);
-                       while (iai < ec.len) : (iai += @intCast(usize, 1)) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-                       iai = @intCast(usize, 0);
-                       while (iai < ec.len) : (iai += @intCast(usize, 1)) {
-                           var iarg = lowerExpr(self, ec[iai]);
-                           emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ind_args_start + @intCast(u32, iai), .src = iarg } });
-                           var islot: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                           if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[iai])) |ipt| { islot[0] = ipt; }
-                           else { islot[0] = self.hoisted_temps.items[@intCast(usize, iarg)].type_id; }
-                           self.hoisted_temps.items[@intCast(usize, ind_args_start) + iai].type_id = islot[0];
-                       }
-                       var ind_result: u32 = @intCast(u32, 0);
-                       if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
-                           ind_result = nextTemp(self, fp.return_type);
-                       }
-                       var fnim: []const u8 = "FNI:t"; pal.markerWriteInt(fnim, ind_result);
-                       emitInst(self, LirInst{ .call = .{ .callee = ind_callee, .args_start = ind_args_start, .args_count = @intCast(u32, ec.len), .result = ind_result } });
-                       return ind_result;
-                  }
-              }
+                 return result;
+               }
              else if (crt_ty.kind == type_mod.TypeKind.ptr_type) {
                  var fptr_pp = self.ctx.registry.ptr_items[@intCast(usize, crt_ty.payload_idx)];
                  var fptr_pointee = self.ctx.registry.types_items[@intCast(usize, fptr_pp.base)];
