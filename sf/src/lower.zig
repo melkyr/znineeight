@@ -1419,7 +1419,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         if (fr_fsym) |frfsym| {
                             if (frfsym.kind == @intCast(u8, 3)) {
                                 type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fa_box[0]);
-                                var fr_res = nextTemp(self, fa_box[0]);
+                                var fr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fa_box[0], false);
+                                var fr_res = nextTemp(self, fr_pt);
                                 emitInst(self, LirInst{ .func_ref = .{ .name_id = frfsym.name_id, .module_id = fr_tmod, .result = fr_res } });
                                 var frm_m: []const u8 = "FREF:n"; pal.markerWrite(frm_m);
                                 var frm_b: [10]u8 = undefined; var frm_l = itoa_mod.itoa(frfsym.name_id, frm_b[0..]); var frm_s: usize = @intCast(usize, 9) - @intCast(usize, frm_l); pal.markerWrite(frm_b[frm_s..@intCast(usize, 9)]);
@@ -1828,7 +1829,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             if (fc_t != type_mod.TYPE_UNDEFINED) {
                 t_target = fc_t;
-                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fc_t);
+                var fc_inner = self.ctx.registry.types_items[@intCast(usize, fc_t)];
+                if (fc_inner.kind == type_mod.TypeKind.ptr_type) {
+                    var fc_pp = self.ctx.registry.ptr_items[@intCast(usize, fc_inner.payload_idx)];
+                    type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fc_pp.base);
+                } else {
+                    type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fc_t);
+                }
                 var fcm: []const u8 = "FNT:t"; pal.markerWrite(fcm);
             }
         } else { var tu: []const u8 = "U"; pal.markerWrite(tu); }
@@ -2991,14 +2998,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var dty = self.ctx.registry.types_items[@intCast(usize, decl_type)];
-            var vd_elide: u8 = @intCast(u8, 0);
-            if (dty.kind == type_mod.TypeKind.module_type) { vd_elide = @intCast(u8, 1); }
-            else if (dty.kind == type_mod.TypeKind.fn_type) {
-                if (node.child_1 != @intCast(u32, 0)) {
-                    if (lowerCalleeIsDirectFunction(self, node.child_1)) { vd_elide = @intCast(u8, 1); }
-                }
-            }
-            if (vd_elide == @intCast(u8, 1)) {
+            if (dty.kind == type_mod.TypeKind.fn_type or dty.kind == type_mod.TypeKind.module_type) {
                 var vb: []const u8 = "VB"; pal.markerWrite(vb);
             } else {
             var dl_temp = nextTemp(self, decl_type);

@@ -518,7 +518,9 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         while (fnt_a < fnt_pc) : (fnt_a += @intCast(usize, 1)) {
             type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
         }
-        return type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
+        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
+        type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
+        return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
     }
     if (node.child_0 != 0) {
         var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
