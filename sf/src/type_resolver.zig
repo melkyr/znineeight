@@ -451,6 +451,19 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             var fnm: []const u8 = "FAH:N"; pal_mod.markerWriteInt(fnm, node_idx);
         }
     }
+    if (node.kind == AstKind.error_union_type) {
+        var eu_payload_type = resolveTypeExprFull(env, node.child_1, depth + @intCast(u32, 1));
+        if (eu_payload_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        var eu_es_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+        if (node.child_0 != 0) {
+            var eu_resolved_es = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+            if (eu_resolved_es == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+            eu_es_box[0] = eu_resolved_es;
+        } else {
+            eu_es_box[0] = type_mod.typeRegistryGetOrCreateErrorSet(env.typereg, @intCast(u16, 0), @intCast(u16, 0));
+        }
+        return type_mod.typeRegistryGetOrCreateErrorUnion(env.typereg, eu_payload_type, eu_es_box[0]);
+    }
     if (node.child_0 != 0) {
         var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
         if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
@@ -492,12 +505,6 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         }
         if (node.kind == AstKind.optional_type) {
             return child_type;
-        }
-        if (node.kind == AstKind.error_union_type) {
-            var err_set_type = resolveTypeExprFull(env, node.child_0, @intCast(u32, 0));
-            var payload_type = resolveTypeExprFull(env, node.child_1, @intCast(u32, 0));
-            if (err_set_type == type_mod.TYPE_UNDEFINED or payload_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
-            return type_mod.typeRegistryGetOrCreateErrorUnion(env.typereg, payload_type, err_set_type);
         }
         if (node.kind == AstKind.array_type) {
             var t0m: []const u8 = "T0"; pal_mod.markerWrite(t0m);

@@ -951,11 +951,17 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveTryExpr(self, node_idx);
     } else if (node.kind == AstKind.catch_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (result != type_mod.TYPE_UNDEFINED) {
+            var clt = self.registry.types_items[@intCast(usize, result)];
+            if (clt.kind == type_mod.TypeKind.error_union_type) {
+                result = self.registry.eu_items[@intCast(usize, clt.payload_idx)].payload;
+            }
+        }
         if (node.child_2 != 0) {
             var capture_node = self.store.nodes.items[@intCast(usize, node.child_2)];
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
             self.local_decl_names[self.local_decl_count] = capture_node.payload;
-            self.local_decl_types[self.local_decl_count] = type_mod.TYPE_U32;
+            self.local_decl_types[self.local_decl_count] = type_mod.TYPE_I32;
             self.local_decl_count += @intCast(usize, 1);
         }
     } else if (node.kind == AstKind.orelse_expr) {

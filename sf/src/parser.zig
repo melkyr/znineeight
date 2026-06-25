@@ -901,7 +901,7 @@ fn parserParseErrorUnionType(self: *Parser) ParserError!u32 {
     var payload = try parserParseType(self);
     return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
-        payload, 0, 0, 0);
+        0, payload, 0, 0);
 }
 
 fn parserParseFnType(self: *Parser) ParserError!u32 {
