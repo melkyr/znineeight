@@ -601,6 +601,14 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var callee_type = semanticAnalyzerResolveExpr(self, node.child_0);
     if (callee_type == @intCast(u32, 0)) { var fn2: []const u8 = "FN2\n"; pal_mod.markerWrite(fn2); return type_mod.TYPE_VOID; }
     var callee_ty = self.registry.types_items[@intCast(usize, callee_type)];
+    if (callee_ty.kind == type_mod.TypeKind.ptr_type) {
+        var cptr_pp = self.registry.ptr_items[@intCast(usize, callee_ty.payload_idx)];
+        var cptr_pointee = self.registry.types_items[@intCast(usize, cptr_pp.base)];
+        if (cptr_pointee.kind == type_mod.TypeKind.fn_type) {
+            callee_type = cptr_pp.base;
+            callee_ty = self.registry.types_items[@intCast(usize, callee_type)];
+        }
+    }
     if (callee_ty.kind != type_mod.TypeKind.fn_type) {
         var fn3: []const u8 = "FN3:N"; pal_mod.markerWriteInt(fn3, node_idx);
         var fn3_ct_m: []const u8 = "FN3:T"; pal_mod.markerWriteInt(fn3_ct_m, callee_type);

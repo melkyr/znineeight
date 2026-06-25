@@ -1588,8 +1588,35 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                        emitInst(self, LirInst{ .call = .{ .callee = ind_callee, .args_start = ind_args_start, .args_count = @intCast(u32, ec.len), .result = ind_result } });
                        return ind_result;
                   }
+              }
+             else if (crt_ty.kind == type_mod.TypeKind.ptr_type) {
+                 var fptr_pp = self.ctx.registry.ptr_items[@intCast(usize, crt_ty.payload_idx)];
+                 var fptr_pointee = self.ctx.registry.types_items[@intCast(usize, fptr_pp.base)];
+                 if (fptr_pointee.kind == type_mod.TypeKind.fn_type) {
+                     var fpfp = self.ctx.registry.fn_items[@intCast(usize, fptr_pointee.payload_idx)];
+                     var fpi_callee = lowerExpr(self, node.child_0);
+                     var fpi_args_start = self.temp_counter;
+                     var fpi_ai: usize = @intCast(usize, 0);
+                     while (fpi_ai < ec.len) : (fpi_ai += @intCast(usize, 1)) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                     fpi_ai = @intCast(usize, 0);
+                     while (fpi_ai < ec.len) : (fpi_ai += @intCast(usize, 1)) {
+                         var fpi_arg = lowerExpr(self, ec[fpi_ai]);
+                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = fpi_args_start + @intCast(u32, fpi_ai), .src = fpi_arg } });
+                         var fpi_slot: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[fpi_ai])) |fpi_pt| { fpi_slot[0] = fpi_pt; }
+                         else { fpi_slot[0] = self.hoisted_temps.items[@intCast(usize, fpi_arg)].type_id; }
+                         self.hoisted_temps.items[@intCast(usize, fpi_args_start) + fpi_ai].type_id = fpi_slot[0];
+                     }
+                     var fpi_result: u32 = @intCast(u32, 0);
+                     if (fpfp.return_type != type_mod.TYPE_VOID and fpfp.return_type != type_mod.TYPE_UNDEFINED) {
+                         fpi_result = nextTemp(self, fpfp.return_type);
+                     }
+                     var fpim: []const u8 = "FNI:t"; pal.markerWriteInt(fpim, fpi_result);
+                     emitInst(self, LirInst{ .call = .{ .callee = fpi_callee, .args_start = fpi_args_start, .args_count = @intCast(u32, ec.len), .result = fpi_result } });
+                     return fpi_result;
+                 }
              }
-         }
+          }
         var callee_node = store.nodes.items[@intCast(usize, node.child_0)];
         if (callee_node.kind == @enumToInt(AstKind.field_access)) {
             var dfa: []const u8 = "DFA:ck="; pal.markerWrite(dfa);
