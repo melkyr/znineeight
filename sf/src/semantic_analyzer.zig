@@ -1185,6 +1185,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 else {
                     var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                     if (rt) |t| { decl_type = t; }
+                    else {
+                        var tre_env_vd = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
+                        decl_type = type_resolver.resolveTypeExprFull(&tre_env_vd, node.child_0, @intCast(u32, 0));
+                    }
                 }
             }
             if (node.child_1 != @intCast(u32, 0)) {

@@ -1825,6 +1825,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
             var join_temp = nextTemp(self, euPayloadOf(self, eu_box[0]));
             self.current_bb = err_bb;
+            self.block_terminated = @intCast(u8, 0);
             if (node.child_2 != 0) {
                 var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
                 var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
@@ -1833,8 +1834,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_node.payload, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
             }
             var err_val = lowerExpr(self, node.child_1);
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
             if (self.block_terminated == @intCast(u8, 0)) {
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
                 emitInst(self, LirInst{ .jump = join_bb });
             }
             self.current_bb = ok_bb;
