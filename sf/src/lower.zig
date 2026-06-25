@@ -496,11 +496,22 @@ fn findLocalTemp(self: *LirLowerer, name_id: u32) u32 {
 
 fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
     var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node);
+    var slice_tid_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
     if (resolved) |rt| {
         var rt_ty = self.ctx.registry.types_items[@intCast(usize, rt)];
         var mg1s: []const u8 = "MS:1\n"; pal.markerWrite(mg1s);
-        if (rt_ty.kind == type_mod.TypeKind.slice_type) {
-            var sp = self.ctx.registry.slice_items[@intCast(usize, rt_ty.payload_idx)];
+        if (rt_ty.kind == type_mod.TypeKind.slice_type) { slice_tid_box[0] = rt; }
+    }
+    if (slice_tid_box[0] == type_mod.TYPE_UNDEFINED) {
+        var bt_id = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+        if (bt_id != type_mod.TYPE_UNDEFINED) {
+            var bt_ty = self.ctx.registry.types_items[@intCast(usize, bt_id)];
+            if (bt_ty.kind == type_mod.TypeKind.slice_type) { slice_tid_box[0] = bt_id; var msts: []const u8 = "MST:1\n"; pal.markerWrite(msts); }
+        }
+    }
+    if (slice_tid_box[0] != type_mod.TYPE_UNDEFINED) {
+            var sp_ty = self.ctx.registry.types_items[@intCast(usize, slice_tid_box[0])];
+            var sp = self.ctx.registry.slice_items[@intCast(usize, sp_ty.payload_idx)];
             var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, sp.elem, false);
              var ptr_temp = nextTemp(self, ptr_type);
                var base_nid = nameMapGet(self, base_temp);
@@ -517,7 +528,6 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
              var sla_nl: []const u8 = "\n"; pal.markerWrite(sla_nl);
              return ptr_temp;
         }
-    }
     return base_temp;
 }
 
@@ -954,6 +964,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         } else if (child_node.kind == AstKind.index_access) {
             var base_temp = lowerExpr(self, child_node.child_0);
+            var ai_orig_base = base_temp;
             base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
             var idx_temp = lowerExpr(self, child_node.child_1);
             var bai_m: []const u8 = "BAI:b"; pal.markerWrite(bai_m);
@@ -978,6 +989,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (is_slice == @intCast(u8, 0)) { ai_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, child_node.child_0)].payload)]; }
             }
             }
+            if (base_temp != ai_orig_base) { ai_ni = @intCast(u32, 0); }
             emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = src } });
         } else {
             var dst = lowerExpr(self, node.child_0);
@@ -1026,6 +1038,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var msp_bb: [10]u8 = undefined; var msp_bl = itoa_mod.itoa(base_temp, msp_bb[0..]); var msp_bs: usize = @intCast(usize, 9) - @intCast(usize, msp_bl); pal.markerWrite(msp_bb[msp_bs..@intCast(usize, 9)]);
         var msp_nm: []const u8 = "n"; pal.markerWrite(msp_nm);
         var msp_nb: [10]u8 = undefined; var msp_nl = itoa_mod.itoa(node.child_0, msp_nb[0..]); var msp_ns: usize = @intCast(usize, 9) - @intCast(usize, msp_nl); pal.markerWrite(msp_nb[msp_ns..@intCast(usize, 9)]);
+        var li_orig_base = base_temp;
         base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
         var msp2_m: []const u8 = "p"; pal.markerWrite(msp2_m);
         var msp2b: [10]u8 = undefined; var msp2l = itoa_mod.itoa(base_temp, msp2b[0..]); var msp2s: usize = @intCast(usize, 9) - @intCast(usize, msp2l); pal.markerWrite(msp2b[msp2s..@intCast(usize, 9)]);
@@ -1070,6 +1083,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (is_slice == @intCast(u8, 0)) { li_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, node.child_0)].payload)]; }
         }
         }
+        if (base_temp != li_orig_base) { li_ni = @intCast(u32, 0); }
         emitInst(self, LirInst{ .load_index = .{ .name_id = li_ni, .base = base_temp, .index = idx_temp, .result = tid } });
         var cli_m: []const u8 = "CLI:b"; pal.markerWrite(cli_m);
         var cli_bb: [10]u8 = undefined; var cli_bl = itoa_mod.itoa(base_temp, cli_bb[0..]); var cli_bs: usize = @intCast(usize, 9) - @intCast(usize, cli_bl); pal.markerWrite(cli_bb[cli_bs..@intCast(usize, 9)]);
