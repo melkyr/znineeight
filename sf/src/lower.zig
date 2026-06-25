@@ -1752,7 +1752,27 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
             self.current_bb = err_bb;
             expandDefers(self, @intCast(u32, 0), @intCast(u8, 1));
-            emitInst(self, LirInst{ .ret = inner_temp });
+            var do_rewrap: u8 = @intCast(u8, 0);
+            {
+                var rt = self.func.return_type;
+                if (rt != type_mod.TYPE_UNDEFINED) {
+                    if (rt != eu_box[0]) {
+                        var rtt = self.ctx.registry.types_items[@intCast(usize, rt)];
+                        if (rtt.kind == type_mod.TypeKind.error_union_type) {
+                            do_rewrap = @intCast(u8, 1);
+                        }
+                    }
+                }
+            }
+            if (do_rewrap != @intCast(u8, 0)) {
+                var prop_code = nextTemp(self, type_mod.TYPE_I32);
+                emitInst(self, LirInst{ .unwrap_error_code = .{ .value = inner_temp, .result = prop_code } });
+                var prop_rewrapped = nextTemp(self, self.func.return_type);
+                emitInst(self, LirInst{ .wrap_error_err = .{ .value = prop_code, .result = prop_rewrapped, .type_id = self.func.return_type } });
+                emitInst(self, LirInst{ .ret = prop_rewrapped });
+            } else {
+                emitInst(self, LirInst{ .ret = inner_temp });
+            }
             self.block_terminated = @intCast(u8, 1);
             self.current_bb = ok_bb;
             var result = nextTemp(self, euPayloadOf(self, eu_box[0]));
