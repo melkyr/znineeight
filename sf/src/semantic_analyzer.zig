@@ -660,10 +660,10 @@ fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
     if (node.payload != 0) {
         var icap_node = self.store.nodes.items[@intCast(usize, node.payload)];
         if (icap_node.kind == AstKind.if_capture) {
-            var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
             var icap_ty = semanticAnalyzerCaptureType(self, icond_t);
             registerLocalDecl(self, icap_node.payload, icap_ty);
         }
@@ -976,6 +976,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             result = type_mod.TYPE_VOID;
         }
     } else if (node.kind == AstKind.bool_not) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
         result = type_mod.TYPE_BOOL;
     } else if (node.kind == AstKind.negate) {
         result = semanticAnalyzerResolveNegate(self, node_idx);
