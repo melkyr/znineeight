@@ -406,7 +406,7 @@ regex over Z98 source, `sed` with regex) is PROHIBITED. These scripts:
 - Cannot be undone without `git checkout` which
   reverts ALL uncommitted fixes alongside the attempted changes
 
-**Use only the `edit` tool** with exact `oldString`/`newString` matching.
+**Use only the `edit` tool (exact `oldString`/`newString`) or the `fastedit` tool (line ranges — see X.7)** for code edits.
 One edit at a time. No bulk transforms. No exceptions.
 
 ### X.4 FORBIDDEN: git checkout to Erase Diagnostic Code
@@ -461,6 +461,39 @@ entries only, use the direct file read approach:
 This bypasses the memory_recall tool's score-based ranking which may
 bury recent entries under older high-score matches.
 </context_management_directive>
+
+### X.7 Editing with `fastedit` (line-based, sanctioned)
+
+`fastedit` is an additional approved manual-edit tool (alongside `edit`):
+it replaces/deletes an inclusive 1-indexed line range
+(`start_line`..`end_line`) with `new_code`, and prints a diff + surrounding
+context + warnings (duplicate function/class names, missing
+blank-line-before-function). It is NOT a bulk / replace-all / python
+transform — it is one controlled, diff-previewed edit, so it satisfies the
+X.3 manual-edit discipline.
+
+Rules and gotchas (learned 2026-06-26, Stage I traversal unify):
+
+- **Re-read the target region with `read` immediately before every
+  `fastedit`.** Line numbers are absolute and shift after each edit; a
+  stale number silently edits the wrong lines.
+- **Edit bottom-to-top** when making several edits in one file, so each
+  edit only shifts lines *below* it and the pending (higher) line numbers
+  stay valid.
+- **Insert-before is NOT supported via `end_line = start_line - 1`** (it
+  errors `start_line must be <= end_line`, despite the tool's own help
+  text). To INSERT, replace the anchor line with `[new content + the
+  original anchor line]` — i.e. include the original line verbatim at the
+  end of `new_code`.
+- **Source indentation is cosmetic for the byte-identical gate** — zig0
+  parses regardless of whitespace and `--dump-c89` output is unaffected;
+  still match sibling indentation for readability.
+- The **duplicate-function-name warning** is useful right after inserting
+  a verbatim-extracted helper (e.g. the M1/M2 header helpers): it flags an
+  accidental second definition.
+
+Same gates apply: self-host build 0 errors + man/gol/mud/lisp `--dump-c89`
+byte-identical (or oracle-correct) + per-stage verification STOP.
 
 **End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```

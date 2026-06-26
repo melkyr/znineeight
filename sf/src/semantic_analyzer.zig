@@ -666,14 +666,7 @@ fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
-    if (node.payload != 0) {
-        var icap_node = self.store.nodes.items[@intCast(usize, node.payload)];
-        if (icap_node.kind == AstKind.if_capture) {
-            var icap_ty = semanticAnalyzerCaptureType(self, icond_t);
-            registerLocalDecl(self, icap_node.payload, icap_ty);
-        }
-    }
+    semanticAnalyzerResolveIfHeader(self, node_idx);
     var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
     if (node.child_2 == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
@@ -1164,6 +1157,27 @@ fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
     self.stmt_work_len += @intCast(usize, 1);
 }
 
+fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (node.payload != @intCast(u32, 0)) {
+        var icap_node = self.store.nodes.items[@intCast(usize, node.payload)];
+        if (icap_node.kind == AstKind.if_capture) {
+            registerLocalDecl(self, icap_node.payload, semanticAnalyzerCaptureType(self, icond_t));
+        }
+    }
+    var ifs_b: [1]u32 = [1]u32{node.child_1};
+    var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
+    if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = self.store.nodes.items[@intCast(usize, ifs_b[0])]; ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
+    var ifst_nm: []const u8 = "IFST:N"; pal_mod.markerWriteInt(ifst_nm, node_idx);
+    var ifst_cm: []const u8 = "IFST:C"; pal_mod.markerWriteInt(ifst_cm, ifs_b[0]);
+    var ifst_km: []const u8 = "IFST:K"; pal_mod.markerWriteInt(ifst_km, ifs_k[0]);
+    var ifst_c2m: []const u8 = "IFST:2"; pal_mod.markerWriteInt(ifst_c2m, node.child_2);
+    var ifs_k2: [1]u32 = [1]u32{@intCast(u32, 0)};
+    if (node.child_2 != @intCast(u32, 0)) { var ifs_cn2 = self.store.nodes.items[@intCast(usize, node.child_2)]; ifs_k2[0] = @intCast(u32, @enumToInt(ifs_cn2.kind)); }
+    var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
+}
+
 fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     _ = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1281,23 +1295,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var d4v: []const u8 = "D4:N"; pal_mod.markerWriteInt(d4v, node.payload);
             var d4v2: []const u8 = "D4:T"; pal_mod.markerWriteInt(d4v2, decl_type);
         } else if (node.kind == AstKind.if_stmt) {
-             var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
-             if (node.payload != @intCast(u32, 0)) {
-                 var icap_node = self.store.nodes.items[@intCast(usize, node.payload)];
-                 if (icap_node.kind == AstKind.if_capture) {
-                     registerLocalDecl(self, icap_node.payload, semanticAnalyzerCaptureType(self, icond_t));
-                 }
-             }
-             var ifs_b: [1]u32 = [1]u32{node.child_1};
-             var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
-             if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = self.store.nodes.items[@intCast(usize, ifs_b[0])]; ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
-              var ifst_nm: []const u8 = "IFST:N"; pal_mod.markerWriteInt(ifst_nm, node_idx);
-              var ifst_cm: []const u8 = "IFST:C"; pal_mod.markerWriteInt(ifst_cm, ifs_b[0]);
-              var ifst_km: []const u8 = "IFST:K"; pal_mod.markerWriteInt(ifst_km, ifs_k[0]);
-              var ifst_c2m: []const u8 = "IFST:2"; pal_mod.markerWriteInt(ifst_c2m, node.child_2);
-              var ifs_k2: [1]u32 = [1]u32{@intCast(u32, 0)};
-              if (node.child_2 != @intCast(u32, 0)) { var ifs_cn2 = self.store.nodes.items[@intCast(usize, node.child_2)]; ifs_k2[0] = @intCast(u32, @enumToInt(ifs_cn2.kind)); }
-              var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
+             semanticAnalyzerResolveIfHeader(self, node_idx);
              if (node.child_2 != @intCast(u32, 0)) {
                  semanticAnalyzerStmtWorkPush(self, node.child_2);
              }
