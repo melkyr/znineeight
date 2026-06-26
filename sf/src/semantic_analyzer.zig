@@ -1356,6 +1356,11 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         }
                     }
                     if (prong_node.child_0 != @intCast(u32, 0)) {
+                        var swdw_rt = rtt_mod.resolvedTypeTableGet(self.type_table, prong_node.child_0);
+                        var swdw_s: u32 = @intCast(u32, 0);
+                        if (swdw_rt) |swdw_t| { swdw_s = swdw_t; }
+                        var swdw_nm: []const u8 = "SWDW:n"; pal_mod.markerWriteInt(swdw_nm, prong_node.child_0);
+                        var swdw_sm: []const u8 = "SWDW:r"; pal_mod.markerWriteInt(swdw_sm, swdw_s);
                         semanticAnalyzerStmtWorkPush(self, prong_node.child_0);
                     }
                 }
