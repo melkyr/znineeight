@@ -30,6 +30,9 @@ pub const SemanticAnalyzer = struct {
     expected_type_stack_len: usize,
     expected_type_stack_cap: usize,
     expected_type_stack_alloc: *Sand,
+    stmt_work_items: [*]u32,
+    stmt_work_len: usize,
+    stmt_work_cap: usize,
     current_fn_return: TypeId,
     current_fn_name: u32,
     coercion_table: *coercion_mod.CoercionTable,
@@ -81,6 +84,9 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .expected_type_stack_len = @intCast(usize, 0),
         .expected_type_stack_cap = @intCast(usize, 0),
         .expected_type_stack_alloc = alloc,
+        .stmt_work_items = undefined,
+        .stmt_work_len = @intCast(usize, 0),
+        .stmt_work_cap = @intCast(usize, 0),
         .current_fn_return = @intCast(u32, 0),
         .current_fn_name = @intCast(u32, 0),
         .coercion_table = coercion_tab,
@@ -1143,22 +1149,31 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     var vcm: []const u8 = "EVC:C"; pal_mod.markerWriteInt(vcm, @intCast(u32, evcap));
 }
 
-const StmtWorkItem = struct {
-    node_idx: u32,
-};
+fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (self.stmt_work_len >= self.stmt_work_cap) {
+        var new_cap: usize = if (self.stmt_work_cap < @intCast(usize, 64)) @intCast(usize, 64) else self.stmt_work_cap * @intCast(usize, 2);
+        var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var ndst = @ptrCast([*]u32, raw);
+        var ci: usize = 0;
+        while (ci < self.stmt_work_len) : (ci += @intCast(usize, 1)) {
+            ndst[ci] = self.stmt_work_items[ci];
+        }
+        self.stmt_work_items = ndst;
+        self.stmt_work_cap = new_cap;
+    }
+    self.stmt_work_items[self.stmt_work_len] = node_idx;
+    self.stmt_work_len += @intCast(usize, 1);
+}
 
 pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) void {
-    var stack: [256]StmtWorkItem = undefined;
-    var sp: usize = 0;
-    stack[0].node_idx = root_node;
-    sp = @intCast(usize, 1);
-    while (sp > @intCast(usize, 0)) {
-        if (sp > @intCast(usize, 255)) { @panic("resolveStmtIter stack overflow"); }
-        sp -= @intCast(usize, 1);
-        var node_idx = stack[sp].node_idx;
+    var sp_base: usize = self.stmt_work_len;
+    semanticAnalyzerStmtWorkPush(self, root_node);
+    while (self.stmt_work_len > sp_base) {
+        self.stmt_work_len -= @intCast(usize, 1);
+        var node_idx = self.stmt_work_items[self.stmt_work_len];
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = self.store.nodes.items[@intCast(usize, node_idx)];
-        var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, sp));
+        var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, self.stmt_work_len));
         if (node.kind == AstKind.block) {
             var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
             var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
@@ -1171,9 +1186,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var bc_nm: []const u8 = "BCK:N"; pal_mod.markerWriteInt(bc_nm, ci);
                 var cnode_k = self.store.nodes.items[@intCast(usize, ci)].kind;
                 var bc_km: []const u8 = "BCK:K"; pal_mod.markerWriteInt(bc_km, @intCast(u32, @enumToInt(cnode_k)));
-                if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                stack[sp].node_idx = ci;
-                sp += @intCast(usize, 1);
+                semanticAnalyzerStmtWorkPush(self, ci);
             }
             var bcej: []const u8 = "]\n"; pal_mod.markerWrite(bcej);
         } else if (node.kind == AstKind.var_decl) {
@@ -1240,14 +1253,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
               if (node.child_2 != @intCast(u32, 0)) { var ifs_cn2 = self.store.nodes.items[@intCast(usize, node.child_2)]; ifs_k2[0] = @intCast(u32, @enumToInt(ifs_cn2.kind)); }
               var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
              if (node.child_2 != @intCast(u32, 0)) {
-                 if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                 stack[sp].node_idx = node.child_2;
-                 sp += @intCast(usize, 1);
+                 semanticAnalyzerStmtWorkPush(self, node.child_2);
              }
              if (node.child_1 != @intCast(u32, 0)) {
-                 if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                 stack[sp].node_idx = node.child_1;
-                 sp += @intCast(usize, 1);
+                 semanticAnalyzerStmtWorkPush(self, node.child_1);
              }
           } else if (node.kind == AstKind.while_stmt) {
              if (node.child_1 != @intCast(u32, 0)) {
@@ -1263,9 +1272,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 }
             }
             if (node.child_1 != @intCast(u32, 0)) {
-                if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                stack[sp].node_idx = node.child_1;
-                sp += @intCast(usize, 1);
+                semanticAnalyzerStmtWorkPush(self, node.child_1);
             }
         } else if (node.kind == AstKind.for_stmt) {
              _ = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1296,9 +1303,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                  var f2_m: []const u8 = "FIX2:LN"; pal_mod.markerWriteInt(f2_m, node.child_2);
              }
             if (node.child_1 != @intCast(u32, 0)) {
-                if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                stack[sp].node_idx = node.child_1;
-                sp += @intCast(usize, 1);
+                semanticAnalyzerStmtWorkPush(self, node.child_1);
             }
         } else if (node.kind == AstKind.swt_ex) {
             var sw: []const u8 = "SW"; pal_mod.markerWrite(sw);
@@ -1351,9 +1356,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         }
                     }
                     if (prong_node.child_0 != @intCast(u32, 0)) {
-                        if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                        stack[sp].node_idx = prong_node.child_0;
-                        sp += @intCast(usize, 1);
+                        semanticAnalyzerStmtWorkPush(self, prong_node.child_0);
                     }
                 }
             }
@@ -1368,9 +1371,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             _ = semanticAnalyzerResolveExpr(self, node_idx);
         } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
-                if (sp >= @intCast(usize, 256)) { @panic("resolveStmtIter stack overflow"); }
-                stack[sp].node_idx = node.child_0;
-                sp += @intCast(usize, 1);
+                semanticAnalyzerStmtWorkPush(self, node.child_0);
             }
         } else if (node.kind == AstKind.break_stmt) {
         } else if (node.kind == AstKind.continue_stmt) {
