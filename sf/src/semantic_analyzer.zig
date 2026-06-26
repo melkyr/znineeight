@@ -822,6 +822,10 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     while (i < prongs.len) : (i += 1) {
         var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
+        if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
+            var swec_m: []const u8 = "ICE: switch else-prong capture (else => |x|) not fully supported yet; halting to avoid miscompilation\n"; pal_mod.stderr_write(swec_m);
+            @panic("switch else-prong capture (else => |x|) not fully supported yet; halting to avoid miscompilation");
+        }
         var pct = self.current_switch_cond_tu; var pp = prong.payload;
         var pct_m2: []const u8 = "PCT:C"; pal_mod.markerWriteInt(pct_m2, pct);
         var ppt_m: []const u8 = "PCT:P"; pal_mod.markerWriteInt(ppt_m, pp);
