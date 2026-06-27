@@ -14,6 +14,42 @@ Debug build:
 gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
 ```
 
+## LISP refactor testing building zig1 pipeline
+
+How the LISP / sema-refactor work actually builds and tests `zig1` (differential vs `zig0`).
+`zig1` is fully determined by **`sf/src/main.zig` (+ its imports)** and **`sf/build/zig0`** — the
+output directory and gcc *warning* flags do NOT change the resulting compiler.
+
+**1. Build zig1 from the current source (isolated output dir):**
+```bash
+OUT=/tmp/z1
+rm -rf "$OUT" && mkdir -p "$OUT"          # always clean: stale .c/.h cause false Slice_* type errors
+./sf/build/zig0 --header-priority-include -o "$OUT/zig1.c" sf/src/main.zig   # emits 35 per-module .c
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign "$OUT"/*.c -o "$OUT/zig1"
+```
+Debug build (for GDB): append `-g -O0 -Wno-implicit-function-declaration` to the gcc line.
+
+- zig0 emits **35 per-module `.c` files** into `$OUT` (gcc globs `"$OUT"/*.c`; there is no single `zig1.c` object).
+- The bootstrap `-Iinclude` above is **stale** (no root `include/` dir exists) — omit it. `-Wno-pointer-sign`
+  only mutes warnings. Gate on the `error:` count, never warnings.
+- Always build from the **repo** `sf/src/main.zig`, never a `/tmp` `git worktree` (those hold older source = a different/older zig1).
+
+**2. Compile + run an example with that zig1:**
+```bash
+"$OUT/zig1" --dump-c89 examples/lisp_interpreter_curr/main.zig > /tmp/lisp.c
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isf/src/include \
+    /tmp/lisp.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/lisp 2>&1 | grep -c 'error:'
+# add sf/src/include/net_runtime.c for mud_server; use `gcc -c` (no link) for no-main repros
+```
+
+**3. Differential / gate (what "passing" means):**
+- `zig0` is the reference oracle: `./sf/build/zig0 -o DIR/out.c repro.zig` (emits per-module `repro.c` in `DIR`).
+- Refactor gate: `man/gol/mud/lisp --dump-c89` **byte-identical** to baselines + `lisp` `error:` count == `12` + self-host gcc `0` errors.
+- Current baselines (HEAD `c3d61919`): `man c379bd194d73d06a9dbac02431a82b2d`, `gol 8aa260ce9d467995f657e46552712fb1`,
+  `mud 35051e34cd0ba883a08ff60569ae262f`, `lisp 74a721caef6f121fe6d744870dbb7c37`; `zig1` ≈ `621772` bytes.
+- Markers: `"$OUT/zig1" --markers --dump-c89 <entry> 2>mk` then `grep -ac '^PREFIX' mk`
+  (watch prefix collisions: `FS:C`/`FS:CK`, `IFST:K`/`IFST:K2` → use the `:N` variant).
+
 ## Compile Examples with zig1
 
 ```bash
