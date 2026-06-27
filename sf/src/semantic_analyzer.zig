@@ -1006,6 +1006,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
          result = type_mod.TYPE_VOID;
+     } else if (node.kind == AstKind.var_decl or node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
+         semanticAnalyzerResolveStmtIter(self, node_idx);
+         result = type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
          result = semanticAnalyzerResolveIfExpr(self, node_idx);
       } else if (node.kind == AstKind.for_stmt) {
