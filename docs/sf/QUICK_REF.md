@@ -246,7 +246,12 @@ time chasing them.
 example is "correct" when its runtime output matches `zig0`'s output, modulo
 the terminal-clear artifact described above.
 
-## Memory Recall (when queries return stale results)
+## Memory Recall (DEPRECATED — use mnemoria instead)
+
+> **DEPRECATED.** The old logfmt memory system has been migrated to `mnemoria`.
+> See [Memory Recall via Mnemoria](#memory-recall-via-mnemoria) below.
+> Logfmt files are preserved at `.opencode/memory/*.logfmt` for reference but
+> are no longer the primary query mechanism.
 
 Memory files local: `/workspace/znineeight/.opencode/memory/YYYY-MM-DD.logfmt`
 
@@ -272,6 +277,65 @@ Scope: project (most common), build, api, database, etc.
 ```bash
 ls /workspace/znineeight/.opencode/memory/*.logfmt | sort -r | head -5
 ```
+
+## Memory Recall via Mnemoria
+
+Memories have been migrated from logfmt files to the `mnemoria` CLI tool.
+Store at `.opencode/memory/` (managed by mnemoria; do NOT edit manually).
+
+### Query Commands
+
+```bash
+# Stats
+mnemoria --path .opencode/memory stats
+
+# Search by keyword (semantic)
+mnemoria --path .opencode/memory search "keyword"
+
+# Ask a question (RAG-based)
+mnemoria --path .opencode/memory ask "What issues were found?"
+
+# Recent timeline
+mnemoria --path .opencode/memory timeline --limit 10
+
+# Filter by agent (legacy memories stored under two agents):
+mnemoria --path .opencode/memory search --agent legacy-zni "keyword"
+mnemoria --path .opencode/memory search --agent legacy-deleted "keyword"
+
+# View timeline for specific agent
+mnemoria --path .opencode/memory timeline --agent legacy-zni --limit 5
+```
+
+### Legacy Agent Names
+
+| agent_name | Content | Count |
+|---|---|---|
+| `legacy-zni` | Active memories from pre-migration logfmt system | 1,498 entries |
+| `legacy-deleted` | Previously deleted/forgotten memories, retained for reference | 431 entries |
+
+### Type Mapping (logfmt types → mnemonia entry_type)
+
+| logfmt type | mnemonia entry_type |
+|---|---|
+| learning | discovery |
+| decision | decision |
+| plan | intent |
+| blocker | problem |
+| pattern | pattern |
+| context | discovery |
+| preference | discovery |
+
+### Adding New Memories
+
+```bash
+mnemoria --path .opencode/memory add \
+  --agent my-agent-name \
+  --type discovery \
+  --summary "Brief description" \
+  "Detailed content here"
+```
+
+> **Full reference:** `docs/sf/AGENTS.md` Section 9 covers all conventions, agent naming, and usage patterns in detail.
 
 ## Code Review via Superpowers Skill
 

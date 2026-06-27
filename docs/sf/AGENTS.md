@@ -497,3 +497,49 @@ byte-identical (or oracle-correct) + per-stage verification STOP.
 
 **End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 ```
+
+## 9. Mnemoria Memory Store
+
+Memories are stored using `mnemoria` CLI. Store at `.opencode/memory/`.
+
+### Agent Conventions
+
+| agent_name | Purpose |
+|---|---|
+| `legacy-zni` | Pre-migration memories from old logfmt system |
+| `legacy-deleted` | Previously deleted memories, retained for reference |
+
+### Type Mapping
+
+| memory type | mnemonia entry_type |
+|---|---|
+| learning | discovery |
+| decision | decision |
+| plan | intent |
+| blocker | problem |
+| pattern | pattern |
+| context | discovery |
+| preference | discovery |
+
+### Usage
+
+```bash
+# Search legacy memories
+mnemoria --path .opencode/memory search --agent legacy-zni "keyword"
+
+# Ask about legacy memories (RAG)
+mnemoria --path .opencode/memory ask "What patterns exist?"
+
+# View recent timeline
+mnemoria --path .opencode/memory timeline --limit 10
+
+# Add new memory
+mnemoria --path .opencode/memory add \
+  --agent my-agent \
+  --type discovery \
+  --summary "Brief description" \
+  "Detailed content here"
+
+# Get stats
+mnemoria --path .opencode/memory stats
+```
