@@ -1009,17 +1009,22 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
      } else if (node.kind == AstKind.var_decl or node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
          semanticAnalyzerResolveStmtIter(self, node_idx);
          result = type_mod.TYPE_VOID;
-     } else if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
-         result = semanticAnalyzerResolveIfExpr(self, node_idx);
-      } else if (node.kind == AstKind.for_stmt) {
-          semanticAnalyzerResolveForHeader(self, node_idx);
-          if (node.child_1 != 0) { semanticAnalyzerResolveStmtIter(self, node.child_1); }
+      } else if (node.kind == AstKind.if_expr) {
+          result = semanticAnalyzerResolveIfExpr(self, node_idx);
+      } else if (node.kind == AstKind.if_stmt) {
+          semanticAnalyzerResolveIfHeader(self, node_idx);
+          if (node.child_2 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_2); }
+          if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
           result = type_mod.TYPE_VOID;
+       } else if (node.kind == AstKind.for_stmt) {
+           semanticAnalyzerResolveForHeader(self, node_idx);
+           if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
+           result = type_mod.TYPE_VOID;
       } else if (node.kind == AstKind.while_stmt) {
           semanticAnalyzerResolveWhileHeader(self, node_idx);
-          if (node.child_1 != 0) { semanticAnalyzerResolveStmtIter(self, node.child_1); }
+          if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
           result = type_mod.TYPE_VOID;
-     } else if (node.kind == AstKind.swt_ex) {
+      } else if (node.kind == AstKind.swt_ex) {
         result = semanticAnalyzerResolveSwitchExpr(self, node_idx);
     } else if (node.kind == AstKind.tuple_literal) {
         result = semanticAnalyzerResolveTupleLiteral(self, node_idx);

@@ -2685,7 +2685,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
            }
             if (pattern.kind == AstKind.range_exclusive or pattern.kind == AstKind.range_inclusive) {
                 var start_temp = lowerExpr(self, pattern.child_0);
-                if (node.payload != 0) addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp);
+                if (node.payload != 0) { addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.payload, .type_id = type_mod.TYPE_U32, .temp = start_temp } }); }
                 var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
@@ -2736,8 +2736,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, elem_type[0]);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-            if (node.payload != @intCast(u32, 0)) { addLocalDecl(self, node.payload, elem_type[0], item_temp); }
-            if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); }
+            if (node.payload != @intCast(u32, 0)) { addLocalDecl(self, node.payload, elem_type[0], item_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.payload, .type_id = elem_type[0], .temp = item_temp } }); }
+            if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.child_2, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
