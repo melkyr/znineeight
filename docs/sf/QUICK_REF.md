@@ -272,3 +272,18 @@ Scope: project (most common), build, api, database, etc.
 ```bash
 ls /workspace/znineeight/.opencode/memory/*.logfmt | sort -r | head -5
 ```
+
+## Code Review via Superpowers Skill
+
+Trigger the requesting-code-review skill when auditing completed changes.
+
+**Manual review (in-session, plan mode):** `skill: requesting-code-review`
+1. Obtain diff: `git diff` or `git diff BASE..HEAD`
+2. Audit against template at `~/.cache/opencode/packages/superpowers@.../superpowers/skills/requesting-code-review/code-reviewer.md`
+3. Checklist: plan alignment, code quality, architecture, edge cases, tests
+4. Categorize: Critical / Important / Minor
+5. Give clear verdict: Ready to commit / With fixes / Do not merge
+
+**Subagent review (build mode):** Dispatch general-purpose subagent with `BASE_SHA`/`HEAD_SHA`, fill template from `code-reviewer.md`. Reviewer inspects `git diff BASE..HEAD`, returns Strengths + Issues + Assessment.
+
+**Key principles:** Review early/often. Fix Critical before proceeding, Important before merge. Categorize by actual severity — not everything is Critical. Acknowledge strengths before listing issues.
