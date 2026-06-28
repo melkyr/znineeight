@@ -37,6 +37,7 @@ const coercion_mod = @import("coercion.zig");
 const CoercionTable = coercion_mod.CoercionTable;
 const sa_mod = @import("semantic_analyzer.zig");
 const type_resolver = @import("type_resolver.zig");
+const ce_mod = @import("comptime_eval.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
@@ -98,6 +99,7 @@ pub const CompilerContext = struct {
     enum_value_table: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
+    comptime_values: hash_mod.U32ToU32Map,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -152,6 +154,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
+     var comptime_values = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -170,6 +173,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .enum_value_table = enum_value_table,
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
+        .comptime_values = comptime_values,
     };
     runCompiler(&ctx);
 }
@@ -191,8 +195,9 @@ fn runCompiler(ctx: *CompilerContext) void {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
-    phase_SemanticAnalysis(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
+    phase_ComptimeEvaluation(ctx);
+    phase_SemanticAnalysis(ctx);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
@@ -325,6 +330,21 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
                 var tsp: []const u8 = " "; pal.markerWrite(tsp);
             }
             var tn: []const u8 = "\n"; pal.markerWrite(tn);
+        }
+    }
+}
+
+fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
+    var pc_m: []const u8 = "CE\n"; pal.markerWrite(pc_m);
+    var ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
+    var ni: usize = 0;
+    while (ni < ctx.store.nodes.len) : (ni += @intCast(usize, 1)) {
+        var node = ctx.store.nodes.items[ni];
+        if (node.kind == AstKind.builtin_call) {
+            var val = ce_mod.comptimeEvalEvaluate(&ce, @intCast(u32, ni));
+            if (val) |v| {
+                hash_mod.u32ToU32MapPut(&ctx.comptime_values, @intCast(u32, ni), @intCast(u32, v));
+            }
         }
     }
 }
@@ -562,6 +582,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .has_symbols = @intCast(u8, 1),
         .enum_value_table = &ctx.enum_value_table,
         .call_arg_types = &ctx.call_arg_types,
+        .comptime_values = &ctx.comptime_values,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;

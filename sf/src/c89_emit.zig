@@ -996,6 +996,11 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var i: usize = @intCast(usize, 0);
     while (i < fcount) : (i += @intCast(usize, 1)) {
         var fe = reg.fe_items[fstart + i];
+        var fe_m: []const u8 = "FE:"; pal.markerWrite(fe_m);
+        var fe_nb: [10]u8 = undefined; var fe_nl = itoa_mod.itoa(fe.name_id, fe_nb[0..]); var fe_ns: usize = @intCast(usize, 9) - @intCast(usize, fe_nl); pal.markerWrite(fe_nb[fe_ns..@intCast(usize, 9)]);
+        var fe_c: []const u8 = ":"; pal.markerWrite(fe_c);
+        var fe_tb: [10]u8 = undefined; var fe_tl = itoa_mod.itoa(fe.type_id, fe_tb[0..]); var fe_ts: usize = @intCast(usize, 9) - @intCast(usize, fe_tl); pal.markerWrite(fe_tb[fe_ts..@intCast(usize, 9)]);
+        var fe_nl2: []const u8 = "\n"; pal.markerWrite(fe_nl2);
         var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
         var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
         var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
@@ -1391,6 +1396,12 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) vo
         if (func.is_extern == @intCast(u8, 0)) {
             emitFunctionSignature(emitter, &func);
             emitHoistedDecls(emitter, &func);
+            var ft = emitter.registry.types_items[@intCast(usize, func.return_type)];
+            if (ft.kind == type_mod.TypeKind.slice_type) {
+                var rm: []const u8 = "R:"; pal.markerWrite(rm);
+                var rnb: [10]u8 = undefined; var rnl = itoa_mod.itoa(func.name_id, rnb[0..]); var rns: usize = @intCast(usize, 9) - @intCast(usize, rnl); pal.markerWrite(rnb[rns..@intCast(usize, 9)]);
+                var rd2: []const u8 = "\n"; pal.markerWrite(rd2);
+            }
             emitter.dl_hoisted = @intCast(u8, 0);
             emitFunctionBody(emitter, &func);
         }

@@ -3,19 +3,22 @@ const AstStore = @import("ast.zig").AstStore;
 const AstKind = @import("ast.zig").AstKind;
 const AstNode = @import("ast.zig").AstNode;
 const StringInterner = @import("string_interner.zig").StringInterner;
+const SymbolRegistry = @import("symbol_table.zig").SymbolRegistry;
 const type_mod = @import("type_registry.zig");
+const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
 
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
     store: *AstStore,
     interner: *StringInterner,
+    symbol_reg: *SymbolRegistry,
     size_of_id: u32,
     align_of_id: u32,
     int_cast_id: u32,
 };
 
-pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *StringInterner) ComptimeEval {
+pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *StringInterner, symbol_reg: *SymbolRegistry) ComptimeEval {
     var s_size: []const u8 = "@sizeOf";
     var s_align: []const u8 = "@alignOf";
     var s_intc: []const u8 = "@intCast";
@@ -23,7 +26,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     var align_id = interner_mod.stringInternerIntern(interner, s_align);
     var intc_id = interner_mod.stringInternerIntern(interner, s_intc);
     return ComptimeEval{
-        .registry = registry, .store = store, .interner = interner,
+        .registry = registry, .store = store, .interner = interner, .symbol_reg = symbol_reg,
         .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id,
     };
 }
@@ -54,15 +57,22 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     if (node_idx == @intCast(u32, 0)) return null;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.ident_expr) {
-        var key: u64 = @intCast(u64, node.payload);
-        return type_mod.nameCacheGet(self.registry, key);
+        var name_id = self.store.identifiers.items[@intCast(usize, node.payload)];
+        var tid = type_mod.nameCacheGet(self.registry, @intCast(u64, name_id));
+        if (tid) |t| return t;
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var ck: u64 = @intCast(u64, mi) * 4294967296 + @intCast(u64, name_id);
+            var tc = type_mod.nameCacheGet(self.registry, ck);
+            if (tc) |t| return t;
+        }
     }
     return null;
 }
 
 fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?u64 {
     if (node.child_0 == self.size_of_id) {
-        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var ec: []const u32 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
@@ -71,7 +81,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?u64 {
         return null;
     }
     if (node.child_0 == self.align_of_id) {
-        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var ec: []const u32 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];

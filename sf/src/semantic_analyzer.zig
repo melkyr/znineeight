@@ -208,6 +208,9 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     if (name_id == self._stub_0) {
         return type_mod.TYPE_UNDEFINED;
     }
+    var idm: []const u8 = "IDT:"; pal_mod.markerWrite(idm);
+    var idnb: [10]u8 = undefined; var idnl = itoa_mod.itoa(name_id, idnb[0..]); var idns: usize = @intCast(usize, 9) - @intCast(usize, idnl); pal_mod.markerWrite(idnb[idns..@intCast(usize, 9)]);
+    var idc: []const u8 = ":VOID\n"; pal_mod.markerWrite(idc);
     return type_mod.TYPE_VOID;
 }
 
@@ -1280,6 +1283,13 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         decl_type = type_resolver.resolveTypeExprFull(&tre_env_vd, node.child_0, @intCast(u32, 0));
                     }
                 }
+            }
+            if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                var b1m: []const u8 = "VRT:"; pal_mod.markerWrite(b1m);
+                var b1nb: [10]u8 = undefined; var b1nl = itoa_mod.itoa(node.child_0, b1nb[0..]); var b1ns: usize = @intCast(usize, 9) - @intCast(usize, b1nl); pal_mod.markerWrite(b1nb[b1ns..@intCast(usize, 9)]);
+                var b1c: []const u8 = ":"; pal_mod.markerWrite(b1c);
+                var b1tb: [10]u8 = undefined; var b1tl = itoa_mod.itoa(decl_type, b1tb[0..]); var b1ts: usize = @intCast(usize, 9) - @intCast(usize, b1tl); pal_mod.markerWrite(b1tb[b1ts..@intCast(usize, 9)]);
+                var b1nl2: []const u8 = "\n"; pal_mod.markerWrite(b1nl2);
             }
             if (node.child_1 != @intCast(u32, 0)) {
                 var init_node = self.store.nodes.items[@intCast(usize, node.child_1)];

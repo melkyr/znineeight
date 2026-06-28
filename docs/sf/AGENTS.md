@@ -319,6 +319,17 @@ If new info contradicts existing memory, use `memory_update` (not `memory_forget
 
 zig0 generates `.c` and `.h` files in the output directory. **Different build targets MUST use separate output directories.** Mixing stale `.c`/`.h` files from different builds causes C89 type mismatch errors (e.g., `unknown type name 'Slice_*'`). Always delete `.c`/`.h` before each zig0 invocation.
 
+### 9.1.1 zig0 Error Diagnosis — DO NOT Blame zig0 First (CRITICAL)
+
+When zig0 produces a compilation error (`use of undeclared identifier`, `unable to infer type`, etc.), the correct diagnostic order is:
+
+1. **Check the identifier declaration** — `grep` for the identifier name in the file and its imports. Is it declared? Is the import alias correct?
+2. **Check the module import name** — different files use different aliases for the same module (e.g., `lower.zig` imports `pal`, while `semantic_analyzer.zig` imports `pal_mod`). Use `grep "const pal\|import.*pal" <file>` to verify.
+3. **Check for missing imports** — `grep "const X = @import" <file>` to see what's imported vs what's used. A file may be a never-imported stub with pre-existing bugs.
+4. **THEN consider zig0 limitations** — only after ruling out (1)-(3). zig0 C89 issues are RARE; user-level bugs are COMMON.
+
+**This is non-negotiable.** Two sessions produced false zig0-blaming: (a) `pal_mod` vs `pal` module name mismatch in `lower.zig`, blamed on "C89 variable budget"; (b) missing `ast_mod` import in `comptime_eval.zig`, blamed on "type inference failure". Both were simple import errors. See memory [97cffe29](mnemoria).
+
 ### 9.2 Build Scripts
 
 Two pre-made scripts isolate output per target:

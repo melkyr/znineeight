@@ -159,6 +159,9 @@ fn typeRegistryAppend(self: *TypeRegistry, t: Type) u32 {
     var dc_is: usize = @intCast(usize, 19) - @intCast(usize, dc_il);
     var dci: []const u8 = "t"; pal_mod.markerWrite(dci); pal_mod.markerWrite(dc_i[dc_is..@intCast(usize, 19)]);
     var dcnl: []const u8 = "\n"; pal_mod.markerWrite(dcnl);
+    if (t.kind == TypeKind.struct_type) {
+        var xs: []const u8 = "X:"; pal_mod.markerWriteInt(xs, id);
+    }
     return id;
 }
 
