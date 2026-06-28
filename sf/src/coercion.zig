@@ -22,6 +22,8 @@ const alloc_mod = @import("allocator.zig");
 const TypeId = @import("type_registry.zig").TypeId;
 const type_mod = @import("type_registry.zig");
 const hash_mod = @import("util/hash.zig");
+const pal = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 pub const CoercionEntry = struct {
     node_idx: u32,
@@ -157,6 +159,7 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
     if (src.kind == type_mod.TypeKind.ptr_type and tgt.kind == type_mod.TypeKind.slice_type) {
         var sp2 = reg.ptr_items[@intCast(usize, src.payload_idx)];
         var ts2 = reg.slice_items[@intCast(usize, tgt.payload_idx)];
+        var clsb: []const u8 = "CLS:p"; pal.markerWrite(clsb); var clsb2: [10]u8 = undefined; var clsb2l = itoa_mod.itoa(sp2.base, clsb2[0..]); var clsb2s: usize = @intCast(usize, 9) - @intCast(usize, clsb2l); pal.markerWrite(clsb2[clsb2s..@intCast(usize, 9)]); var clse: []const u8 = "e"; pal.markerWrite(clse); var clsb3: [10]u8 = undefined; var clsb3l = itoa_mod.itoa(ts2.elem, clsb3[0..]); var clsb3s: usize = @intCast(usize, 9) - @intCast(usize, clsb3l); pal.markerWrite(clsb3[clsb3s..@intCast(usize, 9)]); var clsnl: []const u8 = "\n"; pal.markerWrite(clsnl);
         if (sp2.base == ts2.elem) return CoercionKind.string_to_slice;
         if ((sp2.base == type_mod.TYPE_C_CHAR and ts2.elem == type_mod.TYPE_U8)) return CoercionKind.string_to_slice;
         if ((sp2.base == type_mod.TYPE_U8 and ts2.elem == type_mod.TYPE_C_CHAR)) return CoercionKind.string_to_slice;

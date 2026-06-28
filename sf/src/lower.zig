@@ -2272,9 +2272,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var sem_bb: [10]u8 = undefined; var sem_bl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, se_base)].type_id, sem_bb[0..]); var sem_bs: usize = @intCast(usize, 9) - @intCast(usize, sem_bl); pal.markerWrite(sem_bb[sem_bs..@intCast(usize, 9)]);
          var sem_nl: []const u8 = "\n"; pal.markerWrite(sem_nl);
          var se_bt_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-         if (se_rt) |st| {
-            var se_bt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
-            se_bt_box[0] = se_bt;
+          if (se_rt) |st| {
+             var ser_nl: []const u8 = "SER:F\n"; pal.markerWrite(ser_nl);
+             var se_bt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
+             se_bt_box[0] = se_bt;
             if (se_bt != type_mod.TYPE_UNDEFINED) {
                 var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
                 if (se_bty.kind == type_mod.TypeKind.array_type) {
@@ -2286,14 +2287,30 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     return se_result;
                 }
             }
+            var sec2_m: []const u8 = "SEC2:"; pal.markerWrite(sec2_m); var sec2_b: [10]u8 = undefined; var sec2_l = itoa_mod.itoa(node.child_2, sec2_b[0..]); var sec2_s: usize = @intCast(usize, 9) - @intCast(usize, sec2_l); pal.markerWrite(sec2_b[sec2_s..@intCast(usize, 9)]); var sec2_nl: []const u8 = "\n"; pal.markerWrite(sec2_nl);
+            var se_slice_ptr: u32 = se_base;
+            var se_slice_len_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+            if (se_bt != type_mod.TYPE_UNDEFINED) {
+                var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
+                if (se_bty.kind == type_mod.TypeKind.slice_type) {
+                    var se_sl = self.ctx.registry.slice_items[@intCast(usize, se_bty.payload_idx)];
+                    var se_pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, se_sl.elem, false);
+                    se_slice_ptr = nextTemp(self, se_pty);
+                    var se_slnid = nameMapGet(self, se_base);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = se_slnid, .base = se_base, .field_id = @intCast(u32, 0), .result = se_slice_ptr } });
+                    se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = se_base, .field_id = @intCast(u32, 1), .result = se_slice_len_box[0] } });
+                }
+            }
             if (node.child_2 != @intCast(u32, 0)) {
                 var se_end = lowerExpr(self, node.child_2);
-                var se_ptr = se_base;
+                var se_ptr = se_slice_ptr;
                 var se_len = se_end;
                 if (node.child_1 != @intCast(u32, 0)) {
                     var se_start = lowerExpr(self, node.child_1);
-                    se_ptr = nextTemp(self, se_bt_box[0]);
-                    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_base, .rhs = se_start, .result = se_ptr } });
+                    var se_ppty2 = self.hoisted_temps.items[@intCast(usize, se_slice_ptr)].type_id;
+                    se_ptr = nextTemp(self, se_ppty2);
+                    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_slice_ptr, .rhs = se_start, .result = se_ptr } });
                     se_len = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = se_end, .rhs = se_start, .result = se_len } });
                 }
@@ -2301,9 +2318,27 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .make_slice = .{ .ptr = se_ptr, .len = se_len, .result = se_result, .type_id = st } });
                 return se_result;
             }
-         }
-         return @intCast(u32, 0);
-    } else if (node.kind == AstKind.add_assign) {
+            var r1a_m: []const u8 = "R1A\n"; pal.markerWrite(r1a_m);
+            if (node.child_1 != @intCast(u32, 0)) {
+                var se_start = lowerExpr(self, node.child_1);
+                var se_ppty = self.hoisted_temps.items[@intCast(usize, se_slice_ptr)].type_id;
+                var se_new_ptr = nextTemp(self, se_ppty);
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_slice_ptr, .rhs = se_start, .result = se_new_ptr } });
+                if (se_slice_len_box[0] != type_mod.TYPE_UNDEFINED) {
+                    var se_new_len = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = se_slice_len_box[0], .rhs = se_start, .result = se_new_len } });
+                    var se_result = nextTemp(self, st);
+                    emitInst(self, LirInst{ .make_slice = .{ .ptr = se_new_ptr, .len = se_new_len, .result = se_result, .type_id = st } });
+                    var r1a_mks: []const u8 = "MKS:r"; pal.markerWrite(r1a_mks); var r1a_rb: [10]u8 = undefined; var r1a_rl = itoa_mod.itoa(se_result, r1a_rb[0..]); var r1a_rs: usize = @intCast(usize, 9) - @intCast(usize, r1a_rl); pal.markerWrite(r1a_rb[r1a_rs..@intCast(usize, 9)]); var r1a_nl: []const u8 = "\n"; pal.markerWrite(r1a_nl);
+                    return se_result;
+                }
+            }
+          } else {
+             var ser_m: []const u8 = "SER:M\n"; pal.markerWrite(ser_m);
+          }
+          var ret0_m: []const u8 = "RET0\n"; pal.markerWrite(ret0_m);
+          return @intCast(u32, 0);
+     } else if (node.kind == AstKind.add_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
         var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
