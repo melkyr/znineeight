@@ -3394,7 +3394,22 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         return dst;
     } else if (kind == CoercionKind.array_to_slice) {
         var dst = nextTemp(self, coercion.target_type);
-        emitInst(self, LirInst{ .make_slice = .{ .ptr = src_temp, .len = @intCast(u32, 1), .result = dst, .type_id = coercion.target_type } });
+        var arr_len: u32 = @intCast(u32, 1);
+        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, coercion.node_idx)) |src_tid| {
+            var src_t = self.ctx.registry.types_items[@intCast(usize, src_tid)];
+            if (src_t.kind == type_mod.TypeKind.ptr_type) {
+                var pp = self.ctx.registry.ptr_items[@intCast(usize, src_t.payload_idx)];
+                var pointee = self.ctx.registry.types_items[@intCast(usize, pp.base)];
+                if (pointee.kind == type_mod.TypeKind.array_type) {
+                    arr_len = self.ctx.registry.array_items[@intCast(usize, pointee.payload_idx)].length;
+                }
+            } else if (src_t.kind == type_mod.TypeKind.array_type) {
+                arr_len = self.ctx.registry.array_items[@intCast(usize, src_t.payload_idx)].length;
+            }
+        }
+        var len_temp = nextTemp(self, type_mod.TYPE_U32);
+        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, arr_len), .result = len_temp } });
+        emitInst(self, LirInst{ .make_slice = .{ .ptr = src_temp, .len = len_temp, .result = dst, .type_id = coercion.target_type } });
         return dst;
     } else if (kind == CoercionKind.array_to_many_ptr) {
         var dst = nextTemp(self, coercion.target_type);

@@ -163,6 +163,11 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         if (sp2.base == ts2.elem) return CoercionKind.string_to_slice;
         if ((sp2.base == type_mod.TYPE_C_CHAR and ts2.elem == type_mod.TYPE_U8)) return CoercionKind.string_to_slice;
         if ((sp2.base == type_mod.TYPE_U8 and ts2.elem == type_mod.TYPE_C_CHAR)) return CoercionKind.string_to_slice;
+        var src_pointee = reg.types_items[@intCast(usize, sp2.base)];
+        if (src_pointee.kind == type_mod.TypeKind.array_type) {
+            var arr = reg.array_items[@intCast(usize, src_pointee.payload_idx)];
+            if (arr.elem == ts2.elem) return CoercionKind.array_to_slice;
+        }
     }
 
     return CoercionKind.none;

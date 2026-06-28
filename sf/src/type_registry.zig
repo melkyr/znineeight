@@ -753,6 +753,18 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
             if (s_sl.elem == t_sl.elem) return true;
         }
     }
+    if (tgt.kind == TypeKind.slice_type and src.kind == TypeKind.ptr_type) {
+        var src_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+        var sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+        var src_pointee = self.types_items[@intCast(usize, src_pp.base)];
+        if (src_pointee.kind == TypeKind.array_type) {
+            var arr: ArrayPayload = self.array_items[@intCast(usize, src_pointee.payload_idx)];
+            if (arr.elem == sl.elem) return true;
+        }
+        if (src_pp.base == sl.elem) return true;
+        if (src_pp.base == TYPE_C_CHAR and sl.elem == TYPE_U8) return true;
+        if (src_pp.base == TYPE_U8 and sl.elem == TYPE_C_CHAR) return true;
+    }
     if (tgt.kind == TypeKind.many_ptr_type and src.kind == TypeKind.many_ptr_type) {
         if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
             var s_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
