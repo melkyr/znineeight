@@ -1020,6 +1020,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             self.local_decl_types[self.local_decl_count] = type_mod.TYPE_I32;
             self.local_decl_count += @intCast(usize, 1);
         }
+        if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
     } else if (node.kind == AstKind.orelse_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {

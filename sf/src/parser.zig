@@ -175,15 +175,22 @@ pub fn parserParseExprPrec(self: *Parser, min_prec: Prec) ParserError!u32 {
         }
 
         var rhs: u32 = undefined;
+        var catch_handled: u8 = 0;
         if (tok.kind == TokenKind.kw_catch) {
-            rhs = try parserParseCatchRHS(self, next_min);
+            var cap: u32 = @intCast(u32, 0);
+            rhs = try parserParseCatchRHS(self, next_min, &cap);
+            var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+            lhs = ast_mod.astStoreAddNode(self.store, AstKind.catch_expr, 0, tok.span_start, end, lhs, rhs, cap, 0);
+            catch_handled = 1;
         } else if (tok.kind == TokenKind.kw_orelse) {
             rhs = try parserParseOrelseRHS(self, next_min);
         } else {
             rhs = try parserParseExprPrec(self, next_min);
         }
 
-        lhs = try parserAddBinary(self, tok, lhs, rhs);
+        if (catch_handled == 0) {
+            lhs = try parserAddBinary(self, tok, lhs, rhs);
+        }
     }
     return lhs;
 }
@@ -374,9 +381,8 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
     return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, payload);
 }
 
-fn parserParseCatchRHS(self: *Parser, next_min: Prec) ParserError!u32 {
-    var saved_capture = self.catch_capture;
-    self.catch_capture = @intCast(u32, 0);
+fn parserParseCatchRHS(self: *Parser, next_min: Prec, capture_out: *u32) ParserError!u32 {
+    capture_out.* = @intCast(u32, 0);
     var ptok = parserPeek(self);
     if (ptok.kind == TokenKind.pipe) {
         _ = parserAdvance(self);
@@ -384,7 +390,7 @@ fn parserParseCatchRHS(self: *Parser, next_min: Prec) ParserError!u32 {
         _ = try parserExpect(self, TokenKind.identifier);
         _ = try parserExpect(self, TokenKind.pipe);
         var name_id = name_raw2.value.string_id;
-        self.catch_capture = ast_mod.astStoreAddNode(self.store, AstKind.payload_capture, 0,
+        capture_out.* = ast_mod.astStoreAddNode(self.store, AstKind.payload_capture, 0,
             name_raw2.span_start, name_raw2.span_start + @intCast(u32, name_raw2.span_len),
             0, 0, 0, name_id);
     }
@@ -394,7 +400,6 @@ fn parserParseCatchRHS(self: *Parser, next_min: Prec) ParserError!u32 {
     } else {
         result = try parserParseExprPrec(self, next_min);
     }
-    self.catch_capture = saved_capture;
     return result;
 }
 
