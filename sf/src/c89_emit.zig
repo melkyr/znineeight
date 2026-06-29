@@ -456,8 +456,8 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
     if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
     if (ty.kind == TypeKind.enum_type) {
-        var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
-        return getCTypeName(reg, mangler, ep.backing_type);
+        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
     }
     if (ty.kind == TypeKind.array_type) {
         var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
@@ -1119,16 +1119,21 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
     var sp: []const u8 = " "; bufferedWriterWrite(&emitter.writer, sp);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
-    var i: u16 = @intCast(u16, 0);
-    while (i < ep.members_count) : (i += @intCast(u16, 1)) {
+    var mi: u16 = @intCast(u16, 0);
+    while (mi < ep.members_count) : (mi += @intCast(u16, 1)) {
+        var member = emitter.registry.em_items[@intCast(usize, ep.members_start) + @intCast(usize, mi)];
         var def: []const u8 = "#define "; bufferedWriterWrite(&emitter.writer, def);
         bufferedWriterWrite(&emitter.writer, mangled_name);
         var us: []const u8 = "_"; bufferedWriterWrite(&emitter.writer, us);
-        var mi: u32 = @intCast(u32, i);
-        var mname = interner_mod.stringInternerGet(emitter.interner, mi);
+        var mname = interner_mod.stringInternerGet(emitter.interner, member.name_id);
         bufferedWriterWrite(&emitter.writer, mname);
         var eq: []const u8 = " "; bufferedWriterWrite(&emitter.writer, eq);
-        var d: []const u8 = "0\n"; bufferedWriterWrite(&emitter.writer, d);
+        var val_itoa: [16]u8 = undefined;
+        var val_len = itoa_mod.itoa(@intCast(u32, @intCast(i64, member.value)), val_itoa[0..]);
+        var val_start: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, val_len);
+        var val_end: usize = val_start + @intCast(usize, val_len);
+        bufferedWriterWrite(&emitter.writer, val_itoa[val_start..val_end]);
+        var nl2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl2);
     }
     var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
 }
@@ -1577,6 +1582,15 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         var dp = tid_to_pos[@intCast(usize, ic.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .enum_const => |ec| {
+                    if (ec.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, ec.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = ec.type_id;
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
                         }
                     }
@@ -2586,6 +2600,23 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
+        },
+        .enum_const => |ec| {
+            var result = mangleTempName(emitter.interner, ec.result);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, result);
+            var s: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, s);
+            var ety = emitter.registry.types_items[@intCast(usize, ec.type_id)];
+            var e_mid = nameManglerMangle(emitter.mangler, ety.name_id, @intCast(u8, 2), ety.module_id);
+            var e_name = interner_mod.stringInternerGet(emitter.interner, e_mid);
+            bufferedWriterWrite(&emitter.writer, e_name);
+            var us: []const u8 = "_";
+            bufferedWriterWrite(&emitter.writer, us);
+            var mem_name = interner_mod.stringInternerGet(emitter.interner, ec.member_name_id);
+            bufferedWriterWrite(&emitter.writer, mem_name);
+            var sc: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, sc);
         },
         .float_const => |fc| {
             var result = mangleTempName(emitter.interner, fc.result);

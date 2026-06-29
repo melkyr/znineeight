@@ -64,6 +64,7 @@ pub const LirInst = union(enum) {
     null_const: struct { result: u32 },
     bool_const: struct { value: u8, result: u32 },
     undefined_const: struct { result: u32, type_id: TypeId },
+    enum_const: struct { value: u64, result: u32, type_id: TypeId, member_name_id: u32 },
     load_local: struct { name_id: u32, result: u32 },
     store_local: struct { name_id: u32, value: u32 },
     load_global: struct { name_id: u32, result: u32 },

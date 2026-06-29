@@ -244,6 +244,18 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                             }
                         }
                     }
+                    if (aty.kind == type_mod.TypeKind.enum_type) {
+                        var ep = self.registry.en_items[@intCast(usize, aty.payload_idx)];
+                        var estart: usize = @intCast(usize, ep.members_start);
+                        var ecount: usize = @intCast(usize, ep.members_count);
+                        var ei: usize = 0;
+                        while (ei < ecount) : (ei += 1) {
+                            if (self.registry.em_items[estart + ei].name_id == field_name_id) {
+                                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, alias_type_id);
+                                return alias_type_id;
+                            }
+                        }
+                    }
                 }
             }
             if (s.kind == sym_mod.SymbolKind.module) {
