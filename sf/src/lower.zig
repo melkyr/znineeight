@@ -1929,8 +1929,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 addLocalDecl(self, capture_node.payload, type_mod.TYPE_I32, err_code_temp);
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_node.payload, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
             }
-            var err_val = lowerExpr(self, node.child_1);
+            var err_val = lowerExprOrBlock(self, node.child_1);
+            var cex1_m: []const u8 = "CEX:c1"; pal.markerWrite(cex1_m); var cex1_b: [10]u8 = undefined; var cex1_l = itoa_mod.itoa(node.child_1, cex1_b[0..]); var cex1_s: usize = @intCast(usize, 9) - @intCast(usize, cex1_l); pal.markerWrite(cex1_b[cex1_s..@intCast(usize, 9)]); var cex1_nl: []const u8 = "\n"; pal.markerWrite(cex1_nl);
+            var cexk_m: []const u8 = "CEX:ck"; pal.markerWrite(cexk_m); var cexk_b: [10]u8 = undefined; var ck_val: u32 = @intCast(u32, 0); if (node.child_1 != @intCast(u32, 0)) { var c1node = self.ctx.store.nodes.items[@intCast(usize, node.child_1)]; ck_val = @intCast(u32, @enumToInt(c1node.kind)); } var cexk_l = itoa_mod.itoa(ck_val, cexk_b[0..]); var cexk_s: usize = @intCast(usize, 9) - @intCast(usize, cexk_l); pal.markerWrite(cexk_b[cexk_s..@intCast(usize, 9)]); var cexk_nl: []const u8 = "\n"; pal.markerWrite(cexk_nl);
+            var cexv_m: []const u8 = "CEX:ev"; pal.markerWrite(cexv_m); var cexv_b: [10]u8 = undefined; var cexv_l = itoa_mod.itoa(err_val, cexv_b[0..]); var cexv_s: usize = @intCast(usize, 9) - @intCast(usize, cexv_l); pal.markerWrite(cexv_b[cexv_s..@intCast(usize, 9)]); var cexv_nl: []const u8 = "\n"; pal.markerWrite(cexv_nl);
+            var cexb_m: []const u8 = "CEX:bt"; pal.markerWrite(cexb_m); var cexb_b: [10]u8 = undefined; var cexb_l = itoa_mod.itoa(@intCast(u32, self.block_terminated), cexb_b[0..]); var cexb_s: usize = @intCast(usize, 9) - @intCast(usize, cexb_l); pal.markerWrite(cexb_b[cexb_s..@intCast(usize, 9)]); var cexb_nl: []const u8 = "\n"; pal.markerWrite(cexb_nl);
+            var cexg_m: []const u8 = "CEX:g"; pal.markerWrite(cexg_m); var cexg_b: [10]u8 = undefined; var cexg_l = itoa_mod.itoa(@intCast(u32, self.block_terminated), cexg_b[0..]); var cexg_s: usize = @intCast(usize, 9) - @intCast(usize, cexg_l); pal.markerWrite(cexg_b[cexg_s..@intCast(usize, 9)]); var cexg_nl: []const u8 = "\n"; pal.markerWrite(cexg_nl);
             if (self.block_terminated == @intCast(u8, 0)) {
+                var hit_m: []const u8 = "CEX:HIT\n"; pal.markerWrite(hit_m);
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
                 emitInst(self, LirInst{ .jump = join_bb });
             }
@@ -2551,6 +2557,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else {
         return @intCast(u32, 0);
     }
+}
+
+fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
+    var body_node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (body_node.kind == AstKind.block) {
+        var block_ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, body_node.payload);
+        var bj: usize = 0;
+        while (bj < block_ec.len) : (bj += 1) {
+            lowerStmt(self, block_ec[bj]);
+        }
+        return @intCast(u32, 0);
+    }
+    return lowerExpr(self, node_idx);
 }
 
 fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
