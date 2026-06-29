@@ -11,6 +11,7 @@ const TypeKind = type_mod.TypeKind;
 const hash_mod = @import("util/hash.zig");
 const pal_mod = @import("pal.zig");
 const itoa_mod = @import("util/itoa.zig");
+const type_resolver = @import("type_resolver.zig");
 
 pub const DepEdge = struct { from: u32, to: u32 };
 
@@ -80,7 +81,7 @@ fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) 
     }
 }
 
-fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32) void {
+fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32, sym_reg: *SymbolRegistry) void {
     var node = store.nodes.items[@intCast(usize, decl_idx)];
     if (node.payload == 0) return;
     var children = ast_mod.astStoreGetExtraChildren(store, node.payload);
@@ -155,18 +156,35 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         }
     }
     if (decl_kind == AstKind.enum_decl) {
-        var mstart: u32 = @intCast(u32, type_reg.en_len);
+        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner };
+        var backing_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+        backing_box[0] = type_mod.TYPE_U32;
+        if (node.child_0 != 0) {
+            var bt = type_resolver.resolveTypeExprFull(&tre_env, node.child_0, @intCast(u32, 0));
+            if (bt != type_mod.TYPE_UNDEFINED and bt != type_mod.TYPE_VOID) { backing_box[0] = bt; }
+        }
+        var mstart: u32 = @intCast(u32, type_reg.em_len);
         var mcount: u32 = 0;
+        var auto_val: u32 = @intCast(u32, 0);
         var i: usize = 0;
         while (i < children.len) {
-            var mval = children[i];
-            mcount += 1;
+            var mnode = store.nodes.items[@intCast(usize, children[i])];
+            if (mnode.kind == AstKind.field_decl) {
+                var mval: u32 = auto_val;
+                if (mnode.child_1 != 0) {
+                    var ev = type_resolver.evalConstU32Full(&tre_env, mnode.child_1);
+                    if (ev != @intCast(u32, 0xFFFFFFFF)) { mval = ev; }
+                }
+                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = mnode.payload, .value = @intCast(i64, mval) });
+                mcount += 1;
+                auto_val = mval + @intCast(u32, 1);
+            }
             i += 1;
         }
         type_mod.enAppend(type_reg, type_mod.EnumPayload{
             .members_start = @intCast(u16, mstart),
             .members_count = @intCast(u16, mcount),
-            .backing_type = type_mod.TYPE_U32,
+            .backing_type = backing_box[0],
         });
         var en_last: usize = type_reg.en_len - @intCast(usize, 1);
         var en_idx: u32 = @intCast(u32, en_last);
@@ -218,7 +236,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         else => TypeKind.void_type,
                     };
                     sym_type_id = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-                    populateTypePayload(type_reg, store, init_node.kind, node.child_1);
+                    populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_reg);
                     addTypeDependencies(store, node.child_1, sym_type_id, g);
                     sym_kind = sym_mod.SymbolKind.type_alias;
                     sym_mod_id = mod_id;
@@ -293,7 +311,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 else => TypeKind.void_type,
             };
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-            populateTypePayload(type_reg, store, node.kind, decl_idx);
+            populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg);
             addTypeDependencies(store, decl_idx, tid, g);
             var sym = sym_mod.Symbol{
                 .name_id = name_id,
