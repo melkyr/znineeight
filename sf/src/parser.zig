@@ -1005,6 +1005,12 @@ fn parserParseStructType(self: *Parser) ParserError!u32 {
 
 fn parserParseEnumType(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
+    var backing_type2: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.lparen) {
+        _ = parserAdvance(self);
+        backing_type2 = try parserParseType(self);
+        _ = try parserExpect(self, TokenKind.rparen);
+    }
     _ = try parserExpect(self, TokenKind.lbrace);
     var members_buf: [64]u32 = undefined;
     var members_count: usize = 0;
@@ -1025,8 +1031,9 @@ fn parserParseEnumType(self: *Parser) ParserError!u32 {
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.enum_decl, 0,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
-        0, 0, 0, payload);
+        0, backing_type2, 0, payload);
 }
+
 
 fn parserParseUnionType(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
@@ -1564,11 +1571,17 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
     var tok = parserAdvance(self);
     var name_id: u32 = 0;
     var is_tagged: u8 = 0;
+    var backing_type: u32 = 0;
     if (kind == AstKind.union_decl and parserPeek(self).kind == TokenKind.lparen) {
         _ = parserAdvance(self);
         _ = try parserExpect(self, TokenKind.kw_enum);
         _ = try parserExpect(self, TokenKind.rparen);
         is_tagged = 1;
+    }
+    if (kind == AstKind.enum_decl and parserPeek(self).kind == TokenKind.lparen) {
+        _ = parserAdvance(self);
+        backing_type = try parserParseType(self);
+        _ = try parserExpect(self, TokenKind.rparen);
     }
     if (parserPeek(self).kind == TokenKind.identifier) {
         var name_tok = parserAdvance(self);
@@ -1605,7 +1618,7 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
     }
     var end_pos: u32 = rbrace.span_start + @intCast(u32, rbrace.span_len);
     return ast_mod.astStoreAddNode(self.store, kind, is_tagged,
-        tok.span_start, end_pos, name_id, 0, 0, payload);
+        tok.span_start, end_pos, name_id, backing_type, 0, payload);
 }
 fn parserParseBlock(self: *Parser) ParserError!u32 {
     var lbrace = try parserExpect(self, TokenKind.lbrace);
