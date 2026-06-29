@@ -1018,7 +1018,15 @@ fn parserParseEnumType(self: *Parser) ParserError!u32 {
         var name_tok = try parserExpect(self, TokenKind.identifier);
         var mpt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
         var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, mpt));
-        members_buf[members_count] = name_id;
+        var value_expr: u32 = 0;
+        if (parserPeek(self).kind == TokenKind.eq) {
+            _ = parserAdvance(self);
+            value_expr = try parserParseExprPrec(self, Prec.assignment);
+        }
+        var mnode = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+            name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+            0, value_expr, 0, name_id);
+        members_buf[members_count] = mnode;
         members_count += 1;
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
@@ -1031,7 +1039,7 @@ fn parserParseEnumType(self: *Parser) ParserError!u32 {
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.enum_decl, 0,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
-        0, backing_type2, 0, payload);
+        backing_type2, 0, 0, payload);
 }
 
 
@@ -1596,7 +1604,15 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
         var fpt = ParseToken{ .kind = ftok.kind, .span_start = ftok.span_start, .span_len = ftok.span_len };
         var fid = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, fpt));
         if (kind == AstKind.enum_decl) {
-            fields_buf[fields_count] = fid;
+            var ev: u32 = 0;
+            if (parserPeek(self).kind == TokenKind.eq) {
+                _ = parserAdvance(self);
+                ev = try parserParseExprPrec(self, Prec.assignment);
+            }
+            var enode = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                ftok.span_start, ftok.span_start + @intCast(u32, ftok.span_len),
+                0, ev, 0, fid);
+            fields_buf[fields_count] = enode;
             fields_count += 1;
         } else {
             _ = try parserExpect(self, TokenKind.colon);
