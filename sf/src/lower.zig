@@ -1922,12 +1922,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var join_temp = nextTemp(self, euPayloadOf(self, eu_box[0]));
             self.current_bb = err_bb;
             self.block_terminated = @intCast(u8, 0);
+            var cex_n2_m: []const u8 = "CEX:n2"; pal.markerWrite(cex_n2_m); var cex_n2_b: [10]u8 = undefined; var cex_n2_l = itoa_mod.itoa(node.child_2, cex_n2_b[0..]); var cex_n2_s: usize = @intCast(usize, 9) - @intCast(usize, cex_n2_l); pal.markerWrite(cex_n2_b[cex_n2_s..@intCast(usize, 9)]); var cex_n2_nl: []const u8 = "\n"; pal.markerWrite(cex_n2_nl);
             if (node.child_2 != 0) {
+                var cex_c2_m: []const u8 = "CEX:c2"; pal.markerWrite(cex_c2_m); var cex_c2_b: [10]u8 = undefined; var cex_c2_l = itoa_mod.itoa(node.child_2, cex_c2_b[0..]); var cex_c2_s: usize = @intCast(usize, 9) - @intCast(usize, cex_c2_l); pal.markerWrite(cex_c2_b[cex_c2_s..@intCast(usize, 9)]); var cex_c2_nl: []const u8 = "\n"; pal.markerWrite(cex_c2_nl);
                 var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
                 var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
                 addLocalDecl(self, capture_node.payload, type_mod.TYPE_I32, err_code_temp);
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_node.payload, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
+                var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
             var err_val = lowerExprOrBlock(self, node.child_1);
             var cex1_m: []const u8 = "CEX:c1"; pal.markerWrite(cex1_m); var cex1_b: [10]u8 = undefined; var cex1_l = itoa_mod.itoa(node.child_1, cex1_b[0..]); var cex1_s: usize = @intCast(usize, 9) - @intCast(usize, cex1_l); pal.markerWrite(cex1_b[cex1_s..@intCast(usize, 9)]); var cex1_nl: []const u8 = "\n"; pal.markerWrite(cex1_nl);
@@ -2149,6 +2152,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var sw_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        {
+            var swrt_m: []const u8 = "SWRT:n"; pal.markerWrite(swrt_m);
+            var swrt_b: [10]u8 = undefined; var swrt_l = itoa_mod.itoa(node_idx, swrt_b[0..]); var swrt_s: usize = @intCast(usize, 9) - @intCast(usize, swrt_l); pal.markerWrite(swrt_b[swrt_s..@intCast(usize, 9)]);
+            var swrt_x: []const u8 = "t"; pal.markerWrite(swrt_x);
+            if (sw_rt) |srt| {
+                var swrt_rb: [10]u8 = undefined; var swrt_rl = itoa_mod.itoa(srt, swrt_rb[0..]); var swrt_rs: usize = @intCast(usize, 9) - @intCast(usize, swrt_rl); pal.markerWrite(swrt_rb[swrt_rs..@intCast(usize, 9)]);
+            } else {
+                var swrt_z: []const u8 = "M"; pal.markerWrite(swrt_z);
+            }
+            var swrt_nl: []const u8 = "\n"; pal.markerWrite(swrt_nl);
+        }
         var result_tid: u32 = if (sw_rt) |t| (if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) t else type_mod.TYPE_VOID) else type_mod.TYPE_VOID;
         var result_temp = nextTemp(self, result_tid);
         var prong_ec = ast_mod.astStoreGetExtraChildren(store, node.payload);

@@ -40,6 +40,7 @@ pub const SemanticAnalyzer = struct {
     call_arg_types: *hash_mod.U32ToU32Map,
     call_param_map: *hash_mod.U32ToU32Map,
     current_switch_cond_tu: u32,
+    switch_depth: u32,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
     local_decl_count: usize,
@@ -92,6 +93,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
         .current_switch_cond_tu = @intCast(u32, 0),
+        .switch_depth = @intCast(u32, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_count = @intCast(usize, 0),
@@ -493,6 +495,16 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     var coe_nm: []const u8 = "COE:N"; pal_mod.markerWriteInt(coe_nm, src_node);
     var coe_sm: []const u8 = "COE:S"; pal_mod.markerWriteInt(coe_sm, src_type);
     var coe_dm: []const u8 = "COE:D"; pal_mod.markerWriteInt(coe_dm, dst_type);
+    {
+        var src_t = self.registry.types_items[@intCast(usize, src_type)];
+        var dst_t = self.registry.types_items[@intCast(usize, dst_type)];
+        var coe_skm: []const u8 = "COE:SK"; pal_mod.markerWriteInt(coe_skm, @intCast(u32, @enumToInt(src_t.kind)));
+        var coe_dkm: []const u8 = "COE:DK"; pal_mod.markerWriteInt(coe_dkm, @intCast(u32, @enumToInt(dst_t.kind)));
+    }
+    {
+        var snode = self.store.nodes.items[@intCast(usize, src_node)];
+        var coe_nkm: []const u8 = "COE:NK"; pal_mod.markerWriteInt(coe_nkm, @intCast(u32, @enumToInt(snode.kind)));
+    }
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
@@ -795,10 +807,12 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    self.switch_depth += @intCast(u32, 1);
     var se: []const u8 = "SE"; pal_mod.markerWrite(se);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var swu_im: []const u8 = "SWI:n"; pal_mod.markerWriteInt(swu_im, node_idx); var swu_pm: []const u8 = "SWI:p"; pal_mod.markerWriteInt(swu_pm, node.payload);
-    if (node.payload == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    var swi_dm: []const u8 = "SWI:d"; pal_mod.markerWriteInt(swi_dm, self.switch_depth);
+    if (node.payload == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
     self.current_switch_cond_tu = @intCast(u32, 0);
     if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
@@ -809,7 +823,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
     var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-    if (prongs.len == @intCast(usize, 0)) { self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    if (prongs.len == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
@@ -897,6 +911,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_VOID;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
     var swu_m: []const u8 = "SWU:n"; pal_mod.markerWriteInt(swu_m, node_idx); var swu_tm: []const u8 = "SWU:t"; pal_mod.markerWriteInt(swu_tm, unified);
+    self.switch_depth -= @intCast(u32, 1);
     return unified;
 }
 
@@ -1245,6 +1260,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = self.store.nodes.items[@intCast(usize, node_idx)];
         var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, self.stmt_work_len));
+        var spk_m: []const u8 = "SP:K"; pal_mod.markerWriteInt(spk_m, @intCast(u32, @enumToInt(node.kind)));
         if (node.kind == AstKind.block) {
             var children = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
             var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
