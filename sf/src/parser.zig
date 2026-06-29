@@ -729,8 +729,10 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     }
     self.child_buf_len = saved_switch;
     var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
-    return ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
+    var pswe_node = ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
         kw_tok.span_start, end_pos, cond, 0, 0, payload);
+    var pswe_b: [10]u8 = undefined; var pswe_l = itoa_mod.itoa(pswe_node, pswe_b[0..]); var pswe_s: usize = @intCast(usize, 9) - @intCast(usize, pswe_l); var pswe_m: []const u8 = "PSWE:n"; pal.markerWrite(pswe_m); pal.markerWrite(pswe_b[pswe_s..@intCast(usize, 9)]); var pswe_pm: []const u8 = "p"; pal.markerWrite(pswe_pm); var pswe_pb: [10]u8 = undefined; var pswe_pl = itoa_mod.itoa(payload, pswe_pb[0..]); var pswe_ps: usize = @intCast(usize, 9) - @intCast(usize, pswe_pl); pal.markerWrite(pswe_pb[pswe_ps..@intCast(usize, 9)]); var pswe_nl: []const u8 = "\n"; pal.markerWrite(pswe_nl);
+    return pswe_node;
 }
 
 fn parserParseSwitchProng(self: *Parser) ParserError!u32 {

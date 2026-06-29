@@ -459,7 +459,11 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
         if (type_mod.typeRegistryIsOptional(self.registry, rhs) and lhs == type_mod.TYPE_NULL) return type_mod.TYPE_BOOL;
         if (type_mod.typeRegistryIsErrorSet(self.registry, lhs) and type_mod.typeRegistryIsErrorSet(self.registry, rhs)) { var cp4: []const u8 = "CPB"; pal_mod.markerWrite(cp4); return type_mod.TYPE_BOOL; }
     }
-    var cpv: []const u8 = "CPV"; pal_mod.markerWrite(cpv);
+    if (lhs == rhs) {
+        if (lhs == type_mod.TYPE_BOOL) { var cp5: []const u8 = "CPB"; pal_mod.markerWrite(cp5); return type_mod.TYPE_BOOL; }
+        if (type_mod.typeRegistryIsPointer(self.registry, lhs)) { var cp6: []const u8 = "CPB"; pal_mod.markerWrite(cp6); return type_mod.TYPE_BOOL; }
+    }
+    var cpv: []const u8 = "CPVl"; pal_mod.markerWrite(cpv); var cpv_lb: [10]u8 = undefined; var cpv_ll = itoa_mod.itoa(lhs, cpv_lb[0..]); var cpv_ls: usize = @intCast(usize, 9) - @intCast(usize, cpv_ll); pal_mod.markerWrite(cpv_lb[cpv_ls..@intCast(usize, 9)]); var cpv_rh: []const u8 = "r"; pal_mod.markerWrite(cpv_rh); var cpv_rb: [10]u8 = undefined; var cpv_rl = itoa_mod.itoa(rhs, cpv_rb[0..]); var cpv_rs: usize = @intCast(usize, 9) - @intCast(usize, cpv_rl); pal_mod.markerWrite(cpv_rb[cpv_rs..@intCast(usize, 9)]); var cpv_ih: []const u8 = "n"; pal_mod.markerWrite(cpv_ih); var cpv_ib: [10]u8 = undefined; var cpv_il = itoa_mod.itoa(node.child_0, cpv_ib[0..]); var cpv_is: usize = @intCast(usize, 9) - @intCast(usize, cpv_il); pal_mod.markerWrite(cpv_ib[cpv_is..@intCast(usize, 9)]); var cpv_nl: []const u8 = "\n"; pal_mod.markerWrite(cpv_nl);
     return type_mod.TYPE_VOID;
 }
 
@@ -883,7 +887,9 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
          if (pbd_b0 != @intCast(u32, 0)) { var pbd_n = self.store.nodes.items[@intCast(usize, pbd_b0)]; pbd_k0 = @intCast(u32, @enumToInt(pbd_n.kind)); }
          var pbd_nm: []const u8 = "PBD:N"; pal_mod.markerWriteInt(pbd_nm, pbd_b0);
          var pbd_km: []const u8 = "PBD:K"; pal_mod.markerWriteInt(pbd_km, pbd_k0);
-         var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+          var saved_tu = self.current_switch_cond_tu;
+          var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+         self.current_switch_cond_tu = saved_tu;
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
         if (bt == type_mod.TYPE_NORETURN) {}
