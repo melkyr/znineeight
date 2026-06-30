@@ -569,7 +569,11 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     var id = tok.value.string_id;
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
     var lparen = parserPeek(self);
-    if (lparen.kind != TokenKind.lparen) return error.UnexpectedToken;
+    if (lparen.kind != TokenKind.lparen) {
+        var exp_s: []const u8 = "expected '(' after builtin name";
+        parserAddError(self, lparen, exp_s);
+        return error.UnexpectedToken;
+    }
     _ = parserAdvance(self);
      var saved_builtin: usize = self.child_buf_len;
      while (true) {
@@ -607,14 +611,26 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
 
 fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     var lparen = parserPeek(self);
-    if (lparen.kind != TokenKind.lparen) return error.UnexpectedToken;
+    if (lparen.kind != TokenKind.lparen) {
+        var exp_s: []const u8 = "expected '(' after @import";
+        parserAddError(self, lparen, exp_s);
+        return error.UnexpectedToken;
+    }
     _ = parserAdvance(self);
     var path_tok = parserPeek(self);
-    if (path_tok.kind != TokenKind.string_literal) return error.UnexpectedToken;
+    if (path_tok.kind != TokenKind.string_literal) {
+        var exp_s: []const u8 = "expected string literal for @import path";
+        parserAddError(self, path_tok, exp_s);
+        return error.UnexpectedToken;
+    }
     var path_id = path_tok.value.string_id;
     _ = parserAdvance(self);
     var rparen = parserPeek(self);
-    if (rparen.kind != TokenKind.rparen) return error.UnexpectedToken;
+    if (rparen.kind != TokenKind.rparen) {
+        var exp_s: []const u8 = "expected ')' after @import path";
+        parserAddError(self, rparen, exp_s);
+        return error.UnexpectedToken;
+    }
     var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
     if (self.module_reg) |reg| {
