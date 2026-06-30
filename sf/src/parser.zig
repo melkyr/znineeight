@@ -269,6 +269,7 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     }
     if (tok.kind == TokenKind.kw_bool) return parserParseIdentExpr(self);
     if (tok.kind == TokenKind.kw_c_char) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.kw_void) return parserParseIdentExpr(self);
     if (tok.kind == TokenKind.builtin_identifier) return parserParseBuiltinCall(self);
     if (tok.kind == TokenKind.kw_error) return parserParseErrorLiteral(self);
     if (tok.kind == TokenKind.minus) return parserParsePrefixUnary(self, AstKind.negate);
