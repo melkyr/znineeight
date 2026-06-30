@@ -231,6 +231,7 @@ pub const LirLowerer = struct {
     ptrcast_name_id: u32,
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
+    enumtoint_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -257,6 +258,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var ptin_id = si_mod.stringInternerIntern(ctx.registry.interner, pti_s);
     var itp_s: []const u8 = "@intToPtr";
     var itp_id = si_mod.stringInternerIntern(ctx.registry.interner, itp_s);
+    var eit_s: []const u8 = "@enumToInt";
+    var eit_id = si_mod.stringInternerIntern(ctx.registry.interner, eit_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -277,6 +280,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .ptrcast_name_id = ptrcast_id,
          .ptrtoint_name_id = ptin_id,
          .inttoptr_name_id = itp_id,
+         .enumtoint_name_id = eit_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -1814,11 +1818,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
                 return cres;
             }
-            var elm: []const u8 = "B"; pal.markerWrite(elm);
-            if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
-            else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
-            else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
-            var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
+            if (node.child_0 == self.enumtoint_name_id) {
+                var bm: []const u8 = "E"; pal.markerWrite(bm);
+                if (ec.len >= 1) {
+                    return lowerExpr(self, ec[@intCast(usize, 0)]);
+                } else { return nextTemp(self, type_mod.TYPE_VOID); }
+            }
+            if (ec.len >= 2) {
+                var elm: []const u8 = "B"; pal.markerWrite(elm);
+                if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
+                else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
+                else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
+                var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
         var ty_node = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
         t_target = type_mod.TYPE_U32;
         if (ty_node.kind == AstKind.ptr_type) {
@@ -1889,16 +1900,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .int_to_float = .{
                 .value = val_temp, .target = t_target, .result = result,
             } });
-            } else if (node.child_0 == self.ptrcast_name_id) {
-                emitInst(self, LirInst{ .ptr_cast = .{
-                    .value = val_temp, .target = t_target, .result = result,
-                } });
-            } else if (node.child_0 == self.inttoptr_name_id) {
-                emitInst(self, LirInst{ .int_to_ptr = .{
-                    .value = val_temp, .target = t_target, .result = result,
-                } });
+        } else if (node.child_0 == self.ptrcast_name_id) {
+            emitInst(self, LirInst{ .ptr_cast = .{
+                .value = val_temp, .target = t_target, .result = result,
+            } });
+        } else if (node.child_0 == self.inttoptr_name_id) {
+            emitInst(self, LirInst{ .int_to_ptr = .{
+                .value = val_temp, .target = t_target, .result = result,
+            } });
+        }
+        return result;
             }
-            return result;
+            return nextTemp(self, type_mod.TYPE_VOID);
     } else if (node.kind == AstKind.try_expr) {
         var inner_temp = lowerExpr(self, node.child_0);
         var eu_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
