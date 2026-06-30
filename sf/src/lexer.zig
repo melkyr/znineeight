@@ -139,7 +139,13 @@ pub fn lexerNextToken(self: *Lexer) Token {
         else => {
             if (isAlpha(c) or c == '_') return lexerScanIdentifierOrKeyword(self, start);
             if (isDigit(c)) return lexerScanNumber(self, start, c);
-            const unrecognized_msg: []const u8 = "unrecognized character";
+            var up1: []const u8 = "unrecognized character: '";
+            var char_buf: [2]u8 = undefined;
+            char_buf[0] = c;
+            char_buf[1] = @intCast(u8, 0);
+            var up3: []const u8 = "'";
+            var uparts: [3][]const u8 = [3][]const u8{up1, char_buf[0..1], up3};
+            var unrecognized_msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &uparts[0], @intCast(u32, 3));
             diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1005_UNRECOGNIZED_CHAR, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unrecognized_msg);
             return lexerMakeErrorToken(self, start);
         },
@@ -455,7 +461,13 @@ fn lexerParseEscapeSequence(self: *Lexer) u8 {
         '0' => return @intCast(u8, 0),
         'x' => return lexerParseHexEscape(self),
         else => {
-            const s_unesc: []const u8 = "unrecognized escape sequence";
+            var ue1: []const u8 = "unrecognized escape sequence: '\\";
+            var ue_char_buf: [2]u8 = undefined;
+            ue_char_buf[0] = c;
+            ue_char_buf[1] = @intCast(u8, 0);
+            var ue3: []const u8 = "'";
+            var ueparts: [3][]const u8 = [3][]const u8{ue1, ue_char_buf[0..1], ue3};
+            var s_unesc = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &ueparts[0], @intCast(u32, 3));
             diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1010_UNRECOGNIZED_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_unesc);
             return c;
         },

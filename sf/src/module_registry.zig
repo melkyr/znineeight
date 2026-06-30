@@ -390,7 +390,11 @@ pub fn moduleRegistrySortModules(reg: *ModuleRegistry) void {
         while (ci < mod_count) {
             var entry = reg.modules.items[ci];
             if (entry.state != ModuleState.failed and in_degree[ci] > 0) {
-                var msg: []const u8 = "circular import detected";
+                var mn = interner_mod.stringInternerGet(reg.interner, entry.path_id);
+                var cp1: []const u8 = "circular import detected in module '";
+                var cp2: []const u8 = "'";
+                var cparts: [3][]const u8 = [3][]const u8{cp1, mn, cp2};
+                var msg = diag_mod.diagnosticBuilderMakeMsg(reg.diag.interner, &cparts[0], @intCast(u32, 3));
                 diag_mod.diagnosticCollectorAdd(reg.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
                 entry.state = ModuleState.failed;
                 reg.modules.items[ci] = entry;

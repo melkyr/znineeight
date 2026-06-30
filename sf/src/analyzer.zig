@@ -109,22 +109,62 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
     var ppa = @intCast(u8, @enumToInt(Provenance.param_addr));
     if (prov == pl) {
         if (expr_node.kind == AstKind.address_of) {
-            var msg: []const u8 = "returning address of local variable";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+            var name_opt = resolveOrigin(ctx, expr_node.child_0);
+            if (name_opt) |nid| {
+                var nm = interner_mod.stringInternerGet(ctx.interner, nid);
+                var rp1: []const u8 = "returning address of local variable '";
+                var rp2: []const u8 = "'";
+                var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
+                var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+                return;
+            }
+            var dmsg: []const u8 = "returning address of local variable";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), @intCast(u32, 0), start, end, dmsg);
             return;
         }
         if (expr_node.kind == AstKind.slice_expr) {
-            var msg: []const u8 = "returning slice of local array";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+            var name_opt = resolveOrigin(ctx, expr_node.child_0);
+            if (name_opt) |nid| {
+                var nm = interner_mod.stringInternerGet(ctx.interner, nid);
+                var rp1: []const u8 = "returning slice of local array '";
+                var rp2: []const u8 = "'";
+                var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
+                var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+                return;
+            }
+            var dmsg: []const u8 = "returning slice of local array";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), @intCast(u32, 0), start, end, dmsg);
             return;
         }
-        var msg: []const u8 = "returning pointer to local via variable";
-        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), @intCast(u32, 0), start, end, msg);
+        var name_opt = resolveOrigin(ctx, expr_idx);
+        if (name_opt) |nid| {
+            var nm = interner_mod.stringInternerGet(ctx.interner, nid);
+            var rp1: []const u8 = "returning pointer to local via variable '";
+            var rp2: []const u8 = "'";
+            var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
+            var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), @intCast(u32, 0), start, end, msg);
+            return;
+        }
+        var dmsg: []const u8 = "returning pointer to local via variable";
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), @intCast(u32, 0), start, end, dmsg);
         return;
     }
     if (prov == ppa) {
-        var msg: []const u8 = "returning address of function parameter";
-        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), @intCast(u32, 0), start, end, msg);
+        var name_opt = resolveOrigin(ctx, expr_node.child_0);
+        if (name_opt) |nid| {
+            var nm = interner_mod.stringInternerGet(ctx.interner, nid);
+            var rp1: []const u8 = "returning address of parameter '";
+            var rp2: []const u8 = "'";
+            var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
+            var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), @intCast(u32, 0), start, end, msg);
+            return;
+        }
+        var dmsg: []const u8 = "returning address of function parameter";
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), @intCast(u32, 0), start, end, dmsg);
         return;
     }
 }
@@ -208,13 +248,21 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
             return;
         }
         if (c == @enumToInt(AllocState.freed)) {
-            var dmsg: []const u8 = "double free of pointer";
+            var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
+            var dp1: []const u8 = "double free of pointer '";
+            var dp2: []const u8 = "'";
+            var dparts: [3][]const u8 = [3][]const u8{dp1, pn, dp2};
+            var dmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &dparts[0], @intCast(u32, 3));
             diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
             return;
         }
         smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
     } else {
-        var umsg: []const u8 = "freeing untracked pointer";
+        var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
+        var up1: []const u8 = "freeing untracked pointer '";
+        var up2: []const u8 = "'";
+        var uparts: [3][]const u8 = [3][]const u8{up1, pn, up2};
+        var umsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &uparts[0], @intCast(u32, 3));
         diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
     }
 }
@@ -224,7 +272,11 @@ pub fn checkLeaksOnScopeExit(ctx: *AnalyzerContext, state: *StateMap) void {
     var ei: usize = 0;
     while (ei < entries.len) : (ei += 1) {
         if (entries[ei].state == @enumToInt(AllocState.allocated)) {
-            var lmsg: []const u8 = "memory leak: pointer not freed";
+            var pn = interner_mod.stringInternerGet(ctx.interner, entries[ei].name_id);
+            var lp1: []const u8 = "memory leak: pointer '";
+            var lp2: []const u8 = "' not freed";
+            var lparts: [3][]const u8 = [3][]const u8{lp1, pn, lp2};
+            var lmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &lparts[0], @intCast(u32, 3));
             diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), lmsg);
         }
     }
@@ -239,7 +291,11 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
     var current = smap_mod.stateMapGet(state, lhs_node.payload);
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
-            var lmsg: []const u8 = "memory leak: pointer overwritten before free";
+            var pn = interner_mod.stringInternerGet(ctx.interner, lhs_node.payload);
+            var op1: []const u8 = "memory leak: pointer '";
+            var op2: []const u8 = "' overwritten before free";
+            var oparts: [3][]const u8 = [3][]const u8{op1, pn, op2};
+            var lmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &oparts[0], @intCast(u32, 3));
             diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), lmsg);
         }
     }
@@ -282,7 +338,11 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
         if (current) |c| {
             if (c == @enumToInt(AllocState.allocated)) {
                 smap_mod.stateMapSet(state, arg_node.payload, @enumToInt(AllocState.transferred));
-                var tmsg: []const u8 = "ownership transferred to function";
+                var pn = interner_mod.stringInternerGet(ctx.interner, arg_node.payload);
+                var tp1: []const u8 = "ownership of '";
+                var tp2: []const u8 = "' transferred to function";
+                var tparts: [3][]const u8 = [3][]const u8{tp1, pn, tp2};
+                var tmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &tparts[0], @intCast(u32, 3));
                 var warn_lvl: u8 = @intCast(u8, 2);
                 if (ctx.warn_all != @intCast(u8, 0)) warn_lvl = @intCast(u8, 1);
                 diag_mod.diagnosticCollectorAdd(ctx.diag, warn_lvl, @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), tmsg);
@@ -359,7 +419,11 @@ pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_retur
                   ty.kind == type_mod.TypeKind.union_type or
                   ty.kind == type_mod.TypeKind.tagged_union_type or
                   ty.kind == type_mod.TypeKind.enum_type) and ty.state != @intCast(u8, 2))) {
-                var imsg: []const u8 = "incomplete type in function signature";
+                var tname = interner_mod.stringInternerGet(ctx.interner, name_id);
+                var ip1: []const u8 = "incomplete type '";
+                var ip2: []const u8 = "' in function signature";
+                var iparts: [3][]const u8 = [3][]const u8{ip1, tname, ip2};
+                var imsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &iparts[0], @intCast(u32, 3));
                 diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), imsg);
             }
             if (ty.kind == type_mod.TypeKind.void_type and is_return == @intCast(u32, 0)) {
