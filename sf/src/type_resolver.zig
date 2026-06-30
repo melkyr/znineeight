@@ -25,6 +25,11 @@ pub const TypeResolveEnv = struct {
     interner: *StringInterner,
 };
 
+pub const ClassificationResult = struct {
+    ids: [*]u32,
+    len: u32,
+};
+
 pub const TypeResolver = struct {
     registry: *TypeRegistry,
     depend_items: [*]DepEdge,
@@ -310,6 +315,358 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
             self.registry.types_items[ci] = ty;
         }
     }
+}
+
+fn fieldEmbedsByValue(kind: TypeKind) bool {
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    return false;
+}
+
+pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) ClassificationResult {
+    var tl: usize = self.registry.types_len;
+
+    var po_raw = alloc_mod.sandAlloc(perm_alloc, 1 * tl, 1) catch unreachable;
+    var pointer_only: [*]u8 = @ptrCast([*]u8, po_raw);
+
+    var wp_edge_cap: usize = tl * 4;
+    var wp_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * wp_edge_cap, 4) catch unreachable;
+    var wp_to: [*]u32 = @ptrCast([*]u32, wp_to_raw);
+    var wp_next_raw = alloc_mod.sandAlloc(perm_alloc, 4 * wp_edge_cap, 4) catch unreachable;
+    var wp_next: [*]u32 = @ptrCast([*]u32, wp_next_raw);
+    var wp_head_raw = alloc_mod.sandAlloc(perm_alloc, 4 * tl, 4) catch unreachable;
+    var wp_head: [*]u32 = @ptrCast([*]u32, wp_head_raw);
+    var whi: usize = 0;
+    while (whi < tl) : (whi += 1) { wp_head[whi] = @intCast(u32, 4294967295); }
+    var wp_count: u32 = @intCast(u32, 0);
+
+    var wl_raw = alloc_mod.sandAlloc(perm_alloc, 4 * tl, 4) catch unreachable;
+    var worklist: [*]u32 = @ptrCast([*]u32, wl_raw);
+    var wl_head: u32 = @intCast(u32, 0);
+    var wl_tail: u32 = @intCast(u32, 0);
+
+    var ti: usize = 0;
+    while (ti < tl) : (ti += 1) {
+        var ty = self.registry.types_items[ti];
+        var is_po: u8 = @intCast(u8, 1);
+
+        if (ty.kind == TypeKind.struct_type) {
+            var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
+            var fi: usize = 0;
+            while (fi < @intCast(usize, sp.fields_count) and is_po != 0) : (fi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, sp.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    var payload = self.registry.opt_items[@intCast(usize, ft.payload_idx)].payload;
+                    if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                        var new_cap: usize = wp_edge_cap * 2;
+                        var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                        var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                        var ci: usize = 0;
+                        while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                            new_to[ci] = wp_to[ci];
+                            new_nx[ci] = wp_next[ci];
+                        }
+                        wp_to = new_to;
+                        wp_next = new_nx;
+                        wp_edge_cap = new_cap;
+                    }
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    var payload = self.registry.eu_items[@intCast(usize, ft.payload_idx)].payload;
+                    if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                        var new_cap: usize = wp_edge_cap * 2;
+                        var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                        var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                        var ci: usize = 0;
+                        while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                            new_to[ci] = wp_to[ci];
+                            new_nx[ci] = wp_next[ci];
+                        }
+                        wp_to = new_to;
+                        wp_next = new_nx;
+                        wp_edge_cap = new_cap;
+                    }
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.tagged_union_type) {
+            var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+            var fi: usize = 0;
+            while (fi < @intCast(usize, tp.fields_count) and is_po != 0) : (fi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, tp.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    var payload = self.registry.opt_items[@intCast(usize, ft.payload_idx)].payload;
+                    if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                        var new_cap: usize = wp_edge_cap * 2;
+                        var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                        var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                        var ci: usize = 0;
+                        while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                            new_to[ci] = wp_to[ci];
+                            new_nx[ci] = wp_next[ci];
+                        }
+                        wp_to = new_to;
+                        wp_next = new_nx;
+                        wp_edge_cap = new_cap;
+                    }
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    var payload = self.registry.eu_items[@intCast(usize, ft.payload_idx)].payload;
+                    if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                        var new_cap: usize = wp_edge_cap * 2;
+                        var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                        var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                        var ci: usize = 0;
+                        while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                            new_to[ci] = wp_to[ci];
+                            new_nx[ci] = wp_next[ci];
+                        }
+                        wp_to = new_to;
+                        wp_next = new_nx;
+                        wp_edge_cap = new_cap;
+                    }
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.union_type) {
+            var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+            var fi: usize = 0;
+            while (fi < @intCast(usize, up.fields_count) and is_po != 0) : (fi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, up.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    var payload = self.registry.opt_items[@intCast(usize, ft.payload_idx)].payload;
+                    if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                        var new_cap: usize = wp_edge_cap * 2;
+                        var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                        var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                        var ci: usize = 0;
+                        while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                            new_to[ci] = wp_to[ci];
+                            new_nx[ci] = wp_next[ci];
+                        }
+                        wp_to = new_to;
+                        wp_next = new_nx;
+                        wp_edge_cap = new_cap;
+                    }
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    var payload = self.registry.eu_items[@intCast(usize, ft.payload_idx)].payload;
+                    if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                        var new_cap: usize = wp_edge_cap * 2;
+                        var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                        var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                        var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                        var ci: usize = 0;
+                        while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                            new_to[ci] = wp_to[ci];
+                            new_nx[ci] = wp_next[ci];
+                        }
+                        wp_to = new_to;
+                        wp_next = new_nx;
+                        wp_edge_cap = new_cap;
+                    }
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.array_type) {
+            var et = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem;
+            var et_ty = self.registry.types_items[@intCast(usize, et)];
+            if (fieldEmbedsByValue(et_ty.kind)) {
+                is_po = @intCast(u8, 0);
+            } else if (et_ty.kind == TypeKind.optional_type) {
+                var payload = self.registry.opt_items[@intCast(usize, et_ty.payload_idx)].payload;
+                if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                    var new_cap: usize = wp_edge_cap * 2;
+                    var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                    var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                    var ci: usize = 0;
+                    while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                        new_to[ci] = wp_to[ci];
+                        new_nx[ci] = wp_next[ci];
+                    }
+                    wp_to = new_to;
+                    wp_next = new_nx;
+                    wp_edge_cap = new_cap;
+                }
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            } else if (et_ty.kind == TypeKind.error_union_type) {
+                var payload = self.registry.eu_items[@intCast(usize, et_ty.payload_idx)].payload;
+                if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                    var new_cap: usize = wp_edge_cap * 2;
+                    var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                    var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                    var ci: usize = 0;
+                    while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                        new_to[ci] = wp_to[ci];
+                        new_nx[ci] = wp_next[ci];
+                    }
+                    wp_to = new_to;
+                    wp_next = new_nx;
+                    wp_edge_cap = new_cap;
+                }
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            }
+        } else if (ty.kind == TypeKind.error_union_type) {
+            var eup = self.registry.eu_items[@intCast(usize, ty.payload_idx)].payload;
+            var eup_ty = self.registry.types_items[@intCast(usize, eup)];
+            if (fieldEmbedsByValue(eup_ty.kind)) {
+                is_po = @intCast(u8, 0);
+            } else if (eup_ty.kind == TypeKind.optional_type) {
+                var payload = self.registry.opt_items[@intCast(usize, eup_ty.payload_idx)].payload;
+                if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                    var new_cap: usize = wp_edge_cap * 2;
+                    var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                    var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                    var ci: usize = 0;
+                    while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                        new_to[ci] = wp_to[ci];
+                        new_nx[ci] = wp_next[ci];
+                    }
+                    wp_to = new_to;
+                    wp_next = new_nx;
+                    wp_edge_cap = new_cap;
+                }
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            } else if (eup_ty.kind == TypeKind.error_union_type) {
+                var payload = self.registry.eu_items[@intCast(usize, eup_ty.payload_idx)].payload;
+                if (wp_count >= @intCast(u32, wp_edge_cap)) {
+                    var new_cap: usize = wp_edge_cap * 2;
+                    var new_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_nx_raw = alloc_mod.sandAlloc(perm_alloc, 4 * new_cap, 4) catch unreachable;
+                    var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
+                    var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
+                    var ci: usize = 0;
+                    while (ci < @intCast(usize, wp_count)) : (ci += 1) {
+                        new_to[ci] = wp_to[ci];
+                        new_nx[ci] = wp_next[ci];
+                    }
+                    wp_to = new_to;
+                    wp_next = new_nx;
+                    wp_edge_cap = new_cap;
+                }
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
+                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            }
+        }
+
+        pointer_only[ti] = is_po;
+        if (is_po == @intCast(u8, 0)) {
+            worklist[@intCast(usize, wl_tail)] = @intCast(u32, ti);
+            wl_tail += @intCast(u32, 1);
+        }
+    }
+
+    while (wl_head < wl_tail) {
+        var cur = worklist[@intCast(usize, wl_head)];
+        wl_head += @intCast(u32, 1);
+        var e: u32 = wp_head[@intCast(usize, cur)];
+        while (e != @intCast(u32, 4294967295)) {
+            var parent_tid = wp_to[@intCast(usize, e)];
+            if (pointer_only[@intCast(usize, parent_tid)] != @intCast(u8, 0)) {
+                pointer_only[@intCast(usize, parent_tid)] = @intCast(u8, 0);
+                worklist[@intCast(usize, wl_tail)] = parent_tid;
+                wl_tail += @intCast(u32, 1);
+            }
+            e = wp_next[@intCast(usize, e)];
+        }
+    }
+
+    var ids_raw = alloc_mod.sandAlloc(perm_alloc, 4 * tl, 4) catch unreachable;
+    var ids: [*]u32 = @ptrCast([*]u32, ids_raw);
+    var plen: u32 = @intCast(u32, 0);
+    ti = 0;
+    while (ti < tl) : (ti += 1) {
+        if (pointer_only[ti] != @intCast(u8, 0)) {
+            ids[@intCast(usize, plen)] = @intCast(u32, ti);
+            plen += @intCast(u32, 1);
+        }
+    }
+
+    var cls_m: []const u8 = "CLS:c"; pal_mod.markerWrite(cls_m);
+    var cls_b: [10]u8 = undefined;
+    var cls_l = itoa_mod.itoa(plen, cls_b[0..]);
+    var cls_s: usize = @intCast(usize, 9) - @intCast(usize, cls_l);
+    pal_mod.markerWrite(cls_b[cls_s..@intCast(usize, 9)]);
+    var cls_nl: []const u8 = "\n"; pal_mod.markerWrite(cls_nl);
+    ti = 0;
+    while (ti < tl) : (ti += 1) {
+        if (pointer_only[ti] != @intCast(u8, 0)) {
+            var pfx: []const u8 = "CLS:p"; pal_mod.markerWrite(pfx);
+        } else {
+            var pfx: []const u8 = "CLS:v"; pal_mod.markerWrite(pfx);
+        }
+        var ctb: [10]u8 = undefined;
+        var ctl = itoa_mod.itoa(@intCast(u32, ti), ctb[0..]);
+        var cts: usize = @intCast(usize, 9) - @intCast(usize, ctl);
+        pal_mod.markerWrite(ctb[cts..@intCast(usize, 9)]);
+        var ck: []const u8 = "k";
+        pal_mod.markerWrite(ck);
+        var ckb: [10]u8 = undefined;
+        var ckl = itoa_mod.itoa(@intCast(u32, @enumToInt(self.registry.types_items[ti].kind)), ckb[0..]);
+        var cks: usize = @intCast(usize, 9) - @intCast(usize, ckl);
+        pal_mod.markerWrite(ckb[cks..@intCast(usize, 9)]);
+        var cnl: []const u8 = "\n"; pal_mod.markerWrite(cnl);
+    }
+
+    return ClassificationResult{ .ids = ids, .len = plen };
 }
 
 pub fn typeResolverGetSorted(self: *TypeResolver) []u32 {
