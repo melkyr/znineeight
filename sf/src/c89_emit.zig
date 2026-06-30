@@ -1275,11 +1275,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
      if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
-    if (is_main == @intCast(u8, 1) and lir_fn.is_pub == @intCast(u8, 1)) {
-        var mn: []const u8 = "main";
-        fn_name = mn;
-        lir_fn.return_type = type_mod.TYPE_I32;
-    }
+
     var sc: []const u8 = "/* ";
     bufferedWriterWrite(&emitter.writer, sc);
     bufferedWriterWrite(&emitter.writer, orig);

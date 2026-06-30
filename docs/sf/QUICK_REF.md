@@ -366,3 +366,90 @@ Trigger the requesting-code-review skill when auditing completed changes.
 **Subagent review (build mode):** Dispatch general-purpose subagent with `BASE_SHA`/`HEAD_SHA`, fill template from `code-reviewer.md`. Reviewer inspects `git diff BASE..HEAD`, returns Strengths + Issues + Assessment.
 
 **Key principles:** Review early/often. Fix Critical before proceeding, Important before merge. Categorize by actual severity — not everything is Critical. Acknowledge strengths before listing issues.
+
+## zig0 Runtime h/c Architecture
+
+The zig0 bootstrap compiler has a two-tier runtime that supports **both**
+the compilation of zig1 itself (zig0 → C89 → gcc link) and the programs
+compiled *by* zig1 (zig1 → C89 → gcc link). Understanding this split is
+critical when adding new runtime functions or debugging linker errors.
+
+### File Layout
+
+| Path | Role | Used by |
+|------|------|---------|
+| `src/include/zig_compat.h` | C89 type definitions (`i64`, `u64`, `ZIG_INLINE`, `ZIG_UNUSED`) | All C89 output |
+| `src/include/zig_runtime.h` | **Inline** bootstrap helpers (`__bootstrap_X_from_Y` casts, panic, print) | All generated `.c` files |
+| `src/runtime/zig_runtime.c` | **Non-inline** runtime (arena alloc, sleep, platform console) | Linked at build |
+| `$OUT/zig_runtime.h` | **Copy** of `src/include/zig_runtime.h`, emitted by zig0 via `--header-priority-include` | gcc `#include` resolution |
+| `$OUT/zig_runtime.c` | **Generated** runtime .c by zig0 (includes the header) | Linked into zig1 binary |
+
+### How zig0 Copies Headers
+
+zig0 `--header-priority-include` copies key headers from `src/include/`
+into the output directory alongside the generated `.c` files. This is why
+the gcc link command (`gcc $OUT/*.c`) works without `-I` — each `.c` can
+`#include "zig_runtime.h"` relative to its own directory.
+
+To make a new header available, place it in `src/include/` — zig0 copies
+all `.h` files from that directory.
+
+### `__bootstrap_X_from_Y` Cast Helpers (Inlines)
+
+Zig0's `@intCast(u32, i64_expr)`, `@intCast(u8, usize_expr)`, etc.
+emit calls to `__bootstrap_DSTTYPE_from_SRCTYPE(source)`. These are
+**inline** functions defined in `src/include/zig_runtime.h` (lines 99–180).
+They use `ZIG_INLINE ZIG_UNUSED` → `static` in C89, so each generated
+`.c` file gets its own copy — **no linker symbol needed**.
+
+**Pattern** (all helpers follow this):
+```c
+ZIG_INLINE ZIG_UNUSED u32 __bootstrap_u32_from_i64(i64 x) {
+    if (x < 0 || x > (i64)4294967295U) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (u32)x;
+}
+```
+
+**Win9x safety:** These functions are **pure arithmetic + panic call**.
+They use no C standard library (no `stdio.h`, `string.h`, `stdlib.h`,
+`malloc`, etc.). The types (`i64`, `u64`, `u32`, etc.) are defined
+per-compiler in `zig_compat.h`:
+- **MSC (win9x):** `typedef unsigned __int64 u64`
+- **Watcom:** `typedef unsigned long long u64`
+- **gcc:** `typedef unsigned long long u64`
+
+The `ZIG_INLINE` macro expands to `static __inline` (MSC), `static __inline__`
+(gcc), or `static` (other). The `ZIG_UNUSED` macro suppresses
+`-Wunused-function`.
+
+### `src/runtime/zig_runtime.c` (Non-Inline Symbols)
+
+For functions that **cannot** be inline (arena alloc, sleep, platform I/O),
+implementations live in `src/runtime/zig_runtime.c` as regular linkable symbols.
+This file is compiled separately and linked into the final binary. Note that
+**not** all bootstrap helpers need a non-inline version — the inline helpers
+in the header are sufficient for most casts.
+
+Some helpers exist in BOTH places (inline header + .c definition) as a
+safety fallback — see `__bootstrap_u16_from_usize` (line 286 of the .c).
+
+### Adding a New Runtime Definition
+
+**For a new `@intCast` target pair (inline)**:
+1. Add to `src/include/zig_runtime.h` following the pattern:
+```c
+ZIG_INLINE ZIG_UNUSED DST_T __bootstrap_DST_from_SRC(SRC_T x) {
+    if (<range check>) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (DST_T)x;
+}
+```
+2. Rebuild zig1 — zig0 copies the updated header to `$OUT`.
+
+**For a non-inline function (linkable symbol)**:
+1. Declare in `src/include/zig_runtime.h` (as `extern` or `ZIG_INLINE`).
+2. Define in `src/runtime/zig_runtime.c` as a regular C function.
+3. Ensure the zig1 build or zig0 runtime emission includes the `.c`.
+
+**Common link error:** `undefined reference to '__bootstrap_U64_from_I64'`
+→ This exact helper is **missing** from `src/include/zig_runtime.h`.
+Add it per the inline pattern above. (Added 2026-06-29 for enum(u8) support.)
