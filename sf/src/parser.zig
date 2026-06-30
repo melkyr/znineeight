@@ -1424,7 +1424,12 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
         _ = try parserExpect(self, TokenKind.rparen);
     }
 
-    var body = try parserParseBlock(self);
+    var body: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        body = try parserParseBlock(self);
+    } else {
+        body = try parserParseExprPrec(self, Prec.assignment);
+    }
     var end_pos: u32 = undefined;
     if (self.pos > 0) {
         var last = self.tokens_ptr[self.pos - 1];
@@ -1469,7 +1474,12 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
         _ = try parserExpect(self, TokenKind.pipe);
     }
 
-    var body = try parserParseBlock(self);
+    var body: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        body = try parserParseBlock(self);
+    } else {
+        body = try parserParseExprPrec(self, Prec.assignment);
+    }
     var end_pos: u32 = undefined;
     if (self.pos > 0) {
         var last = self.tokens_ptr[self.pos - 1];
