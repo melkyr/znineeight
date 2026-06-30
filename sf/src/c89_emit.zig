@@ -391,6 +391,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      dl_hoisted: u8,
      emitted_type_set: U32ToU32Map,
      fwd_decl_set: U32ToU32Map,
+     pointer_only_map: U32ToU32Map,
      dedup_names: [128]u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
@@ -416,6 +417,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .dl_hoisted = @intCast(u8, 0),
          .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
          .fwd_decl_set = hash_mod.u32ToU32MapInit(alloc),
+         .pointer_only_map = hash_mod.u32ToU32MapInit(alloc),
           .dedup_names = undefined,
           .dedup_count = @intCast(u32, 0),
            .fl_name_ids = undefined,
@@ -806,11 +808,54 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
             }
         }
     }
+    // Sub-pass 2a: emit pointer-only types first
+    // (fields all through pointers/slices/wrappers — forward decls sufficient)
     tsi = @intCast(usize, 0);
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
+        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
         var ty = reg.types_items[@intCast(usize, tid)];
-        var e2m: []const u8 = "E2:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nm: []const u8 = "n"; pal.markerWrite(e2nm); var e2nb: [10]u8 = undefined; var e2nl3 = itoa_mod.itoa(ty.name_id, e2nb[0..]); var e2ns: usize = @intCast(usize, 9) - @intCast(usize, e2nl3); pal.markerWrite(e2nb[e2ns..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
+        var e2m: []const u8 = "E2A:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
+        if (ty.kind == TypeKind.void_type) continue;
+        if (ty.kind == TypeKind.bool_type) continue;
+        if (ty.kind == TypeKind.noreturn_type) continue;
+        if (ty.kind == TypeKind.null_type) continue;
+        if (ty.kind == TypeKind.undefined_type) continue;
+        if (ty.kind == TypeKind.integer_literal_type) continue;
+        if (ty.kind == TypeKind.type_type) continue;
+        if (ty.kind == TypeKind.module_type) continue;
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (ty.kind != TypeKind.slice_type and
+                ty.kind != TypeKind.optional_type and
+                ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.tagged_union_type and
+                ty.kind != TypeKind.union_type and
+                ty.kind != TypeKind.array_type and
+                ty.kind != TypeKind.fn_type)
+            {
+                var est_m: []const u8 = "ESTA:t"; pal.markerWrite(est_m); var est_b: [10]u8 = undefined; var est_l = itoa_mod.itoa(tid, est_b[0..]); var est_s: usize = @intCast(usize, 9) - @intCast(usize, est_l); pal.markerWrite(est_b[est_s..@intCast(usize, 9)]); var est_km: []const u8 = "k"; pal.markerWrite(est_km); var est_kb: [10]u8 = undefined; var est_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), est_kb[0..]); var est_ks: usize = @intCast(usize, 9) - @intCast(usize, est_kl); pal.markerWrite(est_kb[est_ks..@intCast(usize, 9)]); var est_nm: []const u8 = "n"; pal.markerWrite(est_nm); var est_nb: [10]u8 = undefined; var est_nl2 = itoa_mod.itoa(ty.name_id, est_nb[0..]); var est_ns: usize = @intCast(usize, 9) - @intCast(usize, est_nl2); pal.markerWrite(est_nb[est_ns..@intCast(usize, 9)]); var est_nl: []const u8 = "\n"; pal.markerWrite(est_nl);
+                continue;
+            }
+        }
+        var cname = getCTypeName(reg, emitter.mangler, tid);
+        var dedup_key: u32 = @intCast(u32, 0);
+        var h_ci: usize = @intCast(usize, 0);
+        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
+            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+        }
+        if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key)) |_| continue;
+        hash_mod.u32ToU32MapPut(&emitter.emitted_type_set, dedup_key, @intCast(u32, 1));
+        emitTypeDefinition(emitter, tid);
+    }
+
+    // Sub-pass 2b: emit value-embedding types
+    // (types that embed field types by value — need dependents defined first)
+    tsi = @intCast(usize, 0);
+    while (tsi < reg.types_len) : (tsi += 1) {
+        var tid = sorted[tsi];
+        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) != null) continue;
+        var ty = reg.types_items[@intCast(usize, tid)];
+        var e2m: []const u8 = "E2B:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nm: []const u8 = "n"; pal.markerWrite(e2nm); var e2nb: [10]u8 = undefined; var e2nl3 = itoa_mod.itoa(ty.name_id, e2nb[0..]); var e2ns: usize = @intCast(usize, 9) - @intCast(usize, e2nl3); pal.markerWrite(e2nb[e2ns..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
         if (ty.kind == TypeKind.tagged_union_type) {
             var d2m: []const u8 = "D2:t"; pal.markerWrite(d2m);
             var d2b: [20]u8 = undefined; var d2l = itoa_mod.itoa(tid, d2b[0..]); var d2s: usize = @intCast(usize, 19) - @intCast(usize, d2l); pal.markerWrite(d2b[d2s..@intCast(usize, 19)]);
@@ -837,7 +882,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
                 ty.kind != TypeKind.array_type and
                 ty.kind != TypeKind.fn_type)
             {
-                var est_m: []const u8 = "EST:t"; pal.markerWrite(est_m); var est_b: [10]u8 = undefined; var est_l = itoa_mod.itoa(tid, est_b[0..]); var est_s: usize = @intCast(usize, 9) - @intCast(usize, est_l); pal.markerWrite(est_b[est_s..@intCast(usize, 9)]); var est_km: []const u8 = "k"; pal.markerWrite(est_km); var est_kb: [10]u8 = undefined; var est_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), est_kb[0..]); var est_ks: usize = @intCast(usize, 9) - @intCast(usize, est_kl); pal.markerWrite(est_kb[est_ks..@intCast(usize, 9)]); var est_nm: []const u8 = "n"; pal.markerWrite(est_nm); var est_nb: [10]u8 = undefined; var est_nl2 = itoa_mod.itoa(ty.name_id, est_nb[0..]); var est_ns: usize = @intCast(usize, 9) - @intCast(usize, est_nl2); pal.markerWrite(est_nb[est_ns..@intCast(usize, 9)]); var est_nl: []const u8 = "\n"; pal.markerWrite(est_nl);
+                var est_m: []const u8 = "ESTB:t"; pal.markerWrite(est_m); var est_b: [10]u8 = undefined; var est_l = itoa_mod.itoa(tid, est_b[0..]); var est_s: usize = @intCast(usize, 9) - @intCast(usize, est_l); pal.markerWrite(est_b[est_s..@intCast(usize, 9)]); var est_km: []const u8 = "k"; pal.markerWrite(est_km); var est_kb: [10]u8 = undefined; var est_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), est_kb[0..]); var est_ks: usize = @intCast(usize, 9) - @intCast(usize, est_kl); pal.markerWrite(est_kb[est_ks..@intCast(usize, 9)]); var est_nm: []const u8 = "n"; pal.markerWrite(est_nm); var est_nb: [10]u8 = undefined; var est_nl2 = itoa_mod.itoa(ty.name_id, est_nb[0..]); var est_ns: usize = @intCast(usize, 9) - @intCast(usize, est_nl2); pal.markerWrite(est_nb[est_ns..@intCast(usize, 9)]); var est_nl: []const u8 = "\n"; pal.markerWrite(est_nl);
                 continue;
             }
         }
@@ -1391,7 +1436,11 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
     bufferedWriterWrite(&emitter.writer, s);
 }
 
-pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
+pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
+    var poi: u32 = @intCast(u32, 0);
+    while (poi < ptr_only_len) : (poi += 1) {
+        hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ptr_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
+    }
     emitSpecialTypes(emitter, emitter.registry);
     emitModuleHeader(emitter, name, fns);
     var i: usize = @intCast(usize, 0);
