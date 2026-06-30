@@ -1430,6 +1430,9 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
     } else {
         body = try parserParseExprPrec(self, Prec.assignment);
     }
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
+    }
     var end_pos: u32 = undefined;
     if (self.pos > 0) {
         var last = self.tokens_ptr[self.pos - 1];
@@ -1479,6 +1482,9 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
         body = try parserParseBlock(self);
     } else {
         body = try parserParseExprPrec(self, Prec.assignment);
+    }
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
     }
     var end_pos: u32 = undefined;
     if (self.pos > 0) {
