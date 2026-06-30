@@ -530,6 +530,7 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
 }
 
 fn growWpEdges(perm_a: *Sand, wp_to_ptr: *[*]u32, wp_next_ptr: *[*]u32, cap_ptr: *usize, count: u32) void {
+    if (@intCast(usize, count) < cap_ptr.*) return;
     var old_cap = cap_ptr.*;
     var new_cap: usize = old_cap * 2;
     var new_to_raw = alloc_mod.sandAlloc(perm_a, 4 * new_cap, 4) catch unreachable;
