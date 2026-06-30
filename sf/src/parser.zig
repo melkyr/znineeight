@@ -113,11 +113,43 @@ pub fn parserAdvance(self: *Parser) Token {
     return tok;
 }
 
+fn tokenKindLabel(kind: TokenKind) []const u8 {
+    if (kind == TokenKind.semicolon) { var s: []const u8 = "';'"; return s; }
+    if (kind == TokenKind.lparen) { var s: []const u8 = "'('"; return s; }
+    if (kind == TokenKind.rparen) { var s: []const u8 = "')'"; return s; }
+    if (kind == TokenKind.lbrace) { var s: []const u8 = "'{'"; return s; }
+    if (kind == TokenKind.rbrace) { var s: []const u8 = "'}'"; return s; }
+    if (kind == TokenKind.lbracket) { var s: []const u8 = "'['"; return s; }
+    if (kind == TokenKind.rbracket) { var s: []const u8 = "']'"; return s; }
+    if (kind == TokenKind.comma) { var s: []const u8 = "','"; return s; }
+    if (kind == TokenKind.dot) { var s: []const u8 = "'.'"; return s; }
+    if (kind == TokenKind.colon) { var s: []const u8 = "':'"; return s; }
+    if (kind == TokenKind.pipe) { var s: []const u8 = "'|'"; return s; }
+    if (kind == TokenKind.identifier) { var s: []const u8 = "identifier"; return s; }
+    if (kind == TokenKind.string_literal) { var s: []const u8 = "string literal"; return s; }
+    if (kind == TokenKind.integer_literal) { var s: []const u8 = "integer literal"; return s; }
+    if (kind == TokenKind.kw_fn) { var s: []const u8 = "'fn'"; return s; }
+    if (kind == TokenKind.kw_while) { var s: []const u8 = "'while'"; return s; }
+    if (kind == TokenKind.kw_if) { var s: []const u8 = "'if'"; return s; }
+    if (kind == TokenKind.kw_else) { var s: []const u8 = "'else'"; return s; }
+    if (kind == TokenKind.kw_return) { var s: []const u8 = "'return'"; return s; }
+    if (kind == TokenKind.kw_const) { var s: []const u8 = "'const'"; return s; }
+    if (kind == TokenKind.kw_var) { var s: []const u8 = "'var'"; return s; }
+    if (kind == TokenKind.kw_pub) { var s: []const u8 = "'pub'"; return s; }
+    if (kind == TokenKind.kw_extern) { var s: []const u8 = "'extern'"; return s; }
+    var fallback: []const u8 = "token"; return fallback;
+}
+
 pub fn parserExpect(self: *Parser, kind: TokenKind) ParserError!ParseToken {
     var tok = parserPeek(self);
     if (tok.kind != kind) {
-        var expect_msg: []const u8 = "bad tok";
-        parserAddError(self, tok, expect_msg);
+        var exp_s: []const u8 = "expected ";
+        var exp_lab = tokenKindLabel(kind);
+        var fnd_s: []const u8 = " but found ";
+        var fnd_lab = tokenKindLabel(tok.kind);
+        var parts: [4][]const u8 = [4][]const u8{exp_s, exp_lab, fnd_s, fnd_lab};
+        var msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &parts[0], @intCast(u32, 4));
+        parserAddError(self, tok, msg);
         return error.UnexpectedToken;
     }
     // consume via advanceTok and return ParseToken
@@ -233,7 +265,7 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
         else => {},
     }
     if (found == 0) {
-        var add_msg: []const u8 = "bad op";
+        var add_msg: []const u8 = "invalid token in expression";
         parserAddError(self, tok, add_msg);
         return error.UnexpectedToken;
     }
@@ -290,7 +322,7 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_break) return parserParseBreakExpr(self);
     if (tok.kind == TokenKind.kw_continue) return parserParseContinueExpr(self);
     if (tok.kind == TokenKind.lbrace) return parserParseBlock(self);
-    var primary_msg: []const u8 = "bad expr";
+    var primary_msg: []const u8 = "expected expression";
     parserAddError(self, tok, primary_msg);
     return error.UnexpectedToken;
 }

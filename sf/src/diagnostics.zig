@@ -329,9 +329,28 @@ pub fn diagnosticCollectorFlushAndExit(self: *DiagnosticCollector, exit_code: u3
     pal.exit(@intCast(u8, exit_code));
 }
 
+pub fn diagnosticBuilderMakeMsg(interner: *StringInterner, parts: [*]const []const u8, count: u32) []const u8 {
+    var total: usize = 0;
+    var ci: u32 = 0;
+    while (ci < count) : (ci += 1) { total += parts[@intCast(usize, ci)].len; }
+    var raw = alloc_mod.sandAlloc(interner.allocator, total, 1) catch {
+        var fallback: []const u8 = "diagnostic message too long";
+        return fallback;
+    };
+    var buf = raw[0..total];
+    var pos: usize = 0;
+    ci = 0;
+    while (ci < count) : (ci += 1) {
+        var part = parts[@intCast(usize, ci)];
+        var pi: usize = 0;
+        while (pi < part.len) : (pi += 1) { buf[pos] = part[pi]; pos += 1; }
+    }
+    var sid = interner_mod.stringInternerIntern(interner, buf);
+    return interner_mod.stringInternerGet(interner, sid);
+}
 pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
     if (self.diagnostics.len == 0) return;
-    var pq: []const u8 = "PA_begin\n"; pal.stderr_write(pq);
+
     var diags = diagnosticArrayListGetSlice(self.diagnostics);
     sortDiagnostics(diags);
     var i: usize = 0;
@@ -358,7 +377,7 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         var loc = sm_mod.sourceManagerGetLocation(self.source_manager, d.file_id, d.span_start);
         var fname = sm_mod.sourceManagerGetFileName(self.source_manager, d.file_id);
         writeStr(fname);
-        var pf: []const u8 = "PA_fname\n"; pal.stderr_write(pf);
+
         var col_s: []const u8 = ":";
         writeStr(col_s);
         var line_buf: [16]u8 = undefined;
@@ -459,5 +478,5 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         }
         i += 1;
     }
-    var pe: []const u8 = "PA_end\n"; pal.stderr_write(pe);
+
 }
