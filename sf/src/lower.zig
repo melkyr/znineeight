@@ -2997,7 +2997,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 }
                 emitInst(self, LirInst{ .ret = val });
             } else {
-                emitInst(self, LirInst{ .ret_void = {} });
+                emitValuelessReturn(self);
             }
             self.block_terminated = @intCast(u8, 1);
         }
@@ -3504,6 +3504,19 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
     }
 }
 
+fn emitValuelessReturn(self: *LirLowerer) void {
+    var rty = self.ctx.registry.types_items[@intCast(usize, self.func.return_type)];
+    if (rty.kind == type_mod.TypeKind.error_union_type) {
+        var ztmp = nextTemp(self, type_mod.TYPE_I32);
+        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ztmp } });
+        var eures = nextTemp(self, self.func.return_type);
+        emitInst(self, LirInst{ .wrap_error_ok = .{ .value = ztmp, .result = eures, .type_id = self.func.return_type } });
+        emitInst(self, LirInst{ .ret = eures });
+    } else {
+        emitInst(self, LirInst{ .ret_void = {} });
+    }
+}
+
 pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     var evcap = self.ctx.enum_value_table.capacity; var evcnt = self.ctx.enum_value_table.count;
     var evcap_buf: [20]u8 = undefined; var evcnt_buf: [20]u8 = undefined;
@@ -3579,7 +3592,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     }
     expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
     if (self.block_terminated == @intCast(u8, 0)) {
-        emitInst(self, LirInst{ .ret_void = {} });
+        emitValuelessReturn(self);
     }
     hoistTemps(self);
     var hi: usize = 0;
