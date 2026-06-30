@@ -100,6 +100,8 @@ pub const CompilerContext = struct {
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
     comptime_values: hash_mod.U32ToU32Map,
+    pointer_only_ids: [*]u32,
+    pointer_only_len: u32,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -174,6 +176,8 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
         .comptime_values = comptime_values,
+        .pointer_only_ids = undefined,
+        .pointer_only_len = @intCast(u32, 0),
     };
     runCompiler(&ctx);
 }
@@ -314,6 +318,9 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
+    var ptr_grp = type_resolver.classifyTypeEmissionGroups(&tr, &ctx.alloc.permanent);
+    ctx.pointer_only_ids = ptr_grp.ids;
+    ctx.pointer_only_len = ptr_grp.len;
     if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
         var tr2 = ctx.store.nodes.items[@intCast(usize, mods[0].ast_root)];
         if (tr2.kind == AstKind.module_root) {
