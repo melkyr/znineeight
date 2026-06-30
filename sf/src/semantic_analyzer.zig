@@ -849,8 +849,9 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
-            var swec_m: []const u8 = "ICE: switch else-prong capture (else => |x|) not fully supported yet; halting to avoid miscompilation\n"; pal_mod.stderr_write(swec_m);
-            @panic("switch else-prong capture (else => |x|) not fully supported yet; halting to avoid miscompilation");
+            var swec_msg: []const u8 = "switch else-prong capture (else => |capture|) is not supported";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3001), @intCast(u32, 0), node_idx, node_idx, swec_msg);
+            return type_mod.TYPE_VOID;
         }
         var pct = self.current_switch_cond_tu; var pp = prong.payload;
         var pct_m2: []const u8 = "PCT:C"; pal_mod.markerWriteInt(pct_m2, pct);
@@ -1126,7 +1127,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
      } else {
           var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
           var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
-          @panic("resolveExpr: unhandled node kind");
+           var unr_msg: []const u8 = "internal error: unhandled node kind in type resolution";
+           _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3002), @intCast(u32, 0), node_idx, node_idx, unr_msg);
+           return type_mod.TYPE_VOID;
      }
 
     var stx_m: []const u8 = "STX:n"; pal_mod.markerWriteInt(stx_m, node_idx);
