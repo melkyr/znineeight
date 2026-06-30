@@ -642,28 +642,28 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (type_mod.isValueDependency(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
         }
     } else if (ty.kind == TypeKind.tagged_union_type) {
         var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (type_mod.isValueDependency(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
         }
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) c += 1;
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) c += 1;
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
     } else if (ty.kind == TypeKind.slice_type) {
         var et = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
     } else if (ty.kind == TypeKind.ptr_type) {
         var pt = reg.ptr_items[@intCast(usize, ty.payload_idx)].base;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) c += 1;
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) c += 1;
     } else if (ty.kind == TypeKind.error_union_type) {
         var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
     }
     return c;
 }
@@ -676,7 +676,7 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+            if (type_mod.isValueDependency(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
                 tgt[@intCast(usize, off)] = ft; off += 1;
             }
         }
@@ -685,31 +685,31 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+            if (type_mod.isValueDependency(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
                 tgt[@intCast(usize, off)] = ft; off += 1;
             }
         }
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
             tgt[@intCast(usize, off)] = tp.tag_type; off += 1;
         }
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
             tgt[@intCast(usize, off)] = et; off += 1;
         }
     } else if (ty.kind == TypeKind.slice_type) {
         var et = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
             tgt[@intCast(usize, off)] = et; off += 1;
         }
     } else if (ty.kind == TypeKind.ptr_type) {
         var pt = reg.ptr_items[@intCast(usize, ty.payload_idx)].base;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) {
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, pt)].kind) and pt != ti) {
             tgt[@intCast(usize, off)] = pt; off += 1;
         }
     } else if (ty.kind == TypeKind.error_union_type) {
         var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
+        if (type_mod.isValueDependency(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
             tgt[@intCast(usize, off)] = eup; off += 1;
         }
     }
@@ -717,7 +717,7 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
 
 fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
     var ty = reg.types_items[@intCast(usize, ti)];
-    if (tstEmitPrimitiveKind(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
+    if (!type_mod.isValueDependency(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
     if (ty.kind == TypeKind.struct_type) {
         var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
