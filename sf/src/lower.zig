@@ -240,6 +240,8 @@ pub const LirLowerer = struct {
     _fn_ret_type: u32,
     _ctx_node_idx: u32,
     _ctx_node_kind: u32,
+    capture_shadow: hash_mod.U32ToU32Map,
+    synth_name_counter: u32,
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
@@ -284,6 +286,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         ._fn_ret_type = @intCast(u32, 0),
         ._ctx_node_idx = @intCast(u32, 0),
         ._ctx_node_kind = @intCast(u32, 0),
+        .capture_shadow = hash_mod.u32ToU32MapInit(alloc),
+        .synth_name_counter = @intCast(u32, 1),
     };
 }
 
@@ -464,6 +468,34 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     var adc_tb: [10]u8 = undefined; var adc_tl = itoa_mod.itoa(type_id, adc_tb[0..]); var adc_ts: usize = @intCast(usize, 9) - @intCast(usize, adc_tl); pal.markerWrite(adc_tb[adc_ts..@intCast(usize, 9)]);
     var adc_nl2: []const u8 = "\n"; pal.markerWrite(adc_nl2);
 }
+fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_id: u32) u32 {
+    var exist_temp = findLocalTemp(self, capture_name);
+    if (exist_temp != @intCast(u32, 0)) {
+        var eli: usize = 0;
+        while (eli < self.local_decl_count) : (eli += 1) {
+            if (self.local_decl_names[eli] == capture_name) {
+                if (self.local_decl_types[eli] != variant_type_id) {
+                    var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
+                    var name_buf: [96]u8 = undefined;
+                    var np: usize = @intCast(usize, 0);
+                    while (np < orig_str.len and np < @intCast(usize, 95)) : (np += 1) { name_buf[np] = orig_str[np]; }
+                    name_buf[np] = @intCast(u8, '_'); np += 1;
+                    var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
+                    var scb: [16]u8 = undefined; var scl = itoa_mod.itoa(sc, scb[0..]);
+                    var sc_start: usize = @intCast(usize, 15) - @intCast(usize, scl);
+                    var sci: usize = sc_start;
+                    while (sci < sc_start + @intCast(usize, scl) and np < @intCast(usize, 95)) : (sci += 1) { name_buf[np] = scb[sci]; np += 1; }
+                    var syn_id = si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
+                    _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, capture_name, syn_id);
+                    return syn_id;
+                }
+                break;
+            }
+        }
+    }
+    return capture_name;
+}
+
 
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
@@ -1096,6 +1128,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, node.payload)];
+        var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
+        if (shadow) |syn| { name_id = syn; }
         if (self.ctx.has_symbols != @intCast(u8, 0)) {
          var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
          if (sym) |s| {
@@ -2260,6 +2294,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var ev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec[0]);
                         if (ev3) |idx| {
                         var fe: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                        capture_name = maybeDisambiguateCapture(self, capture_name, fe.type_id);
                         var payload_temp = nextTemp(self, fe.type_id);
                         _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
                         emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = @intCast(u32, 1), .result = payload_temp } });
@@ -2299,6 +2334,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result_temp, .src = prong_val } });
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
+            self.capture_shadow.count = @intCast(usize, 0);
         }
         self.current_bb = exit_bb;
         return result_temp;
@@ -2960,7 +2996,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                          var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec2[0]);
                          if (ev4) |idx| {
                              var fe2: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp2.fields_start) + @intCast(usize, idx)];
-                             var payload_temp2 = nextTemp(self, fe2.type_id);
+                              capture_name = maybeDisambiguateCapture(self, capture_name, fe2.type_id);
+                              var payload_temp2 = nextTemp(self, fe2.type_id);
                              _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
                              emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = @intCast(u32, 1), .result = payload_temp2 } });
                               addLocalDecl(self, capture_name, fe2.type_id, payload_temp2);
@@ -2977,6 +3014,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
+            self.capture_shadow.count = @intCast(usize, 0);
         }
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
