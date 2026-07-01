@@ -1135,14 +1135,16 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var stx_m: []const u8 = "STX:n"; pal_mod.markerWriteInt(stx_m, node_idx);
     var stx_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var stx_km: []const u8 = "STX:k"; pal_mod.markerWriteInt(stx_km, stx_kv);
     var stx_rm: []const u8 = "STX:r"; pal_mod.markerWriteInt(stx_rm, result);
-    if (result != type_mod.TYPE_VOID) {
-         var a4_nm: []const u8 = "A4:N"; pal_mod.markerWriteInt(a4_nm, node_idx);
-         var a4_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var a4_km: []const u8 = "A4:K"; pal_mod.markerWriteInt(a4_km, a4_kv);
-         var a4_rm: []const u8 = "A4:R"; pal_mod.markerWriteInt(a4_rm, result);
-         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
-         var stb_nm: []const u8 = "STB:N"; pal_mod.markerWriteInt(stb_nm, node_idx);
-         var stb_rm: []const u8 = "STB:R"; pal_mod.markerWriteInt(stb_rm, result);
-     }
+     if (result != type_mod.TYPE_VOID) {
+          var a4_nm: []const u8 = "A4:N"; pal_mod.markerWriteInt(a4_nm, node_idx);
+          var a4_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var a4_km: []const u8 = "A4:K"; pal_mod.markerWriteInt(a4_km, a4_kv);
+          var a4_rm: []const u8 = "A4:R"; pal_mod.markerWriteInt(a4_rm, result);
+          rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+          var stb_nm: []const u8 = "STB:N"; pal_mod.markerWriteInt(stb_nm, node_idx);
+          var stb_rm: []const u8 = "STB:R"; pal_mod.markerWriteInt(stb_rm, result);
+      } else {
+          var vfg_m: []const u8 = "VFLOW:guard\n"; pal_mod.markerWrite(vfg_m);
+      }
     return result;
 }
 
@@ -1342,6 +1344,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
                 if (decl_type == type_mod.TYPE_VOID) {
                     var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
+                    var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);
                     decl_type = @intCast(u32, type_mod.TYPE_UNDEFINED);
                 }
                 rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);

@@ -812,7 +812,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
         if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
         var ty = reg.types_items[@intCast(usize, tid)];
         var e2m: []const u8 = "E2A:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
-        if (ty.kind == TypeKind.void_type) continue;
+        if (ty.kind == TypeKind.void_type) { var vfs_m: []const u8 = "VFLOW:spv\n"; pal.markerWrite(vfs_m); continue; }
         if (ty.kind == TypeKind.bool_type) continue;
         if (ty.kind == TypeKind.noreturn_type) continue;
         if (ty.kind == TypeKind.null_type) continue;
@@ -861,7 +861,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
             var d2mb: [20]u8 = undefined; var d2ml = itoa_mod.itoa(ty.module_id, d2mb[0..]); var d2ms: usize = @intCast(usize, 19) - @intCast(usize, d2ml); pal.markerWrite(d2mb[d2ms..@intCast(usize, 19)]);
             var d2nl2: []const u8 = "\n"; pal.markerWrite(d2nl2);
         }
-        if (ty.kind == TypeKind.void_type) continue;
+        if (ty.kind == TypeKind.void_type) { var vfs_m: []const u8 = "VFLOW:spv\n"; pal.markerWrite(vfs_m); continue; }
         if (ty.kind == TypeKind.bool_type) continue;
         if (ty.kind == TypeKind.noreturn_type) continue;
         if (ty.kind == TypeKind.null_type) continue;
@@ -1991,14 +1991,16 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                      eff_type = wt;
                  }
              }
-             if (eff_type == @intCast(u32, 1)) {
-                 var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
-             }
+              if (eff_type == @intCast(u32, 1)) {
+                  var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
+                  var vfeh_m: []const u8 = "VFLOW:ehdv\n"; pal.markerWrite(vfeh_m);
+              }
          } else {
              if (wf2 == @intCast(u8, 1)) { var wt2 = written_type[@intCast(usize, i)]; }
-             if (td.type_id == @intCast(u32, 1)) {
-                 var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
-             }
+              if (td.type_id == @intCast(u32, 1)) {
+                  var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
+                  var vfeh_m: []const u8 = "VFLOW:ehdd\n"; pal.markerWrite(vfeh_m);
+              }
          }
         var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
           var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
@@ -2922,8 +2924,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
              if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
              var dc2_nm: []const u8 = "DC2:N"; pal.markerWriteInt(dc2_nm, c.name_id);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-             var dcr_m: []const u8 = "DC2:r"; pal.markerWriteInt(dcr_m, c.result);
-              if (c.return_type != type_mod.TYPE_VOID) {
+              var dcr_m: []const u8 = "DC2:r"; pal.markerWriteInt(dcr_m, c.result);
+               var vfcd_m: []const u8 = "VFLOW:cdv\n"; pal.markerWrite(vfcd_m);
+               if (c.return_type != type_mod.TYPE_VOID) {
                 var result = resolveTempName(emitter, c.result);
                 bufferedWriterWrite(&emitter.writer, result);
                 var s: []const u8 = " = ";

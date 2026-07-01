@@ -321,6 +321,9 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
         var ntp: []const u8 = "t"; pal.markerWrite(ntp);
         var ntpb: [20]u8 = undefined; var ntpl = itoa_mod.itoa(tid, ntpb[0..]); var ntps: usize = @intCast(usize, 19) - @intCast(usize, ntpl); pal.markerWrite(ntpb[ntps..@intCast(usize, 19)]);
         var nnl: []const u8 = " "; pal.markerWrite(nnl);
+        if (type_id == type_mod.TYPE_VOID) {
+            var vfnt_m: []const u8 = "VFLOW:ntv\n"; pal.markerWrite(vfnt_m);
+        }
     }
     if (type_id == @intCast(u32, 1)) {
         var instb_nt_m: []const u8 = "INSTB:ntv\n"; pal.markerWrite(instb_nt_m);
@@ -1566,6 +1569,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 var result: u32 = @intCast(u32, 0);
                 if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
+                    var vffc_m: []const u8 = "VFLOW:fvret\n"; pal.markerWrite(vffc_m);
                     result = nextTemp(self, fp.return_type);
                 }
                  var fnr_rm: []const u8 = "FNR:R"; pal.markerWriteInt(fnr_rm, fp.return_type);
@@ -1748,6 +1752,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                     var result: u32 = @intCast(u32, 0);
                     if (self._fn_ret_type != type_mod.TYPE_VOID and self._fn_ret_type != type_mod.TYPE_UNDEFINED) {
+                        var vflr_m: []const u8 = "VFLOW:lvret\n"; pal.markerWrite(vflr_m);
                         var c3m2: []const u8 = "C3:"; pal.markerWrite(c3m2);
                         var c3b2: [20]u8 = undefined; var c3l2 = itoa_mod.itoa(self._fn_ret_type, c3b2[0..]); var c3s2: usize = @intCast(usize, 19) - @intCast(usize, c3l2); pal.markerWrite(c3b2[c3s2..@intCast(usize, 19)]);
                         var c3nl2: []const u8 = "\n"; pal.markerWrite(c3nl2);
@@ -3139,6 +3144,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         if (decl_type == type_mod.TYPE_VOID) {
             var instb_vd_m: []const u8 = "INSTB:vd\n"; pal.markerWrite(instb_vd_m);
+            var vfvd_m: []const u8 = "VFLOW:vdecl\n"; pal.markerWrite(vfvd_m);
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and decl_type != type_mod.TYPE_VOID) {
             var dty = self.ctx.registry.types_items[@intCast(usize, decl_type)];
@@ -3470,6 +3476,7 @@ pub fn hoistTemps(self: *LirLowerer) void {
         var td = self.hoisted_temps.items[i];
         if (td.type_id == type_mod.TYPE_VOID) {
             var t4u_hs_m: []const u8 = "T4U:hS\n"; pal.markerWrite(t4u_hs_m);
+            var vfht_m: []const u8 = "VFLOW:htv\n"; pal.markerWrite(vfht_m);
         }
         lir_mod.lirInstArrayListAppend(&new_insts, LirInst{
             .decl_temp = .{ .temp = td.temp_id, .type_id = td.type_id },
