@@ -66,13 +66,12 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     if (cli.input_file.len == 0) { printUsage(); return; }
     if (cli.dump_ast) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
-        var perm_sand = compiler_alloc.permanent;
-        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-        var source_man = sm_mod.sourceManagerInit(&perm_sand);
-        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-        compiler_alloc.permanent = perm_sand;
-        token_mod.initKeywordTable(&perm_sand);
-        var source = pal.readFile(cli.input_file, &perm_sand) orelse {
+         var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4);
+         var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
+         var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
+         token_mod.initKeywordTable(&compiler_alloc.permanent);
+         var source = pal.readFile(cli.input_file, &compiler_alloc.permanent) orelse {
+
             const msg: []const u8 = "error: could not read input file\n";
             pal.stderr_write(msg);
             pal.exit(1);

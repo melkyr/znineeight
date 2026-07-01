@@ -112,12 +112,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      if (cli.show_markers) { pal.markersEnabled(@intCast(u32, 1)); }
      if (cli.sanity_test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
-        var perm_sand = compiler_alloc.permanent;
-        var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-        var source_man = sm_mod.sourceManagerInit(&perm_sand);
-        var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-        compiler_alloc.permanent = perm_sand;
-        token_mod.initKeywordTable(&perm_sand);
+         var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4);
+         var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
+         var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
+         token_mod.initKeywordTable(&compiler_alloc.permanent);
+
         lexer_mod.lexerTestSanityCheck();
         return;
     }
@@ -133,22 +132,20 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
-    var perm_sand = compiler_alloc.permanent;
-    var interner = interner_mod.stringInternerInit(&perm_sand, 4);
-    var source_man = sm_mod.sourceManagerInit(&perm_sand);
-    var diag = diag_mod.diagnosticCollectorInit(&perm_sand, &source_man, &interner);
-    diag.max_diagnostics = @intCast(usize, cli.max_errors);
-    compiler_alloc.permanent = perm_sand;
-    token_mod.initKeywordTable(&perm_sand);
-    var name_mangler = nm_mod.nameManglerInit();
-    var mr = mr_mod.moduleRegistryInit(&perm_sand, &interner, &diag);
-    mr_mod.moduleRegistrySetSourceMan(&mr, &source_man);
-    var type_db_buf: [131072]u8 = undefined;
-    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
-    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
-    type_mod.typeRegistryRegisterPrimitives(&typereg);
-    var store = ast_mod.astStoreInit(&compiler_alloc.module);
-    var symbol_reg = sym_mod.symbolRegistryInit(&perm_sand);
+     var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4);
+     var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
+     var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
+     diag.max_diagnostics = @intCast(usize, cli.max_errors);
+     token_mod.initKeywordTable(&compiler_alloc.permanent);
+     var name_mangler = nm_mod.nameManglerInit();
+     var mr = mr_mod.moduleRegistryInit(&compiler_alloc.permanent, &interner, &diag);
+     mr_mod.moduleRegistrySetSourceMan(&mr, &source_man);
+     var type_db_buf: [131072]u8 = undefined;
+     var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+     type_mod.typeRegistryRegisterPrimitives(&typereg);
+     var store = ast_mod.astStoreInit(&compiler_alloc.module);
+     var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
     var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
