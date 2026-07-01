@@ -322,6 +322,9 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
         var ntpb: [20]u8 = undefined; var ntpl = itoa_mod.itoa(tid, ntpb[0..]); var ntps: usize = @intCast(usize, 19) - @intCast(usize, ntpl); pal.markerWrite(ntpb[ntps..@intCast(usize, 19)]);
         var nnl: []const u8 = " "; pal.markerWrite(nnl);
     }
+    if (type_id == @intCast(u32, 1)) {
+        var instb_nt_m: []const u8 = "INSTB:ntv\n"; pal.markerWrite(instb_nt_m);
+    }
     if (type_id >= @intCast(u32, 18)) {
         var nxam: []const u8 = "NXA:t"; pal.markerWrite(nxam);
         var nxatb: [10]u8 = undefined; var nxatl = itoa_mod.itoa(tid, nxatb[0..]); var nxats: usize = @intCast(usize, 9) - @intCast(usize, nxatl); pal.markerWrite(nxatb[nxats..@intCast(usize, 9)]);
@@ -3124,6 +3127,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         } else if (node.child_1 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
             if (rt) |t| { decl_type = t; }
+        }
+        if (decl_type == type_mod.TYPE_VOID) {
+            var instb_vd_m: []const u8 = "INSTB:vd\n"; pal.markerWrite(instb_vd_m);
         }
         if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var dty = self.ctx.registry.types_items[@intCast(usize, decl_type)];

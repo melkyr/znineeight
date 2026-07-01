@@ -1967,19 +1967,25 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
          if (td.temp_id < @intCast(u32, lir_fn.params.len)) { continue; }
         var eff_type: u32 = td.type_id;
         var wf2 = written_flag[@intCast(usize, i)];
-        if (td.type_id == type_mod.TYPE_UNDEFINED) {
-            if (wf2 == @intCast(u8, 1)) {
-                var wt = written_type[@intCast(usize, i)];
-                if (wt != @intCast(u32, 0xFFFFFFFF)) {
-                    eff_type = wt;
-                }
-            }
-        } else {
-            if (wf2 == @intCast(u8, 1)) { var wt2 = written_type[@intCast(usize, i)]; }
-        }
+         if (td.type_id == type_mod.TYPE_UNDEFINED) {
+             if (wf2 == @intCast(u8, 1)) {
+                 var wt = written_type[@intCast(usize, i)];
+                 if (wt != @intCast(u32, 0xFFFFFFFF)) {
+                     eff_type = wt;
+                 }
+             }
+             if (eff_type == @intCast(u32, 1)) {
+                 var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
+             }
+         } else {
+             if (wf2 == @intCast(u8, 1)) { var wt2 = written_type[@intCast(usize, i)]; }
+             if (td.type_id == @intCast(u32, 1)) {
+                 var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
+             }
+         }
         var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
-        var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
-        var tn = mangleTempName(emitter.interner, td.temp_id);
+          var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
+          var tn = mangleTempName(emitter.interner, td.temp_id);
         var dht: []const u8 = "HT:"; pal.markerWrite(dht);
         pal.markerWrite(tn);
         var dsep3: []const u8 = "("; pal.markerWrite(dsep3);
@@ -3289,6 +3295,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                          var p1nb: [10]u8 = undefined; var p1nl = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 9) - @intCast(usize, p1nl); pal.markerWrite(p1nb[p1ns..@intCast(usize, 9)]);
                          var p1nl2: []const u8 = "\n"; pal.markerWrite(p1nl2);
                          var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
+                         if (dl.type_id == @intCast(u32, 1)) {
+                             var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
+                         }
                          var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
                         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                         bufferedWriterWrite(&emitter.writer, dl_type);
