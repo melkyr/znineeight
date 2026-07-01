@@ -1224,6 +1224,9 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
     var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
+    var insta_ot_m: []const u8 = "INSTA:optt"; pal.markerWrite(insta_ot_m);
+    var insta_ot_b: [10]u8 = undefined; var insta_ot_l = itoa_mod.itoa(op.payload, insta_ot_b[0..]); var insta_ot_s: usize = @intCast(usize, 9) - @intCast(usize, insta_ot_l); pal.markerWrite(insta_ot_b[insta_ot_s..@intCast(usize, 9)]);
+    var insta_ot_n: []const u8 = "\n"; pal.markerWrite(insta_ot_n);
     var pay_c_name = getCTypeName(reg, emitter.mangler, op.payload);
     var pay_ty = reg.types_items[@intCast(usize, op.payload)];
     var pay_mid = nameManglerMangle(emitter.mangler, pay_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
@@ -2398,6 +2401,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                                         var rht = emitter.current_fn.hoisted_temps.items[rtj];
                                         if (rht.temp_id == lf.result) { res_ty = rht.type_id; }
                                     }
+                                    var insta_lf_m: []const u8 = "INSTA:tulf"; pal.markerWrite(insta_lf_m);
+                                    var insta_lf_b: [10]u8 = undefined; var insta_lf_l = itoa_mod.itoa(res_ty, insta_lf_b[0..]); var insta_lf_s: usize = @intCast(usize, 9) - @intCast(usize, insta_lf_l); pal.markerWrite(insta_lf_b[insta_lf_s..@intCast(usize, 9)]);
+                                    var insta_lf_n: []const u8 = "\n"; pal.markerWrite(insta_lf_n);
                                     if (res_ty != @intCast(u32, 0xFFFFFFFF) and res_ty != type_mod.TYPE_VOID) {
                                         var tp = emitter.registry.tu_items[@intCast(usize, bty.payload_idx)];
                                         var vfi: usize = @intCast(usize, 0);
@@ -2940,6 +2946,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, close);
         },
         .wrap_optional => |w| {
+            var insta_w_m: []const u8 = "INSTA:optw\n"; pal.markerWrite(insta_w_m);
             var dst = resolveTempName(emitter, w.result);
             var src = resolveTempName(emitter, w.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -3095,6 +3102,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .unwrap_error_payload => |e| {
+            var insta_p_m: []const u8 = "INSTA:eup\n"; pal.markerWrite(insta_p_m);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -3106,6 +3114,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .unwrap_error_code => |e| {
+            var insta_c_m: []const u8 = "INSTA:euc\n"; pal.markerWrite(insta_c_m);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -3189,6 +3198,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .unwrap_optional => |e| {
+            var insta_ou_m: []const u8 = "INSTA:optu\n"; pal.markerWrite(insta_ou_m);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
