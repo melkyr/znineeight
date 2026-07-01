@@ -2745,6 +2745,17 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
         }
         if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+            var cond_t = getTempType(self, cond_temp);
+            if (cond_t != type_mod.TYPE_UNDEFINED) {
+                var cond_ty = self.ctx.registry.types_items[@intCast(usize, cond_t)];
+                if (cond_ty.kind == type_mod.TypeKind.optional_type) {
+                    var has_val = nextTemp(self, type_mod.TYPE_U8);
+                    emitInst(self, LirInst{ .check_optional = .{ .value = cond_temp, .result = has_val } });
+                    cond_temp = has_val;
+                }
+            }
+        }
+        if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
         var d10m: []const u8 = "D10:k"; pal.markerWrite(d10m);
         var cond_node_k = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         var d10kb: [20]u8 = undefined; var d10kl = itoa_mod.itoa(cond_node_k.kind, d10kb[0..]); var d10ks: usize = @intCast(usize, 19) - @intCast(usize, d10kl); pal.markerWrite(d10kb[d10ks..@intCast(usize, 19)]);
@@ -3182,6 +3193,23 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     if (decl_type == type_mod.TYPE_VOID) {
                         var t4u_vi_m: []const u8 = "T4U:vI\n"; pal.markerWrite(t4u_vi_m);
                     }
+                    var sn_x: u8 = @intCast(u8, 0);
+                    if (decl_type != type_mod.TYPE_VOID and decl_type != type_mod.TYPE_UNDEFINED) {
+                        var dt_x = self.ctx.registry.types_items[@intCast(usize, decl_type)];
+                        if (dt_x.kind == type_mod.TypeKind.optional_type and node.child_1 != 0) {
+                            var in_x = store.nodes.items[@intCast(usize, node.child_1)];
+                            if (in_x.kind == AstKind.null_literal) {
+                                emitInst(self, LirInst{ .set_optional_null = .{ .result = dl_temp, .type_id = decl_type } });
+                                emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = dl_temp } });
+                                var reg_x = findLocalTemp(self, name_id);
+                                if (reg_x != @intCast(u32, 0)) {
+                                    emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = dl_temp } });
+                                }
+                                sn_x = @intCast(u8, 1);
+                            }
+                        }
+                    }
+                    if (sn_x == @intCast(u8, 0)) {
                     var init_val = lowerExpr(self, node.child_1);
                     if (decl_type != type_mod.TYPE_VOID) {
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
@@ -3202,6 +3230,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var vds_nl2: []const u8 = "\n"; pal.markerWrite(vds_nl2);
                     if (reg != @intCast(u32, 0)) {
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = init_val } });
+                    }
                     }
                     }
                 }

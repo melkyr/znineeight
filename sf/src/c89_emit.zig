@@ -2810,9 +2810,23 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         .null_const => |nc| {
             var result = mangleTempName(emitter.interner, nc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = NULL;\n";
-            bufferedWriterWrite(&emitter.writer, s);
+            var nct = getTempTypeByIndex(emitter, nc.result);
+            if (nct != @intCast(u32, 0xFFFFFFFF) and emitter.registry.types_items[@intCast(usize, nct)].kind == type_mod.TypeKind.optional_type) {
+                bufferedWriterWrite(&emitter.writer, result);
+                var sno: []const u8 = ".has_value = 0;\n";
+                bufferedWriterWrite(&emitter.writer, sno);
+            } else {
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = NULL;\n";
+                bufferedWriterWrite(&emitter.writer, s);
+            }
+        },
+        .set_optional_null => |sn| {
+            var sres = mangleTempName(emitter.interner, sn.result);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, sres);
+            var sohv: []const u8 = ".has_value = 0;\n";
+            bufferedWriterWrite(&emitter.writer, sohv);
         },
         .bool_const => |bc| {
             var result = mangleTempName(emitter.interner, bc.result);
