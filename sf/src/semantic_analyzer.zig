@@ -1340,14 +1340,20 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     }
                 }
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
+                if (decl_type == type_mod.TYPE_VOID) {
+                    var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
+                    decl_type = @intCast(u32, type_mod.TYPE_UNDEFINED);
+                }
                 rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
             }
             if (self.local_decl_count >= self.local_decl_cap) {
                 semanticAnalyzerGrowLocalDecls(self);
             }
+            if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             self.local_decl_names[self.local_decl_count] = node.payload;
             self.local_decl_types[self.local_decl_count] = decl_type;
             self.local_decl_count += @intCast(usize, 1);
+            }
             var d4v: []const u8 = "D4:N"; pal_mod.markerWriteInt(d4v, node.payload);
             var d4v2: []const u8 = "D4:T"; pal_mod.markerWriteInt(d4v2, decl_type);
         } else if (node.kind == AstKind.if_stmt) {
