@@ -2885,9 +2885,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var fbi_m: []const u8 = "FBI:n"; pal.markerWrite(fbi_m);
                 var fbi_nb: [10]u8 = undefined; var fbi_nl = itoa_mod.itoa(node.child_1, fbi_nb[0..]); var fbi_ns: usize = @intCast(usize, 9) - @intCast(usize, fbi_nl); pal.markerWrite(fbi_nb[fbi_ns..@intCast(usize, 9)]);
                 var fbi_nl2: []const u8 = "\n"; pal.markerWrite(fbi_nl2);
+                var one_r = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_r } });
                 var nxt = nextTemp(self, type_mod.TYPE_U32);
                 var instc_fr_m: []const u8 = "INSTC:flr\n"; pal.markerWrite(instc_fr_m);
-                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = @intCast(u32, 1), .result = nxt } });
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = one_r, .result = nxt } });
                 start_temp = nxt;
                 emitInst(self, LirInst{ .jump = cond_bb });
             }
@@ -2921,9 +2923,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
+                var one_s = nextTemp(self, type_mod.TYPE_USIZE);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_s } });
                 var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
                 var instc_fs_m: []const u8 = "INSTC:fls\n"; pal.markerWrite(instc_fs_m);
-                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = @intCast(u32, 1), .result = nxt_idx } });
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = one_s, .result = nxt_idx } });
                 idx_temp = nxt_idx;
                 emitInst(self, LirInst{ .jump = cond_bb });
             }
