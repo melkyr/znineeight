@@ -1571,6 +1571,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       ai = 0;
                 while (ai < ec.len) : (ai += 1) {
                     var arg_val = lowerExpr(self, ec[ai]);
+                    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
+                        if (pt != type_mod.TYPE_UNDEFINED) {
+                            var st = getTempType(self, arg_val);
+                            var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
+                            var ce: CoercionEntry = undefined;
+                            ce.node_idx = ec[ai];
+                            ce.kind = ck;
+                            ce.target_type = pt;
+                            arg_val = applyCoercion(self, arg_val, ce);
+                        }
+                    }
                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                     var sbox: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { sbox[0] = pt; }
@@ -1608,6 +1619,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                      fpi_ai = @intCast(usize, 0);
                      while (fpi_ai < ec.len) : (fpi_ai += @intCast(usize, 1)) {
                          var fpi_arg = lowerExpr(self, ec[fpi_ai]);
+                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[fpi_ai])) |fpi_pt| {
+                             if (fpi_pt != type_mod.TYPE_UNDEFINED) {
+                                 var st = getTempType(self, fpi_arg);
+                                 var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, fpi_pt);
+                                 var ce: CoercionEntry = undefined;
+                                 ce.node_idx = ec[fpi_ai];
+                                 ce.kind = ck;
+                                 ce.target_type = fpi_pt;
+                                 fpi_arg = applyCoercion(self, fpi_arg, ce);
+                             }
+                         }
                          emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = fpi_args_start + @intCast(u32, fpi_ai), .src = fpi_arg } });
                          var fpi_slot: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                          if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[fpi_ai])) |fpi_pt| { fpi_slot[0] = fpi_pt; }
@@ -1677,9 +1699,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                  var ai: usize = 0;
                                  while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                                  ai = 0;
-                                 while (ai < ec.len) : (ai += 1) {
-                                      var call_val = lowerExpr(self, ec[ai]);
-                                      emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = call_ns + @intCast(u32, ai), .src = call_val } });
+                                  while (ai < ec.len) : (ai += 1) {
+                                       var call_val = lowerExpr(self, ec[ai]);
+                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
+                                           if (pt != type_mod.TYPE_UNDEFINED) {
+                                               var st = getTempType(self, call_val);
+                                               var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
+                                               var ce: CoercionEntry = undefined;
+                                               ce.node_idx = ec[ai];
+                                               ce.kind = ck;
+                                               ce.target_type = pt;
+                                               call_val = applyCoercion(self, call_val, ce);
+                                           }
+                                       }
+                                       emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = call_ns + @intCast(u32, ai), .src = call_val } });
                                       var slot_tid_a: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { slot_tid_a[0] = pt; var hx: []const u8 = "H"; pal.markerWrite(hx); }
                                       else { slot_tid_a[0] = self.hoisted_temps.items[@intCast(usize, call_val)].type_id; var mx: []const u8 = "M"; pal.markerWrite(mx); }
@@ -1741,6 +1774,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     ai = 0;
                     while (ai < ec.len) : (ai += 1) {
                         var arg_val = lowerExpr(self, ec[ai]);
+                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
+                            if (pt != type_mod.TYPE_UNDEFINED) {
+                                var st = getTempType(self, arg_val);
+                                var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
+                                var ce: CoercionEntry = undefined;
+                                ce.node_idx = ec[ai];
+                                ce.kind = ck;
+                                ce.target_type = pt;
+                                arg_val = applyCoercion(self, arg_val, ce);
+                            }
+                        }
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                         var slot_tid_b: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { slot_tid_b[0] = pt; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
@@ -3533,10 +3577,25 @@ pub fn hoistTemps(self: *LirLowerer) void {
     entry_bb.insts.capacity = new_insts.capacity;
 }
 
+fn applyNoneCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) u32 {
+    if (src_temp != 0 and @intCast(usize, src_temp) < self.hoisted_temps.len) {
+        var sc_ty = getTempType(self, src_temp);
+        if (sc_ty == type_mod.TYPE_NULL) {
+            var tgt = self.ctx.registry.types_items[@intCast(usize, coercion.target_type)];
+            if (tgt.kind == type_mod.TypeKind.optional_type) {
+                var dst = nextTemp(self, coercion.target_type);
+                emitInst(self, LirInst{ .set_optional_null = .{ .result = dst, .type_id = coercion.target_type } });
+                return dst;
+            }
+        }
+    }
+    return src_temp;
+}
+
 pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) u32 {
     var kind = coercion.kind;
     if (kind == CoercionKind.none) {
-        return src_temp;
+        return applyNoneCoercion(self, src_temp, coercion);
     } else if (kind == CoercionKind.wrap_optional) {
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .wrap_optional = .{ .value = src_temp, .result = dst, .type_id = coercion.target_type } });
