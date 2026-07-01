@@ -2617,6 +2617,11 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
               var bin_nl: []const u8 = "\n"; pal.markerWrite(bin_nl);
              var result = resolveTempName(emitter, b.result);
             var lhs = resolveTempName(emitter, b.lhs);
+            if (b.rhs < @intCast(u32, 1000) and b.rhs != @intCast(u32, 0)) {
+                var instc_br_m: []const u8 = "INSTC:brhs"; pal.markerWrite(instc_br_m);
+                var instc_br_b: [10]u8 = undefined; var instc_br_l = itoa_mod.itoa(b.rhs, instc_br_b[0..]); var instc_br_s: usize = @intCast(usize, 9) - @intCast(usize, instc_br_l); pal.markerWrite(instc_br_b[instc_br_s..@intCast(usize, 9)]);
+                var instc_br_n: []const u8 = "\n"; pal.markerWrite(instc_br_n);
+            }
             var rhs = resolveTempName(emitter, b.rhs);
             var op_str = getBinOpStr(b.op);
             var bnr_m: []const u8 = "BNR:r"; pal.markerWrite(bnr_m);
