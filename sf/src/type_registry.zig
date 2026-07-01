@@ -619,7 +619,7 @@ pub fn isValueDependency(kind: TypeKind) bool {
     if (kind == TypeKind.struct_type) return true;
     if (kind == TypeKind.union_type) return true;
     if (kind == TypeKind.tagged_union_type) return true;
-    if (kind == TypeKind.enum_type) return true;
+
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.optional_type) return true;
     if (kind == TypeKind.error_union_type) return true;

@@ -13,6 +13,7 @@ const Sand = @import("allocator.zig").Sand;
 const hash_mod = @import("util/hash.zig");
 const interner_mod = @import("string_interner.zig");
 const type_mod = @import("type_registry.zig");
+
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
 const format_mod = @import("util/format.zig");
@@ -624,17 +625,21 @@ pub fn emitZigPalC(writer: *BufferedWriter) void {
     var h12: []const u8 = "#if defined(_WIN32) && defined(ZIG_NO_CRT)\nint main(void);\nvoid __cdecl mainCRTStartup(void)\n{\n    int result = main();\n    ExitProcess((UINT)result);\n}\n#endif\n\n#endif /* ZIG_PAL_C */\n"; bufferedWriterWrite(writer, h12);
 }
 
-fn tstEmitPrimitiveKind(kind: TypeKind) bool {
-    var k = @enumToInt(kind);
-    return (k >= @enumToInt(TypeKind.u8_type) and k <= @enumToInt(TypeKind.u64_type)) or
-           (k >= @enumToInt(TypeKind.i8_type) and k <= @enumToInt(TypeKind.i64_type)) or
-           k == @enumToInt(TypeKind.usize_type) or k == @enumToInt(TypeKind.isize_type) or
-           k == @enumToInt(TypeKind.c_char_type) or k == @enumToInt(TypeKind.f32_type) or
-           k == @enumToInt(TypeKind.f64_type) or k == @enumToInt(TypeKind.bool_type) or
-           k == @enumToInt(TypeKind.void_type) or k == @enumToInt(TypeKind.noreturn_type) or
-           k == @enumToInt(TypeKind.enum_type) or k == @enumToInt(TypeKind.error_set_type) or
-           k == @enumToInt(TypeKind.ptr_type) or k == @enumToInt(TypeKind.many_ptr_type);
+fn c89NeedsEmitEdge(kind: TypeKind) bool {
+    if (kind == TypeKind.slice_type) return true;
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.optional_type) return true;
+    if (kind == TypeKind.error_union_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.unresolved_name) return true;
+    return false;
 }
+
+
+
 
 fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
     var ty = reg.types_items[@intCast(usize, ti)];
@@ -644,22 +649,22 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
         }
     } else if (ty.kind == TypeKind.tagged_union_type) {
         var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
         }
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) c += 1;
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) c += 1;
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
     } else if (ty.kind == TypeKind.error_union_type) {
         var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
     }
     return c;
 }
@@ -672,7 +677,7 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
                 tgt[@intCast(usize, off)] = ft; off += 1;
             }
         }
@@ -681,21 +686,21 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
                 tgt[@intCast(usize, off)] = ft; off += 1;
             }
         }
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
             tgt[@intCast(usize, off)] = tp.tag_type; off += 1;
         }
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
             tgt[@intCast(usize, off)] = et; off += 1;
         }
     } else if (ty.kind == TypeKind.error_union_type) {
         var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
-        if (!tstEmitPrimitiveKind(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
             tgt[@intCast(usize, off)] = eup; off += 1;
         }
     }
@@ -703,7 +708,7 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
 
 fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
     var ty = reg.types_items[@intCast(usize, ti)];
-    if (tstEmitPrimitiveKind(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
+    if (!c89NeedsEmitEdge(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
     if (ty.kind == TypeKind.struct_type) {
         var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
@@ -719,10 +724,7 @@ fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
         }
     } else if (ty.kind == TypeKind.array_type) {
         if (reg.array_items[@intCast(usize, ty.payload_idx)].elem == target) return true;
-    } else if (ty.kind == TypeKind.slice_type) {
-        if (reg.slice_items[@intCast(usize, ty.payload_idx)].elem == target) return true;
-    } else if (ty.kind == TypeKind.ptr_type) {
-        if (reg.ptr_items[@intCast(usize, ty.payload_idx)].base == target) return true;
+
     } else if (ty.kind == TypeKind.error_union_type) {
         if (reg.eu_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
     }
