@@ -3133,7 +3133,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (decl_type == type_mod.TYPE_VOID) {
             var instb_vd_m: []const u8 = "INSTB:vd\n"; pal.markerWrite(instb_vd_m);
         }
-        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and decl_type != type_mod.TYPE_VOID) {
             var dty = self.ctx.registry.types_items[@intCast(usize, decl_type)];
             if (dty.kind == type_mod.TypeKind.fn_type or dty.kind == type_mod.TypeKind.module_type) {
                 var vb: []const u8 = "VB"; pal.markerWrite(vb);

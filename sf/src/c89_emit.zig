@@ -1999,6 +1999,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var dsep: []const u8 = ":"; pal.markerWrite(dsep);
         pal.markerWrite(c_type);
         var dnl: []const u8 = "\n"; pal.markerWrite(dnl);
+        if (eff_type != @intCast(u32, 1)) {
         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
         bufferedWriterWrite(&emitter.writer, c_type);
         var sp: []const u8 = " ";
@@ -2006,6 +2007,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
          bufferedWriterWrite(&emitter.writer, tn);
          var sm: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, sm);
+        }
     }
 }
 
@@ -3304,6 +3306,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                              var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
                          }
                          var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
+                        if (dl.type_id != @intCast(u32, 1)) {
                         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                         bufferedWriterWrite(&emitter.writer, dl_type);
                         var sp1: []const u8 = " ";
@@ -3311,6 +3314,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                         bufferedWriterWrite(&emitter.writer, dl_name);
                         var sm1: []const u8 = ";\n";
                         bufferedWriterWrite(&emitter.writer, sm1);
+                        }
                     },
                     else => {},
                 }
