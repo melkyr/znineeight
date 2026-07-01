@@ -949,8 +949,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var coe_nm: []const u8 = "n"; pal.markerWrite(coe_nm);
          var coe_nb: [10]u8 = undefined; var coe_nl = itoa_mod.itoa(node_idx, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl); pal.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
          var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
-         var src = lowerExpr(self, node.child_1);
-         if (src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
+          var src = lowerExpr(self, node.child_1);
+          if (src == @intCast(u32, 0)) {
+              var vfpa0_m: []const u8 = "VFLOW:paS0\n"; pal.markerWrite(vfpa0_m);
+              return @intCast(u32, 0);
+          }
+          if (src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
              var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
          }
         if (child_node.kind == AstKind.ident_expr) {
@@ -1261,7 +1265,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var lrb_m: []const u8 = "LRB:n"; pal.markerWrite(lrb_m);
         var lrb_nb: [10]u8 = undefined; var lrb_nl = itoa_mod.itoa(node_idx, lrb_nb[0..]); var lrb_ns: usize = @intCast(usize, 9) - @intCast(usize, lrb_nl); pal.markerWrite(lrb_nb[lrb_ns..@intCast(usize, 9)]);
-        if (rt) |t| { var lrb_tm: []const u8 = "T"; pal.markerWrite(lrb_tm); var lrb_tb: [10]u8 = undefined; var lrb_tl = itoa_mod.itoa(t, lrb_tb[0..]); var lrb_ts: usize = @intCast(usize, 9) - @intCast(usize, lrb_tl); pal.markerWrite(lrb_tb[lrb_ts..@intCast(usize, 9)]); } else { var lrb_xm: []const u8 = "X"; pal.markerWrite(lrb_xm); }
+        if (rt) |t| { var lrb_tm: []const u8 = "T"; pal.markerWrite(lrb_tm); var lrb_tb: [10]u8 = undefined; var lrb_tl = itoa_mod.itoa(t, lrb_tb[0..]); var lrb_ts: usize = @intCast(usize, 9) - @intCast(usize, lrb_tl); pal.markerWrite(lrb_tb[lrb_ts..@intCast(usize, 9)]); var vfrth_m: []const u8 = "VFLOW:irH\n"; pal.markerWrite(vfrth_m); } else { var lrb_xm: []const u8 = "X"; pal.markerWrite(lrb_xm); var vfrtm_m: []const u8 = "VFLOW:irM\n"; pal.markerWrite(vfrtm_m); }
         var lrb_nl2: []const u8 = "\n"; pal.markerWrite(lrb_nl2);
         if (rt) |t| {
             if (t != type_mod.TYPE_UNDEFINED) {
@@ -1273,6 +1277,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         if (ptype == type_mod.TYPE_UNDEFINED) {
+            var vfu_m: []const u8 = "VFLOW:iFU\n"; pal.markerWrite(vfu_m);
             var fu: []const u8 = "F3cU:n"; pal.markerWrite(fu);
             var fub: [20]u8 = undefined; var ful = itoa_mod.itoa(name_id, fub[0..]); var fus: usize = @intCast(usize, 19) - @intCast(usize, ful); pal.markerWrite(fub[fus..@intCast(usize, 19)]);
             var fus2: []const u8 = "s"; pal.markerWrite(fus2);
@@ -1299,6 +1304,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var lds_km: []const u8 = "k"; pal.markerWrite(lds_km);
                     var lds_kb: [10]u8 = undefined; var lds_kl = itoa_mod.itoa(@intCast(u32, self.local_decl_kinds[li]), lds_kb[0..]); var lds_ks: usize = @intCast(usize, 9) - @intCast(usize, lds_kl); pal.markerWrite(lds_kb[lds_ks..@intCast(usize, 9)]);
                      var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
+                     if (arr_tid == type_mod.TYPE_VOID) { var vflb_m: []const u8 = "VFLOW:iTV\n"; pal.markerWrite(vflb_m); }
                      break;
                  }
              }
@@ -1339,11 +1345,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (arr_tid != type_mod.TYPE_UNDEFINED) { self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = arr_tid; var hot_tm2: []const u8 = "tP\n"; pal.markerWrite(hot_tm2); } else { var hot_tm2: []const u8 = "tMISS\n"; pal.markerWrite(hot_tm2); }
             }
         }
+        if (arr_tid == type_mod.TYPE_VOID) {
+            var vfvx_m: []const u8 = "VFIX:iVX\n"; pal.markerWrite(vfvx_m);
+            return @intCast(u32, 0);
+        }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
-        if (arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { if (arr_tid == type_mod.TYPE_VOID) { var vfrv_m: []const u8 = "VFLOW:iRV\n"; pal.markerWrite(vfrv_m); } _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
             var tid = nextTemp(self, ptype);
             var ncb_m: []const u8 = "NCB:t"; pal.markerWrite(ncb_m);
@@ -3146,7 +3156,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var instb_vd_m: []const u8 = "INSTB:vd\n"; pal.markerWrite(instb_vd_m);
             var vfvd_m: []const u8 = "VFLOW:vdecl\n"; pal.markerWrite(vfvd_m);
         }
-        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and decl_type != type_mod.TYPE_VOID) {
+        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var dty = self.ctx.registry.types_items[@intCast(usize, decl_type)];
             if (dty.kind == type_mod.TypeKind.fn_type or dty.kind == type_mod.TypeKind.module_type) {
                 var vb: []const u8 = "VB"; pal.markerWrite(vb);
@@ -3173,6 +3183,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                         var t4u_vi_m: []const u8 = "T4U:vI\n"; pal.markerWrite(t4u_vi_m);
                     }
                     var init_val = lowerExpr(self, node.child_1);
+                    if (decl_type != type_mod.TYPE_VOID) {
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
                     var reg = findLocalTemp(self, name_id);
                     if (reg != @intCast(u32, 0)) {
@@ -3191,6 +3202,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var vds_nl2: []const u8 = "\n"; pal.markerWrite(vds_nl2);
                     if (reg != @intCast(u32, 0)) {
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = init_val } });
+                    }
                     }
                 }
             }
@@ -3477,10 +3489,11 @@ pub fn hoistTemps(self: *LirLowerer) void {
         if (td.type_id == type_mod.TYPE_VOID) {
             var t4u_hs_m: []const u8 = "T4U:hS\n"; pal.markerWrite(t4u_hs_m);
             var vfht_m: []const u8 = "VFLOW:htv\n"; pal.markerWrite(vfht_m);
-        }
+        } else {
         lir_mod.lirInstArrayListAppend(&new_insts, LirInst{
             .decl_temp = .{ .temp = td.temp_id, .type_id = td.type_id },
         });
+        }
     }
     var j: usize = 0;
     while (j < entry_bb.insts.len) : (j += 1) {

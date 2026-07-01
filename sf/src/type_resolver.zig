@@ -797,7 +797,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             return sl_tid;
         }
         if (node.kind == AstKind.optional_type) {
-            return child_type;
+            return type_mod.typeRegistryGetOrCreateOptional(env.typereg, child_type);
         }
         if (node.kind == AstKind.array_type) {
             var t0m: []const u8 = "T0"; pal_mod.markerWrite(t0m);

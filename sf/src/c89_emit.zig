@@ -1103,7 +1103,7 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     var etk: []const u8 = "k"; pal.markerWrite(etk); pal.markerWrite(et_k[et_ks..@intCast(usize, 19)]);
     var etnl: []const u8 = "\n"; pal.markerWrite(etnl);
     if (ty.kind == TypeKind.slice_type) { emitSliceType(emitter, tid); return; }
-    if (ty.kind == TypeKind.optional_type) { emitOptionalType(emitter, tid); return; }
+    if (ty.kind == TypeKind.optional_type) { var vfo1_m: []const u8 = "VFLOW:oTV\n"; pal.markerWrite(vfo1_m); emitOptionalType(emitter, tid); return; }
     if (ty.kind == TypeKind.error_union_type) { emitErrorUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.tagged_union_type) { emitTaggedUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.enum_type) { emitEnumType(emitter, tid); return; }
@@ -1255,6 +1255,7 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var mangled_id = nameManglerMangle(emitter.mangler, opt_nid, @intCast(u8, 2), @intCast(u32, 0));
     var mangled_c_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     if (pay_ty.kind == type_mod.TypeKind.void_type) {
+        var vfov_m: []const u8 = "VFLOW:opV\n"; pal.markerWrite(vfov_m);
         var s1: []const u8 = "typedef struct { int has_value; } ";
         bufferedWriterWrite(&emitter.writer, s1);
         bufferedWriterWrite(&emitter.writer, mangled_c_name);
@@ -3388,6 +3389,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                          var p1nb: [10]u8 = undefined; var p1nl = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 9) - @intCast(usize, p1nl); pal.markerWrite(p1nb[p1ns..@intCast(usize, 9)]);
                          var p1nl2: []const u8 = "\n"; pal.markerWrite(p1nl2);
                          var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
+                         var vfdl_tm: []const u8 = "VFLOW:dlT"; pal.markerWrite(vfdl_tm);
+                         var vfdl_tb: [10]u8 = undefined; var vfdl_tl = itoa_mod.itoa(dl.type_id, vfdl_tb[0..]); var vfdl_ts: usize = @intCast(usize, 9) - @intCast(usize, vfdl_tl); pal.markerWrite(vfdl_tb[vfdl_ts..@intCast(usize, 9)]);
+                         var vfdl_nl: []const u8 = "\n"; pal.markerWrite(vfdl_nl);
                          if (dl.type_id == @intCast(u32, 1)) {
                              var t4u_dl_m: []const u8 = "T4U:dl\n"; pal.markerWrite(t4u_dl_m);
                              var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
