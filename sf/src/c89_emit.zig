@@ -591,6 +591,16 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
 
+fn getTempTypeByIndex(emitter: *C89Emitter, temp_id: u32) u32 {
+    var ti: usize = @intCast(usize, 0);
+    while (ti < emitter.current_fn.hoisted_temps.len) : (ti += @intCast(usize, 1)) {
+        var ht = emitter.current_fn.hoisted_temps.items[ti];
+        if (ht.temp_id == temp_id) { return ht.type_id; }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+
 pub fn emitIncludes(writer: *BufferedWriter) void {
     var l0: []const u8 = "#include \"zig_compat.h\"\n";
     bufferedWriterWrite(writer, l0);
@@ -1219,7 +1229,6 @@ fn emitSliceType(emitter: *C89Emitter, tid: u32) void {
     var pc: []const u8 = ";\n";
     bufferedWriterWrite(&emitter.writer, pc);
 }
-
 fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -1227,7 +1236,6 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var insta_ot_m: []const u8 = "INSTA:optt"; pal.markerWrite(insta_ot_m);
     var insta_ot_b: [10]u8 = undefined; var insta_ot_l = itoa_mod.itoa(op.payload, insta_ot_b[0..]); var insta_ot_s: usize = @intCast(usize, 9) - @intCast(usize, insta_ot_l); pal.markerWrite(insta_ot_b[insta_ot_s..@intCast(usize, 9)]);
     var insta_ot_n: []const u8 = "\n"; pal.markerWrite(insta_ot_n);
-    var pay_c_name = getCTypeName(reg, emitter.mangler, op.payload);
     var pay_ty = reg.types_items[@intCast(usize, op.payload)];
     var pay_mid = nameManglerMangle(emitter.mangler, pay_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
     var pay_mangled = interner_mod.stringInternerGet(emitter.interner, pay_mid);
@@ -1246,6 +1254,15 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var opt_nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
     var mangled_id = nameManglerMangle(emitter.mangler, opt_nid, @intCast(u8, 2), @intCast(u32, 0));
     var mangled_c_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    if (pay_ty.kind == type_mod.TypeKind.void_type) {
+        var s1: []const u8 = "typedef struct { int has_value; } ";
+        bufferedWriterWrite(&emitter.writer, s1);
+        bufferedWriterWrite(&emitter.writer, mangled_c_name);
+        var s2: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, s2);
+        return;
+    }
+    var pay_c_name = getCTypeName(reg, emitter.mangler, op.payload);
     var s1: []const u8 = "typedef struct { ";
     bufferedWriterWrite(&emitter.writer, s1);
     bufferedWriterWrite(&emitter.writer, pay_c_name);
@@ -2381,7 +2398,17 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                var lfd_rm: []const u8 = "r"; pal.markerWrite(lfd_rm);
                var lfd_rb: [10]u8 = undefined; var lfd_rl = itoa_mod.itoa(lf.result, lfd_rb[0..]); var lfd_rs: usize = @intCast(usize, 9) - @intCast(usize, lfd_rl); pal.markerWrite(lfd_rb[lfd_rs..@intCast(usize, 9)]);
                var lfd_nl: []const u8 = "\n"; pal.markerWrite(lfd_nl);
-               bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var lf_res_void: u8 = @intCast(u8, 0);
+                var lf_rvj: usize = @intCast(usize, 0);
+                while (lf_rvj < emitter.current_fn.hoisted_temps.len) : (lf_rvj += @intCast(usize, 1)) {
+                    var lf_rvht = emitter.current_fn.hoisted_temps.items[lf_rvj];
+                    if (lf_rvht.temp_id == lf.result) {
+                        if (lf_rvht.type_id == type_mod.TYPE_VOID) { lf_res_void = @intCast(u8, 1); }
+                        break;
+                    }
+                }
+                if (lf_res_void == @intCast(u8, 0)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               bufferedWriterWrite(&emitter.writer, result);
               var s: []const u8 = " = ";
               bufferedWriterWrite(&emitter.writer, s);
@@ -2477,7 +2504,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
               }
               var s3: []const u8 = ";\n";
               bufferedWriterWrite(&emitter.writer, s3);
-          },
+                }
+           },
         .store_field => |sf| {
             var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
               var val = mangleTempName(emitter.interner, sf.value);
@@ -2962,17 +2990,27 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var insta_w_m: []const u8 = "INSTA:optw\n"; pal.markerWrite(insta_w_m);
             var dst = resolveTempName(emitter, w.result);
             var src = resolveTempName(emitter, w.value);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, dst);
-            var l1: []const u8 = ".has_value = 1;\n";
-            bufferedWriterWrite(&emitter.writer, l1);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, dst);
-            var l2: []const u8 = ".value = ";
-            bufferedWriterWrite(&emitter.writer, l2);
-            bufferedWriterWrite(&emitter.writer, src);
-            var semi: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, semi);
+            var wo_ty = emitter.registry.types_items[@intCast(usize, w.type_id)];
+            var wo_op = emitter.registry.opt_items[@intCast(usize, wo_ty.payload_idx)];
+            var wo_pay = emitter.registry.types_items[@intCast(usize, wo_op.payload)];
+            if (wo_pay.kind == type_mod.TypeKind.void_type) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l1: []const u8 = ".has_value = 1;\n";
+                bufferedWriterWrite(&emitter.writer, l1);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l1: []const u8 = ".has_value = 1;\n";
+                bufferedWriterWrite(&emitter.writer, l1);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var l2: []const u8 = ".value = ";
+                bufferedWriterWrite(&emitter.writer, l2);
+                bufferedWriterWrite(&emitter.writer, src);
+                var semi: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi);
+            }
         },
         .int_cast => |c| {
             var dst = resolveTempName(emitter, c.result);
@@ -3118,25 +3156,56 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var insta_p_m: []const u8 = "INSTA:eup\n"; pal.markerWrite(insta_p_m);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, dst);
-            var s1: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s1);
-            bufferedWriterWrite(&emitter.writer, src);
-            var s2: []const u8 = ".data.payload;\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            var eup_src_tid = getTempTypeByIndex(emitter, e.value);
+            var eup_pay_void: u8 = @intCast(u8, 0);
+            if (eup_src_tid != @intCast(u32, 0xFFFFFFFF)) {
+                var eup_src_ty = emitter.registry.types_items[@intCast(usize, eup_src_tid)];
+                if (eup_src_ty.kind == type_mod.TypeKind.error_union_type) {
+                    var eup_eu = emitter.registry.eu_items[@intCast(usize, eup_src_ty.payload_idx)];
+                    var eup_pay = emitter.registry.types_items[@intCast(usize, eup_eu.payload)];
+                    if (eup_pay.kind == type_mod.TypeKind.void_type) {
+                        eup_pay_void = @intCast(u8, 1);
+                    }
+                }
+            }
+            if (eup_pay_void == @intCast(u8, 0)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var s1: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s1);
+                bufferedWriterWrite(&emitter.writer, src);
+                var s2: []const u8 = ".data.payload;\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .unwrap_error_code => |e| {
             var insta_c_m: []const u8 = "INSTA:euc\n"; pal.markerWrite(insta_c_m);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
+            var euc_src_tid = getTempTypeByIndex(emitter, e.value);
+            var euc_pay_void: u8 = @intCast(u8, 0);
+            if (euc_src_tid != @intCast(u32, 0xFFFFFFFF)) {
+                var euc_src_ty = emitter.registry.types_items[@intCast(usize, euc_src_tid)];
+                if (euc_src_ty.kind == type_mod.TypeKind.error_union_type) {
+                    var euc_eu = emitter.registry.eu_items[@intCast(usize, euc_src_ty.payload_idx)];
+                    var euc_pay = emitter.registry.types_items[@intCast(usize, euc_eu.payload)];
+                    if (euc_pay.kind == type_mod.TypeKind.void_type) {
+                        euc_pay_void = @intCast(u8, 1);
+                    }
+                }
+            }
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
             var s1: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s1);
             bufferedWriterWrite(&emitter.writer, src);
-            var s2: []const u8 = ".data.err;\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            if (euc_pay_void != @intCast(u8, 0)) {
+                var s2: []const u8 = ".err;\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            } else {
+                var s2: []const u8 = ".data.err;\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .wrap_error_ok => |w| {
             var dst = resolveTempName(emitter, w.result);
@@ -3214,13 +3283,27 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var insta_ou_m: []const u8 = "INSTA:optu\n"; pal.markerWrite(insta_ou_m);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, dst);
-            var s1: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s1);
-            bufferedWriterWrite(&emitter.writer, src);
-            var s2: []const u8 = ".value;\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            var uo_src_tid = getTempTypeByIndex(emitter, e.value);
+            var uo_pay_void: u8 = @intCast(u8, 0);
+            if (uo_src_tid != @intCast(u32, 0xFFFFFFFF)) {
+                var uo_src_ty = emitter.registry.types_items[@intCast(usize, uo_src_tid)];
+                if (uo_src_ty.kind == type_mod.TypeKind.optional_type) {
+                    var uo_opt = emitter.registry.opt_items[@intCast(usize, uo_src_ty.payload_idx)];
+                    var uo_pay = emitter.registry.types_items[@intCast(usize, uo_opt.payload)];
+                    if (uo_pay.kind == type_mod.TypeKind.void_type) {
+                        uo_pay_void = @intCast(u8, 1);
+                    }
+                }
+            }
+            if (uo_pay_void == @intCast(u8, 0)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, dst);
+                var s1: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s1);
+                bufferedWriterWrite(&emitter.writer, src);
+                var s2: []const u8 = ".value;\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .int_to_ptr => |c| {
             var dst = resolveTempName(emitter, c.result);
