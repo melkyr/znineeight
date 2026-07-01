@@ -947,6 +947,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var coe_nb: [10]u8 = undefined; var coe_nl = itoa_mod.itoa(node_idx, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl); pal.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
          var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
          var src = lowerExpr(self, node.child_1);
+         if (src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
+             var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
+         }
         if (child_node.kind == AstKind.ident_expr) {
             var name_id = store.identifiers.items[@intCast(usize, child_node.payload)];
             var gsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
@@ -3160,6 +3163,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     }
                     emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = arr_temp } });
                 } else {
+                    if (decl_type == type_mod.TYPE_VOID) {
+                        var t4u_vi_m: []const u8 = "T4U:vI\n"; pal.markerWrite(t4u_vi_m);
+                    }
                     var init_val = lowerExpr(self, node.child_1);
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
                     var reg = findLocalTemp(self, name_id);
@@ -3462,6 +3468,9 @@ pub fn hoistTemps(self: *LirLowerer) void {
     var i: usize = 0;
     while (i < self.hoisted_temps.len) : (i += 1) {
         var td = self.hoisted_temps.items[i];
+        if (td.type_id == type_mod.TYPE_VOID) {
+            var t4u_hs_m: []const u8 = "T4U:hS\n"; pal.markerWrite(t4u_hs_m);
+        }
         lir_mod.lirInstArrayListAppend(&new_insts, LirInst{
             .decl_temp = .{ .temp = td.temp_id, .type_id = td.type_id },
         });

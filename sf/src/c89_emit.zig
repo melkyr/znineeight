@@ -3386,6 +3386,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                          var p1nl2: []const u8 = "\n"; pal.markerWrite(p1nl2);
                          var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
                          if (dl.type_id == @intCast(u32, 1)) {
+                             var t4u_dl_m: []const u8 = "T4U:dl\n"; pal.markerWrite(t4u_dl_m);
                              var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
                          }
                          var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
