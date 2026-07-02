@@ -2843,6 +2843,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         var if_nl: []const u8 = "\n"; pal.markerWrite(if_nl);
         var cond_temp = lowerExpr(self, node.child_0);
+        var orig_cond_temp = cond_temp;
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (cond_ty_id) |ct| {
             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
@@ -2890,7 +2891,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (node.payload != @intCast(u32, 0)) {
             var icapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
             if (icapn.kind == AstKind.if_capture) {
-                bindOptionalCapture(self, node.payload, cond_temp);
+                bindOptionalCapture(self, node.payload, orig_cond_temp);
             }
         }
         var ifb_m: []const u8 = "IFB:b"; pal.markerWrite(ifb_m);
@@ -3005,7 +3006,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
            }
             if (pattern.kind == AstKind.range_exclusive or pattern.kind == AstKind.range_inclusive) {
                 var start_temp = lowerExpr(self, pattern.child_0);
-                if (node.payload != 0) { addLocalDecl(self, node.payload, type_mod.TYPE_U32, start_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.payload, .type_id = type_mod.TYPE_U32, .temp = start_temp } }); }
+                if (node.payload != 0) { var fcapr = maybeDisambiguateCapture(self, node.payload, type_mod.TYPE_U32); addLocalDecl(self, fcapr, type_mod.TYPE_U32, start_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = type_mod.TYPE_U32, .temp = start_temp } }); }
                 var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
@@ -3059,7 +3060,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, elem_type[0]);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-            if (node.payload != @intCast(u32, 0)) { addLocalDecl(self, node.payload, elem_type[0], item_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.payload, .type_id = elem_type[0], .temp = item_temp } }); }
+            if (node.payload != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, node.payload, elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
             if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.child_2, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
