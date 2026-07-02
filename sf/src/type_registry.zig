@@ -294,7 +294,7 @@ pub fn nameCacheGet(self: *TypeRegistry, key: u64) ?u32 {
     return hash_mod.u64ToU32MapGet(&self.name_cache, key);
 }
 
-fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {
+pub fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {
     hash_mod.u64ToU32MapPut(&self.name_cache, key, value);
     var np_k: [20]u8 = undefined;
     var np_kl = itoa_mod.itoa(@intCast(u32, key & @intCast(u64, 0xFFFF)), np_k[0..]);

@@ -1617,10 +1617,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                 }
                 var result: u32 = @intCast(u32, 0);
+                var optva_m: []const u8 = "OPTVOID:rt"; pal.markerWriteInt(optva_m, fp.return_type);
                 if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
                     var vffc_m: []const u8 = "VFLOW:fvret\n"; pal.markerWrite(vffc_m);
                     result = nextTemp(self, fp.return_type);
                 }
+                var optvb_m: []const u8 = "OPTVOID:res"; pal.markerWriteInt(optvb_m, result);
                  var fnr_rm: []const u8 = "FNR:R"; pal.markerWriteInt(fnr_rm, fp.return_type);
                  var fnr_tm: []const u8 = "FNR:T"; pal.markerWriteInt(fnr_tm, result);
                   var call_name: u32 = fp.name_id;
@@ -2154,6 +2156,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
     } else if (node.kind == AstKind.orelse_expr) {
         var lhs_temp = lowerExpr(self, node.child_0);
+        var optvc_m: []const u8 = "OPTVOID:lhs"; pal.markerWriteInt(optvc_m, lhs_temp);
         var has_val_temp = nextTemp(self, type_mod.TYPE_U8);
         emitInst(self, LirInst{ .check_optional = .{ .value = lhs_temp, .result = has_val_temp } });
         var null_bb = createBlock(self);
@@ -3037,6 +3040,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             self.current_bb = exit_bb;
             self.block_terminated = @intCast(u8, 0);
+            self.capture_shadow.count = @intCast(usize, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
         } else {
             var slice_temp = lowerExpr(self, node.child_0);
@@ -3074,6 +3078,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 emitInst(self, LirInst{ .jump = cond_bb });
             }
             self.current_bb = exit_bb;
+            self.capture_shadow.count = @intCast(usize, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
          }
      } else if (node.kind == AstKind.swt_ex) {

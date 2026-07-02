@@ -288,6 +288,14 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                                     return fn_ty;
                                 }
+                                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
+                                var resolved_rt = type_resolver.resolveTypeExprFull(&tre_env, proto.return_type_node, @intCast(u32, 0));
+                                if (resolved_rt != type_mod.TYPE_UNDEFINED) {
+                                    rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt);
+                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt);
+                                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                                    return fn_ty;
+                                }
                             }
                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
@@ -359,6 +367,14 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                              var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
                              rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                               return fn_ty;
+                }
+                var tre_env_b = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
+                var resolved_rt_b = type_resolver.resolveTypeExprFull(&tre_env_b, proto.return_type_node, @intCast(u32, 0));
+                if (resolved_rt_b != type_mod.TYPE_UNDEFINED) {
+                    rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt_b);
+                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt_b);
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
+                    return fn_ty;
                 }
             }
                      var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);

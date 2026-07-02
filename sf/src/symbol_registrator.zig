@@ -240,6 +240,19 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     addTypeDependencies(store, node.child_1, sym_type_id, g);
                     sym_kind = sym_mod.SymbolKind.type_alias;
                     sym_mod_id = mod_id;
+                } else if (init_node.kind == AstKind.ident_expr) {
+                    var rca_m: []const u8 = "RCA:p"; pal_mod.markerWriteInt(rca_m, init_node.payload);
+                    var ident_name_id = store.identifiers.items[@intCast(usize, init_node.payload)];
+                    var rca_i: []const u8 = "RCA:i"; pal_mod.markerWriteInt(rca_i, ident_name_id);
+                    var cached = type_mod.nameCacheGet(type_reg, @intCast(u64, ident_name_id));
+                    if (cached) |ct| {
+                        var rca_h: []const u8 = "RCA:H"; pal_mod.markerWriteInt(rca_h, ct);
+                        var ck: u64 = @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+                        type_mod.nameCachePut(type_reg, ck, ct);
+                        sym_type_id = ct;
+                        sym_kind = sym_mod.SymbolKind.type_alias;
+                        sym_mod_id = mod_id;
+                    }
                 }
             }
 

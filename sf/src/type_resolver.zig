@@ -578,6 +578,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
     var rtd_nm: []const u8 = "RTD:n"; pal_mod.markerWriteInt(rtd_nm, node_idx); var rtd_km: []const u8 = "RTD:k"; pal_mod.markerWriteInt(rtd_km, @intCast(u32, @enumToInt(node.kind)));
     if (node.kind == AstKind.ident_expr) {
         var name_id = env.store.identifiers.items[@intCast(usize, node.payload)];
+        var opm4_m: []const u8 = "OPTVOID:id"; pal_mod.markerWriteInt(opm4_m, name_id);
         var tid = type_mod.nameCacheGet(env.typereg, @intCast(u64, name_id));
         if (tid) |t| return t;
         var nf: []const u8 = "NF"; pal_mod.markerWrite(nf);
@@ -588,6 +589,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             if (tc) |t| return t;
         }
         var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
+        var opm4f_m: []const u8 = "OPTVOID:idF"; pal_mod.markerWriteInt(opm4f_m, name_id);
         return type_mod.TYPE_UNDEFINED;
     }
     if (node.kind == AstKind.struct_decl) {
@@ -704,6 +706,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         fnt_ret_box[0] = type_mod.TYPE_VOID;
         if (node.child_0 != 0) {
             fnt_ret_box[0] = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+            var opm2_m: []const u8 = "OPTVOID:fntR"; pal_mod.markerWriteInt(opm2_m, fnt_ret_box[0]);
             if (fnt_ret_box[0] == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
         }
         var fnt_ptypes: [16]u32 = undefined;
@@ -754,6 +757,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
         }
         var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
+        var opm3_m: []const u8 = "OPTVOID:fntT"; pal_mod.markerWriteInt(opm3_m, fnt_tid);
         type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
         return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
     }
@@ -797,7 +801,10 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             return sl_tid;
         }
         if (node.kind == AstKind.optional_type) {
-            return type_mod.typeRegistryGetOrCreateOptional(env.typereg, child_type);
+            var optvd_m: []const u8 = "OPTVOID:opt"; pal_mod.markerWriteInt(optvd_m, child_type);
+            var optvd_tid = type_mod.typeRegistryGetOrCreateOptional(env.typereg, child_type);
+            var optvd_rm: []const u8 = "OPTVOID:optR"; pal_mod.markerWriteInt(optvd_rm, optvd_tid);
+            return optvd_tid;
         }
         if (node.kind == AstKind.array_type) {
             var t0m: []const u8 = "T0"; pal_mod.markerWrite(t0m);
