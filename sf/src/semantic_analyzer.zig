@@ -163,6 +163,7 @@ fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32) u32 {
 
 pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, name_id: u32, node_idx: u32) u32 {
     var ide: []const u8 = "IDE\n"; pal_mod.markerWrite(ide);
+    if (name_id == @intCast(u32, 1)) { var sem_m: []const u8 = "SEM:vi"; pal_mod.markerWriteInt(sem_m, module_id); }
     var li = self.local_decl_count;
     while (li > @intCast(usize, 0)) {
         li -= @intCast(usize, 1);

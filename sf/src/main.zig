@@ -482,6 +482,12 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                     var init_type = sa_mod.semanticAnalyzerResolveExpr(&sa, decl.child_1);
                     var v2tb: [20]u8 = undefined; var v2tl = itoa_mod.itoa(init_type, v2tb[0..]); var v2ts: usize = @intCast(usize, 19) - @intCast(usize, v2tl); pal.markerWrite(v2tb[v2ts..@intCast(usize, 19)]);
                     var v2nl: []const u8 = "\n"; pal.markerWrite(v2nl);
+                    var v49p_m: []const u8 = "V49:p"; pal.markerWriteInt(v49p_m, decl.payload);
+                    var v49t_m: []const u8 = "V49:t"; pal.markerWriteInt(v49t_m, init_type);
+                    if (init_type <= @intCast(u32, ctx.typereg.types_len - @intCast(usize, 1))) {
+                        var ty = ctx.typereg.types_items[@intCast(usize, init_type)];
+                        var v49k_m: []const u8 = "V49:k"; pal.markerWriteInt(v49k_m, @intCast(u32, @enumToInt(ty.kind)));
+                    }
                     if (init.kind == AstKind.ident_expr) {
                         if (init_type != type_mod.TYPE_UNDEFINED) {
                             var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, decl.payload);

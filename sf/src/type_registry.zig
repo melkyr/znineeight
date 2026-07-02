@@ -291,7 +291,12 @@ pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
 }
 
 pub fn nameCacheGet(self: *TypeRegistry, key: u64) ?u32 {
-    return hash_mod.u64ToU32MapGet(&self.name_cache, key);
+    var val = hash_mod.u64ToU32MapGet(&self.name_cache, key);
+    var key_lo: u64 = key & @intCast(u64, 4294967295);
+    if (key_lo == @intCast(u64, 1)) {
+        var ngc_m: []const u8 = "NGC:g1"; pal_mod.markerWriteInt(ngc_m, if (val) |v| v else @intCast(u32, 0));
+    }
+    return val;
 }
 
 pub fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {

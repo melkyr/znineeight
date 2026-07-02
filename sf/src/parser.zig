@@ -538,7 +538,8 @@ fn parserParseSingleToken(self: *Parser, kind: AstKind) ParserError!u32 {
 
 fn parserParseIdentExpr(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
-    var id = tok.value.string_id;
+    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
+    var id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
     return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, id, tok.span_start, end);
 }
