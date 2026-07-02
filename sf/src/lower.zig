@@ -3652,8 +3652,12 @@ pub fn hoistTemps(self: *LirLowerer) void {
 }
 
 fn applyNoneCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) u32 {
+    var apns_m: []const u8 = "APN:s"; pal.markerWriteInt(apns_m, src_temp);
+    var apnt_m: []const u8 = "APN:t"; pal.markerWriteInt(apnt_m, coercion.target_type);
+    var apnn_m: []const u8 = "APN:n"; pal.markerWriteInt(apnn_m, coercion.node_idx);
     if (src_temp != 0 and @intCast(usize, src_temp) < self.hoisted_temps.len) {
         var sc_ty = getTempType(self, src_temp);
+        var apny_m: []const u8 = "APN:y"; pal.markerWriteInt(apny_m, sc_ty);
         if (sc_ty == type_mod.TYPE_NULL) {
             var tgt = self.ctx.registry.types_items[@intCast(usize, coercion.target_type)];
             if (tgt.kind == type_mod.TypeKind.optional_type) {
@@ -3670,6 +3674,10 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
     var kind = coercion.kind;
     if (kind == CoercionKind.none) {
         return applyNoneCoercion(self, src_temp, coercion);
+    } else if (kind == CoercionKind.wrap_optional_null) {
+        var dst = nextTemp(self, coercion.target_type);
+        emitInst(self, LirInst{ .set_optional_null = .{ .result = dst, .type_id = coercion.target_type } });
+        return dst;
     } else if (kind == CoercionKind.wrap_optional) {
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .wrap_optional = .{ .value = src_temp, .result = dst, .type_id = coercion.target_type } });

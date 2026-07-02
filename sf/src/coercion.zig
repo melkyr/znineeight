@@ -15,6 +15,7 @@ pub const CoercionKind = enum(u8) {
     int_widen,
     float_widen,
     int_literal_coerce,
+    wrap_optional_null,
 };
 
 const Sand = @import("allocator.zig").Sand;
@@ -94,8 +95,9 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
     if (source == type_mod.TYPE_F32 and target == type_mod.TYPE_F64) return CoercionKind.float_widen;
 
     if (src.kind == type_mod.TypeKind.null_type) {
+        var ccn_m: []const u8 = "CC:nul"; pal.markerWriteInt(ccn_m, target);
         if (type_mod.typeRegistryIsPointer(reg, target)) return CoercionKind.none;
-        if (tgt.kind == type_mod.TypeKind.optional_type) return CoercionKind.none;
+        if (tgt.kind == type_mod.TypeKind.optional_type) return CoercionKind.wrap_optional_null;
         if (tgt.kind == type_mod.TypeKind.fn_type) return CoercionKind.none;
     }
     if (tgt.kind == type_mod.TypeKind.optional_type) {

@@ -548,6 +548,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
+    var cka_m: []const u8 = "CCK:ca"; pal_mod.markerWriteInt(cka_m, @intCast(u32, @enumToInt(ck)));
     if (ck != coercion_mod.CoercionKind.none) {
         coercion_mod.coercionTableAdd(self.coercion_table, src_node, ck, dst_type);
         var cor_nm: []const u8 = "COR:N"; pal_mod.markerWriteInt(cor_nm, src_node); var cor_km: []const u8 = "COR:K"; pal_mod.markerWriteInt(cor_km, @intCast(u32, @enumToInt(ck)));
@@ -1366,6 +1367,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var it = semanticAnalyzerResolveExpr(self, node.child_1);
                 if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
                     var ck = coercion_mod.classifyCoercion(self.registry, it, decl_type);
+                    var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
                     if (ck != coercion_mod.CoercionKind.none) {
                         coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
                     }
