@@ -2127,6 +2127,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
          var rst_nb: [10]u8 = undefined; var rst_nl = itoa_mod.itoa(emitter.fl_name_ids[@intCast(usize, rti)], rst_nb[0..]); var rst_ns: usize = @intCast(usize, 9) - @intCast(usize, rst_nl); pal.markerWrite(rst_nb[rst_ns..@intCast(usize, 9)]);
          var rst_nl2: []const u8 = "\n"; pal.markerWrite(rst_nl2);
          return mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rti)]); } }
+     var vflow_rnt: []const u8 = "VFLOW:rnt"; pal.markerWriteInt(vflow_rnt, temp_id);
      return mangleTempName(emitter.interner, temp_id);
  }
 
@@ -2428,6 +2429,11 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     }
                 }
                 if (lf_res_void == @intCast(u8, 0)) {
+                var lfcm: []const u8 = "/*==LF:f"; bufferedWriterWrite(&emitter.writer, lfcm);
+                var lfcfb: [10]u8 = undefined; var lfcfl = itoa_mod.itoa(lf.field_id, lfcfb[0..]); var lfcfs: usize = @intCast(usize, 9) - @intCast(usize, lfcfl); bufferedWriterWrite(&emitter.writer, lfcfb[lfcfs..@intCast(usize, 9)]);
+                var lfcm2: []const u8 = " b"; bufferedWriterWrite(&emitter.writer, lfcm2);
+                var lfcbb: [10]u8 = undefined; var lfcbl = itoa_mod.itoa(lf.base, lfcbb[0..]); var lfcbs: usize = @intCast(usize, 9) - @intCast(usize, lfcbl); bufferedWriterWrite(&emitter.writer, lfcbb[lfcbs..@intCast(usize, 9)]);
+                var lfcm3: []const u8 = "==*/\n"; bufferedWriterWrite(&emitter.writer, lfcm3);
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               bufferedWriterWrite(&emitter.writer, result);
               var s: []const u8 = " = ";
@@ -2623,6 +2629,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s3);
         },
         .load => |l| {
+            var vflow_ldv: []const u8 = "VFLOW:ldv\n"; pal.markerWrite(vflow_ldv);
             var ptr = resolveTempName(emitter, l.ptr);
             var result = resolveTempName(emitter, l.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -3304,8 +3311,10 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .check_optional => |e| {
+            var gapc_coe: []const u8 = "GAPC:coe\n"; pal.markerWrite(gapc_coe);
             var dst = resolveTempName(emitter, e.result);
             var src = resolveTempName(emitter, e.value);
+            var gapc_cos: []const u8 = "GAPC:cos"; pal.markerWriteInt(gapc_cos, e.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
             var s1: []const u8 = " = ";

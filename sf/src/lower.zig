@@ -1053,6 +1053,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_dr = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var dr_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_dr) |t| { if (t != type_mod.TYPE_UNDEFINED) { dr_box[0] = t; } } else { var rtm_dr: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_dr); var rtmb_dr: [10]u8 = undefined; var rtml_dr = itoa_mod.itoa(node_idx, rtmb_dr[0..]); var rtms_dr: usize = @intCast(usize, 9) - @intCast(usize, rtml_dr); pal.markerWrite(rtmb_dr[rtms_dr..@intCast(usize, 9)]); var rtmnl_dr: []const u8 = "\n"; pal.markerWrite(rtmnl_dr); }
+        if (dr_box[0] == type_mod.TYPE_VOID) { var vflow_drv: []const u8 = "VFLOW:drv\n"; pal.markerWrite(vflow_drv); }
         var tid = nextTemp(self, dr_box[0]);
         emitInst(self, LirInst{ .load = .{ .ptr = ptr_temp, .result = tid } });
         return tid;
@@ -1419,6 +1420,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
+        var gape_fac: []const u8 = "GAPE:fac\n"; pal.markerWrite(gape_fac);
         var fabs_m: []const u8 = "FABS:bt"; pal.markerWrite(fabs_m);
         var fabs_b: [10]u8 = undefined; var fabs_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, base_temp)].type_id, fabs_b[0..]); var fabs_ts: usize = @intCast(usize, 9) - @intCast(usize, fabs_tl); pal.markerWrite(fabs_b[fabs_ts..@intCast(usize, 9)]);
         var fabs_nl: []const u8 = "\n"; pal.markerWrite(fabs_nl);
@@ -1427,6 +1429,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } } else { var rtm_fa: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_fa); var rtmb_fa: [10]u8 = undefined; var rtml_fa = itoa_mod.itoa(node_idx, rtmb_fa[0..]); var rtms_fa: usize = @intCast(usize, 9) - @intCast(usize, rtml_fa); pal.markerWrite(rtmb_fa[rtms_fa..@intCast(usize, 9)]); var rtmnl_fa: []const u8 = "\n"; pal.markerWrite(rtmnl_fa); }
+        if (fa_box[0] == type_mod.TYPE_VOID) { var gape_fav: []const u8 = "GAPE:fav\n"; pal.markerWrite(gape_fav); }
         var d1f: []const u8 = "D1:FADr"; pal.markerWrite(d1f);
         var d1fb: [20]u8 = undefined;
         if (rt_fa) |d1t| { var d1fl = itoa_mod.itoa(d1t, d1fb[0..]); var d1fs: usize = @intCast(usize, 19) - @intCast(usize, d1fl); pal.markerWrite(d1fb[d1fs..@intCast(usize, 19)]); }
@@ -1500,18 +1503,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 return tid;
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
+                var gape_fkb: []const u8 = "GAPE:fkb\n"; pal.markerWrite(gape_fkb);
                 var fields: []FieldEntry = undefined;
                 type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
+                var gape_flen: []const u8 = "GAPE:flen"; pal.markerWriteInt(gape_flen, @intCast(u32, fields.len));
                 var fi: usize = 0;
                 while (fi < fields.len) : (fi += 1) {
                     if (fields[fi].name_id == field_name_id) {
+                        var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, fi));
                         var sf_nid = nameMapGet(self, base_temp);
                         emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = @intCast(u32, fi), .result = tid } });
                         return tid;
                     }
-                }
+            var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
+            }
             }
         }
+        if (fa_box[0] == type_mod.TYPE_VOID) { var gape_frt: []const u8 = "GAPE:frt\n"; pal.markerWrite(gape_frt); }
         return tid;
     } else if (node.kind == AstKind.fn_call) {
         var d9m: []const u8 = "D9:FCk"; pal.markerWrite(d9m);
@@ -2851,8 +2859,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (cond_t != type_mod.TYPE_UNDEFINED) {
                 var cond_ty = self.ctx.registry.types_items[@intCast(usize, cond_t)];
                 if (cond_ty.kind == type_mod.TypeKind.optional_type) {
+                    var gapc_ci3: []const u8 = "GAPC:ci3\n"; pal.markerWrite(gapc_ci3);
                     var has_val = nextTemp(self, type_mod.TYPE_U8);
                     emitInst(self, LirInst{ .check_optional = .{ .value = cond_temp, .result = has_val } });
+                    var gapc_ci4: []const u8 = "GAPC:ci4\n"; pal.markerWrite(gapc_ci4);
                     cond_temp = has_val;
                 }
             }
