@@ -589,6 +589,16 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             if (tc) |t| return t;
         }
         var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
+        var si: usize = 0;
+        while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
+            if (sym) |s| {
+                if (s.type_id != @intCast(u32, 0)) {
+                    var ops_m: []const u8 = "OPTVOID:ids"; pal_mod.markerWriteInt(ops_m, s.type_id);
+                    return s.type_id;
+                }
+            }
+        }
         var opm4f_m: []const u8 = "OPTVOID:idF"; pal_mod.markerWriteInt(opm4f_m, name_id);
         return type_mod.TYPE_UNDEFINED;
     }

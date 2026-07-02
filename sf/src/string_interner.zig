@@ -2,6 +2,7 @@ const hash_mod = @import("util/hash.zig");
 const mem_mod = @import("util/mem.zig");
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
+const pal = @import("pal.zig");
 
 pub const InternEntry = struct {
     text: []const u8,
@@ -85,6 +86,8 @@ pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) StringInterner {
 }
 
 pub fn stringInternerIntern(self: *StringInterner, text: []const u8) u32 {
+    var inth_m: []const u8 = "INT:tl"; pal.markerWriteInt(inth_m, @intCast(u32, text.len));
+    if (text.len > @intCast(usize, 0)) { var inth2_m: []const u8 = "INT:t0"; pal.markerWriteInt(inth2_m, @intCast(u32, text[0])); }
     var hash = hash_mod.fnv1a(text);
     var bucket_count = self.buckets_len;
     if (bucket_count == 0) {
@@ -95,10 +98,14 @@ pub fn stringInternerIntern(self: *StringInterner, text: []const u8) u32 {
     var idx: u32 = self.buckets_items[@intCast(usize, bucket)];
     while (idx != 0) {
         var entry = &self.entries_items[@intCast(usize, idx)];
-        if (entry.hash == hash and mem_mod.mem_eql(entry.text, text)) return idx;
+        if (entry.hash == hash and mem_mod.mem_eql(entry.text, text)) {
+            var indp_m: []const u8 = "INT:dup"; pal.markerWriteInt(indp_m, idx);
+            return idx;
+        }
         idx = entry.next;
     }
     var new_idx = self.entries_len;
+    var innw_m: []const u8 = "INT:new"; pal.markerWriteInt(innw_m, @intCast(u32, new_idx));
     var copied = stringInternerCopyToArena(self, text);
     appendEntry(&self.entries_items, &self.entries_len, &self.entries_capacity, self.entries_allocator, InternEntry{
         .text = copied[0..text.len],

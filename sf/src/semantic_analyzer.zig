@@ -281,8 +281,11 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                         var fn_dn = self.store.nodes.items[@intCast(usize, fs.decl_node)];
                         if (fn_dn.kind == AstKind.fn_decl) {
                             var proto = self.store.fn_protos.items[@intCast(usize, fn_dn.payload)];
+                            var bre1_m: []const u8 = "BR:x"; pal_mod.markerWriteInt(bre1_m, proto.name_id);
                             if (proto.return_type_node != @intCast(u32, 0)) {
                                 var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
+                                var rtt_val: u32 = if (rtt) |rv| rv else @intCast(u32, 0);
+                                var bre2_m: []const u8 = "BR:rt"; pal_mod.markerWriteInt(bre2_m, rtt_val);
                                 if (rtt) |rtv| {
                                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
@@ -290,6 +293,8 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                 }
                                 var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
                                 var resolved_rt = type_resolver.resolveTypeExprFull(&tre_env, proto.return_type_node, @intCast(u32, 0));
+                                var brr1_m: []const u8 = "BR:treN"; pal_mod.markerWriteInt(brr1_m, proto.return_type_node);
+                                var brr2_m: []const u8 = "BR:treT"; pal_mod.markerWriteInt(brr2_m, resolved_rt);
                                 if (resolved_rt != type_mod.TYPE_UNDEFINED) {
                                     rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt);
                                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt);
@@ -297,7 +302,9 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                     return fn_ty;
                                 }
                             }
+                            var bre3_m: []const u8 = "BR:dv\n"; pal_mod.markerWrite(bre3_m);
                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                            var bre4_m: []const u8 = "BR:ft"; pal_mod.markerWriteInt(bre4_m, fn_ty);
                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                             return fn_ty;
                         }
@@ -600,9 +607,12 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     var proto = self.store.fn_protos.items[@intCast(usize, dn.payload)];
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
+                        var rnt_val: u32 = if (rt) |t| t else @intCast(u32, 0);
+                        var brnt_m: []const u8 = "BR:rnt"; pal_mod.markerWriteInt(brnt_m, rnt_val);
                         if (rt) |t| { direct_ret = t; }
                         else {
                             var rn = self.store.nodes.items[@intCast(usize, proto.return_type_node)];
+                            var brnk_m: []const u8 = "BR:rnk"; pal_mod.markerWriteInt(brnk_m, @intCast(u32, @enumToInt(rn.kind)));
                             if (rn.kind == AstKind.ident_expr) {
                                 var rnid = self.store.identifiers.items[@intCast(usize, rn.payload)];
                                 var nc = type_mod.nameCacheGet(self.registry, @intCast(u64, rnid));
@@ -615,9 +625,15 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         }
                                 }
                                 if (nc) |t| { direct_ret = t; }
+                            } else {
+                                var tre_env_fc = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
+                                var fc_rt = type_resolver.resolveTypeExprFull(&tre_env_fc, proto.return_type_node, @intCast(u32, 0));
+                                var brfc_m: []const u8 = "BR:fc"; pal_mod.markerWriteInt(brfc_m, fc_rt);
+                                if (fc_rt != type_mod.TYPE_UNDEFINED) { direct_ret = fc_rt; }
                             }
                         }
-                    }
+                    var brfnr_m: []const u8 = "BR:fnr"; pal_mod.markerWriteInt(brfnr_m, direct_ret);
+                }
                 }
             }
         } else { var xs: []const u8 = "xS\n"; pal_mod.markerWrite(xs); }
@@ -1367,9 +1383,11 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             self.local_decl_names[self.local_decl_count] = node.payload;
             self.local_decl_types[self.local_decl_count] = decl_type;
             self.local_decl_count += @intCast(usize, 1);
+            var ck: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, node.payload);
+            type_mod.nameCachePut(self.registry, ck, decl_type);
+            var regcp_m: []const u8 = "REG:cp"; pal_mod.markerWriteInt(regcp_m, node.payload);
+            var regct_m: []const u8 = "REG:ct"; pal_mod.markerWriteInt(regct_m, decl_type);
             }
-            var d4v: []const u8 = "D4:N"; pal_mod.markerWriteInt(d4v, node.payload);
-            var d4v2: []const u8 = "D4:T"; pal_mod.markerWriteInt(d4v2, decl_type);
         } else if (node.kind == AstKind.if_stmt) {
              semanticAnalyzerResolveIfHeader(self, node_idx);
              if (node.child_2 != @intCast(u32, 0)) {
