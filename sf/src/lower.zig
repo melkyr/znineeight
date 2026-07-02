@@ -1569,10 +1569,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       var ai: usize = 0;
                       while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                       ai = 0;
+                var is_ex: u8 = fp.is_extern;
                 while (ai < ec.len) : (ai += 1) {
                     var arg_val = lowerExpr(self, ec[ai]);
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
-                        if (pt != type_mod.TYPE_UNDEFINED) {
+                        if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                             var st = getTempType(self, arg_val);
                             var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                             var ce: CoercionEntry = undefined;
@@ -1581,12 +1582,31 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             ce.target_type = pt;
                             arg_val = applyCoercion(self, arg_val, ce);
                         }
+                        if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
+                            var et = self.ctx.registry.types_items[@intCast(usize, pt)];
+                            if (et.kind == type_mod.TypeKind.optional_type) {
+                                var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
+                                self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = eo.payload;
+                                if (@intCast(usize, arg_val) < self.hoisted_temps.len and getTempType(self, arg_val) != type_mod.TYPE_NULL) {
+                                    var ua = nextTemp(self, eo.payload);
+                                    emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = arg_val, .result = ua } });
+                                    arg_val = ua;
+                                }
+                            }
+                        }
                     }
                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                     var sbox: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { sbox[0] = pt; }
                     else { sbox[0] = self.hoisted_temps.items[@intCast(usize, arg_val)].type_id; }
                     self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sbox[0];
+                    if (is_ex == @intCast(u8, 1) and sbox[0] != type_mod.TYPE_UNDEFINED) {
+                        var sti = self.ctx.registry.types_items[@intCast(usize, sbox[0])];
+                        if (sti.kind == type_mod.TypeKind.optional_type) {
+                            var sio = self.ctx.registry.opt_items[@intCast(usize, sti.payload_idx)];
+                            self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sio.payload;
+                        }
+                    }
                 }
                 var result: u32 = @intCast(u32, 0);
                 if (fp.return_type != type_mod.TYPE_VOID and fp.return_type != type_mod.TYPE_UNDEFINED) {
@@ -1699,10 +1719,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                  var ai: usize = 0;
                                  while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                                  ai = 0;
+                                  var is_ex: u8 = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0));
                                   while (ai < ec.len) : (ai += 1) {
                                        var call_val = lowerExpr(self, ec[ai]);
                                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
-                                           if (pt != type_mod.TYPE_UNDEFINED) {
+                                           if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                                                var st = getTempType(self, call_val);
                                                var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                                                var ce: CoercionEntry = undefined;
@@ -1711,13 +1732,31 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                                ce.target_type = pt;
                                                call_val = applyCoercion(self, call_val, ce);
                                            }
+                                           if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
+                                               var et = self.ctx.registry.types_items[@intCast(usize, pt)];
+                                               if (et.kind == type_mod.TypeKind.optional_type) {
+                                                   var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
+                                                   if (@intCast(usize, call_val) < self.hoisted_temps.len and getTempType(self, call_val) != type_mod.TYPE_NULL) {
+                                                       var ua = nextTemp(self, eo.payload);
+                                                       emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = call_val, .result = ua } });
+                                                       call_val = ua;
+                                                   }
+                                               }
+                                           }
                                        }
                                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = call_ns + @intCast(u32, ai), .src = call_val } });
-                                      var slot_tid_a: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                                      if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { slot_tid_a[0] = pt; var hx: []const u8 = "H"; pal.markerWrite(hx); }
-                                      else { slot_tid_a[0] = self.hoisted_temps.items[@intCast(usize, call_val)].type_id; var mx: []const u8 = "M"; pal.markerWrite(mx); }
-                                      self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = slot_tid_a[0];
-                                 }
+                                       var slot_tid_a: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt2| { slot_tid_a[0] = pt2; var hx: []const u8 = "H"; pal.markerWrite(hx); }
+                                       else { slot_tid_a[0] = self.hoisted_temps.items[@intCast(usize, call_val)].type_id; var mx: []const u8 = "M"; pal.markerWrite(mx); }
+                                       self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = slot_tid_a[0];
+                                       if (is_ex == @intCast(u8, 1) and slot_tid_a[0] != type_mod.TYPE_UNDEFINED) {
+                                           var sti = self.ctx.registry.types_items[@intCast(usize, slot_tid_a[0])];
+                                           if (sti.kind == type_mod.TypeKind.optional_type) {
+                                               var sio = self.ctx.registry.opt_items[@intCast(usize, sti.payload_idx)];
+                                               self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = sio.payload;
+                                           }
+                                       }
+                                  }
                                  var args_count: u32 = @intCast(u32, ec.len);
                                  self._fn_ret_type = type_mod.TYPE_UNDEFINED;
                                  if (fs.decl_node != 0) {
@@ -1772,10 +1811,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var ai: usize = 0;
                     while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                     ai = 0;
+                    var is_ex: u8 = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0));
                     while (ai < ec.len) : (ai += 1) {
                         var arg_val = lowerExpr(self, ec[ai]);
                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
-                            if (pt != type_mod.TYPE_UNDEFINED) {
+                            if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                                 var st = getTempType(self, arg_val);
                                 var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                                 var ce: CoercionEntry = undefined;
@@ -1784,12 +1824,30 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 ce.target_type = pt;
                                 arg_val = applyCoercion(self, arg_val, ce);
                             }
+                            if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
+                                var et = self.ctx.registry.types_items[@intCast(usize, pt)];
+                                if (et.kind == type_mod.TypeKind.optional_type) {
+                                    var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
+                                    if (@intCast(usize, arg_val) < self.hoisted_temps.len and getTempType(self, arg_val) != type_mod.TYPE_NULL) {
+                                        var ua = nextTemp(self, eo.payload);
+                                        emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = arg_val, .result = ua } });
+                                        arg_val = ua;
+                                    }
+                                }
+                            }
                         }
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                         var slot_tid_b: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { slot_tid_b[0] = pt; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
+                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt2| { slot_tid_b[0] = pt2; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
                         else { slot_tid_b[0] = getTempType(self, arg_val); var mx2: u32 = 2; if (mx2 == 2) { var qx: usize = 999998; mx2 = 0; } }
                         self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = slot_tid_b[0];
+                        if (is_ex == @intCast(u8, 1) and slot_tid_b[0] != type_mod.TYPE_UNDEFINED) {
+                            var sti = self.ctx.registry.types_items[@intCast(usize, slot_tid_b[0])];
+                            if (sti.kind == type_mod.TypeKind.optional_type) {
+                                var sio = self.ctx.registry.opt_items[@intCast(usize, sti.payload_idx)];
+                                self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sio.payload;
+                            }
+                        }
                     }
                     var args_count: u32 = @intCast(u32, ec.len);
                     self._fn_ret_type = type_mod.TYPE_UNDEFINED;

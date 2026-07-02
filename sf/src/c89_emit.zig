@@ -3340,6 +3340,20 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 bufferedWriterWrite(&emitter.writer, s2);
             }
         },
+        .unwrap_optional_abi => |e| {
+            var dst = resolveTempName(emitter, e.result);
+            var src = resolveTempName(emitter, e.value);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s0: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, s0);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s1: []const u8 = ".has_value ? ";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, src);
+            var s2: []const u8 = ".value : NULL;\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+        },
         .int_to_ptr => |c| {
             var dst = resolveTempName(emitter, c.result);
             var src = resolveTempName(emitter, c.value);
