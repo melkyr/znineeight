@@ -1,68 +1,67 @@
-# Task 1 Report: `const_alias_prepass.zig`
+# Task 1 Report: Create `sf/src/extern_c.zig` — Consolidate extern fns
 
-**Commit:** `4da84fc1` — "feat: add topo-sort const-alias pre-pass between symbol reg and type resolution"
-**Files:** `sf/src/const_alias_prepass.zig` (new, 240 lines), `sf/src/main.zig` (+2 lines)
+**Status:** COMPLETE
+**Commit:** `e3a43f26` refactor: consolidate extern fn into sf/src/extern_c.zig
 
-## What was built
+## What was done
 
-- `sf/src/const_alias_prepass.zig` with:
-  - `resolveWellKnownTypeName([]const u8) u32` — maps primitive type names to `TYPE_*`.
-  - top-level `growDep(...)` helper (edge-array growth).
-  - `pub fn constAliasPrepass(symbol_reg, registry, interner, store, perm_alloc) void` — 4-phase pass:
-    1. catalog unresolved `kind==global`, `type_id==0` `var_decl` aliases whose init is an `ident_expr`; build reverse edges keyed by dependency name;
-    2. seed a worklist by resolving terminal aliases (raw nameCache id, composite-key scan across modules, then well-known-type match);
-    3. Kahn propagation across the alias DAG, setting `sym.type_id` and `nameCachePut` for each resolved alias;
-    4. residuals left for sema.
-- Wired into `main.zig` `phase_TypeResolution`, immediately after `registerModuleSymbols` and before type resolution.
+1. **Created `sf/src/extern_c.zig`** with the three consolidated declarations:
+   ```zig
+   pub extern fn write(fd: i32, buf: [*]const u8, count: i32) i32;
+   pub extern fn __bootstrap_print(s: [*]const u8) void;
+   pub extern fn __bootstrap_print_int(n: i32) void;
+   ```
 
-## Deviations from the brief (all required for zig0 / correctness)
+2. **`sf/src/pal.zig`** — replaced the bare `extern fn write` (line 4) with
+   `const ext_c = @import("extern_c.zig");`. Updated both call sites in
+   `stdout_write`/`stderr_write` to `ext_c.write(...)`. The `extern "c"` fopen/
+   fread/fclose/fseek/ftell/c_exit declarations were **left in place** — the
+   brief only scoped `write`, `__bootstrap_print`, `__bootstrap_print_int` into
+   `extern_c.zig`.
 
-1. **`growDep` made top-level** — brief flagged this; zig0 rejects nested fns. Uses literal `4` instead of the in-function `SZ_U32`.
-2. **Single-line param list** — zig0's parser errored ("Expected parameter name") on the multi-line signature with trailing comma. Collapsed to one line.
-3. **`var resolved: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED)`** — zig0 dropped the C declaration when a `var` is initialized directly to an imported comptime const then reassigned (produced `'resolved' undeclared`). Wrapping in `@intCast` forces a runtime var (matches `semantic_analyzer.zig:1346`).
-4. **Corrected array sizing (memory-safety fixes over the brief's literal text):**
-   - `alias_sym_id`: brief allocated `SZ_U8 * tl * 2` (bytes) for a `[*]u32` indexed to `2*tl-1`. Changed to `SZ_U32 * tl * 2`.
-   - `dep_head`: brief sized it `tl`, but it is indexed by **canonical interner IDs** (which can far exceed the symbol count). Sized to `interner.entries_len` (min `tl`) and initialized over that range. Without this it OOBs on any non-trivial program.
-5. **Composite nameCache keys via `x * 4294967296 + y`** instead of `(x << 32) | y`, matching the existing convention in `symbol_registrator.zig:250`, `comptime_eval.zig:65`, `main.zig:310`, and avoiding zig0 shift-amount typing.
-6. **All `[*]` pointer indices cast to `usize`** (codebase always does this, e.g. `string_interner.zig:98`); `sandAlloc` size arithmetic cast to `usize` per Z98 rule.
+3. **`sf/src/main_exp.zig`** — replaced lines 1-2 with the import; call sites
+   now `ext_c.__bootstrap_print(...)` / `ext_c.__bootstrap_print_int(...)`.
 
-## Verification results
+4. **`sf/src/test_a.zig`** — replaced line 1 with the import; call site now
+   `ext_c.__bootstrap_print("hello")`.
 
-| Gate | Command | Result | Expected |
-|------|---------|--------|----------|
-| Build zig1 | `zig0 -> gcc -m32 -std=c89` | **0 errors** ✅ | 0 |
-| file_const_single | dump-c89 + gcc | **3** ⚠️ | 0 |
-| json_parser | dump-c89 + gcc | **13** ⚠️ | < 13 |
-| mandelbrot | dump-c89 + gcc | **0** ✅ | 0 |
-| game_of_life | dump-c89 + gcc | **0** ✅ | 0 |
-| mud_server | dump-c89 + gcc | **1** ⚠️ | 0 |
+## Deviation from brief (IMPORTANT LEARNING)
 
-### Important finding: the numeric repro gates are not movable by Task 1 alone
-
-I built a **no-prepass baseline** (`main.zig` with the call disabled) and compared:
-
-- `file_const_single`: **3 errors with AND without** the prepass — identical.
-- `json_parser`: **13 with AND without** — identical.
-- `mud_server`: **1 with AND without** — identical (pre-existing).
-- mandelbrot / game_of_life: 0 both ways.
-
-**Root cause:** On all current repros the prepass finds *nothing to resolve* (`alias_count == 0`, confirmed: no `KAHN:*` markers emitted). The only alias in these inputs is `pub const File = void;`, and `void` is pre-seeded into the name cache as interner id 1 → `TYPE_VOID` at type-registry init, so `symbol_registrator` already resolves it to `type_alias` during registration (marker `RCA:H1`). The prepass's `kind==global && type_id==0` filter correctly skips it.
-
-The 3 residual `file_const_single` errors and the 13 `json_parser` errors are an **`orelse` / optional-pointer lowering** defect (`zT_3` unwrap temp typed `int`, `x` typed as the full optional instead of `*void`), located in `lower.zig`/`semantic_analyzer.zig` — outside the scope of `const_alias_prepass.zig`. These are the target of the remaining tasks (2/3).
-
-### Proof the prepass itself works
-
-On a constructed out-of-order chain (`pub const A = B; pub const B = C; pub const C = u32;`) the pass emits:
-
+The brief suggested adding `const write = ext_c.write;` alias to keep pal.zig
+call sites unchanged. **This does NOT work with zig0.** The alias caused zig0
+to emit a mangled *constant* symbol at the call sites
+(`zC_29c0b880_2910d0f5_write(...)`) while the `pub extern fn` declaration in
+extern_c.c kept the unmangled C name (`extern int write(...)`). Result:
 ```
-KAHN:start
-KAHN:res1  KAHN:rt10   (B -> u32, TYPE_U32=10)
-KAHN:res0  KAHN:rt10   (A propagated -> u32)
-KAHN:end
+pal.c: undefined reference to `zC_29c0b880_2910d0f5_write'
+collect2: error: ld returned 1 exit status
 ```
+**Fix:** call `ext_c.write(...)` directly (no alias). zig0 then correctly emits
+the unmangled `write(...)` at the call site, matching the extern declaration.
 
-i.e. topo-sort seed + propagation resolve both `A` and `B` to `u32`. Generated C compiles with 0 errors.
+Verified generated C:
+- `extern_c.c:13: extern int write(int fd, unsigned char const* buf, int count);`
+- `pal.c:186: (void)(write(1, msg.ptr, ...));`  (unmangled, consistent)
 
-## Conclusion
+## Gate check
 
-Task 1 deliverable is complete: the pre-pass compiles cleanly into zig1 (0 gcc errors), is correctly wired between symbol registration and type resolution, is functionally verified via markers, and introduces **zero regressions** (every baseline is byte-for-byte identical in error count vs. the no-prepass build). The unmet numeric gates (`file_const_single=0`, `json_parser<13`, `mud_server=0`) are downstream `orelse`/optional lowering issues that this task's infrastructure does not and cannot address on its own; they depend on Tasks 2–3.
+Exact gate command output: `3` (zig0), `0` (gcc).
+
+- **gcc: 0 errors** — clean, zig1 binary produced (684692 bytes).
+- **zig0: 3 "error:" matches are FALSE POSITIVES** — two `[AST_UTILS] Warning:
+  NULL symbol ... at kw_error:656:49` lines and one source line containing
+  `s_error`, all matched by the substring `error:`. Verified identical count
+  (`3`) on the unmodified baseline via `git stash`, so they are pre-existing
+  and unrelated to this change. **zig0 real error count = 0.**
+
+## Files changed
+- `sf/src/extern_c.zig` (new, 3 lines)
+- `sf/src/pal.zig` (import + 2 call sites)
+- `sf/src/main_exp.zig` (import + 2 call sites)
+- `sf/src/test_a.zig` (import + 1 call site)
+
+## Concerns
+- None blocking. Note for future tasks: **do not use `const x = ext_mod.extern_fn;`
+  aliases** — zig0 mangles the alias into a `zC_` constant symbol that won't link
+  against the unmangled extern declaration. Reference extern fns via the module
+  prefix directly (`ext_c.write(...)`).
