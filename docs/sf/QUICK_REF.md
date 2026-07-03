@@ -36,7 +36,7 @@ Debug build (for GDB): append `-g -O0 -Wno-implicit-function-declaration` to the
 
 **2. Compile + run an example with that zig1:**
 ```bash
-"$OUT/zig1" --dump-c89 examples/lisp_interpreter_curr/main.zig > /tmp/lisp.c
+"$OUT/zig1" --dump-c89 examples/zig0/lisp_interpreter_curr/main.zig > /tmp/lisp.c
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isf/src/include \
     /tmp/lisp.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/lisp 2>&1 | grep -c 'error:'
 # add sf/src/include/net_runtime.c for mud_server; use `gcc -c` (no link) for no-main repros
@@ -53,14 +53,14 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isf/src/include \
 ## Compile Examples with zig1
 
 ```bash
-./out_release/zig1 --dump-c89 examples/mandelbrot/mandelbrot.zig > out.c
-./out_release/zig1 --dump-c89 examples/game_of_life/main_lin.zig > out.c
-./out_release/zig1 --dump-c89 examples/mud_server/main.zig > out.c
+./out_release/zig1 --dump-c89 examples/zig0/mandelbrot/mandelbrot.zig > out.c
+./out_release/zig1 --dump-c89 examples/zig0/game_of_life/main_lin.zig > out.c
+./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > out.c
 ```
 
 With markers (diagnostic output to stderr):
 ```bash
-./out_release/zig1 --markers --dump-c89 examples/mud_server/main.zig > out.c 2>diag.txt
+./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>diag.txt
 ```
 
 ## GCC Compile + Link
@@ -81,7 +81,7 @@ cd /workspace/znineeight
 rm -rf out_release && mkdir -p out_release
 ./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
-./out_release/zig1 --dump-c89 examples/mud_server/main.zig > /tmp/mud.c
+./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > /tmp/mud.c
 gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
   /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c \
   sf/src/include/net_runtime.c -o /tmp/mud
@@ -120,7 +120,7 @@ grep -n "keyword" out_release/semantic_analyzer.c | head -20
 cat > /tmp/gdb.txt <<'EOF'
 set pagination off
 break out_release/semantic_analyzer.c:LINENO
-run examples/mud_server/main.zig > /dev/null 2> /dev/null
+run examples/zig0/mud_server/main.zig > /dev/null 2> /dev/null
 print varname
 print another_var
 continue
@@ -175,7 +175,7 @@ Always use `grep -a` (binary-as-text) on the raw stderr file.
 
 ```bash
 # Capture markers to file
-./out_release/zig1 --markers --dump-c89 examples/mud_server/main.zig > out.c 2>/tmp/markers.bin
+./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>/tmp/markers.bin
 
 # Extract specific markers
 grep -a "^PREFIX:" /tmp/markers.bin

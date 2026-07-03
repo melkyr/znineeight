@@ -255,11 +255,11 @@ All code submissions must include:
 
 | Program | Tests |
 |---------|-------|
-| `examples/mandelbrot/mandelbrot.zig` | Floats, extern functions |
-| `examples/game_of_life/main.zig` | Tagged unions, switch |
-| `examples/mud_server/main.zig` | Slices, struct init, null |
-| `examples/lisp_interpreter_curr/*.zig` | Deep switches, TCO, error unions |
-| `examples/lzw/*.zig` | Have also relevant syntax |
+| `examples/zig0/mandelbrot/mandelbrot.zig` | Floats, extern functions |
+| `examples/zig0/game_of_life/main.zig` | Tagged unions, switch |
+| `examples/zig0/mud_server/main.zig` | Slices, struct init, null |
+| `examples/zig0/lisp_interpreter_curr/*.zig` | Deep switches, TCO, error unions |
+| `examples/zig0/lzw/*.zig` | Have also relevant syntax |
 
 ---
 
