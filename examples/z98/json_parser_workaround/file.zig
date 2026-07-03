@@ -1,3 +1,6 @@
+@cInclude("<stdio.h>");
+@cInclude("<stdlib.h>");
+
 pub const File = void;
 
 extern fn fopen(filename: [*]const c_char, mode: [*]const c_char) ?*File;

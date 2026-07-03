@@ -1,7 +1,11 @@
 const file = @import("file.zig");
 const json = @import("json.zig");
 
-extern fn __bootstrap_print(s: [*]const u8) void;
+@cInclude("zig_runtime.h");
+@cInclude("<stdio.h>");
+@cInclude("<stdlib.h>");
+
+extern fn __bootstrap_print(s: [*]const c_char) void;
 extern fn __bootstrap_print_int(i: i32) void;
 extern var zig_default_arena: *void;
 
@@ -9,7 +13,7 @@ fn printSlice(s: []const u8) void {
     __bootstrap_write(s.ptr, s.len);
 }
 
-extern fn __bootstrap_write(s: [*]const u8, len: usize) void;
+extern fn __bootstrap_write(s: [*]const c_char, len: usize) void;
 
 fn printIndent(level: usize) void {
     var i: usize = 0;
