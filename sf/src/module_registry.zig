@@ -7,6 +7,8 @@ const interner_mod = @import("string_interner.zig");
 const pal_mod = @import("pal.zig");
 const hash_mod = @import("util/hash.zig");
 const SourceManager = @import("source_manager.zig").SourceManager;
+const ga_mod = @import("growable_array.zig");
+const U32ArrayList = ga_mod.U32ArrayList;
 
 pub const ModuleState = enum(u8) {
     pending,
@@ -26,6 +28,7 @@ pub const ModuleEntry = struct {
     imports_start: u32,
     symbol_table: u32,
     type_offset: u32,
+    c_includes: U32ArrayList,
 };
 
 pub const ModuleEntryArrayList = struct {
@@ -225,6 +228,7 @@ pub fn moduleRegistryAddModule(self: *ModuleRegistry, path_id: u32) u32 {
         .imports_start = @intCast(u32, 0),
         .symbol_table = @intCast(u32, 0),
         .type_offset = @intCast(u32, 0),
+        .c_includes = ga_mod.u32ArrayListInit(self.alloc),
     };
     moduleEntryArrayListAppend(&self.modules, entry);
     self.next_id += 1;

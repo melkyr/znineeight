@@ -19,6 +19,7 @@ const ast_mod = @import("ast.zig");
 const itoa_mod = @import("util/itoa.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
+const ga_mod = @import("growable_array.zig");
 const import_resolver = @import("import_resolver.zig");
 const az_mod = @import("analyzer.zig");
 const sym_mod = @import("symbol_table.zig");
@@ -665,6 +666,9 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     pal.markerWrite(rbuf[rstart..@intCast(usize, 19)]);
                     var sp2: []const u8 = " ";
                     pal.markerWrite(sp2);
+            if (decl.kind == AstKind.c_include) {
+                        ga_mod.u32ArrayListAppend(&mods[mi].c_includes, decl.payload);
+                    }
             if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.markerWrite(mf);
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
