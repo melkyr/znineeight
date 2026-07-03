@@ -1447,12 +1447,33 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, rp);
 }
 
-fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) void {
+fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32) void {
     var s1: []const u8 = "/* Module: ";
     bufferedWriterWrite(&emitter.writer, s1);
     bufferedWriterWrite(&emitter.writer, name);
-    var s2: []const u8 = " */\n#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n\n/* Forward declarations */\n";
+    var s2: []const u8 = " */\n#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
     bufferedWriterWrite(&emitter.writer, s2);
+    var ci: usize = @intCast(usize, 0);
+    while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
+        var inc_id = c_includes[ci];
+        var inc_str = interner_mod.stringInternerGet(emitter.interner, inc_id);
+        var is1: []const u8 = "#include ";
+        bufferedWriterWrite(&emitter.writer, is1);
+        if (inc_str.len > @intCast(usize, 0)) {
+            if (inc_str.ptr[0] == @intCast(u8, '<')) {
+                bufferedWriterWrite(&emitter.writer, inc_str);
+            } else {
+                var qs: []const u8 = "\"";
+                bufferedWriterWrite(&emitter.writer, qs);
+                bufferedWriterWrite(&emitter.writer, inc_str);
+                bufferedWriterWrite(&emitter.writer, qs);
+            }
+        }
+        var inl: []const u8 = "\n";
+        bufferedWriterWrite(&emitter.writer, inl);
+    }
+    var s3: []const u8 = "\n/* Forward declarations */\n";
+    bufferedWriterWrite(&emitter.writer, s3);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         if (fns[i].is_extern == @intCast(u8, 0)) {
@@ -1470,13 +1491,13 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
     bufferedWriterWrite(&emitter.writer, s);
 }
 
-pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
+pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
     var poi: u32 = @intCast(u32, 0);
     while (poi < ptr_only_len) : (poi += 1) {
         hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ptr_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
     }
     emitSpecialTypes(emitter, emitter.registry);
-    emitModuleHeader(emitter, name, fns);
+    emitModuleHeader(emitter, name, fns, c_includes);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         var func = fns[i];

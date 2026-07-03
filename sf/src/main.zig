@@ -727,7 +727,12 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitIncludes(&cwriter);
     c89_mod.bufferedWriterFlush(&cwriter);
 
-    c89_mod.emitModule(&emitter, module_name, fns, ctx.pointer_only_ids, ctx.pointer_only_len);
+    var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var c_incs: []u32 = undefined;
+    if (amods.len > @intCast(usize, 0)) {
+        c_incs = ga_mod.u32ArrayListGetSlice(&amods[0].c_includes);
+    }
+    c89_mod.emitModule(&emitter, module_name, fns, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);
 }
