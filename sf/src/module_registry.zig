@@ -9,6 +9,8 @@ const hash_mod = @import("util/hash.zig");
 const SourceManager = @import("source_manager.zig").SourceManager;
 const ga_mod = @import("growable_array.zig");
 const U32ArrayList = ga_mod.U32ArrayList;
+const AstStore = @import("ast.zig").AstStore;
+const AstKind = @import("ast.zig").AstKind;
 
 pub const ModuleState = enum(u8) {
     pending,
@@ -431,5 +433,20 @@ pub fn moduleRegistryVerifyOrder(reg: *ModuleRegistry) void {
             }
         }
         vi += 1;
+    }
+}
+
+pub fn moduleRegistryCollectIncludes(store: *AstStore, decls: []u32, c_includes: *U32ArrayList) void {
+    var di: usize = @intCast(usize, 0);
+    while (di < decls.len) : (di += @intCast(usize, 1)) {
+        var decl = store.nodes.items[@intCast(usize, decls[di])];
+        if (decl.kind == AstKind.c_include) {
+            ga_mod.u32ArrayListAppend(c_includes, decl.payload);
+        } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
+            var init = store.nodes.items[@intCast(usize, decl.child_1)];
+            if (init.kind == AstKind.c_include) {
+                ga_mod.u32ArrayListAppend(c_includes, init.payload);
+            }
+        }
     }
 }

@@ -19,7 +19,6 @@ const ast_mod = @import("ast.zig");
 const itoa_mod = @import("util/itoa.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
-const ga_mod = @import("growable_array.zig");
 const import_resolver = @import("import_resolver.zig");
 const az_mod = @import("analyzer.zig");
 const sym_mod = @import("symbol_table.zig");
@@ -45,6 +44,7 @@ const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
 const LirFunction = @import("lir.zig").LirFunction;
+const cinclude = @import("cinclude.zig");
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -653,6 +653,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                 var dstart: usize = @intCast(usize, 19) - @intCast(usize, dcount_len);
                 pal.markerWrite(dcount_buf[dstart..@intCast(usize, 19)]);
                 pal.markerWrite(msep);
+                mr_mod.moduleRegistryCollectIncludes(ctx.store, decls, &mods[mi].c_includes);
                 var di: usize = @intCast(usize, 0);
                 while (di < decls.len) : (di += @intCast(usize, 1)) {
                     var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -663,9 +664,6 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     pal.markerWrite(rbuf[rstart..@intCast(usize, 19)]);
                     var sp2: []const u8 = " ";
                     pal.markerWrite(sp2);
-            if (decl.kind == AstKind.c_include) {
-                        ga_mod.u32ArrayListAppend(&mods[mi].c_includes, decl.payload);
-                    }
             if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.markerWrite(mf);
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
@@ -723,11 +721,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitIncludes(&cwriter);
     c89_mod.bufferedWriterFlush(&cwriter);
 
-    var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
-    var c_incs: []u32 = undefined;
-    if (amods.len > @intCast(usize, 0)) {
-        c_incs = ga_mod.u32ArrayListGetSlice(&amods[0].c_includes);
-    }
+    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.scratch);
     c89_mod.emitModule(&emitter, module_name, fns, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);

@@ -1285,7 +1285,11 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
     var vmsg: []const u8 = "V"; pal.markerWrite(vmsg);
     var kw = parserAdvance(self);
     var name_raw = parserPeek(self);
-    _ = try parserExpect(self, TokenKind.identifier);
+    if (name_raw.kind == TokenKind.underscore) {
+        _ = parserAdvance(self);
+    } else {
+        _ = try parserExpect(self, TokenKind.identifier);
+    }
     var name_id = name_raw.value.string_id;
     var flags: u8 = 0;
     if (is_mutable) flags = flags | @intCast(u8, 0x01);
@@ -1305,6 +1309,12 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
     var end_pos: u32 = semi.span_start + @intCast(u32, semi.span_len);
     var vok: []const u8 = "v"; pal.markerWrite(vok);
     var pdv_s: []const u8 = "PDVx"; pal.markerWrite(pdv_s);
+    if (init_node != @intCast(u32, 0)) {
+        var init_check = self.store.nodes.items[@intCast(usize, init_node)];
+        if (init_check.kind == AstKind.c_include) {
+            return init_node;
+        }
+    }
     return ast_mod.astStoreAddNode(self.store, AstKind.var_decl, flags,
         kw.span_start, end_pos, type_node, init_node, 0, name_id);
 }
