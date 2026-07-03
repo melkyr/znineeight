@@ -39,6 +39,7 @@ const sa_mod = @import("semantic_analyzer.zig");
 const type_resolver = @import("type_resolver.zig");
 const ce_mod = @import("comptime_eval.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
+const const_alias_prepass = @import("const_alias_prepass.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
@@ -292,6 +293,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     while (mi < mods.len) : (mi += 1) {
         symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
     }
+    const_alias_prepass.constAliasPrepass(ctx.symbol_reg, ctx.typereg, ctx.interner, ctx.store, &ctx.alloc.permanent);
     var env2 = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner };
     var ci: usize = 0;
     while (ci < mods.len) : (ci += 1) {
