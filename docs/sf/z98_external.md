@@ -41,7 +41,7 @@ examples/z98/              — zig1 target (uses @cInclude)
 
 When zig0 is dropped, delete extern_c.zig, rename extern_c_z98.zig → extern_c.zig.
 
-`sf/src/extern_c_z98.zig` uses the bare form:
+`sf/src/extern_c_z98.zig` uses the capture form:
 
     const _ = @cInclude("pal.h");
     const _ = @cInclude("zig_runtime.h");
