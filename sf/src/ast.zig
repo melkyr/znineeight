@@ -95,6 +95,7 @@ pub const AstKind = enum(u8) {
     payload_capture = 93,
     range_exclusive = 94,
     range_inclusive = 95,
+    c_include = 96,
 };
 
 pub const AstNode = struct {
