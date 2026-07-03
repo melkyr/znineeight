@@ -92,6 +92,7 @@ pub const TokenKind = enum(u16) {
     kw_noreturn,
     kw_c_char,
     kw_anytype,
+    c_include_builtin,
     eof,
     err_token,            // unrecognized character (error recovery)
 };

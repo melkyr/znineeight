@@ -409,6 +409,11 @@ fn lexerScanBuiltinIdentifier(self: *Lexer, start: usize) Token {
     }
     var text = self.source[start..self.pos];
     var string_id = interner_mod.stringInternerIntern(self.interner, text);
+    if (text.len == @intCast(usize, 9)) {
+        if (text[@intCast(usize, 0)] == '@' and text[@intCast(usize, 1)] == 'c' and text[@intCast(usize, 2)] == 'I' and text[@intCast(usize, 3)] == 'n' and text[@intCast(usize, 4)] == 'c' and text[@intCast(usize, 5)] == 'l' and text[@intCast(usize, 6)] == 'u' and text[@intCast(usize, 7)] == 'd' and text[@intCast(usize, 8)] == 'e') {
+            return lexerMakeToken(self, TokenKind.c_include_builtin, start, .{ .string_id = string_id });
+        }
+    }
     return lexerMakeToken(self, TokenKind.builtin_identifier, start, .{ .string_id = string_id });
 }
 
