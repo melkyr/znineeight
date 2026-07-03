@@ -79,6 +79,7 @@ pub const CompilerCli = struct {
      warn_all: bool,
      warn_error: bool,
      show_markers: bool,
+     emit_extern_forward_decls: u8,
      include_dirs: [16][]const u8,
     include_count: u32,
 };
@@ -713,6 +714,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         undefined,
         &ctx.alloc.scratch,
     );
+    emitter.emit_extern_fwd = ctx.cli.emit_extern_forward_decls;
     var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
     var module_name: []const u8 = "output";
 
@@ -750,6 +752,7 @@ fn parseArgs() CompilerCli {
          .warn_all = false,
          .warn_error = false,
          .show_markers = false,
+         .emit_extern_forward_decls = @intCast(u8, 0),
          .include_count = @intCast(u32, 0),
         .include_dirs = undefined,
     };
@@ -774,6 +777,7 @@ fn parseArgs() CompilerCli {
     const s_warn_all: []const u8 = "--warn-all";
      const s_warn_error: []const u8 = "--warn-error";
      const s_markers: []const u8 = "--markers";
+     const s_emit_extern_fwd: []const u8 = "--emit-extern-forward-decls";
      const s_include: []const u8 = "-I";
     const s_t: []const u8 = "-t";
     const s_a: []const u8 = "-a";
@@ -842,6 +846,8 @@ fn parseArgs() CompilerCli {
                  cli.warn_error = true;
              } else if (matchFlag(arg, s_markers)) {
                  cli.show_markers = true;
+             } else if (matchFlag(arg, s_emit_extern_fwd)) {
+                 cli.emit_extern_forward_decls = @intCast(u8, 1);
              } else if (matchFlag(arg, s_include)) {
                 i += 1;
                 if (i < argc and cli.include_count < 16) {

@@ -396,9 +396,10 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      dedup_names: [128]u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
-     fl_temps: [128]u32,
-     fl_count: u32,
- };
+      fl_temps: [128]u32,
+      fl_count: u32,
+      emit_extern_fwd: u8,
+  };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
     return C89Emitter{
@@ -424,6 +425,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .fl_name_ids = undefined,
            .fl_temps = undefined,
            .fl_count = @intCast(u32, 0),
+           .emit_extern_fwd = @intCast(u8, 0),
        };
 }
 
@@ -1453,7 +1455,11 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) 
     bufferedWriterWrite(&emitter.writer, s2);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
+        if (fns[i].is_extern == @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, fns[i]);
+        } else if (emitter.emit_extern_fwd != @intCast(u8, 0)) {
+            emitFunctionForwardDecl(emitter, fns[i]);
+        }
     }
     var nl: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, nl);
