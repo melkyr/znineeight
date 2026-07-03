@@ -681,6 +681,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.undefined_literal) {
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var und_ud_m: []const u8 = "UND:udLt"; pal.markerWrite(und_ud_m);
+        var und_ud_tb: [10]u8 = undefined; var und_ud_tl = itoa_mod.itoa(tid, und_ud_tb[0..]); var und_ud_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ud_tl); pal.markerWrite(und_ud_tb[und_ud_ts..@intCast(usize, 9)]);
+        var und_ud_nl: []const u8 = "\n"; pal.markerWrite(und_ud_nl);
         emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
         var uds_m: []const u8 = "UDS:t"; pal.markerWrite(uds_m);
         var uds_tb: [10]u8 = undefined; var uds_tl = itoa_mod.itoa(tid, uds_tb[0..]); var uds_ts: usize = @intCast(usize, 9) - @intCast(usize, uds_tl); pal.markerWrite(uds_tb[uds_ts..@intCast(usize, 9)]);
@@ -1930,6 +1933,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         dbgPrintU32(args_start); var d2n3: []const u8 = " nc="; pal.markerWrite(d2n3);
         dbgPrintU32(@intCast(u32, ec.len)); var d2nl3: []const u8 = "\n"; pal.markerWrite(d2nl3);
          var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var und_ic_m: []const u8 = "UND:icRt"; pal.markerWrite(und_ic_m);
+        var und_ic_tb: [10]u8 = undefined; var und_ic_tl = itoa_mod.itoa(result, und_ic_tb[0..]); var und_ic_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ic_tl); pal.markerWrite(und_ic_tb[und_ic_ts..@intCast(usize, 9)]);
+        var und_ic_nl: []const u8 = "\n"; pal.markerWrite(und_ic_nl);
         emitInst(self, LirInst{ .call = .{
             .callee = callee_temp,
             .args_start = args_start,
@@ -2167,7 +2173,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ok_bb = createBlock(self);
         var join_bb = createBlock(self);
         emitInst(self, LirInst{ .branch = .{ .cond = has_val_temp, .then_bb = ok_bb, .else_bb = null_bb } });
-        var join_temp = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var join_temp = nextTemp(self, if (rt) |t| t else type_mod.TYPE_UNDEFINED);
+        var omg_j_m: []const u8 = "OMG:joinT"; pal.markerWriteInt(omg_j_m, join_temp);
+        var omg_nv_m: []const u8 = "OMG:JUNDEF\n"; pal.markerWrite(omg_nv_m);
+        var und_oej_m: []const u8 = "UND:oeJt"; pal.markerWrite(und_oej_m);
+        var und_oej_tb: [10]u8 = undefined; var und_oej_tl = itoa_mod.itoa(join_temp, und_oej_tb[0..]); var und_oej_ts: usize = @intCast(usize, 9) - @intCast(usize, und_oej_tl); pal.markerWrite(und_oej_tb[und_oej_ts..@intCast(usize, 9)]);
+        var und_oej_nl: []const u8 = "\n"; pal.markerWrite(und_oej_nl);
         self.current_bb = null_bb;
         var null_val = lowerExpr(self, node.child_1);
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = null_val } });
@@ -2175,9 +2187,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = ok_bb;
-        var ok_val = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var rt2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var ok_val = nextTemp(self, if (rt2) |t| t else type_mod.TYPE_UNDEFINED);
         emitInst(self, LirInst{ .unwrap_optional = .{ .value = lhs_temp, .result = ok_val } });
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = ok_val } });
+        var omg_k_m: []const u8 = "OMG:okT"; pal.markerWriteInt(omg_k_m, ok_val);
+        var omg_ku_m: []const u8 = "OMG:KUNDEF\n"; pal.markerWrite(omg_ku_m);
+        var und_oek_m: []const u8 = "UND:oeKt"; pal.markerWrite(und_oek_m);
+        var und_oek_tb: [10]u8 = undefined; var und_oek_tl = itoa_mod.itoa(ok_val, und_oek_tb[0..]); var und_oek_ts: usize = @intCast(usize, 9) - @intCast(usize, und_oek_tl); pal.markerWrite(und_oek_tb[und_oek_ts..@intCast(usize, 9)]);
+        var und_oek_nl: []const u8 = "\n"; pal.markerWrite(und_oek_nl);
+        var omg_ok_m: []const u8 = "OMG:okAsgJ"; pal.markerWriteInt(omg_ok_m, join_temp);
+        var omg_oks_m: []const u8 = "OMG:okSrc"; pal.markerWriteInt(omg_oks_m, ok_val);
+        var omg_oknl_m: []const u8 = "\n"; pal.markerWrite(omg_oknl_m);
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
@@ -2185,7 +2206,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return join_temp;
     } else if (node.kind == AstKind.if_expr) {
         var cond_temp = lowerExpr(self, node.child_0);
-        var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var result = nextTemp(self, if (rt3) |t| t else type_mod.TYPE_UNDEFINED);
+        var und_ie_m: []const u8 = "UND:ieRt"; pal.markerWrite(und_ie_m);
+        var und_ie_tb: [10]u8 = undefined; var und_ie_tl = itoa_mod.itoa(result, und_ie_tb[0..]); var und_ie_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ie_tl); pal.markerWrite(und_ie_tb[und_ie_ts..@intCast(usize, 9)]);
+        var und_ie_nl: []const u8 = "\n"; pal.markerWrite(und_ie_nl);
         var then_bb = createBlock(self);
         var else_bb = createBlock(self);
         var join_bb = createBlock(self);
@@ -2238,6 +2263,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.struct_init) {
         var init_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var base_temp = nextTemp(self, if (init_type) |it| it else type_mod.TYPE_UNDEFINED);
+        if (init_type == null) {
+            var und_si_m: []const u8 = "UND:siBt"; pal.markerWrite(und_si_m);
+            var und_si_tb: [10]u8 = undefined; var und_si_tl = itoa_mod.itoa(base_temp, und_si_tb[0..]); var und_si_ts: usize = @intCast(usize, 9) - @intCast(usize, und_si_tl); pal.markerWrite(und_si_tb[und_si_ts..@intCast(usize, 9)]);
+            var und_si_nl: []const u8 = "\n"; pal.markerWrite(und_si_nl);
+        }
         var sin2_m: []const u8 = "SIN2:n"; pal.markerWrite(sin2_m);
         var sin2_nb: [10]u8 = undefined; var sin2_nl = itoa_mod.itoa(node_idx, sin2_nb[0..]); var sin2_ns: usize = @intCast(usize, 9) - @intCast(usize, sin2_nl); pal.markerWrite(sin2_nb[sin2_ns..@intCast(usize, 9)]);
         var sin2_bm: []const u8 = "b"; pal.markerWrite(sin2_bm);
@@ -3827,6 +3857,9 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                 if (p_type) |_| { var dp: []const u8 = "HP"; pal.markerWrite(dp); } else { var dp: []const u8 = "MP"; pal.markerWrite(dp); }
                 var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
                 var p_temp: u32 = nextTemp(self, type_mod.TYPE_UNDEFINED);
+                var und_fp_m: []const u8 = "UND:fpPt"; pal.markerWrite(und_fp_m);
+                var und_fp_tb: [10]u8 = undefined; var und_fp_tl = itoa_mod.itoa(p_temp, und_fp_tb[0..]); var und_fp_ts: usize = @intCast(usize, 9) - @intCast(usize, und_fp_tl); pal.markerWrite(und_fp_tb[und_fp_ts..@intCast(usize, 9)]);
+                var und_fp_nl: []const u8 = "\n"; pal.markerWrite(und_fp_nl);
                 lir_mod.lirParamArrayListAppend(&func_ptr.params, lir_mod.LirParam{
                     .name_id = p_name_id,
                     .type_id = p_tid,

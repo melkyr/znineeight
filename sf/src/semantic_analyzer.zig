@@ -730,6 +730,18 @@ fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return eu.payload;
 }
 
+fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var inner = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+    var ty = self.registry.types_items[@intCast(usize, inner)];
+    if (ty.kind != type_mod.TypeKind.optional_type) {
+        return type_mod.TYPE_VOID;
+    }
+    var opt = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
+    return opt.payload;
+}
+
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     semanticAnalyzerResolveIfHeader(self, node_idx);
@@ -1077,7 +1089,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         }
         if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
     } else if (node.kind == AstKind.orelse_expr) {
-        result = semanticAnalyzerResolveExpr(self, node.child_0);
+        result = semanticAnalyzerResolveOrelseExpr(self, node_idx);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
          result = type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.var_decl or node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
