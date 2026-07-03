@@ -22,8 +22,14 @@ headers, not the compiler. The Zig `extern fn` becomes a pure ABI annotation.
 
 ## Syntax
 
-const _ = @cInclude("stdio.h");       // → #include <stdio.h>
-const _ = @cInclude("net_runtime.h"); // → #include "net_runtime.h"
+Both forms are supported:
+
+@cInclude("zig_runtime.h");            // bare form
+const _ = @cInclude("<stdio.h>");      // capture form (convention for system headers)
+
+The first character of the header string determines the include style:
+- Starts with `<` → `#include <stdio.h>` (angle brackets, system header)
+- Otherwise → `#include "zig_runtime.h"` (quotes, project header)
 
 ## Bootstrap Strategy
 
@@ -34,6 +40,14 @@ examples/zig0/             — oracle (zig0 compile)
 examples/z98/              — zig1 target (uses @cInclude)
 
 When zig0 is dropped, delete extern_c.zig, rename extern_c_z98.zig → extern_c.zig.
+
+`sf/src/extern_c_z98.zig` uses the bare form:
+
+    const _ = @cInclude("pal.h");
+    const _ = @cInclude("zig_runtime.h");
+
+Both the bare form (`@cInclude("pal.h");`) and the capture form
+(`const _ = @cInclude("pal.h");`) are valid and produce the same output.
 
 ## Future
 
