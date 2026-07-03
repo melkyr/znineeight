@@ -303,6 +303,7 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_c_char) return parserParseIdentExpr(self);
     if (tok.kind == TokenKind.kw_void) return parserParseIdentExpr(self);
     if (tok.kind == TokenKind.builtin_identifier) return parserParseBuiltinCall(self);
+    if (tok.kind == TokenKind.c_include_builtin) return parserParseCInclude(self);
     if (tok.kind == TokenKind.kw_error) return parserParseErrorLiteral(self);
     if (tok.kind == TokenKind.minus) return parserParsePrefixUnary(self, AstKind.negate);
     if (tok.kind == TokenKind.bang) return parserParsePrefixUnary(self, AstKind.bool_not);
@@ -645,6 +646,35 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
         bi_tok.span_start, end_pos, 0, 0, 0, path_id);
+}
+
+fn parserParseCInclude(self: *Parser) ParserError!u32 {
+    var bi_tok = parserAdvance(self);
+    var lparen = parserPeek(self);
+    if (lparen.kind != TokenKind.lparen) {
+        var exp_s: []const u8 = "expected '(' after @cInclude";
+        parserAddError(self, lparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    _ = parserAdvance(self);
+    var name_tok = parserPeek(self);
+    if (name_tok.kind != TokenKind.string_literal) {
+        var exp_s: []const u8 = "expected string literal for @cInclude name";
+        parserAddError(self, name_tok, exp_s);
+        return error.UnexpectedToken;
+    }
+    var name_id = name_tok.value.string_id;
+    _ = parserAdvance(self);
+    var rparen = parserPeek(self);
+    if (rparen.kind != TokenKind.rparen) {
+        var exp_s: []const u8 = "expected ')' after @cInclude name";
+        parserAddError(self, rparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
+    _ = parserAdvance(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.c_include, 0,
+        bi_tok.span_start, end_pos, 0, 0, 0, name_id);
 }
 
 fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
