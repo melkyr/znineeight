@@ -9,6 +9,18 @@ extern int pal_i64_to_str(long long val, char* buf, int bufsize);
 extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);
 extern int pal_f64_to_str(double val, char* buf, int bufsize);
 
+/* Backward compat aliases — defined in zig_runtime.c */
+void __bootstrap_print(const char* s);
+void __bootstrap_print_int(int n);
+void __bootstrap_print_char(int c);
+void __bootstrap_panic(const char* msg, const char* file, int line);
+void __bootstrap_write(const char* s, unsigned int len);
+void __bootstrap_sleep_ms(unsigned int ms);
+
+/* Arena */
+void* arena_alloc_default(unsigned int size);
+extern void* zig_default_arena;
+
 void std_panic(const char* msg);
 void std_print(const char* s);
 void std_print_len(const char* s, unsigned int len);
