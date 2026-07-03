@@ -54,7 +54,6 @@ test_runner_batch*
 # Temporary binaries
 test_multi_file
 tr*
-zig0
 zig0.exe
 
 # Generated C89 files
