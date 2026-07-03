@@ -397,9 +397,8 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      dedup_count: u32,
      fl_name_ids: [128]u32,
       fl_temps: [128]u32,
-      fl_count: u32,
-      emit_extern_fwd: u8,
-  };
+       fl_count: u32,
+   };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
     return C89Emitter{
@@ -425,7 +424,6 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .fl_name_ids = undefined,
            .fl_temps = undefined,
            .fl_count = @intCast(u32, 0),
-           .emit_extern_fwd = @intCast(u8, 0),
        };
 }
 
@@ -1402,18 +1400,12 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
 }
 
 fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
-    var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
-    if (lir_fn.is_extern == @intCast(u8, 1)) {
-        var ex: []const u8 = "extern ";
-        bufferedWriterWrite(&emitter.writer, ex);
-    }
     var ret_c = getCTypeName(emitter.registry, emitter.mangler, lir_fn.return_type);
     bufferedWriterWrite(&emitter.writer, ret_c);
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
-    if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
     bufferedWriterWrite(&emitter.writer, fn_name);
     var op: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, op);
@@ -1477,8 +1469,6 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, 
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         if (fns[i].is_extern == @intCast(u8, 0)) {
-            emitFunctionForwardDecl(emitter, fns[i]);
-        } else if (emitter.emit_extern_fwd != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, fns[i]);
         }
     }
