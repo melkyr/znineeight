@@ -63,6 +63,14 @@ With markers (diagnostic output to stderr):
 ./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>diag.txt
 ```
 
+## Compile Z98 Examples (@cInclude)
+
+```bash
+./out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig > out.c
+gcc -m32 -std=c89 -Wno-pointer-sign -Isf/src/include out.c \
+    sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o app
+```
+
 ## GCC Compile + Link
 
 ```bash

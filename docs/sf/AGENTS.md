@@ -72,6 +72,7 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 |------------|--------------------------|
 | No generics (`anytype`, `@Type`) | Use concrete hash maps (`U32ToU32Map`, `U64ToU32Map`) manually implemented. |
 | No `@cImport` | Manual `extern` declarations for PAL functions. |
+| No `@cInclude` in zig0 mode | Use bare `extern fn` in `extern_c.zig`; `@cInclude` only in z98 examples |
 | No `comptime` beyond basic folding | Use `@sizeOf`/`@alignOf` only; avoid complex comptime logic. |
 | Strict `i32` ↔ `usize` coercion | Always use `@intCast`. |
 | No pointer captures (`if (opt) \|*p\|`) | Use `if (opt != null) { var p = &opt.value; }` pattern. |
