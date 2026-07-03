@@ -1,4 +1,4 @@
-extern fn __bootstrap_print(s: [*]const u8) void;
+const ext_c = @import("extern_c.zig");
 pub fn main() void {
-    __bootstrap_print("hello");
+    ext_c.__bootstrap_print("hello");
 }

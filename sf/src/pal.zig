@@ -1,7 +1,7 @@
 const alloc_mod = @import("allocator.zig");
 const Sand = alloc_mod.Sand;
 
-extern fn write(fd: i32, buf: [*]const u8, count: i32) i32;
+const ext_c = @import("extern_c.zig");
 extern "c" fn fopen(path: [*]const u8, mode: [*]const u8) ?*void;
 extern "c" fn fread(buf: [*]u8, size: u32, count: u32, file: *void) u32;
 extern "c" fn fclose(file: *void) i32;
@@ -57,11 +57,11 @@ pub fn fileExists(path: []const u8) bool {
 }
 
 pub fn stdout_write(msg: []const u8) void {
-    _ = write(1, msg.ptr, @intCast(i32, msg.len));
+    _ = ext_c.write(1, msg.ptr, @intCast(i32, msg.len));
 }
 
 pub fn stderr_write(msg: []const u8) void {
-    _ = write(2, msg.ptr, @intCast(i32, msg.len));
+    _ = ext_c.write(2, msg.ptr, @intCast(i32, msg.len));
 }
 
 pub fn exit(code: u8) void {
