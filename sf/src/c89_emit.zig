@@ -1400,12 +1400,18 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
 }
 
 fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
+    var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
+    if (lir_fn.is_extern == @intCast(u8, 1)) {
+        var ex: []const u8 = "extern ";
+        bufferedWriterWrite(&emitter.writer, ex);
+    }
     var ret_c = getCTypeName(emitter.registry, emitter.mangler, lir_fn.return_type);
     bufferedWriterWrite(&emitter.writer, ret_c);
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
+    if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
     bufferedWriterWrite(&emitter.writer, fn_name);
     var op: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, op);
@@ -1447,9 +1453,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction) 
     bufferedWriterWrite(&emitter.writer, s2);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
-        if (fns[i].is_extern == @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, fns[i]);
-        }
     }
     var nl: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, nl);

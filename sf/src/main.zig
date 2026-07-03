@@ -40,6 +40,7 @@ const type_resolver = @import("type_resolver.zig");
 const ce_mod = @import("comptime_eval.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
 const const_alias_prepass = @import("const_alias_prepass.zig");
+const extdedup = @import("extern_deduplicate.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
@@ -216,6 +217,7 @@ fn runCompiler(ctx: *CompilerContext) void {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
+    extdedup.phase_ExternDeduplicate(&ctx.lir_fns, &ctx.alloc.scratch);
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
