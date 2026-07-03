@@ -1583,6 +1583,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
                         if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                             var st = getTempType(self, arg_val);
+                            if (st == type_mod.TYPE_NULL) { var cs5_m: []const u8 = "CS5\n"; pal.markerWrite(cs5_m); }
                             var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                             var ce: CoercionEntry = undefined;
                             ce.node_idx = ec[ai];
@@ -1652,7 +1653,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[fpi_ai])) |fpi_pt| {
                              if (fpi_pt != type_mod.TYPE_UNDEFINED) {
                                  var st = getTempType(self, fpi_arg);
-                                 var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, fpi_pt);
+                                  if (st == type_mod.TYPE_NULL) { var cs6_m: []const u8 = "CS6\n"; pal.markerWrite(cs6_m); }
+                                  var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, fpi_pt);
                                  var ce: CoercionEntry = undefined;
                                  ce.node_idx = ec[fpi_ai];
                                  ce.kind = ck;
@@ -1735,7 +1737,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
                                            if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                                                var st = getTempType(self, call_val);
-                                               var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
+                                                if (st == type_mod.TYPE_NULL) { var cs7_m: []const u8 = "CS7\n"; pal.markerWrite(cs7_m); }
+                                                var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                                                var ce: CoercionEntry = undefined;
                                                ce.node_idx = ec[ai];
                                                ce.kind = ck;
@@ -1827,6 +1830,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
                             if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                                 var st = getTempType(self, arg_val);
+                                if (st == type_mod.TYPE_NULL) { var cs8_m: []const u8 = "CS8\n"; pal.markerWrite(cs8_m); }
                                 var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                                 var ce: CoercionEntry = undefined;
                                 ce.node_idx = ec[ai];
@@ -3676,6 +3680,7 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         return applyNoneCoercion(self, src_temp, coercion);
     } else if (kind == CoercionKind.wrap_optional_null) {
         var dst = nextTemp(self, coercion.target_type);
+        { var apcb: [10]u8 = undefined; var apcl = itoa_mod.itoa(coercion.node_idx, apcb[0..]); var apcs: usize = @intCast(usize, 9) - @intCast(usize, apcl); var apm: []const u8 = "APC:wpN"; pal.markerWrite(apm); pal.markerWrite(apcb[apcs..@intCast(usize, 9)]); var aptm: []const u8 = "T"; pal.markerWrite(aptm); var aptb: [10]u8 = undefined; var aptl = itoa_mod.itoa(dst, aptb[0..]); var apts: usize = @intCast(usize, 9) - @intCast(usize, aptl); pal.markerWrite(aptb[apts..@intCast(usize, 9)]); var apnl: []const u8 = "\n"; pal.markerWrite(apnl); }
         emitInst(self, LirInst{ .set_optional_null = .{ .result = dst, .type_id = coercion.target_type } });
         return dst;
     } else if (kind == CoercionKind.wrap_optional) {

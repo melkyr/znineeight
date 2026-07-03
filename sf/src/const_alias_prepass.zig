@@ -56,26 +56,25 @@ fn growDep(perm: *Sand, to_ptr: *[*]u32, next_ptr: *[*]u32, cap_ptr: *u32) void 
 }
 
 pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRegistry, interner: *StringInterner, store: *AstStore, perm_alloc: *Sand) void {
-    // ── Count total symbols ──
+    { var cap_m: []const u8 = "CAP:ent\n"; pal.markerWrite(cap_m); }
+
     var tl: u32 = 0;
     var cti: usize = 0;
     while (cti < symbol_reg.tables_len) : (cti += 1) {
         tl += @intCast(u32, symbol_reg.tables_items[cti].len);
     }
-    if (tl == 0) return;
+    { var cap_tm: []const u8 = "CAP:tlm"; pal.markerWriteInt(cap_tm, tl); }
+    if (tl == 0) { var cap_m: []const u8 = "CAP:tl0\n"; pal.markerWrite(cap_m); return; }
 
     const SZ_U32: usize = 4;
     const U32_MAX: u32 = 4294967295;
 
-    // dep_to / dep_next: edge arrays, grow on overflow
     var dep_cap: u32 = tl;
     var dep_to_raw = alloc_mod.sandAlloc(perm_alloc, SZ_U32 * @intCast(usize, tl), SZ_U32) catch unreachable;
     var dep_to = @ptrCast([*]u32, dep_to_raw);
     var dep_next_raw = alloc_mod.sandAlloc(perm_alloc, SZ_U32 * @intCast(usize, tl), SZ_U32) catch unreachable;
     var dep_next = @ptrCast([*]u32, dep_next_raw);
 
-    // dep_head is indexed by canonical interner IDs, so it must be sized to
-    // hold every possible interned string ID, not just the symbol count.
     var head_cap: usize = interner.entries_len;
     if (head_cap < @intCast(usize, tl)) head_cap = @intCast(usize, tl);
     var dep_head_raw = alloc_mod.sandAlloc(perm_alloc, SZ_U32 * head_cap, SZ_U32) catch unreachable;
@@ -97,9 +96,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
 
     var alias_count: u32 = 0;
 
-    // ═══════════════════════════════════════════════════════
-    // Phase 1: Catalog unresolved type-const aliases
-    // ═══════════════════════════════════════════════════════
+    // Phase 1: Catalog
     {
         var mi: usize = 0;
         while (mi < symbol_reg.tables_len) : (mi += 1) {
@@ -108,14 +105,28 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
             while (si < table.len) : (si += 1) {
                 var sym = &table.items[si];
                 if (@enumToInt(sym.kind) != @enumToInt(sym_mod.SymbolKind.global)) continue;
+                { var g0_m: []const u8 = "GATE:g0"; pal.markerWriteInt(g0_m, sym.type_id); }
                 if (sym.type_id != 0) continue;
+                { var g1_m: []const u8 = "GATE:g1\n"; pal.markerWrite(g1_m); }
                 var decl_node = store.nodes.items[@intCast(usize, sym.decl_node)];
-                if (@enumToInt(decl_node.kind) != 1) continue; // var_decl
-                if (decl_node.child_1 == 0) continue;
+                if (@enumToInt(decl_node.kind) != 1) {
+                    { var g2_m: []const u8 = "GATE:g2"; pal.markerWriteInt(g2_m, @intCast(u32, @enumToInt(decl_node.kind))); }
+                    continue;
+                }
+                if (decl_node.child_1 == 0) {
+                    { var g3_m: []const u8 = "GATE:g3\n"; pal.markerWrite(g3_m); }
+                    continue;
+                }
                 var init = store.nodes.items[@intCast(usize, decl_node.child_1)];
-                if (@enumToInt(init.kind) != 24) continue; // ident_expr only
+                {
+                    var c1_m: []const u8 = "CAT:ik"; pal.markerWriteInt(c1_m, @intCast(u32, @enumToInt(init.kind)));
+                }
+                if (@enumToInt(init.kind) != 24) continue;
 
                 var dep_name = store.identifiers.items[@intCast(usize, init.payload)];
+                {
+                    var c2_m: []const u8 = "CAT:dn"; pal.markerWriteInt(c2_m, dep_name);
+                }
                 var dep_text = interner_mod.stringInternerGet(interner, dep_name);
                 var dep_canonical = interner_mod.stringInternerIntern(interner, dep_text);
 
@@ -123,7 +134,6 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                 alias_sym_id[@intCast(usize, alias_count) * 2] = @intCast(u32, mi);
                 alias_sym_id[@intCast(usize, alias_count) * 2 + 1] = @intCast(u32, si);
 
-                // Reverse edge: dep_canonical → alias_count (linked list on dep_head)
                 if (dep_count >= dep_cap) growDep(perm_alloc, &dep_to, &dep_next, &dep_cap);
                 dep_to[@intCast(usize, dep_count)] = alias_count;
                 dep_next[@intCast(usize, dep_count)] = dep_head[@intCast(usize, dep_canonical)];
@@ -135,11 +145,10 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
         }
     }
 
-    if (alias_count == 0) return;
+    { var cap_acm: []const u8 = "CAP:ac"; pal.markerWriteInt(cap_acm, alias_count); }
+    if (alias_count == 0) { var cap_m: []const u8 = "CAP:ac0\n"; pal.markerWrite(cap_m); return; }
 
-    // ═══════════════════════════════════════════════════════
-    // Phase 2: Seed worklist — resolve terminal aliases
-    // ═══════════════════════════════════════════════════════
+    // Phase 2: Seed
     {
         var ai: u32 = 0;
         while (ai < alias_count) : (ai += 1) {
@@ -150,11 +159,8 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
             var sym = &table.items[@intCast(usize, sym_idx)];
             var resolved: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
 
-            // Try nameCache with raw interner ID
-            if (type_mod.nameCacheGet(registry, @intCast(u64, dep_name))) |tid| {
-                resolved = tid;
-            }
-            // Try nameCache with composite keys across all modules
+            if (type_mod.nameCacheGet(registry, @intCast(u64, dep_name))) |tid| { resolved = tid; }
+
             if (resolved == type_mod.TYPE_UNDEFINED) {
                 var cmi: usize = 0;
                 while (cmi < symbol_reg.tables_len) : (cmi += 1) {
@@ -162,7 +168,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                     if (type_mod.nameCacheGet(registry, ckey)) |tid| { resolved = tid; break; }
                 }
             }
-            // Try well-known type string match
+
             if (resolved == type_mod.TYPE_UNDEFINED) {
                 var name_str = interner_mod.stringInternerGet(interner, dep_name);
                 resolved = resolveWellKnownTypeName(name_str);
@@ -178,12 +184,8 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // Phase 3: Kahn propagation
-    // ═══════════════════════════════════════════════════════
-    {
-        var kst_m: []const u8 = "KAHN:start\n"; pal.markerWrite(kst_m);
-    }
+    // Phase 3: Kahn
+    { var kst_m: []const u8 = "KAHN:start\n"; pal.markerWrite(kst_m); }
 
     while (wl_len > 0) {
         wl_len -= 1;
@@ -192,16 +194,9 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
         var resolved_table = symbol_reg.tables_items[@intCast(usize, resolved_mod)];
         var resolved_sym = &resolved_table.items[@intCast(usize, alias_sym_id[@intCast(usize, resolved_idx) * 2 + 1])];
         var rt = resolved_sym.type_id;
-        {
-            var krs_m: []const u8 = "KAHN:res"; pal.markerWriteInt(krs_m, resolved_idx);
-            var krt_m: []const u8 = "KAHN:rt"; pal.markerWriteInt(krt_m, rt);
-        }
 
-        // Find aliases that depend on THIS alias's own name. The reverse edges
-        // were keyed by the canonical interner ID of the dependency name, so we
-        // canonicalize this alias's declared name and walk dep_head from there.
         var decl_node = store.nodes.items[@intCast(usize, resolved_sym.decl_node)];
-        var alias_own_name = decl_node.payload; // var_decl.payload = name_id
+        var alias_own_name = decl_node.payload;
         var alias_own_text = interner_mod.stringInternerGet(interner, alias_own_name);
         var alias_own_canonical = interner_mod.stringInternerIntern(interner, alias_own_text);
 
@@ -220,21 +215,10 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                 type_mod.nameCachePut(registry, dkey, rt);
                 wl[@intCast(usize, wl_len)] = dep_alias_idx;
                 wl_len += 1;
-                {
-                    var kpr_m: []const u8 = "KAHN:prp"; pal.markerWriteInt(kpr_m, dep_alias_idx);
-                    var kpt_m: []const u8 = "KAHN:pt"; pal.markerWriteInt(kpt_m, rt);
-                }
             }
             edge_idx = dep_next[@intCast(usize, edge_idx)];
         }
     }
 
-    {
-        var ken_m: []const u8 = "KAHN:end\n"; pal.markerWrite(ken_m);
-    }
-
-    // ═══════════════════════════════════════════════════════
-    // Phase 4: Residuals — anything still type_id==0 left for sema
-    // ═══════════════════════════════════════════════════════
-    // (no action needed — sema handles unresolved types in Pass 5)
+    { var ken_m: []const u8 = "KAHN:end\n"; pal.markerWrite(ken_m); }
 }

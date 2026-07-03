@@ -547,6 +547,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     }
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
+    if (src_type == type_mod.TYPE_NULL) { var cs1_m: []const u8 = "CS1\n"; pal_mod.markerWrite(cs1_m); }
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
     var cka_m: []const u8 = "CCK:ca"; pal_mod.markerWriteInt(cka_m, @intCast(u32, @enumToInt(ck)));
     if (ck != coercion_mod.CoercionKind.none) {
@@ -950,6 +951,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             unified = bt;
             unified_node = prong.child_0;
         }
+
         else {
             var unum: u32 = @intCast(u32, 0);
             if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
@@ -1366,6 +1368,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
                 var it = semanticAnalyzerResolveExpr(self, node.child_1);
                 if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
+                    if (it == type_mod.TYPE_NULL) { var cs4_m: []const u8 = "CS4\n"; pal_mod.markerWrite(cs4_m); }
                     var ck = coercion_mod.classifyCoercion(self.registry, it, decl_type);
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
                     if (ck != coercion_mod.CoercionKind.none) {
