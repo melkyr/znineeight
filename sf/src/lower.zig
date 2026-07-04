@@ -677,6 +677,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.null_literal) {
         var tid = nextTemp(self, type_mod.TYPE_NULL);
+        var nco_m: []const u8 = "NCO:ti"; pal.markerWriteInt(nco_m, tid);
+        var nco_nl: []const u8 = "\n"; pal.markerWrite(nco_nl);
         emitInst(self, LirInst{ .null_const = .{ .result = tid } });
         return tid;
     } else if (node.kind == AstKind.undefined_literal) {
@@ -1913,6 +1915,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var a3p: []const u8 = "F3aP"; pal.markerWrite(a3p);
+        var f3rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        if (f3rt) |t| {
+            var f3rb: [10]u8 = undefined; var f3rl = itoa_mod.itoa(t, f3rb[0..]); var f3rs: usize = @intCast(usize, 9) - @intCast(usize, f3rl);
+            var f3pm: []const u8 = "F3P:rt"; pal.markerWrite(f3pm); pal.markerWrite(f3rb[f3rs..@intCast(usize, 9)]);
+            var f3nl: []const u8 = "\n"; pal.markerWrite(f3nl);
+        } else {
+            var f3pn: []const u8 = "F3P:NULL\n"; pal.markerWrite(f3pn);
+        }
         var callee_cn = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
         var a3pt: [20]u8 = undefined; var a3ptl = itoa_mod.itoa(callee_cn.kind, a3pt[0..]); var a3pts: usize = @intCast(usize, 19) - @intCast(usize, a3ptl); pal.markerWrite(a3pt[a3pts..@intCast(usize, 19)]);
         if (callee_cn.kind == AstKind.ident_expr) {
@@ -3697,7 +3707,12 @@ fn applyNoneCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
             if (tgt.kind == type_mod.TypeKind.optional_type) {
                 var dst = nextTemp(self, coercion.target_type);
                 emitInst(self, LirInst{ .set_optional_null = .{ .result = dst, .type_id = coercion.target_type } });
-                return dst;
+                var cof5_m: []const u8 = "COF:src"; pal.markerWriteInt(cof5_m, src_temp); var cof5_tm: []const u8 = "T"; pal.markerWriteInt(cof5_tm, coercion.target_type); var cof5_sm: []const u8 = "S"; pal.markerWriteInt(cof5_sm, sc_ty); var cof5_nl: []const u8 = "\n"; pal.markerWrite(cof5_nl); return dst;
+            }
+            if (type_mod.typeRegistryIsPointer(self.ctx.registry, coercion.target_type) or tgt.kind == type_mod.TypeKind.fn_type) {
+                var dst = nextTemp(self, coercion.target_type);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = dst } });
+                var cof6_m: []const u8 = "COF:src"; pal.markerWriteInt(cof6_m, src_temp); var cof6_tm: []const u8 = "T"; pal.markerWriteInt(cof6_tm, coercion.target_type); var cof6_sm: []const u8 = "S"; pal.markerWriteInt(cof6_sm, sc_ty); var cof6_nl: []const u8 = "\n"; pal.markerWrite(cof6_nl); return dst;
             }
         }
     }
@@ -3712,19 +3727,29 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         var dst = nextTemp(self, coercion.target_type);
         { var apcb: [10]u8 = undefined; var apcl = itoa_mod.itoa(coercion.node_idx, apcb[0..]); var apcs: usize = @intCast(usize, 9) - @intCast(usize, apcl); var apm: []const u8 = "APC:wpN"; pal.markerWrite(apm); pal.markerWrite(apcb[apcs..@intCast(usize, 9)]); var aptm: []const u8 = "T"; pal.markerWrite(aptm); var aptb: [10]u8 = undefined; var aptl = itoa_mod.itoa(dst, aptb[0..]); var apts: usize = @intCast(usize, 9) - @intCast(usize, aptl); pal.markerWrite(aptb[apts..@intCast(usize, 9)]); var apnl: []const u8 = "\n"; pal.markerWrite(apnl); }
         emitInst(self, LirInst{ .set_optional_null = .{ .result = dst, .type_id = coercion.target_type } });
-        return dst;
+        var cof4_m: []const u8 = "COF:src"; pal.markerWriteInt(cof4_m, src_temp); var cof4_tm: []const u8 = "T"; pal.markerWriteInt(cof4_tm, coercion.target_type); var cof4_sm: []const u8 = "S"; pal.markerWriteInt(cof4_sm, getTempType(self, src_temp)); var cof4_nl: []const u8 = "\n"; pal.markerWrite(cof4_nl); return dst;
     } else if (kind == CoercionKind.wrap_optional) {
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .wrap_optional = .{ .value = src_temp, .result = dst, .type_id = coercion.target_type } });
-        return dst;
+        var cof3_m: []const u8 = "COF:src"; pal.markerWriteInt(cof3_m, src_temp); var cof3_tm: []const u8 = "T"; pal.markerWriteInt(cof3_tm, coercion.target_type); var cof3_sm: []const u8 = "S"; pal.markerWriteInt(cof3_sm, getTempType(self, src_temp)); var cof3_nl: []const u8 = "\n"; pal.markerWrite(cof3_nl); return dst;
     } else if (kind == CoercionKind.wrap_error_success) {
         var dst = nextTemp(self, coercion.target_type);
+        var wes_sm: []const u8 = "WES:srcT"; pal.markerWriteInt(wes_sm, src_temp);
+        var wes_tm: []const u8 = "WES:tgtT"; pal.markerWriteInt(wes_tm, coercion.target_type);
+        var sc_ty = getTempType(self, src_temp);
+        var wes_y: []const u8 = "WES:srcY"; pal.markerWriteInt(wes_y, sc_ty);
+        var wes_nl: []const u8 = "\n"; pal.markerWrite(wes_nl);
         emitInst(self, LirInst{ .wrap_error_ok = .{ .value = src_temp, .result = dst, .type_id = coercion.target_type } });
-        return dst;
+        var cof2_m: []const u8 = "COF:src"; pal.markerWriteInt(cof2_m, src_temp); var cof2_tm: []const u8 = "T"; pal.markerWriteInt(cof2_tm, coercion.target_type); var cof2_sm: []const u8 = "S"; pal.markerWriteInt(cof2_sm, sc_ty); var cof2_nl: []const u8 = "\n"; pal.markerWrite(cof2_nl); return dst;
     } else if (kind == CoercionKind.wrap_error_err) {
         var dst = nextTemp(self, coercion.target_type);
+        var wee_sm: []const u8 = "WEE:srcT"; pal.markerWriteInt(wee_sm, src_temp);
+        var wee_tm: []const u8 = "WEE:tgtT"; pal.markerWriteInt(wee_tm, coercion.target_type);
+        var sc_ty2 = getTempType(self, src_temp);
+        var wee_y: []const u8 = "WEE:srcY"; pal.markerWriteInt(wee_y, sc_ty2);
+        var wee_nl: []const u8 = "\n"; pal.markerWrite(wee_nl);
         emitInst(self, LirInst{ .wrap_error_err = .{ .value = src_temp, .result = dst, .type_id = coercion.target_type } });
-        return dst;
+        var cof_m: []const u8 = "COF:src"; pal.markerWriteInt(cof_m, src_temp); var cof_tm: []const u8 = "T"; pal.markerWriteInt(cof_tm, coercion.target_type); var cof_sm: []const u8 = "S"; pal.markerWriteInt(cof_sm, sc_ty2); var cof_nl: []const u8 = "\n"; pal.markerWrite(cof_nl); return dst;
     } else if (kind == CoercionKind.int_widen) {
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst, .is_checked = @intCast(u8, 0) } });

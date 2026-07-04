@@ -502,7 +502,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     }
     if (ty.kind == TypeKind.undefined_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.integer_literal_type) { var s: []const u8 = "int"; return s; }
-    if (ty.kind == TypeKind.null_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.null_type) { var nul_m: []const u8 = "NUL:TYnul "; pal.markerWrite(nul_m); var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.slice_type) {
         var sp = reg.slice_items[@intCast(usize, ty.payload_idx)];
         var elem_ty2 = reg.types_items[@intCast(usize, sp.elem)];
@@ -2065,6 +2065,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
          bufferedWriterWrite(&emitter.writer, tn);
          var sm: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, sm);
+        } else {
+            var mtp_m: []const u8 = "MTP:ti"; pal.markerWrite(mtp_m);
+            var mtp_tb: [10]u8 = undefined; var mtp_tl = itoa_mod.itoa(td.temp_id, mtp_tb[0..]); var mtp_ts: usize = @intCast(usize, 9) - @intCast(usize, mtp_tl); pal.markerWrite(mtp_tb[mtp_ts..@intCast(usize, 9)]);
+            var mtp_dm: []const u8 = "T"; pal.markerWriteInt(mtp_dm, eff_type);
+            var mtp_nl: []const u8 = " "; pal.markerWrite(mtp_nl);
         }
     }
 }

@@ -550,7 +550,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     if (src_type == type_mod.TYPE_NULL) { var cs1_m: []const u8 = "CS1\n"; pal_mod.markerWrite(cs1_m); }
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
     var cka_m: []const u8 = "CCK:ca"; pal_mod.markerWriteInt(cka_m, @intCast(u32, @enumToInt(ck)));
-    if (ck != coercion_mod.CoercionKind.none) {
+    if (ck != coercion_mod.CoercionKind.none or (src_type == type_mod.TYPE_NULL and type_mod.typeRegistryIsPointer(self.registry, dst_type))) {
         coercion_mod.coercionTableAdd(self.coercion_table, src_node, ck, dst_type);
         var cor_nm: []const u8 = "COR:N"; pal_mod.markerWriteInt(cor_nm, src_node); var cor_km: []const u8 = "COR:K"; pal_mod.markerWriteInt(cor_km, @intCast(u32, @enumToInt(ck)));
     }
@@ -746,17 +746,16 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     semanticAnalyzerResolveIfHeader(self, node_idx);
     var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
-    if (node.child_2 == @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (node.child_2 == @intCast(u32, 0)) { var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
-    if (then_type == else_type) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
-    if (then_type == type_mod.TYPE_NORETURN) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
-    if (else_type == type_mod.TYPE_NORETURN) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
-    if (then_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, else_type)) { coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, coercion_mod.CoercionKind.int_literal_coerce, else_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
-    if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { coercion_mod.coercionTableAdd(self.coercion_table, node.child_2, coercion_mod.CoercionKind.int_literal_coerce, then_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
-    if (then_type == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
-    if (else_type == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
-    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
-    return type_mod.TYPE_VOID;
+    if (then_type == else_type) { var sif_m: []const u8 = "SIF:1N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_NORETURN) { var sif2m: []const u8 = "SIF:2N"; pal_mod.markerWriteInt(sif2m, node_idx); var sif2tm: []const u8 = "T"; pal_mod.markerWriteInt(sif2tm, else_type); var sif2nl: []const u8 = " "; pal_mod.markerWrite(sif2nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_NORETURN) { var sif3m: []const u8 = "SIF:3N"; pal_mod.markerWriteInt(sif3m, node_idx); var sif3tm: []const u8 = "T"; pal_mod.markerWriteInt(sif3tm, then_type); var sif3nl: []const u8 = " "; pal_mod.markerWrite(sif3nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, else_type)) { var sif4m: []const u8 = "SIF:4N"; pal_mod.markerWriteInt(sif4m, node_idx); var sif4tm: []const u8 = "T"; pal_mod.markerWriteInt(sif4tm, else_type); var sif4nl: []const u8 = " "; pal_mod.markerWrite(sif4nl); coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, coercion_mod.CoercionKind.int_literal_coerce, else_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { var sif5m: []const u8 = "SIF:5N"; pal_mod.markerWriteInt(sif5m, node_idx); var sif5tm: []const u8 = "T"; pal_mod.markerWriteInt(sif5tm, then_type); var sif5nl: []const u8 = " "; pal_mod.markerWrite(sif5nl); coercion_mod.coercionTableAdd(self.coercion_table, node.child_2, coercion_mod.CoercionKind.int_literal_coerce, then_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (then_type == type_mod.TYPE_VOID) { var sif6m: []const u8 = "SIF:6N"; pal_mod.markerWriteInt(sif6m, node_idx); var sif6tm: []const u8 = "T"; pal_mod.markerWriteInt(sif6tm, else_type); var sif6nl: []const u8 = " "; pal_mod.markerWrite(sif6nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
+    if (else_type == type_mod.TYPE_VOID) { var sif7m: []const u8 = "SIF:7N"; pal_mod.markerWriteInt(sif7m, node_idx); var sif7tm: []const u8 = "T"; pal_mod.markerWriteInt(sif7tm, then_type); var sif7nl: []const u8 = " "; pal_mod.markerWrite(sif7nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    var siffm: []const u8 = "SIF:FN"; pal_mod.markerWriteInt(siffm, node_idx); var sifftm: []const u8 = "\n"; pal_mod.markerWrite(sifftm); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID;
 }
 
 fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
