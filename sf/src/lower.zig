@@ -245,8 +245,7 @@ pub const LirLowerer = struct {
     _ctx_node_kind: u32,
     capture_shadow: hash_mod.U32ToU32Map,
     synth_name_counter: u32,
-    rl_types: [32]u32,
-    rl_len: usize,
+
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
@@ -296,8 +295,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         ._ctx_node_kind = @intCast(u32, 0),
         .capture_shadow = hash_mod.u32ToU32MapInit(alloc),
         .synth_name_counter = @intCast(u32, 1),
-        .rl_types = undefined,
-        .rl_len = @intCast(usize, 0),
+
     };
 }
 
@@ -517,18 +515,7 @@ fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
 }
 
-fn rlPush(self: *LirLowerer, ty: u32) void {
-    if (self.rl_len >= @intCast(usize, 32)) return;
-    self.rl_types[self.rl_len] = ty;
-    self.rl_len += @intCast(usize, 1);
-}
-fn rlPop(self: *LirLowerer) void {
-    if (self.rl_len > @intCast(usize, 0)) self.rl_len -= @intCast(usize, 1);
-}
-fn rlTop(self: *LirLowerer) u32 {
-    if (self.rl_len == @intCast(usize, 0)) return @intCast(u32, 0);
-    return self.rl_types[self.rl_len - @intCast(usize, 1)];
-}
+
 
 fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
     var ty = self.ctx.registry.types_items[@intCast(usize, tid)];
@@ -1461,12 +1448,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { if (arr_tid == type_mod.TYPE_VOID) { var vfrv_m: []const u8 = "VFLOW:iRV\n"; pal.markerWrite(vfrv_m); } _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
             var load_ty = ptype;
-            if (arr_tid != type_mod.TYPE_UNDEFINED and arr_tid != type_mod.TYPE_VOID and arr_tid != @intCast(u32, 0) and arr_tid != ptype) {
-                var pty = self.ctx.registry.types_items[@intCast(usize, ptype)];
-                if (pty.kind == type_mod.TypeKind.optional_type) {
-                    if (self.ctx.registry.opt_items[@intCast(usize, pty.payload_idx)].payload == arr_tid) { load_ty = arr_tid; }
-                }
-            }
+
             var tid = nextTemp(self, load_ty);
             var ncb_m: []const u8 = "NCB:t"; pal.markerWrite(ncb_m);
             var ncb_tb: [10]u8 = undefined; var ncb_tl = itoa_mod.itoa(tid, ncb_tb[0..]); var ncb_ts: usize = @intCast(usize, 9) - @intCast(usize, ncb_tl); pal.markerWrite(ncb_tb[ncb_ts..@intCast(usize, 9)]);
