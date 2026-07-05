@@ -6,8 +6,22 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 **Reference docs:** `sf/docs/milestone0.md` (pipeline + task format), `sf/docs/zig0_bootstrap_manual.md` (quirks §9, §6, §7, §8).
 
-## 2. Gap Inventory
 
+## 1.5 Wrapping Subsystem: CLOSED (v3)
+
+`materializeInto` (`sf/src/lower.zig`) is the **sole** wrapper for optional/error_union of any nesting. It is reached only via `applyCoercion` delegation. Intent (`{value, null, error}`) is derived from the source AST node kind through `coercion.node_idx`. No `applyCoercion` wrap fallback exists.
+
+Guarded by the **repro/mi_matrix** corpus (132 shapes) + `repro/mi_matrix/EXPECTED_FAIL.md` manifest. Lisp gate: **9→6** (the 3 eliminated were wrap-class errors).
+
+Remaining lisp gate errors (6) are **outside** wrapping — the next investigation targets:
+- **bug #4** — `if(opt)` struct-as-scalar (lines ~3743, 3796 of C output)
+- **bug #3** — undeclared void/comptime temps `zT_328–330` (lines ~5363, 5367)
+- **G15/G25** — `return try` result typed `TYPE_VOID` (line ~6710, Opt-from-int mismatch)
+- **Deferred catch-merge bug** (`lower.zig:2268`) surfaced by the corpus
+
+
+
+## 2. Gap Inventory
 | # | Subsystem | File | Gap | Severity | Status |
 |---|-----------|------|-----|----------|--------|
 | G1 | Parser | `parser.zig:1100` | decl_buf[64] overflow → AST shared_store corruption | Critical | ✅ |
