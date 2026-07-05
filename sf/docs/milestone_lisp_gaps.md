@@ -51,6 +51,8 @@ Remaining lisp gate errors (6) are **outside** wrapping — the next investigati
 | G25 | Lowerer | `lower.zig:3117` | func.return_type TYPE_VOID persists — RTT lookup fails for some functions | High | ❌ |
 | G26 | c89_emit/lowerer | `emitHoistedDecls` | Undeclared locals in void-return functions — cascade from G25 | Medium | ❌ |
 | G27 | Lowerer | `lower.zig:2977` | `lowerExprImpl` returns 0 for `AstKind.block` (void `{}` expr) → coercion into `E!void` flows temp-0 into `materializeInto`/`getTempType`. Now caught by ICE guards (ERR_9001) — was silent SEGV. Root unfixed, out of scope (block expr needs a void temp). | High | ❌ |
+| B3 | ComptimeEval | `comptime_eval.zig:56` | `comptimeEvalResolveTypeArg` resolves only `ident_expr`, returns null for `ptr_type` → `@sizeOf`/`@alignOf` of pointer type never get comptime value → `lower.zig:2125` leaves dangling temps `zT_328-330` | Critical | ⚠️ Attrib (Upstream) |
+| B4 | Lowerer | `lower.zig:~3164` | `while_stmt` branches on raw `cond_temp` without `check_optional` (unlike if/orelse at `:2338`/`:3081`) → C output `if(cur)` on raw optional struct instead of `if(cur.has_value)` | Critical | ⚠️ Attrib (Lower) |
 
 ## 3. Task Details
 
@@ -1145,6 +1147,34 @@ grep -c "zT_811C9DC5_" /tmp/t19.c  # Expect 0 — no stale name
 
 ---
 
+### T26: Bug #3 Layer Attribution — @sizeOf/@alignOf undeclared temps (UPSTREAM)
+
+**Where:** `comptime_eval.zig:56` (`comptimeEvalResolveTypeArg`), `lower.zig:2125` (comptime_values fold)
+
+**Proven layer:** UPSTREAM (`comptime_eval`). `comptimeEvalResolveTypeArg` resolves only `ident_expr` type args and returns null for `ptr_type`, so `@sizeOf`/`@alignOf` of a pointer type never get a comptime value. `lower.zig:2125` folds only on a `comptime_values` hit and leaves a dangling temp on the miss → undeclared C temps `zT_328`/`zT_329`/`zT_330` from `eval.zig:152` using `arg_count * @sizeOf(*value_mod.Value)` / `@alignOf(*value_mod.Value)`.
+
+**Diagnostic evidence (D1):** `./out_release/zig1 --dump-c89 examples/lisp_interpreter_curr/main.zig` aborts with `error[48]: internal: comptime value unresolved for @sizeOf/@alignOf (node 2145)` exit 3. The ICE guard `iceUnresolvedComptime` in `lower.zig` confirms the lowerer is NOT at fault — the comptime value never arrived from upstream.
+
+**Fix location:** UPSTREAM — extend `comptimeEvalResolveTypeArg` to resolve non-`ident_expr` type arguments (e.g., `ptr_type`, `many_ptr_type`). A lower-level fallback would mask the real gap.
+
+**Status:** ⚠️ Attributed (Upstream). Fix is separate future task.
+
+---
+
+### T27: Bug #4 Layer Attribution — while optional capture missing check_optional (LOWER)
+
+**Where:** `lower.zig:~3164` (while_stmt emission), compare `lower.zig:2338`/`:3081` (if/orelse optional capture)
+
+**Proven layer:** LOWER. The `while_stmt` handler branches on the raw `cond_temp` and calls `bindOptionalCapture` without first emitting `check_optional`. In contrast, `if`/`orelse` optional-capture paths (`:2338`/`:3081`) correctly emit `check_optional` before the capture. This causes the C output to emit `if (cur)` on a raw optional struct instead of `if (cur.has_value)`, triggering GCC "struct used as scalar" errors on lines ~3743, ~3796.
+
+**Diagnostic evidence (D3):** The `WCAPKIND` diagnostic marker reports `WCAPKIND:21` — `21` is the ordinal of `TypeKind.optional_type`, confirming the condition expression is correctly typed as optional upstream. The bug is thus in LOWER's failure to unwrap that optional for the branch condition.
+
+**Fix location:** LOWER — at `lower.zig:~3164`, emit `check_optional` for the optional-capture condition before `bindOptionalCapture`, matching the pattern used in if/orelse optional capture.
+
+**Status:** ⚠️ Attributed (Lower). Fix is separate future task.
+
+---
+
 ### T16: Integration Test
 
 **Target:** Lisp interpreter compiles (0 errors), runs (produces output), mud_server regression (0 errors).
@@ -1237,5 +1267,7 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T23 | E4: is_error/data on non-struct — T18 void return (lowerer func.return_type) (G25) | `lower.zig:3117` | ❌ |
 | T24 | E5: Undeclared locals (val/data/s/name) — cascade from T23 (G26) | `c89_emit.zig:emitHoistedDecls` | ❌ |
 | T25 | E6: Type mismatches (Slice/int/pointer assign) — cascade from T20-T24 | — | ❌ |
+| T26 | Bug #3 attribution — @sizeOf/@alignOf temps: root in comptime_eval (upstream), D1 ICE evidence | `comptime_eval.zig`, `lower.zig` | ⚠️ Attrib |
+| T27 | Bug #4 attribution — while optional capture: root in lower while_stmt (lower), D3 WCAPKIND=21 evidence | `lower.zig` | ⚠️ Attrib |
 
-**Legend**: ✅ Done | ⚠️ Partial | ❌ Missing
+**Legend**: ✅ Done | ⚠️ Partial | ❌ Missing | ⚠️ Attrib = Confirmed layer attribution, fix is separate future task
