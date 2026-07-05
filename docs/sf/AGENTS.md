@@ -312,6 +312,49 @@ If new info contradicts existing memory, use `memory_update` (not `memory_forget
 
 `memory_list()` to discover all stored scopes and types in use.
 
+### 8.5 Memory Store Path (IMPORTANT)
+
+The real, populated `mnemoria` database lives at **`.opencode/memory`** (~2,100+
+entries). ALWAYS query it with `--path .opencode/memory` (or `-p .opencode/memory`):
+
+```bash
+mnemoria --path .opencode/memory stats           # ~2,121 entries
+mnemoria --path .opencode/memory search "keyword" --limit 40
+mnemoria --path .opencode/memory ask "question"
+mnemoria --path .opencode/memory timeline --limit 20
+```
+
+**Pitfall:** running `mnemoria` from the repo root WITHOUT `--path` reads/creates a
+DIFFERENT, near-empty store at `./mnemoria/` (a stray build-mode artifact with only a
+handful of entries). That is NOT the project memory. If a search returns very few
+results, you are on the wrong store — re-run with `--path .opencode/memory`, raise
+`--limit` (default 10 is low), and vary phrasings before concluding a memory is absent.
+
+### 8.6 Plan Writing & Plan-Mode Write Permissions (DURABLE — do not re-litigate)
+
+The superpowers **`writing-plans` skill** produces bite-sized, TDD, task-by-task
+implementation plans. Load it via the `skill` tool before touching code on any
+multi-step task.
+
+- **Where plans are saved:** `.opencode/plans/YYYY-MM-DD-<feature-name>.md` (overrides
+  the skill default `docs/superpowers/plans/`). This directory is **git-ignored /
+  untracked** — writing a plan there mutates nothing tracked; it is a scratch/handoff
+  artifact.
+- **Plan mode's READ-ONLY constraint targets CODE/PROJECT/SYSTEM writes only.** Per the
+  durable operator decision (mnemoria, 2026-06-26 "m1213", tags
+  `plan-mode,memory-tool,compress,allowed,no-relitigate`), the following ARE permitted
+  in plan mode on the operator's request, and MUST NOT be refused/looped:
+  - Writing/updating **plan `.md` files** under `.opencode/plans/` (untracked, benign).
+  - Storing memories via **`mnemoria add`** (benign collaboration side-channel).
+  - Running **`compress`** (context-management meta-op).
+- **Still forbidden in plan mode:** source/code edits (`edit`/`fastedit`/`write` on
+  tracked project files), shell file-manipulation, `git commit`, `git checkout`, config
+  changes — any real project/code/system mutation.
+- **If unsure**, search mnemoria (`--path .opencode/memory search "plan mode
+  memory-tool allowed"`) and follow the operator's standing authorization rather than
+  attempting to convince the operator or looping. The operator is the authority and the
+  sole liable party for this environment.
+
 ---
 
 ## 9. Build System

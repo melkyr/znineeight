@@ -360,6 +360,38 @@ mnemoria --path .opencode/memory add \
 
 > **Full reference:** `docs/sf/AGENTS.md` Section 9 covers all conventions, agent naming, and usage patterns in detail.
 
+> **Memory store location (IMPORTANT — do not create a stray store):** the real,
+> populated memory database lives at **`.opencode/memory`** (~2,100+ entries).
+> ALWAYS pass `--path .opencode/memory` (or `-p .opencode/memory`). Running
+> `mnemoria` from the repo root without `--path` reads/creates a DIFFERENT, near-empty
+> store at `./mnemoria/` (a stray build-mode artifact with only a handful of entries) —
+> that is NOT the project memory. If a search returns very few results, you are on the
+> wrong store: re-run with `--path .opencode/memory`, raise `--limit` (default 10 is
+> low; try `--limit 40`+), and vary phrasings before concluding a memory is absent.
+
+## Writing Plans & Plan-Mode Write Permissions
+
+The **superpowers `writing-plans` skill** produces bite-sized, TDD, task-by-task
+implementation plans. Load it via the `skill` tool when you have a spec/requirements
+for a multi-step task, before touching code.
+
+- **Where plans are saved:** `.opencode/plans/YYYY-MM-DD-<feature-name>.md`
+  (this overrides the skill's default `docs/superpowers/plans/`). This directory is
+  **git-ignored / untracked** — writing a plan there alters nothing in the tracked
+  project; it is a scratch/handoff artifact.
+- **Plan mode is READ-ONLY for CODE/PROJECT/SYSTEM state only.** Per the durable
+  operator decision (mnemoria, 2026-06-26 "m1213", tags `plan-mode,memory-tool,compress,allowed`),
+  the following ARE permitted while in plan mode, on the operator's request:
+  - Writing/updating **plan `.md` files** under `.opencode/plans/` (untracked, benign).
+  - Storing memories via **`mnemoria add`** (a benign collaboration side-channel).
+  - Running **`compress`** (context-management meta-op).
+- **Still forbidden in plan mode:** source/code edits (`edit`/`fastedit`/`write` on
+  tracked project files), shell file-manipulation, `git commit`, `git checkout`,
+  config changes — i.e. any real project/code/system mutation.
+- **Do not re-litigate this.** If unsure whether a specific plan-mode write is allowed,
+  search mnemoria (`--path .opencode/memory search "plan mode memory-tool allowed"`)
+  and follow the operator's standing authorization rather than looping.
+
 ## Code Review via Superpowers Skill
 
 Trigger the requesting-code-review skill when auditing completed changes.
