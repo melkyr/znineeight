@@ -3198,6 +3198,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (node.payload != @intCast(u32, 0)) {
             var wcapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
             if (wcapn.kind == AstKind.while_capture) {
+                var wck_tid = getTempType(self, cond_temp);
+                var wck_kind: u32 = @intCast(u32, 0);
+                if (@intCast(usize, wck_tid) < self.ctx.registry.types_len) { wck_kind = @intCast(u32, @enumToInt(self.ctx.registry.types_items[@intCast(usize, wck_tid)].kind)); }
+                var wck_m: []const u8 = "WCAPKIND:"; pal.markerWriteInt(wck_m, wck_kind);
                 bindOptionalCapture(self, node.payload, cond_temp);
             }
         }
