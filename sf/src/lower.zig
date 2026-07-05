@@ -545,9 +545,24 @@ fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
 }
 
 fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.ctx.registry.types_len) {
+        var ws: []const u8 = "type";
+        iceInvalidIndex(self, ws, tid, @intCast(u32, self.ctx.registry.types_len));
+        return tid;
+    }
     var ty = self.ctx.registry.types_items[@intCast(usize, tid)];
     if (ty.kind == type_mod.TypeKind.error_union_type) {
+        if (@intCast(usize, ty.payload_idx) >= self.ctx.registry.eu_len) {
+            var ws: []const u8 = "eu_payload";
+            iceInvalidIndex(self, ws, ty.payload_idx, @intCast(u32, self.ctx.registry.eu_len));
+            return tid;
+        }
         var pay = self.ctx.registry.eu_items[@intCast(usize, ty.payload_idx)].payload;
+        if (@intCast(usize, pay) >= self.ctx.registry.types_len) {
+            var ws: []const u8 = "type";
+            iceInvalidIndex(self, ws, pay, @intCast(u32, self.ctx.registry.types_len));
+            return tid;
+        }
         var payk = self.ctx.registry.types_items[@intCast(usize, pay)].kind;
         if (payk != type_mod.TypeKind.void_type) {
             return pay;
@@ -569,6 +584,11 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
     if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
 
     if (intent == SrcIntent.error_src) {
+        if (@intCast(usize, expected) >= self.ctx.registry.types_len) {
+            var ws: []const u8 = "type";
+            iceInvalidIndex(self, ws, expected, @intCast(u32, self.ctx.registry.types_len));
+            return src_temp;
+        }
         var ek = self.ctx.registry.types_items[@intCast(usize, expected)];
         if (ek.kind == type_mod.TypeKind.error_union_type) {
             var et = nextTemp(self, expected);
@@ -586,16 +606,31 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
     var cur: u32 = expected;
     var guard: usize = @intCast(usize, 0);
     while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (@intCast(usize, cur) >= self.ctx.registry.types_len) {
+            var ws: []const u8 = "type";
+            iceInvalidIndex(self, ws, cur, @intCast(u32, self.ctx.registry.types_len));
+            return src_temp;
+        }
         var ck = self.ctx.registry.types_items[@intCast(usize, cur)];
         if (ck.kind == type_mod.TypeKind.optional_type) {
             layers[nlayers] = cur; nlayers += @intCast(usize, 1);
             if (intent == SrcIntent.null_src) break;
+            if (@intCast(usize, ck.payload_idx) >= self.ctx.registry.opt_len) {
+                var ws: []const u8 = "opt_payload";
+                iceInvalidIndex(self, ws, ck.payload_idx, @intCast(u32, self.ctx.registry.opt_len));
+                return src_temp;
+            }
             var opl = self.ctx.registry.opt_items[@intCast(usize, ck.payload_idx)].payload;
             if (opl == src_ty) { cur = opl; break; }
             cur = opl; continue;
         }
         if (ck.kind == type_mod.TypeKind.error_union_type) {
             layers[nlayers] = cur; nlayers += @intCast(usize, 1);
+            if (@intCast(usize, ck.payload_idx) >= self.ctx.registry.eu_len) {
+                var ws: []const u8 = "eu_payload";
+                iceInvalidIndex(self, ws, ck.payload_idx, @intCast(u32, self.ctx.registry.eu_len));
+                return src_temp;
+            }
             var eul = self.ctx.registry.eu_items[@intCast(usize, ck.payload_idx)].payload;
             if (eul == src_ty) { cur = eul; break; }
             cur = eul; continue;
