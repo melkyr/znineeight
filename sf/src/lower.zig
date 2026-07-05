@@ -243,6 +243,8 @@ pub const LirLowerer = struct {
     _ctx_node_kind: u32,
     capture_shadow: hash_mod.U32ToU32Map,
     synth_name_counter: u32,
+    rl_types: [32]u32,
+    rl_len: usize,
 };
 
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
@@ -292,6 +294,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         ._ctx_node_kind = @intCast(u32, 0),
         .capture_shadow = hash_mod.u32ToU32MapInit(alloc),
         .synth_name_counter = @intCast(u32, 1),
+        .rl_types = undefined,
+        .rl_len = @intCast(usize, 0),
     };
 }
 
@@ -509,6 +513,19 @@ fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_i
 
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
+}
+
+fn rlPush(self: *LirLowerer, ty: u32) void {
+    if (self.rl_len >= @intCast(usize, 32)) return;
+    self.rl_types[self.rl_len] = ty;
+    self.rl_len += @intCast(usize, 1);
+}
+fn rlPop(self: *LirLowerer) void {
+    if (self.rl_len > @intCast(usize, 0)) self.rl_len -= @intCast(usize, 1);
+}
+fn rlTop(self: *LirLowerer) u32 {
+    if (self.rl_len == @intCast(usize, 0)) return @intCast(u32, 0);
+    return self.rl_types[self.rl_len - @intCast(usize, 1)];
 }
 
 fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
