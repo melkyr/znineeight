@@ -558,7 +558,15 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32) u32 {
             cur = self.ctx.registry.opt_items[@intCast(usize, ck.payload_idx)].payload;
             continue;
         }
+        if (ck.kind == type_mod.TypeKind.error_union_type) {
+            layers[nlayers] = cur; nlayers += @intCast(usize, 1);
+            var src_k = self.ctx.registry.types_items[@intCast(usize, src_ty)].kind;
+            if (src_k == type_mod.TypeKind.error_set_type) break;
+            cur = self.ctx.registry.eu_items[@intCast(usize, ck.payload_idx)].payload;
+            continue;
+        }
         break;
+
     }
     if (nlayers == @intCast(usize, 0)) return src_temp;
 
@@ -566,13 +574,22 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32) u32 {
     var i: usize = nlayers;
     while (i > @intCast(usize, 0)) : (i -= @intCast(usize, 1)) {
         var layer = layers[i - @intCast(usize, 1)];
+        var lk = self.ctx.registry.types_items[@intCast(usize, layer)].kind;
         var t = nextTemp(self, layer);
-        if (getTempType(self, val) == type_mod.TYPE_NULL) {
+        if (lk == type_mod.TypeKind.error_union_type) {
+            var vk = self.ctx.registry.types_items[@intCast(usize, getTempType(self, val))].kind;
+            if (vk == type_mod.TypeKind.error_set_type) {
+                emitInst(self, LirInst{ .wrap_error_err = .{ .value = val, .result = t, .type_id = layer } });
+            } else {
+                emitInst(self, LirInst{ .wrap_error_ok = .{ .value = val, .result = t, .type_id = layer } });
+            }
+        } else if (getTempType(self, val) == type_mod.TYPE_NULL) {
             emitInst(self, LirInst{ .set_optional_null = .{ .result = t, .type_id = layer } });
         } else {
             emitInst(self, LirInst{ .wrap_optional = .{ .value = val, .result = t, .type_id = layer } });
         }
         val = t;
+
     }
     return val;
 }
