@@ -89,11 +89,7 @@ def canonicalize_one(filepath: str) -> bool:
     text = strip_builtin(original, 'as')
 
     if needs_error_set(text):
-        m = re.search(r'\b(pub fn |fn |const )', text)
-        if m:
-            text = text[:m.start()] + 'const E = error{Bad}; ' + text[m.start():]
-        else:
-            text = 'const E = error{Bad}; ' + text
+        text = 'const E = error{Bad}; ' + text
 
     if text == original:
         return False
