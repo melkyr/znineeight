@@ -235,6 +235,8 @@ pub const LirLowerer = struct {
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
     enumtoint_name_id: u32,
+    size_of_name_id: u32,
+    align_of_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -264,6 +266,10 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var itp_id = si_mod.stringInternerIntern(ctx.registry.interner, itp_s);
     var eit_s: []const u8 = "@enumToInt";
     var eit_id = si_mod.stringInternerIntern(ctx.registry.interner, eit_s);
+    var sizeof_s: []const u8 = "@sizeOf";
+    var sizeof_id = si_mod.stringInternerIntern(ctx.registry.interner, sizeof_s);
+    var alignof_s: []const u8 = "@alignOf";
+    var alignof_id = si_mod.stringInternerIntern(ctx.registry.interner, alignof_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -285,6 +291,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .ptrtoint_name_id = ptin_id,
          .inttoptr_name_id = itp_id,
          .enumtoint_name_id = eit_id,
+         .size_of_name_id = sizeof_id,
+         .align_of_name_id = alignof_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -528,6 +536,25 @@ fn iceInvalidIndex(self: *LirLowerer, what: []const u8, idx: u32, len: u32) void
     var end: u32 = 0;
     if (@intCast(usize, self._ctx_node_idx) < self.ctx.store.nodes.len) {
         var node = self.ctx.store.nodes.items[@intCast(usize, self._ctx_node_idx)];
+        start = node.span_start;
+        end = node.span_start + @intCast(u32, node.span_len);
+    }
+    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
+    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+}
+
+fn iceUnresolvedComptime(self: *LirLowerer, node_idx: u32) void {
+    var node_id_buf: [10]u8 = undefined;
+    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
+    var p0: []const u8 = "internal: comptime value unresolved for @sizeOf/@alignOf (node ";
+    var p1: []const u8 = ")";
+    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
+    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
+    var start: u32 = 0;
+    var end: u32 = 0;
+    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
+        var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
         start = node.span_start;
         end = node.span_start + @intCast(u32, node.span_len);
     }
@@ -2127,6 +2154,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, cv), .result = cres } });
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
                 return cres;
+            }
+            if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id) {
+                iceUnresolvedComptime(self, node_idx);
+                return nextTemp(self, type_mod.TYPE_USIZE);
             }
             if (node.child_0 == self.enumtoint_name_id) {
                 var bm: []const u8 = "E"; pal.markerWrite(bm);
