@@ -1,1 +1,1 @@
-pub fn main() void { var x: E!?i32 = @as(?i32, @as(i32, 42)); _ = x; }
+const E = error{Bad}; pub fn main() void { var x: E!?i32 = 42; _ = x; }

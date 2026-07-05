@@ -1,1 +1,1 @@
-pub fn main() void { var x: ??i32 = @as(?i32, null); x = @as(?i32, @as(i32, 42)); _ = x; }
+pub fn main() void { var x: ??i32 = null; x = 42; _ = x; }

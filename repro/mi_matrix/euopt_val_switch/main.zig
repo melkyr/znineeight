@@ -1,1 +1,1 @@
-pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => @as(?i32, @as(i32, 42)), 1 => @as(?i32, null), else => @as(?i32, null), }; _ = r; }
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
