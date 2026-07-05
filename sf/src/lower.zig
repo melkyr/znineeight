@@ -32,6 +32,8 @@ const format_mod = @import("util/format.zig");
 const itoa_mod = @import("util/itoa.zig");
 const hash_mod = @import("util/hash.zig");
 
+pub const SrcIntent = enum(u8) { value, null_src, error_src };
+
 const BIN_ADD  = @intCast(u8, 0);
 const BIN_SUB  = @intCast(u8, 1);
 const BIN_MUL  = @intCast(u8, 2);
@@ -540,8 +542,28 @@ fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
     return tid;
 }
 
-pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32) u32 {
+fn srcIntentFor(self: *LirLowerer, coercion: coercion_mod.CoercionEntry) SrcIntent {
+    if (coercion.kind == CoercionKind.wrap_optional_null) return SrcIntent.null_src;
+    if (coercion.kind == CoercionKind.wrap_error_err) return SrcIntent.error_src;
+    var n = self.ctx.store.nodes.items[@intCast(usize, coercion.node_idx)];
+    if (n.kind == ast_mod.AstKind.null_literal) return SrcIntent.null_src;
+    if (n.kind == ast_mod.AstKind.error_literal) return SrcIntent.error_src;
+    return SrcIntent.value;
+}
+
+pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: SrcIntent) u32 {
     if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
+
+    if (intent == SrcIntent.error_src) {
+        var ek = self.ctx.registry.types_items[@intCast(usize, expected)];
+        if (ek.kind == type_mod.TypeKind.error_union_type) {
+            var et = nextTemp(self, expected);
+            emitInst(self, LirInst{ .wrap_error_err = .{ .value = src_temp, .result = et, .type_id = expected } });
+            return et;
+        }
+        return src_temp;
+    }
+
     var src_ty = getTempType(self, src_temp);
     if (src_ty == expected) return src_temp;
 
@@ -550,46 +572,51 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32) u32 {
     var cur: u32 = expected;
     var guard: usize = @intCast(usize, 0);
     while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
-        if (cur == src_ty) break;
         var ck = self.ctx.registry.types_items[@intCast(usize, cur)];
         if (ck.kind == type_mod.TypeKind.optional_type) {
             layers[nlayers] = cur; nlayers += @intCast(usize, 1);
-            if (src_ty == type_mod.TYPE_NULL) break;
-            cur = self.ctx.registry.opt_items[@intCast(usize, ck.payload_idx)].payload;
-            continue;
+            if (intent == SrcIntent.null_src) break;
+            var opl = self.ctx.registry.opt_items[@intCast(usize, ck.payload_idx)].payload;
+            if (opl == src_ty) { cur = opl; break; }
+            cur = opl; continue;
         }
         if (ck.kind == type_mod.TypeKind.error_union_type) {
             layers[nlayers] = cur; nlayers += @intCast(usize, 1);
-            var src_k = self.ctx.registry.types_items[@intCast(usize, src_ty)].kind;
-            if (src_k == type_mod.TypeKind.error_set_type) break;
-            cur = self.ctx.registry.eu_items[@intCast(usize, ck.payload_idx)].payload;
-            continue;
+            var eul = self.ctx.registry.eu_items[@intCast(usize, ck.payload_idx)].payload;
+            if (eul == src_ty) { cur = eul; break; }
+            cur = eul; continue;
         }
         break;
-
     }
     if (nlayers == @intCast(usize, 0)) return src_temp;
 
     var val = src_temp;
+    if (intent == SrcIntent.value and cur != src_ty) {
+        var nk = coercion_mod.classifyCoercion(self.ctx.registry, src_ty, cur);
+        if (nk == CoercionKind.int_widen or nk == CoercionKind.int_literal_coerce) {
+            var ct = nextTemp(self, cur);
+            emitInst(self, LirInst{ .int_cast = .{ .value = val, .target = cur, .result = ct, .is_checked = @intCast(u8, 0) } });
+            val = ct;
+        } else if (nk == CoercionKind.float_widen) {
+            var ft = nextTemp(self, cur);
+            emitInst(self, LirInst{ .float_cast = .{ .value = val, .target = cur, .result = ft } });
+            val = ft;
+        }
+    }
+
     var i: usize = nlayers;
     while (i > @intCast(usize, 0)) : (i -= @intCast(usize, 1)) {
         var layer = layers[i - @intCast(usize, 1)];
         var lk = self.ctx.registry.types_items[@intCast(usize, layer)].kind;
         var t = nextTemp(self, layer);
         if (lk == type_mod.TypeKind.error_union_type) {
-            var vk = self.ctx.registry.types_items[@intCast(usize, getTempType(self, val))].kind;
-            if (vk == type_mod.TypeKind.error_set_type) {
-                emitInst(self, LirInst{ .wrap_error_err = .{ .value = val, .result = t, .type_id = layer } });
-            } else {
-                emitInst(self, LirInst{ .wrap_error_ok = .{ .value = val, .result = t, .type_id = layer } });
-            }
-        } else if (getTempType(self, val) == type_mod.TYPE_NULL) {
+            emitInst(self, LirInst{ .wrap_error_ok = .{ .value = val, .result = t, .type_id = layer } });
+        } else if (intent == SrcIntent.null_src and i == nlayers) {
             emitInst(self, LirInst{ .set_optional_null = .{ .result = t, .type_id = layer } });
         } else {
             emitInst(self, LirInst{ .wrap_optional = .{ .value = val, .result = t, .type_id = layer } });
         }
         val = t;
-
     }
     return val;
 }
