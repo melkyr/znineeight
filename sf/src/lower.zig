@@ -540,6 +540,44 @@ fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
     return tid;
 }
 
+pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32) u32 {
+    if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
+    var src_ty = getTempType(self, src_temp);
+    if (src_ty == expected) return src_temp;
+
+    var layers: [8]u32 = undefined;
+    var nlayers: usize = @intCast(usize, 0);
+    var cur: u32 = expected;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (cur == src_ty) break;
+        var ck = self.ctx.registry.types_items[@intCast(usize, cur)];
+        if (ck.kind == type_mod.TypeKind.optional_type) {
+            layers[nlayers] = cur; nlayers += @intCast(usize, 1);
+            if (src_ty == type_mod.TYPE_NULL) break;
+            cur = self.ctx.registry.opt_items[@intCast(usize, ck.payload_idx)].payload;
+            continue;
+        }
+        break;
+    }
+    if (nlayers == @intCast(usize, 0)) return src_temp;
+
+    var val = src_temp;
+    var i: usize = nlayers;
+    while (i > @intCast(usize, 0)) : (i -= @intCast(usize, 1)) {
+        var layer = layers[i - @intCast(usize, 1)];
+        var t = nextTemp(self, layer);
+        if (getTempType(self, val) == type_mod.TYPE_NULL) {
+            emitInst(self, LirInst{ .set_optional_null = .{ .result = t, .type_id = layer } });
+        } else {
+            emitInst(self, LirInst{ .wrap_optional = .{ .value = val, .result = t, .type_id = layer } });
+        }
+        val = t;
+    }
+    return val;
+}
+
+
 fn nameMapGet(self: *LirLowerer, temp_id: u32) u32 {
     var result = hash_mod.u32ToU32MapGet(&self.local_decl_name_map, temp_id);
     if (result) |v| return v;
@@ -1378,7 +1416,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { if (arr_tid == type_mod.TYPE_VOID) { var vfrv_m: []const u8 = "VFLOW:iRV\n"; pal.markerWrite(vfrv_m); } _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
-            var tid = nextTemp(self, ptype);
+            var load_ty = ptype;
+            if (arr_tid != type_mod.TYPE_UNDEFINED and arr_tid != type_mod.TYPE_VOID and arr_tid != @intCast(u32, 0) and arr_tid != ptype) {
+                var pty = self.ctx.registry.types_items[@intCast(usize, ptype)];
+                if (pty.kind == type_mod.TypeKind.optional_type) {
+                    if (self.ctx.registry.opt_items[@intCast(usize, pty.payload_idx)].payload == arr_tid) { load_ty = arr_tid; }
+                }
+            }
+            var tid = nextTemp(self, load_ty);
             var ncb_m: []const u8 = "NCB:t"; pal.markerWrite(ncb_m);
             var ncb_tb: [10]u8 = undefined; var ncb_tl = itoa_mod.itoa(tid, ncb_tb[0..]); var ncb_ts: usize = @intCast(usize, 9) - @intCast(usize, ncb_tl); pal.markerWrite(ncb_tb[ncb_ts..@intCast(usize, 9)]);
             var ncb_ym: []const u8 = "Y"; pal.markerWrite(ncb_ym);
@@ -3390,6 +3435,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     }
                     if (sn_x == @intCast(u8, 0)) {
                     var init_val = lowerExpr(self, node.child_1);
+                    init_val = materializeInto(self, init_val, decl_type);
                     if (decl_type != type_mod.TYPE_VOID) {
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
                     var reg = findLocalTemp(self, name_id);
