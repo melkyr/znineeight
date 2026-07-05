@@ -50,6 +50,7 @@ Remaining lisp gate errors (6) are **outside** wrapping — the next investigati
 | G24 | c89_emit | `c89_emit.zig:529` | Non-deterministic EU name — same payload different hash prefix | Medium | ❌ |
 | G25 | Lowerer | `lower.zig:3117` | func.return_type TYPE_VOID persists — RTT lookup fails for some functions | High | ❌ |
 | G26 | c89_emit/lowerer | `emitHoistedDecls` | Undeclared locals in void-return functions — cascade from G25 | Medium | ❌ |
+| G27 | Lowerer | `lower.zig:2977` | `lowerExprImpl` returns 0 for `AstKind.block` (void `{}` expr) → coercion into `E!void` flows temp-0 into `materializeInto`/`getTempType`. Now caught by ICE guards (ERR_9001) — was silent SEGV. Root unfixed, out of scope (block expr needs a void temp). | High | ❌ |
 
 ## 3. Task Details
 

@@ -1,15 +1,15 @@
 # mi_matrix corpus — expected-fail manifest (v4 idiomatic baseline)
 
 ## Totals (132 repros)
-- **NEW (idiomatic): OK=94 / FAIL=37 / CRASH=1**
+- **NEW (idiomatic): OK=94 / FAIL=37 / ICE=1 / CRASH=0**
 - OLD (@as-era): OK=72 / FAIL=38 / CRASH=22
-- Delta: **+22 OK, -1 FAIL, -21 CRASH** — expected shift: corpus now tests implicit coercion (no `@as`, named error sets, `?E!T` kept as target).
+- Delta: **+22 OK, -1 FAIL, -22 CRASH, +1 ICE** — expected shift: corpus now tests implicit coercion (no `@as`, named error sets, `?E!T` kept as target).
 
 ---
 
-## CRASH (1 — SEGV / ASAN abort, not a parse error)
+## ICE (1 — diagnosed, caught by ERR_9001 guard, no SEGV)
 
-- `euvoid_val_catch` — `zF_96d35854_63f9b65b_getTempType` SEGV
+- `euvoid_val_catch` — `error[48]`: invalid temp index 0 (len 0). Root cause: `lowerExprImpl` returns 0 for `AstKind.block` (the `{}` void value), flowing into `materializeInto` → `getTempType(0)` where `hoisted_temps.len==0`. Now caught by `ERR_9001_ICE` guard instead of SEGV. Trigger: `E!void` with implicit coercion (block `{}` → error union). `@as(E!void, h()) catch {}` does NOT reproduce (rc=2 parse error).
 
 ---
 
