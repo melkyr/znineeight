@@ -1,0 +1,1 @@
+fn h() E!i32 { return @as(i32, 42); } pub fn main() void { var r: i32 = h() catch 0; _ = r; }

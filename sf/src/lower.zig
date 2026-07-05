@@ -2298,6 +2298,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var und_oej_nl: []const u8 = "\n"; pal.markerWrite(und_oej_nl);
         self.current_bb = null_bb;
         var null_val = lowerExpr(self, node.child_1);
+        var oe_int: SrcIntent = SrcIntent.value;
+        var oe_an = self.ctx.store.nodes.items[@intCast(usize, node.child_1)];
+        if (oe_an.kind == AstKind.null_literal) { oe_int = SrcIntent.null_src; }
+        if (oe_an.kind == AstKind.error_literal) { oe_int = SrcIntent.error_src; }
+        null_val = materializeInto(self, null_val, if (rt) |t| t else type_mod.TYPE_UNDEFINED, oe_int);
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = null_val } });
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
@@ -2618,6 +2623,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 prong_val = @intCast(u32, 0);
             } else {
                 prong_val = lowerExpr(self, prong_node.child_0);
+                var sw_int: SrcIntent = SrcIntent.value;
+                if (body_node.kind == AstKind.null_literal) { sw_int = SrcIntent.null_src; }
+                if (body_node.kind == AstKind.error_literal) { sw_int = SrcIntent.error_src; }
+                prong_val = materializeInto(self, prong_val, result_tid, sw_int);
             }
             var swp_m: []const u8 = "SWP:p"; pal.markerWrite(swp_m);
             var swp_pb: [10]u8 = undefined; var swp_pl = itoa_mod.itoa(prong_val, swp_pb[0..]); var swp_ps: usize = @intCast(usize, 9) - @intCast(usize, swp_pl); pal.markerWrite(swp_pb[swp_ps..@intCast(usize, 9)]);
