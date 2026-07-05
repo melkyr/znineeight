@@ -1,9 +1,9 @@
 # mi_matrix corpus — expected-fail manifest (v4 idiomatic baseline)
 
 ## Totals (132 repros)
-- **NEW (idiomatic): OK=94 / FAIL=37 / ICE=1 / CRASH=0**
+- **NEW (idiomatic): OK=111 / FAIL=20 / ICE=1 / CRASH=0**
 - OLD (@as-era): OK=72 / FAIL=38 / CRASH=22
-- Delta: **+22 OK, -1 FAIL, -22 CRASH, +1 ICE** — expected shift: corpus now tests implicit coercion (no `@as`, named error sets, `?E!T` kept as target).
+- Delta: **+39 OK, -18 FAIL, -22 CRASH, +1 ICE** (+22/+17 OK from idiom shift + if_expr branch-join wiring through materializeInto).
 
 ---
 
@@ -13,61 +13,41 @@
 
 ---
 
-## FAIL (37) grouped by gcc error
+## FAIL (20) grouped by gcc error
 
-### `incompatible types when assigning to type 'zT_733AFA29_…` (11)
+### `incompatible types when assigning to type 'zT_733AFA29_…` (6)
 euoptptr_err_catch
 euoptptr_val_catch
 opteu_err_if_expr
+  - NOTE: opteu_err_if_expr is a residual — materializeInto's error_src fast-path does not wrap when the outer layer is optional (?E!T); tracked for a separate materializeInto task.
 opteu_err_switch
-opteu_null_if_expr
 opteu_val_catch
-optopt_null_if_expr
-optopt_val_if_expr
-optptr_null_if_expr
 optptr_null_orelse
-optptr_val_if_expr
 
-### `incompatible types when assigning to type 'zT_4E757CD1_…` (5)
+### `incompatible types when assigning to type 'zT_4E757CD1_…` (3)
 euopt_err_assign
-euopt_err_if_expr
 euopt_err_var_decl
-euopt_val_if_expr
 euoptptr_err_call_arg
 
-### `incompatible types when assigning to type 'zT_0DA61B72_…` (4)
+### `incompatible types when assigning to type 'zT_0DA61B72_…` (2)
 eu_err_assign
-eu_err_if_expr
 eu_err_var_decl
-eu_val_if_expr
 
-### `incompatible types when assigning to type 'zT_3F70E806_…` (4)
+### `incompatible types when assigning to type 'zT_3F70E806_…` (2)
 eunum_err_assign
-eunum_err_if_expr
 eunum_err_var_decl
-eunum_val_if_expr
 
-### `incompatible types when assigning to type 'zT_0BF1F60F_…` (4)
+### `incompatible types when assigning to type 'zT_0BF1F60F_…` (2)
 euopt_err_catch
 euopt_val_catch
-opt_null_if_expr
-opt_val_if_expr
 
-### `incompatible types when assigning to type 'zT_D4788E5A_…` (3)
+### `incompatible types when assigning to type 'zT_D4788E5A_…` (2)
 euoptptr_err_assign
-euoptptr_err_if_expr
 euoptptr_err_var_decl
-
-### `incompatible types when assigning to type 'zT_30A21E0E_…` (2)
-optnum_null_if_expr
-optnum_val_if_expr
 
 ### `incompatible types when assigning to type 'int *' from …` (2)
 euoptptr_val_orelse
 optptr_val_orelse
-
-### `incompatible types when assigning to type 'zT_D67AD017_…` (1)
-euoptptr_val_if_expr
 
 ### `request for member 'has_value' in something not a struct…` (1)
 opteu_null_orelse
