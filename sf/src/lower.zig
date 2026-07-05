@@ -3314,23 +3314,16 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
-                var val = lowerExprImpl(self, node.child_0);
+                var val = lowerExpr(self, node.child_0);
                 var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val); var rett: []const u8 = " t="; pal.markerWrite(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id); var retn: []const u8 = "\n"; pal.markerWrite(retn);
                 if (self.func.return_type != type_mod.TYPE_VOID) {
-                    var ce = coercion_mod.coercionTableGet(self.ctx.coercions, node.child_0);
-                    var err_wrapped: u8 = @intCast(u8, 0);
-                    if (ce) |coercion| {
-                        if (coercion.kind == CoercionKind.wrap_error_err) {
-                            val = applyCoercion(self, val, coercion);
-                            err_wrapped = @intCast(u8, 1);
-                        }
+                    var vt = getTempType(self, val);
+                    if (vt != self.func.return_type) {
+                        var rgm: []const u8 = "RET_GAP:n"; pal.markerWriteInt(rgm, node.child_0);
+                        var rgvm: []const u8 = "RET_GAP:v"; pal.markerWriteInt(rgvm, vt);
+                        var rgfm: []const u8 = "RET_GAP:f"; pal.markerWriteInt(rgfm, self.func.return_type);
                     }
-                    if (err_wrapped == @intCast(u8, 0)) {
-                        val = materializeInto(self, val, self.func.return_type);
-                        if (getTempType(self, val) != self.func.return_type) {
-                            if (ce) |coercion| { val = applyCoercion(self, val, coercion); }
-                        }
-                    }
+                    self.hoisted_temps.items[@intCast(usize, val)].type_id = self.func.return_type;
                 }
                 emitInst(self, LirInst{ .ret = val });
             } else {
@@ -3459,7 +3452,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     }
                     if (sn_x == @intCast(u8, 0)) {
                     var init_val = lowerExpr(self, node.child_1);
-                    init_val = materializeInto(self, init_val, decl_type);
+
                     if (decl_type != type_mod.TYPE_VOID) {
                     emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
                     var reg = findLocalTemp(self, name_id);
