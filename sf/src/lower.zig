@@ -21,6 +21,7 @@ const CoercionEntry = @import("coercion.zig").CoercionEntry;
 const CoercionKind = @import("coercion.zig").CoercionKind;
 const coercion_mod = @import("coercion.zig");
 const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
+const diag_mod = @import("diagnostics.zig");
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const ModuleRegistry = @import("module_registry.zig").ModuleRegistry;
@@ -510,12 +511,38 @@ fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_i
     return capture_name;
 }
 
-
-fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
-    return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
+fn iceInvalidIndex(self: *LirLowerer, what: []const u8, idx: u32, len: u32) void {
+    var idx_buf: [10]u8 = undefined;
+    var idx_l = itoa_mod.itoa(idx, idx_buf[0..]);
+    var len_buf: [10]u8 = undefined;
+    var len_l = itoa_mod.itoa(len, len_buf[0..]);
+    var p0: []const u8 = "internal: invalid ";
+    var p1: []const u8 = " index ";
+    var p2: []const u8 = " (len ";
+    var p3: []const u8 = ")";
+    var idx_s: usize = @intCast(usize, 9) - @intCast(usize, idx_l);
+    var len_s: usize = @intCast(usize, 9) - @intCast(usize, len_l);
+    var parts: [7][]const u8 = [7][]const u8{ p0, what, p1, idx_buf[idx_s..@intCast(usize, 9)], p2, len_buf[len_s..@intCast(usize, 9)], p3 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 7));
+    var start: u32 = 0;
+    var end: u32 = 0;
+    if (@intCast(usize, self._ctx_node_idx) < self.ctx.store.nodes.len) {
+        var node = self.ctx.store.nodes.items[@intCast(usize, self._ctx_node_idx)];
+        start = node.span_start;
+        end = node.span_start + @intCast(u32, node.span_len);
+    }
+    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
+    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
-
+fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
+    if (@intCast(usize, temp_id) >= self.hoisted_temps.len) {
+        var ws: []const u8 = "temp";
+        iceInvalidIndex(self, ws, temp_id, @intCast(u32, self.hoisted_temps.len));
+        return @intCast(u32, 0);
+    }
+    return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
+}
 
 fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
     var ty = self.ctx.registry.types_items[@intCast(usize, tid)];
