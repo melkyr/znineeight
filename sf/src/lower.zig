@@ -580,6 +580,13 @@ fn srcIntentFor(self: *LirLowerer, coercion: coercion_mod.CoercionEntry) SrcInte
     return SrcIntent.value;
 }
 
+fn srcIntentForNode(self: *LirLowerer, node_idx: u32) SrcIntent {
+    var n = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+    if (n.kind == ast_mod.AstKind.null_literal) return SrcIntent.null_src;
+    if (n.kind == ast_mod.AstKind.error_literal) return SrcIntent.error_src;
+    return SrcIntent.value;
+}
+
 pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: SrcIntent) u32 {
     if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
 
@@ -2372,7 +2379,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.if_expr) {
         var cond_temp = lowerExpr(self, node.child_0);
         var rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var result = nextTemp(self, if (rt3) |t| t else type_mod.TYPE_UNDEFINED);
+        var ie_rtype: u32 = if (rt3) |t| t else type_mod.TYPE_UNDEFINED;
+        var result = nextTemp(self, ie_rtype);
         var und_ie_m: []const u8 = "UND:ieRt"; pal.markerWrite(und_ie_m);
         var und_ie_tb: [10]u8 = undefined; var und_ie_tl = itoa_mod.itoa(result, und_ie_tb[0..]); var und_ie_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ie_tl); pal.markerWrite(und_ie_tb[und_ie_ts..@intCast(usize, 9)]);
         var und_ie_nl: []const u8 = "\n"; pal.markerWrite(und_ie_nl);
@@ -2382,12 +2390,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = else_bb } });
         self.current_bb = then_bb;
         var then_val = lowerExpr(self, node.child_1);
+        then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = else_bb;
         var else_val = lowerExpr(self, node.child_2);
+        else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2));
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
