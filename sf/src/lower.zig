@@ -2689,6 +2689,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             self.capture_shadow.count = @intCast(usize, 0);
         }
+        var swx_m: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_m, @intCast(u32, self.block_terminated));
         self.current_bb = exit_bb;
         return result_temp;
      } else if (node.kind == AstKind.slice_expr) {
@@ -3986,6 +3987,8 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
 
 fn emitValuelessReturn(self: *LirLowerer) void {
     var rty = self.ctx.registry.types_items[@intCast(usize, self.func.return_type)];
+    var evr_rt: []const u8 = "EVR:rt"; pal.markerWriteInt(evr_rt, self.func.return_type);
+    var evr_k: []const u8 = "EVR:k"; pal.markerWriteInt(evr_k, @intCast(u32, @enumToInt(rty.kind)));
     if (rty.kind == type_mod.TypeKind.error_union_type) {
         var ztmp = nextTemp(self, type_mod.TYPE_I32);
         emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ztmp } });
@@ -4013,6 +4016,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     var node = store.nodes.items[@intCast(usize, fn_node)];
     var proto_idx = node.payload;
     var proto = store.fn_protos.items[@intCast(usize, proto_idx)];
+    var fnl_m: []const u8 = "FNL:"; pal.markerWriteInt(fnl_m, proto.name_id);
     var func_raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
     var func_ptr = @ptrCast(*LirFunction, func_raw);
     func_ptr.name_id = proto.name_id;
