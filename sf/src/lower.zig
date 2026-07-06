@@ -2353,6 +2353,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var cexg_m: []const u8 = "CEX:g"; pal.markerWrite(cexg_m); var cexg_b: [10]u8 = undefined; var cexg_l = itoa_mod.itoa(@intCast(u32, self.block_terminated), cexg_b[0..]); var cexg_s: usize = @intCast(usize, 9) - @intCast(usize, cexg_l); pal.markerWrite(cexg_b[cexg_s..@intCast(usize, 9)]); var cexg_nl: []const u8 = "\n"; pal.markerWrite(cexg_nl);
             if (self.block_terminated == @intCast(u8, 0)) {
                 var hit_m: []const u8 = "CEX:HIT\n"; pal.markerWrite(hit_m);
+                err_val = materializeInto(self, err_val, euPayloadOf(self, eu_box[0]), srcIntentForNode(self, node.child_1));
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
                 emitInst(self, LirInst{ .jump = join_bb });
             }
