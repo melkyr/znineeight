@@ -1,9 +1,9 @@
 # mi_matrix corpus — expected-fail manifest (v4 idiomatic baseline)
 
 ## Totals (132 repros)
-- **NEW (idiomatic): OK=111 / FAIL=20 / ICE=1 / CRASH=0**
+- **NEW (idiomatic): OK=117 / FAIL=14 / ICE=1 / CRASH=0**
 - OLD (@as-era): OK=72 / FAIL=38 / CRASH=22
-- Delta: **+39 OK, -18 FAIL, -22 CRASH, +1 ICE** (+22/+17 OK from idiom shift + if_expr branch-join wiring through materializeInto).
+- Delta: **+45 OK, -24 FAIL, -22 CRASH, +1 ICE** (idiom shift + if_expr branch-join wiring + catch err-branch materialization + materializeInto error_src generalization, all through materializeInto).
 
 ---
 
@@ -13,14 +13,9 @@
 
 ---
 
-## FAIL (20) grouped by gcc error
+## FAIL (14) grouped by gcc error
 
-### `incompatible types when assigning to type 'zT_733AFA29_…` (6)
-euoptptr_err_catch
-euoptptr_val_catch
-opteu_err_if_expr
-  - NOTE: opteu_err_if_expr is a residual — materializeInto's error_src fast-path does not wrap when the outer layer is optional (?E!T); tracked for a separate materializeInto task.
-opteu_err_switch
+### `incompatible types when assigning to type 'zT_733AFA29_…` (2)
 opteu_val_catch
 optptr_null_orelse
 
@@ -37,10 +32,6 @@ eu_err_var_decl
 eunum_err_assign
 eunum_err_var_decl
 
-### `incompatible types when assigning to type 'zT_0BF1F60F_…` (2)
-euopt_err_catch
-euopt_val_catch
-
 ### `incompatible types when assigning to type 'zT_D4788E5A_…` (2)
 euoptptr_err_assign
 euoptptr_err_var_decl
@@ -51,3 +42,11 @@ optptr_val_orelse
 
 ### `request for member 'has_value' in something not a struct…` (1)
 opteu_null_orelse
+
+---
+
+## Layer attribution of the remaining 14 (reference)
+- **error→EU sema gap (9)**: eu_err_assign, eu_err_var_decl, eunum_err_assign, eunum_err_var_decl, euopt_err_assign, euopt_err_var_decl, euoptptr_err_assign, euoptptr_err_var_decl, euoptptr_err_call_arg. Sema does not record `error.X → E!T` coercion at assign/var_decl/call_arg (value→E!T is recorded). Fix belongs in sema, not a lower patch.
+- **`??*T` nested-optional-pointer representation (3)**: optptr_null_orelse, optptr_val_orelse, euoptptr_val_orelse. `Opt<*T>` ↔ raw `int*` collapse — type_registry/c89_emit representation.
+- **opteu_val_catch (1)**: `var r: ?E!i32 = h()` — EU→optional wrap coercion not recorded (sema).
+- **opteu_null_orelse (1)**: `(null) orelse 42` — degenerate null mistyped (sema).
