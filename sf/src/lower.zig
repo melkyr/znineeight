@@ -3994,10 +3994,10 @@ fn emitValuelessReturn(self: *LirLowerer) void {
     var evr_rt: []const u8 = "EVR:rt"; pal.markerWriteInt(evr_rt, self.func.return_type);
     var evr_k: []const u8 = "EVR:k"; pal.markerWriteInt(evr_k, @intCast(u32, @enumToInt(rty.kind)));
     if (rty.kind == type_mod.TypeKind.error_union_type) {
-        var ztmp = nextTemp(self, type_mod.TYPE_I32);
-        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ztmp } });
+        var pay = self.ctx.registry.eu_items[@intCast(usize, rty.payload_idx)].payload;
+        var ptmp = nextTemp(self, pay);
         var eures = nextTemp(self, self.func.return_type);
-        emitInst(self, LirInst{ .wrap_error_ok = .{ .value = ztmp, .result = eures, .type_id = self.func.return_type } });
+        emitInst(self, LirInst{ .wrap_error_ok = .{ .value = ptmp, .result = eures, .type_id = self.func.return_type } });
         emitInst(self, LirInst{ .ret = eures });
     } else {
         emitInst(self, LirInst{ .ret_void = {} });
