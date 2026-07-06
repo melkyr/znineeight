@@ -3371,6 +3371,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .nop = {} });
             self.block_terminated = @intCast(u8, 1);
         }
+        var exit_preds: u32 = @intCast(u32, 0);
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
              var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
@@ -3404,10 +3405,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
               }
               lowerStmtBody(self, prong_node.child_0);
             if (self.block_terminated == @intCast(u8, 0)) {
+                exit_preds += @intCast(u32, 1);
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
             self.capture_shadow.count = @intCast(usize, 0);
         }
+        var swx_p: []const u8 = "SWEXIT:preds"; pal.markerWriteInt(swx_p, exit_preds);
+        var swx_b: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_b, @intCast(u32, self.block_terminated));
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
     } else if (node.kind == AstKind.return_stmt) {
