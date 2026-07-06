@@ -2164,50 +2164,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
         var ty_node = store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
         t_target = type_mod.TYPE_U32;
-        if (ty_node.kind == AstKind.ptr_type) {
-            var pt_base = store.nodes.items[@intCast(usize, ty_node.child_0)];
-            if (pt_base.kind == AstKind.ident_expr) {
-                var tn_id = store.identifiers.items[@intCast(usize, pt_base.payload)];
-                var tn : ?u32 = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
-                if (tn == null) {
-                    var mi_c: usize = 0;
-                    while (mi_c < @intCast(usize, self.ctx.symbol_tables.tables_len)) : (mi_c += 1) {
-                        var ck: u64 = @intCast(u64, mi_c) * 4294967296 + @intCast(u64, tn_id);
-                        tn = type_mod.nameCacheGet(self.ctx.registry, ck);
-                        if (tn != null) break;
-                    }
-                }
-                if (tn) |t| { t_target = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, t, false); }
-            }
-        } else if (ty_node.kind == AstKind.many_ptr_type) {
-            var pt_base = store.nodes.items[@intCast(usize, ty_node.child_0)];
-            if (pt_base.kind == AstKind.ident_expr) {
-                var tn_id = store.identifiers.items[@intCast(usize, pt_base.payload)];
-                var tn : ?u32 = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
-                if (tn == null) {
-                    var mi_c: usize = 0;
-                    while (mi_c < @intCast(usize, self.ctx.symbol_tables.tables_len)) : (mi_c += 1) {
-                        var ck: u64 = @intCast(u64, mi_c) * 4294967296 + @intCast(u64, tn_id);
-                        tn = type_mod.nameCacheGet(self.ctx.registry, ck);
-                        if (tn != null) break;
-                    }
-                }
-                if (tn) |t| { t_target = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, t, false); }
-            }
-        } else if (ty_node.kind == AstKind.ident_expr) {
-            var tn_id = store.identifiers.items[@intCast(usize, ty_node.payload)];
-            var tn : ?u32 = type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, tn_id));
-            if (tn == null) {
-                var mi_c: usize = 0;
-                while (mi_c < @intCast(usize, self.ctx.symbol_tables.tables_len)) : (mi_c += 1) {
-                    var ck: u64 = @intCast(u64, mi_c) * 4294967296 + @intCast(u64, tn_id);
-                    tn = type_mod.nameCacheGet(self.ctx.registry, ck);
-                    if (tn != null) break;
-                }
-            }
-            if (tn) |t| { t_target = t; var tt: []const u8 = "T"; pal.markerWrite(tt); }
-            else { var tt: []const u8 = "t"; pal.markerWrite(tt); }
-        } else if (ty_node.kind == AstKind.fn_type) {
+        if (ty_node.kind == AstKind.fn_type) {
             var fc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner };
             var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             if (fc_t != type_mod.TYPE_UNDEFINED) {
@@ -2221,7 +2178,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 var fcm: []const u8 = "FNT:t"; pal.markerWrite(fcm);
             }
-        } else { var tu: []const u8 = "U"; pal.markerWrite(tu); }
+        } else {
+            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner };
+            var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+            if (ct != type_mod.TYPE_UNDEFINED) { t_target = ct; }
+        }
         if (t_target == type_mod.TYPE_U32) { var cdm: []const u8 = "CASTDFLT:n"; pal.markerWriteInt(cdm, node_idx); var cdk: []const u8 = "CASTDFLT:k"; pal.markerWriteInt(cdk, @intCast(u32, @enumToInt(ty_node.kind))); }
         var result = nextTemp(self, t_target);
         if (node.child_0 == self.intcast_name_id) {
