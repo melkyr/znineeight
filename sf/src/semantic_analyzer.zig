@@ -55,6 +55,8 @@ pub const SemanticAnalyzer = struct {
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
     inttoenum_name_id: u32,
+    size_of_name_id: u32,
+    align_of_name_id: u32,
 };
 
 pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
@@ -74,6 +76,10 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var if_id = interner_mod.stringInternerIntern(interner, if_s);
     var ie_s: []const u8 = "@intToEnum";
     var ie_id = interner_mod.stringInternerIntern(interner, ie_s);
+    var so_s: []const u8 = "@sizeOf";
+    var so_id = interner_mod.stringInternerIntern(interner, so_s);
+    var ao_s: []const u8 = "@alignOf";
+    var ao_id = interner_mod.stringInternerIntern(interner, ao_s);
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -110,6 +116,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .floatcast_name_id = fc_id,
         .inttofloat_name_id = if_id,
         .inttoenum_name_id = ie_id,
+        .size_of_name_id = so_id,
+        .align_of_name_id = ao_id,
     };
 }
 
@@ -1046,7 +1054,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveFnCall(self, node_idx);
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-        if (ec.len >= @intCast(usize, 2)) {
+        if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id) {
+            if (ec.len >= @intCast(usize, 1)) {
+                var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
+                _ = type_resolver.resolveTypeExprFull(&so_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+            }
+            result = type_mod.TYPE_INT_LIT;
+        } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
                 var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
