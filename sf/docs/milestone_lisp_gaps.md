@@ -13,11 +13,10 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 Guarded by the **repro/mi_matrix** corpus (132 shapes) + `repro/mi_matrix/EXPECTED_FAIL.md` manifest. Lisp gate: **9→6** (the 3 eliminated were wrap-class errors).
 
-Remaining lisp gate errors (6) are **outside** wrapping — the next investigation targets:
-- **bug #4** — `if(opt)` struct-as-scalar (lines ~3743, 3796 of C output)
-- **bug #3** — undeclared void/comptime temps `zT_328–330` (lines ~5363, 5367)
-- **G15/G25** — `return try` result typed `TYPE_VOID` (line ~6710, Opt-from-int mismatch)
-- **Deferred catch-merge bug** (`lower.zig:2268`) surfaced by the corpus
+Remaining lisp gate is **2** errors — the next investigation targets:
+- **bug #3** — ~~undeclared void/comptime temps `zT_328–330`~~ **FIXED (commit 9f4d2095)** — comptime `@sizeOf`/`@alignOf` type args now resolved via canonical `resolveTypeExprFull`
+- `zT_329` undeclared in `zF_08D22E0F_eval` (~line 5370)
+- **G15/#6710** — Opt-from-int mismatch in `value_to_env_real` (~line 6718)
 
 
 
@@ -51,7 +50,7 @@ Remaining lisp gate errors (6) are **outside** wrapping — the next investigati
 | G25 | Lowerer | `lower.zig:3117` | func.return_type TYPE_VOID persists — RTT lookup fails for some functions | High | ❌ |
 | G26 | c89_emit/lowerer | `emitHoistedDecls` | Undeclared locals in void-return functions — cascade from G25 | Medium | ❌ |
 | G27 | Lowerer | `lower.zig:2977` | `lowerExprImpl` returns 0 for `AstKind.block` (void `{}` expr) → coercion into `E!void` flows temp-0 into `materializeInto`/`getTempType`. Now caught by ICE guards (ERR_9001) — was silent SEGV. Root unfixed, out of scope (block expr needs a void temp). | High | ❌ |
-| B3 | ComptimeEval | `comptime_eval.zig:56` | `comptimeEvalResolveTypeArg` resolves only `ident_expr`, returns null for `ptr_type` → `@sizeOf`/`@alignOf` of pointer type never get comptime value → `lower.zig:2125` leaves dangling temps `zT_328-330` | Critical | ⚠️ Attrib (Upstream) |
+| B3 | ComptimeEval | `comptime_eval.zig:56` | `comptimeEvalResolveTypeArg` now delegates to canonical `resolveTypeExprFull` (handles `ptr_type`/`many_ptr_type`/`field_access`/etc.) → `@sizeOf`/`@alignOf(*T)` fold correctly | Critical | ✅ Fixed (9f4d2095) |
 | B4 | Lowerer | `lower.zig:~3164` | `while_stmt` branches on raw `cond_temp` without `check_optional` (unlike if/orelse at `:2338`/`:3081`) → C output `if(cur)` on raw optional struct instead of `if(cur.has_value)` | Critical | ⚠️ Attrib (Lower) |
 
 ## 3. Task Details
@@ -1157,7 +1156,13 @@ grep -c "zT_811C9DC5_" /tmp/t19.c  # Expect 0 — no stale name
 
 **Fix location:** UPSTREAM — extend `comptimeEvalResolveTypeArg` to resolve non-`ident_expr` type arguments (e.g., `ptr_type`, `many_ptr_type`). A lower-level fallback would mask the real gap.
 
-**Status:** ⚠️ Attributed (Upstream). Fix is separate future task.
+**Status:** ✅ Fixed.
+
+**RESOLVED (2026-07-05, commit 9f4d2095):** `comptimeEvalResolveTypeArg` now delegates to the canonical `resolveTypeExprFull` (which handles `ptr_type`/`many_ptr_type`/`field_access`/etc.), so `@sizeOf`/`@alignOf(*T)` fold correctly; the D1 ICE is eliminated and lisp `--dump-c89` compiles again.
+
+**Cast-target resolver (commit 9ae6d1f0):** `@intCast`/`@ptrCast` cast-target resolution in `lower.zig` (previously ident-only, silently defaulted pointer targets to `u32`) now delegates to `resolveTypeExprFull`; proven via the `CASTDFLT` diagnostic (commit 10476bf5) which fired on lisp's `many_ptr` `*value_mod.Value` cast and no longer fires after the fix. Fixed a real silent-wrong-type bug; did not change the lisp gate count.
+
+**direct_ret fallback (commit f32258a0):** a gated `DRETFB` marker on the `semantic_analyzer.zig` ident-only fn-return fallback shows it **never fires** across lisp/man/gol/mud/132 corpus repros — the resolved-type-table main path covers all cases (confirmed never-exercised smell; safe to delete in future).
 
 ---
 
@@ -1267,7 +1272,7 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T23 | E4: is_error/data on non-struct — T18 void return (lowerer func.return_type) (G25) | `lower.zig:3117` | ❌ |
 | T24 | E5: Undeclared locals (val/data/s/name) — cascade from T23 (G26) | `c89_emit.zig:emitHoistedDecls` | ❌ |
 | T25 | E6: Type mismatches (Slice/int/pointer assign) — cascade from T20-T24 | — | ❌ |
-| T26 | Bug #3 attribution — @sizeOf/@alignOf temps: root in comptime_eval (upstream), D1 ICE evidence | `comptime_eval.zig`, `lower.zig` | ⚠️ Attrib |
+| T26 | Bug #3 attribution — @sizeOf/@alignOf temps: root in comptime_eval (upstream), D1 ICE evidence | `comptime_eval.zig`, `lower.zig` | ✅ Fixed |
 | T27 | Bug #4 attribution — while optional capture: root in lower while_stmt (lower), D3 WCAPKIND=21 evidence | `lower.zig` | ⚠️ Attrib |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing | ⚠️ Attrib = Confirmed layer attribution, fix is separate future task
