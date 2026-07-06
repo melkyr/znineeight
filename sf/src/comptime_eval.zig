@@ -7,6 +7,8 @@ const SymbolRegistry = @import("symbol_table.zig").SymbolRegistry;
 const type_mod = @import("type_registry.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
+const type_resolver = @import("type_resolver.zig");
+
 
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
@@ -55,19 +57,10 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind) ?u64 
 
 fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     if (node_idx == @intCast(u32, 0)) return null;
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    if (node.kind == AstKind.ident_expr) {
-        var name_id = self.store.identifiers.items[@intCast(usize, node.payload)];
-        var tid = type_mod.nameCacheGet(self.registry, @intCast(u64, name_id));
-        if (tid) |t| return t;
-        var mi: usize = 0;
-        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
-            var ck: u64 = @intCast(u64, mi) * 4294967296 + @intCast(u64, name_id);
-            var tc = type_mod.nameCacheGet(self.registry, ck);
-            if (tc) |t| return t;
-        }
-    }
-    return null;
+    var env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbol_reg, .interner = self.interner };
+    var tid = type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
+    if (tid == type_mod.TYPE_UNDEFINED) return null;
+    return tid;
 }
 
 fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?u64 {
