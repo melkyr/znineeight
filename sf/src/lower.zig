@@ -2222,6 +2222,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var fcm: []const u8 = "FNT:t"; pal.markerWrite(fcm);
             }
         } else { var tu: []const u8 = "U"; pal.markerWrite(tu); }
+        if (t_target == type_mod.TYPE_U32) { var cdm: []const u8 = "CASTDFLT:n"; pal.markerWriteInt(cdm, node_idx); var cdk: []const u8 = "CASTDFLT:k"; pal.markerWriteInt(cdk, @intCast(u32, @enumToInt(ty_node.kind))); }
         var result = nextTemp(self, t_target);
         if (node.child_0 == self.intcast_name_id) {
             emitInst(self, LirInst{ .int_cast = .{
