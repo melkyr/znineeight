@@ -13,10 +13,10 @@ The lisp interpreter (`examples/lisp_interpreter_curr/`, 10 files, 1009 lines) d
 
 Guarded by the **repro/mi_matrix** corpus (132 shapes) + `repro/mi_matrix/EXPECTED_FAIL.md` manifest. Lisp gate: **9→6** (the 3 eliminated were wrap-class errors).
 
-Remaining lisp gate is **2** errors — the next investigation targets:
+Remaining lisp gate is **0** — **LISP FULLY COMPILES AND LINKS** (2026-07-05):
 - **bug #3** — ~~undeclared void/comptime temps `zT_328–330`~~ **FIXED (commit 9f4d2095)** — comptime `@sizeOf`/`@alignOf` type args now resolved via canonical `resolveTypeExprFull`
-- `zT_329` undeclared in `zF_08D22E0F_eval` (~line 5370)
-- **G15/#6710** — Opt-from-int mismatch in `value_to_env_real` (~line 6718)
+- ~~`zT_329` undeclared in `zF_08D22E0F_eval`~~ **FIXED** — sema types `@sizeOf`/`@alignOf` as `TYPE_INT_LIT` so `count * @sizeOf(T)` no longer poisons the arithmetic result to VOID (undeclarable temp)
+- ~~**G15/#6710** — Opt-from-int mismatch in `value_to_env_real`~~ **FIXED (commit c783cfc9)** — the mis-wrap was the **dead end-of-function epilogue** `emitValuelessReturn` (`lower.zig`), which for an error-union return synthesized `int_const(0)` and `wrap_error_ok`-ed it into the payload — invalid C when the payload is an aggregate (`?*EnvNode`). Now emits a **payload-typed** default (`nextTemp(eu_payload)`), valid C for any payload. The epilogue is emitted (dead) because the statement-switch handler unconditionally resets `block_terminated=0` after an all-returning switch (`lower.zig:3412`); skipping the dead epilogue entirely (LIR noreturn propagation) is deferred to a future LIR-improvement pass. Proven via EVR/SWEXIT/FNL markers (commits 1379a37, c4f56482); see `.superpowers/sdd/phase1-proof.md`.
 
 
 
