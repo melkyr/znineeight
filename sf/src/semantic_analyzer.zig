@@ -614,6 +614,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         var brnt_m: []const u8 = "BR:rnt"; pal_mod.markerWriteInt(brnt_m, rnt_val);
                         if (rt) |t| { direct_ret = t; }
                         else {
+                            var drfb_m: []const u8 = "DRETFB:n"; pal_mod.markerWriteInt(drfb_m, node_idx);
                             var rn = self.store.nodes.items[@intCast(usize, proto.return_type_node)];
                             var brnk_m: []const u8 = "BR:rnk"; pal_mod.markerWriteInt(brnk_m, @intCast(u32, @enumToInt(rn.kind)));
                             if (rn.kind == AstKind.ident_expr) {
