@@ -3185,6 +3185,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         markTerminated(&self.func.blocks, entry_bb);
         self.current_bb = cond_bb;
         var cond_temp = lowerExpr(self, node.child_0);
+        var orig_cond_temp = cond_temp;
         var mwc_m: []const u8 = "MW:c"; pal.markerWrite(mwc_m);
         var mwc_b: [20]u8 = undefined; var mwc_l = itoa_mod.itoa(cond_temp, mwc_b[0..]); var mwc_s: usize = @intCast(usize, 19) - @intCast(usize, mwc_l); pal.markerWrite(mwc_b[mwc_s..@intCast(usize, 19)]);
         if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
@@ -3192,6 +3193,17 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var mwc_tb: [20]u8 = undefined; var mwc_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, cond_temp)].type_id, mwc_tb[0..]); var mwc_ts: usize = @intCast(usize, 19) - @intCast(usize, mwc_tl); pal.markerWrite(mwc_tb[mwc_ts..@intCast(usize, 19)]);
         }
         var mwc_nl: []const u8 = "\n"; pal.markerWrite(mwc_nl);
+        if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+            var cond_t = getTempType(self, cond_temp);
+            if (cond_t != type_mod.TYPE_UNDEFINED) {
+                var cond_ty = self.ctx.registry.types_items[@intCast(usize, cond_t)];
+                if (cond_ty.kind == type_mod.TypeKind.optional_type) {
+                    var has_val = nextTemp(self, type_mod.TYPE_U8);
+                    emitInst(self, LirInst{ .check_optional = .{ .value = cond_temp, .result = has_val } });
+                    cond_temp = has_val;
+                }
+            }
+        }
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
         self.current_bb = body_bb;
         self.block_terminated = @intCast(u8, 0);
@@ -3202,7 +3214,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var wck_kind: u32 = @intCast(u32, 0);
                 if (@intCast(usize, wck_tid) < self.ctx.registry.types_len) { wck_kind = @intCast(u32, @enumToInt(self.ctx.registry.types_items[@intCast(usize, wck_tid)].kind)); }
                 var wck_m: []const u8 = "WCAPKIND:"; pal.markerWriteInt(wck_m, wck_kind);
-                bindOptionalCapture(self, node.payload, cond_temp);
+                bindOptionalCapture(self, node.payload, orig_cond_temp);
             }
         }
         var wbt_m: []const u8 = "WBT:"; pal.markerWrite(wbt_m);
