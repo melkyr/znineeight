@@ -617,20 +617,6 @@ fn srcIntentForNode(self: *LirLowerer, node_idx: u32) SrcIntent {
 pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: SrcIntent) u32 {
     if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
 
-    if (intent == SrcIntent.error_src) {
-        if (@intCast(usize, expected) >= self.ctx.registry.types_len) {
-            var ws: []const u8 = "type";
-            iceInvalidIndex(self, ws, expected, @intCast(u32, self.ctx.registry.types_len));
-            return src_temp;
-        }
-        var ek = self.ctx.registry.types_items[@intCast(usize, expected)];
-        if (ek.kind == type_mod.TypeKind.error_union_type) {
-            var et = nextTemp(self, expected);
-            emitInst(self, LirInst{ .wrap_error_err = .{ .value = src_temp, .result = et, .type_id = expected } });
-            return et;
-        }
-        return src_temp;
-    }
 
     var src_ty = getTempType(self, src_temp);
     if (src_ty == expected) return src_temp;
@@ -660,6 +646,7 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
         }
         if (ck.kind == type_mod.TypeKind.error_union_type) {
             layers[nlayers] = cur; nlayers += @intCast(usize, 1);
+            if (intent == SrcIntent.error_src) break;
             if (@intCast(usize, ck.payload_idx) >= self.ctx.registry.eu_len) {
                 var ws: []const u8 = "eu_payload";
                 iceInvalidIndex(self, ws, ck.payload_idx, @intCast(u32, self.ctx.registry.eu_len));
@@ -693,7 +680,11 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
         var lk = self.ctx.registry.types_items[@intCast(usize, layer)].kind;
         var t = nextTemp(self, layer);
         if (lk == type_mod.TypeKind.error_union_type) {
-            emitInst(self, LirInst{ .wrap_error_ok = .{ .value = val, .result = t, .type_id = layer } });
+            if (intent == SrcIntent.error_src) {
+                emitInst(self, LirInst{ .wrap_error_err = .{ .value = val, .result = t, .type_id = layer } });
+            } else {
+                emitInst(self, LirInst{ .wrap_error_ok = .{ .value = val, .result = t, .type_id = layer } });
+            }
         } else if (intent == SrcIntent.null_src and i == nlayers) {
             emitInst(self, LirInst{ .set_optional_null = .{ .result = t, .type_id = layer } });
         } else {
