@@ -2327,6 +2327,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var join_bb = createBlock(self);
             emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
             var join_temp = nextTemp(self, euPayloadOf(self, eu_box[0]));
+            var cdiag_pt: u32 = euPayloadOf(self, eu_box[0]);
+            var cdiag_p1: []const u8 = "CDIAG:pay"; pal.markerWriteInt(cdiag_p1, cdiag_pt);
             self.current_bb = err_bb;
             self.block_terminated = @intCast(u8, 0);
             var cex_n2_m: []const u8 = "CEX:n2"; pal.markerWrite(cex_n2_m); var cex_n2_b: [10]u8 = undefined; var cex_n2_l = itoa_mod.itoa(node.child_2, cex_n2_b[0..]); var cex_n2_s: usize = @intCast(usize, 9) - @intCast(usize, cex_n2_l); pal.markerWrite(cex_n2_b[cex_n2_s..@intCast(usize, 9)]); var cex_n2_nl: []const u8 = "\n"; pal.markerWrite(cex_n2_nl);
@@ -2340,6 +2342,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
             var err_val = lowerExprOrBlock(self, node.child_1);
+            var cdiag_et: u32 = getTempType(self, err_val);
+            var cdiag_e1: []const u8 = "CDIAG:errT"; pal.markerWriteInt(cdiag_e1, cdiag_et);
+            var cdiag_ek: u32 = @intCast(u32, 0); if (@intCast(usize, cdiag_et) < self.ctx.registry.types_len) { cdiag_ek = @intCast(u32, @enumToInt(self.ctx.registry.types_items[@intCast(usize, cdiag_et)].kind)); }
+            var cdiag_e2: []const u8 = "CDIAG:errK"; pal.markerWriteInt(cdiag_e2, cdiag_ek);
             var cex1_m: []const u8 = "CEX:c1"; pal.markerWrite(cex1_m); var cex1_b: [10]u8 = undefined; var cex1_l = itoa_mod.itoa(node.child_1, cex1_b[0..]); var cex1_s: usize = @intCast(usize, 9) - @intCast(usize, cex1_l); pal.markerWrite(cex1_b[cex1_s..@intCast(usize, 9)]); var cex1_nl: []const u8 = "\n"; pal.markerWrite(cex1_nl);
             var cexk_m: []const u8 = "CEX:ck"; pal.markerWrite(cexk_m); var cexk_b: [10]u8 = undefined; var ck_val: u32 = @intCast(u32, 0); if (node.child_1 != @intCast(u32, 0)) { var c1node = self.ctx.store.nodes.items[@intCast(usize, node.child_1)]; ck_val = @intCast(u32, @enumToInt(c1node.kind)); } var cexk_l = itoa_mod.itoa(ck_val, cexk_b[0..]); var cexk_s: usize = @intCast(usize, 9) - @intCast(usize, cexk_l); pal.markerWrite(cexk_b[cexk_s..@intCast(usize, 9)]); var cexk_nl: []const u8 = "\n"; pal.markerWrite(cexk_nl);
             var cexv_m: []const u8 = "CEX:ev"; pal.markerWrite(cexv_m); var cexv_b: [10]u8 = undefined; var cexv_l = itoa_mod.itoa(err_val, cexv_b[0..]); var cexv_s: usize = @intCast(usize, 9) - @intCast(usize, cexv_l); pal.markerWrite(cexv_b[cexv_s..@intCast(usize, 9)]); var cexv_nl: []const u8 = "\n"; pal.markerWrite(cexv_nl);
@@ -2353,6 +2359,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             self.current_bb = ok_bb;
             var ok_val = nextTemp(self, euPayloadOf(self, eu_box[0]));
             emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
+            var cdiag_ot: u32 = getTempType(self, ok_val);
+            var cdiag_o1: []const u8 = "CDIAG:okT"; pal.markerWriteInt(cdiag_o1, cdiag_ot);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = ok_val } });
             if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = join_bb });
