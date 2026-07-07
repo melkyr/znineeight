@@ -7,7 +7,7 @@ pub fn main() void {
     var i: usize = 0;
     while (i < 8) { src[i] = @intCast(u8, i + 97); i += 1; }
     const line = src[0..4];
-    var t = Tokenizer{ .input = line, .pos = 0 };
+    var t = Tokenizer{ .input = line, .pos = @intCast(usize, 0) };
     __bootstrap_print_int(@intCast(i32, t.input.len));
     __bootstrap_print_int(@intCast(i32, t.input[0]));
     __bootstrap_print_int(@intCast(i32, t.pos));
