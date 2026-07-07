@@ -562,6 +562,25 @@ fn iceUnresolvedComptime(self: *LirLowerer, node_idx: u32) void {
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
+fn iceSliceUnsupported(self: *LirLowerer, node_idx: u32) void {
+    var node_id_buf: [10]u8 = undefined;
+    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
+    var p0: []const u8 = "internal: unsupported slice_expr form/base (node ";
+    var p1: []const u8 = ")";
+    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
+    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
+    var start: u32 = 0;
+    var end: u32 = 0;
+    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
+        var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+        start = node.span_start;
+        end = node.span_start + @intCast(u32, node.span_len);
+    }
+    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
+    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+}
+
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     if (@intCast(usize, temp_id) >= self.hoisted_temps.len) {
         var ws: []const u8 = "temp";
@@ -2705,17 +2724,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              var ser_nl: []const u8 = "SER:F\n"; pal.markerWrite(ser_nl);
              var se_bt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
              se_bt_box[0] = se_bt;
-            if (se_bt != type_mod.TYPE_UNDEFINED) {
-                var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
-                if (se_bty.kind == type_mod.TypeKind.array_type) {
-                    var se_arr_len = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)].length;
-                    var se_len_temp = nextTemp(self, type_mod.TYPE_USIZE);
-                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr_len), .result = se_len_temp } });
-                    var se_result = nextTemp(self, st);
-                    emitInst(self, LirInst{ .make_slice = .{ .ptr = se_base, .len = se_len_temp, .result = se_result, .type_id = st } });
-                    return se_result;
-                }
-            }
+
             var sec2_m: []const u8 = "SEC2:"; pal.markerWrite(sec2_m); var sec2_b: [10]u8 = undefined; var sec2_l = itoa_mod.itoa(node.child_2, sec2_b[0..]); var sec2_s: usize = @intCast(usize, 9) - @intCast(usize, sec2_l); pal.markerWrite(sec2_b[sec2_s..@intCast(usize, 9)]); var sec2_nl: []const u8 = "\n"; pal.markerWrite(sec2_nl);
             var se_slice_ptr: u32 = se_base;
             var se_slice_len_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
@@ -2729,6 +2738,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     emitInst(self, LirInst{ .load_field = .{ .name_id = se_slnid, .base = se_base, .field_id = @intCast(u32, 0), .result = se_slice_ptr } });
                     se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = se_base, .field_id = @intCast(u32, 1), .result = se_slice_len_box[0] } });
+                } else if (se_bty.kind == type_mod.TypeKind.array_type) {
+                    var se_arr = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)];
+                    var se_mpty = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, se_arr.elem, false);
+                    se_slice_ptr = nextTemp(self, se_mpty);
+                    emitInst(self, LirInst{ .ptr_cast = .{ .value = se_base, .target = se_mpty, .result = se_slice_ptr } });
+                    se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr.length), .result = se_slice_len_box[0] } });
                 }
             }
             if (node.child_2 != @intCast(u32, 0)) {
@@ -2766,6 +2782,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              var ser_m: []const u8 = "SER:M\n"; pal.markerWrite(ser_m);
           }
           var ret0_m: []const u8 = "RET0\n"; pal.markerWrite(ret0_m);
+          iceSliceUnsupported(self, node_idx);
           return @intCast(u32, 0);
      } else if (node.kind == AstKind.add_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
