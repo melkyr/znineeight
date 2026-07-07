@@ -2707,7 +2707,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              se_bt_box[0] = se_bt;
             if (se_bt != type_mod.TYPE_UNDEFINED) {
                 var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
-                if (se_bty.kind == type_mod.TypeKind.array_type and node.child_2 == @intCast(u32, 0)) {
+                if (se_bty.kind == type_mod.TypeKind.array_type) {
                     var se_arr_len = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)].length;
                     var se_len_temp = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr_len), .result = se_len_temp } });
