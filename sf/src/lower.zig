@@ -844,7 +844,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bool_literal) {
-        var val = @intCast(u8, node.payload & @intCast(u32, 1));
+        var val = @intCast(u8, node.flags & @intCast(u8, 1));
         var tid = nextTemp(self, type_mod.TYPE_BOOL);
         emitInst(self, LirInst{ .bool_const = .{ .value = val, .result = tid } });
         return tid;
@@ -2707,7 +2707,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              se_bt_box[0] = se_bt;
             if (se_bt != type_mod.TYPE_UNDEFINED) {
                 var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
-                if (se_bty.kind == type_mod.TypeKind.array_type) {
+                if (se_bty.kind == type_mod.TypeKind.array_type and node.child_2 == @intCast(u32, 0)) {
                     var se_arr_len = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)].length;
                     var se_len_temp = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr_len), .result = se_len_temp } });

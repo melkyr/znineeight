@@ -1,63 +1,29 @@
-### Task 1 Report — D1: comptime-missing ICE for `@sizeOf`/`@alignOf`
+# Task 1 Report — Array-base slice honors explicit `[start..end]`
 
-**Status:** DONE
+## Edit Made
+**File:** `sf/src/lower.zig`, line 2710
 
-**Commit:** `34657612`
+**Before:**
+```zig
+                if (se_bty.kind == type_mod.TypeKind.array_type) {
+```
 
----
+**After:**
+```zig
+                if (se_bty.kind == type_mod.TypeKind.array_type and node.child_2 == @intCast(u32, 0)) {
+```
 
-#### RED Baseline (Step 1)
+## RED Output
+`8` (slice repro with unpatched binary prints array length instead of `3`)
 
-- **Lisp gate gcc errors (6):**
-  - `/tmp/l.c:3743:9: error: used struct type value where scalar is required`
-  - `/tmp/l.c:3796:9: error: used struct type value where scalar is required`
-  - `/tmp/l.c:5363:5: error: 'zT_329' undeclared ...`
-  - `/tmp/l.c:5363:26: error: 'zT_328' undeclared ...`
-  - `/tmp/l.c:5367:14: error: 'zT_330' undeclared ...`
-  - `/tmp/l.c:6710:26: error: incompatible types when assigning ...`
+## GREEN Outputs
+- `repro/bool_literal_lower` → `13` ✅ (prints `1` then `3`)
+- `repro/slice_array_end` → **FAILS TO COMPILE**: `assignment to expression with array type` at `buf + zT_15`
 
-- **man `--dump-c89` md5:** `1ea4057da4cfe2a2932f3cfcdf23202f`
-- **gol `--dump-c89` md5:** `80e978322f281fb49b2075234f4ae9d0`
-- **mud `--dump-c89` md5:** `276a8e49e2ff01ad3ac1e6af6c24fe2c`
-- **mi_matrix split:** OK=111 / FAIL=20 / ICE=1
+## [release] Done Confirmation
+Build prints `[release] Done` (zig1-dump errors are expected/pre-existing).
 
----
+## Concerns
+**BLOCKED**: The bounds-aware path (lines 2734-2748) produces invalid C for array-based slices. When `node.child_2 != 0` and the base is an array type, the code falls through to the bounds-aware path which computes `se_ptr = se_slice_ptr + se_start`. For array types, `se_slice_ptr` is `se_base` (the array temp), not a pointer. The emitted C attempts pointer arithmetic on an array-typed expression, which gcc rejects with `assignment to expression with array type`.
 
-#### Edits (Step 2–4)
-
-All edits to `sf/src/lower.zig`:
-
-| # | Location | Change |
-|---|----------|--------|
-| 1 | LirLowerer struct (after `enumtoint_name_id`) | Added `size_of_name_id: u32,` and `align_of_name_id: u32,` fields |
-| 2 | `lowererInit` (before `return LirLowerer{`) | Interned `"@sizeOf"` → `sizeof_id`, `"@alignOf"` → `alignof_id` |
-| 3 | Return struct literal (after `.enumtoint_name_id`) | Added `.size_of_name_id = sizeof_id, .align_of_name_id = alignof_id,` |
-| 4 | After `iceInvalidIndex` (new function) | Added `fn iceUnresolvedComptime` — builds message via `diagnosticBuilderMakeMsg`, emits `ERR_9001_ICE`, exits 3 |
-| 5 | builtin_call site (after comptime_values miss block) | Wired: if `node.child_0` matches `size_of_name_id` or `align_of_name_id`, call `iceUnresolvedComptime(self, node_idx)` |
-
----
-
-#### GREEN Verification (Step 6)
-
-- **Lisp gate:** Now ABORTS with exit 3 and ICE:
-  ```
-  error[48]: internal: comptime value unresolved for @sizeOf/@alignOf (node 2145)
-  ```
-  Proves bug #3 is upstream (comptime_eval never populates comptime_values for pointer-type args).
-
-- **man md5:** `1ea4057da4cfe2a2932f3cfcdf23202f` (unchanged)
-- **gol md5:** `80e978322f281fb49b2075234f4ae9d0` (unchanged)
-- **mud md5:** `276a8e49e2ff01ad3ac1e6af6c24fe2c` (unchanged)
-- **mi_matrix split:** OK=111 / FAIL=20 / ICE=1 (unchanged)
-
----
-
-#### Deviations
-
-None. All steps followed verbatim.
-
----
-
-#### Concerns
-
-None.
+Per the brief instruction: "STOP-and-present if the bounds-aware path produces invalid C for an array base (e.g. base + start or make_slice on the array temp does not yield a valid decayed pointer / fails to gcc-compile)."
