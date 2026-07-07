@@ -3,6 +3,7 @@ const TypeRegistry = @import("type_registry.zig").TypeRegistry;
 const TypeKind = @import("type_registry.zig").TypeKind;
 const StringInterner = @import("string_interner.zig").StringInterner;
 const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
+const diag_mod = @import("diagnostics.zig");
 const LirInst = @import("lir.zig").LirInst;
 const SwitchCaseArrayList = @import("lir.zig").SwitchCaseArrayList;
 const U32ArrayList = @import("growable_array.zig").U32ArrayList;
@@ -2610,13 +2611,15 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                  }
              }
              if (found2 == @intCast(u8, 0)) {
-                 bufferedWriterWrite(&emitter.writer, fn_prefix2);
-                 var fb: [16]u8 = undefined;
-                 var fl = itoa_mod.itoa(sf.field_id, fb[0..]);
-                 var fn_idx: u32 = @intCast(u32, @intCast(u32, 15) - fl);
-                 var fn_start: usize = @intCast(usize, fn_idx);
-                 var fn_end: usize = @intCast(usize, 15);
-                 bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]);
+                 var fi_buf: [10]u8 = undefined;
+                 var fi_l = itoa_mod.itoa(sf.field_id, fi_buf[0..]);
+                 var p0: []const u8 = "internal: store_field unresolved field (field_id ";
+                 var p1: []const u8 = ")";
+                 var fi_s: usize = @intCast(usize, 9) - @intCast(usize, fi_l);
+                 var parts: [3][]const u8 = [3][]const u8{ p0, fi_buf[fi_s..@intCast(usize, 9)], p1 };
+                 var msg = diag_mod.diagnosticBuilderMakeMsg(emitter.interner, &parts[0], @intCast(u32, 3));
+                 diag_mod.diagnosticCollectorAdd(emitter.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+                 diag_mod.diagnosticCollectorFlushAndExit(emitter.diag, @intCast(u32, 3));
               }
             if (is_arr2 != @intCast(u8, 0)) {
                 var sf_semi: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sf_semi);
