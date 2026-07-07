@@ -2560,7 +2560,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
            },
         .store_field => |sf| {
             var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
-              var val = mangleTempName(emitter.interner, sf.value);
+              var val = resolveTempName(emitter, sf.value);
              var is_arr2: u8 = @intCast(u8, 0);
              var arr_len2: u32 = @intCast(u32, 0);
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -2617,9 +2617,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                  var fn_start: usize = @intCast(usize, fn_idx);
                  var fn_end: usize = @intCast(usize, 15);
                  bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]);
-             } else {
-                 bufferedWriterWrite(&emitter.writer, fn_prefix2);
-             }
+              }
             if (is_arr2 != @intCast(u8, 0)) {
                 var sf_semi: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sf_semi);
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);

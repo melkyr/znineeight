@@ -1240,6 +1240,33 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (base_temp != ai_orig_base) { ai_ni = @intCast(u32, 0); }
             emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = src } });
+        } else if (child_node.kind == AstKind.field_access) {
+            var field_name_id = child_node.payload;
+            var base_temp = lowerExpr(self, child_node.child_0);
+            var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, child_node.child_0);
+            if (resolved_base) |type_id| {
+                var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
+                var kind = ty.kind;
+                var type_box: [1]u32 = [1]u32{type_id};
+                if (kind == type_mod.TypeKind.ptr_type or kind == type_mod.TypeKind.many_ptr_type) {
+                    type_box[0] = self.ctx.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+                    ty = self.ctx.registry.types_items[@intCast(usize, type_box[0])];
+                    kind = ty.kind;
+                }
+                if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
+                    var fields: []FieldEntry = undefined;
+                    type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
+                    var fi: usize = 0;
+                    var field_id: u32 = @intCast(u32, 0);
+                    while (fi < fields.len) : (fi += 1) {
+                        if (fields[fi].name_id == field_name_id) {
+                            field_id = @intCast(u32, fi);
+                            break;
+                        }
+                    }
+                    emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = src } });
+                }
+            }
         } else {
             var dst = lowerExpr(self, node.child_0);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = dst, .src = src } });
