@@ -814,7 +814,7 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
             var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, sp.elem, false);
              var ptr_temp = nextTemp(self, ptr_type);
                var base_nid = nameMapGet(self, base_temp);
-              emitInst(self, LirInst{ .load_field = .{ .name_id = base_nid, .base = base_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
+               emitInst(self, LirInst{ .load_field = .{ .name_id = base_nid, .base = base_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
              var slb_m: []const u8 = "SLB:b"; pal.markerWrite(slb_m);
              var slb_bb: [10]u8 = undefined; var slb_bl = itoa_mod.itoa(base_temp, slb_bb[0..]); var slb_bs: usize = @intCast(usize, 9) - @intCast(usize, slb_bl); pal.markerWrite(slb_bb[slb_bs..@intCast(usize, 9)]);
              var slb_rm: []const u8 = "r"; pal.markerWrite(slb_rm);
@@ -1469,7 +1469,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     var tutid_type: u32 = s.type_id;
                                     if (rt_tu2) |rt2v| { tutid_type = rt2v; }
                                     var tu_tid = nextTemp(self, tutid_type);
-                                   emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid, .field_id = @intCast(u32, 0), .src = literal_tid } });
+                                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid, .field_id = type_mod.TU_FIELD_TAG, .src = literal_tid } });
                                   return tu_tid;
                               }
                               return literal_tid;
@@ -1514,7 +1514,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                           if (@enumToInt(nty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.tagged_union_type))) {
                               var literal_tid = lowerGlobalRef(self, s.*, name_id);
                               var tu_tid2 = nextTemp(self, nt);
-                              emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid2, .field_id = @intCast(u32, 0), .src = literal_tid } });
+                               emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid2, .field_id = type_mod.TU_FIELD_TAG, .src = literal_tid } });
                               return tu_tid2;
                           }
                       }
@@ -1763,14 +1763,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var f4sl: []const u8 = "F4SL\n"; pal.markerWrite(f4sl);
                     tid = nextTemp(self, type_mod.TYPE_USIZE);
                     var sl_nid = nameMapGet(self, base_temp);
-                    emitInst(self, LirInst{ .load_field = .{ .name_id = sl_nid, .base = base_temp, .field_id = @intCast(u32, 1), .result = tid } });
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = sl_nid, .base = base_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = tid } });
                 } else {
                     var pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem, false);
                     tid = nextTemp(self, pty);
                     var pm: []const u8 = "P:"; pal.markerWriteInt(pm, @intCast(u32, pty));
                     var psm: []const u8 = "Ps:"; pal.markerWriteInt(psm, tid);
                     var sp_nid = nameMapGet(self, base_temp);
-                    emitInst(self, LirInst{ .load_field = .{ .name_id = sp_nid, .base = base_temp, .field_id = @intCast(u32, 0), .result = tid } });
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = sp_nid, .base = base_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = tid } });
                 }
                 return tid;
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
@@ -2585,7 +2585,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
                             var tag_val = nextTemp(self, type_mod.TYPE_U32);
                             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, fj), .result = tag_val } });
-                            emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, 0), .src = tag_val } });
+                             emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_TAG, .src = tag_val } });
                             var sin_m: []const u8 = "SIN:n"; pal.markerWrite(sin_m);
                             var sin_nb: [10]u8 = undefined; var sin_nl = itoa_mod.itoa(node_idx, sin_nb[0..]); var sin_ns: usize = @intCast(usize, 9) - @intCast(usize, sin_nl); pal.markerWrite(sin_nb[sin_ns..@intCast(usize, 9)]);
                             var sin_bm: []const u8 = "b"; pal.markerWrite(sin_bm);
@@ -2640,7 +2640,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
             if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
                 var tag_temp = nextTemp(self, type_mod.TYPE_U32);
-                emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                 emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = cond_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
                 cond_temp = tag_temp;
             }
         }
@@ -2737,7 +2737,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         capture_name = maybeDisambiguateCapture(self, capture_name, fe.type_id);
                         var payload_temp = nextTemp(self, fe.type_id);
                         _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
-                        emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = @intCast(u32, 1), .result = payload_temp } });
+                         emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
                         addLocalDecl(self, capture_name, fe.type_id, payload_temp);
                         emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe.type_id, .temp = payload_temp } });
                     }
@@ -2807,9 +2807,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var se_pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, se_sl.elem, false);
                     se_slice_ptr = nextTemp(self, se_pty);
                     var se_slnid = nameMapGet(self, se_base);
-                    emitInst(self, LirInst{ .load_field = .{ .name_id = se_slnid, .base = se_base, .field_id = @intCast(u32, 0), .result = se_slice_ptr } });
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = se_slnid, .base = se_base, .field_id = type_mod.SLICE_FIELD_PTR, .result = se_slice_ptr } });
                     se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
-                    emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = se_base, .field_id = @intCast(u32, 1), .result = se_slice_len_box[0] } });
+                     emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = se_base, .field_id = type_mod.SLICE_FIELD_LEN, .result = se_slice_len_box[0] } });
                 } else if (se_bty.kind == type_mod.TypeKind.array_type) {
                     var se_arr = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)];
                     var se_mpty = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, se_arr.elem, false);
@@ -3170,7 +3170,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var a3b: []const u8 = "F3bT"; pal.markerWrite(a3b);
                 var tag_temp = nextTemp(self, type_mod.TYPE_U32);
                 var tgn2 = nameMapGet(self, cond_temp);
-               emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
                 cond_temp = tag_temp;
             }
         }
@@ -3379,8 +3379,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
             var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
             var ms_nid = nameMapGet(self, slice_temp);
-            emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = @intCast(u32, 0), .result = ptr_temp } });
-            emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = @intCast(u32, 1), .result = len_temp } });
+             emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
+             emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
             var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
             var cond_bb = createBlock(self);
@@ -3426,7 +3426,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                   tu_type_box2[0] = ct;
                  var tag_temp = nextTemp(self, type_mod.TYPE_U32);
                 var tgn2 = nameMapGet(self, cond_temp);
-               emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = @intCast(u32, 0), .result = tag_temp } });
+                emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
                 cond_temp = tag_temp;
             }
          }
@@ -3501,7 +3501,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                               capture_name = maybeDisambiguateCapture(self, capture_name, fe2.type_id);
                               var payload_temp2 = nextTemp(self, fe2.type_id);
                              _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
-                             emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = @intCast(u32, 1), .result = payload_temp2 } });
+                              emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
                               addLocalDecl(self, capture_name, fe2.type_id, payload_temp2);
                               emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
                               var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);

@@ -140,11 +140,11 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
             if (ht.type_id != type_mod.TYPE_UNDEFINED) {
                 var bty: type_mod.Type = registry.types_items[@intCast(usize, ht.type_id)];
                 if (bty.kind == TypeKind.slice_type) {
-                    if (field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; fn_prefix = pn; found = @intCast(u8, 1); }
-                    else if (field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; fn_prefix = pn; found = @intCast(u8, 1); }
+                    if (field_id == type_mod.SLICE_FIELD_PTR) { var pn: []const u8 = ".ptr"; fn_prefix = pn; found = @intCast(u8, 1); }
+                    else if (field_id == type_mod.SLICE_FIELD_LEN) { var pn: []const u8 = ".len"; fn_prefix = pn; found = @intCast(u8, 1); }
                 } else if (bty.kind == TypeKind.tagged_union_type) {
-                    if (field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; fn_prefix = pn; found = @intCast(u8, 1); }
-                    else if (field_id == @intCast(u32, 1)) { var pn: []const u8 = ".payload"; fn_prefix = pn; found = @intCast(u8, 1); }
+                    if (field_id == type_mod.TU_FIELD_TAG) { var pn: []const u8 = ".tag"; fn_prefix = pn; found = @intCast(u8, 1); }
+                    else if (field_id == type_mod.TU_FIELD_PAYLOAD) { var pn: []const u8 = ".payload"; fn_prefix = pn; found = @intCast(u8, 1); }
                 } else if (bty.kind == TypeKind.ptr_type or bty.kind == TypeKind.many_ptr_type) {
                     var pointee = registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
                     var pty = registry.types_items[@intCast(usize, pointee)];
@@ -2475,12 +2475,12 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                           var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
                           if (bty.kind == type_mod.TypeKind.slice_type) {
                               field_name_resolved = @intCast(u8, 1);
-                              if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; bufferedWriterWrite(&emitter.writer, pn); }
-                              else if (lf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; bufferedWriterWrite(&emitter.writer, pn); }
+                              if (lf.field_id == type_mod.SLICE_FIELD_PTR) { var pn: []const u8 = ".ptr"; bufferedWriterWrite(&emitter.writer, pn); }
+                              else if (lf.field_id == type_mod.SLICE_FIELD_LEN) { var pn: []const u8 = ".len"; bufferedWriterWrite(&emitter.writer, pn); }
                               else { var s2: []const u8 = ".f_"; bufferedWriterWrite(&emitter.writer, s2); var fb: [16]u8 = undefined; var fl = itoa_mod.itoa(lf.field_id, fb[0..]); var fn_idx: u32 = @intCast(u32, @intCast(u32, 15) - fl); var fn_start: usize = @intCast(usize, fn_idx); var fn_end: usize = @intCast(usize, 15); bufferedWriterWrite(&emitter.writer, fb[fn_start..fn_end]); }
                              } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
                                 field_name_resolved = @intCast(u8, 1);
-                                if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; bufferedWriterWrite(&emitter.writer, pn); }
+                                if (lf.field_id == type_mod.TU_FIELD_TAG) { var pn: []const u8 = ".tag"; bufferedWriterWrite(&emitter.writer, pn); }
                                 else {
                                     var res_ty: u32 = @intCast(u32, 0xFFFFFFFF);
                                     var rtj: usize = @intCast(usize, 0);
@@ -2542,8 +2542,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                   var lfu_m: []const u8 = "LFU:f"; pal.markerWrite(lfu_m);
                   var lfu_fb: [10]u8 = undefined; var lfu_fl = itoa_mod.itoa(lf.field_id, lfu_fb[0..]); var lfu_fs: usize = @intCast(usize, 9) - @intCast(usize, lfu_fl); pal.markerWrite(lfu_fb[lfu_fs..@intCast(usize, 9)]);
                   var lfu_nl: []const u8 = "\n"; pal.markerWrite(lfu_nl);
-                  if (lf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; bufferedWriterWrite(&emitter.writer, pn); }
-                  else if (lf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; bufferedWriterWrite(&emitter.writer, pn); }
+                  if (lf.field_id == type_mod.SLICE_FIELD_PTR) { var pn: []const u8 = ".ptr"; bufferedWriterWrite(&emitter.writer, pn); }
+                  else if (lf.field_id == type_mod.SLICE_FIELD_LEN) { var pn: []const u8 = ".len"; bufferedWriterWrite(&emitter.writer, pn); }
                   else {
                       var s2: []const u8 = ".f_";
                       bufferedWriterWrite(&emitter.writer, s2);
