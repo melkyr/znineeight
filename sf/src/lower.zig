@@ -600,6 +600,40 @@ fn iceFieldStoreUnsupported(self: *LirLowerer, node_idx: u32) void {
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
+fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
+    var fa_node = self.ctx.store.nodes.items[@intCast(usize, fa_node_idx)];
+    var field_name_id = fa_node.payload;
+    var base_temp = lowerExpr(self, fa_node.child_0);
+    var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
+    if (resolved_base) |type_id| {
+        var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
+        var kind = ty.kind;
+        var type_box: [1]u32 = [1]u32{type_id};
+        if (kind == type_mod.TypeKind.ptr_type or kind == type_mod.TypeKind.many_ptr_type) {
+            type_box[0] = self.ctx.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+            ty = self.ctx.registry.types_items[@intCast(usize, type_box[0])];
+            kind = ty.kind;
+        }
+        if (kind == type_mod.TypeKind.struct_type) {
+            var fields: []FieldEntry = undefined;
+            type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
+            var fi: usize = 0;
+            var field_id: u32 = @intCast(u32, 0);
+            while (fi < fields.len) : (fi += 1) {
+                if (fields[fi].name_id == field_name_id) {
+                    field_id = @intCast(u32, fi);
+                    break;
+                }
+            }
+            emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+        } else {
+            iceFieldStoreUnsupported(self, diag_node_idx);
+        }
+    } else {
+        iceFieldStoreUnsupported(self, diag_node_idx);
+    }
+}
+
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     if (@intCast(usize, temp_id) >= self.hoisted_temps.len) {
         var ws: []const u8 = "temp";
@@ -1260,36 +1294,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (base_temp != ai_orig_base) { ai_ni = @intCast(u32, 0); }
             emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = src } });
         } else if (child_node.kind == AstKind.field_access) {
-            var field_name_id = child_node.payload;
-            var base_temp = lowerExpr(self, child_node.child_0);
-            var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, child_node.child_0);
-            if (resolved_base) |type_id| {
-                var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
-                var kind = ty.kind;
-                var type_box: [1]u32 = [1]u32{type_id};
-                if (kind == type_mod.TypeKind.ptr_type or kind == type_mod.TypeKind.many_ptr_type) {
-                    type_box[0] = self.ctx.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
-                    ty = self.ctx.registry.types_items[@intCast(usize, type_box[0])];
-                    kind = ty.kind;
-                }
-                if (kind == type_mod.TypeKind.struct_type) {
-                    var fields: []FieldEntry = undefined;
-                    type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
-                    var fi: usize = 0;
-                    var field_id: u32 = @intCast(u32, 0);
-                    while (fi < fields.len) : (fi += 1) {
-                        if (fields[fi].name_id == field_name_id) {
-                            field_id = @intCast(u32, fi);
-                            break;
-                        }
-                    }
-                    emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = src } });
-                } else {
-                    iceFieldStoreUnsupported(self, node_idx);
-                }
-            } else {
-                iceFieldStoreUnsupported(self, node_idx);
-            }
+            lowerFieldStore(self, node.child_0, src, node_idx);
         } else {
             var dst = lowerExpr(self, node.child_0);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = dst, .src = src } });
@@ -2851,6 +2856,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2872,6 +2879,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2893,6 +2902,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2914,6 +2925,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2935,6 +2948,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2956,6 +2971,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2977,6 +2994,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -2998,6 +3017,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3019,6 +3040,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3040,6 +3063,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3698,6 +3723,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3718,6 +3745,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3738,6 +3767,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3758,6 +3789,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3778,6 +3811,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3798,6 +3833,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3818,6 +3855,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3838,6 +3877,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3858,6 +3899,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
@@ -3878,6 +3921,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (reg != @intCast(u32, 0)) {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
             }
+        } else if (lhs_node.kind == AstKind.field_access) {
+            lowerFieldStore(self, node.child_0, op_r, node_idx);
         } else {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
         }
