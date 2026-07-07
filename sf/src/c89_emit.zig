@@ -2245,7 +2245,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         },
           .assign_field => |a| {
               var base: []const u8 = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
-              var src = mangleTempName(emitter.interner, a.src);
+              var src = resolveTempName(emitter, a.src);
               bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               bufferedWriterWrite(&emitter.writer, base);
               emitFieldAssign(&emitter.writer, emitter.indent, emitter.registry, emitter.interner, emitter.current_fn.hoisted_temps.items, emitter.current_fn.hoisted_temps.len, base, a.base, a.field_id, src);
