@@ -626,6 +626,23 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                 }
             }
             emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+        } else if (kind == type_mod.TypeKind.slice_type) {
+            var len_s: []const u8 = "len";
+            var len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, len_s);
+            var sfid: u32 = if (field_name_id == len_id) type_mod.SLICE_FIELD_LEN else type_mod.SLICE_FIELD_PTR;
+            emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = sfid, .value = value_temp } });
+        } else if (kind == type_mod.TypeKind.tagged_union_type) {
+            var tag_s: []const u8 = "tag";
+            var tag_id = si_mod.stringInternerIntern(self.ctx.registry.interner, tag_s);
+            var pay_s: []const u8 = "payload";
+            var pay_id = si_mod.stringInternerIntern(self.ctx.registry.interner, pay_s);
+            if (field_name_id == tag_id) {
+                emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_TAG, .value = value_temp } });
+            } else if (field_name_id == pay_id) {
+                emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .value = value_temp } });
+            } else {
+                iceFieldStoreUnsupported(self, diag_node_idx);
+            }
         } else {
             iceFieldStoreUnsupported(self, diag_node_idx);
         }

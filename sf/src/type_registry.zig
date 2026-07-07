@@ -28,6 +28,13 @@ pub const TYPE_NULL:      TypeId = 17;
 pub const TYPE_UNDEFINED: TypeId = 18;
 pub const TYPE_INT_LIT:   TypeId = 19;
 pub const TYPE_TYPE:      TypeId = 20;
+
+// Synthetic (compiler-defined) field indices — slice & tagged-union layout.
+// Consumed by load_field / store_field in lower.zig and c89_emit.zig.
+pub const SLICE_FIELD_PTR:  u32 = 0;
+pub const SLICE_FIELD_LEN:  u32 = 1;
+pub const TU_FIELD_TAG:     u32 = 0;
+pub const TU_FIELD_PAYLOAD: u32 = 1;
 pub const FIRST_USER_TYPE: TypeId = 20;
 
 pub const TypeKind = enum(u8) {

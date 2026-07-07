@@ -2568,18 +2568,19 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
              bufferedWriterWrite(&emitter.writer, base);
              var fn_prefix2: []const u8 = ".f_";
              var found2: u8 = @intCast(u8, 0);
-             var tj2: usize = @intCast(usize, 0);
+              var suffix_pending: u8 = @intCast(u8, 0);
+              var tj2: usize = @intCast(usize, 0);
              while (tj2 < emitter.current_fn.hoisted_temps.len) : (tj2 += @intCast(usize, 1)) {
                  var ht = emitter.current_fn.hoisted_temps.items[tj2];
                  if (ht.temp_id == sf.base) {
                      if (ht.type_id != type_mod.TYPE_UNDEFINED) {
                          var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
                          if (bty.kind == type_mod.TypeKind.slice_type) {
-                             if (sf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".ptr"; fn_prefix2 = pn; found2 = @intCast(u8, 1); }
-                             else if (sf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".len"; fn_prefix2 = pn; found2 = @intCast(u8, 1); }
+                              if (sf.field_id == type_mod.SLICE_FIELD_PTR) { var pn: []const u8 = ".ptr"; fn_prefix2 = pn; found2 = @intCast(u8, 1); suffix_pending = @intCast(u8, 1); }
+                              else if (sf.field_id == type_mod.SLICE_FIELD_LEN) { var pn: []const u8 = ".len"; fn_prefix2 = pn; found2 = @intCast(u8, 1); suffix_pending = @intCast(u8, 1); }
                           } else if (bty.kind == type_mod.TypeKind.tagged_union_type) {
-                              if (sf.field_id == @intCast(u32, 0)) { var pn: []const u8 = ".tag"; fn_prefix2 = pn; found2 = @intCast(u8, 1); }
-                              else if (sf.field_id == @intCast(u32, 1)) { var pn: []const u8 = ".payload"; fn_prefix2 = pn; found2 = @intCast(u8, 1); }
+                               if (sf.field_id == type_mod.TU_FIELD_TAG) { var pn: []const u8 = ".tag"; fn_prefix2 = pn; found2 = @intCast(u8, 1); suffix_pending = @intCast(u8, 1); }
+                               else if (sf.field_id == type_mod.TU_FIELD_PAYLOAD) { var pn: []const u8 = ".payload"; fn_prefix2 = pn; found2 = @intCast(u8, 1); suffix_pending = @intCast(u8, 1); }
                            } else if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
                                var pointee = emitter.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
                                var pty = emitter.registry.types_items[@intCast(usize, pointee)];
@@ -2621,7 +2622,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                  diag_mod.diagnosticCollectorAdd(emitter.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
                  diag_mod.diagnosticCollectorFlushAndExit(emitter.diag, @intCast(u32, 3));
               }
-            if (is_arr2 != @intCast(u8, 0)) {
+             if (suffix_pending != @intCast(u8, 0)) { bufferedWriterWrite(&emitter.writer, fn_prefix2); }
+             if (is_arr2 != @intCast(u8, 0)) {
                 var sf_semi: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sf_semi);
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var sf_lb: []const u8 = "{\n"; bufferedWriterWrite(&emitter.writer, sf_lb);
