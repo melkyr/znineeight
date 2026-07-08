@@ -46,6 +46,21 @@ The **deref-store-through-pointer** bug was fixed earlier (`ptr.* = X` / `ptr.* 
 
 
 
+## 1.8 Store-Side L-Value Dispatch: UNIFIED (2026-07-08, store-lvalue-dispatch-unify)
+
+The store side of the l-value grammar previously had **two divergent dispatches** — inline in `plain_assign` and in `lowerCompoundLValueStore` — which disagreed on three l-value forms. They are now unified into **one shared, l-value-node-keyed helper `lowerAssignLValue(self, lv_node_idx, value_temp, diag_node_idx)`** (`lower.zig`), structurally symmetric with the address-side `lowerLValueAddr` (§1.7). Both `plain_assign` (value = `src`) and all 20 compound-assign handlers (value = `op_r`, via a thin `lowerCompoundLValueStore` wrapper) route through it. The helper dispatches `ident_expr` (`store_local` + conditional `assign`), `index_access` (`assign_index`, logic reproduced verbatim from the old plain path), `field_access` (`lowerFieldStore`), `deref` (`lowerDerefStore`), `paren_expr` (**recurses** on `child_0`), else (`iceAssignLValueUnsupported`).
+
+- **FIXED — `(p.*) = x` (paren-plain):** previously hit the plain `else` → **hard ICE** (`ERR_9001`). Now the `paren_expr` recursion reaches the inner `deref` → real `*ptr = x` store. Handles nesting (`((p.*)) = x`) via recursion (the parser wraps once per `(`, so a 1-level unwrap would be incomplete).
+- **FIXED — `(p.*) += x` (paren-compound):** previously hit the compound `else` → **silent `assign{dst=loaded-copy}`** → store DROPPED. Now stores correctly via the same paren recursion.
+- **FIXED — `arr[i] += x` (index-compound):** the compound path had **no `index_access` branch** → fell to `else` → silent store DROP (load-index copy). The shared helper now emits a real `assign_index` (same bug class as the deref/field store bugs fixed earlier; compound simply never got an index branch).
+- **RECONCILED — compound `else` silent-drop → loud ICE:** the compound `else` now calls `iceAssignLValueUnsupported` (matching the plain side) instead of silently emitting `assign{dst=lhs_val}` (a write into a loaded copy that never stored). Empirically gated: fires on **nothing** valid across lisp/man/gol/mud/corpus (0 occurrences); the only valid form its old `else` ever swallowed was `index_access`, which now has its own branch.
+- **UNCHANGED (byte-identical):** plain `ident`/`index_access`/`field`/`deref`/`else` and compound `ident`/`field`/`deref` — same LIR (only stderr-only `pal.markerWrite` markers were dropped in the consolidation; they never appear in `--dump-c89`).
+- **0-occurrence caveat:** all three fixed forms appear in **no** gate program, so man/gol/mud stay `--dump-c89` byte-identical; their correctness is **RUNTIME-verified** by new RED→GREEN repros: `repro/paren_deref_store` (`16`, incl. nested `((p.*))`), `repro/paren_compound_store` (`15`), `repro/index_compound_store` (`15`). Corpus `117/14/1`.
+
+`lowerAssignLValue` is now the **sole store-side l-value dispatch**, mirroring `lowerLValueAddr` on the address side.
+
+
+
 ## 2. Gap Inventory
 | # | Subsystem | File | Gap | Severity | Status |
 |---|-----------|------|-----|----------|--------|
@@ -79,6 +94,7 @@ The **deref-store-through-pointer** bug was fixed earlier (`ptr.* = X` / `ptr.* 
 | B3 | ComptimeEval | `comptime_eval.zig:56` | `comptimeEvalResolveTypeArg` now delegates to canonical `resolveTypeExprFull` (handles `ptr_type`/`many_ptr_type`/`field_access`/etc.) → `@sizeOf`/`@alignOf(*T)` fold correctly | Critical | ✅ Fixed (9f4d2095) |
 | B4 | Lowerer | `lower.zig:~3164` | `while_stmt` branches on raw `cond_temp` without `check_optional` (unlike if/orelse at `:2338`/`:3081`) → C output `if(cur)` on raw optional struct instead of `if(cur.has_value)` | Critical | ⚠️ Attrib (Lower) |
 | G28 | Lowerer | `lower.zig` `lowerLValueAddr` | **FIXED (Task 7):** `address_of` consolidated into `lowerLValueAddr`. Scalar local/param `&n`/`&param` now `addr_of{ findLocalTemp(name_id) }` → `&<name>` (was `&`load-copy). `&(p.*)`/paren fixed; `&arr[i]`/`&struct`/`&slice`/`&tagged`/global unchanged (byte-identical). `&base.field` field-address ICEs (documented gap, 0 corpus uses). Repros GREEN: `deref_store_scalar_addr`/`deref_store_param_addr`/`addr_of_deref` (all 15). | High | ✅ |
+| G29 | Lowerer | `lower.zig` `lowerAssignLValue` | **FIXED (store-lvalue-dispatch-unify):** store-side l-value dispatch unified into `lowerAssignLValue` (sole store dispatch, mirrors `lowerLValueAddr`); `plain_assign` + 20 compound handlers (via `lowerCompoundLValueStore` wrapper) route through it. Fixes `(p.*)=x` (was hard ICE), `(p.*)+=x` + `arr[i]+=x` (were silent store-drops); compound `else` silent-drop → loud ICE (empirically fires on nothing valid). All else byte-identical. Repros GREEN: `paren_deref_store` (16, incl. nested `((p.*))`), `paren_compound_store` (15), `index_compound_store` (15). | High | ✅ |
 
 ## 3. Task Details
 
