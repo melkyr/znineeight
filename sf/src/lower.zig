@@ -1312,6 +1312,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = src } });
         } else if (child_node.kind == AstKind.field_access) {
             lowerFieldStore(self, node.child_0, src, node_idx);
+        } else if (child_node.kind == AstKind.deref) {
+            var ptr_temp = lowerExpr(self, child_node.child_0);
+            emitInst(self, LirInst{ .store = .{ .ptr = ptr_temp, .value = src } });
         } else {
             var dst = lowerExpr(self, node.child_0);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = dst, .src = src } });
