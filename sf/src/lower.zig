@@ -686,6 +686,25 @@ fn lowerDerefStore(self: *LirLowerer, deref_node_idx: u32, value_temp: u32) void
     emitInst(self, LirInst{ .store = .{ .ptr = ptr_temp, .value = value_temp } });
 }
 
+fn lowerCompoundLValueStore(self: *LirLowerer, node_idx: u32, lhs_val: u32, op_r: u32) void {
+    var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+    if (lhs_node.kind == AstKind.ident_expr) {
+        var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
+        emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+        var reg = findLocalTemp(self, name_id);
+        if (reg != @intCast(u32, 0)) {
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+        }
+    } else if (lhs_node.kind == AstKind.deref) {
+        lowerDerefStore(self, node.child_0, op_r);
+    } else if (lhs_node.kind == AstKind.field_access) {
+        lowerFieldStore(self, node.child_0, op_r, node_idx);
+    } else {
+        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+    }
+}
+
 fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
     var fa_node = self.ctx.store.nodes.items[@intCast(usize, fa_node_idx)];
     var field_name_id = fa_node.payload;
@@ -2937,21 +2956,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.sub_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -2962,21 +2967,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.mul_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -2987,21 +2978,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.div_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3012,21 +2989,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.mod_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3037,21 +3000,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.shl_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3062,21 +3011,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.shr_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3087,21 +3022,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.and_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3112,21 +3033,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.xor_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3137,21 +3044,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.or_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -3162,21 +3055,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else {
         return @intCast(u32, 0);
@@ -3816,29 +3695,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var bio_om: []const u8 = "o"; pal.markerWrite(bio_om);
         var bio_ob: [10]u8 = undefined; var bio_ol = itoa_mod.itoa(@intCast(u32, BIN_ADD), bio_ob[0..]); var bio_os: usize = @intCast(usize, 9) - @intCast(usize, bio_ol); pal.markerWrite(bio_ob[bio_os..@intCast(usize, 9)]);
         var bio_nl: []const u8 = "\n"; pal.markerWrite(bio_nl);
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        var adk_m: []const u8 = "ADK:k"; pal.markerWrite(adk_m);
-        var adk_kb: [10]u8 = undefined; var adk_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(lhs_node.kind)), adk_kb[0..]); var adk_ks: usize = @intCast(usize, 9) - @intCast(usize, adk_kl); pal.markerWrite(adk_kb[adk_ks..@intCast(usize, 9)]);
-        var adk_nl: []const u8 = "\n"; pal.markerWrite(adk_nl);
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var sio_m: []const u8 = "SIO:n"; pal.markerWrite(sio_m);
-            var sio_nb: [10]u8 = undefined; var sio_nl = itoa_mod.itoa(name_id, sio_nb[0..]); var sio_ns: usize = @intCast(usize, 9) - @intCast(usize, sio_nl); pal.markerWrite(sio_nb[sio_ns..@intCast(usize, 9)]);
-            var sio_vm: []const u8 = "v"; pal.markerWrite(sio_vm);
-            var sio_vb: [10]u8 = undefined; var sio_vl = itoa_mod.itoa(op_r, sio_vb[0..]); var sio_vs: usize = @intCast(usize, 9) - @intCast(usize, sio_vl); pal.markerWrite(sio_vb[sio_vs..@intCast(usize, 9)]);
-            var sio_nl2: []const u8 = "\n"; pal.markerWrite(sio_nl2);
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.sub_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3848,21 +3705,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.mul_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3872,21 +3715,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.div_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3896,21 +3725,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.mod_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3920,21 +3735,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.shl_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3944,21 +3745,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.shr_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3968,21 +3755,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.and_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -3992,21 +3765,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.xor_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -4016,21 +3775,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.or_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -4040,21 +3785,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-        if (lhs_node.kind == AstKind.ident_expr) {
-            var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
-            var reg = findLocalTemp(self, name_id);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
-            }
-        } else if (lhs_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, op_r);
-        } else if (lhs_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, op_r, node_idx);
-        } else {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
-        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
       } else if (node.kind == AstKind.expr_stmt) {
           lowerStmtBody(self, node.child_0);
       } else {
