@@ -34,15 +34,16 @@ Remaining lisp gate is **0** — **LISP FULLY COMPILES AND LINKS** (2026-07-05):
 **zig1-lisp COMPILES but does NOT yet fully RUN.** The REPL now advances, but crashes on list expressions containing a number/atom: a **separate field-LOAD bug** — `self.input[start..self.pos]` drops the `load_field` for the slice END operand (`self.pos`) → uninitialized end → crash in `parse_int_simple`. The LOAD mirror of the store bug; tracked as a NEW plan. mandelbrot/game_of_life run correctly; corpus 117/14/1; byte-identical maintained.
 
 
-## 1.7 Address-Of Scalar Local: GAP (2026-07-08)
+## 1.7 Address-Of L-Value: FIXED (2026-07-08, Task 7)
 
-The **deref-store-through-pointer** bug is now **FIXED**: `ptr.* = X` and `ptr.* op= x` emit `*ptr = ...` via the unified `lowerDerefStore` helper (commits `5090d25a`, `55c20ff5`, `9d44671e`). But a **separate latent gap** remains in `address_of` lowering:
+The **deref-store-through-pointer** bug was fixed earlier (`ptr.* = X` / `ptr.* op= x` → `*ptr = ...` via `lowerDerefStore`, commits `5090d25a`, `55c20ff5`, `9d44671e`). Task 7 now **also fixes** the `address_of` scalar/deref/paren l-value family by consolidating the handler into a `lowerLValueAddr` dispatch (`lower.zig`, symmetric to the assignment-side l-value dispatch):
 
-- **Address-of a scalar local (`&n`, `n: i32`) lowers to the address of a loaded copy**, not of `n`. The `address_of` handler (`lower.zig:1332-1351`) special-cases `index_access` (`:1334` → `&arr[i]` real address) but has **no scalar-ident case**: it does `operand_temp = lowerExpr(child_0)` then `addr_of{ operand=operand_temp }`. For a scalar `ident_expr`, `lowerExpr` returns a **load-local copy** temp (`lower.zig:1642-1644`), so `&n` = `&(copy)`.
-- A store through such a pointer **silently no-ops** on the caller's variable (writes the copy). The emitted C is `zT_3 = n; zT_4 = &zT_3;` — `&` of the copy, and the read-back sees the unchanged original.
-- **`&arr[i]` (`lower.zig:1334`) and `&struct` / `&slice` / `&tagged` are UNAFFECTED**: aggregate idents return the **real** local temp (`lower.zig:1625-1628`), so those all yield real addresses and work correctly. The store LIR is correct; only scalar-local address-of is broken.
-- **Repro:** `repro/deref_store_scalar_addr` (KNOWN-FAILING: prints `10`, expect `15`). The deref-store fix itself is verified GREEN by `repro/deref_store_aggregate` (`16`) and `repro/deref_store_compound` (`&arr[0]` → `15`), which take `&` of aggregates.
-- **Not exercised** by lisp/man/gol/mud today (they only take `&` of structs/arrays). Deferred to plan **Task 6** (investigate) + **Task 7** (fix).
+- **FIXED — address-of a scalar local/param (`&n`, `&param`):** previously lowered to `&(loaded copy)` (`operand=lowerExpr(child)` returned a `load_local` temp), so a store through the pointer silently no-op'd the caller's variable. Now, for a scalar local `ident_expr`, `lowerLValueAddr` emits `addr_of{ operand = findLocalTemp(name_id) }` — the **real** decl temp, which resolves via the emitter `fl_temps`/`resolveTempName` → `mangleLocalName` to `&<name>` (e.g. `&n`). **No new LIR was needed** (Task 7 Step 1 verified empirically: `addr_of` of the scalar's decl temp, incl. temp id 0, renders as `&n`, not `&zT_0`).
+- **FIXED — `&(p.*)` / `&p.*` (deref):** now an identity — returns the pointer temp (`lowerExpr(child_0)`), no `addr_of`. **`&(expr)` (paren):** recurses into the inner l-value.
+- **UNCHANGED (still correct, byte-identical):** `&arr[i]` (`index_access` base+idx, moved verbatim), `&struct`/`&slice`/`&tagged`/`&array` (aggregate idents return the real local temp; helper routes them through the existing `lowerExpr`+`addr_of` path), and address-of a global ident (kept on the current path).
+- **STILL A GAP (documented, ICE):** `&base.field` (field-address of a value/struct field) — there is **no** `&base.field` emit (`addr_of` only emits `&<temp>`), so `field_access` l-values ICE via `iceAddrOfLValueUnsupported`. Zero occurrences in the corpus/gate programs (all field-address code is `&ptr.field[idx]`, i.e. outermost `index_access`, already handled). Deferred to a follow-up if ever needed.
+- **Repros GREEN:** `repro/deref_store_scalar_addr` (`15`), `repro/deref_store_param_addr` (`&scalar_param` → `15`), `repro/addr_of_deref` (`&(p.*)` → `15`), plus `repro/deref_store_aggregate` (`16`) and `repro/deref_store_compound` (`&arr[0]` → `15`). man/gol/mud `--dump-c89` byte-identical vs parent (they use no broken form); corpus `117/14/1`.
+
 
 
 ## 2. Gap Inventory
@@ -77,7 +78,7 @@ The **deref-store-through-pointer** bug is now **FIXED**: `ptr.* = X` and `ptr.*
 | G27 | Lowerer | `lower.zig:2977` | `lowerExprImpl` returns 0 for `AstKind.block` (void `{}` expr) → coercion into `E!void` flows temp-0 into `materializeInto`/`getTempType`. Now caught by ICE guards (ERR_9001) — was silent SEGV. Root unfixed, out of scope (block expr needs a void temp). | High | ❌ |
 | B3 | ComptimeEval | `comptime_eval.zig:56` | `comptimeEvalResolveTypeArg` now delegates to canonical `resolveTypeExprFull` (handles `ptr_type`/`many_ptr_type`/`field_access`/etc.) → `@sizeOf`/`@alignOf(*T)` fold correctly | Critical | ✅ Fixed (9f4d2095) |
 | B4 | Lowerer | `lower.zig:~3164` | `while_stmt` branches on raw `cond_temp` without `check_optional` (unlike if/orelse at `:2338`/`:3081`) → C output `if(cur)` on raw optional struct instead of `if(cur.has_value)` | Critical | ⚠️ Attrib (Lower) |
-| G28 | Lowerer | `lower.zig:1332-1351`, `lower.zig:1642-1644` | `address_of` has no scalar-ident case → `&n` (scalar local) = address of a load-local copy, so a store through the pointer no-ops the caller's var. `&arr[i]`/`&struct`/`&slice`/`&tagged` unaffected (real local `lower.zig:1625-1628`). Repro `repro/deref_store_scalar_addr` (prints 10, expect 15). Deferred to Task 6/7. | High | ❌ |
+| G28 | Lowerer | `lower.zig` `lowerLValueAddr` | **FIXED (Task 7):** `address_of` consolidated into `lowerLValueAddr`. Scalar local/param `&n`/`&param` now `addr_of{ findLocalTemp(name_id) }` → `&<name>` (was `&`load-copy). `&(p.*)`/paren fixed; `&arr[i]`/`&struct`/`&slice`/`&tagged`/global unchanged (byte-identical). `&base.field` field-address ICEs (documented gap, 0 corpus uses). Repros GREEN: `deref_store_scalar_addr`/`deref_store_param_addr`/`addr_of_deref` (all 15). | High | ✅ |
 
 ## 3. Task Details
 

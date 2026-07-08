@@ -1,88 +1,50 @@
-# KNOWN-FAILING repro: address-of scalar local (`&n`)
+# FIXED repro: address-of scalar local (`&n`) — Task 7
 
-**Status:** KNOWN-FAILING (documents a latent gap). NOT a gate. Do not "fix" by
-swapping the form.
+**Status:** FIXED (Task 7, 2026-07-08). Prints `15` (was `10`). This is now a
+GREEN regression guard, not a known-failing case.
 
-- Expected-correct output: `15`
-- Actual (current) output: `10` — the store through `&n` writes a *loaded copy*, so
-  the caller's `n` is never updated.
+- Expected/actual output: `15` (= 10 + 5).
 
 ## What it does
 
 `bump(p: *i32)` does `p.* += 5`; `main` does `var n = 10; bump(&n); print(n)`.
-Correct semantics: `n` becomes 15. Current zig1 prints 10.
+Correct semantics: `n` becomes 15.
 
-## Root cause (separate zig1 lowering gap — NOT the deref-store bug)
+## Root cause (pre-fix)
 
-Address-of a SCALAR local lowers to the address of a *loaded copy* of that local:
+Address-of a SCALAR local lowered to the address of a *loaded copy*: the
+`address_of` handler did `operand_temp = lowerExpr(child_0)`, and for a scalar
+`ident_expr` `lowerExpr` returns a `load_local` COPY temp, so `&n` = `&(copy)`.
+A store through that pointer wrote the copy; the caller's `n` was never updated.
 
-- The `address_of` handler (`sf/src/lower.zig:1332-1351`) special-cases
-  `index_access` (`:1334` → `&arr[i]` computes a real address) but has **NO
-  scalar-ident case**. For a scalar ident operand it does
-  `operand_temp = lowerExpr(node.child_0)` then emits `addr_of{ operand=operand_temp }`
-  → `&operand_temp`.
-- For a scalar `ident_expr`, `lowerExpr` returns a **LOAD-LOCAL copy** temp
-  (`sf/src/lower.zig:1642-1644`: `emitInst(load_local); return tid;`). So `&n` =
-  address of the loaded copy, not of `n`.
-- A store through that pointer writes the copy; the caller's `n` is unchanged.
+Emitted C (pre-fix): `zT_3 = n; zT_4 = &zT_3;` — `&` of the copy.
 
-Aggregate idents (array / slice / struct / tagged_union) return the **REAL** local
-temp directly (`sf/src/lower.zig:1625-1628`), so `&arr`, `&pr`, `&slice`, `&tagged`,
-and `&arr[0]` all yield real addresses and work correctly. This gap is therefore
-scalar-local-only.
+## The fix (Task 7)
 
-## Emitted C evidence (`--dump-c89`, current binary)
+The `address_of` handler was consolidated into a `lowerLValueAddr(self, lv_node,
+result_type)` dispatch (`sf/src/lower.zig`), symmetric to the assignment-side
+l-value dispatch:
 
-`main` (note lines: load `n` into copy `zT_3`, take `&zT_3`):
+- **scalar local/param `ident_expr`** → `addr_of{ operand = findLocalTemp(name_id) }`,
+  the REAL decl temp. It resolves via the emitter `fl_temps`/`resolveTempName` →
+  `mangleLocalName` to `&<name>`. **No new LIR was needed** — Task 7 Step 1
+  verified empirically that `addr_of` of the scalar's decl temp (even temp id 0)
+  emits `&n`, not `&zT_0`. Emitted C (post-fix): `zT_4 = &n;`.
+- **aggregate ident / global ident** → unchanged (`lowerExpr` + `addr_of`), so
+  `&struct`/`&slice`/`&tagged`/`&array` stay byte-identical.
+- **`index_access` (`&arr[i]`)** → the exact `base + idx` logic, moved verbatim.
+- **`deref` (`&(p.*)` / `&p.*`)** → identity: returns the pointer temp, no `addr_of`.
+- **`paren_expr` (`&(expr)`)** → recurses into the inner l-value.
+- **`field_access` (`&base.field`)** → ICE (`iceAddrOfLValueUnsupported`); there is
+  no `&base.field` emit and it has zero corpus occurrences (documented gap).
 
-```c
-/* main */
-void zF_EA90E208_main(void) {
-    int zT_3;
-    int* zT_4;
-    int n;
-    ...
-    n = zT_1;            /* n = 10 */
-    zT_3 = n;            /* LOAD-LOCAL COPY of n */
-    zT_4 = &zT_3;        /* &(copy), NOT &n  <-- BUG */
-    zT_2 = zT_4;
-    zF_623C0FB5_bump(zT_2);
-    zT_6 = n;            /* reads original n, still 10 */
-    __bootstrap_print_int(zT_6 ...);
-}
-```
+## Related GREEN repros
 
-`bump` stores correctly through its pointer — the store itself is fine; the pointer
-just aims at the copy:
+- `repro/deref_store_param_addr` — `&scalar_param` → `15` (was `10`).
+- `repro/addr_of_deref` — `&(p.*)` (paren + deref identity) → `15` (was `10`).
+- `repro/deref_store_aggregate` → `16`; `repro/deref_store_compound` (`&arr[0]`) → `15`.
 
-```c
-/* bump */
-void zF_623C0FB5_bump(int* p) {
-    zT_2 = *zT_1;        /* *p */
-    zT_4 = zT_2 + zT_3;  /* + 5 */
-    zT_5 = p;
-    *zT_5 = zT_4;        /* *p = ...  (writes the copy) */
-}
-```
+## Regression evidence (Task 7)
 
-## Relationship to the deref-store fix (which IS correct)
-
-This is a SEPARATE gap from the deref-store-through-pointer fix. The deref-store fix
-(`lowerDerefStore`, commits `5090d25a` / `55c20ff5` / `9d44671e`) correctly emits
-`*ptr = ...` — verified GREEN by:
-
-- `repro/deref_store_aggregate` → `16`
-- `repro/deref_store_compound` (`&arr[0]`) → `15`
-
-Both pass because they take `&` of an **aggregate** (real address). The store LIR is
-correct; only scalar-local address-of is broken.
-
-## Impact
-
-Not exercised by lisp / man / gol / mud today (they only take `&` of structs/arrays),
-so it does not currently block them. It is a real latent correctness gap.
-
-## Handoff
-
-Deferred to plan **Task 6** (investigate `&n`) and **Task 7** (fix `&n`). Do NOT fix
-here.
+- man/gol/mud `--dump-c89` BYTE-IDENTICAL vs parent `bf8b3fd1` (no broken form used).
+- Corpus `117/14/1`. mandelbrot + game_of_life compile and run rc=0.

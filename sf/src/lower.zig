@@ -619,6 +619,67 @@ fn iceAssignLValueUnsupported(self: *LirLowerer, node_idx: u32) void {
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
+fn iceAddrOfLValueUnsupported(self: *LirLowerer, node_idx: u32) void {
+    var node_id_buf: [10]u8 = undefined;
+    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
+    var p0: []const u8 = "internal: unsupported address-of l-value (node ";
+    var p1: []const u8 = ")";
+    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
+    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
+    var start: u32 = 0;
+    var end: u32 = 0;
+    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
+        var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+        start = node.span_start;
+        end = node.span_start + @intCast(u32, node.span_len);
+    }
+    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
+    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+}
+
+fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
+    var store = self.ctx.store;
+    var lv_node = store.nodes.items[@intCast(usize, lv_node_idx)];
+    if (lv_node.kind == AstKind.index_access) {
+        var base_temp = lowerExpr(self, lv_node.child_0);
+        base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
+        var idx_temp = lowerExpr(self, lv_node.child_1);
+        var tid = nextTemp(self, result_type);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
+        return tid;
+    }
+    if (lv_node.kind == AstKind.ident_expr) {
+        var name_id = store.identifiers.items[@intCast(usize, lv_node.payload)];
+        var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
+        if (shadow) |syn| { name_id = syn; }
+        var is_local: bool = false;
+        var loc_kind: u8 = @intCast(u8, 0);
+        var li: usize = @intCast(usize, 0);
+        while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
+            if (self.local_decl_names[li] == name_id) { is_local = true; loc_kind = self.local_decl_kinds[li]; break; }
+        }
+        var is_agg: bool = (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) or (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) or (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) or (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type)));
+        var operand_temp: u32 = @intCast(u32, 0);
+        if (is_local and !is_agg) {
+            operand_temp = findLocalTemp(self, name_id);
+        } else {
+            operand_temp = lowerExpr(self, lv_node_idx);
+        }
+        var tid = nextTemp(self, result_type);
+        emitInst(self, LirInst{ .addr_of = .{ .operand = operand_temp, .result = tid } });
+        return tid;
+    }
+    if (lv_node.kind == AstKind.deref) {
+        return lowerExpr(self, lv_node.child_0);
+    }
+    if (lv_node.kind == AstKind.paren_expr) {
+        return lowerLValueAddr(self, lv_node.child_0, result_type);
+    }
+    iceAddrOfLValueUnsupported(self, lv_node_idx);
+    return @intCast(u32, 0);
+}
+
 fn lowerDerefStore(self: *LirLowerer, deref_node_idx: u32, value_temp: u32) void {
     var deref_node = self.ctx.store.nodes.items[@intCast(usize, deref_node_idx)];
     var ptr_temp = lowerExpr(self, deref_node.child_0);
@@ -1353,25 +1414,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .load = .{ .ptr = ptr_temp, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.address_of) {
-        var child_node = store.nodes.items[@intCast(usize, node.child_0)];
-        if (child_node.kind == AstKind.index_access) {
-            var base_temp = lowerExpr(self, child_node.child_0);
-            base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
-            var idx_temp = lowerExpr(self, child_node.child_1);
-            var rt_aoi = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-            var aoi_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-            if (rt_aoi) |t| { if (t != type_mod.TYPE_UNDEFINED) { aoi_box[0] = t; } } else { var rtm_aoi: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_aoi); var rtmb_aoi: [10]u8 = undefined; var rtml_aoi = itoa_mod.itoa(node_idx, rtmb_aoi[0..]); var rtms_aoi: usize = @intCast(usize, 9) - @intCast(usize, rtml_aoi); pal.markerWrite(rtmb_aoi[rtms_aoi..@intCast(usize, 9)]); var rtmnl_aoi: []const u8 = "\n"; pal.markerWrite(rtmnl_aoi); }
-            var tid = nextTemp(self, aoi_box[0]);
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
-            return tid;
-        }
-        var operand_temp = lowerExpr(self, node.child_0);
         var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
         if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
-        var tid = nextTemp(self, ao_box[0]);
-        emitInst(self, LirInst{ .addr_of = .{ .operand = operand_temp, .result = tid } });
-        return tid;
+        return lowerLValueAddr(self, node.child_0, ao_box[0]);
     } else if (node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, node.child_0);
         var idxk: [1]u32 = [1]u32{@intCast(u32, 0)};
