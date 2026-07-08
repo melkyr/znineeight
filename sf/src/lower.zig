@@ -600,6 +600,25 @@ fn iceFieldStoreUnsupported(self: *LirLowerer, node_idx: u32) void {
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
+fn iceAssignLValueUnsupported(self: *LirLowerer, node_idx: u32) void {
+    var node_id_buf: [10]u8 = undefined;
+    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
+    var p0: []const u8 = "internal: unsupported assignment l-value (node ";
+    var p1: []const u8 = ")";
+    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
+    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
+    var start: u32 = 0;
+    var end: u32 = 0;
+    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
+        var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
+        start = node.span_start;
+        end = node.span_start + @intCast(u32, node.span_len);
+    }
+    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
+    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+}
+
 fn lowerDerefStore(self: *LirLowerer, deref_node_idx: u32, value_temp: u32) void {
     var deref_node = self.ctx.store.nodes.items[@intCast(usize, deref_node_idx)];
     var ptr_temp = lowerExpr(self, deref_node.child_0);
@@ -1321,8 +1340,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } else if (child_node.kind == AstKind.deref) {
             lowerDerefStore(self, node.child_0, src);
         } else {
-            var dst = lowerExpr(self, node.child_0);
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = dst, .src = src } });
+            iceAssignLValueUnsupported(self, node_idx);
         }
         return src;
     } else if (node.kind == AstKind.deref) {
