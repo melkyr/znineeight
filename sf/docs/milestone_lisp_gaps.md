@@ -20,6 +20,20 @@ Remaining lisp gate is **0** — **LISP FULLY COMPILES AND LINKS** (2026-07-05):
 
 
 
+## 1.6 Field-Store-Through-Pointer: WIRED (2026-07-07)
+
+`store_field` (LIR since milestone0, `lir.zig:39`) was NEVER emitted by lowering, so `ptr.field = value` and `ptr.field OP= value` were universally mis-compiled (field loaded into a temp, assigned to the temp, never stored back) — silently breaking every runtime-exercised field store (lisp `self.pos = saved_pos`, `self.pos += 1`, `node.value = val`). Fixed by wiring `store_field` into the assignment lowerers:
+
+- **Unified `lowerFieldStore` helper** (`lower.zig`) resolves the base (ptr-unwrap) and emits `store_field`; used by `plain_assign` + all 20 compound-assign sites (21 call sites, one impl). Commits `98d1c894`, `7e751257`, `26638c28`.
+- **struct / pointer-to-struct**: real `base.field = v` / `base->field = v`.
+- **slice `.ptr/.len` + tagged_union `.tag/.payload`**: added via **named field-index constants** in `type_registry.zig` (`SLICE_FIELD_PTR/LEN`, `TU_FIELD_TAG/PAYLOAD`) + emitter suffix-pending flag. Commit `0587ff35`.
+- **Legacy bare-`0/1` field-index literals** (24 sites in `lower.zig`/`c89_emit.zig`) migrated to those constants — behavior-neutral, byte-identical. Commit `8f10bf2e`.
+- **union field stores** (`v.data.Int = val`) remain **ICE'd** (`iceFieldStoreUnsupported`, ERR_9001) — a separate NESTED l-value chain bug, tracked, out of scope.
+- Two-layer defensive ICE (unsupported base kind in `lowerFieldStore` + `found2==0` in emitter) — no silent mis-emit.
+
+**zig1-lisp COMPILES but does NOT yet fully RUN.** The REPL now advances, but crashes on list expressions containing a number/atom: a **separate field-LOAD bug** — `self.input[start..self.pos]` drops the `load_field` for the slice END operand (`self.pos`) → uninitialized end → crash in `parse_int_simple`. The LOAD mirror of the store bug; tracked as a NEW plan. mandelbrot/game_of_life run correctly; corpus 117/14/1; byte-identical maintained.
+
+
 ## 2. Gap Inventory
 | # | Subsystem | File | Gap | Severity | Status |
 |---|-----------|------|-----|----------|--------|
