@@ -1539,6 +1539,8 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
 fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     self._stub_0 = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (node.child_1 != @intCast(u32, 0)) { _ = semanticAnalyzerResolveExpr(self, node.child_1); }
+    if (node.child_2 != @intCast(u32, 0)) { _ = semanticAnalyzerResolveExpr(self, node.child_2); }
     if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
     self._stub_1 = type_mod.TYPE_VOID;
