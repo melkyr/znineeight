@@ -2623,6 +2623,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var sin_sm: []const u8 = "s"; pal.markerWrite(sin_sm);
                             var sin_sb: [10]u8 = undefined; var sin_sl = itoa_mod.itoa(val_temp, sin_sb[0..]); var sin_ss: usize = @intCast(usize, 9) - @intCast(usize, sin_sl); pal.markerWrite(sin_sb[sin_ss..@intCast(usize, 9)]);
                             var sin_nl2: []const u8 = "\n"; pal.markerWrite(sin_nl2);
+                            if (self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
+                                if (val_temp != @intCast(u32, 0) and @intCast(usize, val_temp) < self.hoisted_temps.len) {
+                                    self.hoisted_temps.items[@intCast(usize, val_temp)].type_id = self.ctx.registry.fe_items[fs + fj].type_id;
+                                }
+                                emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .src = val_temp } });
+                            }
                             break;
                         }
                     }
