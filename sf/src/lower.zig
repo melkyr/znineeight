@@ -687,23 +687,51 @@ fn lowerDerefStore(self: *LirLowerer, deref_node_idx: u32, value_temp: u32) void
 }
 
 fn lowerCompoundLValueStore(self: *LirLowerer, node_idx: u32, lhs_val: u32, op_r: u32) void {
+    _ = lhs_val;
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
-    var lhs_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
-    if (lhs_node.kind == AstKind.ident_expr) {
-        var name_id = self.ctx.store.identifiers.items[@intCast(usize, lhs_node.payload)];
-        emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = op_r } });
+    lowerAssignLValue(self, node.child_0, op_r, node_idx);
+}
+
+fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
+    var store = self.ctx.store;
+    var lv_node = store.nodes.items[@intCast(usize, lv_node_idx)];
+    if (lv_node.kind == AstKind.ident_expr) {
+        var name_id = store.identifiers.items[@intCast(usize, lv_node.payload)];
+        emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = value_temp } });
         var reg = findLocalTemp(self, name_id);
         if (reg != @intCast(u32, 0)) {
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = op_r } });
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = value_temp } });
         }
-    } else if (lhs_node.kind == AstKind.deref) {
-        lowerDerefStore(self, node.child_0, op_r);
-    } else if (lhs_node.kind == AstKind.field_access) {
-        lowerFieldStore(self, node.child_0, op_r, node_idx);
+    } else if (lv_node.kind == AstKind.index_access) {
+        var base_temp = lowerExpr(self, lv_node.child_0);
+        var ai_orig_base = base_temp;
+        base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
+        var idx_temp = lowerExpr(self, lv_node.child_1);
+        var ai_ni: u32 = @intCast(u32, 0);
+        var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, lv_node.child_0);
+        if (src_ni) |sn| {
+            ai_ni = sn;
+        } else {
+        if (store.nodes.items[@intCast(usize, lv_node.child_0)].kind == AstKind.ident_expr) {
+            var c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, lv_node.child_0);
+            var is_slice: u8 = @intCast(u8, 0);
+            if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
+            if (is_slice == @intCast(u8, 0)) { ai_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, lv_node.child_0)].payload)]; }
+        }
+        }
+        if (base_temp != ai_orig_base) { ai_ni = @intCast(u32, 0); }
+        emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = value_temp } });
+    } else if (lv_node.kind == AstKind.field_access) {
+        lowerFieldStore(self, lv_node_idx, value_temp, diag_node_idx);
+    } else if (lv_node.kind == AstKind.deref) {
+        lowerDerefStore(self, lv_node_idx, value_temp);
+    } else if (lv_node.kind == AstKind.paren_expr) {
+        lowerAssignLValue(self, lv_node.child_0, value_temp, diag_node_idx);
     } else {
-        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = lhs_val, .src = op_r } });
+        iceAssignLValueUnsupported(self, diag_node_idx);
     }
 }
+
 
 fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
     var fa_node = self.ctx.store.nodes.items[@intCast(usize, fa_node_idx)];
@@ -1329,99 +1357,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
           if (src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
              var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
          }
-        if (child_node.kind == AstKind.ident_expr) {
-            var name_id = store.identifiers.items[@intCast(usize, child_node.payload)];
-            var gsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
-            var gbuf: [20]u8 = undefined;
-            var gh: []const u8 = "GL";
-            pal.markerWrite(gh);
-            if (gsym) |gs| {
-                var gsk = itoa_mod.itoa(@intCast(u32, @enumToInt(gs.kind)), gbuf[0..]);
-                var gsl: usize = @intCast(usize, gsk);
-                var gss: usize = @intCast(usize, 20) - @intCast(usize, 1) - gsl;
-                pal.markerWrite(gh);
-                pal.markerWrite(gbuf[gss..@intCast(usize, 20)]);
-            } else {
-                var gtable = sym_mod.symbolRegistryGetTable(self.ctx.symbol_tables, self.module_id);
-                var gtl = itoa_mod.itoa(@intCast(u32, gtable.len), gbuf[0..]);
-                var gtsl: usize = @intCast(usize, gtl);
-                var gtss: usize = @intCast(usize, 20) - @intCast(usize, 1) - gtsl;
-                var gms: []const u8 = "M:";
-                pal.markerWrite(gms);
-                pal.markerWrite(gbuf[gtss..@intCast(usize, 20)]);
-                var gnl = itoa_mod.itoa(name_id, gbuf[0..]);
-                var gnsl: usize = @intCast(usize, gnl);
-                var gnss: usize = @intCast(usize, 20) - @intCast(usize, 1) - gnsl;
-                var gns: []const u8 = ":";
-                pal.markerWrite(gns);
-                pal.markerWrite(gbuf[gnss..@intCast(usize, 20)]);
-                var gei: usize = @intCast(usize, 0);
-                while (gei < @intCast(usize, gtable.len)) : (gei += @intCast(usize, 1)) {
-                    var dent = gtable.items[gei];
-                    var dn = itoa_mod.itoa(dent.name_id, gbuf[0..]);
-                    var dnl: usize = @intCast(usize, dn);
-                    var dns: usize = @intCast(usize, 20) - @intCast(usize, 1) - dnl;
-                    var dq: []const u8 = ".";
-                    pal.markerWrite(dq);
-                    pal.markerWrite(gbuf[dns..@intCast(usize, 20)]);
-                    var dk = itoa_mod.itoa(@intCast(u32, @enumToInt(dent.kind)), gbuf[0..]);
-                    var dkl: usize = @intCast(usize, dk);
-                    var dks: usize = @intCast(usize, 20) - @intCast(usize, 1) - dkl;
-                    var dsp: []const u8 = ",";
-                    pal.markerWrite(dsp);
-                    pal.markerWrite(gbuf[dks..@intCast(usize, 20)]);
-                }
-                }
-            var gn: []const u8 = "\n";
-            pal.markerWrite(gn);
-             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = src } });
-            var reg = findLocalTemp(self, name_id);
-            var ass_m: []const u8 = "ASS:n"; pal.markerWrite(ass_m);
-            var ass_nb: [10]u8 = undefined; var ass_nl = itoa_mod.itoa(name_id, ass_nb[0..]); var ass_ns: usize = @intCast(usize, 9) - @intCast(usize, ass_nl); pal.markerWrite(ass_nb[ass_ns..@intCast(usize, 9)]);
-            var ass_rm: []const u8 = "→"; pal.markerWrite(ass_rm);
-            var ass_rb: [10]u8 = undefined; var ass_rl = itoa_mod.itoa(reg, ass_rb[0..]); var ass_rs: usize = @intCast(usize, 9) - @intCast(usize, ass_rl); pal.markerWrite(ass_rb[ass_rs..@intCast(usize, 9)]);
-            var ass_eq: []const u8 = "="; pal.markerWrite(ass_eq);
-            var ass_sb: [10]u8 = undefined; var ass_sl = itoa_mod.itoa(src, ass_sb[0..]); var ass_ss: usize = @intCast(usize, 9) - @intCast(usize, ass_sl); pal.markerWrite(ass_sb[ass_ss..@intCast(usize, 9)]);
-            var ass_nl2: []const u8 = "\n"; pal.markerWrite(ass_nl2);
-            if (reg != @intCast(u32, 0)) {
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = src } });
-            }
-        } else if (child_node.kind == AstKind.index_access) {
-            var base_temp = lowerExpr(self, child_node.child_0);
-            var ai_orig_base = base_temp;
-            base_temp = maybeExtractSlicePtr(self, child_node.child_0, base_temp);
-            var idx_temp = lowerExpr(self, child_node.child_1);
-            var bai_m: []const u8 = "BAI:b"; pal.markerWrite(bai_m);
-            var bai_bb: [10]u8 = undefined; var bai_bl = itoa_mod.itoa(base_temp, bai_bb[0..]); var bai_bs: usize = @intCast(usize, 9) - @intCast(usize, bai_bl); pal.markerWrite(bai_bb[bai_bs..@intCast(usize, 9)]);
-            var bai_im: []const u8 = "i"; pal.markerWrite(bai_im);
-            var bai_ib: [10]u8 = undefined; var bai_il = itoa_mod.itoa(idx_temp, bai_ib[0..]); var bai_is: usize = @intCast(usize, 9) - @intCast(usize, bai_il); pal.markerWrite(bai_ib[bai_is..@intCast(usize, 9)]);
-            var bai_sm: []const u8 = "s"; pal.markerWrite(bai_sm);
-            var bai_sb: [10]u8 = undefined; var bai_sl = itoa_mod.itoa(src, bai_sb[0..]); var bai_ss: usize = @intCast(usize, 9) - @intCast(usize, bai_sl); pal.markerWrite(bai_sb[bai_ss..@intCast(usize, 9)]);
-            var bai_nl: []const u8 = "\n"; pal.markerWrite(bai_nl);
-            var ai_ni: u32 = @intCast(u32, 0);
-            var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, child_node.child_0);
-            if (src_ni) |sn| {
-                ai_ni = sn;
-                var sar: []const u8 = "SAR:n"; pal.markerWrite(sar);
-                var sar_b: [10]u8 = undefined; var sar_l = itoa_mod.itoa(sn, sar_b[0..]); var sar_s: usize = @intCast(usize, 9) - @intCast(usize, sar_l); pal.markerWrite(sar_b[sar_s..@intCast(usize, 9)]);
-                var sar_nl: []const u8 = "\n"; pal.markerWrite(sar_nl);
-            } else {
-            if (store.nodes.items[@intCast(usize, child_node.child_0)].kind == AstKind.ident_expr) {
-                var c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, child_node.child_0);
-                var is_slice: u8 = @intCast(u8, 0);
-                if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
-                if (is_slice == @intCast(u8, 0)) { ai_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, child_node.child_0)].payload)]; }
-            }
-            }
-            if (base_temp != ai_orig_base) { ai_ni = @intCast(u32, 0); }
-            emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = src } });
-        } else if (child_node.kind == AstKind.field_access) {
-            lowerFieldStore(self, node.child_0, src, node_idx);
-        } else if (child_node.kind == AstKind.deref) {
-            lowerDerefStore(self, node.child_0, src);
-        } else {
-            iceAssignLValueUnsupported(self, node_idx);
-        }
+        lowerAssignLValue(self, node.child_0, src, node_idx);
+
         return src;
     } else if (node.kind == AstKind.deref) {
         var ptr_temp = lowerExpr(self, node.child_0);
