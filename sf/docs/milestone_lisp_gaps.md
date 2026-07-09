@@ -1320,5 +1320,6 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T28 | Tagged-union payload store on struct-init + anon-`.{}` init inference via expected_type_stack (return/var-decl/call-arg/assign/field/module-const + if-arm/switch-prong by propagation) | `lower.zig`, `c89_emit.zig`, `semantic_analyzer.zig`, `main.zig` | ✅ Done |
 | T28a | Anon-`.{}` in `orelse` RHS — DEFERRED gap (needs new resolveExpr(child_1) in resolveOrelseExpr; 0 corpus uses). Repro `repro/anon_init_orelse_rhs` | `semantic_analyzer.zig:742-752` | ❌ Deferred |
 | T28b | Array-of-tagged-union read wrong value (SEPARATE, both anon+explicit init; store is correct, read/index path wrong). Repro `repro/array_tagged_union_read` | `lower.zig`/`c89_emit.zig` (array elem read) | ❌ Separate |
+| T28c | Same-type tagged-union variants (`union(enum){A:i32,B:i32}`) resolve payload by first-match TYPE — runtime-correct by union aliasing + correct tag; verified non-issue. Repro `repro/tagged_union_same_type` | `c89_emit.zig` (read+write variant match) | ✅ Non-issue |
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing | ⚠️ Attrib = Confirmed layer attribution, fix is separate future task | ❌ Deferred/Separate = out-of-scope, documented for a future plan
