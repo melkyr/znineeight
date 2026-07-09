@@ -1317,5 +1317,8 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 | T25 | E6: Type mismatches (Slice/int/pointer assign) — cascade from T20-T24 | — | ❌ |
 | T26 | Bug #3 attribution — @sizeOf/@alignOf temps: root in comptime_eval (upstream), D1 ICE evidence | `comptime_eval.zig`, `lower.zig` | ✅ Fixed |
 | T27 | Bug #4 attribution — while optional capture: root in lower while_stmt (lower), D3 WCAPKIND=21 evidence | `lower.zig` | ⚠️ Attrib |
+| T28 | Tagged-union payload store on struct-init + anon-`.{}` init inference via expected_type_stack (return/var-decl/call-arg/assign/field/module-const + if-arm/switch-prong by propagation) | `lower.zig`, `c89_emit.zig`, `semantic_analyzer.zig`, `main.zig` | ✅ Done |
+| T28a | Anon-`.{}` in `orelse` RHS — DEFERRED gap (needs new resolveExpr(child_1) in resolveOrelseExpr; 0 corpus uses). Repro `repro/anon_init_orelse_rhs` | `semantic_analyzer.zig:742-752` | ❌ Deferred |
+| T28b | Array-of-tagged-union read wrong value (SEPARATE, both anon+explicit init; store is correct, read/index path wrong). Repro `repro/array_tagged_union_read` | `lower.zig`/`c89_emit.zig` (array elem read) | ❌ Separate |
 
-**Legend**: ✅ Done | ⚠️ Partial | ❌ Missing | ⚠️ Attrib = Confirmed layer attribution, fix is separate future task
+**Legend**: ✅ Done | ⚠️ Partial | ❌ Missing | ⚠️ Attrib = Confirmed layer attribution, fix is separate future task | ❌ Deferred/Separate = out-of-scope, documented for a future plan
