@@ -2802,11 +2802,20 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var is_tagged_union: u8 = @intCast(u8, 0);
+            var temp_type_id: u32 = @intCast(u32, 0);
+            temp_type_id = type_mod.TYPE_USIZE;
+            var is_signed: u8 = @intCast(u8, 0);
+            var width_bits: u8 = @intCast(u8, 32);
             var tu_fi: usize = @intCast(usize, 0);
             while (tu_fi < emitter.current_fn.hoisted_temps.len) : (tu_fi += @intCast(usize, 1)) {
                 var ht = emitter.current_fn.hoisted_temps.items[tu_fi];
                 if (ht.temp_id == ic.result and ht.type_id != type_mod.TYPE_UNDEFINED) {
                     var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
+                    temp_type_id = ht.type_id;
+                    if (bty.kind == type_mod.TypeKind.i8_type or bty.kind == type_mod.TypeKind.i16_type or bty.kind == type_mod.TypeKind.i32_type or bty.kind == type_mod.TypeKind.i64_type or bty.kind == type_mod.TypeKind.isize_type) {
+                        is_signed = @intCast(u8, 1);
+                    }
+                    width_bits = @intCast(u8, bty.size * @intCast(u32, 8));
                     if (bty.kind == type_mod.TypeKind.tagged_union_type) {
                         is_tagged_union = @intCast(u8, 1);
                     }
@@ -2821,11 +2830,44 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 bufferedWriterWrite(&emitter.writer, s);
             }
             var ib: [32]u8 = undefined;
-            var il = itoa_mod.itoa(@intCast(u32, ic.value & @intCast(u64, 0xFFFFFFFF)), ib[0..]);
-            var is_idx = @intCast(u32, @intCast(u32, 31) - il);
-            var is_start: usize = @intCast(usize, is_idx);
-            var is_end: usize = @intCast(usize, 31);
-            bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+            var neg_magnitude: u8 = @intCast(u8, 0);
+            if (is_signed != @intCast(u8, 0)) {
+                var masked = ic.value;
+                if (width_bits < @intCast(u8, 64)) {
+                    var wbm = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
+                    masked = masked & wbm;
+                }
+                var sb = @intCast(u8, width_bits - @intCast(u8, 1));
+                var sign_bit = @intCast(u64, 1) << @intCast(u64, sb);
+                if ((masked & sign_bit) != @intCast(u64, 0)) {
+                    var magnitude: u64 = undefined;
+                    if (width_bits < @intCast(u8, 64)) {
+                        var wbm2 = @intCast(u64, 1) << @intCast(u64, width_bits);
+                        magnitude = wbm2 - masked;
+                    } else {
+                        magnitude = @intCast(u64, 0) - masked;
+                    }
+                    neg_magnitude = @intCast(u8, 1);
+                    var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
+                    var lp: []const u8 = "(";
+                    bufferedWriterWrite(&emitter.writer, lp);
+                    bufferedWriterWrite(&emitter.writer, cname);
+                    var rp: []const u8 = ")-";
+                    bufferedWriterWrite(&emitter.writer, rp);
+                    var il = itoa_mod.itoa(@intCast(u32, magnitude), ib[0..]);
+                    var is_idx = @intCast(u32, @intCast(u32, 31) - il);
+                    var is_start: usize = @intCast(usize, is_idx);
+                    var is_end: usize = @intCast(usize, 31);
+                    bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+                }
+            }
+            if (neg_magnitude == @intCast(u8, 0)) {
+                var il = itoa_mod.itoa(@intCast(u32, ic.value), ib[0..]);
+                var is_idx = @intCast(u32, @intCast(u32, 31) - il);
+                var is_start: usize = @intCast(usize, is_idx);
+                var is_end: usize = @intCast(usize, 31);
+                bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+            }
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
