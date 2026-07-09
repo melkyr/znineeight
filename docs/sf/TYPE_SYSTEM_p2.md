@@ -1417,6 +1417,26 @@ fn resolveStructInit(self: *SemanticAnalyzer, node: AstNode, node_idx: u32) !Typ
 }
 ```
 
+### 7.5 Slice-Expression Const-ness Semantics
+
+A slice-expression `base[a..b]` preserves the const-ness of the
+base's element type:
+
+- If the base is `[]const T`, `*const T`, or a `const [N]T` array,
+  the resulting slice is `[]const T`.
+- If the base is `[]T`, `*T`, or a mutable `[N]T`, the result is `[]T`.
+- The slice's element type `T` is determined from the base (array elem,
+  slice elem, or pointer pointee).
+
+This is a **semantic** property, independent of the C89 backend (which
+may emit both with the same `{ptr, len}` layout). The semantic analyzer
+MUST set `is_const` from the base type's `flags` bit0 rather than
+hardcoding `false`.
+
+The `slice_cache` key is `(elem << 1) | is_const` (Task 154), so
+`[]T` and `[]const T` are distinct `TypeId`s, and every downstream pass
+(including tagged-union member selection) sees the correct type.
+
 ---
 
 ## 8. Comptime Evaluation

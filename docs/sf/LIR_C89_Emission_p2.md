@@ -132,6 +132,13 @@ fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) !void {
 | `enum(T)` | `typedef T E_Name; #define E_Name_Member N` | Backing type + preprocessor constants |
 | Empty struct/union | `typedef struct { char _dummy; } zS_Empty;` | C89 forbids empty aggregates |
 
+> **Tagged-union payload variant selection (design intent):** The
+> emitter selects the payload union member by matching the source
+> value's `type_id` against variant field `type_id`s (exact match).
+> This depends on the invariant that the payload value carries the
+> variant field's exact type. The semantic analyzer and lowerer are
+> responsible for upholding this invariant.
+
 ### 3.3 Forward Declaration Logic
 
 ```zig
