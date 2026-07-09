@@ -159,3 +159,78 @@ pub fn u64ToU32MapPut(self: *U64ToU32Map, key: u64, value: u32) void {
     self.occupied[i] = @intCast(u8, 1);
     self.count += 1;
 }
+
+pub const U32ToU64Map = struct {
+    keys: [*]u32,
+    values: [*]u64,
+    occupied: [*]u8,
+    capacity: usize,
+    count: usize,
+    alloc: *Sand,
+};
+
+pub fn u32ToU64MapInit(alloc: *Sand) U32ToU64Map {
+    return U32ToU64Map{
+        .keys = undefined, .values = undefined, .occupied = undefined,
+        .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .alloc = alloc,
+    };
+}
+
+pub fn u32ToU64MapGet(self: *U32ToU64Map, key: u32) ?u64 {
+    if (self.capacity == @intCast(usize, 0)) return null;
+    var mask: usize = self.capacity - @intCast(usize, 1);
+    var i: usize = @intCast(usize, key) & mask;
+    while (self.occupied[i] != @intCast(u8, 0)) {
+        if (self.keys[i] == key) return self.values[i];
+        i = (i + @intCast(usize, 1)) & mask;
+    }
+    return null;
+}
+
+fn u32ToU64MapGrow(self: *U32ToU64Map) void {
+    var old_cap = self.capacity;
+    var old_keys = self.keys;
+    var old_values = self.values;
+    var old_occupied = self.occupied;
+    var new_cap: usize = if (old_cap < @intCast(usize, 8)) @intCast(usize, 8) else old_cap * @intCast(usize, 2);
+    var raw_keys = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_vals = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_occ = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
+    self.keys = @ptrCast([*]u32, raw_keys);
+    self.values = @ptrCast([*]u64, raw_vals);
+    self.occupied = @ptrCast([*]u8, raw_occ);
+    self.capacity = new_cap;
+    self.count = @intCast(usize, 0);
+    var zi: usize = 0;
+    while (zi < new_cap) { self.occupied[zi] = @intCast(u8, 0); zi += 1; }
+    var ri: usize = 0;
+    while (ri < old_cap) {
+        if (old_occupied[ri] != @intCast(u8, 0)) {
+            var k = old_keys[ri];
+            var v = old_values[ri];
+            var mask2 = new_cap - @intCast(usize, 1);
+            var idx = @intCast(usize, k) & mask2;
+            while (self.occupied[idx] != @intCast(u8, 0)) { idx = (idx + @intCast(usize, 1)) & mask2; }
+            self.keys[idx] = k;
+            self.values[idx] = v;
+            self.occupied[idx] = @intCast(u8, 1);
+            self.count += 1;
+        }
+        ri += 1;
+    }
+}
+
+pub fn u32ToU64MapPut(self: *U32ToU64Map, key: u32, value: u64) void {
+    if (self.count * @intCast(usize, 4) >= self.capacity * @intCast(usize, 3)) { u32ToU64MapGrow(self); }
+    if (self.capacity == @intCast(usize, 0)) { u32ToU64MapGrow(self); }
+    var mask: usize = self.capacity - @intCast(usize, 1);
+    var i: usize = @intCast(usize, key) & mask;
+    while (self.occupied[i] != @intCast(u8, 0)) {
+        if (self.keys[i] == key) { self.values[i] = value; return; }
+        i = (i + @intCast(usize, 1)) & mask;
+    }
+    self.keys[i] = key;
+    self.values[i] = value;
+    self.occupied[i] = @intCast(u8, 1);
+    self.count += 1;
+}

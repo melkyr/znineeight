@@ -101,7 +101,7 @@ pub const CompilerContext = struct {
     enum_value_table: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
-    comptime_values: hash_mod.U32ToU32Map,
+    comptime_values: hash_mod.U32ToU64Map,
     pointer_only_ids: [*]u32,
     pointer_only_len: u32,
 };
@@ -155,7 +155,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
-     var comptime_values = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
+     var comptime_values = hash_mod.u32ToU64MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -374,7 +374,7 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
         if (node.kind == AstKind.builtin_call) {
             var val = ce_mod.comptimeEvalEvaluate(&ce, @intCast(u32, ni));
             if (val) |v| {
-                hash_mod.u32ToU32MapPut(&ctx.comptime_values, @intCast(u32, ni), @intCast(u32, v));
+                hash_mod.u32ToU64MapPut(&ctx.comptime_values, @intCast(u32, ni), v.bits);
             }
         }
     }

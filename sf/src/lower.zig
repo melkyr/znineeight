@@ -83,7 +83,7 @@ pub const SemanticContext = struct {
     has_symbols: u8,
     enum_value_table: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
-    comptime_values: *hash_mod.U32ToU32Map,
+    comptime_values: *hash_mod.U32ToU64Map,
 };
 
 pub const DeferActionArrayList = struct {
@@ -2259,7 +2259,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     return nextTemp(self, type_mod.TYPE_USIZE);
                 }
             }
-            if (hash_mod.u32ToU32MapGet(self.ctx.comptime_values, node_idx)) |cv| {
+            if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
                 var fold_ty_box: [1]u32 = [1]u32{ type_mod.TYPE_USIZE };
                 if (node.child_0 == self.intcast_name_id) {
                     var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -2270,7 +2270,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                 }
                 var cres = nextTemp(self, fold_ty_box[0]);
-                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, cv), .result = cres } });
+                emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = cres } });
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
                 return cres;
             }
