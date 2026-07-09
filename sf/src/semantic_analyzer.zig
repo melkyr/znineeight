@@ -1599,7 +1599,11 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
         self._stub_1 = self._stub_0;
     }
     if (self._stub_1 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
-    return type_mod.typeRegistryGetOrCreateSlice(self.registry, self._stub_1, false);
+    var se_is_const: bool = false;
+    if (bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type or bt.kind == type_mod.TypeKind.array_type) {
+        if ((bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) se_is_const = true;
+    }
+    return type_mod.typeRegistryGetOrCreateSlice(self.registry, self._stub_1, se_is_const);
 }
 
 fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
