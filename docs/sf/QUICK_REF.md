@@ -1,6 +1,78 @@
 # Z98 Compiler Quick Reference
 
+## ⭐ SUBAGENT CHEAT-SHEET — READ THIS SECTION BEFORE ANY BUILD/COMPILE/RUN ⭐
+
+**Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
+exact, verified commands. Do not improvise flags or rediscover linking — copy these.
+
+### Build zig1 (the compiler under test)
+```bash
+cd /workspace/znineeight
+bash sf/scripts/build_release.sh
+```
+- **GATE ON THIS LINE ONLY:** `=== [release] Done: sf/build/out_release/zig1 ===`.
+- The script now exits **0** cleanly. (The old `zig1-dump` step — which built `sf/src/main_dump.zig`
+  and FAILED on a pre-existing `main_dump.zig`/`source_manager.zig` break, making the script exit
+  nonzero and look broken — is commented out with marker `main-dump failing`. Do NOT re-enable it;
+  do NOT try to "fix" that dump build. It is out of scope and expected-broken.)
+- Resulting binary: **`sf/build/out_release/zig1`**. Oracle reference compiler: **`sf/build/zig0`**
+  (git-ignored; already built).
+- `-Wall` gcc **warnings** may scroll past during the build — they are harmless. Only a nonzero exit
+  or a missing `[release] Done` line means a real failure.
+
+### Compile + RUN a program (repro or example) with zig1  — VERIFIED RECIPE
+```bash
+sf/build/out_release/zig1 --dump-c89 <FILE.zig> > /tmp/x.c 2>/tmp/x.err ; echo "dump rc=$?"
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
+    /tmp/x.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/x ; echo "gcc rc=$?"
+/tmp/x ; echo "run rc=$?"
+```
+- You **must** link `sf/src/include/zig_runtime.c` AND `sf/src/include/zig_pal.c`, and pass
+  `-I sf/src/include`. Missing any of these is the #1 cause of wasted turns.
+- For **mud_server** also add `sf/src/include/net_runtime.c` to the gcc line.
+- For a **no-`main` repro** (compile-only, no link/run) use `gcc -m32 -std=c89 -c ... -o /dev/null`.
+- A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
+  on **stdout** (`/tmp/x.c`), not stderr.
+
+### Corpus gate (132 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
+For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89`, then
+`gcc -m32 -std=c89 -c -Wno-long-long -Wno-pointer-sign -I sf/src/include` the output.
+- **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
+  stderr-emptiness classifier gives false counts like 68/63).
+- `dump` rc≥128 = CRASH; stderr matching `error\[48\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
+- **Baseline: `OK=117 FAIL=14 ICE=1 CRASH=0`** (the 1 ICE is the pre-existing `euvoid_val_catch`
+  "invalid temp index 0"). Must stay `117/14/1/0` or improve.
+
+### Byte-identical gate (man / gol / mud)  — parent built from a worktree via the REPO zig0
+Entries: `examples/zig0/mandelbrot/mandelbrot.zig`, `examples/zig0/game_of_life/main_lin.zig`,
+`examples/zig0/mud_server/main.zig`.
+```bash
+# 1. current zig1 output:
+sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
+# 2. build PARENT zig1 from a worktree of the parent commit, using the REPO's zig0
+#    (the worktree does NOT contain the git-ignored sf/build/zig0):
+git worktree add -d /tmp/wt <PARENT_SHA>
+mkdir -p /tmp/pz
+./sf/build/zig0 --header-priority-include -o /tmp/pz/zig1.c /tmp/wt/sf/src/main.zig
+gcc -m32 -std=c89 -O0 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
+    -Isf/src/include /tmp/pz/*.c -o /tmp/pz/zig1
+/tmp/pz/zig1 --dump-c89 <ENTRY> > /tmp/old.c
+md5sum /tmp/new.c /tmp/old.c   # compare
+git worktree remove --force /tmp/wt
+```
+- If `/tmp/old.c` is empty (0 lines) the parent build FAILED → false DIFFER; re-run.
+- Do **NOT** compare against `zig0`'s own output directly — `zig0` emits a legacy bootstrap C format
+  (mandelbrot ≈ 96 lines) that is NOT the same as `zig1 --dump-c89` (≈ 545 lines). Always compare
+  parent-zig1 `--dump-c89` vs current-zig1 `--dump-c89`.
+
+### Editing source
+Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region
+immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transforms.
+
+---
+
 ## Bootstrap Build (zig0 → zig1)
+
 
 ```bash
 cd /workspace/znineeight
