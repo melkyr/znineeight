@@ -2260,11 +2260,21 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
             }
             if (hash_mod.u32ToU32MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-                var cres = nextTemp(self, type_mod.TYPE_USIZE);
+                var fold_ty_box: [1]u32 = [1]u32{ type_mod.TYPE_USIZE };
+                if (node.child_0 == self.intcast_name_id) {
+                    var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                    if (rt) |t| {
+                        if (t != type_mod.TYPE_USIZE and t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_INT_LIT) {
+                            fold_ty_box[0] = t;
+                        }
+                    }
+                }
+                var cres = nextTemp(self, fold_ty_box[0]);
                 emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, cv), .result = cres } });
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
                 return cres;
             }
+
             if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id) {
                 iceUnresolvedComptime(self, node_idx);
                 return nextTemp(self, type_mod.TYPE_USIZE);
@@ -2624,9 +2634,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var sin_sb: [10]u8 = undefined; var sin_sl = itoa_mod.itoa(val_temp, sin_sb[0..]); var sin_ss: usize = @intCast(usize, 9) - @intCast(usize, sin_sl); pal.markerWrite(sin_sb[sin_ss..@intCast(usize, 9)]);
                             var sin_nl2: []const u8 = "\n"; pal.markerWrite(sin_nl2);
                             if (self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
-                                if (val_temp != @intCast(u32, 0) and @intCast(usize, val_temp) < self.hoisted_temps.len) {
-                                    self.hoisted_temps.items[@intCast(usize, val_temp)].type_id = self.ctx.registry.fe_items[fs + fj].type_id;
-                                }
+
                                 emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .src = val_temp } });
                             }
                             break;
