@@ -578,7 +578,9 @@ fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, ret_val: u32) u32 {
 fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.child_0 != @intCast(u32, 0)) {
+        pushExpectedType(self, self.current_fn_return);
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
+        popExpectedType(self);
         if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
             if (ret_val != self.current_fn_return) {
                 var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
@@ -666,7 +668,9 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     cpp_val_fnx = type_mod.TYPE_UNDEFINED;
                     if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { cpp_val_fnx = cpp_v; } else { cpp_val_fnx = self.registry.xt_items[@intCast(usize, ftp.params_start) + ai2]; }
                     hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai2], cpp_val_fnx);
+                    pushExpectedType(self, cpp_val_fnx);
                     var dxc_at = semanticAnalyzerResolveExpr(self, args[ai2]);
+                    popExpectedType(self);
                     tryRecordCoercion(self, args[ai2], dxc_at, cpp_val_fnx);
                 }
             }
@@ -674,7 +678,9 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             }
         var ai: usize = 0;
         while (ai < args.len) : (ai += 1) {
+            pushExpectedType(self, @intCast(u32, 0));
             _ = semanticAnalyzerResolveExpr(self, args[ai]);
+            popExpectedType(self);
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, direct_ret);
         return direct_ret;
@@ -718,7 +724,9 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var ptm_tm: []const u8 = "PTM:T"; pal_mod.markerWriteInt(ptm_tm, param_type);
         var ptm_nm: []const u8 = "PTM:N"; pal_mod.markerWriteInt(ptm_nm, args[ai]);
         var fn4g: []const u8 = "FN4g\n"; pal_mod.markerWrite(fn4g);
+        pushExpectedType(self, param_type);
         var arg_type = semanticAnalyzerResolveExpr(self, args[ai]);
+        popExpectedType(self);
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         tryRecordCoercion(self, args[ai], arg_type, param_type);
@@ -805,6 +813,7 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
     if (node.child_0 != @intCast(u32, 0)) {
         target_type = semanticAnalyzerResolveExpr(self, node.child_0);
     }
+    if (target_type == @intCast(u32, 0)) { target_type = topExpectedType(self); }
     if (target_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var tgt = self.registry.types_items[@intCast(usize, target_type)];
     if (tgt.kind == type_mod.TypeKind.tagged_union_type) {
@@ -821,8 +830,10 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                 while (fi < fcount) : (fi += 1) {
                     if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
                         if (fi_node.child_0 != @intCast(u32, 0)) {
-                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
                             var field_type = self.registry.fe_items[fstart + fi].type_id;
+                            pushExpectedType(self, field_type);
+                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
+                            popExpectedType(self);
                             tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                         }
                         break;
@@ -847,8 +858,10 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                 while (fi < fcount) : (fi += 1) {
                     if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
                         if (fi_node.child_0 != @intCast(u32, 0)) {
-                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
                             var field_type = self.registry.fe_items[fstart + fi].type_id;
+                            pushExpectedType(self, field_type);
+                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
+                            popExpectedType(self);
                             tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                         }
                         break;
@@ -866,7 +879,9 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var ase: []const u8 = "ASE"; pal_mod.markerWrite(ase);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+    pushExpectedType(self, lhs);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    popExpectedType(self);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var as0: []const u8 = "AS0"; pal_mod.markerWrite(as0); return type_mod.TYPE_VOID; }
     if (type_mod.typeRegistryIsAssignable(self.registry, rhs, lhs)) {
         tryRecordCoercion(self, node.child_1, rhs, lhs);
@@ -1265,6 +1280,33 @@ fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
     self.stmt_work_len += @intCast(usize, 1);
 }
 
+pub fn pushExpectedType(self: *SemanticAnalyzer, ty: u32) void {
+    if (self.expected_type_stack_len >= self.expected_type_stack_cap) {
+        var new_cap: usize = if (self.expected_type_stack_cap < @intCast(usize, 64)) @intCast(usize, 64) else self.expected_type_stack_cap * @intCast(usize, 2);
+        var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var ndst = @ptrCast([*]u32, raw);
+        var ci: usize = 0;
+        while (ci < self.expected_type_stack_len) : (ci += @intCast(usize, 1)) {
+            ndst[ci] = self.expected_type_stack_items[ci];
+        }
+        self.expected_type_stack_items = ndst;
+        self.expected_type_stack_cap = new_cap;
+    }
+    self.expected_type_stack_items[self.expected_type_stack_len] = ty;
+    self.expected_type_stack_len += @intCast(usize, 1);
+}
+
+pub fn popExpectedType(self: *SemanticAnalyzer) void {
+    if (self.expected_type_stack_len > @intCast(usize, 0)) {
+        self.expected_type_stack_len -= @intCast(usize, 1);
+    }
+}
+
+pub fn topExpectedType(self: *SemanticAnalyzer) u32 {
+    if (self.expected_type_stack_len == @intCast(usize, 0)) return @intCast(u32, 0);
+    return self.expected_type_stack_items[self.expected_type_stack_len - @intCast(usize, 1)];
+}
+
 fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1392,7 +1434,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             if (node.child_1 != @intCast(u32, 0)) {
                 var init_node = self.store.nodes.items[@intCast(usize, node.child_1)];
                 var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
+                var vd_exp = if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) decl_type else @intCast(u32, 0);
+                pushExpectedType(self, vd_exp);
                 var it = semanticAnalyzerResolveExpr(self, node.child_1);
+                popExpectedType(self);
                 if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
                     if (it == type_mod.TYPE_NULL) { var cs4_m: []const u8 = "CS4\n"; pal_mod.markerWrite(cs4_m); }
                     var ck = coercion_mod.classifyCoercion(self.registry, it, decl_type);

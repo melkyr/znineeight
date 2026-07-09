@@ -482,7 +482,14 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 var init = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
                 if (init.kind != AstKind.struct_decl and init.kind != AstKind.union_decl) {
                     var v2m: []const u8 = "V2:"; pal.markerWrite(v2m);
+                    var mexp_ty: u32 = @intCast(u32, 0);
+                    if (decl.child_0 != 0) {
+                        var mrt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl.child_0);
+                        if (mrt) |mt| { mexp_ty = mt; }
+                    }
+                    sa_mod.pushExpectedType(&sa, mexp_ty);
                     var init_type = sa_mod.semanticAnalyzerResolveExpr(&sa, decl.child_1);
+                    sa_mod.popExpectedType(&sa);
                     var v2tb: [20]u8 = undefined; var v2tl = itoa_mod.itoa(init_type, v2tb[0..]); var v2ts: usize = @intCast(usize, 19) - @intCast(usize, v2tl); pal.markerWrite(v2tb[v2ts..@intCast(usize, 19)]);
                     var v2nl: []const u8 = "\n"; pal.markerWrite(v2nl);
                     var v49p_m: []const u8 = "V49:p"; pal.markerWriteInt(v49p_m, decl.payload);
