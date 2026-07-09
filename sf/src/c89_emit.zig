@@ -2854,7 +2854,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     bufferedWriterWrite(&emitter.writer, cname);
                     var rp: []const u8 = ")-";
                     bufferedWriterWrite(&emitter.writer, rp);
-                    var il = itoa_mod.itoa(@intCast(u32, magnitude), ib[0..]);
+                    var il = itoa_mod.itoa64(magnitude, ib[0..]);
                     var is_idx = @intCast(u32, @intCast(u32, 31) - il);
                     var is_start: usize = @intCast(usize, is_idx);
                     var is_end: usize = @intCast(usize, 31);
@@ -2862,7 +2862,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 }
             }
             if (neg_magnitude == @intCast(u8, 0)) {
-                var il = itoa_mod.itoa(@intCast(u32, ic.value), ib[0..]);
+                var il = itoa_mod.itoa64(ic.value, ib[0..]);
                 var is_idx = @intCast(u32, @intCast(u32, 31) - il);
                 var is_start: usize = @intCast(usize, is_idx);
                 var is_end: usize = @intCast(usize, 31);
