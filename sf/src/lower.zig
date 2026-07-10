@@ -497,7 +497,7 @@ fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_i
         var eli: usize = 0;
         while (eli < self.local_decl_count) : (eli += 1) {
             if (self.local_decl_names[eli] == capture_name) {
-                if (self.local_decl_types[eli] != variant_type_id) {
+
                     var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
                     var name_buf: [96]u8 = undefined;
                     var np: usize = @intCast(usize, 0);
@@ -511,8 +511,7 @@ fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_i
                     var syn_id = si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
                     _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, capture_name, syn_id);
                     return syn_id;
-                }
-                break;
+
             }
         }
     }
@@ -2443,8 +2442,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
                 var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
-                addLocalDecl(self, capture_node.payload, type_mod.TYPE_I32, err_code_temp);
-                emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_node.payload, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
+                var catch_cap_name = maybeDisambiguateCapture(self, capture_node.payload, type_mod.TYPE_I32);
+                addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp);
+                emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
             var err_val = lowerExprOrBlock(self, node.child_1);
