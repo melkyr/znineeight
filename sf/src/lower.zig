@@ -2774,7 +2774,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .nop = {} });
             self.block_terminated = @intCast(u8, 1);
         }
-        var saved_ldc = self.local_decl_count;
+
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
             var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
@@ -2845,7 +2845,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result_temp, .src = prong_val } });
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
-            self.local_decl_count = saved_ldc;
+
             self.capture_shadow.count = @intCast(usize, 0);
         }
         var swx_m: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_m, @intCast(u32, self.block_terminated));
@@ -3429,7 +3429,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 1);
         }
         var exit_preds: u32 = @intCast(u32, 0);
-        var saved_ldc = self.local_decl_count;
+
         pi = 0;
         while (pi < prong_ec.len) : (pi += 1) {
              var prong_node = store.nodes.items[@intCast(usize, prong_ec[pi])];
@@ -3466,7 +3466,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 exit_preds += @intCast(u32, 1);
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
-            self.local_decl_count = saved_ldc;
+
             self.capture_shadow.count = @intCast(usize, 0);
         }
         var swx_p: []const u8 = "SWEXIT:preds"; pal.markerWriteInt(swx_p, exit_preds);
