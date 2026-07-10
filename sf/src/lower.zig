@@ -3580,11 +3580,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                             var in_x = store.nodes.items[@intCast(usize, node.child_1)];
                             if (in_x.kind == AstKind.null_literal) {
                                 emitInst(self, LirInst{ .set_optional_null = .{ .result = dl_temp, .type_id = decl_type } });
-                                emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = dl_temp } });
-                                var reg_x = findLocalTemp(self, name_id);
-                                if (reg_x != @intCast(u32, 0)) {
-                                    emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = dl_temp } });
-                                }
                                 sn_x = @intCast(u8, 1);
                             }
                         }

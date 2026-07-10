@@ -2954,7 +2954,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .set_optional_null => |sn| {
-            var sres = mangleTempName(emitter.interner, sn.result);
+            var sres = resolveTempName(emitter, sn.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, sres);
             var sohv: []const u8 = ".has_value = 0;\n";
