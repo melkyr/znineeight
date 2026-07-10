@@ -3315,6 +3315,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var nxt = nextTemp(self, type_mod.TYPE_U32);
                 var instc_fr_m: []const u8 = "INSTC:flr\n"; pal.markerWrite(instc_fr_m);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = one_r, .result = nxt } });
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = start_temp, .src = nxt } });
                 start_temp = nxt;
                 emitInst(self, LirInst{ .jump = cond_bb });
             }
@@ -3354,6 +3355,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
                 var instc_fs_m: []const u8 = "INSTC:fls\n"; pal.markerWrite(instc_fs_m);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = one_s, .result = nxt_idx } });
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = idx_temp, .src = nxt_idx } });
                 idx_temp = nxt_idx;
                 emitInst(self, LirInst{ .jump = cond_bb });
             }
