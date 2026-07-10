@@ -1238,17 +1238,41 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
-    } else if (node.kind == AstKind.cmp_eq) {
+    } else if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne) {
+        var c0n = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        var c1n = self.ctx.store.nodes.items[@intCast(usize, node.child_1)];
+        var is_opt_null: u8 = @intCast(u8, 0);
+        var opt_child: u32 = @intCast(u32, 0);
+        if (c0n.kind == AstKind.null_literal and c1n.kind != AstKind.null_literal) {
+            opt_child = node.child_1; is_opt_null = @intCast(u8, 1);
+        } else if (c1n.kind == AstKind.null_literal and c0n.kind != AstKind.null_literal) {
+            opt_child = node.child_0; is_opt_null = @intCast(u8, 1);
+        }
+        if (is_opt_null != @intCast(u8, 0)) {
+            var opt_ty = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, opt_child);
+            if (opt_ty) |ot| {
+                if (self.ctx.registry.types_items[@intCast(usize, ot)].kind == type_mod.TypeKind.optional_type) {
+                    var opt_val = lowerExpr(self, opt_child);
+                    var has_val = nextTemp(self, type_mod.TYPE_U8);
+                    emitInst(self, LirInst{ .check_optional = .{ .value = opt_val, .result = has_val } });
+                    if (node.kind == AstKind.cmp_eq) {
+                        var result = nextTemp(self, type_mod.TYPE_BOOL);
+                        emitInst(self, LirInst{ .unary = .{ .op = UN_NOT, .operand = has_val, .result = result } });
+                        return result;
+                    } else {
+                        return has_val;
+                    }
+                }
+            }
+        }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, type_mod.TYPE_BOOL);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = lhs, .rhs = rhs, .result = tid } });
-        return tid;
-    } else if (node.kind == AstKind.cmp_ne) {
-        var lhs = lowerExpr(self, node.child_0);
-        var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, type_mod.TYPE_BOOL);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = lhs, .rhs = rhs, .result = tid } });
+        if (node.kind == AstKind.cmp_eq) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = lhs, .rhs = rhs, .result = tid } });
+        } else {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = lhs, .rhs = rhs, .result = tid } });
+        }
         return tid;
     } else if (node.kind == AstKind.cmp_lt) {
         var lhs = lowerExpr(self, node.child_0);
