@@ -3327,9 +3327,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var slice_temp = lowerExpr(self, node.child_0);
             var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
             var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
-            var ms_nid = nameMapGet(self, slice_temp);
-             emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
-             emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+            if (pat_type) |pt2| {
+                var pt_ty2 = self.ctx.registry.types_items[@intCast(usize, pt2)];
+                if (pt_ty2.kind == type_mod.TypeKind.array_type) {
+                    var ap2 = self.ctx.registry.array_items[@intCast(usize, pt_ty2.payload_idx)];
+                    ptr_temp = slice_temp;
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ap2.length), .result = len_temp } });
+                } else {
+                    var ms_nid = nameMapGet(self, slice_temp);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+                }
+            } else {
+                var ms_nid = nameMapGet(self, slice_temp);
+                emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
+                emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+            }
             var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
             var cond_bb = createBlock(self);
