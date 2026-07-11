@@ -1,22 +1,23 @@
 const pal = @import("pal");
 
-const Trio = struct {
-    a: i32,
+const AggTri = struct {
+    s: []const u8,
     b: i32,
     c: i32,
 };
 
-fn make(a: i32, b: i32, c: i32) Trio {
-    var t: Trio = undefined;
-    t.a = a;
+fn store(s: []const u8, b: i32, c: i32) AggTri {
+    var t: AggTri = undefined;
+    t.s = s;
     t.b = b;
     t.c = c;
     return t;
 }
 
 pub fn main() void {
-    var x = make(10, 20, 30);
-    __bootstrap_print_int(x.a);
+    var msg: []const u8 = "OK";
+    var x = store(msg, 20, 30);
+    pal.stderr_write(x.s);
     pal.stderr_write("\n");
     __bootstrap_print_int(x.b);
     pal.stderr_write("\n");
