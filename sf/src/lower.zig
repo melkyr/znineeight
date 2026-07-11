@@ -2409,6 +2409,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             self.block_terminated = @intCast(u8, 1);
             self.current_bb = ok_bb;
+            self.block_terminated = @intCast(u8, 0);
             var result = nextTemp(self, euPayloadOf(self, eu_box[0]));
             emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = inner_temp, .result = result } });
             if (self.block_terminated == @intCast(u8, 0)) {
