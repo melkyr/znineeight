@@ -150,7 +150,12 @@ pub fn main() void {
             if (err == error.OutOfMemory) print_str("OutOfMemory")
             else if (err == error.UnboundSymbol) print_str("UnboundSymbol")
             else if (err == error.NotCallable) print_str("NotCallable")
-            else print_str("Other");
+            else if (err == error.InvalidLambda) print_str("InvalidLambda")
+            else if (err == error.InvalidDefine) print_str("InvalidDefine")
+            else if (err == error.InvalidIf) print_str("InvalidIf")
+            else if (err == error.InvalidQuote) print_str("InvalidQuote")
+            else if (err == error.InvalidExpr) print_str("InvalidExpr")
+            else { var ec = @intCast(u32, @enumToInt(err)); var ei: i32 = @intCast(i32, ec); __bootstrap_print_int(ei); print_str("=err"); }
             print_str(nl[0..1]);
             continue;
         };

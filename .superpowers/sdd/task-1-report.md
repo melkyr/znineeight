@@ -1,29 +1,38 @@
-# Task 1 Report — Array-base slice honors explicit `[start..end]`
+### Task 1 Report: Capture rename edge-case RED repro suite
 
-## Edit Made
-**File:** `sf/src/lower.zig`, line 2710
+**Status:** DONE
 
-**Before:**
-```zig
-                if (se_bty.kind == type_mod.TypeKind.array_type) {
-```
+**Commit:** `2bc17580` — `test(repro): RED capture rename edge-case repros (switch, catch, for, nested, shadow)`
 
-**After:**
-```zig
-                if (se_bty.kind == type_mod.TypeKind.array_type and node.child_2 == @intCast(u32, 0)) {
-```
+**Files created:**
+- `repro/capture_rename/main.zig` — 6 test cases covering switch, catch, for-in, nested, and shadow captures
+- `repro/capture_rename/NOTES.md` — expected vs actual output, root cause analysis
 
-## RED Output
-`8` (slice repro with unpatched binary prints array length instead of `3`)
+**Gate evidence:**
+- `=== [release] Done: sf/build/out_release/zig1 ===` — build succeeded
+- `dump rc=0` — zig1 compiled repro successfully
+- `gcc rc=0` — C output compiled successfully
+- `timeout 3 /tmp/capr` → `77542630` with rc=124 (timeout from for-in infinite loop)
 
-## GREEN Outputs
-- `repro/bool_literal_lower` → `13` ✅ (prints `1` then `3`)
-- `repro/slice_array_end` → **FAILS TO COMPILE**: `assignment to expression with array type` at `buf + zT_15`
+**RED cases identified:**
 
-## [release] Done Confirmation
-Build prints `[release] Done` (zig1-dump errors are expected/pre-existing).
+| Case | Pattern | Expected | Actual | Root Cause |
+|------|---------|----------|--------|------------|
+| **CASE 2** | catch same-name same-type | 99 | **77** | `maybeDisambiguateCapture` not called for catch captures (lower.zig:2446-2447). Second `\|err\|` aliases first catch's error code temp. |
+| **CASE 3** | for-in same-name | 30 | **(infinite loop)** | General codegen bug: missing loop counter update in C for for-in over slice. Not capture-specific. |
 
-## Concerns
-**BLOCKED**: The bounds-aware path (lines 2734-2748) produces invalid C for array-based slices. When `node.child_2 != 0` and the base is an array type, the code falls through to the bounds-aware path which computes `se_ptr = se_slice_ptr + se_start`. For array types, `se_slice_ptr` is `se_base` (the array temp), not a pointer. The emitted C attempts pointer arithmetic on an array-typed expression, which gcc rejects with `assignment to expression with array type`.
+**Cases that PASSED (no RED):**
+- CASE 1: switch same-name same-type — switch captures are scoped (local_decl_count restored after prong lowering at lower.zig:2848/:3469)
+- CASE 4: switch diff-type — maybeDisambiguateCapture correctly renames
+- CASE 5: catch shadow var_decl — no ICE, compiles
+- CASE 6: nested captures (switch + while) — works correctly
 
-Per the brief instruction: "STOP-and-present if the bounds-aware path produces invalid C for an array base (e.g. base + start or make_slice on the array temp does not yield a valid decayed pointer / fails to gcc-compile)."
+**Key finding for CASE 2:** The catch lowering code at lower.zig:2441-2448 directly uses `addLocalDecl` with the raw capture name without calling `maybeDisambiguateCapture`. This causes duplicate local decl entries with the same name but different temps. `findLocalTemp` returns the first match, so the second catch body references the wrong error code.
+
+**Adaptations needed from brief:**
+- Brief used plain `enum` switch — zig1 only supports `union(enum)` switch with captures
+- Brief used `for (a_arr[0..3])` — zig1 only supports `for (array)`
+- Brief used `print_nl` with `std`/`pal` — used `__bootstrap_print_int` instead
+- Brief used `if (false) { }` blocks — removed, unnecessary for the test
+- For-in tests use slice for-in (compiles but infinite loops) instead of array for-in (gcc compile error)
+- Cases reordered so CASE 3 (for-in infinite loop) runs last, allowing earlier cases to produce output
