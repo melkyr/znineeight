@@ -1337,3 +1337,22 @@ gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
 
 
 **Legend**: ✅ Done | ⚠️ Partial | ❌ Missing | ⚠️ Attrib = Confirmed layer attribution, fix is separate future task | ❌ Deferred/Separate = out-of-scope, documented for a future plan
+
+---
+
+## Example compile gaps (2026-07-12) — RED corpus repros added, fixes are future plans
+
+A survey compiling `examples/z98/*` with zig1 at HEAD `b206a3f3` found 6 distinct
+compile-failure symptoms. Each now has a minimal RED repro under `repro/mi_matrix/`
+(corpus `117/14/1/0` → `117/18/3/0`; no pre-existing repro reclassified). All are
+zig1 bugs — the zig0 oracle handles each cleanly. Fixes = separate future plans.
+
+| ID | Symptom | Blocks example(s) | Layer | Repro | Status |
+|----|---------|-------------------|-------|-------|--------|
+| EX1 | `error[48]` unsupported field-store base (ICE) — cross-module `@import` + named-const-sized array-of-struct `[N]struct{x:i32}` + array-element field store `t.arr[0].x=1` (each factor load-bearing; misleading name — also fires on array-element stores) | lzw, json_parser_workaround, lisp_interpreter | lowerer (`iceFieldStoreUnsupported` lower.zig:733/758) | `xmod_field_store_index` | ❌ RED |
+| EX2 | `error[3002]` unhandled node kind in type resolution (ICE) — bare range-for `for (1..13) \|i\| {}` | days_in_month | type resolution | `typeres_unhandled_node` | ❌ RED |
+| EX3 | `assignment to expression with array type` (gcc FAIL) — array-value copy `const t = arr[i]` from `*[N]T` | heapsort | c89_emit (array l-value = element-copy loop) | `array_value_copy` | ❌ RED |
+| EX4 | malformed `zT_..._Arr_unsigned_char*_[4]` typedef (gcc FAIL) — `[4][*]const u8{...}` | sort_strings | c89_emit type-name mangling | `array_manyptr_type` | ❌ RED |
+| EX5 | `unknown type name zT_..._FP_int_int_int` (gcc FAIL) — function-pointer return type `fn(i32,i32) i32` typedef never emitted | func_ptr_return | c89_emit | `func_ptr_return_type` | ❌ RED |
+| EX6 | `incompatible types ... Opt<...> from <ptr>` (gcc FAIL) — optional wrapping extern-fn pointer return with no null-wrap (`?*File = fopen(...)`) | json_parser | sema/type-registry | `opt_extern_ptr_file` | ❌ RED |
+
