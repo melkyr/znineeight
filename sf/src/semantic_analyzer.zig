@@ -1559,25 +1559,16 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
     var ix_m: []const u8 = "IX:T"; pal_mod.markerWriteInt(ix_m, self._stub_0);
     if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
-    if (bt.kind == type_mod.TypeKind.array_type) {
-         var r1 = self.registry.array_items[@intCast(usize, bt.payload_idx)].elem;
-         var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r1);
-         return r1;
-     } else if (bt.kind == type_mod.TypeKind.slice_type) {
-         var r2 = self.registry.slice_items[@intCast(usize, bt.payload_idx)].elem;
-         var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r2);
-         return r2;
-     } else if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
-         var r3 = self.registry.ptr_items[@intCast(usize, bt.payload_idx)].base;
-         var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r3);
-         return r3;
-     } else if (bt.kind == type_mod.TypeKind.tuple_type) {
-         var tp = self.registry.tup_items[@intCast(usize, bt.payload_idx)];
-         var r4 = self.registry.xt_items[@intCast(usize, tp.elems_start)];
-         var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r4);
-         return r4;
+    var ix_elem = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
+    if (ix_elem != type_mod.TYPE_UNDEFINED) {
+        var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, ix_elem);
+        return ix_elem;
+    } else if (bt.kind == type_mod.TypeKind.tuple_type) {
+        var tp = self.registry.tup_items[@intCast(usize, bt.payload_idx)];
+        var r4 = self.registry.xt_items[@intCast(usize, tp.elems_start)];
+        var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r4);
+        return r4;
     }
-    var ix_d: []const u8 = "d"; pal_mod.markerWrite(ix_d);
     return self._stub_0;
 }
 
@@ -1589,12 +1580,9 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
     if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
     self._stub_1 = type_mod.TYPE_VOID;
-    if (bt.kind == type_mod.TypeKind.array_type) {
-        self._stub_1 = self.registry.array_items[@intCast(usize, bt.payload_idx)].elem;
-    } else if (bt.kind == type_mod.TypeKind.slice_type) {
-        self._stub_1 = self.registry.slice_items[@intCast(usize, bt.payload_idx)].elem;
-    } else if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
-        self._stub_1 = self.registry.ptr_items[@intCast(usize, bt.payload_idx)].base;
+    var ix_elem2 = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
+    if (ix_elem2 != type_mod.TYPE_UNDEFINED) {
+        self._stub_1 = ix_elem2;
     } else {
         self._stub_1 = self._stub_0;
     }

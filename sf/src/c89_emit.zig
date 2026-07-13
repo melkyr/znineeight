@@ -127,6 +127,57 @@ fn isC89Keyword(self: *NameMangler, name_id: u32) u8 {
     return @intCast(u8, 0);
 }
 
+fn isBasePtrToArray(emitter: *C89Emitter, base_temp: u32) u8 {
+    var hs = emitter.current_fn.hoisted_temps;
+    var ht = hs.items[@intCast(usize, base_temp)];
+    var btid = ht.type_id;
+    var bty = emitter.registry.types_items[@intCast(usize, btid)];
+    if (bty.kind != type_mod.TypeKind.ptr_type and bty.kind != type_mod.TypeKind.many_ptr_type) return @intCast(u8, 0);
+    var pointee = emitter.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
+    var pty = emitter.registry.types_items[@intCast(usize, pointee)];
+    if (pty.kind == type_mod.TypeKind.array_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+/// Emit indexed access in C89: `base[idx]` or `(*base)[idx]` depending on whether base is ptr-to-array.
+/// kind: 0 = load (emit result = X;), 1 = assign (emit X = src;)
+fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_or_src: []const u8, kind: u8) void {
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var base_name = resolveTempName(emitter, base_temp);
+    var idx_name = resolveTempName(emitter, idx_temp);
+    var is_ptr_arr = isBasePtrToArray(emitter, base_temp);
+    if (kind == @intCast(u8, 0)) {
+        // load: result = (*base)[idx]; or result = base[idx];
+        bufferedWriterWrite(&emitter.writer, name_or_src);   // result name
+        var eq: []const u8 = " = ";
+        bufferedWriterWrite(&emitter.writer, eq);
+        if (is_ptr_arr == @intCast(u8, 1)) {
+            var lp: []const u8 = "(*";  bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, base_name);
+            var rp: []const u8 = ")["; bufferedWriterWrite(&emitter.writer, rp);
+        } else {
+            bufferedWriterWrite(&emitter.writer, base_name);
+            var lb: []const u8 = "[";   bufferedWriterWrite(&emitter.writer, lb);
+        }
+        bufferedWriterWrite(&emitter.writer, idx_name);
+        var rc: []const u8 = "];\n";    bufferedWriterWrite(&emitter.writer, rc);
+    } else {
+        // assign: (*base)[idx] = src; or base[idx] = src;
+        if (is_ptr_arr == @intCast(u8, 1)) {
+            var lp2: []const u8 = "(*"; bufferedWriterWrite(&emitter.writer, lp2);
+            bufferedWriterWrite(&emitter.writer, base_name);
+            var rp2: []const u8 = ")["; bufferedWriterWrite(&emitter.writer, rp2);
+        } else {
+            bufferedWriterWrite(&emitter.writer, base_name);
+            var lb2: []const u8 = "[";  bufferedWriterWrite(&emitter.writer, lb2);
+        }
+        bufferedWriterWrite(&emitter.writer, idx_name);
+        var eq2: []const u8 = "] = ";   bufferedWriterWrite(&emitter.writer, eq2);
+        bufferedWriterWrite(&emitter.writer, name_or_src);   // src name
+        var sc: []const u8 = ";\n";     bufferedWriterWrite(&emitter.writer, sc);
+    }
+}
+
 fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegistry, interner: *StringInterner, current_fn: *LirFunction, hoisted_temps_items: [*]lir_mod.TempDecl, hoisted_temps_len: usize, base: []const u8, base_temp: u32, field_id: u32, src: []const u8, src_temp: u32) void {
     var fn_prefix: []const u8 = ".f_";
     var found: u8 = @intCast(u8, 0);
@@ -498,7 +549,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var a_pfx: []const u8 = "Arr_"; var apfx: usize = 0;
         while (apfx < a_pfx.len and ap2 < 127) : (apfx += 1) { abuf[ap2] = a_pfx[apfx]; ap2 += 1; }
         var aei: usize = 0;
-        while (aei < e_cname.len and ap2 < 127) : (aei += 1) { var ac = e_cname[aei]; if (ac == 32) { ac = '_'; } abuf[ap2] = ac; ap2 += 1; }
+        while (aei < e_cname.len and ap2 < 127) : (aei += 1) { var ac = e_cname[aei]; if (ac == 32) { ac = '_'; } else if (ac == 42) { ac = '_'; } abuf[ap2] = ac; ap2 += 1; }
         if (ap2 < 127) { abuf[ap2] = '_'; ap2 += 1; }
         var albuf: [16]u8 = undefined;
         var all = itoa_mod.itoa(ap.length, albuf[0..]);
@@ -1116,7 +1167,7 @@ fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
     var pfx: []const u8 = "Arr_"; var px: usize = 0;
     while (px < pfx.len and nam_p < 127) : (px += 1) { nam_buf[nam_p] = pfx[px]; nam_p += 1; }
     var ex: usize = 0;
-    while (ex < ename.len and nam_p < 127) : (ex += 1) { var c = ename[ex]; if (c == 32) { c = '_'; } nam_buf[nam_p] = c; nam_p += 1; }
+    while (ex < ename.len and nam_p < 127) : (ex += 1) { var c = ename[ex]; if (c == 32) { c = '_'; } else if (c == 42) { c = '_'; } nam_buf[nam_p] = c; nam_p += 1; }
     if (nam_p < 127) { nam_buf[nam_p] = '_'; nam_p += 1; }
     var lx: usize = lst2;
     while (lx < @intCast(usize, 16) - @intCast(usize, 1) and nam_p < 127) : (lx += 1) { nam_buf[nam_p] = lbuf2[lx]; nam_p += 1; }
@@ -2294,27 +2345,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var base: []const u8 = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
             var idx = resolveTempName(emitter, a.index);
             var src = resolveTempName(emitter, a.src);
-            var adm: []const u8 = "/*==MARKER_AIDX base=";
-            bufferedWriterWrite(&emitter.writer, adm);
-            bufferedWriterWrite(&emitter.writer, base);
-            var adsep: []const u8 = " idx=";
-            bufferedWriterWrite(&emitter.writer, adsep);
-            bufferedWriterWrite(&emitter.writer, idx);
-            var adsep2: []const u8 = " src=";
-            bufferedWriterWrite(&emitter.writer, adsep2);
-            bufferedWriterWrite(&emitter.writer, src);
-            var adend: []const u8 = "==*/\n";
-            bufferedWriterWrite(&emitter.writer, adend);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, base);
-            var sep: []const u8 = "[";
-            bufferedWriterWrite(&emitter.writer, sep);
-            bufferedWriterWrite(&emitter.writer, idx);
-            var sep2: []const u8 = "] = ";
-            bufferedWriterWrite(&emitter.writer, sep2);
-            bufferedWriterWrite(&emitter.writer, src);
-            var sep3: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, sep3);
+            var src_name = resolveTempName(emitter, a.src);
+            emitBaseIdxAccess(emitter, a.base, a.index, src_name, @intCast(u8, 1));
         },
         .jump => |bb| {
             var jxp_m: []const u8 = "JXP\n"; pal.markerWrite(jxp_m);
@@ -2697,19 +2729,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .load_index => |li| {
-            var base = if (li.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, li.name_id) else resolveTempName(emitter, li.base);
-            var idx = resolveTempName(emitter, li.index);
             var result = resolveTempName(emitter, li.result);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, base);
-            var s2: []const u8 = "[";
-            bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, idx);
-            var s3: []const u8 = "];\n";
-            bufferedWriterWrite(&emitter.writer, s3);
+            emitBaseIdxAccess(emitter, li.base, li.index, result, @intCast(u8, 0));
         },
         .load => |l| {
             var vflow_ldv: []const u8 = "VFLOW:ldv\n"; pal.markerWrite(vflow_ldv);

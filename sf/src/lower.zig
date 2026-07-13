@@ -1427,25 +1427,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
          if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; var ixh: []const u8 = "IXH"; pal.markerWrite(ixh); var ixhtb: [10]u8 = undefined; var ixhtl = itoa_mod.itoa(t, ixhtb[0..]); var ixhts: usize = @intCast(usize, 9) - @intCast(usize, ixhtl); pal.markerWrite(ixhtb[ixhts..@intCast(usize, 9)]); } }
          else {
-         var ixm: []const u8 = "IXM"; pal.markerWrite(ixm);
+         var ixm2: []const u8 = "IXM"; pal.markerWrite(ixm2);
          var reg = self.ctx.registry;
          var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
          if (bt != type_mod.TYPE_UNDEFINED) {
              var bty = reg.types_items[@intCast(usize, bt)];
-             var lixm_m: []const u8 = "LIX:bt"; pal.markerWrite(lixm_m);
-             var lixm_tb: [10]u8 = undefined; var lixm_tl = itoa_mod.itoa(bt, lixm_tb[0..]); var lixm_ts: usize = @intCast(usize, 9) - @intCast(usize, lixm_tl); pal.markerWrite(lixm_tb[lixm_ts..@intCast(usize, 9)]);
-             var lixm_km: []const u8 = ",bk"; pal.markerWrite(lixm_km);
-             var lixm_kb: [10]u8 = undefined; var lixm_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(bty.kind)), lixm_kb[0..]); var lixm_ks: usize = @intCast(usize, 9) - @intCast(usize, lixm_kl); pal.markerWrite(lixm_kb[lixm_ks..@intCast(usize, 9)]);
-             var lixm_nl: []const u8 = "\n"; pal.markerWrite(lixm_nl);
-             if (bty.kind == type_mod.TypeKind.slice_type) {
-                 elem_type[0] = reg.slice_items[@intCast(usize, bty.payload_idx)].elem;
-             } else if (bty.kind == type_mod.TypeKind.array_type) {
-                 elem_type[0] = reg.array_items[@intCast(usize, bty.payload_idx)].elem;
-             } else if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
-                 elem_type[0] = reg.ptr_items[@intCast(usize, bty.payload_idx)].base;
+             var ix_elem = type_mod.typeRegistryIndexedElemType(reg, bt);
+             if (ix_elem != type_mod.TYPE_UNDEFINED) {
+                 elem_type[0] = ix_elem;
              }
-        }
-        }
+         }
+         }
         var tid = nextTemp(self, elem_type[0]);
         var li_ni: u32 = @intCast(u32, 0);
         var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, node.child_0);

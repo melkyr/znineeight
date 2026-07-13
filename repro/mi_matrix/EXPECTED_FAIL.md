@@ -1,7 +1,7 @@
 # mi_matrix corpus — expected-fail manifest (v4 idiomatic baseline)
 
 ## Totals (138 repros)
-- **CURRENT: OK=117 / FAIL=18 / ICE=3 / CRASH=0** (2026-07-12: +6 example-derived RED repros — see section below)
+- **CURRENT: OK=119 / FAIL=16 / ICE=3 / CRASH=0** (2026-07-13: array_value_copy + array_manyptr_type fixed; see Plan A fix commits)
 - Prior (132 repros): OK=117 / FAIL=14 / ICE=1 / CRASH=0 (v4 idiomatic baseline) — UNCHANGED by the 6 additions (no existing repro reclassified).
 - OLD (@as-era): OK=72 / FAIL=38 / CRASH=22
 - Delta (v4 idiomatic vs @as-era): **+45 OK, -24 FAIL, -22 CRASH, +1 ICE** (idiom shift + if_expr branch-join wiring + catch err-branch materialization + materializeInto error_src generalization, all through materializeInto).
@@ -63,7 +63,7 @@ reclassified.
 
 - `xmod_field_store_index` — **ICE** `error[48]` unsupported field-store base (node 37); layer=lowerer (`iceFieldStoreUnsupported` lower.zig:733/758). Real trigger (Task 7): cross-module `@import` + named-const-sized array-of-struct `[N]struct{x:i32}` + array-element field store `t.arr[0].x=1`; each factor load-bearing (single-file / `[1]` literal / no-store-fn all compile clean). NOT the simple `arr[i].field=x`. Oracle: OK (zig0 dump rc=0, gcc 0). Pure zig1 bug.
 - `typeres_unhandled_node` — **ICE** `error[3002]` unhandled node kind in type resolution; layer=type resolution. Minimal trigger: bare range-for `for (1..13) |i| {}`. Oracle: OK (zig0 dump rc=0). Pure zig1 bug.
-- `array_value_copy` — **FAIL** `assignment to expression with array type`; layer=c89_emit (array-value copy from `*[N]T` deref should be element-copy loop). Oracle: OK (main.c gcc 0). Pure zig1 bug.
-- `array_manyptr_type` — **FAIL** malformed `zT_..._Arr_unsigned_char*_[4]` typedef (stray `*` in mangled name) from `[4][*]const u8{...}`; layer=c89_emit type-name mangling. Oracle: OK (main.c gcc 0). Pure zig1 bug.
+- `array_value_copy` — **FIXED (2026-07-13)** — FAIL `assignment to expression with array type`; layer=lowerer (index_access ptr-to-array element-type now corrected via `typeRegistryIndexedElemType` helper) + c89_emit (`(*a)[i]` syntax emitter). Root: `lower.zig:1444-1445` + `semantic_analyzer.zig:1563-1573` + `c89_emit.zig:2286-2317,2699-2713`. Fix: DRY `typeRegistryIndexedElemType` helper in `type_registry.zig`, 3 index-elem sites converted, `emitBaseIdxAccess` for C89 syntax. Repro now dump 0/gcc 0/run→11, matches oracle.
+- `array_manyptr_type` — **FIXED (2026-07-13)** — FAIL malformed typedef (stray `*` in mangled name) from `[4][*]const u8{...}`; layer=c89_emit type-name mangling. Root: `c89_emit.zig:501,1119` identifier-copy loops only sanitized space→`_` but not `*`. Fix: both loops now map `*` (byte 42)→`_`. Repro now dump 0/gcc 0/run→aa, matches oracle.
 - `func_ptr_return_type` — **FAIL** `unknown type name zT_..._FP_int_int_int` (FP-return typedef referenced, never emitted) from `fn(i32,i32) i32` return type; layer=c89_emit. Oracle: OK (main.c gcc 0). Pure zig1 bug.
 - `opt_extern_ptr_file` — **FAIL** `incompatible types when assigning to type 'zT_..._Opt_...' from type 'int'` (optional wrapping extern-fn pointer return, no null-wrap) via `const File=void; extern fn fopen(...) ?*File;`; layer=sema/type-registry. Oracle: OK (main.c gcc 0). Pure zig1 bug. (Used `?*File`/`const File=void` idiom, not `@cInclude`, because zig0 aborts on `@cInclude` in this mode; tracked as must-not-fail per operator.)

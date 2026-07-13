@@ -709,6 +709,29 @@ pub fn typeRegistryGetSliceElem(self: *TypeRegistry, tid: u32) ?u32 {
     return self.slice_items[ty.payload_idx].elem;
 }
 
+/// Returns the element type of indexing base_tid[i]:
+///   array_type -> .elem; slice_type -> .elem;
+///   ptr/many_ptr -> pointee, OR if pointee is array_type -> that array's .elem;
+///   none of the above -> TYPE_UNDEFINED (sentinel; caller applies its own fallback).
+pub fn typeRegistryIndexedElemType(self: *TypeRegistry, base_tid: u32) u32 {
+    var ty = self.types_items[@intCast(usize, base_tid)];
+    if (ty.kind == TypeKind.array_type) {
+        return self.array_items[@intCast(usize, ty.payload_idx)].elem;
+    }
+    if (ty.kind == TypeKind.slice_type) {
+        return self.slice_items[@intCast(usize, ty.payload_idx)].elem;
+    }
+    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+        var pointee = self.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        var pointee_ty = self.types_items[@intCast(usize, pointee)];
+        if (pointee_ty.kind == TypeKind.array_type) {
+            return self.array_items[@intCast(usize, pointee_ty.payload_idx)].elem;
+        }
+        return pointee;
+    }
+    return TYPE_UNDEFINED;
+}
+
 pub fn typeRegistryIsOptional(self: *TypeRegistry, tid: u32) bool {
     return self.types_items[tid].kind == TypeKind.optional_type;
 }
