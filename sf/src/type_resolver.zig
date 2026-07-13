@@ -17,8 +17,11 @@ const StringInterner = interner_mod.StringInterner;
 const sym_mod = @import("symbol_table.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const ast_mod = @import("ast.zig");
+const mr_mod = @import("module_registry.zig");
+const rtt_mod = @import("resolved_type_table.zig");
 
 pub const TypeResolveEnv = struct {
+
     store: *AstStore,
     typereg: *TypeRegistry,
     symbol_reg: *SymbolRegistry,
@@ -559,7 +562,7 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     }
     if (node.kind == AstKind.ident_expr) {
         var name_id = env.store.identifiers.items[@intCast(usize, node.payload)];
-        var c_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, 0), name_id);
+        var c_sym = symbolLookupAllModules(env, name_id);
         if (c_sym) |cs| {
             if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 var c_decl = env.store.nodes.items[@intCast(usize, cs.decl_node)];
@@ -570,6 +573,15 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
         }
     }
     return @intCast(u32, 0xFFFFFFFF);
+}
+
+fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
+    var si: usize = 0;
+    while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+        var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
+        if (sym != null) return sym;
+    }
+    return null;
 }
 
 pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type_mod.TypeId {
@@ -839,18 +851,9 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                         else arr_len = lhs - rhs;
                     }
                 } else if (sz_node.kind == AstKind.ident_expr) {
-                    var c_name_id = env.store.identifiers.items[@intCast(usize, sz_node.payload)];
-                    var c_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, 0), c_name_id);
-                    if (c_sym) |cs| {
-                         if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                            var c_decl = env.store.nodes.items[@intCast(usize, cs.decl_node)];
-                            if (c_decl.child_1 != 0) {
-                                var c_init = env.store.nodes.items[@intCast(usize, c_decl.child_1)];
-                                if (c_init.kind == AstKind.int_literal) {
-                                    arr_len = @intCast(u32, env.store.int_values.items[@intCast(usize, c_init.payload)]);
-                                }
-                            }
-                        }
+                    var al = evalConstU32Full(env, node.child_1);
+                    if (al != @intCast(u32, 0xFFFFFFFF)) {
+                        arr_len = al;
                     }
                 }
                 var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m);
@@ -929,4 +932,144 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
             }
         }
     }
+}
+
+fn varDeclInitNeedsNameCache(init_kind: AstKind) bool {
+    if (init_kind == AstKind.struct_decl) return false;
+    if (init_kind == AstKind.union_decl) return false;
+    if (init_kind == AstKind.enum_decl) return false;
+    if (init_kind == AstKind.error_set_decl) return false;
+    if (init_kind == AstKind.ident_expr) return false;
+    if (init_kind == AstKind.import_expr) return false;
+    if (init_kind == AstKind.fn_decl) return false;
+    return true;
+}
+
+
+fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry) void {
+    var ci: usize = 0;
+    while (ci < mods.len) : (ci += 1) {
+        var cr = mods[ci].ast_root;
+        if (cr == @intCast(u32, 0)) continue;
+        var crn = env.store.nodes.items[@intCast(usize, cr)];
+        var cd = ast_mod.astStoreGetExtraChildren(env.store, crn.payload);
+        var cdi: usize = 0;
+        while (cdi < cd.len) : (cdi += 1) {
+            var cdcl = env.store.nodes.items[@intCast(usize, cd[cdi])];
+            if (cdcl.kind == AstKind.var_decl and cdcl.child_1 != @intCast(u32, 0)) {
+                var cdinit = env.store.nodes.items[@intCast(usize, cdcl.child_1)];
+                if (varDeclInitNeedsNameCache(cdinit.kind)) {
+                    var cdtype = resolveTypeExprFull(env, cdcl.child_1, @intCast(u32, 0));
+                    if (cdtype != type_mod.TYPE_UNDEFINED) {
+                        var ck: u64 = @intCast(u64, mods[ci].id) * @intCast(u64, 4294967296) + @intCast(u64, cdcl.payload);
+                        type_mod.nameCachePut(env.typereg, ck, cdtype);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var rnode = env.store.nodes.items[@intCast(usize, root)];
+        var decls = ast_mod.astStoreGetExtraChildren(env.store, rnode.payload);
+        var di: usize = 0;
+        while (di < decls.len) : (di += 1) {
+            var decl = env.store.nodes.items[@intCast(usize, decls[di])];
+            if (decl.kind == AstKind.var_decl and decl.child_1 != 0) {
+                var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
+                if (init.kind == AstKind.struct_decl or init.kind == AstKind.union_decl) {
+                    resolveDeclAggregateFieldTypes(env, mods[mi].id, decls[di]);
+                }
+            }
+        }
+    }
+}
+
+fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolved_types: *rtt_mod.ResolvedTypeTable) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var rnode = env.store.nodes.items[@intCast(usize, root)];
+        var decls = ast_mod.astStoreGetExtraChildren(env.store, rnode.payload);
+        var di: usize = 0;
+        while (di < decls.len) : (di += 1) {
+            var decl = env.store.nodes.items[@intCast(usize, decls[di])];
+            if (decl.kind == AstKind.fn_decl) {
+                var proto = env.store.fn_protos.items[@intCast(usize, decl.payload)];
+                {
+                    var sym_check = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
+                    if (sym_check) |sc| {
+                        if (sc.type_id != @intCast(u32, 0)) continue;
+                    }
+                }
+                var rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
+                if (proto.return_type_node != 0) {
+                    var rtype = resolveTypeExprFull(env, proto.return_type_node, @intCast(u32, 0));
+                    if (rtype != type_mod.TYPE_UNDEFINED) {
+                        rt_box[0] = rtype;
+                        rtt_mod.resolvedTypeTableSet(resolved_types, proto.return_type_node, rtype);
+                    }
+                }
+                var is_ext: u8 = @intCast(u8, 0);
+                if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
+                var fn_start: u16 = @intCast(u16, env.typereg.xt_len);
+                if (proto.params_count > @intCast(u16, 0)) {
+                    var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+                    var pnodes = ast_mod.astStoreGetExtraChildren(env.store, p_payload);
+                    var pi: usize = 0;
+                    while (pi < pnodes.len) : (pi += 1) {
+                        var pnode = env.store.nodes.items[@intCast(usize, pnodes[pi])];
+                        if (pnode.child_0 != 0) {
+                            var ptype = resolveTypeExprFull(env, pnode.child_0, @intCast(u32, 0));
+                            type_mod.xtAppend(env.typereg, ptype);
+                            if (ptype != type_mod.TYPE_UNDEFINED) {
+                                rtt_mod.resolvedTypeTableSet(resolved_types, pnode.child_0, ptype);
+                            }
+                        } else {
+                            type_mod.xtAppend(env.typereg, type_mod.TYPE_VOID);
+                        }
+                    }
+                }
+                var tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, proto.name_id, mods[mi].id, is_ext, fn_start, proto.params_count, rt_box[0]);
+                rtt_mod.resolvedTypeTableSet(resolved_types, decls[di], tid);
+                var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
+                if (sym) |sp| {
+                    sp.type_id = tid;
+                }
+            } else if (decl.kind == AstKind.var_decl and decl.child_0 != 0) {
+                var vtype = resolveTypeExprFull(env, decl.child_0, @intCast(u32, 0));
+                if (vtype != type_mod.TYPE_UNDEFINED) {
+                    rtt_mod.resolvedTypeTableSet(resolved_types, decl.child_0, vtype);
+                    rtt_mod.resolvedTypeTableSet(resolved_types, decls[di], vtype);
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, decl.payload);
+                    if (sym) |sp| {
+                        sp.type_id = vtype;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn typeResolverResolveNames(
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    interner: *StringInterner,
+    resolved_types: *rtt_mod.ResolvedTypeTable,
+    module_reg: *mr_mod.ModuleRegistry,
+    perm_alloc: *Sand
+) void {
+    var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner };
+    _ = perm_alloc;
+    resolveNamedTypeExpressions(&env, mods);
+    resolveAggregateFieldTypesAll(&env, mods);
+    resolveFnSignatures(&env, mods, resolved_types);
 }
