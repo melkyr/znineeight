@@ -564,10 +564,10 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     }
 }
 
-fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, ret_val: u32) u32 {
+fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val: u32) u32 {
     var rn = self.store.nodes.items[@intCast(usize, child_0)];
     if (rn.kind == AstKind.error_literal) {
-        var frt = self.registry.types_items[@intCast(usize, self.current_fn_return)];
+        var frt = self.registry.types_items[@intCast(usize, target_ty)];
         if (frt.kind == type_mod.TypeKind.error_union_type) {
             return self.registry.eu_items[@intCast(usize, frt.payload_idx)].error_set;
         }
@@ -597,7 +597,7 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
             var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
             var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
             var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-            tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, ret_val), self.current_fn_return);
+            tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, self.current_fn_return, ret_val), self.current_fn_return);
         }
     }
 }
@@ -671,7 +671,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     pushExpectedType(self, cpp_val_fnx);
                     var dxc_at = semanticAnalyzerResolveExpr(self, args[ai2]);
                     popExpectedType(self);
-                    tryRecordCoercion(self, args[ai2], dxc_at, cpp_val_fnx);
+                    tryRecordCoercion(self, args[ai2], errLitSrcType(self, args[ai2], cpp_val_fnx, dxc_at), cpp_val_fnx);
                 }
             }
             }
@@ -729,7 +729,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         popExpectedType(self);
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
-        tryRecordCoercion(self, args[ai], arg_type, param_type);
+        tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], param_type, arg_type), param_type);
     }
     var fn4_rm: []const u8 = "FN4:R"; pal_mod.markerWriteInt(fn4_rm, fnp.return_type);
     return fnp.return_type;
@@ -883,8 +883,9 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     popExpectedType(self);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var as0: []const u8 = "AS0"; pal_mod.markerWrite(as0); return type_mod.TYPE_VOID; }
-    if (type_mod.typeRegistryIsAssignable(self.registry, rhs, lhs)) {
-        tryRecordCoercion(self, node.child_1, rhs, lhs);
+    var eff_src = errLitSrcType(self, node.child_1, lhs, rhs);
+    if (type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs)) {
+        tryRecordCoercion(self, node.child_1, eff_src, lhs);
         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
         return lhs;
     }
@@ -1440,7 +1441,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 popExpectedType(self);
                 if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
                     if (it == type_mod.TYPE_NULL) { var cs4_m: []const u8 = "CS4\n"; pal_mod.markerWrite(cs4_m); }
-                    var ck = coercion_mod.classifyCoercion(self.registry, it, decl_type);
+                    var ck = coercion_mod.classifyCoercion(self.registry, errLitSrcType(self, node.child_1, decl_type, it), decl_type);
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
                     if (ck != coercion_mod.CoercionKind.none) {
                         coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
