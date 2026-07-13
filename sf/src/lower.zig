@@ -1571,6 +1571,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 } else if (s.kind == sym_mod.SymbolKind.module) {
                     var m1m: []const u8 = "M1:"; pal.markerWrite(m1m);
                     return type_mod.TYPE_UNDEFINED;
+                } else if (s.kind == sym_mod.SymbolKind.function) {
+                    var s_t: u32 = s.type_id;
+                    if (s_t != @intCast(u32, 0)) {
+                        type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, s_t);
+                        var fr_pt2 = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, s_t, false);
+                        var fr_nid = s.name_id;
+                        var fr_mid = self.module_id;
+                        if (s.module_id != @intCast(u32, 0)) { fr_mid = s.module_id; }
+                        var fr_res2 = nextTemp(self, fr_pt2);
+                        emitInst(self, LirInst{ .func_ref = .{ .name_id = fr_nid, .module_id = fr_mid, .result = fr_res2 } });
+                        return fr_res2;
+                    }
+                    return type_mod.TYPE_UNDEFINED;
+                } else if (s.kind == sym_mod.SymbolKind.local or s.kind == sym_mod.SymbolKind.param) {
+                    if (findLocalTemp(self, name_id)) |fnd| {
+                        return fnd;
+                    }
+                    return type_mod.TYPE_UNDEFINED;
+                } else if (s.kind == sym_mod.SymbolKind.type_alias) {
+                    return type_mod.TYPE_UNDEFINED;
                 }
          }
         }
@@ -1591,7 +1611,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (t != type_mod.TYPE_UNDEFINED) {
                 var rty = self.ctx.registry.types_items[@intCast(usize, t)];
                 if (rty.kind == type_mod.TypeKind.fn_type or rty.kind == type_mod.TypeKind.module_type) {
-                    return @intCast(u32, 0);
+                    return @intCast(u32, type_mod.TYPE_UNDEFINED);
                 }
                 ptype = t;
             }

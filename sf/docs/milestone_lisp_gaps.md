@@ -1353,6 +1353,6 @@ zig1 bugs — the zig0 oracle handles each cleanly. Fixes = separate future plan
 | EX2 | `error[3002]` unhandled node kind in type resolution (ICE) — bare range-for `for (1..13) \|i\| {}` | days_in_month | type resolution | `typeres_unhandled_node` | ❌ RED |
 | EX3 | `assignment to expression with array type` (gcc FAIL) — array-value copy `const t = arr[i]` from `*[N]T`; root: `lower.zig:1444-1445` ixm ptr-to-array element-type + `c89_emit.zig:2286-2713` C89 `base[idx]` syntax; fix: DRY `typeRegistryIndexedElemType` helper + `emitBaseIdxAccess` emitter helper | heapsort | lowerer / c89_emit | `array_value_copy` | ✅ Fixed (2026-07-13) |
 | EX4 | malformed `zT_..._Arr_unsigned_char*_[4]` typedef (gcc FAIL) — `[4][*]const u8{...}`; root: `c89_emit.zig:501,1119` id-copy loops only sanitize space not `*`; fix: map `*` (byte 42)→`_` in both loops | sort_strings | c89_emit | `array_manyptr_type` | ✅ Fixed (2026-07-13) |
-| EX5 | `unknown type name zT_..._FP_int_int_int` (gcc FAIL) — function-pointer return type `fn(i32,i32) i32` typedef never emitted | func_ptr_return | c89_emit | `func_ptr_return_type` | ❌ RED |
+| EX5 | `unknown type name zT_..._FP_int_int_int` (gcc FAIL) → function-pointer return type `fn(i32,i32) i32` typedef never emitted | func_ptr_return | c89_emit + lowerer | `func_ptr_return_type` | ✅ Fixed (2026-07-13) |
 | EX6 | `incompatible types ... Opt<...> from <ptr>` (gcc FAIL) — optional wrapping extern-fn pointer return with no null-wrap (`?*File = fopen(...)`) | json_parser | sema/type-registry | `opt_extern_ptr_file` | ❌ RED |
 

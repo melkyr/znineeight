@@ -641,12 +641,14 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var fpp = reg.fn_items[@intCast(usize, ty.payload_idx)];
         var fbuf: [96]u8 = undefined;
         var fpos: usize = @intCast(usize, 0);
-        var fpre: []const u8 = "FP_";
-        var fprei: usize = @intCast(usize, 0);
-        while (fprei < fpre.len and fpos < @intCast(usize, 95)) : (fprei += @intCast(usize, 1)) {
-            fbuf[fpos] = fpre[fprei];
-            fpos += @intCast(usize, 1);
+        fbuf[0] = @intCast(u8, 70);
+        fbuf[2] = @intCast(u8, 95);
+        if ((ty.flags & @as(u32, 1)) != @as(u32, 0)) {
+            fbuf[1] = @intCast(u8, 80);
+        } else {
+            fbuf[1] = @intCast(u8, 78);
         }
+        fpos = @intCast(usize, 3);
         var fret_c = getCTypeName(reg, mangler, fpp.return_type);
         var fri: usize = @intCast(usize, 0);
         while (fri < fret_c.len and fpos < @intCast(usize, 95)) : (fri += @intCast(usize, 1)) {
