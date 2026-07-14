@@ -346,6 +346,22 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fapr_dk_m: []const u8 = "FAPR:DK"; pal_mod.markerWriteInt(fapr_dk_m, @intCast(u32, @enumToInt(base_ty.kind)));
         var fapr_nl: []const u8 = "\n"; pal_mod.markerWrite(fapr_nl);
     }
+    if (base_ty.kind == type_mod.TypeKind.optional_type) {
+        var sp = node.span_start;
+        var ep = sp + @intCast(u32, node.span_len);
+        var opt_msg: []const u8 = "cannot access field on optional type; use .? to unwrap first";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
+            self.source_file_id, sp, ep, opt_msg);
+        return type_mod.TYPE_VOID;
+    }
+    if (base_ty.kind == type_mod.TypeKind.error_union_type) {
+        var sp = node.span_start;
+        var ep = sp + @intCast(u32, node.span_len);
+        var eu_msg: []const u8 = "cannot access field on error-union type; handle the error first";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
+            self.source_file_id, sp, ep, eu_msg);
+        return type_mod.TYPE_VOID;
+    }
     if (base_ty.kind == type_mod.TypeKind.struct_type) {
         var sp = self.registry.st_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, sp.fields_start);
