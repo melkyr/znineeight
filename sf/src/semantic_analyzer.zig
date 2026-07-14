@@ -921,10 +921,18 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var sp = node.span_start;
             var ep = sp + @intCast(u32, node.span_len);
             var tma_msg: []const u8 = "type mismatch in assignment — internal type representations differ; generated code may be incorrect";
-            var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1), @intCast(u16, 3000),
-                self.source_file_id, sp, ep, tma_msg);
             var sk = self.registry.types_items[@intCast(usize, eff_src)].kind;
             var tk = self.registry.types_items[@intCast(usize, lhs)].kind;
+            var level: u8 = 1;
+            if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
+                var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, eff_src)].payload_idx)];
+                var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, lhs)].payload_idx)];
+                if (eu_src.error_set == eu_tgt.error_set) {
+                    level = 0;
+                }
+            }
+            var di = diag_mod.diagnosticCollectorAdd(self.diag, level, @intCast(u16, 3000),
+                self.source_file_id, sp, ep, tma_msg);
             _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
             _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
     }
@@ -1491,10 +1499,18 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         var sp = node.span_start;
                         var ep = sp + @intCast(u32, node.span_len);
                         var tmd_msg: []const u8 = "type mismatch in variable declaration — initialization type may not be compatible with declared type";
-                        var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1), @intCast(u16, 3000),
-                            self.source_file_id, sp, ep, tmd_msg);
                         var sk = self.registry.types_items[@intCast(usize, it)].kind;
                         var tk = self.registry.types_items[@intCast(usize, decl_type)].kind;
+                        var level: u8 = 1;
+                        if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
+                            var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, it)].payload_idx)];
+                            var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, decl_type)].payload_idx)];
+                            if (eu_src.error_set == eu_tgt.error_set) {
+                                level = 0;
+                            }
+                        }
+                        var di = diag_mod.diagnosticCollectorAdd(self.diag, level, @intCast(u16, 3000),
+                            self.source_file_id, sp, ep, tmd_msg);
                         _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
                         _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
                     }
