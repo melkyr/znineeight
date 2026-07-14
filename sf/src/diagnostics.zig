@@ -1,3 +1,5 @@
+const type_mod = @import("type_registry.zig");
+
 pub const DiagnosticLevel = enum(u8) {
     err_lvl = 0,
     warning = 1,
@@ -479,5 +481,66 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         }
         i += 1;
     }
+ 
+}
 
+pub fn typeKindToStr(kind: type_mod.TypeKind) []const u8 {
+    var s_void: []const u8 = "void";
+    var s_bool: []const u8 = "bool";
+    var s_ctl: []const u8 = "comptime_int";
+    var s_i8: []const u8 = "i8";
+    var s_i16: []const u8 = "i16";
+    var s_i32: []const u8 = "i32";
+    var s_i64: []const u8 = "i64";
+    var s_u8_: []const u8 = "u8";
+    var s_u16: []const u8 = "u16";
+    var s_u32: []const u8 = "u32";
+    var s_u64: []const u8 = "u64";
+    var s_f32: []const u8 = "f32";
+    var s_f64: []const u8 = "f64";
+    var s_ptr: []const u8 = "pointer";
+    var s_mptr: []const u8 = "many-pointer";
+    var s_slice: []const u8 = "slice";
+    var s_opt: []const u8 = "optional";
+    var s_eu: []const u8 = "error-union";
+    var s_es: []const u8 = "error-set";
+    var s_arr: []const u8 = "array";
+    var s_struct: []const u8 = "struct";
+    var s_enum: []const u8 = "enum";
+    var s_union: []const u8 = "union";
+    var s_tu: []const u8 = "tagged-union";
+    var s_fn: []const u8 = "function";
+    var s_tuple: []const u8 = "tuple";
+    var s_null: []const u8 = "null";
+    var s_nr: []const u8 = "noreturn";
+    var s_type: []const u8 = "type";
+    if (kind == type_mod.TypeKind.void_type) { return s_void; }
+    if (kind == type_mod.TypeKind.bool_type) { return s_bool; }
+    if (kind == type_mod.TypeKind.integer_literal_type) { return s_ctl; }
+    if (kind == type_mod.TypeKind.i8_type) { return s_i8; }
+    if (kind == type_mod.TypeKind.i16_type) { return s_i16; }
+    if (kind == type_mod.TypeKind.i32_type) { return s_i32; }
+    if (kind == type_mod.TypeKind.i64_type) { return s_i64; }
+    if (kind == type_mod.TypeKind.u8_type) { return s_u8_; }
+    if (kind == type_mod.TypeKind.u16_type) { return s_u16; }
+    if (kind == type_mod.TypeKind.u32_type) { return s_u32; }
+    if (kind == type_mod.TypeKind.u64_type) { return s_u64; }
+    if (kind == type_mod.TypeKind.f32_type) { return s_f32; }
+    if (kind == type_mod.TypeKind.f64_type) { return s_f64; }
+    if (kind == type_mod.TypeKind.ptr_type) { return s_ptr; }
+    if (kind == type_mod.TypeKind.many_ptr_type) { return s_mptr; }
+    if (kind == type_mod.TypeKind.slice_type) { return s_slice; }
+    if (kind == type_mod.TypeKind.optional_type) { return s_opt; }
+    if (kind == type_mod.TypeKind.error_union_type) { return s_eu; }
+    if (kind == type_mod.TypeKind.error_set_type) { return s_es; }
+    if (kind == type_mod.TypeKind.array_type) { return s_arr; }
+    if (kind == type_mod.TypeKind.struct_type) { return s_struct; }
+    if (kind == type_mod.TypeKind.enum_type) { return s_enum; }
+    if (kind == type_mod.TypeKind.union_type) { return s_union; }
+    if (kind == type_mod.TypeKind.tagged_union_type) { return s_tu; }
+    if (kind == type_mod.TypeKind.fn_type) { return s_fn; }
+    if (kind == type_mod.TypeKind.tuple_type) { return s_tuple; }
+    if (kind == type_mod.TypeKind.null_type) { return s_null; }
+    if (kind == type_mod.TypeKind.noreturn_type) { return s_nr; }
+    return s_type;
 }
