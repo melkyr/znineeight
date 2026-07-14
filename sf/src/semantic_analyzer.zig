@@ -1217,6 +1217,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
                node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign) {
         result = semanticAnalyzerResolveAssign(self, node_idx);
+    } else if (node.kind == AstKind.range_exclusive or node.kind == AstKind.range_inclusive) {
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
+        return type_mod.TYPE_U32;
      } else {
           var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
           var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
@@ -1357,6 +1360,7 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         var elem_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
         if (ty.kind == type_mod.TypeKind.slice_type) { elem_box[0] = self.registry.slice_items[@intCast(usize, ty.payload_idx)].elem; }
         else if (ty.kind == type_mod.TypeKind.array_type) { elem_box[0] = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem; }
+        else if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) { elem_box[0] = tid; }
         if (node.payload != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
             var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, node.payload);
             var fs_e_m: []const u8 = "FS:E"; pal_mod.markerWriteInt(fs_e_m, elem_box[0]);
