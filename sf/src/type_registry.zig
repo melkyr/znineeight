@@ -116,6 +116,7 @@ pub const TypeRegistry = struct {
     slice_cache: hash_mod.U64ToU32Map,
     optional_cache: hash_mod.U32ToU32Map,
     array_cache: hash_mod.U64ToU32Map,
+    eu_cache: hash_mod.U64ToU32Map,
 
     name_cache: hash_mod.U64ToU32Map,
 };
@@ -292,6 +293,7 @@ pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
         .slice_cache = hash_mod.u64ToU32MapInit(alloc),
         .optional_cache = hash_mod.u32ToU32MapInit(alloc),
         .array_cache = hash_mod.u64ToU32MapInit(alloc),
+        .eu_cache = hash_mod.u64ToU32MapInit(alloc),
         .name_cache = hash_mod.u64ToU32MapInit(alloc),
     };
     return reg;
@@ -406,6 +408,10 @@ pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32
 }
 
 pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, error_set: TypeId) u32 {
+    var eu_key: u64 = (@intCast(u64, payload) << @intCast(u64, 32)) | @intCast(u64, error_set);
+    if (hash_mod.u64ToU32MapGet(&self.eu_cache, eu_key)) |existing| {
+        return existing;
+    }
     var pay_type = self.types_items[payload];
     var eu_size: u32 = 0;
     var eu_align: u32 = 0;
@@ -420,12 +426,14 @@ pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, e
         eu_state = @intCast(u8, 2);
     }
     euAppend(self, EUPayload{ .payload = payload, .error_set = error_set });
-    return typeRegistryAppend(self, Type{
+    var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.error_union_type, .state = eu_state, .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
         .size = eu_size, .alignment = eu_align,
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.eu_len - @intCast(usize, 1)),
     });
+    hash_mod.u64ToU32MapPut(&self.eu_cache, eu_key, tid);
+    return tid;
 }
 
 pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u32) u32 {
