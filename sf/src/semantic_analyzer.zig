@@ -752,6 +752,21 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
     if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
+    if (ty.kind == type_mod.TypeKind.null_type and self.expected_type_stack_len > @intCast(u32, 0)) {
+        var expected = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - @intCast(u32, 1))];
+        if (expected != @intCast(u32, 0)) {
+            var oe_et = self.registry.types_items[@intCast(usize, expected)];
+            var payload_type: u32 = expected;
+            if (oe_et.kind == type_mod.TypeKind.optional_type) {
+                var oe_opt = self.registry.opt_items[@intCast(usize, oe_et.payload_idx)];
+                payload_type = oe_opt.payload;
+            }
+            var opt_target = type_mod.typeRegistryGetOrCreateOptional(self.registry, payload_type);
+            coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.wrap_optional_null, opt_target);
+            return payload_type;
+        }
+        return type_mod.TYPE_VOID;
+    }
     if (ty.kind != type_mod.TypeKind.optional_type) {
         return type_mod.TYPE_VOID;
     }
