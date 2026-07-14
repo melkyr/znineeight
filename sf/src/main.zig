@@ -243,6 +243,7 @@ fn runCompiler(ctx: *CompilerContext) void {
         var msg5: []const u8 = "K\n";
         pal.markerWrite(msg5);
     }
+    diag_mod.diagnosticCollectorPrintAll(ctx.diag);
 }
 
 fn phase_ImportResolution(ctx: *CompilerContext) void {

@@ -920,13 +920,13 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (lhs != type_mod.TYPE_VOID) {
             var sp = node.span_start;
             var ep = sp + @intCast(u32, node.span_len);
-            var tma_msg: []const u8 = "type mismatch in assignment";
+            var tma_msg: []const u8 = "type mismatch in assignment — internal type representations differ; generated code may be incorrect";
             var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1), @intCast(u16, 3000),
                 self.source_file_id, sp, ep, tma_msg);
             var sk = self.registry.types_items[@intCast(usize, eff_src)].kind;
             var tk = self.registry.types_items[@intCast(usize, lhs)].kind;
-            _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindToStr(sk));
-            _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindToStr(tk));
+            _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
+            _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
     }
     return type_mod.TYPE_VOID;
 }
@@ -1490,13 +1490,13 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     } else if (it != type_mod.TYPE_UNDEFINED and !type_mod.typeRegistryIsAssignable(self.registry, it, decl_type)) {
                         var sp = node.span_start;
                         var ep = sp + @intCast(u32, node.span_len);
-                        var tmd_msg: []const u8 = "type mismatch in variable declaration";
+                        var tmd_msg: []const u8 = "type mismatch in variable declaration — initialization type may not be compatible with declared type";
                         var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 1), @intCast(u16, 3000),
                             self.source_file_id, sp, ep, tmd_msg);
                         var sk = self.registry.types_items[@intCast(usize, it)].kind;
                         var tk = self.registry.types_items[@intCast(usize, decl_type)].kind;
-                        _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindToStr(sk));
-                        _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindToStr(tk));
+                        _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
+                        _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
                     }
                 }
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
