@@ -26,6 +26,7 @@ pub const SemanticAnalyzer = struct {
     symbols: *SymbolRegistry,
     store: *AstStore,
     module_id: u32,
+    source_file_id: u32,
     expected_type_stack_items: [*]TypeId,
     expected_type_stack_len: usize,
     expected_type_stack_cap: usize,
@@ -59,7 +60,7 @@ pub const SemanticAnalyzer = struct {
     align_of_name_id: u32,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
     var und_text: []const u8 = "_";
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     var pc_text: []const u8 = "@ptrCast";
@@ -87,6 +88,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .symbols = symbols,
         .store = store,
         .module_id = module_id,
+        .source_file_id = source_file_id,
         .expected_type_stack_items = undefined,
         .expected_type_stack_len = @intCast(usize, 0),
         .expected_type_stack_cap = @intCast(usize, 0),
@@ -920,7 +922,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var ep = sp + @intCast(u32, node.span_len);
             var tma_msg: []const u8 = "type mismatch in assignment";
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
-                self.module_id, sp, ep,
+                self.source_file_id, sp, ep,
                 tma_msg);
     }
     return type_mod.TYPE_VOID;
@@ -954,7 +956,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
             var swec_msg: []const u8 = "switch else-prong capture (else => |capture|) is not supported";
-            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3001), @intCast(u32, 0), node_idx, node_idx, swec_msg);
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3001), self.source_file_id, node_idx, node_idx, swec_msg);
             return type_mod.TYPE_VOID;
         }
         var pct = self.current_switch_cond_tu; var pp = prong.payload;
@@ -1242,7 +1244,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
           var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
           var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
            var unr_msg: []const u8 = "internal error: unhandled node kind in type resolution";
-           _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3020), @intCast(u32, 0), node_idx, node_idx, unr_msg);
+           _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3020), self.source_file_id, node_idx, node_idx, unr_msg);
            return type_mod.TYPE_VOID;
      }
 
@@ -1487,7 +1489,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         var ep = sp + @intCast(u32, node.span_len);
                         var tmd_msg: []const u8 = "type mismatch in variable declaration";
                         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
-                            self.module_id, sp, ep,
+                            self.source_file_id, sp, ep,
                             tmd_msg);
                     }
                 }

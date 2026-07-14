@@ -104,9 +104,8 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
                 continue;
             };
 
-            entry.ast_root = ast_root;
-            entry.state = mr_mod.ModuleState.parsed;
-            reg.modules.items[mod_id] = entry;
+            reg.modules.items[mod_id].ast_root = ast_root;
+            reg.modules.items[mod_id].state = mr_mod.ModuleState.parsed;
 
             var root = shared_store.nodes.items[@intCast(usize, ast_root)];
             if (root.kind == AstKind.module_root) {
