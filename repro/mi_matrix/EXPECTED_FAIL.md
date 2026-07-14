@@ -1,7 +1,7 @@
 # mi_matrix corpus — expected-fail manifest (v4 idiomatic baseline)
 
 ## Totals (138 repros)
-- **CURRENT: OK=137 / FAIL=5 / ICE=0 / CRASH=0** (2026-07-14: sema-diagnostics v2 — range handler fixes typeres_unhandled_node, ERR_3000→warning unblocks euvoid_val_catch, source/target type notes, diagnostic print at normal exit)
+- **CURRENT: OK=136 / FAIL=5 / ICE=1 / CRASH=0** (2026-07-14: sema-diagnostics v2 — range handler fixes typeres_unhandled_node, clearer type-mismatch warnings with source/target notes, diagnostic print at normal exit. euvoid_val_catch ICE renumbered 48→ERR_9001_ICE (3042) — same crash, different code, gate pattern updated.)
 - Prior: OK=122 / FAIL=15 / ICE=1 / CRASH=0 (2026-07-13: xmod_field_store_index fixed; see EX1 fix)
 - Prior (132 repros): OK=117 / FAIL=14 / ICE=1 / CRASH=0 (v4 idiomatic baseline) — UNCHANGED by the 6 additions (no existing repro reclassified).
 - OLD (@as-era): OK=72 / FAIL=38 / CRASH=22
@@ -9,9 +9,9 @@
 
 ---
 
-## ICE (0 — CLEAR)
+## ICE (1 — `error[3042]` ERR_9001_ICE, invalid temp index 0)
 
-- `euvoid_val_catch` — **FIXED (2026-07-14)** — `error[48]` invalid temp index 0. Warnings (ERR_3000 at level 1) no longer halt the pipeline; euvoid_val_catch now emits valid C that gcc compiles. Original root cause (lowerExprImpl returns 0) remains but pipeline now recovers.
+- `euvoid_val_catch` — `error[3042]`: invalid temp index 0 (len 0). Root cause: `lowerExprImpl` returns temp 0 for `AstKind.error_literal`, flowing into `materializeInto` → `getTempType(0)` where `hoisted_temps` has no entry 0. ICE renumbered from hardcoded 48 to `ERR_9001_ICE` (3042) during sema-diagnostics v2. Dump rc=3, 0 bytes C output. Also produces a sema warning[3000] (type mismatch) but ICE fires regardless at lowerer.
 
 ---
 
