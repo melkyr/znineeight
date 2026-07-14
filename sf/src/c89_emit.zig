@@ -602,15 +602,14 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.optional_type) {
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
         var pay_ty = reg.types_items[@intCast(usize, op.payload)];
-        var pay_mid = nameManglerMangle(mangler, pay_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
-        var pay_mangled = interner_mod.stringInternerGet(mangler.interner, pay_mid);
+        var pay_cname = getCTypeName(reg, mangler, op.payload);
         var buf: [64]u8 = undefined;
         var p: usize = @intCast(usize, 0);
         var pref: []const u8 = "Opt_";
         var pi: usize = @intCast(usize, 0);
         while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
         var ei: usize = @intCast(usize, 0);
-        while (ei < pay_mangled.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) { buf[p] = pay_mangled[ei]; p += @intCast(usize, 1); }
+        while (ei < pay_cname.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) { var ac = pay_cname[ei]; if (ac == 42) { ac = '_'; } buf[p] = ac; p += @intCast(usize, 1); }
         if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
         var opt_nid = interner_mod.stringInternerIntern(mangler.interner, buf[0..p]);
         var mangled_id = nameManglerMangle(mangler, opt_nid, @intCast(u8, 2), @intCast(u32, 0));
@@ -1335,8 +1334,7 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var insta_ot_b: [10]u8 = undefined; var insta_ot_l = itoa_mod.itoa(op.payload, insta_ot_b[0..]); var insta_ot_s: usize = @intCast(usize, 9) - @intCast(usize, insta_ot_l); pal.markerWrite(insta_ot_b[insta_ot_s..@intCast(usize, 9)]);
     var insta_ot_n: []const u8 = "\n"; pal.markerWrite(insta_ot_n);
     var pay_ty = reg.types_items[@intCast(usize, op.payload)];
-    var pay_mid = nameManglerMangle(emitter.mangler, pay_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
-    var pay_mangled = interner_mod.stringInternerGet(emitter.interner, pay_mid);
+    var pay_cname = getCTypeName(reg, emitter.mangler, op.payload);
     var buf: [64]u8 = undefined;
     var p: usize = @intCast(usize, 0);
     var pref: []const u8 = "Opt_";
@@ -1345,8 +1343,8 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
         buf[p] = pref[pi]; p += @intCast(usize, 1);
     }
     var ei: usize = @intCast(usize, 0);
-    while (ei < pay_mangled.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) {
-        buf[p] = pay_mangled[ei]; p += @intCast(usize, 1);
+    while (ei < pay_cname.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) {
+        var ac = pay_cname[ei]; if (ac == 42) { ac = '_'; } buf[p] = ac; p += @intCast(usize, 1);
     }
     if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
     var opt_nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
