@@ -39,7 +39,7 @@ For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89`, then
 `gcc -m32 -std=c89 -c -Wno-long-long -Wno-pointer-sign -I sf/src/include` the output.
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
-- `dump` rc≥128 = CRASH; stderr matching `error\[48\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
+- `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
 - **Baseline: `OK=117 FAIL=14 ICE=1 CRASH=0`** (the 1 ICE is the pre-existing `euvoid_val_catch`
   "invalid temp index 0"). Must stay `117/14/1/0` or improve.
 
