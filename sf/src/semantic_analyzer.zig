@@ -905,6 +905,14 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
         return lhs;
     }
     var as2: []const u8 = "AS2"; pal_mod.markerWrite(as2);
+    if (eff_src != type_mod.TYPE_INT_LIT or lhs != type_mod.TYPE_C_CHAR) {
+        if (lhs != type_mod.TYPE_VOID) {
+            var tma_msg: []const u8 = "type mismatch in assignment";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
+                self.module_id, @intCast(u32, 0), @intCast(u32, 0),
+                tma_msg);
+        }
+    }
     return type_mod.TYPE_VOID;
 }
 
@@ -1464,6 +1472,11 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
                     if (ck != coercion_mod.CoercionKind.none) {
                         coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
+                    } else if (it != type_mod.TYPE_UNDEFINED and !type_mod.typeRegistryIsAssignable(self.registry, it, decl_type)) {
+                        var tmd_msg: []const u8 = "type mismatch in variable declaration";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
+                            self.module_id, @intCast(u32, 0), @intCast(u32, 0),
+                            tmd_msg);
                     }
                 }
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
