@@ -894,6 +894,16 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var ase: []const u8 = "ASE"; pal_mod.markerWrite(ase);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+    if (node.child_0 != @intCast(u32, 0)) {
+        var lhs_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+        if (lhs_node.kind == AstKind.ident_expr) {
+            var us_str: []const u8 = "_";
+            if (self.store.identifiers.items[@intCast(usize, lhs_node.payload)] == interner_mod.stringInternerIntern(self.interner, us_str)) {
+                _ = semanticAnalyzerResolveExpr(self, node.child_1);
+                return type_mod.TYPE_VOID;
+            }
+        }
+    }
     pushExpectedType(self, lhs);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     popExpectedType(self);
@@ -905,13 +915,13 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
         return lhs;
     }
     var as2: []const u8 = "AS2"; pal_mod.markerWrite(as2);
-    if (eff_src != type_mod.TYPE_INT_LIT or lhs != type_mod.TYPE_C_CHAR) {
-        if (lhs != type_mod.TYPE_VOID) {
+    if (lhs != type_mod.TYPE_VOID) {
+            var sp = node.span_start;
+            var ep = sp + @intCast(u32, node.span_len);
             var tma_msg: []const u8 = "type mismatch in assignment";
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
-                self.module_id, @intCast(u32, 0), @intCast(u32, 0),
+                self.module_id, sp, ep,
                 tma_msg);
-        }
     }
     return type_mod.TYPE_VOID;
 }
@@ -1473,9 +1483,11 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     if (ck != coercion_mod.CoercionKind.none) {
                         coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
                     } else if (it != type_mod.TYPE_UNDEFINED and !type_mod.typeRegistryIsAssignable(self.registry, it, decl_type)) {
+                        var sp = node.span_start;
+                        var ep = sp + @intCast(u32, node.span_len);
                         var tmd_msg: []const u8 = "type mismatch in variable declaration";
                         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
-                            self.module_id, @intCast(u32, 0), @intCast(u32, 0),
+                            self.module_id, sp, ep,
                             tmd_msg);
                     }
                 }

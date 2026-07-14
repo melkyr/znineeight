@@ -117,6 +117,7 @@ pub const TypeRegistry = struct {
     optional_cache: hash_mod.U32ToU32Map,
     array_cache: hash_mod.U64ToU32Map,
     eu_cache: hash_mod.U64ToU32Map,
+    es_cache: hash_mod.U64ToU32Map,
 
     name_cache: hash_mod.U64ToU32Map,
 };
@@ -294,6 +295,7 @@ pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
         .optional_cache = hash_mod.u32ToU32MapInit(alloc),
         .array_cache = hash_mod.u64ToU32MapInit(alloc),
         .eu_cache = hash_mod.u64ToU32MapInit(alloc),
+        .es_cache = hash_mod.u64ToU32MapInit(alloc),
         .name_cache = hash_mod.u64ToU32MapInit(alloc),
     };
     return reg;
@@ -520,13 +522,22 @@ pub fn typeRegistryMarkFnPtrUsed(self: *TypeRegistry, tid: u32) void {
 }
 
 pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u16, tags_count: u16) u32 {
+    var key: u64 = @intCast(u64, tags_count);
+    var ki: u16 = 0;
+    while (ki < tags_count) : (ki += 1) {
+        var tag = self.xn_items[@intCast(usize, tags_start + ki)];
+        key = (key ^ @intCast(u64, tag)) * @intCast(u64, 1099511628211);
+    }
+    if (hash_mod.u64ToU32MapGet(&self.es_cache, key)) |existing| return existing;
     esAppend(self, ErrorSetPayload{ .tags_start = tags_start, .tags_count = tags_count });
-    return typeRegistryAppend(self, Type{
+    var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.error_set_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.es_len - @intCast(usize, 1)),
     });
+    hash_mod.u64ToU32MapPut(&self.es_cache, key, tid);
+    return tid;
 }
 
 pub fn typeRegistryGetOrCreateModule(self: *TypeRegistry, module_id: u32) u32 {
@@ -761,6 +772,7 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     var src = self.types_items[@intCast(usize, source)];
     var tgt = self.types_items[@intCast(usize, target)];
     if (src.kind == TypeKind.integer_literal_type and typeRegistryIsNumeric(self, target)) return true;
+    if (src.kind == TypeKind.integer_literal_type and target == TYPE_C_CHAR) return true;
     if (typeRegistryIsInteger(self, source) and typeRegistryIsInteger(self, target) and source != TYPE_INT_LIT) {
         if (typeRegistryIsUnsigned(self, source) == typeRegistryIsUnsigned(self, target) and src.size < tgt.size) return true;
     }
