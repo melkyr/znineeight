@@ -767,6 +767,13 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         if (typeRegistryIsAssignable(self, source, opt.payload)) return true;
         if (src.kind == TypeKind.null_type) return true;
     }
+    if (src.kind == TypeKind.error_union_type and tgt.kind == TypeKind.error_union_type) {
+        var eu_src: EUPayload = self.eu_items[@intCast(usize, src.payload_idx)];
+        var eu_tgt: EUPayload = self.eu_items[@intCast(usize, tgt.payload_idx)];
+        if (eu_src.error_set == eu_tgt.error_set) {
+            return typeRegistryIsAssignable(self, eu_src.payload, eu_tgt.payload);
+        }
+    }
     if (tgt.kind == TypeKind.error_union_type) {
         var eu: EUPayload = self.eu_items[@intCast(usize, tgt.payload_idx)];
         if (typeRegistryIsAssignable(self, source, eu.payload)) return true;
