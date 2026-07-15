@@ -1777,10 +1777,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var target_mod = s.module_id;
                     var res_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod, field_name_id);
                     if (res_sym) |ts| {
-                        var res_type_id = ts.type_id;
-                        if (res_type_id != @intCast(u32, 0)) {
-                            var gtemp = nextTemp(self, res_type_id);
-                            return gtemp;
+                        if (ts.kind == sym_mod.SymbolKind.type_alias) {
+                            var res_type_id = ts.type_id;
+                            if (res_type_id != @intCast(u32, 0)) {
+                                var gtemp = nextTemp(self, res_type_id);
+                                return gtemp;
+                            }
                         }
                     }
                 }
