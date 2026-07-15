@@ -1871,6 +1871,49 @@ fn testErrdeferNotExecuted() void {
     ok(emsg);
 }
 
+fn testErrorSetMemberIndex() void {
+    var arena = alloc_mod.sandInit(perm_buf[0..]);
+    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
+    var source_man = sm_mod.sourceManagerInit(&diag_sand);
+    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
+    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+
+    var fnf_s: []const u8 = "FileNotFound";
+    var oom_s: []const u8 = "OutOfMemory";
+    var non_s: []const u8 = "NonExistent";
+    var fnf_id = interner_mod.stringInternerIntern(&interner, fnf_s);
+    var oom_id = interner_mod.stringInternerIntern(&interner, oom_s);
+    var non_id = interner_mod.stringInternerIntern(&interner, non_s);
+
+    type_mod.xnAppend(&typereg, fnf_id);
+    type_mod.xnAppend(&typereg, oom_id);
+    var es_type_id = type_mod.typeRegistryGetOrCreateErrorSet(&typereg, @intCast(u16, 0), @intCast(u16, 2));
+
+    var mi1 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, es_type_id, fnf_id);
+    if (mi1 != @intCast(u32, 0)) { fail("testESMemberIndex: FileNotFound not ordinal 0"); return; }
+
+    var mi2 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, es_type_id, oom_id);
+    if (mi2 != @intCast(u32, 1)) { fail("testESMemberIndex: OutOfMemory not ordinal 1"); return; }
+
+    var mi3 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, es_type_id, non_id);
+    if (mi3 != @intCast(u32, 0xFFFFFFFF)) { fail("testESMemberIndex: unknown name not sentinel"); return; }
+
+    var mi4 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, type_mod.TYPE_VOID, fnf_id);
+    if (mi4 != @intCast(u32, 0xFFFFFFFF)) { fail("testESMemberIndex: non-es type not sentinel"); return; }
+
+    var unpop_name_s: []const u8 = "UnpopES";
+    var unpop_name_id = interner_mod.stringInternerIntern(&interner, unpop_name_s);
+    var unpop_es_tid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 9999), unpop_name_id, type_mod.TypeKind.error_set_type);
+    var mi5 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, unpop_es_tid, fnf_id);
+    if (mi5 != @intCast(u32, 0xFFFFFFFF)) { fail("testESMemberIndex: unpopulated es not sentinel"); return; }
+
+    var emsg: []const u8 = "testErrorSetMemberIndex";
+    ok(emsg);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testResolveIntLiteral();
@@ -1946,6 +1989,7 @@ pub fn main() void {
     testDeferPushedNotWalked();
     testDeferExecutedAtExit();
     testErrdeferNotExecuted();
+    testErrorSetMemberIndex();
     var msg: []const u8 = "Semantic analysis tests passed.\n";
     pal.stdout_write(msg);
 }

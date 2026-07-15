@@ -267,6 +267,13 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                             }
                         }
                     }
+                    if (aty.kind == type_mod.TypeKind.error_set_type) {
+                        var es_mi = type_mod.typeRegistryErrorSetMemberIndex(self.registry, alias_type_id, field_name_id);
+                        if (es_mi != @intCast(u32, 0xFFFFFFFF)) {
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, alias_type_id);
+                            return alias_type_id;
+                        }
+                    }
                 }
             }
             if (s.kind == sym_mod.SymbolKind.module) {
@@ -439,6 +446,14 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, pty);
             return pty;
         }
+    } else if (base_ty.kind == type_mod.TypeKind.error_set_type) {
+        var es_mi2 = type_mod.typeRegistryErrorSetMemberIndex(self.registry, base_type_id, field_name_id);
+        if (es_mi2 != @intCast(u32, 0xFFFFFFFF)) {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, base_type_id);
+            return base_type_id;
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
     } else {
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);

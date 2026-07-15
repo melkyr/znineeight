@@ -540,6 +540,22 @@ pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u16, tag
     return tid;
 }
 
+pub fn typeRegistryErrorSetMemberIndex(reg: *TypeRegistry, es_type_id: u32, name_id: u32) u32 {
+    if (es_type_id >= @intCast(u32, reg.types_len)) return @intCast(u32, 0xFFFFFFFF);
+    var ty = reg.types_items[@intCast(usize, es_type_id)];
+    if (ty.kind != TypeKind.error_set_type) return @intCast(u32, 0xFFFFFFFF);
+    if (ty.payload_idx >= @intCast(u32, reg.es_len)) return @intCast(u32, 0xFFFFFFFF);
+    var es_payload = reg.es_items[@intCast(usize, ty.payload_idx)];
+    var tags_start: usize = @intCast(usize, es_payload.tags_start);
+    var tags_count: usize = @intCast(usize, es_payload.tags_count);
+    if (tags_start + tags_count > reg.xn_len) return @intCast(u32, 0xFFFFFFFF);
+    var i: usize = 0;
+    while (i < tags_count) : (i += 1) {
+        if (reg.xn_items[tags_start + i] == name_id) return @intCast(u32, i);
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
 pub fn typeRegistryGetOrCreateModule(self: *TypeRegistry, module_id: u32) u32 {
     var i: usize = 0;
     while (i < self.types_len) : (i += 1) {
