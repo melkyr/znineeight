@@ -1783,6 +1783,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 var gtemp = nextTemp(self, res_type_id);
                                 return gtemp;
                             }
+                        } else if (ts.kind == sym_mod.SymbolKind.function) {
+                            var fn_type_id = ts.type_id;
+                            if (fn_type_id != @intCast(u32, 0)) {
+                                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fn_type_id);
+                                var fr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fn_type_id, false);
+                                var fr_res = nextTemp(self, fr_pt);
+                                emitInst(self, LirInst{ .func_ref = .{ .name_id = ts.name_id, .module_id = target_mod, .result = fr_res } });
+                                return fr_res;
+                            }
                         }
                     }
                 }
