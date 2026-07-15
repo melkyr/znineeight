@@ -192,6 +192,26 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         ty.payload_idx = en_idx;
         type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
     }
+    if (decl_kind == AstKind.error_set_decl) {
+        var member_count: u32 = 0;
+        var xi: usize = 0;
+        while (xi < children.len) : (xi += 1) {
+            var cnode = store.nodes.items[@intCast(usize, children[xi])];
+            if (cnode.kind == AstKind.field_decl) {
+                type_mod.xnAppend(type_reg, cnode.payload);
+                member_count += 1;
+            }
+        }
+        type_mod.esAppend(type_reg, type_mod.ErrorSetPayload{
+            .tags_start = @intCast(u16, type_reg.xn_len - @intCast(usize, member_count)),
+            .tags_count = @intCast(u16, member_count),
+        });
+        var es_last: usize = type_reg.es_len - @intCast(usize, 1);
+        var es_idx: u32 = @intCast(u32, es_last);
+        var ty: type_mod.Type = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+        ty.payload_idx = es_idx;
+        type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+    }
 }
 
 fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, mod_id: u32, decl_idx: u32, g: *DepGraph, reg: *mr_mod.ModuleRegistry) void {
