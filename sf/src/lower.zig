@@ -1569,8 +1569,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       }
                       return lowerGlobalRef(self, s.*, name_id);
                 } else if (s.kind == sym_mod.SymbolKind.module) {
+                    var mtemp = nextTemp(self, s.type_id);
                     var m1m: []const u8 = "M1:"; pal.markerWrite(m1m);
-                    return type_mod.TYPE_UNDEFINED;
+                    return mtemp;
                 } else if (s.kind == sym_mod.SymbolKind.function) {
                     var s_t: u32 = s.type_id;
                     if (s_t != @intCast(u32, 0)) {
@@ -1590,7 +1591,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                     return type_mod.TYPE_UNDEFINED;
                 } else if (s.kind == sym_mod.SymbolKind.type_alias) {
-                    return type_mod.TYPE_UNDEFINED;
+                    var atemp = nextTemp(self, s.type_id);
+                    return atemp;
                 }
          }
         }
@@ -1756,25 +1758,29 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 }
                             }
                         }
-                        if (ty.kind == type_mod.TypeKind.error_set_type) {
-                            if (@intCast(usize, ty.payload_idx) < self.ctx.registry.es_len) {
-                                var esp = self.ctx.registry.es_items[@intCast(usize, ty.payload_idx)];
-                                var estart: usize = @intCast(usize, esp.tags_start);
-                                var ecount: usize = @intCast(usize, esp.tags_count);
-                                var ei: usize = 0;
-                                while (ei < ecount and estart + ei < self.ctx.registry.xn_len) : (ei += 1) {
-                                    if (self.ctx.registry.xn_items[estart + ei] == field_name_id) {
-                                        var eftid = nextTemp(self, type_id);
-                                        emitInst(self, LirInst{ .enum_const = .{
-                                            .value = @intCast(u64, ei),
-                                            .result = eftid,
-                                            .type_id = type_id,
-                                            .member_name_id = field_name_id,
-                                        }});
-                                        return eftid;
-                                    }
-                                }
+                         if (ty.kind == type_mod.TypeKind.error_set_type) {
+                            var ordinal = type_mod.typeRegistryErrorSetMemberIndex(self.ctx.registry, type_id, field_name_id);
+                            if (ordinal != @intCast(u32, 0xFFFFFFFF)) {
+                                var eftid = nextTemp(self, type_id);
+                                emitInst(self, LirInst{ .enum_const = .{
+                                    .value = @intCast(u64, ordinal),
+                                    .result = eftid,
+                                    .type_id = type_id,
+                                    .member_name_id = field_name_id,
+                                }});
+                                return eftid;
                             }
+                        }
+                    }
+                }
+                if (s.kind == sym_mod.SymbolKind.module) {
+                    var target_mod = s.module_id;
+                    var res_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod, field_name_id);
+                    if (res_sym) |ts| {
+                        var res_type_id = ts.type_id;
+                        if (res_type_id != @intCast(u32, 0)) {
+                            var gtemp = nextTemp(self, res_type_id);
+                            return gtemp;
                         }
                     }
                 }
@@ -1782,11 +1788,30 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var base_temp = lowerExpr(self, node.child_0);
         if (base_temp == type_mod.TYPE_UNDEFINED or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
+            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0) == null) {
             var np_msg: []const u8 = "non-value base expression in field access";
             _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3042),
                 @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), np_msg);
             var dummy = nextTemp(self, type_mod.TYPE_VOID);
             return dummy;
+            }
+        }
+        var base_ty = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+        if (base_ty != type_mod.TYPE_UNDEFINED) {
+            var bty = self.ctx.registry.types_items[@intCast(usize, base_ty)];
+            if (bty.kind == type_mod.TypeKind.error_set_type) {
+                var es_ordinal = type_mod.typeRegistryErrorSetMemberIndex(self.ctx.registry, base_ty, field_name_id);
+                if (es_ordinal != @intCast(u32, 0xFFFFFFFF)) {
+                    var eftid2 = nextTemp(self, base_ty);
+                    emitInst(self, LirInst{ .enum_const = .{
+                        .value = @intCast(u64, es_ordinal),
+                        .result = eftid2,
+                        .type_id = base_ty,
+                        .member_name_id = field_name_id,
+                    }});
+                    return eftid2;
+                }
+            }
         }
         var gape_fac: []const u8 = "GAPE:fac\n"; pal.markerWrite(gape_fac);
         var fabs_m: []const u8 = "FABS:bt"; pal.markerWrite(fabs_m);

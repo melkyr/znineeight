@@ -192,6 +192,22 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         ty.payload_idx = en_idx;
         type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
     }
+    if (decl_kind == AstKind.error_set_decl) {
+        var tags_start_idx: u16 = @intCast(u16, type_reg.xn_len);
+        var i: usize = 0;
+        while (i < children.len) : (i += 1) {
+            type_mod.xnAppend(type_reg, children[i]);
+        }
+        type_mod.esAppend(type_reg, type_mod.ErrorSetPayload{
+            .tags_start = tags_start_idx,
+            .tags_count = @intCast(u16, children.len),
+        });
+        var es_last: usize = type_reg.es_len - @intCast(usize, 1);
+        var es_idx: u32 = @intCast(u32, es_last);
+        var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+        ty.payload_idx = es_idx;
+        type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+    }
 }
 
 fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, mod_id: u32, decl_idx: u32, g: *DepGraph, reg: *mr_mod.ModuleRegistry) void {
@@ -341,6 +357,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         AstKind.error_set_decl => {
             var name_id = node.payload;
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, TypeKind.error_set_type);
+            populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg);
             var sym = sym_mod.Symbol{
                 .name_id = name_id,
                 .type_id = tid,
