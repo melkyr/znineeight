@@ -3054,6 +3054,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
+    } else if (node.kind == AstKind.block) {
+        var void_temp = nextTemp(self, type_mod.TYPE_VOID);
+        lowerStmtBody(self, node_idx);
+        return void_temp;
     } else {
         return @intCast(u32, 0);
     }
