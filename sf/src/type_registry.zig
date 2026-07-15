@@ -194,7 +194,7 @@ fn euAppend(self: *TypeRegistry, v: EUPayload) void {
     payloadEnsure(@ptrCast(*[*]u8, &self.eu_items), &self.eu_len, &self.eu_cap, self.types_alloc, @sizeOf(EUPayload), self.eu_len + 1);
     self.eu_items[self.eu_len] = v; self.eu_len += 1;
 }
-pub fn esAppend(self: *TypeRegistry, v: ErrorSetPayload) void {
+fn esAppend(self: *TypeRegistry, v: ErrorSetPayload) void {
     payloadEnsure(@ptrCast(*[*]u8, &self.es_items), &self.es_len, &self.es_cap, self.types_alloc, @sizeOf(ErrorSetPayload), self.es_len + 1);
     self.es_items[self.es_len] = v; self.es_len += 1;
 }

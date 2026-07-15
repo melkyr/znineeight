@@ -267,18 +267,6 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                             }
                         }
                     }
-                    if (aty.kind == type_mod.TypeKind.error_set_type) {
-                        var esp = self.registry.es_items[@intCast(usize, aty.payload_idx)];
-                        var estart: usize = @intCast(usize, esp.tags_start);
-                        var ecount: usize = @intCast(usize, esp.tags_count);
-                        var ei: usize = 0;
-                        while (ei < ecount) : (ei += 1) {
-                            if (self.registry.xn_items[estart + ei] == field_name_id) {
-                                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, alias_type_id);
-                                return alias_type_id;
-                            }
-                        }
-                    }
                 }
             }
             if (s.kind == sym_mod.SymbolKind.module) {
@@ -386,17 +374,6 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var tp = self.registry.tu_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, tp.fields_start);
         fields_count = @intCast(usize, tp.fields_count);
-    } else if (base_ty.kind == type_mod.TypeKind.error_set_type) {
-        var esp = self.registry.es_items[@intCast(usize, base_ty.payload_idx)];
-        var estart: usize = @intCast(usize, esp.tags_start);
-        var ecount: usize = @intCast(usize, esp.tags_count);
-        var ei: usize = 0;
-        while (ei < ecount) : (ei += 1) {
-            if (self.registry.xn_items[estart + ei] == field_name_id) {
-                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, base_type_id);
-                return base_type_id;
-            }
-        }
     } else if (base_ty.kind == type_mod.TypeKind.module_type) {
         var mfa: []const u8 = "MFA\n"; pal_mod.markerWrite(mfa);
         var mod_field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, base_ty.module_id, field_name_id);
@@ -1511,9 +1488,6 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     else {
                         var tre_env_vd = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
                         decl_type = type_resolver.resolveTypeExprFull(&tre_env_vd, node.child_0, @intCast(u32, 0));
-                        if (decl_type != type_mod.TYPE_UNDEFINED) {
-                            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, decl_type);
-                        }
                     }
                 }
             }

@@ -601,15 +601,16 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     }
     if (ty.kind == TypeKind.optional_type) {
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
-        var pay_ty = reg.types_items[@intCast(usize, op.payload)];
-        var pay_cname = getCTypeName(reg, mangler, op.payload);
         var buf: [64]u8 = undefined;
         var p: usize = @intCast(usize, 0);
         var pref: []const u8 = "Opt_";
         var pi: usize = @intCast(usize, 0);
         while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
-        var ei: usize = @intCast(usize, 0);
-        while (ei < pay_cname.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) { var ac = pay_cname[ei]; if (ac == 42) { ac = '_'; } buf[p] = ac; p += @intCast(usize, 1); }
+        var ps_b: [10]u8 = undefined;
+        var ps_len = itoa_mod.itoa(op.payload, ps_b[0..]);
+        var ps_s: usize = @intCast(usize, 9) - @intCast(usize, ps_len);
+        var wi: usize = @intCast(usize, 0);
+        while (wi < @intCast(usize, ps_len) and p < @intCast(usize, 63)) : (wi += @intCast(usize, 1)) { buf[p] = ps_b[ps_s + wi]; p += @intCast(usize, 1); }
         if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
         var opt_nid = interner_mod.stringInternerIntern(mangler.interner, buf[0..p]);
         var mangled_id = nameManglerMangle(mangler, opt_nid, @intCast(u8, 2), @intCast(u32, 0));
@@ -683,10 +684,6 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var fp_nid = interner_mod.stringInternerIntern(mangler.interner, fbuf[0..fpos]);
         var fp_mid = nameManglerMangle(mangler, fp_nid, @intCast(u8, 2), @intCast(u32, 0));
         return interner_mod.stringInternerGet(mangler.interner, fp_mid);
-    }
-    if (ty.kind == type_mod.TypeKind.error_set_type) {
-        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
-        return interner_mod.stringInternerGet(mangler.interner, mid);
     }
     var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
@@ -1206,7 +1203,6 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.slice_type) { emitSliceType(emitter, tid); return; }
     if (ty.kind == TypeKind.optional_type) { var vfo1_m: []const u8 = "VFLOW:oTV\n"; pal.markerWrite(vfo1_m); emitOptionalType(emitter, tid); return; }
     if (ty.kind == TypeKind.error_union_type) { emitErrorUnionType(emitter, tid); return; }
-    if (ty.kind == TypeKind.error_set_type) { emitErrorSetType(emitter, tid); return; }
     if (ty.kind == TypeKind.tagged_union_type) { emitTaggedUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.enum_type) { emitEnumType(emitter, tid); return; }
     if (ty.kind == TypeKind.struct_type) { emitStructType(emitter, tid); return; }
@@ -1249,34 +1245,6 @@ fn emitFnPtrType(emitter: *C89Emitter, tid: u32) void {
         }
     }
     var s_end: []const u8 = ");\n"; bufferedWriterWrite(&emitter.writer, s_end);
-}
-
-fn emitErrorSetType(emitter: *C89Emitter, tid: u32) void {
-    var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    var esp = emitter.registry.es_items[@intCast(usize, ty.payload_idx)];
-    var cname = getCTypeName(emitter.registry, emitter.mangler, tid);
-    var td: []const u8 = "typedef int "; bufferedWriterWrite(&emitter.writer, td);
-    bufferedWriterWrite(&emitter.writer, cname);
-    var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
-    var ei: usize = @intCast(usize, 0);
-    var value: u32 = @intCast(u32, 0);
-    while (ei < @intCast(usize, esp.tags_count)) : (ei += @intCast(usize, 1)) {
-        var mname_id = emitter.registry.xn_items[@intCast(usize, esp.tags_start) + ei];
-        var mname = interner_mod.stringInternerGet(emitter.interner, mname_id);
-        var def: []const u8 = "#define "; bufferedWriterWrite(&emitter.writer, def);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var us: []const u8 = "_"; bufferedWriterWrite(&emitter.writer, us);
-        bufferedWriterWrite(&emitter.writer, mname);
-        var sp: []const u8 = " "; bufferedWriterWrite(&emitter.writer, sp);
-        var val_itoa: [16]u8 = undefined;
-        var val_len = itoa_mod.itoa(value, val_itoa[0..]);
-        var val_start: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, val_len);
-        var val_end: usize = val_start + @intCast(usize, val_len);
-        bufferedWriterWrite(&emitter.writer, val_itoa[val_start..val_end]);
-        value += @intCast(u32, 1);
-        var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
-    }
-    var nl2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl2);
 }
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
@@ -1367,7 +1335,6 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var insta_ot_b: [10]u8 = undefined; var insta_ot_l = itoa_mod.itoa(op.payload, insta_ot_b[0..]); var insta_ot_s: usize = @intCast(usize, 9) - @intCast(usize, insta_ot_l); pal.markerWrite(insta_ot_b[insta_ot_s..@intCast(usize, 9)]);
     var insta_ot_n: []const u8 = "\n"; pal.markerWrite(insta_ot_n);
     var pay_ty = reg.types_items[@intCast(usize, op.payload)];
-    var pay_cname = getCTypeName(reg, emitter.mangler, op.payload);
     var buf: [64]u8 = undefined;
     var p: usize = @intCast(usize, 0);
     var pref: []const u8 = "Opt_";
@@ -1375,10 +1342,11 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) {
         buf[p] = pref[pi]; p += @intCast(usize, 1);
     }
-    var ei: usize = @intCast(usize, 0);
-    while (ei < pay_cname.len and p < @intCast(usize, 63)) : (ei += @intCast(usize, 1)) {
-        var ac = pay_cname[ei]; if (ac == 42) { ac = '_'; } buf[p] = ac; p += @intCast(usize, 1);
-    }
+    var ps_b: [10]u8 = undefined;
+    var ps_len = itoa_mod.itoa(op.payload, ps_b[0..]);
+    var ps_s: usize = @intCast(usize, 9) - @intCast(usize, ps_len);
+    var wi: usize = @intCast(usize, 0);
+    while (wi < @intCast(usize, ps_len) and p < @intCast(usize, 63)) : (wi += @intCast(usize, 1)) { buf[p] = ps_b[ps_s + wi]; p += @intCast(usize, 1); }
     if (p > @intCast(usize, 63)) p = @intCast(usize, 63);
     var opt_nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
     var mangled_id = nameManglerMangle(emitter.mangler, opt_nid, @intCast(u8, 2), @intCast(u32, 0));

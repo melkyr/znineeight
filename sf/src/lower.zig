@@ -1778,19 +1778,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                     }
                 }
-                if (s.kind == sym_mod.SymbolKind.module) {
-                    var target_mod = s.module_id;
-                    var res_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod, field_name_id);
-                    if (res_sym) |ts| {
-                        if (ts.kind == sym_mod.SymbolKind.type_alias) {
-                            var res_type_id = ts.type_id;
-                            if (res_type_id != @intCast(u32, 0)) {
-                                var gtemp = nextTemp(self, res_type_id);
-                                return gtemp;
-                            }
-                        }
-                    }
-                }
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
