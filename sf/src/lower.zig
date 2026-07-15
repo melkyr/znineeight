@@ -1756,11 +1756,38 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 }
                             }
                         }
+                        if (ty.kind == type_mod.TypeKind.error_set_type) {
+                            if (@intCast(usize, ty.payload_idx) < self.ctx.registry.es_len) {
+                                var esp = self.ctx.registry.es_items[@intCast(usize, ty.payload_idx)];
+                                var estart: usize = @intCast(usize, esp.tags_start);
+                                var ecount: usize = @intCast(usize, esp.tags_count);
+                                var ei: usize = 0;
+                                while (ei < ecount and estart + ei < self.ctx.registry.xn_len) : (ei += 1) {
+                                    if (self.ctx.registry.xn_items[estart + ei] == field_name_id) {
+                                        var eftid = nextTemp(self, type_id);
+                                        emitInst(self, LirInst{ .enum_const = .{
+                                            .value = @intCast(u64, ei),
+                                            .result = eftid,
+                                            .type_id = type_id,
+                                            .member_name_id = field_name_id,
+                                        }});
+                                        return eftid;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
+        if (base_temp == type_mod.TYPE_UNDEFINED or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
+            var np_msg: []const u8 = "non-value base expression in field access";
+            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3042),
+                @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), np_msg);
+            var dummy = nextTemp(self, type_mod.TYPE_VOID);
+            return dummy;
+        }
         var gape_fac: []const u8 = "GAPE:fac\n"; pal.markerWrite(gape_fac);
         var fabs_m: []const u8 = "FABS:bt"; pal.markerWrite(fabs_m);
         var fabs_b: [10]u8 = undefined; var fabs_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, base_temp)].type_id, fabs_b[0..]); var fabs_ts: usize = @intCast(usize, 9) - @intCast(usize, fabs_tl); pal.markerWrite(fabs_b[fabs_ts..@intCast(usize, 9)]);
@@ -2094,10 +2121,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                                        var ua = nextTemp(self, eo.payload);
                                                        emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = call_val, .result = ua } });
                                                        call_val = ua;
-                                                   }
-                                               }
-                                           }
-                                       }
+                    }
+                }
+            }
+        }
                                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = call_ns + @intCast(u32, ai), .src = call_val } });
                                        var slot_tid_a: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt2| { slot_tid_a[0] = pt2; var hx: []const u8 = "H"; pal.markerWrite(hx); }
