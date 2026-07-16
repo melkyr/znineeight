@@ -3148,6 +3148,99 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
              bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               var dcr_m: []const u8 = "DC2:r"; pal.markerWriteInt(dcr_m, c.result);
                var vfcd_m: []const u8 = "VFLOW:cdv\n"; pal.markerWrite(vfcd_m);
+               var need_wrap: u8 = @intCast(u8, 0);
+               var wrap_kind: u8 = @intCast(u8, 0);
+               var wrap_pay_void: u8 = @intCast(u8, 0);
+               if (c.is_extern == @intCast(u8, 1) and c.return_type != type_mod.TYPE_VOID) {
+                   var rt_ty = emitter.registry.types_items[@intCast(usize, c.return_type)];
+                   if (rt_ty.kind == type_mod.TypeKind.optional_type) {
+                       need_wrap = @intCast(u8, 1);
+                       wrap_kind = @intCast(u8, 1);
+                       var op = emitter.registry.opt_items[@intCast(usize, rt_ty.payload_idx)];
+                       var pay_ty = emitter.registry.types_items[@intCast(usize, op.payload)];
+                       if (pay_ty.kind == type_mod.TypeKind.void_type) { wrap_pay_void = @intCast(u8, 1); }
+                   } else if (rt_ty.kind == type_mod.TypeKind.error_union_type) {
+                       need_wrap = @intCast(u8, 1);
+                       wrap_kind = @intCast(u8, 2);
+                       var eu = emitter.registry.eu_items[@intCast(usize, rt_ty.payload_idx)];
+                       var pay_ty = emitter.registry.types_items[@intCast(usize, eu.payload)];
+                       if (pay_ty.kind == type_mod.TypeKind.void_type) { wrap_pay_void = @intCast(u8, 1); }
+                   }
+               }
+               if (need_wrap == @intCast(u8, 1)) {
+                   var result = resolveTempName(emitter, c.result);
+                   if (wrap_kind == @intCast(u8, 1)) {
+                       bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                       bufferedWriterWrite(&emitter.writer, result);
+                       var l1: []const u8 = ".has_value = 1;\n";
+                       bufferedWriterWrite(&emitter.writer, l1);
+                       if (wrap_pay_void == @intCast(u8, 0)) {
+                           bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                           bufferedWriterWrite(&emitter.writer, result);
+                           var l2: []const u8 = ".value = ";
+                           bufferedWriterWrite(&emitter.writer, l2);
+                           bufferedWriterWrite(&emitter.writer, fn_name);
+                           var sp: []const u8 = "(";
+                           bufferedWriterWrite(&emitter.writer, sp);
+                           var ai: u32 = @intCast(u32, 0);
+                           while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
+                               if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
+                               var arg = resolveTempName(emitter, c.args_start + ai);
+                               bufferedWriterWrite(&emitter.writer, arg);
+                           }
+                           var s2: []const u8 = ");\n";
+                           bufferedWriterWrite(&emitter.writer, s2);
+                       } else {
+                           bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                           bufferedWriterWrite(&emitter.writer, fn_name);
+                           var sp: []const u8 = "(";
+                           bufferedWriterWrite(&emitter.writer, sp);
+                           var ai: u32 = @intCast(u32, 0);
+                           while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
+                               if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
+                               var arg = resolveTempName(emitter, c.args_start + ai);
+                               bufferedWriterWrite(&emitter.writer, arg);
+                           }
+                           var s2: []const u8 = ");\n";
+                           bufferedWriterWrite(&emitter.writer, s2);
+                       }
+                   } else {
+                       bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                       bufferedWriterWrite(&emitter.writer, result);
+                       var l1: []const u8 = ".is_error = 0;\n";
+                       bufferedWriterWrite(&emitter.writer, l1);
+                       if (wrap_pay_void == @intCast(u8, 0)) {
+                           bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                           bufferedWriterWrite(&emitter.writer, result);
+                           var l2: []const u8 = ".data.payload = ";
+                           bufferedWriterWrite(&emitter.writer, l2);
+                           bufferedWriterWrite(&emitter.writer, fn_name);
+                           var sp: []const u8 = "(";
+                           bufferedWriterWrite(&emitter.writer, sp);
+                           var ai: u32 = @intCast(u32, 0);
+                           while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
+                               if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
+                               var arg = resolveTempName(emitter, c.args_start + ai);
+                               bufferedWriterWrite(&emitter.writer, arg);
+                           }
+                           var s2: []const u8 = ");\n";
+                           bufferedWriterWrite(&emitter.writer, s2);
+                       } else {
+                           bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                           bufferedWriterWrite(&emitter.writer, fn_name);
+                           var sp: []const u8 = "(";
+                           bufferedWriterWrite(&emitter.writer, sp);
+                           var ai: u32 = @intCast(u32, 0);
+                           while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
+                               if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
+                               var arg = resolveTempName(emitter, c.args_start + ai);
+                               bufferedWriterWrite(&emitter.writer, arg);
+                           }
+                           var s2: []const u8 = ");\n";
+                           bufferedWriterWrite(&emitter.writer, s2);
+                       }
+                   }
+               } else {
                if (c.return_type != type_mod.TYPE_VOID) {
                 var result = resolveTempName(emitter, c.result);
                 bufferedWriterWrite(&emitter.writer, result);
@@ -3168,6 +3261,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
+               }
         },
         .switch_br => |s| {
             var s1: []const u8 = "switch (";
