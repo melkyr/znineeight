@@ -1,8 +1,9 @@
-# mi_matrix corpus — expected-fail manifest (v6 2026-07-16)
+# mi_matrix corpus — expected-fail manifest (v7 2026-07-16)
 
-## Totals (149 repros)
+## Totals (162 repros)
 
-- **CURRENT: OK=148 / FAIL=1 / ICE=0 / CRASH=0** (2026-07-16: error-set crash fix chain — F-SEMA Gap A/B sema arms + shared helper `typeRegistryErrorSetMemberIndex`; F-C5C7 Fix A+B valid module/type_alias temps + Fix C symreg `populateTypePayload` error_set_decl case + Fix E/F lowerer member lookups + module-base field_access branch; F-LISP module-qualified fn refs via func_ref machinery; F-C6 c89_emit `emitErrorSetType` typedef + per-member `#define` constants; F-TEMPNONE dedicated temp-index sentinel `TEMP_NONE=0xFFFFFFFF`; F-REMOVE unconditional 3042 tripwire + module-as-value warning[3023] + observability repro)
+- **CURRENT: OK=148 / FAIL=14 / ICE=0 / CRASH=0** (2026-07-16: folded 13 ungated RED repros from top-level `repro/` tree into gated corpus)
+- Prior: OK=148 / FAIL=1 / ICE=0 / CRASH=0 (2026-07-16: error-set crash fix chain — F-SEMA Gap A/B sema arms + shared helper `typeRegistryErrorSetMemberIndex`; F-C5C7 Fix A+B valid module/type_alias temps + Fix C symreg `populateTypePayload` error_set_decl case + Fix E/F lowerer member lookups + module-base field_access branch; F-LISP module-qualified fn refs via func_ref machinery; F-C6 c89_emit `emitErrorSetType` typedef + per-member `#define` constants; F-TEMPNONE dedicated temp-index sentinel `TEMP_NONE=0xFFFFFFFF`; F-REMOVE unconditional 3042 tripwire + module-as-value warning[3023] + observability repro)
 - Prior: OK=147 / FAIL=1 / ICE=0 / CRASH=0 (2026-07-15: error-set pipeline fix — T1 symbol_reg, T2 sema, T3 lowerer, T4 c89_emit)
 - Prior: OK=144 / FAIL=2 / ICE=2 / CRASH=0 (2026-07-14: Phase D repros — actual state; earlier manifest erroneously claimed 147/1/0/0)
 - Prior: OK=136 / FAIL=5 / ICE=1 / CRASH=0 (2026-07-14: sema-diagnostics v2)
@@ -21,9 +22,41 @@ All error-set SEGV/ICE crashes eliminated. **Accidental-revert history:** commit
 
 ---
 
-## FAIL (1)
+## FAIL (14)
 
 - `opt_extern_ptr_file` — gcc `incompatible types when assigning to type 'Opt_...' from type 'int'` (optional wrapping extern-fn pointer return, no null-wrap). Layer: sema/type-registry. Oracle: OK. **Must-not-fail per operator, deferred.**
+
+### Optional-wrap coercion (6)
+- `opt_value_decl` — gcc `incompatible types when assigning to type 'zT_*_Opt_*'` (optional payload in decl init).
+- `orelse_void` — gcc `incompatible types when assigning to type 'zT_*_Opt_*'` (orelse void coercion).
+- `optstar_void_orelse` — gcc `incompatible types when assigning to type 'zT_*_Opt_*'` (*void orelse coercion).
+- `file_const_single` — gcc `incompatible types when assigning to type 'zT_*_Opt_*'` (file-level const optional).
+- `eu_optional_value` — gcc `incompatible types when assigning to type 'zT_*_Opt_*'` (error union optional value).
+- `mi_eu_opt_val` — gcc `incompatible types when assigning to type 'zT_*_Opt_*'` (module-import variant of eu_optional_value).
+
+### EU representation (3)
+- `eu_err_ret` — gcc `incompatible types` (error union error return payload mismatch).
+- `eu_value_ret` — gcc `incompatible types` (error union value return payload mismatch).
+- `mi_eu_err` — gcc `incompatible types` (module-import variant of eu_err_ret).
+
+### VOID decl-skip / undeclared-temp (2)
+- `var_declared_void` — gcc `'x' undeclared` (VOID-typed variable skipped in C decl emission).
+- `field_store_drop` — gcc `'zT_23'/'zT_32' undeclared` (undeclared temps from field-store lowering; related to var_declared_void VOID-decl-skip path).
+
+### Aggregate / anon-init (2)
+- `anon_init_orelse_rhs` — gcc `incompatible types` (anonymous init on orelse RHS).
+- `array_tagged_union_read` — gcc `incompatible types` (tagged union indexing on array).
+
+---
+
+## Folded 13 RED repros (2026-07-16)
+
+Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. All classify as FAIL (gcc errors):
+
+- **Optional-wrap coercion** (6): `opt_value_decl`, `orelse_void`, `optstar_void_orelse`, `file_const_single`, `eu_optional_value`, `mi_eu_opt_val` — `incompatible types when assigning to type 'zT_*_Opt_*'`.
+- **EU representation** (3): `eu_err_ret`, `eu_value_ret`, `mi_eu_err` — `incompatible types` in error-union payload/return coercion.
+- **VOID decl-skip / undeclared-temp** (2): `var_declared_void` — `'x' undeclared` (VOID-typed variable skipped in C declaration). `field_store_drop` — `'zT_23'/'zT_32' undeclared` (undeclared temps from field-store lowering; same root cause as var_declared_void VOID-decl-skip path). Fix owned by future plan.
+- **Aggregate / anon-init** (2): `anon_init_orelse_rhs` — anon init on orelse RHS. `array_tagged_union_read` — tagged union indexing on array.
 
 ---
 
