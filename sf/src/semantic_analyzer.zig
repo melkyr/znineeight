@@ -615,18 +615,7 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
         popExpectedType(self);
         if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
-            if (ret_val != self.current_fn_return) {
-                var fn_ret_ty = self.registry.types_items[@intCast(usize, self.current_fn_return)];
-                if (fn_ret_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                    var ret_node = self.store.nodes.items[@intCast(usize, node.child_0)];
-                    if (ret_node.kind == AstKind.enum_literal) {
-                        var old_tu = self.current_switch_cond_tu;
-                        self.current_switch_cond_tu = self.current_fn_return;
-                        _ = semanticAnalyzerResolveExpr(self, node.child_0);
-                        self.current_switch_cond_tu = old_tu;
-                    }
-                }
-            }
+
             var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
             var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
             var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
@@ -848,6 +837,39 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
                     return self.current_switch_cond_tu;
                 }
+            }
+        }
+    }
+    if (self.expected_type_stack_len > 0) {
+        var top: u32 = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - 1)];
+        if (top != @intCast(u32, 0)) {
+            var top_ty = self.registry.types_items[@intCast(usize, top)];
+            if (top_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                var tp = self.registry.tu_items[@intCast(usize, top_ty.payload_idx)];
+                var fstart2: usize = @intCast(usize, tp.fields_start);
+                var fcount2: usize = @intCast(usize, tp.fields_count);
+                var fi2: usize = 0;
+                while (fi2 < fcount2) : (fi2 += 1) {
+                    var fe = self.registry.fe_items[fstart2 + fi2];
+                    if (fe.name_id == n) {
+                        if (fe.type_id == type_mod.TYPE_VOID) {
+                            hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi2));
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, top);
+                            return top;
+                        } else {
+                            var sp = node.span_start;
+                            var ep = sp + @intCast(u32, node.span_len);
+                            var elr_msg: []const u8 = "enum literal member requires payload";
+                            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3008_ENUM_LITERAL_REQUIRES_PAYLOAD)), self.source_file_id, sp, ep, elr_msg);
+                            return type_mod.TYPE_VOID;
+                        }
+                    }
+                }
+                var sp = node.span_start;
+                var ep = sp + @intCast(u32, node.span_len);
+                var elu_msg: []const u8 = "unknown enum literal member";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3009_UNKNOWN_ENUM_LITERAL_MEMBER)), self.source_file_id, sp, ep, elu_msg);
+                return type_mod.TYPE_VOID;
             }
         }
     }
