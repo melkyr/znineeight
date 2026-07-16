@@ -804,6 +804,7 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         return type_mod.TYPE_VOID;
     }
     var opt = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
+    coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, opt.payload);
     return opt.payload;
 }
 
