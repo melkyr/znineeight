@@ -1,9 +1,10 @@
-# mi_matrix corpus — expected-fail manifest (v5 2026-07-14)
+# mi_matrix corpus — expected-fail manifest (v6 2026-07-16)
 
-## Totals (148 repros)
+## Totals (149 repros)
 
-- **CURRENT: OK=147 / FAIL=1 / ICE=0 / CRASH=0** (2026-07-15: error-set pipeline fix — T1 symbol_reg, T2 sema, T3 lowerer, T4 c89_emit; all 3 ICEs eliminated, C5+C6+C7 produce compilable C)
-- Prior: OK=142 / FAIL=3 / ICE=3 / CRASH=0 (2026-07-14: Phase D repros)
+- **CURRENT: OK=148 / FAIL=1 / ICE=0 / CRASH=0** (2026-07-16: error-set crash fix chain — F-SEMA Gap A/B sema arms + shared helper `typeRegistryErrorSetMemberIndex`; F-C5C7 Fix A+B valid module/type_alias temps + Fix C symreg `populateTypePayload` error_set_decl case + Fix E/F lowerer member lookups + module-base field_access branch; F-LISP module-qualified fn refs via func_ref machinery; F-C6 c89_emit `emitErrorSetType` typedef + per-member `#define` constants; F-TEMPNONE dedicated temp-index sentinel `TEMP_NONE=0xFFFFFFFF`; F-REMOVE unconditional 3042 tripwire + module-as-value warning[3023] + observability repro)
+- Prior: OK=147 / FAIL=1 / ICE=0 / CRASH=0 (2026-07-15: error-set pipeline fix — T1 symbol_reg, T2 sema, T3 lowerer, T4 c89_emit)
+- Prior: OK=144 / FAIL=2 / ICE=2 / CRASH=0 (2026-07-14: Phase D repros — actual state; earlier manifest erroneously claimed 147/1/0/0)
 - Prior: OK=136 / FAIL=5 / ICE=1 / CRASH=0 (2026-07-14: sema-diagnostics v2)
 - Prior: OK=122 / FAIL=15 / ICE=1 / CRASH=0 (2026-07-13: xmod_field_store_index fixed)
 - Prior (132 repros): OK=117 / FAIL=14 / ICE=1 / CRASH=0 (v4 idiomatic baseline)
@@ -12,10 +13,11 @@
 
 ## ICE (0 — CLEAR)
 
-All 3 ICEs eliminated by error-set pipeline fix (T1-T4):
-- `lzw_cross_module_error_set` — **FIXED (T3+T4)** — cross-module error_set reference now resolves + emits typedef
-- `lzw_error_set_member_comparison` — **FIXED (T2+T4)** — `E.A` member access now resolves in sema + emits #define
-- `lzw_eu_return_mismatch` — **FIXED (T1-T4)** — catch/return coercion resolved by fully wired error_set pipeline
+All error-set SEGV/ICE crashes eliminated. **Accidental-revert history:** commit `a4bb08c4` ("use structural hash for optional C typedef naming") accidentally reverted 4 earlier error-set commits — `9f2236e2` (c89_emit error_set typedef + member emission), `c0803328` (symreg error_set payload population), `d0104d33` (sema error_set member handlers), `b4d78651` (lowerer module-base field_access branch) — which is why an earlier manifest claimed 147/1/0/0 when actual was 144/2/2/0. This plan's upstream fix chain correctly restored all 4 layers.
+
+- `lzw_cross_module_error_set` (C5) — **FIXED** — was ICE (SEGV at hoisted_temps[18] OOB). Fixed by: sema member resolution via shared helper, symreg payload, lowerer valid module temp + module-base field_access branch + member lookup via helper, c89_emit cross-module typedef emission.
+- `lzw_error_set_member_comparison` (C6) — **FIXED** — was ICE → partial F2 error[3042] → now compilable C. Fixed by: sema Gap A/B arms, c89_emit `emitErrorSetType` typedef + per-member `#define` ordinals.
+- `lzw_eu_return_mismatch` (C7) — **FIXED** — was ICE (SEGV same class as C5). Fixed by: sema member resolution, symreg payload, lowerer valid type_alias temp + member lookup via helper, `.is_error=1` wrap_error_err EU-wrap coercion path.
 
 ---
 
@@ -25,45 +27,29 @@ All 3 ICEs eliminated by error-set pipeline fix (T1-T4):
 
 ---
 
-## FIXED (2026-07-15 — error-set pipeline fix)
+## Repro added 2026-07-16
 
-- `lzw_cross_module_error_set` — **FIXED (T3+T4)** — lowerer SymbolKind.module branch + c89_emit typedef
-- `lzw_error_set_member_comparison` — **FIXED (T2+T4)** — sema error_set handler + c89_emit #define
-- `lzw_eu_return_mismatch` — **FIXED (T1-T4)** — fully wired error_set pipeline resolves catch/return coercion
-- `euvoid_val_catch` — **FIXED (F1)** — lowerExprImpl block handler
-- `lzw_local_var_undeclared` — **FIXED (F3)** — sema cache resolvedTypeTable
+- `module_as_value` — **OK (warning[3023] non-fatal)**. Bare module ident in value position (`_ = h;`) emits `warning[3023]: module used as value expression`. VOID temp prevents C-decl pollution (TYPE_VOID=1 skipped by c89_emit decl loop). zig0 oracle: accepts silently (rc=0). C compiles cleanly (gcc 0 errors). Class: OK.
+
+---
 
 ## FIXED (2026-07-15 — lowerer-errors-deep-dive)
 
 - `euvoid_val_catch` — **FIXED (F1)** — `lowerExprImpl` now handles `AstKind.block` in expression context. `return {}` coerced to `E!void` no longer ICEs.
-- `lzw_local_var_undeclared` — **FIXED (F3)** — sema now caches non-ident type annotations (`[256]u8`, `*T`, `?T`) in `resolvedTypeTable`. Lowerer can emit `decl_local` — `buf` declared in C.
-- `lzw_error_set_member_comparison` — **PARTIAL (F2)** — SEGV converted to clean `error[3042]` diagnostic (no crash). Error set member emission still pending.
-- `lzw_cross_module_error_set` — **PARTIAL (F2)** — SEGV converted to clean `error[3042]` diagnostic. Cross-module error set reference resolution still pending.
-- `lzw_eu_return_mismatch` — **PARTIAL (F2)** — SEGV converted to clean `error[3042]` diagnostic. EU TypeId mismatch resolution still pending.
+- `lzw_local_var_undeclared` — **FIXED (F3)** — sema caches non-ident type annotations (`[256]u8`, `*T`, `?T`) in `resolvedTypeTable`. Lowerer emits `decl_local` — `buf` declared in C.
 
 ## Repro added 2026-07-14
 
 - `field_access_optional` — **FIXED (ERR_3000)** — `?S.x` now produces `error[3000]: cannot access field on optional type` instead of lowerer ICE. Matches zig0 oracle (rejects `.` on optional). Green guard — no C emitted.
-
-- `lzw_error_set_typedef` — **GREEN at HEAD** — simple error-union case passes. Full lzw example triggers the gap via cross-module named error set references. Green guard kept.
-
-- `lzw_local_var_undeclared` — **FAIL** — see above. Deferred.
-
-- `lzw_cross_module_error_set` — **ICE** — SEGV crash (AddressSanitizer) in lowerExprImpl. Cross-module error set reference. **New repro 2026-07-14, deferred.**
-
-- `lzw_error_set_member_comparison` — **FAIL** — error set member constant C typedef never emitted. **New repro 2026-07-14, deferred.**
-
-- `lzw_eu_return_mismatch` — **ICE** — SEGV crash (AddressSanitizer) in lowerExprImpl. `catch |err| return err` TypeId mismatch. Same crash class as lzw_cross_module_error_set. **New repro 2026-07-14, deferred.**
-
----
+- `lzw_error_set_typedef` — **GREEN at HEAD** — simple error-union case passes.
 
 ## Previously FIXED (2026-07-14)
 
-- `eu_assign_incompat_payload` — **FIXED** — `E!i64 → E!i32` now emits `error[3000]` at sema (EU payload mismatch severity check). Previously gcc FAIL.
-- `euoptptr_val_orelse` — **FIXED** — optional C typedef naming now uses `getCTypeName` instead of `name_id=0`. Distinct C structs for `?*i32` vs `??*i32`.
+- `eu_assign_incompat_payload` — **FIXED** — `E!i64 → E!i32` now emits `error[3000]` at sema (EU payload mismatch severity check).
+- `euoptptr_val_orelse` — **FIXED** — optional C typedef naming uses `getCTypeName` instead of `name_id=0`.
 - `optptr_val_orelse` — **FIXED** — same c89_emit fix.
 - `optptr_null_orelse` — **FIXED** — same c89_emit fix.
-- `eu_assign_incompat_errorset` — **WARNING** — different error sets produce warning[3000] but same C struct compiles. Correctly not blocking.
+- `eu_assign_incompat_errorset` — **WARNING** — different error sets produce warning[3000] but same C struct compiles.
 - `typeres_unhandled_node` — **FIXED (2026-07-14)** — range handler + lowerer demote.
 
 ## Previously FIXED (2026-07-13)
