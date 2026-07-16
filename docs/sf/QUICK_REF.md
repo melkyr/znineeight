@@ -71,6 +71,14 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
 
 ---
 
+
+### Canonical Examples vs Oracle Examples
+
+- **Canonical examples** under `examples/z98/` — use `@cInclude` + `extern fn` (valid Z98 syntax).
+- **Oracle examples** under `examples/zig0/` — use zig0-compatible syntax. Only for oracle comparison against `zig0` output, not as working-example reference.
+- The gcc compile recipe includes `-I sf/src/include` which auto-declares bootstrap functions (`__bootstrap_print` etc.) from `zig_runtime.h`.
+
+
 ## Bootstrap Build (zig0 → zig1)
 
 
