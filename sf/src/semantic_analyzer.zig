@@ -1556,7 +1556,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
                     var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);
                 }
-                rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
+                var ct_entry = coercion_mod.coercionTableGet(self.coercion_table, node.child_1);
+                if (ct_entry == null) {
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
+                }
             }
             if (self.local_decl_count >= self.local_decl_cap) {
                 semanticAnalyzerGrowLocalDecls(self);
