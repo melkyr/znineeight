@@ -961,6 +961,12 @@ fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
     return base_temp;
 }
 
+fn literalTempType(self: *LirLowerer, node_idx: u32) u32 {
+    var ert = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    if (ert) |t| { if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) { return t; } }
+    return type_mod.TYPE_INT_LIT;
+}
+
 fn emitTaggedUnionInit(self: *LirLowerer, tu_type_id: u32, variant_index: u32) u32 {
     var struct_tid = nextTemp(self, tu_type_id);
     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, variant_index), .result = struct_tid } });
@@ -1100,9 +1106,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         pal.markerWrite(eg2b[eg2s..@intCast(usize, 19)]);
         var eRs: []const u8 = " "; pal.markerWrite(eRs);
         var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
-        var enum_type: [1]u32 = [1]u32{type_mod.TYPE_INT_LIT};
-        var ert = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (ert) |t| { if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) { enum_type[0] = t; } }
+        var enum_type: [1]u32 = [1]u32{literalTempType(self, node_idx)};
         if (ev) |v| { ev_val = @intCast(u64, v); var we1: []const u8 = "WE"; pal.markerWrite(we1);
             var enum_ty = enum_type[0];
             if (enum_ty != type_mod.TYPE_INT_LIT and enum_ty != type_mod.TYPE_UNDEFINED and enum_ty != type_mod.TYPE_VOID) {
@@ -1129,7 +1133,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.error_literal) {
         var val = @intCast(u64, node.payload);
-        var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        if (ev) |v| { val = @intCast(u64, v); }
+        var tid = nextTemp(self, literalTempType(self, node_idx));
         emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.unreachable_expr) {
