@@ -1,6 +1,9 @@
-extern fn extFn() ?*u32;
+fn makeOptPtr() ?*u32 {
+    var p: *u32 = undefined;
+    return p;
+}
 
 pub fn main() void {
-    var x = extFn() orelse return;
+    var x = makeOptPtr() orelse return;
     _ = x;
 }

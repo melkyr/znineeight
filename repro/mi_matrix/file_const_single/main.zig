@@ -1,7 +1,11 @@
 pub const File = void;
-extern fn extFn() ?*File;
+
+fn makeOptFile() ?*File {
+    var f: *File = undefined;
+    return f;
+}
 
 pub fn main() void {
-    var x = extFn() orelse return;
+    var x = makeOptFile() orelse return;
     _ = x;
 }

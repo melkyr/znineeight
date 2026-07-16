@@ -1,6 +1,9 @@
-extern fn extFn() ?*void;
+fn makeOptVoid() ?*void {
+    var p: *void = undefined;
+    return p;
+}
 
 pub fn main() void {
-    var x = extFn() orelse return;
+    var x = makeOptVoid() orelse return;
     _ = x;
 }
