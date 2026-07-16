@@ -54,6 +54,7 @@ const BIN_GE   = @intCast(u8, 15);
 const UN_NEG   = @intCast(u8, 0);
 const UN_NOT   = @intCast(u8, 1);
 const UN_BNOT  = @intCast(u8, 2);
+const TEMP_NONE: u32 = 0xFFFFFFFF;
 
 pub const DeferAction = struct {
     kind: u8,
@@ -1371,7 +1372,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var coe_nb: [10]u8 = undefined; var coe_nl = itoa_mod.itoa(node_idx, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl); pal.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
          var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
           var src = lowerExpr(self, node.child_1);
-          if (src == @intCast(u32, 0)) {
+          if (src == TEMP_NONE or src == @intCast(u32, 0)) {
               var rhs_node = store.nodes.items[@intCast(usize, node.child_1)];
               var is_resolved: u8 = @intCast(u8, 0);
               if (rhs_node.kind == AstKind.ident_expr) {
@@ -1383,7 +1384,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                   return @intCast(u32, 0);
               }
           }
-          if (src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
+          if (src != TEMP_NONE and src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
              var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
          }
         lowerAssignLValue(self, node.child_0, src, node_idx);
@@ -1538,7 +1539,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       if (skip_rt != @intCast(u32, 0)) {
                          var srty = self.ctx.registry.types_items[@intCast(usize, skip_rt)];
                          if (srty.kind == type_mod.TypeKind.fn_type or srty.kind == type_mod.TypeKind.module_type) {
-                             return type_mod.TYPE_UNDEFINED;
+                              return TEMP_NONE;
                          }
                      }
                      if (s.decl_node != 0) {
@@ -1550,7 +1551,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                              var dty = self.ctx.registry.types_items[@intCast(usize, dt)];
                              var b2kb: [20]u8 = undefined; var b2kl = itoa_mod.itoa(@intCast(u32, @enumToInt(dty.kind)), b2kb[0..]); var b2ks: usize = @intCast(usize, 19) - @intCast(usize, b2kl); pal.markerWrite(b2kb[b2ks..@intCast(usize, 19)]);
                              if (dty.kind == type_mod.TypeKind.fn_type or dty.kind == type_mod.TypeKind.module_type) {
-                                 return @intCast(u32, 0);
+                                  return TEMP_NONE;
                              }
                          } else {
                              var b2mm: []const u8 = "M"; pal.markerWrite(b2mm);
@@ -1584,12 +1585,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         emitInst(self, LirInst{ .func_ref = .{ .name_id = fr_nid, .module_id = fr_mid, .result = fr_res2 } });
                         return fr_res2;
                     }
-                    return type_mod.TYPE_UNDEFINED;
+                    return TEMP_NONE;
                 } else if (s.kind == sym_mod.SymbolKind.local or s.kind == sym_mod.SymbolKind.param) {
                     if (findLocalTemp(self, name_id)) |fnd| {
                         return fnd;
                     }
-                    return type_mod.TYPE_UNDEFINED;
+                    return TEMP_NONE;
                 } else if (s.kind == sym_mod.SymbolKind.type_alias) {
                     var atemp = nextTemp(self, s.type_id);
                     return atemp;
@@ -1613,7 +1614,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (t != type_mod.TYPE_UNDEFINED) {
                 var rty = self.ctx.registry.types_items[@intCast(usize, t)];
                 if (rty.kind == type_mod.TypeKind.fn_type or rty.kind == type_mod.TypeKind.module_type) {
-                    return @intCast(u32, type_mod.TYPE_UNDEFINED);
+                    return TEMP_NONE;
                 }
                 ptype = t;
             }
@@ -1798,7 +1799,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
-        if (base_temp == type_mod.TYPE_UNDEFINED or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
+        if (base_temp == TEMP_NONE or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
             if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0) == null) {
             var np_msg: []const u8 = "non-value base expression in field access";
             _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3042),
