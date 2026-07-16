@@ -34,14 +34,13 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (132 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
+### Corpus gate (166 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89`, then
 `gcc -m32 -std=c89 -c -Wno-long-long -Wno-pointer-sign -I sf/src/include` the output.
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
 - `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
-- **Baseline: `OK=117 FAIL=14 ICE=1 CRASH=0`** (the 1 ICE is the pre-existing `euvoid_val_catch`
-  "invalid temp index 0"). Must stay `117/14/1/0` or improve.
+- **Baseline: `OK=162 FAIL=4 ICE=0 CRASH=0` over 166 repros** (2026-07-16: extern-fn ABI-wrap). ICE cleared; the 4 FAILs are out-of-scope: anon_init_orelse_rhs, array_tagged_union_read, field_store_drop, var_declared_void. Must stay `162/4/0/0` or improve.
 
 ### Byte-identical gate (man / gol / mud)  — parent built from a worktree via the REPO zig0
 Entries: `examples/zig0/mandelbrot/mandelbrot.zig`, `examples/zig0/game_of_life/main_lin.zig`,

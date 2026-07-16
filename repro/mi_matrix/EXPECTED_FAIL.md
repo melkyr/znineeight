@@ -1,8 +1,8 @@
-# mi_matrix corpus — expected-fail manifest (v8 2026-07-16)
+# mi_matrix corpus — expected-fail manifest (v9 2026-07-16)
 
-## Totals (162 repros)
+## Totals (166 repros)
 
-- **CURRENT: OK=157 / FAIL=5 / ICE=0 / CRASH=0** (2026-07-16: optional-wrap coercion family — 6/7 targets FIXED via sema coercion recording + catch_expr stmt routing + resolvedTypeTable pollution fix; 1 target opt_extern_ptr_file deferred to ??*T FILE* plan)
+- **CURRENT: OK=162 / FAIL=4 / ICE=0 / CRASH=0** (2026-07-16: extern-fn ABI-wrap — c89_emit .call_direct wrapping for extern fn optional/EU returns; 5/5 extern-fn repros fixed; opt_extern_ptr_file FIXED; json_parser HARD gate 0 errors; EU representation (3) now FIXED by error-set pipeline)
 - Prior: OK=148 / FAIL=14 / ICE=0 / CRASH=0 (2026-07-16: folded 13 ungated RED repros from top-level `repro/` tree into gated corpus)
 - Prior: OK=148 / FAIL=1 / ICE=0 / CRASH=0 (2026-07-16: error-set crash fix chain — F-SEMA Gap A/B sema arms + shared helper `typeRegistryErrorSetMemberIndex`; F-C5C7 Fix A+B valid module/type_alias temps + Fix C symreg `populateTypePayload` error_set_decl case + Fix E/F lowerer member lookups + module-base field_access branch; F-LISP module-qualified fn refs via func_ref machinery; F-C6 c89_emit `emitErrorSetType` typedef + per-member `#define` constants; F-TEMPNONE dedicated temp-index sentinel `TEMP_NONE=0xFFFFFFFF`; F-REMOVE unconditional 3042 tripwire + module-as-value warning[3023] + observability repro)
 - Prior: OK=147 / FAIL=1 / ICE=0 / CRASH=0 (2026-07-15: error-set pipeline fix — T1 symbol_reg, T2 sema, T3 lowerer, T4 c89_emit)
@@ -39,17 +39,11 @@ All error-set SEGV/ICE crashes eliminated. **Accidental-revert history:** commit
 
 ---
 
-### Deferred: ??*T FILE* gateway (1)
-- `opt_extern_ptr_file` — gcc `incompatible types when assigning to type 'Opt_...' from type 'int'` (optional wrapping extern-fn pointer return, no null-wrap). C `fopen` returns `FILE*`, not an optional struct; requires `c89_emit` ABI-boundary conversion to wrap the raw pointer into the `Opt_*` type. Layer: sema/type-registry + c89_emit. Oracle: OK. **Must-not-fail per operator, deferred to ??*T FILE* plan.**
-
+### FIXED by extern-fn ABI-wrap (1)
+- `opt_extern_ptr_file` — **FIXED (F-ABI)** — was deferred `??*T FILE* gateway`. extern-fn ABI-wrap (`c89_emit .call_direct` wrapping for extern fn optional/EU returns) now wraps raw `FILE*` into `Opt_*` type. gcc 0 errors. No longer deferred.
 ---
 
-## FAIL (5)
-
-### EU representation (3) — out-of-scope
-- `eu_err_ret` — gcc `incompatible types` (error union error return payload mismatch).
-- `eu_value_ret` — gcc `incompatible types` (error union value return payload mismatch).
-- `mi_eu_err` — gcc `incompatible types` (module-import variant of eu_err_ret).
+## FAIL (4)
 
 ### VOID decl-skip / undeclared-temp (2) — out-of-scope
 - `var_declared_void` — gcc `'x' undeclared` (VOID-typed variable skipped in C decl emission).
@@ -59,15 +53,15 @@ All error-set SEGV/ICE crashes eliminated. **Accidental-revert history:** commit
 - `anon_init_orelse_rhs` — gcc `incompatible types` (anonymous init on orelse RHS).
 - `array_tagged_union_read` — gcc `incompatible types` (tagged union indexing on array).
 
-Note: FAIL=5 count excludes the 6 now-FIXED optional-wrap items. The 4 out-of-scope families (EU representation, VOID decl-skip, aggregate/anon-init) account for 7 repros total (3+2+2).
+Note: FAIL=4 count reflects 2 remaining out-of-scope families (VOID decl-skip, aggregate/anon-init) = 4 repros total (2+2). EU representation (3 repros: eu_err_ret, eu_value_ret, mi_eu_err) now FIXED by error-set pipeline (F-C5C7 Fix A/B) — gcc 0 errors.
 
 ---
 
 ## Folded 13 RED repros (2026-07-16)
 
-Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. **As of 2026-07-16, 6/13 FIXED (see FIXED section above).** Remaining 7 still classify as FAIL (gcc errors):
+Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. **As of 2026-07-16, 9/13 FIXED (see FIXED sections above).** Remaining 4 still classify as FAIL (gcc errors):
 
-- **EU representation** (3): `eu_err_ret`, `eu_value_ret`, `mi_eu_err` — `incompatible types` in error-union payload/return coercion.
+- **EU representation** (3): `eu_err_ret`, `eu_value_ret`, `mi_eu_err` — **FIXED by error-set pipeline (F-C5C7 Fix A/B)** — gcc 0 errors. Was previously FAIL (incompatible types in error-union payload/return coercion).
 - **VOID decl-skip / undeclared-temp** (2): `var_declared_void` — `'x' undeclared` (VOID-typed variable skipped in C declaration). `field_store_drop` — `'zT_23'/'zT_32' undeclared` (undeclared temps from field-store lowering; same root cause as var_declared_void VOID-decl-skip path). Fix owned by future plan.
 - **Aggregate / anon-init** (2): `anon_init_orelse_rhs` — anon init on orelse RHS. `array_tagged_union_read` — tagged union indexing on array.
 
@@ -76,6 +70,16 @@ Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. **As of 2026-0
 ## Repro added 2026-07-16
 
 - `module_as_value` — **OK (warning[3023] non-fatal)**. Bare module ident in value position (`_ = h;`) emits `warning[3023]: module used as value expression`. VOID temp prevents C-decl pollution (TYPE_VOID=1 skipped by c89_emit decl loop). zig0 oracle: accepts silently (rc=0). C compiles cleanly (gcc 0 errors). Class: OK.
+
+---
+
+
+## FIXED (2026-07-16 — extern-fn ABI-wrap: 5/5)
+- `opt_extern_ptr_file` — **FIXED (F-ABI)** — was deferred `??*T FILE* gateway`. extern-fn ABI-wrap (`c89_emit .call_direct` wrapping for extern fn optional/EU returns) now wraps raw `FILE*` into `Opt_*` type. gcc 0 errors. No longer deferred.
+- `extern_fn_opt_return` — **OK (F-ABI)** — optional return from extern fn; ABI-wrap emits wrapper that calls extern, builds `Opt_*` struct from raw return. gcc 0 errors.
+- `extern_fn_opt_return_cross` — **OK (F-ABI)** — cross-module variant of extern_fn_opt_return. gcc 0 errors.
+- `extern_fn_eu_return` — **OK (F-ABI)** — error-union return from extern fn; ABI-wrap emits caller-side wrapper. gcc 0 errors.
+- `error_set_unknown_member` — **OK (F-ABI)** — error-set member resolution across modules; was expected FAIL per original plan but passes gcc 0 errors after extern-fn ABI fixes. Class: OK (not fail).
 
 ---
 
