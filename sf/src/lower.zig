@@ -1670,6 +1670,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var parm_km: []const u8 = "k"; pal.markerWrite(parm_km);
         var parm_kb: [10]u8 = undefined; var parm_kl = itoa_mod.itoa(@intCast(u32, arr_kind), parm_kb[0..]); var parm_ks: usize = @intCast(usize, 9) - @intCast(usize, parm_kl); pal.markerWrite(parm_kb[parm_ks..@intCast(usize, 9)]);
         var parm_nl2: []const u8 = "\n"; pal.markerWrite(parm_nl2);
+        if (arr_tid == type_mod.TYPE_VOID) {
+            var vfvx_m: []const u8 = "VFIX:iVX\n"; pal.markerWrite(vfvx_m);
+            return @intCast(u32, 0);
+        }
+        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
+        if (arr_kind != @intCast(u8, 0) and ptype != type_mod.TYPE_UNDEFINED) { if (arr_tid == type_mod.TYPE_VOID) { var vfrv_m: []const u8 = "VFLOW:iRV\n"; pal.markerWrite(vfrv_m); } _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
             var tpp_m: []const u8 = "TPP:a"; pal.markerWrite(tpp_m);
             var tpp_ab: [10]u8 = undefined; var tpp_al = itoa_mod.itoa(arr_temp, tpp_ab[0..]); var tpp_as: usize = @intCast(usize, 9) - @intCast(usize, tpp_al); pal.markerWrite(tpp_ab[tpp_as..@intCast(usize, 9)]);
@@ -1690,15 +1699,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (arr_tid != type_mod.TYPE_UNDEFINED) { self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = arr_tid; var hot_tm2: []const u8 = "tP\n"; pal.markerWrite(hot_tm2); } else { var hot_tm2: []const u8 = "tMISS\n"; pal.markerWrite(hot_tm2); }
             }
         }
-        if (arr_tid == type_mod.TYPE_VOID) {
-            var vfvx_m: []const u8 = "VFIX:iVX\n"; pal.markerWrite(vfvx_m);
-            return @intCast(u32, 0);
-        }
-        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
-        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
-        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
-        if (arr_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type))) { _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
-        if (arr_temp != @intCast(u32, 0) and ptype != type_mod.TYPE_UNDEFINED) { if (arr_tid == type_mod.TYPE_VOID) { var vfrv_m: []const u8 = "VFLOW:iRV\n"; pal.markerWrite(vfrv_m); } _ = hash_mod.u32ToU32MapPut(&self.local_decl_name_map, arr_temp, name_id); return arr_temp; }
         if (arr_kind != @intCast(u8, 0)) {
             var load_ty = ptype;
 
