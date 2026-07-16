@@ -1186,6 +1186,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var clt = self.registry.types_items[@intCast(usize, result)];
             if (clt.kind == type_mod.TypeKind.error_union_type) {
                 result = self.registry.eu_items[@intCast(usize, clt.payload_idx)].payload;
+                coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, result);
             }
         }
         if (node.child_2 != 0) {
