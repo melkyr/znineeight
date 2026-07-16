@@ -1570,8 +1570,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       }
                       return lowerGlobalRef(self, s.*, name_id);
                 } else if (s.kind == sym_mod.SymbolKind.module) {
-                    var mtemp = nextTemp(self, s.type_id);
-                    var m1m: []const u8 = "M1:"; pal.markerWrite(m1m);
+                    var mtemp = nextTemp(self, type_mod.TYPE_VOID);
+                    var mam: []const u8 = "module used as value expression";
+                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_3012_MODULE_AS_VALUE)),
+                        @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), mam);
                     return mtemp;
                 } else if (s.kind == sym_mod.SymbolKind.function) {
                     var s_t: u32 = s.type_id;
@@ -1800,13 +1802,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var base_temp = lowerExpr(self, node.child_0);
         if (base_temp == TEMP_NONE or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
-            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0) == null) {
+
             var np_msg: []const u8 = "non-value base expression in field access";
             _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3042),
                 @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), np_msg);
             var dummy = nextTemp(self, type_mod.TYPE_VOID);
             return dummy;
-            }
+
         }
         var base_ty = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
         if (base_ty != type_mod.TYPE_UNDEFINED) {
