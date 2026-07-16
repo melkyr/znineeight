@@ -7,13 +7,14 @@ Generated C compiles and runs.
 ## Expected zig1 behavior
 - Compilable C (gcc rc=0, no undeclared variable)
 - VOID temp (TYPE_VOID) — no C decl emitted
-- Module branch in lower.zig ident_expr IS instrumented with WARN_3012
-  ("module used as value expression"), but the var_decl handler short-circuits
-  before calling lowerExpr for module-typed init expressions (lower.zig:3684-3685),
-  so the warning does NOT fire for this specific var-decl repro pattern.
-  The branch fires when the ident_expr handler is reached in non-var_decl
-  contexts (e.g. statement expressions, return expressions).
+- Module branch in lower.zig ident_expr IS instrumented with WARN_3023
+  ("module used as value expression").
+- warning[3023] fires EXACTLY ONCE from `_ = h;` — the `_ =` discard pattern
+  reaches the ident_expr handler and triggers the diagnostic.
+- The `var v = h;` pattern still short-circuits before calling lowerExpr
+  for module-typed init expressions (lower.zig:3684-3685), so no warning
+  from that line.
 
 ## Corpus classification
-OK (compilable C, gcc rc=0). Warning diagnostic is non-fatal when it fires;
-not triggered in this var-decl repro due to upstream short-circuit.
+OK (compilable C, gcc rc=0). Warning diagnostic is non-fatal;
+one warning[3023] emitted from `_ = h;`.
