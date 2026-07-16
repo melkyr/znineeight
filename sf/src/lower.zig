@@ -3139,6 +3139,10 @@ fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
         }
         return @intCast(u32, 0);
     }
+    if (body_node.kind == AstKind.return_stmt or body_node.kind == AstKind.break_stmt or body_node.kind == AstKind.continue_stmt) {
+        lowerStmt(self, node_idx);
+        return @intCast(u32, 0);
+    }
     return lowerExpr(self, node_idx);
 }
 
