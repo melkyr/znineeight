@@ -2555,6 +2555,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
                 emitInst(self, LirInst{ .jump = join_bb });
             }
+            self.block_terminated = @intCast(u8, 0);
             self.current_bb = ok_bb;
             var ok_val = nextTemp(self, euPayloadOf(self, eu_box[0]));
             emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = lhs_temp, .result = ok_val } });
@@ -2596,6 +2597,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
+        self.block_terminated = @intCast(u8, 0);
         self.current_bb = ok_bb;
         var rt2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ok_val = nextTemp(self, if (rt2) |t| t else type_mod.TYPE_UNDEFINED);
@@ -3275,6 +3277,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (self.block_terminated == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .jump = join_bb });
             }
+            self.block_terminated = @intCast(u8, 0);
         } else {
             self.block_terminated = @intCast(u8, 0);
         }
@@ -3349,19 +3352,19 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var wek_m: []const u8 = "WEK:"; pal.markerWrite(wek_m);
             var wek_nl: []const u8 = "\n"; pal.markerWrite(wek_nl);
             emitInst(self, LirInst{ .jump = cont_bb });
-            self.current_bb = cont_bb;
-            self.block_terminated = @intCast(u8, 0);
-            var inc_m: []const u8 = "INC:c"; pal.markerWrite(inc_m);
-            var inc_cb: [10]u8 = undefined; var inc_cl = itoa_mod.itoa(node.child_2, inc_cb[0..]); var inc_cs: usize = @intCast(usize, 9) - @intCast(usize, inc_cl); pal.markerWrite(inc_cb[inc_cs..@intCast(usize, 9)]);
-            var inc_nm: []const u8 = "n"; pal.markerWrite(inc_nm);
-            var inc_nb: [10]u8 = undefined; var inc_nl2 = itoa_mod.itoa(node_idx, inc_nb[0..]); var inc_ns2: usize = @intCast(usize, 9) - @intCast(usize, inc_nl2); pal.markerWrite(inc_nb[inc_ns2..@intCast(usize, 9)]);
-            var inc_nl: []const u8 = "\n"; pal.markerWrite(inc_nl);
-            if (node.child_2 != @intCast(u32, 0)) {
-                lowerStmtBody(self, node.child_2);
-            }
-            if (self.block_terminated == @intCast(u8, 0)) {
-                emitInst(self, LirInst{ .jump = cond_bb });
-            }
+        }
+        self.current_bb = cont_bb;
+        self.block_terminated = @intCast(u8, 0);
+        var inc_m: []const u8 = "INC:c"; pal.markerWrite(inc_m);
+        var inc_cb: [10]u8 = undefined; var inc_cl = itoa_mod.itoa(node.child_2, inc_cb[0..]); var inc_cs: usize = @intCast(usize, 9) - @intCast(usize, inc_cl); pal.markerWrite(inc_cb[inc_cs..@intCast(usize, 9)]);
+        var inc_nm: []const u8 = "n"; pal.markerWrite(inc_nm);
+        var inc_nb: [10]u8 = undefined; var inc_nl2 = itoa_mod.itoa(node_idx, inc_nb[0..]); var inc_ns2: usize = @intCast(usize, 9) - @intCast(usize, inc_nl2); pal.markerWrite(inc_nb[inc_ns2..@intCast(usize, 9)]);
+        var inc_nl: []const u8 = "\n"; pal.markerWrite(inc_nl);
+        if (node.child_2 != @intCast(u32, 0)) {
+            lowerStmtBody(self, node.child_2);
+        }
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = cond_bb });
         }
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
