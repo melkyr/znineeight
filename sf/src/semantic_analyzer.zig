@@ -533,14 +533,14 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
     if (c0_lit == @intCast(u8, 0) and c1_lit != @intCast(u8, 0)) {
         lhs = semanticAnalyzerResolveExpr(self, node.child_0);
         var peerk: u32 = 0;
-        if (lhs != 0 and lhs != type_mod.TYPE_VOID) { peerk = self.registry.types_items[@intCast(usize, lhs)].kind; }
+        if (lhs != 0 and lhs != type_mod.TYPE_VOID and lhs != type_mod.TYPE_UNDEFINED) { peerk = self.registry.types_items[@intCast(usize, lhs)].kind; }
         if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
             pushExpectedType(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
         } else { rhs = semanticAnalyzerResolveExpr(self, node.child_1); }
     } else if (c0_lit != @intCast(u8, 0) and c1_lit == @intCast(u8, 0)) {
         rhs = semanticAnalyzerResolveExpr(self, node.child_1);
         var peerk: u32 = 0;
-        if (rhs != 0 and rhs != type_mod.TYPE_VOID) { peerk = self.registry.types_items[@intCast(usize, rhs)].kind; }
+        if (rhs != 0 and rhs != type_mod.TYPE_VOID and rhs != type_mod.TYPE_UNDEFINED) { peerk = self.registry.types_items[@intCast(usize, rhs)].kind; }
         if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
             pushExpectedType(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
         } else { lhs = semanticAnalyzerResolveExpr(self, node.child_0); }
