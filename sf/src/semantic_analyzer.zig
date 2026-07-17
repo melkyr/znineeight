@@ -1257,7 +1257,17 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             self.local_decl_types[self.local_decl_count] = if (catch_es != 0) catch_es else type_mod.TYPE_I32;
             self.local_decl_count += @intCast(usize, 1);
         }
-        if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
+        if (node.child_1 != @intCast(u32, 0)) {
+            if (catch_es != 0) {
+                var child1 = self.store.nodes.items[@intCast(usize, node.child_1)];
+                if (child1.kind == AstKind.error_literal) {
+                    pushExpectedType(self, catch_es);
+                    _ = semanticAnalyzerResolveExpr(self, node.child_1);
+                    popExpectedType(self);
+                }
+            }
+            semanticAnalyzerStmtWorkPush(self, node.child_1);
+        }
     } else if (node.kind == AstKind.orelse_expr) {
         result = semanticAnalyzerResolveOrelseExpr(self, node_idx);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
