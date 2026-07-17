@@ -1761,13 +1761,13 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             emitter.fl_name_ids[@intCast(usize, local_count)] = dl.name_id;
                             emitter.fl_count = local_count + @intCast(u32, 1);
                             local_count += @intCast(u32, 1);
-                         } else {
-                             var d3e: []const u8 = "F3eD:t"; pal.markerWrite(d3e);
-                             var d3etb: [20]u8 = undefined; var d3etl = itoa_mod.itoa(dl.temp, d3etb[0..]); var d3ets: usize = @intCast(usize, 19) - @intCast(usize, d3etl); pal.markerWrite(d3etb[d3ets..@intCast(usize, 19)]);
-                             var d3en: []const u8 = "N"; pal.markerWrite(d3en);
-                             var d3enb: [20]u8 = undefined; var d3enl = itoa_mod.itoa(dl.name_id, d3enb[0..]); var d3ens: usize = @intCast(usize, 19) - @intCast(usize, d3enl); pal.markerWrite(d3enb[d3ens..@intCast(usize, 19)]);
-                             var d3enl2: []const u8 = "\n"; pal.markerWrite(d3enl2);
-                         }
+                          } else {
+                              // Overwrite stale first occurrence with newer binding
+                              // so resolveTempName reverse-scan finds the latest
+                              emitter.fl_temps[@intCast(usize, ldi)] = dl.temp;
+                              emitter.fl_name_ids[@intCast(usize, ldi)] = dl.name_id;
+                              local_types[@intCast(usize, ldi)] = dl.type_id;
+                          }
                     }
                 },
                 else => {},
@@ -2856,7 +2856,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .int_const => |ic| {
-            var result = mangleTempName(emitter.interner, ic.result);
+            var result = resolveTempName(emitter, ic.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var is_tagged_union: u8 = @intCast(u8, 0);
@@ -2930,7 +2930,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .enum_const => |ec| {
-            var result = mangleTempName(emitter.interner, ec.result);
+            var result = resolveTempName(emitter, ec.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
@@ -2947,7 +2947,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, sc);
         },
         .float_const => |fc| {
-            var result = mangleTempName(emitter.interner, fc.result);
+            var result = resolveTempName(emitter, fc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
@@ -2964,7 +2964,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .string_const => |sc| {
-            var result = mangleTempName(emitter.interner, sc.result);
+            var result = resolveTempName(emitter, sc.result);
             var str = interner_mod.stringInternerGet(emitter.interner, sc.string_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
@@ -2998,7 +2998,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .null_const => |nc| {
-            var result = mangleTempName(emitter.interner, nc.result);
+            var result = resolveTempName(emitter, nc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var nct = getTempTypeByIndex(emitter, nc.result);
             if (nct != @intCast(u32, 0xFFFFFFFF) and emitter.registry.types_items[@intCast(usize, nct)].kind == type_mod.TypeKind.optional_type) {
@@ -3019,7 +3019,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, sohv);
         },
         .bool_const => |bc| {
-            var result = mangleTempName(emitter.interner, bc.result);
+            var result = resolveTempName(emitter, bc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             if (bc.value != @intCast(u8, 0)) {
@@ -3031,7 +3031,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .undefined_const => |uc| {
-            var result = mangleTempName(emitter.interner, uc.result);
+            var result = resolveTempName(emitter, uc.result);
             var uct_m: []const u8 = "UCT:r"; pal.markerWrite(uct_m);
             var uct_rb: [10]u8 = undefined; var uct_rl = itoa_mod.itoa(uc.result, uct_rb[0..]); var uct_rs: usize = @intCast(usize, 9) - @intCast(usize, uct_rl); pal.markerWrite(uct_rb[uct_rs..@intCast(usize, 9)]);
             var uct_tm: []const u8 = "t"; pal.markerWrite(uct_tm);

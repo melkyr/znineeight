@@ -939,12 +939,14 @@ fn nameMapGet(self: *LirLowerer, temp_id: u32) u32 {
 
 fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
     if (self.local_decl_count == @intCast(usize, 0)) return null;
-    var li: usize = @intCast(usize, 0);
-    while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
+    var li: usize = self.local_decl_count;
+    while (li > @intCast(usize, 0)) {
+        li -= @intCast(usize, 1);
         if (self.local_decl_names[li] == name_id) { return self.local_decl_temps[li]; }
     }
     return null;
 }
+
 
 fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
     var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node);
