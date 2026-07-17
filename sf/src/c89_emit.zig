@@ -1762,11 +1762,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             emitter.fl_count = local_count + @intCast(u32, 1);
                             local_count += @intCast(u32, 1);
                           } else {
-                              // Overwrite stale first occurrence with newer binding
-                              // so resolveTempName reverse-scan finds the latest
-                              emitter.fl_temps[@intCast(usize, ldi)] = dl.temp;
-                              emitter.fl_name_ids[@intCast(usize, ldi)] = dl.name_id;
-                              local_types[@intCast(usize, ldi)] = dl.type_id;
+                              // nothing added for duplicates
                           }
                     }
                 },

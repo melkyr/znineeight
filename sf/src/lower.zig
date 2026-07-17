@@ -242,6 +242,7 @@ pub const LirLowerer = struct {
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
     local_decl_kinds: [64]u8,
+    local_decl_scopes: [64]u32,
     local_decl_name_map: hash_mod.U32ToU32Map,
     local_decl_count: usize,
     _fn_ret_type: u32,
@@ -298,6 +299,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
         .local_decl_kinds = undefined,
+        .local_decl_scopes = undefined,
         .local_decl_name_map = hash_mod.u32ToU32MapInit(alloc),
         .local_decl_count = @intCast(usize, 0),
         ._fn_ret_type = @intCast(u32, 0),
@@ -465,12 +467,13 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
     return result;
 }
 
-fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
+fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_depth: u32) void {
     if (self.local_decl_count >= @intCast(usize, 64)) return;
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_types[self.local_decl_count] = type_id;
     self.local_decl_temps[self.local_decl_count] = temp;
     self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
+    self.local_decl_scopes[self.local_decl_count] = at_depth;
     self.local_decl_count += @intCast(usize, 1);
     var adt_m: []const u8 = "ADT:n"; pal.markerWrite(adt_m);
     var adt_nb: [10]u8 = undefined; var adt_nl = itoa_mod.itoa(name_id, adt_nb[0..]); var adt_ns: usize = @intCast(usize, 9) - @intCast(usize, adt_nl); pal.markerWrite(adt_nb[adt_ns..@intCast(usize, 9)]);
@@ -493,26 +496,23 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32) void {
     var adc_nl2: []const u8 = "\n"; pal.markerWrite(adc_nl2);
 }
 fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_id: u32) u32 {
-    if (findLocalTemp(self, capture_name) != null) {
-        var eli: usize = 0;
-        while (eli < self.local_decl_count) : (eli += 1) {
-            if (self.local_decl_names[eli] == capture_name) {
-
-                    var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
-                    var name_buf: [96]u8 = undefined;
-                    var np: usize = @intCast(usize, 0);
-                    while (np < orig_str.len and np < @intCast(usize, 95)) : (np += 1) { name_buf[np] = orig_str[np]; }
-                    name_buf[np] = @intCast(u8, '_'); np += 1;
-                    var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
-                    var scb: [16]u8 = undefined; var scl = itoa_mod.itoa(sc, scb[0..]);
-                    var sc_start: usize = @intCast(usize, 15) - @intCast(usize, scl);
-                    var sci: usize = sc_start;
-                    while (sci < sc_start + @intCast(usize, scl) and np < @intCast(usize, 95)) : (sci += 1) { name_buf[np] = scb[sci]; np += 1; }
-                    var syn_id = si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
-                    _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, capture_name, syn_id);
-                    return syn_id;
-
-            }
+    var eli: usize = self.local_decl_count;
+    while (eli > @intCast(usize, 0)) {
+        eli -= @intCast(usize, 1);
+        if (self.local_decl_names[eli] == capture_name) {
+            var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
+            var name_buf: [96]u8 = undefined;
+            var np: usize = @intCast(usize, 0);
+            while (np < orig_str.len and np < @intCast(usize, 95)) : (np += 1) { name_buf[np] = orig_str[np]; }
+            name_buf[np] = @intCast(u8, '_'); np += 1;
+            var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
+            var scb: [16]u8 = undefined; var scl = itoa_mod.itoa(sc, scb[0..]);
+            var sc_start: usize = @intCast(usize, 15) - @intCast(usize, scl);
+            var sci: usize = sc_start;
+            while (sci < sc_start + @intCast(usize, scl) and np < @intCast(usize, 95)) : (sci += 1) { name_buf[np] = scb[sci]; np += 1; }
+            var syn_id = si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
+            _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, capture_name, syn_id);
+            return syn_id;
         }
     }
     return capture_name;
@@ -942,7 +942,7 @@ fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
     var li: usize = self.local_decl_count;
     while (li > @intCast(usize, 0)) {
         li -= @intCast(usize, 1);
-        if (self.local_decl_names[li] == name_id) { return self.local_decl_temps[li]; }
+        if (self.local_decl_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) { return self.local_decl_temps[li]; }
     }
     return null;
 }
@@ -1013,7 +1013,7 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         emitInst(self, LirInst{ .assign = .{ .dst = bound, .src = cond_temp, .name_id = cap_name } });
         cap_temp = bound;
     }
-    addLocalDecl(self, cap_name, cap_type, cap_temp);
+    addLocalDecl(self, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1));
     emitInst(self, LirInst{ .decl_local = .{ .name_id = cap_name, .type_id = cap_type, .temp = cap_temp } });
 }
 
@@ -2552,7 +2552,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
                 var catch_cap_name = maybeDisambiguateCapture(self, capture_node.payload, type_mod.TYPE_I32);
-                addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp);
+                addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp, self.scope_depth);
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
@@ -2916,11 +2916,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var payload_temp = nextTemp(self, fe.type_id);
                         _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
                          emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
-                        addLocalDecl(self, capture_name, fe.type_id, payload_temp);
+                        addLocalDecl(self, capture_name, fe.type_id, payload_temp, self.scope_depth + @intCast(u32, 1));
                         emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe.type_id, .temp = payload_temp } });
                     }
                      } else {
-                         addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0]);
+                         addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0], self.scope_depth + @intCast(u32, 1));
                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = tu_base_box[0] } });
                      }
                 }
@@ -3411,7 +3411,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var start_temp = lowerExpr(self, pattern.child_0);
                 var cap_type = if (pat_type) |pt| pt else type_mod.TYPE_U32;
                 if (node.payload != 0) {
-                    var fcapr = maybeDisambiguateCapture(self, node.payload, cap_type); addLocalDecl(self, fcapr, cap_type, start_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
+                    var fcapr = maybeDisambiguateCapture(self, node.payload, cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
                 }
                 var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
@@ -3481,8 +3481,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, elem_type[0]);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-            if (node.payload != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, node.payload, elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
-            if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.child_2, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
+            if (node.payload != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, node.payload, elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
+            if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.child_2, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
@@ -3589,12 +3589,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                               var payload_temp2 = nextTemp(self, fe2.type_id);
                              _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
                               emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
-                              addLocalDecl(self, capture_name, fe2.type_id, payload_temp2);
+                              addLocalDecl(self, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1));
                               emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
                               var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
                           }
                       } else {
-                          addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0]);
+                          addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1));
                           emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = tu_base_box2[0] } });
                       }
                   }
@@ -3716,7 +3716,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             } else {
             var dl_temp = nextTemp(self, decl_type);
             emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = decl_type, .temp = dl_temp } });
-            addLocalDecl(self, name_id, decl_type, dl_temp);
+            addLocalDecl(self, name_id, decl_type, dl_temp, self.scope_depth);
             if (node.child_1 != 0) {
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 var is_array_type: u8 = @intCast(u8, 0);
@@ -4141,7 +4141,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                     .type_id = p_tid,
                     .temp_id = p_temp,
                 });
-                addLocalDecl(self, p_name_id, p_tid, p_temp);
+                addLocalDecl(self, p_name_id, p_tid, p_temp, self.scope_depth);
                 self.hoisted_temps.items[@intCast(usize, p_temp)].type_id = p_tid;
                 if (p_type) |pt| {
                     var lpf_m: []const u8 = "LPF:n"; pal.markerWrite(lpf_m);
