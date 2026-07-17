@@ -147,7 +147,21 @@ If differences exist, the agent must debug `zig1` using the strategies in `DEBUG
 - **No Dead Code**: Remove debugging prints before committing unless guarded by a `const DEBUG = false;` flag.
 
 ---
+### 2.5 Review Hardening (MANDATORY — post-incident policy, 2026-07-17)
 
+> **Origin:** `.opencode/plans/2026-07-16-literal-ordinal-resolution-amended.md` "PROCESS-FAILURE RECORD". These rules are binding for all subagent dispatches and contract execution.
+
+1. **Skip/severance/deviation = BLOCKED.** Any subagent that skips a contracted phase, exercises a severability clause, or deviates from contract text MUST report status `BLOCKED` (never `DONE`) and halt. The controller MUST STOP and present to the operator BEFORE any commit containing a deviation. Deviations discovered post-hoc are sanctionable.
+
+2. **Reviewer independence.** Reviewer prompts MUST NOT contain "do not flag" instructions, pre-judged severities, or framing that shields specific categories of findings. Reviewers flag everything; the controller adjudicates in the loop, and the operator rules on plan-conflicts.
+
+3. **Runtime gates mandatory.** Every fix-task gate battery MUST include RUNTIME execution of affected programs (and oracle/parent comparison where available). Compile-only gates are FORBIDDEN — the 2026-07-16 incident proved a compile-clean binary can regress at runtime (partial name_id→ordinal migration broke `err == error.X` consistency).
+
+4. **Important/Critical findings loop.** Every Important or Critical review finding MUST be followed by a fix subagent + re-review, OR an explicit operator ruling. The controller may not self-adjudicate severity downgrades.
+
+5. **Verification claims must be evidenced.** A subagent claiming "X was verified" must include the evidence (file:line, command output). Unevidenced verification claims are treated as false — per the 2026-07-16 incident where a phase was skipped on a wrong verification claim.
+
+---
 ## 3. Phase‑Specific Implementation Guidelines
 
 ### 3.1 Milestone 0: Infrastructure (`src/`)

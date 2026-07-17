@@ -486,6 +486,16 @@ Trigger the requesting-code-review skill when auditing completed changes.
 
 **Key principles:** Review early/often. Fix Critical before proceeding, Important before merge. Categorize by actual severity — not everything is Critical. Acknowledge strengths before listing issues.
 
+### Review Hardening (MANDATORY)
+
+- Deviations from contract = `BLOCKED` (never `DONE`); controller must STOP before any commit containing a deviation.
+- Reviewer prompts: no "do not flag", no pre-judged severities, no shielding of findings.
+- Every fix-task gate battery MUST include RUNTIME execution; compile-only gates forbidden.
+- All Important/Critical review findings → fix subagent + re-review, or explicit operator ruling. No self-adjudication.
+- Verification claims require evidence (file:line, output). Unevidenced = false.
+
+**Full policy:** `docs/sf/AGENTS.md` §2.5 (post-incident, 2026-07-17).
+
 ## zig0 Runtime h/c Architecture
 
 The zig0 bootstrap compiler has a two-tier runtime that supports **both**
