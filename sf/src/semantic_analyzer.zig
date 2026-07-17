@@ -524,8 +524,30 @@ fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {
 fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
     var cpe: []const u8 = "CPE"; pal_mod.markerWrite(cpe);
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
-    var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    var lhs: u32 = 0;
+    var rhs: u32 = 0;
+    var c0n = self.store.nodes.items[@intCast(usize, node.child_0)];
+    var c1n = self.store.nodes.items[@intCast(usize, node.child_1)];
+    var c0_lit: u8 = if (c0n.kind == AstKind.error_literal or c0n.kind == AstKind.enum_literal) @intCast(u8, 1) else @intCast(u8, 0);
+    var c1_lit: u8 = if (c1n.kind == AstKind.error_literal or c1n.kind == AstKind.enum_literal) @intCast(u8, 1) else @intCast(u8, 0);
+    if (c0_lit == @intCast(u8, 0) and c1_lit != @intCast(u8, 0)) {
+        lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+        var peerk: u32 = 0;
+        if (lhs != 0 and lhs != type_mod.TYPE_VOID) { peerk = self.registry.types_items[@intCast(usize, lhs)].kind; }
+        if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
+            pushExpectedType(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
+        } else { rhs = semanticAnalyzerResolveExpr(self, node.child_1); }
+    } else if (c0_lit != @intCast(u8, 0) and c1_lit == @intCast(u8, 0)) {
+        rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+        var peerk: u32 = 0;
+        if (rhs != 0 and rhs != type_mod.TYPE_VOID) { peerk = self.registry.types_items[@intCast(usize, rhs)].kind; }
+        if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
+            pushExpectedType(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
+        } else { lhs = semanticAnalyzerResolveExpr(self, node.child_0); }
+    } else {
+        lhs = semanticAnalyzerResolveExpr(self, node.child_0);
+        rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    }
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var cp0: []const u8 = "CP0"; pal_mod.markerWrite(cp0); return type_mod.TYPE_VOID; }
     if (lhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, rhs)) { var cp1: []const u8 = "CPB"; pal_mod.markerWrite(cp1); return type_mod.TYPE_BOOL; }
     if (rhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, lhs)) { var cp2: []const u8 = "CPB"; pal_mod.markerWrite(cp2); return type_mod.TYPE_BOOL; }
@@ -1220,11 +1242,11 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.try_expr) {
         result = semanticAnalyzerResolveTryExpr(self, node_idx);
     } else if (node.kind == AstKind.catch_expr) {
-        result = semanticAnalyzerResolveExpr(self, node.child_0);
+        var catch_es: u32 = 0; result = semanticAnalyzerResolveExpr(self, node.child_0);
         if (result != type_mod.TYPE_UNDEFINED) {
             var clt = self.registry.types_items[@intCast(usize, result)];
             if (clt.kind == type_mod.TypeKind.error_union_type) {
-                result = self.registry.eu_items[@intCast(usize, clt.payload_idx)].payload;
+                catch_es = self.registry.eu_items[@intCast(usize, clt.payload_idx)].error_set; result = self.registry.eu_items[@intCast(usize, clt.payload_idx)].payload;
                 coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, result);
             }
         }
@@ -1232,7 +1254,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var capture_node = self.store.nodes.items[@intCast(usize, node.child_2)];
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
             self.local_decl_names[self.local_decl_count] = capture_node.payload;
-            self.local_decl_types[self.local_decl_count] = type_mod.TYPE_I32;
+            self.local_decl_types[self.local_decl_count] = if (catch_es != 0) catch_es else type_mod.TYPE_I32;
             self.local_decl_count += @intCast(usize, 1);
         }
         if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
