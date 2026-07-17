@@ -26,13 +26,14 @@ Verification: `zig1 --dump-c89` → gcc 0 errors + runtime stdout == `expected_o
 
 | Ver | HEAD | Date | Corpus | Description |
 |-----|------|------|--------|-------------|
-| v10 | 6a4e9563 | 2026-07-17 | **168 dirs, OK=164, FAIL=4, ICE=0, CRASH=0** | Literal name_id->ordinal resolution complete (7 commits). Fixed: error_literal (return/assign/eq/catch-RHS/inline RHS contexts) + enum_literal (non-switch void-member assign/eq contexts) + ERR_3008/3009 diagnostics + hack deletion (:620-628) + review-hardening policy. Behavior-oracle novel repro class established (error_literal_return non-zig0-oracleable; enum_literal_assign regression guard). Known FAILs unchanged: anon_init_orelse_rhs, array_tagged_union_read, field_store_drop, var_declared_void. |
+| v11 | 6dc252c5 | 2026-07-17 | **168 dirs, OK=164, FAIL=4, ICE=0, CRASH=0** | Cleanup + tech debt sweep (4 commits). Fixed: (1) LATENT-BUG 6 straggler nodes resolved (TooManyArgs/TooFewArgs added to LispError + ERR_3011 non-member diagnostic); (2) untyped-literal fix — error-literal inference + ERR_3010 enum-literal diagnostic; (3) TYPE_UNDEFINED defensive guard in comparison handler. New ErrorCodes: ERR_3010 (untyped enum), ERR_3011 (non-member error). Known FAILs unchanged. |
+| v10 | 456085a2 | 2026-07-17 | **168 dirs, OK=164, FAIL=4, ICE=0, CRASH=0** | Literal name_id->ordinal resolution complete (8 commits). Fixed: error_literal (return/assign/eq/catch-RHS/inline RHS contexts) + enum_literal (non-switch void-member assign/eq contexts) + ERR_3008/3009 diagnostics + hack deletion (:620-628) + review-hardening policy. Behavior-oracle novel repro class established. Known FAILs unchanged. |
 
 ## Future Work (tracked, not in scope)
 
 | Item | Origin | Description |
 |------|--------|-------------|
 | `@errorName` builtin | Task 4e PASS ruling | Error-set name table emission at emitErrorSetType + builtin — would let apps print error names instead of manual if-chains |
-| Untyped-literal fix | Task 6 operator ruling | Two-part: (a) error-literal untyped var-decl inference via error-set name search; (b) enum-literal untyped → level-0 diagnostic |
+
 | Phase-C skip justification | Task 4d review F1 | Reviewer-proven wrong verification claim; recorded debt only, no action needed |
 | `.gitignore` `*.txt` rule | Task 5 gotcha | `expected_out.txt` files require `git add -f`; note for future repros |
