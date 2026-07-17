@@ -1602,6 +1602,28 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 pushExpectedType(self, vd_exp);
                 var it = semanticAnalyzerResolveExpr(self, node.child_1);
                 popExpectedType(self);
+                if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED) and init_node.kind == AstKind.error_literal) {
+                    var name_id: u32 = init_node.payload;
+                    var ei: usize = 0;
+                    while (ei < self.registry.types_len) : (ei += 1) {
+                        if (self.registry.types_items[ei].kind == type_mod.TypeKind.error_set_type) {
+                            var ord = type_mod.typeRegistryErrorSetMemberIndex(self.registry, @intCast(u32, ei), name_id);
+                            if (ord != @intCast(u32, 0xFFFFFFFF)) {
+                                var es_type_id: u32 = @intCast(u32, ei);
+                                hash_mod.u32ToU32MapPut(self.enum_value_table, node.child_1, ord);
+                                rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, es_type_id);
+                                it = es_type_id;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED) and init_node.kind == AstKind.enum_literal) {
+                    var sp = init_node.span_start;
+                    var ep = sp + @intCast(u32, init_node.span_len);
+                    var elu_msg: []const u8 = "unable to infer type of enum literal without context";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3010_CANNOT_INFER_ENUM_LITERAL_TYPE)), self.source_file_id, sp, ep, elu_msg);
+                }
                 if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
                     if (it == type_mod.TYPE_NULL) { var cs4_m: []const u8 = "CS4\n"; pal_mod.markerWrite(cs4_m); }
                     var ck = coercion_mod.classifyCoercion(self.registry, errLitSrcType(self, node.child_1, decl_type, it), decl_type);
