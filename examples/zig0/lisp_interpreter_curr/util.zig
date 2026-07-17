@@ -19,6 +19,8 @@ pub const LispError = error {
     InvalidParams,
     Unreachable,
     InvalidDigit,
+    TooManyArgs,
+    TooFewArgs,
 };
 
 pub fn mem_eql(a: []const u8, b: []const u8) bool {
