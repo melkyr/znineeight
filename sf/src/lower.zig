@@ -734,8 +734,23 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
 fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
     var fa_node = self.ctx.store.nodes.items[@intCast(usize, fa_node_idx)];
     var field_name_id = fa_node.payload;
-    var base_temp = lowerExpr(self, fa_node.child_0);
-    var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
+    var child_0_node = self.ctx.store.nodes.items[@intCast(usize, fa_node.child_0)];
+    var base_temp: u32 = undefined;
+    var resolved_base: ?u32 = null;
+    if (child_0_node.kind == AstKind.index_access) {
+        var slice_temp = lowerExpr(self, child_0_node.child_0);
+        var ptr_temp = maybeExtractSlicePtr(self, child_0_node.child_0, slice_temp);
+        var idx_temp = lowerExpr(self, child_0_node.child_1);
+        var elem_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
+        var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, if (elem_type) |et| et else type_mod.TYPE_VOID, false);
+        base_temp = nextTemp(self, ptr_type);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ptr_temp, .rhs = idx_temp, .result = base_temp } });
+        resolved_base = ptr_type;
+    } else {
+        base_temp = lowerExpr(self, fa_node.child_0);
+        resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
+    }
+
     if (resolved_base) |type_id| {
         var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
         var kind = ty.kind;
