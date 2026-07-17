@@ -1172,7 +1172,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, ord);
                         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, es);
                         result = es;
-                    } else { result = type_mod.TYPE_VOID; }
+                    } else {
+                        var sp = node.span_start;
+                        var ep = sp + @intCast(u32, node.span_len);
+                        var eln_msg: []const u8 = "error literal not found in error set";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3011_ERROR_LITERAL_NOT_IN_SET)), self.source_file_id, sp, ep, eln_msg);
+                        result = type_mod.TYPE_VOID;
+                    }
                 } else { result = type_mod.TYPE_VOID; }
             } else { result = type_mod.TYPE_VOID; }
         } else { result = type_mod.TYPE_VOID; }
