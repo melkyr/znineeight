@@ -18,6 +18,8 @@ pub const LispError = error {
     DivisionByZero,
     InvalidParams,
     Unreachable,
+    TooManyArgs,
+    TooFewArgs,
     InvalidDigit,
 };
 
