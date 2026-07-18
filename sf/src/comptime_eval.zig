@@ -144,8 +144,7 @@ pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
     if (node.kind == AstKind.int_literal) {
         return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u8, 0), .sig = true };
     } else if (node.kind == AstKind.char_literal) {
-        var cv: u64 = @intCast(u64, node.payload);
-        return ComptimeVal{ .bits = cv, .width_bits = @intCast(u8, 8), .sig = false };
+        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u8, 8), .sig = false };
     } else if (node.kind == AstKind.bool_literal) {
         if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u8, 1), .sig = false };
         return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u8, 1), .sig = false };
