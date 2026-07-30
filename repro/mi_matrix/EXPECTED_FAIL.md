@@ -148,3 +148,17 @@ Repros discovered from broken examples (lisp_interpreter, json_parser_workaround
 | F | `define_mutate_closure` | ICE(2000) | ICE(2000) | fn ptr type not parseable by zig1 |
 
 **Total: 13 new (10 unique + 3 GREEN guards), 2 new FAILs, 7 ICEs, 4 OK (all GREEN + C1 RED that unexpectedly passes)**
+
+---
+
+## Syntax Coverage G — 2026-07-30 (3 repros, cross-module struct literal)
+
+Cross-module struct literal pattern discovered from json_parser_workaround. Creating a struct literal with an imported struct type causes the variable declaration to be missing from C output. Adding a field-store after the literal escalates to ICE(3043).
+
+| Category | Repro | GREEN | RED | Pattern |
+|----------|-------|-------|-----|---------|
+| G1 | `ptrcast_slice_field_void` | OK | ICE(3043) | xmod struct + slice field + field-store |
+| G2 | `ptrcast_slice_field_xmod` | OK | ICE(3043) | xmod struct + scalar fields + field-store |
+| G3 | `ptrcast_slice_field_type` | OK | FAIL | xmod struct literal only (no field-store, undeclared var) |
+
+**Note:** Category F (define_mutate_closure) removed from corpus — `fn (i32) i32` syntax not parseable by zig1. Total active repros in v14: 182. Classification: OK=167, FAIL=7, ICE=10, CRASH=0.
