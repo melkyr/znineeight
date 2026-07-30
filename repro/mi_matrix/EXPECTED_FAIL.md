@@ -147,7 +147,7 @@ Repros discovered from broken examples (lisp_interpreter, json_parser_workaround
 | E | `module_var_mutable` | OK | FAIL | global mutable var missing C decl |
 | F | `define_mutate_closure` | ICE(2000) | ICE(2000) | fn ptr type not parseable by zig1 |
 
-**Total: 13 new (10 unique + 3 GREEN guards), 2 new FAILs, 7 ICEs, 4 OK (all GREEN + C1 RED that unexpectedly passes)**
+**Total (A-F): 13 new (10 unique + 3 GREEN guards), 2 new FAILs, 7 ICEs, 4 OK (all GREEN + C1 RED that unexpectedly passes)**
 
 ---
 
@@ -161,4 +161,16 @@ Cross-module struct literal pattern discovered from json_parser_workaround. Crea
 | G2 | `ptrcast_slice_field_xmod` | OK | ICE(3043) | xmod struct + scalar fields + field-store |
 | G3 | `ptrcast_slice_field_type` | OK | FAIL | xmod struct literal only (no field-store, undeclared var) |
 
-**Note:** Category F (define_mutate_closure) removed from corpus — `fn (i32) i32` syntax not parseable by zig1. Total active repros in v14: 182. Classification: OK=167, FAIL=7, ICE=10, CRASH=0.
+**Note:** Category F (define_mutate_closure) removed from corpus — `fn (i32) i32` syntax not parseable by zig1.
+
+---
+
+## Syntax Coverage H — 2026-07-30 (1 repro, cross-module &extern_var + union field-store)
+
+Full json_parser_workaround chain: `&zig_default_arena` (address-of extern var) → `arena_alloc_default` → `@ptrCast` to struct with union data → field-store to union member → ICE(3043).
+
+| Category | Repro | GREEN | RED | Pattern |
+|----------|-------|-------|-----|---------|
+| H1 | `xmod_amp_arena_union_store` | OK | ICE(3043) | &extern_var + extern alloc + @ptrCast + union field-store |
+
+**Total active repros in v15: 185. Classification: OK=168, FAIL=7, ICE=11, CRASH=0.**
