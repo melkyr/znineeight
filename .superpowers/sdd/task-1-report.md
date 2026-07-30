@@ -1,38 +1,55 @@
-### Task 1 Report: Capture rename edge-case RED repro suite
+# Task 1: Verify Baseline Corpus Gate — Report
 
-**Status:** DONE
+## 1. Build Result
 
-**Commit:** `2bc17580` — `test(repro): RED capture rename edge-case repros (switch, catch, for, nested, shadow)`
+- **Script:** `bash sf/scripts/build_release.sh`
+- **Status:** SUCCESS
+- **Gate line:** `=== [release] Done: sf/build/out_release/zig1 ===`
+- **Binary:** `sf/build/out_release/zig1` exists and is executable.
 
-**Files created:**
-- `repro/capture_rename/main.zig` — 6 test cases covering switch, catch, for-in, nested, and shadow captures
-- `repro/capture_rename/NOTES.md` — expected vs actual output, root cause analysis
+## 2. Corpus Counts
 
-**Gate evidence:**
-- `=== [release] Done: sf/build/out_release/zig1 ===` — build succeeded
-- `dump rc=0` — zig1 compiled repro successfully
-- `gcc rc=0` — C output compiled successfully
-- `timeout 3 /tmp/capr` → `77542630` with rc=124 (timeout from for-in infinite loop)
+- **Total repro directories:** 172 (baseline expected 166)
+- **OK:** 163 (expected 162)
+- **FAIL:** 4 (expected 4)
+- **ICE:** 5 (expected 0)
+- **CRASH:** 0 (expected 0)
 
-**RED cases identified:**
+## 3. FAIL/ICE/CRASH Repros
 
-| Case | Pattern | Expected | Actual | Root Cause |
-|------|---------|----------|--------|------------|
-| **CASE 2** | catch same-name same-type | 99 | **77** | `maybeDisambiguateCapture` not called for catch captures (lower.zig:2446-2447). Second `\|err\|` aliases first catch's error code temp. |
-| **CASE 3** | for-in same-name | 30 | **(infinite loop)** | General codegen bug: missing loop counter update in C for for-in over slice. Not capture-specific. |
+### FAIL (4 — matches expected)
 
-**Cases that PASSED (no RED):**
-- CASE 1: switch same-name same-type — switch captures are scoped (local_decl_count restored after prong lowering at lower.zig:2848/:3469)
-- CASE 4: switch diff-type — maybeDisambiguateCapture correctly renames
-- CASE 5: catch shadow var_decl — no ICE, compiles
-- CASE 6: nested captures (switch + while) — works correctly
+| Repro | Expected? |
+|-------|-----------|
+| `anon_init_orelse_rhs` | Yes (aggregate/anon-init, out-of-scope) |
+| `array_tagged_union_read` | Yes (aggregate/anon-init, out-of-scope) |
+| `field_store_drop` | Yes (VOID decl-skip / undeclared-temp, out-of-scope) |
+| `var_declared_void` | Yes (VOID decl-skip / undeclared-temp, out-of-scope) |
 
-**Key finding for CASE 2:** The catch lowering code at lower.zig:2441-2448 directly uses `addLocalDecl` with the raw capture name without calling `maybeDisambiguateCapture`. This causes duplicate local decl entries with the same name but different temps. `findLocalTemp` returns the first match, so the second catch body references the wrong error code.
+### ICE (5 — baseline expects 0)
 
-**Adaptations needed from brief:**
-- Brief used plain `enum` switch — zig1 only supports `union(enum)` switch with captures
-- Brief used `for (a_arr[0..3])` — zig1 only supports `for (array)`
-- Brief used `print_nl` with `std`/`pal` — used `__bootstrap_print_int` instead
-- Brief used `if (false) { }` blocks — removed, unnecessary for the test
-- For-in tests use slice for-in (compiles but infinite loops) instead of array for-in (gcc compile error)
-- Cases reordered so CASE 3 (for-in infinite loop) runs last, allowing earlier cases to produce output
+| Repro | Error | Notes |
+|-------|-------|-------|
+| `bare_error_union_return` | `error[3011]` | **False positive** — semantic error (error literal not found in error set), not compiler ICE |
+| `catch_block_value_producing` | `error[2000]` x8 | **False positive** — parse errors, not compiler ICE |
+| `eu_assign_incompat_payload` | `error[3000]` | **False positive** — semantic diagnostic (type mismatch in assignment), not compiler ICE |
+| `field_access_optional` | `error[3000]` | **False positive** — semantic diagnostic (cannot access field on optional), not compiler ICE |
+| `struct_field_store_subscript` | `error[3043]` | **Real ICE** — internal: unsupported field-store base |
+
+### CRASH (0 — matches expected)
+
+## 4. Baseline Comparison
+
+**Baseline does NOT match.** Expected 162/4/0/0, actual 163/4/5/0.
+
+Key findings:
+
+1. **Corpus size:** 172 repros vs baseline's 166 — 6 extra repros added since baseline was established.
+
+2. **Gate recipe over-classifies ICE:** The recipe `grep -q 'error\['` matches ALL error[N] diagnostics, including semantic errors and parse errors. 4 of 5 ICEs are false positives. Only `struct_field_store_subscript` (`error[3043]`) is a genuine compiler internal error. QUICK_REF.md specifies a narrower ICE pattern: `error\[(48|3042|9001)\]|AddressSanitizer`.
+
+3. **Real ICE exists:** `struct_field_store_subscript` crashes with `error[3043]: internal: unsupported field-store base (node 26)` — a true compiler internal error not in baseline.
+
+## 5. Verdict
+
+**BLOCKED** — baseline gate 162/4/0/0 not matched. Actual: 163/4/5/0 with 1 real ICE (`struct_field_store_subscript`) and 4 false-positive ICEs (semantic diagnostics misclassified by the `error\[` grep pattern).

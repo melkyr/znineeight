@@ -2,7 +2,7 @@
 
 **Pattern:** Field-store to a struct through a `@ptrCast`-derived pointer.
 
-**RED (main.zig):** TODO in Task 3 — stores to union data field via ptr.
+**RED (main.zig):** Stores to union data field via @ptrCast pointer. ICEs with error[3043].
 **GREEN (main_green.zig):** Same pattern but only stores to scalar fields (no union member). Regression guard.
 
 **Category:** A1 — union field-store through pointer
