@@ -308,8 +308,12 @@ After all arms: emit `STX:n<idx> STX:k<kind> STX:r<result> A4:N<idx> A4:K<kind> 
 #### Measured arm-hit table (4 examples, `[markers]` A4:K / STX:k)
 
 Counts below are resolveExpr resolutions that reach the tail (`A4:K`). `RXS` is the swt_ex entry count
-(semantic_analyzer.zig:1137); early returns (`P0:n` payload==0, `PL0:n` no prongs) make RXS ≥ A4:K56
-(lisp 112 vs 56). TypeId results (`STX:r`) are omitted; the table is hit-frequency only.
+(semantic_analyzer.zig:1137); every swt_ex entry resolves, so RXS == A4:K56 (lisp 56 == 56). Note the
+raw `RXS` grep count of 112 is a double-count: `semanticAnalyzerResolveExpr` emits `RXS` with no
+trailing newline followed by `RXS:n<idx>` (semantic_analyzer.zig:1138-1139), so the concatenated
+`RXSRXS:n<idx>` matches the `RXS` pattern twice. `P0: n` (semantic_analyzer.zig:1024) is a marker in
+`semanticAnalyzerResolveSwitchExpr`, not in the swt_ex dispatch arm. TypeId results (`STX:r`) are
+omitted; the table is hit-frequency only.
 
 | Arm | Kinds hit (of 4 examples) | mud | gol | lisp | json |
 |-----|---------------------------|-----|-----|------|------|
@@ -835,10 +839,11 @@ Deterministic check order:
 
 `CCK:ca` (semantic_analyzer.zig:615) logs every `classifyCoercion` result in `tryRecordCoercion`;
 `CCK:vr` (semantic_analyzer.zig:1630) logs the var-decl path; `COR:K` (semantic_analyzer.zig:618)
-logs only coercions actually recorded (`ck != none` or null→ptr). Per-example recorded counts
-(`CCK:ca`, with the recorded subset equal to `COR:K`):
+logs only coercions actually recorded (`ck != none` or null→ptr). Per-example `CCK:ca` counts below
+(the recorded subset — `ck != none` — equals `COR:K`; the trailing `none(0)` column is the `CCK:ca`
+kind-0 count, which `COR:K` excludes, e.g. lisp 3 / json 2):
 
-| Example | wrap_optional(1) | wrap_error_success(2) | wrap_error_err(3) | array_to_slice(5) | string_to_slice(8) | const_qualify(12) | int_literal_coerce(15) | wrap_optional_null(16) | none(0, not recorded) |
+| Example | wrap_optional(1) | wrap_error_success(2) | wrap_error_err(3) | array_to_slice(5) | string_to_slice(8) | const_qualify(12) | int_literal_coerce(15) | wrap_optional_null(16) | none(0: CCK:ca kind-0 count; excluded from COR:K) |
 |---------|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
 | mud_server | 1 | 0 | 0 | 0 | 10 | 1 | 15 | 2 | 0 |
 | game_of_life | 0 | 0 | 0 | 0 | 0 | 4 | 30 | 0 | 0 |
