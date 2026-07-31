@@ -315,6 +315,7 @@ ModuleEntry created (pending) → eventually parsed by main loop
 |--------|----------|-------------|
 | `I` | phase_ImportResolution (main.zig:250) | Phase entry — start of import resolution |
 | `Z` | phase_ImportResolution (main.zig:256) | Phase exit — queue drained, all modules parsed |
+| `M` | post-importResolve (main.zig:535) | Module dump — iterates modules, writes `M<id>:<ast_root>:R<decl_count>` |
 
 ### Import Resolution Parse Markers (import_resolver.zig)
 
