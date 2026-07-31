@@ -21,11 +21,11 @@
 
 | Step | Line | Purpose | Command | Output | Failures |
 |------|------|---------|---------|--------|----------|
-| Build zig0 | 11-12 | Compile bootstrap compiler from C++98 | `g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o build/zig0` | `build/zig0` | C++ compile error |
-| Clean output dir | 15-16 | Isolate release output — remove stale `.c`/`.h` | `rm -rf build/out_release && mkdir -p build/out_release` | `build/out_release/` (empty) | (none) |
-| zig0 → C89 | 19 | Translate `sf/src/main.zig` to C89 | `build/zig0 --header-priority-include -o build/out_release/zig1.c sf/src/main.zig` | `build/out_release/*.c` (35+ files) | zig0 compile error |
-| gcc compile | 22-28 | Compile C89 to binary with ASan | `gcc -m32 -std=c89 -O0 -Wall -fsanitize=address -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_release/*.c -o build/out_release/zig1` | `build/out_release/zig1` | gcc error |
-| zig1-dump (disabled) | 37-48 | (Commented out) Build dump binary from `main_dump.zig` | (disabled — pre-existing break) | (none) | Would fail on `main_dump.zig` |
+| Build zig0 | 11-12 | Compile bootstrap compiler from C++98 | `g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o build/zig0` | `build/zig0` | C++ compile error [inference] |
+| Clean output dir | 15-16 | Isolate release output — remove stale `.c`/`.h` | `rm -rf build/out_release && mkdir -p build/out_release` | `build/out_release/` (empty) | (none) [inference] |
+| zig0 → C89 | 19 | Translate `sf/src/main.zig` to C89 | `build/zig0 --header-priority-include -o build/out_release/zig1.c sf/src/main.zig` | `build/out_release/*.c` (35+ files) | zig0 compile error [inference] |
+| gcc compile | 22-28 | Compile C89 to binary with ASan | `gcc -m32 -std=c89 -O0 -Wall -fsanitize=address -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_release/*.c -o build/out_release/zig1` | `build/out_release/zig1` | gcc error [inference] |
+| zig1-dump (disabled) | 37-48 | (Commented out) Build dump binary from `main_dump.zig` | (disabled — pre-existing break) | (none) | Would fail on `main_dump.zig` [inference] |
 
 **Gate line:** `=== [release] Done: sf/build/out_release/zig1 ===` (`build_release.sh:30`)
 **Resulting binary:** `sf/build/out_release/zig1`
@@ -35,45 +35,45 @@
 
 | Component | Line | Purpose | Command | Notes |
 |-----------|------|---------|---------|-------|
-| Zig0 check | 9-12 | Build zig0 if missing | `g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o build/zig0` | Conditional — only runs if `build/zig0` missing |
-| `build_and_run` function | 18-53 | Per-binary build+compile+run pipeline | (see below) | Shared logic for all 9 test binaries |
-| `build_and_run` — zig0→C89 | 27 | Translate test `.zig` to C89 | `zig0 --header-priority-include -o build/out_test_<name>/<name>.c sf/src/tests/<name>.zig` | Failure → counted as FAIL |
-| `build_and_run` — gcc compile | 34-43 | Compile C89 to binary | `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_test_<name>/*.c -o build/out_test_<name>/<name>` | No ASan, no `-O0`, no `-Wall`. Failure → counted as FAIL |
-| `build_and_run` — execute | 46-49 | Run the test binary | `build/out_test_<name>/<name>` | Nonzero exit → FAIL |
-| Test invocations | 56-64 | All 9 test entries | `build_and_run "test_<name>_bin"` | Each gets isolated output dir |
-| Results summary | 66 | Final tally | `echo "Results: $PASS passed, $FAIL failed"` | |
+| Zig0 check | 9-12 | Build zig0 if missing | `g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o build/zig0` | Conditional — only runs if `build/zig0` missing [inference] |
+| `build_and_run` function | 18-53 | Per-binary build+compile+run pipeline | (see below) | Shared logic for all 9 test binaries [inference] |
+| `build_and_run` — zig0→C89 | 27 | Translate test `.zig` to C89 | `zig0 --header-priority-include -o build/out_test_<name>/<name>.c sf/src/tests/<name>.zig` | Failure → counted as FAIL [inference] |
+| `build_and_run` — gcc compile | 34-43 | Compile C89 to binary | `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_test_<name>/*.c -o build/out_test_<name>/<name>` | No ASan, no `-O0`, no `-Wall`. Failure → counted as FAIL [inference] |
+| `build_and_run` — execute | 46-49 | Run the test binary | `build/out_test_<name>/<name>` | Nonzero exit → FAIL [inference] |
+| Test invocations | 56-64 | All 9 test entries | `build_and_run "test_<name>_bin"` | Each gets isolated output dir [inference] |
+| Results summary | 66 | Final tally | `echo "Results: $PASS passed, $FAIL failed"` | [inference] |
 
 ### `build_release.sh` GCC flags rationale
 
 | Flag | Purpose | Why needed |
 |------|---------|------------|
-| `-m32` | 32-bit target | Compiler targets 32-bit Windows 9x/NT |
-| `-std=c89` | C89 standard | `zig0` emits C89, must compile under C89 rules |
-| `-O0` | No optimization | Easier debugging, avoids optimizer bugs on generated code |
-| `-Wall` | All warnings | Catch codegen issues in release build |
-| `-fsanitize=address` | ASan | Detect buffer overflows/use-after-free in release binary |
-| `-Wno-long-long` | Suppress `long long` warning | C89 extension required for 64-bit types |
-| `-Wno-pointer-sign` | Suppress signed/unsigned mismatch | Generated code casts freely |
-| `-Wno-implicit-function-declaration` | Suppress implicit decl warnings | Generated code may use undeclared functions |
-| `-Iinclude` | Include path for `zig_runtime.h` etc. | Header resolution during compile |
+| `-m32` | 32-bit target | Compiler targets 32-bit Windows 9x/NT [inference] |
+| `-std=c89` | C89 standard | `zig0` emits C89, must compile under C89 rules [inference] |
+| `-O0` | No optimization | Easier debugging, avoids optimizer bugs on generated code [inference] |
+| `-Wall` | All warnings | Catch codegen issues in release build [inference] |
+| `-fsanitize=address` | ASan | Detect buffer overflows/use-after-free in release binary [inference] |
+| `-Wno-long-long` | Suppress `long long` warning | C89 extension required for 64-bit types [inference] |
+| `-Wno-pointer-sign` | Suppress signed/unsigned mismatch | Generated code casts freely [inference] |
+| `-Wno-implicit-function-declaration` | Suppress implicit decl warnings | Generated code may use undeclared functions [inference] |
+| `-Iinclude` | Include path for `zig_runtime.h` etc. | Header resolution during compile [inference] |
 
 ### `build_test.sh` GCC flags differences
 
 | Flag | `build_release.sh` | `build_test.sh` | Reason |
 |------|-------------------|-----------------|--------|
-| `-O0` | Yes | No (default) | Test binaries don't need consistent address mapping |
-| `-Wall` | Yes | No | Test builds skip warning noise |
-| `-fsanitize=address` | Yes | No | Test binaries don't use ASan |
-| `-m32` | Yes | Yes | Both target 32-bit |
-| `-std=c89` | Yes | Yes | Both compile zig0-emitted C89 |
+| `-O0` | Yes | No (default) | Test binaries don't need consistent address mapping [inference] |
+| `-Wall` | Yes | No | Test builds skip warning noise [inference] |
+| `-fsanitize=address` | Yes | No | Test binaries don't use ASan [inference] |
+| `-m32` | Yes | Yes | Both target 32-bit [inference] |
+| `-std=c89` | Yes | Yes | Both compile zig0-emitted C89 [inference] |
 
 ### Output Directory Isolation
 
 | Directory | Script | Binary | Cleanup |
 |-----------|--------|--------|---------|
-| `build/` | both | `zig0` (bootstrap) | gitignored, manual rebuild |
-| `build/out_release/` | `build_release.sh` | `zig1` | `rm -rf` before each build |
-| `build/out_test_<name>/` | `build_test.sh` | `<name>` test binary | `rm -rf` before each build_and_run |
+| `build/` | both | `zig0` (bootstrap) | gitignored, manual rebuild [inference] |
+| `build/out_release/` | `build_release.sh` | `zig1` | `rm -rf` before each build [inference] |
+| `build/out_test_<name>/` | `build_test.sh` | `<name>` test binary | `rm -rf` before each build_and_run [inference] |
 
 **Why isolation matters** (`AGENTS.md §9.1`): zig0 generates `.c` / `.h` files per module. Different builds emit different file sets. Stale files from a previous build cause C89 type mismatch errors (`unknown type name 'Slice_*'`). Each target gets its own `rm -rf` + `mkdir -p`.
 
@@ -81,12 +81,12 @@
 
 | Test Type | Command | Verifier |
 |-----------|---------|----------|
-| Release build | `bash sf/scripts/build_release.sh` | Gate on `Done: .../zig1` |
-| Test suite | `bash sf/scripts/build_test.sh` | `PASS=9 FAIL=0` |
-| Compile+run with zig1 | `sf/build/out_release/zig1 --dump-c89 <FILE> > /tmp/x.c && gcc -m32 ... /tmp/x.c sf/include/zig_runtime.c sf/include/zig_pal.c -o /tmp/x && /tmp/x` | Exit code 0 |
-| Byte-identical gate | zig1 `--dump-c89` output vs parent zig1 `--dump-c89` output | `md5sum` match |
-| Corpus gate | 166 repros in `repro/mi_matrix/*/main.zig` | Baseline: `OK=162 FAIL=4 ICE=0 CRASH=0` |
-| Compile-only gate | `gcc -m32 -std=c89 -c` on zig1 output | gcc rc=0 |
+| Release build | `bash sf/scripts/build_release.sh` | Gate on `Done: .../zig1` [inference] |
+| Test suite | `bash sf/scripts/build_test.sh` | `PASS=9 FAIL=0` [inference] |
+| Compile+run with zig1 | `sf/build/out_release/zig1 --dump-c89 <FILE> > /tmp/x.c && gcc -m32 ... /tmp/x.c sf/include/zig_runtime.c sf/include/zig_pal.c -o /tmp/x && /tmp/x` | Exit code 0 [inference] |
+| Byte-identical gate | zig1 `--dump-c89` output vs parent zig1 `--dump-c89` output | `md5sum` match [inference] |
+| Corpus gate | 166 repros in `repro/mi_matrix/*/main.zig` | Baseline: `OK=162 FAIL=4 ICE=0 CRASH=0` [inference] |
+| Compile-only gate | `gcc -m32 -std=c89 -c` on zig1 output | gcc rc=0 [inference] |
 
 ---
 

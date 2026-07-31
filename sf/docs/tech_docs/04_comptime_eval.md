@@ -9,7 +9,7 @@
 | Builtin intrinsics | 3 | @sizeOf, @alignOf, @intCast |
 | Binary ops evaluated | 5 | add, sub, mul, div, mod |
 | Literal kinds | 3 | int_literal, char_literal, bool_literal |
-| Dispatch arms | 6 | int/char/bool/negate/binop/builtin/paren |
+| Dispatch arms | 7 | int/char/bool/negate/binop/builtin/paren |
 
 ---
 
