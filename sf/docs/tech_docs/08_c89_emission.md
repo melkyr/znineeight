@@ -776,7 +776,7 @@ preceded by a `/* original-name */` comment (`[source]` `c89_emit.zig:1464-1468`
 the order directly readable from the `.c`.
 
 Count check: emitted bodies 7/7/19/45; P7 LIR totals 20/11/48/32 include the externs
-(mud 12 extern + 8; gol 4 + 7; json 13 + 19; lisp 3 + 45). These counts exclude the
+(mud 13 extern + 7; gol 4 + 7; json 13 + 19; lisp 3 + 45). These counts exclude the
 `int main(void)` wrapper (mud:1198, gol:1188, json:697, lisp:2109), emitted last in each
 file immediately after the mangled `main` body (8/8/20/46 incl. wrapper).
 

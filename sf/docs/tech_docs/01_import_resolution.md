@@ -471,8 +471,8 @@ Z
 
 ### Doc inaccuracies found (item 5)
 
-| Doc location | Claim | Reality |
-|--------------|-------|---------|
+| Doc location (pre-edit) | Claim | Reality |
+|-------------------------|-------|---------|
 | this doc :11, :152, :267-278 | Kahn sort runs after import resolution; modules reach `resolved` | `moduleRegistrySortModules` never called from main.zig — only from tests. Modules stay `parsed`. |
 | this doc :26, :73, :326 | `ECBED` indicates store corruption, should not happen | Fires normally on the first module parsed (shared `extra_children` grows from empty). |
 | this doc :365 | Import cycle can cause infinite parse loop | Impossible: enqueue gated on `pending` (import_resolver.zig:130); queue always drains. |

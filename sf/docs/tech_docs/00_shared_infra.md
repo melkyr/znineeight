@@ -479,7 +479,7 @@ Then subsystems allocate from permanent arena:
 
 > **P10 correction `[grep]`:** the pattern below is **aspirational — not used.** No phase in
 > `sf/src/` calls `trackingAllocatorInit`/`trackingAlloc`/`trackingReset`/`trackingPeak`;
-> `TrackingAllocator` (allocator.zig:121-151) is only defined, never wired in. Phases allocate
+> `TrackingAllocator` (allocator.zig:121-164) is only defined, never wired in. Phases allocate
 > directly through `sandAlloc`. Per-phase peaks were measured in P10 by reading each tier's
 > `peak` field at phase boundaries, not via `TrackingAllocatorReport`.
 
@@ -526,7 +526,7 @@ debug build — identical to release `--track-memory` final values):
 4. **Permanent arena grows most during C89 emission** (type/ident name interning): mud 33→72K,
    gol 19→65K, lisp 87→118K across phase 8.
 5. **`TrackingAllocator` is currently unused by `main.zig`** — the pipeline calls plain
-   `sandAlloc`; `trackingAlloc*`/`trackingReset` exist in `allocator.zig:121-151` but no phase
+   `sandAlloc`; `trackingAlloc*`/`trackingReset` exist in `allocator.zig:121-164` but no phase
    wires one in. Per-phase peaks were obtained in P10 by reading `peak` directly, not via
    `TrackingAllocatorReport`.
 6. The **`TypeRegistry` type_db sand** is a separate 128KB **stack** buffer (`main.zig:145-146`),

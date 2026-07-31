@@ -364,8 +364,8 @@ AST tree (root node index = module_root node)
 
 | Flag | Effect |
 |------|--------|
-| `--dump-types` | Dumps type info after type resolution |
-| `--dump-lir` | Dumps LIR after lowering |
+| `--dump-types` | Dumps type info after type resolution (DEAD — parsed at main.zig:693-694, never consulted) |
+| `--dump-lir` | Dumps LIR after lowering (DEAD — parsed at main.zig:695-696, never consulted) |
 | `--dump-c89` | Dumps generated C89 |
 
 > **P9 correction:** the main pipeline (`main.zig` `parseArgs`, main.zig:631-762) does **NOT**

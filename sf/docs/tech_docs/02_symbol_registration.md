@@ -276,7 +276,7 @@ TypeRegistry (permanent arena, updated with stubs)
 
 4. **Sentinel root node (from=0) in DepGraph** (symbol_registrator.zig:78): `addTypeDependencies` always uses `from=0` as a sentinel. Type resolution must handle this convention — `tid=0` is not a valid type ID, it means "root/dummy".
 
-5. **Scratch arena dependency** (phase_SymbolRegistration, main.zig:261): `DepGraph` is allocated in scratch arena and invalidated on next phase's `sandReset`. If type resolution (phase 3) needs to reference the graph later, it must snapshot or consume it before reset.
+5. **Scratch arena dependency** (phase_SymbolRegistration, main.zig:261): `DepGraph` is allocated in scratch arena and invalidated on next phase's `sandReset`. If type resolution (phase 3) needs to reference the graph later, it must snapshot or consume it before reset. (In practice moot: phase 3 resets scratch itself (`main.zig:291`) and re-runs the identical `registerModuleSymbols` loop (`main.zig:296`), rebuilding an identical graph — same edge counts, `[fprintf]` — so no phase-2 snapshot is relied upon.)
 
 6. **Pass-2 payload duplication on re-registration** (symbol_registrator.zig:84, verified `[fprintf]`): `registerModuleSymbols` runs twice — once in `phase_SymbolRegistration` (main.zig:266) and again inside `phase_TypeResolution` (main.zig:296). The second run re-executes `populateTypePayload`, so every payload array (`fe`, `em`, `xn`, `st`, `tu`, `un`, `en`, `es`) is appended to AGAIN with identical entries, and the back-patch `types_items[types_len-1].payload_idx = <new idx>` (symbol_registrator.zig:112-116, :140-155, :189-193, :205-209) targets the *last type in the registry* — which in pass 2 is NOT the type being re-registered (named-type dedup at type_registry.zig:631 returns the existing id without appending). Observed: json_parser `fe` grows 11→22 and `xn` 11→22 across the two passes; the last registered type (json `Parser`) ends with `payload_idx` pointing at pass-2 duplicates. The duplicated entries are identical (`FieldEntry{name_id, TYPE_VOID, 0}` placeholders) and phase 3 re-resolves fields from the AST by name, so the 4 examples still compile/run correctly — but the payload arrays ~double in size and the final type's `payload_idx` is re-pointed. Latent corruption, not yet observable as a miscompile.
 
@@ -430,8 +430,8 @@ the **var_decl inline-type path** (symbol_registrator.zig:246-258), not the stan
 
 ### Doc inaccuracies found (item 6)
 
-| Doc location | Claim | Reality |
-|--------------|-------|---------|
+| Doc location (pre-edit) | Claim | Reality |
+|-------------------------|-------|---------|
 | this doc :12 | "Type stubs populated | 4 | StructPayload, UnionPayload/TaggedUnionPayload, EnumPayload, ErrorSetPayload" | Only StructPayload, TaggedUnionPayload and ErrorSetPayload are populated by the 4 examples (no enum / plain union declared). All 4 back-patch code paths exist. |
 | this doc :13 | Debug-markers list omits `RS`, `D12`, `MC`, `DC`, `X`, `NP`, `RN`, `NGC` | All fire during registration: type_registry.zig:161 (DC), :172 (X), :308 (NGC), :318 (NP), :574-575 (MC/MCDC), :648 (RN); symbol_registrator.zig:219 (D12), :406 (RS). |
 | this doc :100 | "then `VR`/`VD`/`Vi`" (implies `VR` on every var_decl) | `VR` fires only on duplicate reject (symbol_registrator.zig:286-289); pass 1 has zero `VR`, pass 2 has one per var_decl. |
