@@ -700,7 +700,9 @@ pass DO emit). The C-visible typedef set is a strict subset of the sorted iterat
 
 The sorted tail resolves aggregates LAST (mud `…, 26 Command, 25 Room, 23 plat_fd_set,
 24 Player, 62 Arr_Player, 47 Arr_Room, 61 dup`), consistent with P3's documented Kahn
-dynamics (degenerate from=0 edge set). `[markers]` `E2A:t25k25` / `E2B:t23k25n43` confirm the
+dynamics (degenerate from=0 edge set). This tail is NOT contiguous in the marker stream:
+`[markers]` `E2A: … t26 … t60, t25` (pointer-only pass) then `E2B:t63, t23, t24, t62, t47, t61`
+(value-embedding pass). `E2A:t25k25` / `E2B:t23k25n43` confirm the
 sub-pass split matches the `pointer_only` classification from P3.
 
 ### 6.2 Mangled Function Names & 31-char Limit (Q2)
@@ -727,7 +729,7 @@ sub-pass split matches the `pointer_only` classification from P3.
   (`[c89]` grep for `zF_<hash>_name_N`; the `EU_<n>`/`Opt_<n>`/`Arr_<n>` suffixes are the
   type-scheme, not collision suffixes). `[source]` collision loop `c89_emit.zig:410-450`.
 - **Caveat**: error-set members emit as `#define zT_<hash>_<Set>_<Member> <N>` macros whose
-  names exceed 31 chars — `zT_91ED3DBA_ParseError_ExpectedCommaOrEnd` (41, json_parser.c:21),
+  names exceed 31 chars — `zT_91ED3DBA_ParseError_ExpectedCommaOrEnd` (41, json_parser.c:20),
   `zT_45176AD9_LispError_UnexpectedRParen` (38, lisp:18). Macros compile fine under
   `gcc -std=c89` (no `-pedantic`); the 31-char mangler limit applies to identifiers, not these
   `#define` names.
@@ -774,7 +776,9 @@ preceded by a `/* original-name */` comment (`[source]` `c89_emit.zig:1464-1468`
 the order directly readable from the `.c`.
 
 Count check: emitted bodies 7/7/19/45; P7 LIR totals 20/11/48/32 include the externs
-(mud 12 extern + 8; gol 4 + 7; json 13 + 19; lisp 3 + 45).
+(mud 12 extern + 8; gol 4 + 7; json 13 + 19; lisp 3 + 45). These counts exclude the
+`int main(void)` wrapper (mud:1198, gol:1188, json:697, lisp:2109), emitted last in each
+file immediately after the mangled `main` body (8/8/20/46 incl. wrapper).
 
 ### 6.5 2-Phase Output Confirmation (Q5)
 
@@ -829,7 +833,7 @@ lines and `[c89]`):
 | `.assign_index` | `base[idx] = src;` (`:2370`) | gol:645 `zT_85[zT_89] = zT_86;` (+23 more) |
 | `.assign` array copy | `{ unsigned int _i=0; while(_i<N){ dst[_i]=src[_i]; _i++; } }` (`:2284`) | gol:490-496 `grid[_i] = zT_1[_i];` |
 | `.undefined_const` tagged-union array | `[_i].tag = 0;` (`:3029`) | gol:482-488 `zT_1[_i].tag = 0;` |
-| `.branch` | `if (c) goto A; else goto B;` (`:2398`) | lisp:6485-6486 |
+| `.branch` | `if (c) goto A; else goto B;` (`:2398`) | lisp:6446 `if (zT_75) goto z_bb_38; else goto z_bb_39;` |
 | `.store_local` `_` | `(void)val;` (`:2481`) | gol:908 `(void)zT_243;`, mud:884 `(void)zT_126;` |
 
 Also observed live: `.switch_br` (lisp:6180-6184 `switch (zT_6) { case 5: goto z_bb_1; … }`),
@@ -854,4 +858,4 @@ emission — a "stray I\n late in the trace" is this documented marker, not a se
 - **Collision resolution unexercised** (see §6.2).
 - **Error-set `#define` names exceed 31 chars** (see §6.2) — macro names, not mangler output.
 - **Marker-table gap**: `D6` (`c89_emit.zig:511-519`, getCTypeName debug, fires for every
-  `tid>=20` cname lookup) is not listed in §1.16.
+  `tid>=20` cname lookup) was not listed in §1.16 (added above).
