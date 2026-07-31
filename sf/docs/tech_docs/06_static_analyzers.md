@@ -17,6 +17,77 @@
 
 ---
 
+## Deep-Dive Evidence (P6, 2026-07-31)
+
+> ⚠️ **Critical finding:** in the current pipeline the static analyzers analyze
+> **zero** functions. `runAllAnalyzers` gates each `fn_decl` on
+> `decl.child_1` (analyzer.zig:780), but the parser stores the function body in
+> `child_0` (parser.zig:1417 — `astStoreAddNode(..., body_node, 0, 0, proto_idx)`),
+> and both sema and LIR read the body from `child_0`
+> (semantic_analyzer.zig:1391/1421, lower.zig:4192). `child_1` is therefore
+> **always 0** for `fn_decl`s, so `if (decl.child_1 == 0) continue;` fires for
+> every function and no analyzer pass ever executes. Verified by:
+> `[gdb]` (breakpoints on all 4 pass entry points: 0 hits; decl dump shows
+> `child_1=0` for all fn_decls, `child_0!=0` for those with bodies),
+> `[fprintf]` (0 `[ZZ] fn=` per-function reports), and `[repro]`
+> (double-free/leak/untracked-free program compiles with zero diagnostics).
+> The design doc repeats the same mistake (`docs/sf/STATIC_ANALYZERS_p2.md:917`),
+> and `testRunAllAnalyzers` (test_analyzer_bin.zig:1274) builds its fn_decl with
+> the body in `child_0` yet only asserts `error_count == 0`, so it passes
+> vacuously. The correct guard is `child_0`. Untouched here (documentation-only
+> task; flagged as a concern).
+
+### Per-example analysis counts (4 working examples)
+
+`[markers]` counts from the LIR per-module/per-decl loop (main.zig:535 `M`,
+main.zig:569 `F`) — the only per-decl marker source in the pipeline; the static
+analyzer phase itself emits only the `A` phase marker (main.zig:471) and
+`analyzer.zig`/`state_map.zig` contain **zero** `markerWrite` calls. Cross-checked
+with `[fprintf]` decl-kind dumps from an instrumented build.
+
+| Example | modules | fn_decls (markers `F`) | fn_decls (fprintf dump) | fn_decls with body (`child_0!=0`) | functions analyzed |
+|---------|---------|------------------------|-------------------------|-----------------------------------|--------------------|
+| mud_server | 4 | 20 | 20 | 7 | 0 |
+| game_of_life | 3 | 11 | 11 | 7 | 0 |
+| lisp_interpreter_curr | 10 | 48 | 48 | 45 | 0 |
+| json_parser | 3 | 32 | 32 | 19 | 0 |
+
+Per-pass runs: signature / null / lifetime / doublefree each ran **0** times per
+example (0 breakpoint hits on every pass entry point; 0 per-pass fprintf reports).
+
+### StateMap fork/merge evidence
+
+Because no function is analyzed, StateMap is never forked/merged in the pipeline
+(`[fprintf]` counters `forks/merges/unknown_writes/drops` all 0; no
+`budget_peak` output → `PER_FUNC_BUDGET` check at analyzer.zig:797 is
+unreachable today). The merge **semantics** were verified standalone via a
+direct harness of `state_map.zig` (`[fprintf]`):
+
+| Scenario | parent entry | branch_a | branch_b | merged result |
+|----------|--------------|----------|----------|---------------|
+| both branches differ | 2 | 2 | 3 | `99` (unknown_state) |
+| both branches agree (new) | — | 5 | 5 | `5` |
+| only in branch_a, no parent | — | 1 | — | **dropped** (parent stays empty) |
+| only in branch_a, parent differs | 2 | 5 | — | `99` |
+| only in branch_a, parent same | 2 | 2 | — | `2` (kept) |
+| only in branch_b, parent differs | 2 | — | 5 | `2` (parent value kept) |
+| only in branch_b, no parent | — | — | 4 | **dropped** (parent stays empty) |
+
+Key precision-loss cases confirmed by the harness:
+
+1. **Disagreeing branches → `unknown_state(99)`** (conservative merge).
+2. **Branch-only-declared variable, no parent entry → silently dropped** — the
+   merge loop only writes when `ps`/`ps_val` exists (state_map.zig:84-91, :96-103);
+   a name present in only one fork and absent in the parent is neither merged nor
+   marked 99. After the merge, `stateMapGet(parent, name)` returns `null`.
+   This is the branch-only-declared precision loss the pre-plan audit flagged.
+
+The table above is `[fprintf]` output from `/tmp/smap_out/smap_test` (harness
+driving `state_map.zig` directly with name_ids 1-3; values 0=uninit,1=is_null,
+2=safe,3=maybe,4+,255=absent).
+
+---
+
 ## analyzer.zig (`sf/src/analyzer.zig`, 803 lines)
 
 4 independent analyzer passes in phase 6. Each runs per-function with a fresh `StateMap` and resets the scratch arena between passes.
@@ -394,6 +465,14 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 
 Central statement dispatch for all analyzers. The null analysis if/else/loop state forking logic is the most complex part — each path gets a forked `StateMap`, and after both paths execute, `stateMapMergeStates` computes a conservative merge.
 
+⚠️ **Reachability (`[gdb]`, 2026-07-31):** `visitStatement` (and thus all the
+fork/merge paths above) is **never reached in the current pipeline** — see
+Deep-Dive Evidence: `runNullAnalyzer`/`runLifetimeAnalyzer`/`runDoubleFreeAnalyzer`
+each get 0 breakpoint hits because `runAllAnalyzers` skips every fn_decl. The
+branching/merge machinery is exercised only by unit tests
+(`test_analyzer_bin.zig`: `testBranchMergeDiff`, `testIfCaptureRefinement`, ...)
+and the standalone `state_map.zig` harness.
+
 ---
 
 ### onNullStmt (`sf/src/analyzer.zig:700-702`)
@@ -466,6 +545,13 @@ Orchestrates all 4 analyzers across every function in the module:
 5. **Budget check**: if `ctx.alloc.peak > PER_FUNC_BUDGET` → `WARN_7002_ANALYZER_BUDGET_EXCEEDED`
 
 Each pass resets the scratch arena (`alloc_mod.sandReset`) after completion, so per-function peak is measured independently. The budget check happens after all passes complete for that function.
+
+**⚠️ Verified gap (`[gdb]`/`[fprintf]`, 2026-07-31):** the "no-body" guard at
+analyzer.zig:780 (`if (decl.child_1 == 0) continue;`) reads `child_1`, but the
+parser stores the fn body in `child_0` (parser.zig:1417) and sema/lower read
+`child_0` (semantic_analyzer.zig:1391/1421, lower.zig:4192). Since `child_1` is
+always 0 for fn_decls, **every function is skipped** and none of the 4 passes
+runs — see Deep-Dive Evidence above. Correct guard: `decl.child_0`.
 
 ---
 
@@ -551,12 +637,25 @@ For each entry in branch_a:
     if a != b → set parent to unknown_state (99)
   if only in branch_a:
     if parent has entry and parent != a → set parent to unknown_state
+    if parent has NO entry → NOTHING written (name dropped from merged map)
 
 For each entry in branch_b not in branch_a:
   if parent has entry and parent != b → set parent to unknown_state
+  if parent has NO entry → NOTHING written (name dropped from merged map)
 ```
 
 The `unknown_state` parameter is always `99`, which represents a "merged" or "uncertain" state. This is conservative — if either branch disagrees, the merged state becomes unknown.
+
+**⚠️ Precision loss — branch-only-declared variables (`[fprintf]` standalone
+harness, 2026-07-31):** when a name exists in only one fork and the parent has
+no entry for it, `stateMapMergeStates` **silently drops it** — the merge loops
+only write when `stateMapGet(parent, name)` returns a value (state_map.zig:84-91,
+:96-103). After the merge, `stateMapGet(parent, name)` returns `null`, so the
+variable's per-branch state is lost entirely (it does not even degrade to 99).
+Observed: `a-only-no-parent → dropped (255=absent)`, `b-only-no-parent →
+dropped (255=absent)`; by contrast `a-only-diff-parent → 99` and
+`b-only-diff-parent → parent value kept (2)`. This is the undocumented
+branch-only-declared precision loss flagged by the pre-plan audit.
 
 ---
 
@@ -578,6 +677,8 @@ phase_StaticAnalyzers (main.zig)
        ├─ Iterate root module declarations
        │
        ├─ For each fn_decl with body:
+       │     (⚠️ 2026-07-31: guard analyzer.zig:780 tests child_1, always 0 →
+       │      body lives in child_0 → every fn is skipped; passes below never run)
        │
        │  ┌─ sandResetPeak (track per-function budget)
        │  │
@@ -651,6 +752,12 @@ Each function gets a 512KB scratch arena budget across all 4 analyzers. If `ctx.
 
 The budget is measured per-function because the scratch arena is reset (`sandReset`) between each analyzer pass and between each function. This means peak allocation across all passes for a single function determines budget compliance.
 
+⚠️ **Reachability (`[gdb]`/`[fprintf]`, 2026-07-31):** the peak check at
+analyzer.zig:797 is currently **unreachable** — no function passes the
+`child_1`-based body guard (see Deep-Dive Evidence), so no analyzer pass runs
+and `ctx.alloc.peak` stays 0. `WARN_7002` has never been emitted for the 4
+working examples.
+
 ### Disabling individual analyzers
 
 | Flag | Effect |
@@ -665,9 +772,19 @@ Set via CLI flags. Signature analyzer always runs (no skip flag).
 
 | Marker | File | Line | Meaning |
 |--------|------|------|---------|
-| `A` | main.zig | — | Start of static analysis phase |
+| `A` | main.zig | 471 | Start of static analysis phase |
 
-Note: unlike other phases, the static analyzers produce minimal trace markers. Most debugging is done via diagnostic output (error/warning codes).
+Verified `[markers]` (2026-07-31): the `A` phase marker fires (observed glued to
+sema's final `sA` as `sAA`, immediately before the LIR `L\nnodes=` marker), but
+`analyzer.zig` and `state_map.zig` contain **zero** `markerWrite` calls — there
+are no per-function/per-pass markers. The per-module/per-decl markers
+(`M` main.zig:535, `F` main.zig:569, kind numbers) are emitted by
+**phase_LIRLowering**, not the static analyzer phase, and are the usable source
+for counting fn_decls per module (see Deep-Dive Evidence table).
+
+Note: unlike other phases, the static analyzers produce no trace markers of
+their own. Most debugging is done via diagnostic output (error/warning codes)
+or direct GDB breakpoints on the analyzer entry points.
 
 ### Error/Warning Codes
 
