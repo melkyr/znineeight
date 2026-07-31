@@ -5,8 +5,8 @@
 | Artifact | Count | Notes |
 |----------|-------|-------|
 | `TypeId` sentinels | 20 | TYPE_VOID(1) through TYPE_TYPE(20) |
-| `TypeKind` variants | 36 | none_sentinel(0) through anon_union(35) |
-| `Type` fields | 9 | kind, state, flags, _pad, size, alignment, name_id, c_name_id, module_id, payload_idx |
+| `TypeKind` variants | 40 | none_sentinel(0) through anon_union(39) |
+| `Type` fields | 10 | kind, state, flags, _pad, size, alignment, name_id, c_name_id, module_id, payload_idx |
 | Payload structs | 13 | PtrPayload, ArrayPayload, SlicePayload, OptionalPayload, EUPayload, ErrorSetPayload, FnPayload, StructPayload, EnumPayload, UnionPayload, TaggedUnionPayload, TuplePayload, UnresolvedPayload |
 | Per-kind payload arrays | 13 | ptr/array/slice/opt/eu/es/fn/st/en/un/tu/tup/unr |
 | Auxiliary arrays | 4 | fe(FieldEntry), em(EnumMember), xt(TypeId list), xn(u32 list) |
@@ -493,7 +493,9 @@ TypeRegistry (permanent arena)
     │   ├─ es_cache: hash(tags) → TypeId
     │   └─ name_cache: (mod<<32)|name → TypeId
     │
-    └─ All Type entries with size≠0, alignment≠0, state=2
+    └─ All Type entries with state=2 (resolved). Size/alignment are populated for the 8
+        layout kinds; NOT for named error_set types (no error_set branch in
+        typeResolverResolveLayout) and NOT for zero-size sentinels (void/noreturn/null/type).
 
 TypeResolver (scratch arena, consumed by next phase)
     │
@@ -608,7 +610,8 @@ To trace a specific TypeId through the pipeline:
 - Search `DC:k*` for creation
 - Search `RN:t<id>` for named type registration
 - Search `NP:v<id>` for cache population
-- In type_resolver.zig: `GR`, `TR`, `Ti` markers trace resolve entry
+- In type_resolver.zig: `RTD:n<node>k<kind>` traces every `resolveTypeExprFull` entry
+  (type_resolver.zig:590)
 
 ### Known Issues
 
@@ -621,3 +624,231 @@ To trace a specific TypeId through the pipeline:
 4. **Depth limit in resolveTypeExprFull** (type_resolver.zig:588): Hardcoded max depth of 16. Deeply nested type expressions will silently return `TYPE_UNDEFINED`.
 
 5. **evalConstU32Full fallback ambiguity** (type_resolver.zig:575): `0xFFFFFFFF` return value is both a valid u32 and the sentinel for uncomputable. Cannot distinguish "zero-sized array length 0xFFFFFFFF" from "failed to evaluate".
+
+---
+
+## Evidence: 4 Working Examples (Deep-Dive P3)
+
+Traces: `/tmp/dd/*.mrk` (P0, `zig1 --markers --dump-c89`). The TypeResolution phase window is
+bounded by `T` (main.zig:290) and `CE` (main.zig:327); extraction via
+`awk '/^T$/{f=1}f{print}/^CE$/{exit}'`. Registry/layout/order data obtained by GDB on a debug
+bootstrap build of the same source (`zig0 --header-priority-include`, `gcc -m32 -g -O0`), breaking
+at `classifyTypeEmissionGroups` entry (after `typeResolverResolve`, so all types are resolved) and
+dumping `self->registry` (`[gdb]`). The debug build reproduces the P0 marker stream, so both
+evidence sets describe the same compiler.
+
+Final `types_len` per example (== `sorted_len`): mud_server 61, game_of_life 41, json_parser 76,
+lisp_interpreter_curr 105. All types reach `state=2`; zero `ERR_3005` cycle reports.
+
+### Q1. TypeId assignments: sentinels vs user types
+
+Sentinels are TypeIds 0-20 (0 = `none_sentinel`; 1-20 = TYPE_VOID..TYPE_TYPE, state=2 from
+`typeRegistryRegisterPrimitives`, type_registry.zig:579-619). The first user type is 21. Named
+user types are registered in pass 1 (`RN:` markers, type_registry.zig:645-661; `DC:k<kind>...`
+type_registry.zig:158-170) in module-ID + declaration order:
+
+| Example | TypeId | Kind | Name | Module |
+|---------|:------:|------|------|:------:|
+| mud_server | 21, 22, 27 | module | std, util, std_debug | m1, m2, m3 |
+| mud_server | 23 | struct | plat_fd_set | m0 |
+| mud_server | 24 | struct | Player | m0 |
+| mud_server | 25 | struct | Room | m0 |
+| mud_server | 26 | tagged_union | Command | m0 |
+| game_of_life | 21, 24 | module | std, std_debug | m1, m2 |
+| game_of_life | 22 | tagged_union | Cell | m0 |
+| game_of_life | 23 | struct | Point | m0 |
+| json_parser | 21, 22 | module | file, json | m1, m2 |
+| json_parser | 23 | error_set | FileError (4 tags) | m1 |
+| json_parser | 24 | struct | JsonItem | m2 |
+| json_parser | 25 | tagged_union | JsonValue | m2 |
+| json_parser | 26 | error_set | ParseError (7 tags) | m2 |
+| json_parser | 27 | struct | Parser | m2 |
+| lisp | 21-29 | module | sand, value, token, parser, env, eval, builtins, util, deep_copy | m1-m9 |
+| lisp | 30 | struct | Sand | m1 |
+| lisp | 31 | tagged_union | Value | m2 |
+| lisp | 32 | tagged_union | Token | m3 |
+| lisp | 33 | struct | Tokenizer | m3 |
+| lisp | 34 | struct | EnvNode | m5 |
+| lisp | 35 | error_set | LispError (22 tags) | m8 |
+| lisp | 38 | struct | anon_3546 (inline `Cons: struct {car,cdr}` in value.zig) | m0 |
+
+Evidence: `RN:`/`DC:` markers `[markers]`; `TID <id> kind ... name_id ... mod ...` GDB lines
+`[gdb]`; name_id→string mapping via GDB on `TypeRegistry.interner` `[gdb]` (e.g. mud name 43 =
+"plat_fd_set", 59 = "Player", 65 = "Room", 76 = "Command"; lisp 55 = "Value", 293 = "anon_3546").
+`X:<id>` markers (struct appends, type_registry.zig:171-173) match the struct TypeIds exactly.
+
+Synthetic types created during pass-2 type resolution (not registered, so no `RN:`) continue the
+same dense sequence: mud 28 (array), 29 (array), 30 (slice) ... 60 (fn); json 28 (slice) ... 75
+(fn); lisp 36 (many_ptr) ... 104 (fn). Module types `module_id` matches the module registry
+(GDB); note they are created with `state=0` but the resolve pass flips them to `state=2`
+(no-op layout), so all final states are 2.
+
+### Q2. Layout sizes for key structs (GDB `[gdb]`)
+
+`typeResolverResolveLayout` (type_resolver.zig:103-223) computes size/alignment; field offsets are
+written back into `fe_items[].offset`. Final values:
+
+| Example | Type | TID | size | align | fields (offset: type) |
+|---------|------|:---:|:----:|:-----:|-----------------------|
+| mud | plat_fd_set | 23 | 512 | 4 | data [128]u32 (0) |
+| mud | Player | 24 | 272 | 4 | socket i32(0), room_id u8(4), buffer [256]u8(5), pos usize(264), is_active bool(268) |
+| mud | Room | 25 | 12 | 4 | desc []const u8(0), north u8(8), south u8(9), east u8(10), west u8(11) |
+| mud | Command | 26 | 8 | 4 | tag u32 + payload: Go u8 (Look/Quit/Unknown are void fields) |
+| mud | !void (main ret) | 51 | 8 | 4 | empty error set (TID 50, size 4) + void payload |
+| gol | Cell | 22 | 4 | 4 | tag u32 only (Dead/Alive are void variants) |
+| gol | Point | 23 | 8 | 4 | x usize(0), y usize(4) |
+| json | FileError | 23 | 0 | 0 | error_set, 4 tags (no layout branch) |
+| json | JsonItem | 24 | 16 | 4 | key []const u8(0), value ?*JsonValue(8) |
+| json | JsonValue | 25 | 16 | 8 | tag u32 + max payload 8 (f64 / []const u8 / []JsonValue / []JsonItem) |
+| json | ParseError | 26 | 0 | 0 | error_set, 7 tags (no layout branch) |
+| json | Parser | 27 | 16 | 4 | input []const u8(0), pos usize(8), arena *void(12) |
+| json | ParseError!JsonValue | 65 | 8 | 4 | eu: payload(4) + err(4) |
+| lisp | Sand | 30 | 12 | 4 | start [*]u8(0), pos usize(4), end usize(8) |
+| lisp | Value | 31 | 16 | 8 | tag u32 + max payload 8 (i64 forces align 8; Cons anon struct also 8) |
+| lisp | Token | 32 | 16 | 8 | tag u32 + max payload 8 (i64) |
+| lisp | Tokenizer | 33 | 12 | 4 | input []const u8(0), pos usize(8) |
+| lisp | EnvNode | 34 | 20 | 4 | symbol []const u8(0), value *Value(8), next ?*EnvNode(12) |
+| lisp | LispError | 35 | 0 | 0 | error_set, 22 tags (no layout branch) |
+| lisp | anon Cons | 38 | 8 | 4 | car *Value(0), cdr *Value(4) |
+
+Field-offset evidence is the GDB `FE <i> name <nid> type <tid> off <off>` dump; sizes/aligns are the
+`TID <id> ... size <s> align <a>` dump. Spot-checks against the doc's Layout Resolution rules:
+tagged_union `total = tag(4) → alignUp(4,max_pa) + alignUp(max_ps,max_pa)`, optional
+`alignUp(alignUp(size,4)+4, pay_align)`, all confirmed by these values.
+
+**Named error_set types end at size=0, alignment=0**: `typeResolverResolveLayout` has no
+`error_set_type` branch (the 8 handled kinds are struct/enum/union/tagged_union/optional/
+error_union/array/tuple), so FileError/ParseError/LispError keep their initial size/align of 0.
+The empty/unnamed error sets created via `typeRegistryGetOrCreateErrorSet`
+(type_registry.zig:524-541) are created directly with size=4 align=4 (mud TID 50, gol TID 31).
+
+### Q3. Pointer-only classification (`CLS:` markers `[markers]`)
+
+`classifyTypeEmissionGroups` (type_resolver.zig:332-533) emits `CLS:c<n>` (pointer-only count),
+then per type `CLS:p<tid>k<kind>` (pointer-only) or `CLS:v<tid>k<kind>` (value-emitted). Value-
+emitted types (everything else is pointer-only):
+
+| Example | value-emitted (CLS:v) | reason |
+|---------|----------------------|--------|
+| mud_server | 23 plat_fd_set, 24 Player, 47 `[2]Room` | struct with an array field; struct with array field; array of struct |
+| game_of_life | (none) | no aggregate value-embeds another |
+| json_parser | 65 ParseError!JsonValue | eu whose payload JsonValue is a tagged_union |
+| lisp | 31 Value, 71 LispError!Token | Value embeds inline anon struct `Cons`; eu whose payload Token is a tagged_union |
+
+Counts: mud `CLS:c58` (58 pointer-only), gol 41, json 75, lisp 103. Note gol has **zero**
+value-emitted types even though Cell/Point are used as values in the program — the classification
+is purely structural (field/element embedding), not usage-based. The doc's rule "field of kind
+struct/tagged_union/union/array/tuple → NOT pointer-only" (type_resolver.zig:323-329, 359-471)
+exactly predicts these sets. The optional/error_union backward-edge path
+(type_resolver.zig:367-373) is exercised by json's `?*JsonValue` (JsonItem field) but its payload
+is a pointer, so it never flips a parent.
+
+### Q4. const_alias_prepass (`CAP:`/`GATE:`/`CAT:` markers `[markers]`)
+
+`constAliasPrepass` (const_alias_prepass.zig:58-224) only catalogs `SymbolKind.global` symbols
+whose `var_decl` init is a bare `ident_expr` (AstKind 24). In all 4 examples the catalog
+terminates with `CAP:ac0` (alias_count == 0, early exit at const_alias_prepass.zig:149) and
+`KAHN:start`/`KAHN:end` never fire:
+
+| Example | CAP:tlm (total syms) | candidates (GATE/CAT) | result |
+|---------|:--------------------:|-----------------------|--------|
+| mud_server | 31 | 4 globals, inits kind 10 (int_literal) ×3, kind 16 (undefined_literal) ×1 | CAP:ac0 |
+| game_of_life | 17 | 2 globals, inits kind 10 ×2 | CAP:ac0 |
+| json_parser | 44 | 3 globals: 1 with no init (GATE:g3), 2 with int_literal inits | CAP:ac0 |
+| lisp | 87 | 2 globals, inits kind 16 ×2 | CAP:ac0 |
+
+So no `const X = Y` type aliases exist in these programs (type declarations are inline
+`struct/union/enum/error{...}` or `@import`), the 3-phase Kahn propagation is **unexercised**, and
+no transitive alias chain can be observed. `json`'s `const File = void` is a `type_alias` symbol
+(SymbolKind 4), which the `global`-only gate skips. The doc's description of the prepass
+(const_alias_prepass.zig:58-224, §Phases 1-3) matches the source mechanically; it simply never
+runs to Phase 2/3 in these examples.
+
+### Q5. Cache hits
+
+Observable via markers `[markers]` (slice_cache `U2H`/`U2N` type_registry.zig:361-384; array_cache
+`O1H`/`O2N` type_registry.zig:453-482; fn-type linear scan `P2:n...H` type_registry.zig:504-505;
+ptr/many_ptr `PTR:i...c<child>` + inline `P<tid>`/`M<tid>` on hit vs `DC:` on miss
+type_resolver.zig:793-812), and via GDB distinct-type counts `[gdb]`:
+
+| Example | ptr_cache (hit/miss) | slice_cache (U2H/U2N) | array_cache (O1H/O2N) | fn linear scan hits | optional resolutions (distinct) |
+|---------|:--------------------:|:---------------------:|:---------------------:|:-------------------:|:-------------------------------:|
+| mud_server | 6 / 5 | 5 / 2 | 0 / 3 | 0 | 3 (1) |
+| game_of_life | 2 / 1 | 3 / 2 | 0 / 0 | 0 | 0 |
+| json_parser | 28 / 5 | 6 / 4 | 0 / 0 | 0 | 3 (3) |
+| lisp | 97 / 9 | 24 / 3 | 1 / 1 | 0 | 9 (1) |
+
+- **ptr_cache / many_ptr_cache**: heavily hit (lisp 97 of 106 resolutions dedup to 9 distinct ptr
+  types). Hit markers are inline (`PTR:i18k84c1P33`), misses interleave a `DC:k17`/`DC:k18`.
+- **slice_cache**: hits everywhere (lisp 24 hits, 3 distinct slice types).
+- **array_cache**: only lisp has arrays — `[131072]u64` created once, hit once
+  (`perm_buf_u64` / `temp_buf_u64`). mud creates 3 arrays ([128]u32, [256]u8, [2]Room), no hits.
+- **fn_type linear scan** (type_registry.zig:501-507): **zero hits** in all 4 examples — every fn
+  type is unique (fn-type counts equal the per-module fn symbol totals: mud 20, gol 11, json 32,
+  lisp 48). Known Issue 1 (linear dedup) is therefore not just slow but never actually dedups here.
+- **optional_cache / eu_cache / es_cache**: silent (no markers). Distinct types from GDB:
+  optional mud 1 / json 3 / lisp 1 / gol 0; error-union mud 1 / gol 1 / json 4 / lisp 6; error-set
+  (es_len incl. pass-2 duplicates) mud 1 (empty) / gol 1 (empty) / json 4 (2 named ×2) / lisp 2
+  (LispError ×2) — named error sets double their ES payload in pass 2 (Known Issue 6 section below).
+  lisp's 9 optional resolutions producing 1 distinct type implies 8 optional_cache hits; mud's 3
+  resolutions producing 1 distinct implies 2 hits.
+
+### Q6. Kahn algorithm vs actual "topological" order (GDB `[gdb]`)
+
+The doc's Kahn pseudocode (type_resolver.zig:268-321, seed / pop→layout→state=2→decrement→push /
+cycle-check) is **mechanically exact** vs source. What it does not say: the DepGraph edge set is
+degenerate — every edge is `(from=0, to=<owner type>)` from `addTypeDependencies`
+(symbol_registrator.zig:78), so `in_degree` counts only *field counts per aggregate*, and no
+type→type dependency edge ever exists. Consequently the resolved order is dominated by TypeId
+order, not by field-type dependencies:
+
+| Example | seed (in_degree 0) | pop order (worklist LIFO) | aggregate tail (pushed when tid 0 pops) |
+|---------|--------------------|---------------------------|----------------------------------------|
+| mud | 0-22, 27-60 | 60,59,...,28,27,22,...,1,0 | 26,25,24,23 (reverse registration) |
+| gol | 0-21, 24-40 | 40,...,24,21,...,1,0 | 23,22 (reverse) |
+| json | 0-23, 26, 28-75 | 75,...,28,26,23,22,...,1,0 | 27,25,24 (reverse) |
+| lisp | 0-29, 35, 36-104 (all but field-owning 30-34; LispError contributes 0 edges) | 104,...,36,35,29,...,1,0 | 34,33,32,31,30 (reverse) |
+
+For mud the full GDB `SORTED` list is `60,59,...,28,27,22,21,20,...,1,0,26,25,24,23`; gol
+`40,...,24,21,...,1,0,23,22`; json `75,...,28,26,23,22,...,1,0,27,25,24`. The final push order
+(while scanning tid 0's outgoing edges) is registration order, and the LIFO worklist then pops it
+in reverse. So the aggregates resolve **last**, in reverse registration order, after sentinel 0.
+The order is a *valid* topological order of the actual edge set (0 precedes every aggregate), but
+it carries no field-dependency information: e.g. Player's `buffer: [256]u8` type is resolved
+before Player even though the array references no aggregate, and a struct referencing a later
+struct by value would still be ordered by TypeId. `sorted_len == types_len` in all 4 examples —
+no type is left unresolved, no `ERR_3005`.
+
+### Known Issue 6 (cross-doc): pass-2 payload back-patch clobbers `types_len-1`
+
+`populateTypePayload` (symbol_registrator.zig:84-211) back-patches `types_items[types_len-1]
+.payload_idx` after each `stAppend`/`tuAppend`/`enAppend`/`esAppend`. In pass 1 the last type is the
+just-registered aggregate, so this is correct. In pass 2 (`registerModuleSymbols` re-run inside
+`phase_TypeResolution`, main.zig:296) the named types dedup via `nameCacheGet`
+(type_registry.zig:631) and append nothing, so every back-patch lands on **the last type in the
+registry at that moment** (the final pass-1 type). GDB-verified victim per example:
+
+| Example | clobbered type | its payload_idx after pass 2 | content |
+|---------|----------------|:----------------------------:|---------|
+| mud_server | TID 27 (module std_debug) | 1 | TU1 = Command pass-2 duplicate (garbage) |
+| game_of_life | TID 24 (module std_debug) | 1 | ST1 = Point pass-2 duplicate (garbage) |
+| json_parser | TID 27 (Parser) | 3 | ST3 = Parser pass-2 duplicate — accidentally its own |
+| lisp | TID 35 (LispError) | 1 | ES1 = LispError pass-2 duplicate (identical 22 tags) |
+
+Payload arrays are doubled (GDB `st_len`/`tu_len`/`es_len`: mud 6/2/1, gol 2/2/1, json 4/2/4,
+lisp 7/4/2; lisp's extra ST6 is the anon Cons struct, not a duplicate). For mud/gol the victim is
+an unused module type so the mis-write is harmless; for json it lands on the correct type
+(Parser) by coincidence; for lisp the error-set payload is content-identical. The user aggregates
+keep their pass-1 payload indices (mud 23-26 → ST/TU 0-2/0; gol 22/23 → TU0/ST0; lisp 30-34 →
+ST0/TU0/TU1/ST1/ST2), and `resolveDeclAggregateFieldTypes` resolves those (pass-1) field entries
+(GDB `FE` real types vs all-void pass-2 duplicates). This is the same issue as 02 Known Issue 6;
+here we add per-example proof of which type is clobbered.
+
+### Doc inaccuracies found (Deep-Dive P3)
+
+| Doc location (pre-edit) | Claim | Reality |
+|--------------------------|-------|---------|
+| Summary Table (was :8) | TypeKind has 36 variants (0..anon_union=35) | 40 variants, 0..anon_union=39 (type_registry.zig:40-56) |
+| Summary Table (was :9) | Type has 9 fields | 10 fields listed (kind,state,flags,_pad,size,alignment,name_id,c_name_id,module_id,payload_idx), 28 bytes total |
+| Data Structures (was :496) | "All Type entries with size≠0, alignment≠0, state=2" | named error_set types end at size=0/align=0 (no layout branch); zero-size sentinels too |
+| How to Inspect (was :611) | "GR, TR, Ti markers trace resolve entry" | no such markers exist in type_resolver.zig or any trace; the entry marker is `RTD:n<node>k<kind>` (type_resolver.zig:590) |
