@@ -365,14 +365,14 @@ ModuleEntry created (pending) → eventually parsed by main loop
 | `ERR_3005` | `CIRCULAR_TYPE_DEPENDENCY` | Circular import detected during topological sort |
 | `ERR_4000` | `INVALID_CONTROL_FLOW` | Topological sort violation — import not resolved |
 
-### Known Issues
+### Known Issues [updated: 2026-07-31]
 
 1. **Fixed-size arrays** (module_registry.zig:329,341): `in_degree` and `worklist` are `[256]u32` — hard limit of 256 modules. Exceeding this causes silent out-of-bounds writes.
 2. **Import dedup O(n)** (module_registry.zig:316-319): `importQueueEnqueue` does linear scan of pending items. LIFO stack means worst-case O(n²) across all enqueues.
 3. **No post-parse cycle detection**: The parsing loop does not detect cycles — they surface later in `moduleRegistrySortModules` (ERR_3005). The loop itself cannot hang on a cycle: `import_resolver.zig:130` enqueues only modules still in `pending` state and `import_resolver.zig:87` skips non-pending modules, so the queue always drains. In the compile pipeline (sort not invoked) a cycle would be silently tolerated with no diagnostic.
 4. **`source_man_stub`** (module_registry.zig:197): One-byte stub used as placeholder `SourceManager` until `moduleRegistrySetSourceMan` is called. If `moduleRegistryResolveImports` runs before `setSourceMan`, the pointer dereference will crash.
 5. **No path normalization** (module_resolver.zig:109-119,144-161): `joinPath` and `moduleResolverResolve` do not resolve `..` or `.` — only simple concatenation.
-6. **Import-edge misattribution** (parser.zig:641-645, verified by GDB `[gdb]`): after resolving an `@import`, `parserParseImport` overwrites `self.current_module_id` with the resolved module's id (`parser.zig:643`). Every subsequent `@import` in the same file is then attributed to the *previously-imported* module instead of the file being parsed. `moduleRegistryAddImport` grows the wrong module's `import_count`/`imports_start`, corrupting `import_edges_items`. Observed in all 4 examples: json_parser records a spurious `file.zig -> json.zig` edge, mud_server records `std.zig -> util.zig`, and lisp records a `sand→value→token→…→deep_copy` chain for main.zig's 9 imports (should all be `main.zig -> …`). If `moduleRegistrySortModules` were wired into the pipeline this would emit false ERR_3005 cycles. Queue order and parse order are unaffected (enqueue happens regardless of attribution).
+
 
 ---
 
@@ -464,8 +464,7 @@ Z
    sort-after-`Z` step and the `ECBED` semantics (see table below). `[markers]`
 6. **json_parser `arena_alloc_default` extern** — no cross-module resolution issue. Extern fn
    declarations never call `moduleRegistryResolveImport`; GDB on `moduleRegistryResolveImport`
-   shows the only 3 import-resolution calls are the `@import` edges (main→file, json→file, plus a
-   spurious file→json from Known Issue 6), none referencing `arena_alloc_default`. file.zig:25 and
+    shows the only 3 import-resolution calls are the @import edges (main->file, json->file, all correctly attributed [fixed 2026-07-31]), none
    json.zig:253 each self-contain the extern; `arena.zig` (a third declarer) is never imported and
    so never enters the graph. `[gdb]` + `[markers]`
 

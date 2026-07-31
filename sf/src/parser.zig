@@ -639,10 +639,7 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
         var scratch: [256]u8 = undefined;
         var scratch_sand = alloc_mod.sandInit(scratch[0..]);
         var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, &scratch_sand);
-        if (resolved) |mod_id| {
-            self.current_module_id = mod_id;
-            _ = mod_id;
-        }
+
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
         bi_tok.span_start, end_pos, 0, 0, 0, path_id);
