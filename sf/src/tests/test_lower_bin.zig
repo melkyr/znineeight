@@ -22,6 +22,7 @@ const coercion_mod = @import("../coercion.zig");
 const lower_mod = @import("../lower.zig");
 const LirLowerer = lower_mod.LirLowerer;
 const SemanticContext = lower_mod.SemanticContext;
+const hash_mod = @import("../util/hash.zig");
 
 var perm_buf: [2097152]u8 = undefined;
 var scratch_buf: [262144]u8 = undefined;
@@ -77,6 +78,7 @@ fn testLower() void {
     type_mod.typeRegistryRegisterPrimitives(&typereg);
 
     var sym_table = sym_mod.symbolTableInit(&scratch);
+    var sym_reg = sym_mod.symbolRegistryInit(&scratch);
     var resolved = resolved_mod.resolvedTypeTableInit(&scratch);
     var coercions = coercion_mod.coercionTableInit(&scratch);
 
@@ -101,13 +103,20 @@ fn testLower() void {
     };
     az_mod.runAllAnalyzers(&ac, ast_root);
 
+    var enum_value_table = hash_mod.u32ToU32MapInit(&scratch);
+    var call_arg_types = hash_mod.u32ToU32MapInit(&scratch);
+    var comptime_values = hash_mod.u32ToU64MapInit(&scratch);
     var ctx = SemanticContext{
         .store = &store,
         .registry = &typereg,
-        .symbol_tables = undefined,
+        .symbol_tables = &sym_reg,
         .resolved_types = &resolved,
         .coercions = &coercions,
         .diag = &diag,
+        .has_symbols = @intCast(u8, 0),
+        .enum_value_table = &enum_value_table,
+        .call_arg_types = &call_arg_types,
+        .comptime_values = &comptime_values,
     };
 
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);
@@ -117,7 +126,7 @@ fn testLower() void {
     var di: usize = 0;
     var found_count: u32 = @intCast(u32, 0);
     var no_blocks: []const u8 = "function has no blocks";
-    var expected_4: []const u8 = "expected 4 functions in lower_test/main.zig";
+    var expected_5: []const u8 = "expected at least 5 functions in lower_test/main.zig";
     while (di < decls.len) : (di += @intCast(usize, 1)) {
         var decl = store.nodes.items[@intCast(usize, decls[di])];
         if (decl.kind == AstKind.fn_decl) {
@@ -129,8 +138,8 @@ fn testLower() void {
         }
     }
 
-    if (found_count < @intCast(u32, 4)) {
-        fail(expected_4);
+    if (found_count < @intCast(u32, 5)) {
+        fail(expected_5);
     }
 
     var ok: []const u8 = "Lowering tests passed.\n";

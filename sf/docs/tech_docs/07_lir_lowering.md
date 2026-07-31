@@ -526,7 +526,7 @@ lowerStmtBody(node)  // recurses into block children
 - For `defer` (kind=0): always emits the body
 - For `errdefer` (kind=1): only emits when `is_error_path != 0`
 
-**Important (verified, P7):** the expansion **pops** the action — `self.defer_stack.len = i` at `lower.zig:3931` (errdefer at `:3935`) — before lowering its body. A `defer`/`errdefer` is therefore lowered at exactly **one** scope exit, not at every exit. The design doc (`docs/sf/AST_LIR_Lowering_p2.md:406-421`) shows the same loop **without** the pop; the implementation deviates. See the P7 `readFile`/`fclose` trace below (item 3): only the first-lowered return path gets the inlined `fclose`, the other return paths leak the `FILE*`.
+**Fixed (F2, 2026-07-31):** `expandDefers` now takes a `pop` parameter. At scope-termination exits (`lowerStmtBody` block exit, `lowerStmt` block exit, `lowerFn` end), `pop=1` removes the action after emitting — preserving scope-lifetime semantics (a defer never re-emits after its scope closes). At internal exits (`return_stmt`, `break_stmt`, `continue_stmt`, try-error path), `pop=0` leaves the action on the stack — ensuring the defer/errdefer body is inlined at **every** runtime exit while the scope is live. This is the hybrid "pop at block-exit only" fix (Option B from I2 research), matching the design doc's intent at `docs/sf/AST_LIR_Lowering_p2.md:406-421` while closing its scope-termination blind spot.` [updated: 2026-07-31]
 
 Called at:
 - Scope exit in `lowerStmtBody` (target_depth = self.scope_depth, is_error_path = 0)
@@ -653,7 +653,7 @@ P7XD:3,0 ... P7XD:0,0    <- subsequent return sites (size<0, fseek(SET)!=0,
 P7XD:0,0 ... P7XD:0,0       bytes_read!=size, ferror!=0, success): NO fclose
 ```
 
-`expandDefers` counts `[fprintf]`: pushDefer 0/0/0/1, expandDefers calls 86/55/593/195 for mud/gol/lisp/json. **Finding (single-use defer):** `expandDefers` pops the action it expands — `self.defer_stack.len = i` at `lower.zig:3931` (and `:3935` for errdefer) — so a `defer` is lowered at exactly **one** exit site, not at every scope exit. In `readFile` only the first-lowered return path (the `fseek(f,0,SEEK_END)!=0` error, json_parser.c:845-854) contains the `fclose(zT_31)` call (at :849); the other return paths (json_parser.c:872, :892, :933, :946, :955) return without closing `f`. The design doc `docs/sf/AST_LIR_Lowering_p2.md:406-421` shows `expandDefers` **without** the pop — this is an implementation deviation with real correctness impact (FILE* leak on every path except the first return). Not fixed here (documentation-only task).
+`expandDefers` counts `[fprintf]`: pushDefer 0/0/0/1, expandDefers calls 86/55/593/195 for mud/gol/lisp/json. **Fixed (F2, 2026-07-31):** The single-use defer issue has been resolved via the hybrid-pop fix (Option B from I2 research). `expandDefers` now takes a `pop` parameter: at scope-termination exits (block exit, fn-end) `pop=1` removes the action; at internal exits (return, break, continue, try-error) `pop=0` leaves it for re-expansion at subsequent exits. After the fix, `readFile`'s emitted C contains `fclose` at all 6 return paths (pre-fix: only 1), closing the FILE* leak.` [updated: 2026-07-31]
 
 ### 4. `@ptrCast` lowering: scalar vs tagged-union vs fn-pointer
 

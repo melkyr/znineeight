@@ -2486,7 +2486,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var join_bb = createBlock(self);
             emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
             self.current_bb = err_bb;
-            expandDefers(self, @intCast(u32, 0), @intCast(u8, 1));
+            expandDefers(self, @intCast(u32, 0), @intCast(u8, 1), @intCast(u8, 0));
             var do_rewrap: u8 = @intCast(u8, 0);
             {
                 var rt = self.func.return_type;
@@ -3190,7 +3190,7 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
     } else {
         lowerStmt(self, node_idx);
     }
-    expandDefers(self, self.scope_depth, @intCast(u8, 0));
+    expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
     self.scope_depth -= @intCast(u32, 1);
 }
 
@@ -3211,7 +3211,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         while (i < ec.len) : (i += 1) {
             lowerStmt(self, ec[i]);
         }
-        expandDefers(self, self.scope_depth, @intCast(u8, 0));
+        expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         self.scope_depth -= @intCast(u32, 1);
     } else if (node.kind == AstKind.defer_stmt) {
         pushDefer(self, @intCast(u8, 0), node.child_0);
@@ -3612,7 +3612,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
     } else if (node.kind == AstKind.return_stmt) {
-        expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
+        expandDefers(self, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0));
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
@@ -3653,7 +3653,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             if (exit_target == @intCast(u32, 0)) { return; }
         }
-        expandDefers(self, exit_scope, @intCast(u8, 0));
+        expandDefers(self, exit_scope, @intCast(u8, 0), @intCast(u8, 0));
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = exit_target });
             self.block_terminated = @intCast(u8, 1);
@@ -3679,7 +3679,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             if (header_target == @intCast(u32, 0)) { return; }
         }
-        expandDefers(self, cont_scope, @intCast(u8, 0));
+        expandDefers(self, cont_scope, @intCast(u8, 0), @intCast(u8, 0));
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = header_target });
             self.block_terminated = @intCast(u8, 1);
@@ -3919,7 +3919,7 @@ pub fn pushDefer(self: *LirLowerer, kind: u8, ast_node: u32) void {
     });
 }
 
-pub fn expandDefers(self: *LirLowerer, target_depth: u32, is_error_path: u8) void {
+pub fn expandDefers(self: *LirLowerer, target_depth: u32, is_error_path: u8, pop: u8) void {
     var i = self.defer_stack.len;
     while (i > @intCast(usize, 0)) {
         i -= @intCast(usize, 1);
@@ -3928,13 +3928,21 @@ pub fn expandDefers(self: *LirLowerer, target_depth: u32, is_error_path: u8) voi
             break;
         }
         if (action.kind == @intCast(u8, 0)) {
-            self.defer_stack.len = i;
+            if (pop != @intCast(u8, 0)) {
+                self.defer_stack.len = i;
+            }
             lowerStmt(self, action.ast_node);
-            i = self.defer_stack.len;
+            if (pop != @intCast(u8, 0)) {
+                i = self.defer_stack.len;
+            }
         } else if (action.kind == @intCast(u8, 1) and is_error_path != @intCast(u8, 0)) {
-            self.defer_stack.len = i;
+            if (pop != @intCast(u8, 0)) {
+                self.defer_stack.len = i;
+            }
             lowerStmt(self, action.ast_node);
-            i = self.defer_stack.len;
+            if (pop != @intCast(u8, 0)) {
+                i = self.defer_stack.len;
+            }
         }
     }
 }
@@ -4166,7 +4174,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
         self.block_terminated = @intCast(u8, 0);
         lowerStmtBody(self, body);
     }
-    expandDefers(self, @intCast(u32, 0), @intCast(u8, 0));
+    expandDefers(self, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 1));
     if (self.block_terminated == @intCast(u8, 0)) {
         emitValuelessReturn(self);
     }
