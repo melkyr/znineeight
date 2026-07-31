@@ -6,7 +6,7 @@
 |----------|-------|-------|
 | `SemanticAnalyzer` fields | 38 | 29 non-builtin + 9 builtin name IDs |
 | Expression kind dispatch arms | 46+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
-| `CoercionKind` variants | 18 | `none` through `wrap_optional_null` |
+| `CoercionKind` variants | 17 | `none` through `wrap_optional_null` (coercion.zig:1-19) |
 | Coercion checks in `classifyCoercion` | ~18 | Null, optional, error union, ptr, slice, array, widening |
 | Marker codes | 80+ | `IDE`, `D7`, `L`, `S`, `STY`, `FAE`, `PFA`, `FAPR`, `COE`, `CCK`, `COR`, `SIF`, etc. |
 | Expected-type stack | stack-based | Push/pop in calls, returns, assigns, struct init, var decls |
@@ -104,6 +104,51 @@ topExpectedType(self) -> u32:
 
 Used for contextual type inference: fn call args, return stmts, assigns, struct init fields, var decl init, if/else unification, enum/error literals.
 
+#### Measured push/pop behavior (`[fprintf]` on pushExpectedType/popExpectedType + call sites)
+
+Max stack depth per example: mud 2, gol 2, lisp 3, json 3. Push/pop counts are always balanced
+(mud 191/191, gol 193/193, lisp 852/852, json 408/408) — every `pushExpectedType` is matched by a
+`popExpectedType`.
+
+**Return statement + tagged-union struct literal (mud parseCommand, main.zig:88
+`return .{ .Go = @intCast(u8, 0) };`):**
+```
+[P5R] ret node=219 fn_ret=26 top=0        <- return_stmt; fn returns Command TU (type 26)
+[P5E] PUSH ty=26 depth=1                  <- push current_fn_return
+[P5SI] struct_init node=218 target=26     <- return expr: tagged-union struct_init
+[P5SI] field push fi=1 field_ty=8         <- field Go: u8
+[P5E] PUSH ty=8 depth=2                   <- nested field-type push (max 2 for mud)
+[P5E] POP depth=1
+[P5E] POP depth=0
+```
+
+**Struct-literal field chain (lisp value.zig:20
+`v.* = Value{ .Cons = .{ .car = car, .cdr = cdr } };`):**
+```
+[P5E] PUSH ty=31 depth=1                  <- assign pushes lhs (Value TU, type 31)
+[P5SI] struct_init node=3608 target=31    <- Value{...}
+[P5SI] field push fi=4 field_ty=38        <- Cons: anonymous struct
+[P5E] PUSH ty=38 depth=2
+[P5SI] struct_init node=3606 target=38    <- .{...} target comes from topExpectedType
+[P5SI] field push fi=0 field_ty=39        <- car: *Value
+[P5E] PUSH ty=39 depth=3                  <- deepest (max 3 for lisp)
+```
+
+**If/else branches (json parserPeek, json.zig:32
+`return if (self.pos < self.input.len) self.input[self.pos] else zero;`):**
+```
+[P5R] ret node=352 fn_ret=8 top=0         <- return_stmt; fn returns u8 (8)
+[P5E] PUSH ty=8 depth=1                   <- push fn return type
+[P5I] if_expr node=351 top=8              <- BOTH branches see u8 on the stack
+[P5ID] LOCAL hit 'self' ...               <- then-branch resolves (index_access)
+SIF:1N351 T8                              <- then==else -> unified u8
+[P5E] POP depth=0
+```
+
+`if_expr` itself never pushes (no push in `semanticAnalyzerResolveIfExpr`,
+semantic_analyzer.zig:822-836); its then/else branches inherit the expected type pushed by the
+enclosing return-statement or var-decl.
+
 ### semanticAnalyzerStmtWorkPush (`sf/src/semantic_analyzer.zig:1427-1441`)
 
 `[inference: grow-by-doubling from 64, write/inc work pointer]`
@@ -126,6 +171,46 @@ Resolution order:
 6. **Debug detail `D8:*`**: if node_idx in [450, 660], dump name, node kind, resolved type.
 7. If name_id == `_stub_0` (discard) → return `TYPE_UNDEFINED`.
 8. Fallback → return `TYPE_VOID` (marker `IDT:<name>:VOID\n`).
+
+#### Measured lookup priority (`[fprintf]` on `semanticAnalyzerResolveIdent` in the generated C89)
+
+Five stages, first hit wins. Stage-2 symbol lookup is *checked first* even though
+`nameCacheGet` is computed earlier (semantic_analyzer.zig:191-194); the name-cache key is
+`(u64)name_id` (module 0), so stage 3 only sees bare-name entries.
+
+| # | Stage | Code | Marker | lisp trace evidence |
+|---|-------|------|--------|---------------------|
+| 1 | local shadow (reverse scan) | semantic_analyzer.zig:177-190 | `D7:*` / `L\n` | `f_ptr` param: `[P5ID] LOCAL hit name=264 'f_ptr' type=40` |
+| 2 | symbol registry (own module) | semantic_analyzer.zig:193-199 | `S\n` / `STY:*` / `TAL` / `SVO` | `sand_mod` module sym: `[P5ID] SYM hit name=20 'sand_mod' type=21 kind=5`; `Value` alias: `[P5ID] SYM type_alias name=55 'Value' type=31` |
+| 3 | name cache (module-0 key) | semantic_analyzer.zig:191-192,200 | `C2:T` | `usize`: `[P5ID] CACHE hit name=12 'usize' type=13`; `i32`→6, `i64`→7 |
+| 4 | discard sentinel `_` | semantic_analyzer.zig:221-223 | — | `[P5ID] DISCARD name=70` → TYPE_UNDEFINED |
+| 5 | fallback VOID | semantic_analyzer.zig:224-227 | `IDT:<name>:VOID` | `[P5ID] VOID name=70` → TYPE_VOID |
+
+Stage-3 entries come from `typeRegistryRegisterPrimitives` → `registerPrimitiveName`, which caches
+`usize`/`i32`/`i64`/... under their bare name_id (type_registry.zig:621-627), plus module-0 types
+cached by `resolveNamedTypeExpressions` (type_resolver.zig:949-971). Stage counts per example:
+mud 235 LOCAL / 29 SYM / 4 TAL / 5 CACHE / 3 VOID; gol 137/15/18/9/1; lisp 909/113/12/19/1;
+json 441/8/8/9/1 + 1 DISCARD.
+
+Cross-module references resolve in two hops. The base `mod` goes through stage 2 (module symbol,
+`kind=5`); the field name is then looked up in the *target* module's table by
+`resolveFieldAccess` (`symbolRegistryQualifiedLookup(symbols, target_mod, field_name)`,
+semantic_analyzer.zig:279-281, `Q1:FL/KL/TL/FN`). lisp `sand_mod.sand_init` from main.zig:110:
+```
+FAE PFA:BK24 PFA:FN88
+[P5ID] SYM hit name=20 'sand_mod' type=21 kind=5    <- stage 2 on base ident
+Q1:FL2 Q1:KL3 Q1:TL54 Q1:FN88                       <- cross-module field (function, fn type 54)
+```
+`[fprintf]` + `[markers]`.
+
+**Known quirk (sentinel):** `_stub_0` is both the discard sentinel (semantic_analyzer.zig:49,109)
+and a scratch register reused by `semanticAnalyzerResolveIndexAccess` / `ResolveSliceExpr` /
+`ResolveTupleLiteral` / `ResolveArrayInit` (semantic_analyzer.zig:1749, 1784, 1811, 1830). After
+any of those resolve, `_stub_0` holds a TypeId, so a later `_` ident misses stage 4 and returns
+TYPE_VOID instead of TYPE_UNDEFINED. Observed: mud 3× `_`→VOID (main.zig:164/173/202), gol 1×,
+lisp 1× (parser.zig:30), json 1× `_`→VOID + 1× `_`→DISCARD (main.zig:88, resolved before any
+index_access clobber). Benign: `resolveAssign` handles `_` by comparing the lhs name against a
+fresh interner lookup (semantic_analyzer.zig:977-982), not via `_stub_0`.
 
 ### semanticAnalyzerResolveFieldAccess (`sf/src/semantic_analyzer.zig:230-485`)
 
@@ -219,6 +304,116 @@ fi from 0..fields_count:
 | — | (any other AstKind) | `[inference: diag ERR_3020, return TYPE_VOID]` | `TYPE_VOID` |
 
 After all arms: emit `STX:n<idx> STX:k<kind> STX:r<result> A4:N<idx> A4:K<kind> A4:R<result>`, `resolvedTypeTableSet(node_idx, result)`, `STB:N<idx> STB:R<result>`, return `result`.
+
+#### Measured arm-hit table (4 examples, `[markers]` A4:K / STX:k)
+
+Counts below are resolveExpr resolutions that reach the tail (`A4:K`). `RXS` is the swt_ex entry count
+(semantic_analyzer.zig:1137); early returns (`P0:n` payload==0, `PL0:n` no prongs) make RXS ≥ A4:K56
+(lisp 112 vs 56). TypeId results (`STX:r`) are omitted; the table is hit-frequency only.
+
+| Arm | Kinds hit (of 4 examples) | mud | gol | lisp | json |
+|-----|---------------------------|-----|-----|------|------|
+| 1 int_literal | all | 61 | 82 | 113 | 67 |
+| 2 float_literal | — | 0 | 0 | 0 | 0 |
+| 3 char_literal | mud,gol,lisp,json | 2 | 2 | 18 | 62 |
+| 4 bool_literal | mud,lisp,json | 9 | 0 | 25 | 4 |
+| 5 null_literal | mud,lisp,json | 4 | 0 | 5 | 1 |
+| 6 undefined_literal | all | 4 | 2 | 8 | 3 |
+| 7 unreachable_expr | gol,lisp,json | 0 | 2 | 23 | 1 |
+| 8 string_literal | all | 21 | 5 | 75 | 58 |
+| 9 enum_literal | mud only | 3 | 0 | 0 | 0 |
+| 10 error_literal | lisp,json | 0 | 0 | 61 | 14 |
+| 11 ident_expr | all | 276 | 180 | 1054 | 471 |
+| 12 field_access | all | 88 | 9 | 268 | 99 |
+| 13 index_access | all | 30 | 6 | 49 | 24 |
+| 14 slice_expr | all | 1 | 10 | 13 | 6 |
+| 15 deref | lisp,json | 0 | 0 | 70 | 6 |
+| 16 address_of | mud,lisp,json | 15 | 0 | 38 | 6 |
+| 17 fn_call | all | 35 | 22 | 167 | 130 |
+| 18 builtin_call | all | 39 | 8 | 41 | 22 |
+| 19 bool_not | mud,lisp | 2 | 0 | 3 | 0 |
+| 20 negate | gol,lisp | 0 | 2 | 5 | 0 |
+| 21 bit_not | lisp only | 0 | 0 | 1 | 0 |
+| 22 try_expr | lisp,json | 0 | 0 | 74 | 21 |
+| 23 catch_expr | lisp,json | 0 | 0 | 24 | 2 |
+| 24 orelse_expr | json only | 0 | 0 | 0 | 1 |
+| 25 break_stmt/continue_stmt | lisp only | 0/0 | 0/0 | 1/2 | 0/0 |
+| 26 var_decl/defer/errdefer | — | 0 | 0 | 0 | 0 |
+| 27 if_expr | all | 1 | 2 | 3 | 1 |
+| 28 if_stmt | lisp,json | 0 | 0 | 9 | 1 |
+| 29 for_stmt | — | 0 | 0 | 0 | 0 |
+| 30 while_stmt | — | 0 | 0 | 0 | 0 |
+| 31 swt_ex (kind 56) | all | 1 | 3 | 56 | 2 |
+| 32 tuple_literal | gol only | 0 | 2 | 0 | 0 |
+| 33 struct_init | all | 14 | 19 | 11 | 8 |
+| 34 array_init | gol only | 0 | 4 | 0 | 0 |
+| 35 type/decl nodes (84-90,3-5,9) | error_set_decl(9) only | 0 | 0 | 1 | 2 |
+| 36 paren_expr | mud,lisp,json | 2 | 0 | 24 | 1 |
+| 37 return_stmt | mud,lisp | 2 | 0 | 58 | 0 |
+| 38 expr_stmt | gol,lisp,json | 0 | 1 | 56 | 2 |
+| 39 import_expr | all | 3 | 2 | 31 | 3 |
+| 40 block | all | 2 | 19 | 72 | 9 |
+| 41 add/sub/mul/div/mod | div+mod never | 7/4/0/0/0 | 6/0/2/0/0 | 10/3/3/0/0 | 18/6/4/0/0 |
+| 42 bit_and/or/xor/shl/shr | bit_and only (lisp 1) | 0 | 0 | 1 | 0 |
+| 43 bool_and/bool_or | all | 2/0 | 4/3 | 11/5 | 13/7 |
+| 44 cmp_eq/ne/lt/le/gt/ge | all six hit | 8/3/13/1/2/1 | 3/0/11/2/1/6 | 29/11/20/1/5/3 | 36/11/14/2/2/5 |
+| 45 plain/add/sub/mul/div assigns | 51-53; 54,55 lisp only | 21/9/2/0/0 | 6/8/0/0/0 | 73/19/1/1/1 | 15/12/0/0/0 |
+| 46 range_exclusive/inclusive | — | 0 | 0 | 0 | 0 |
+
+**Never-hit arms** across all 4 examples:
+- Arm 2 `float_literal` — no float literals in any example.
+- Arm 26 `var_decl`/`defer_stmt`/`errdefer_stmt` — statement kinds are handled directly in
+  `semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1564/1702); the resolveExpr fallback
+  arm (semantic_analyzer.zig:1281-1283) is never exercised.
+- Arm 29 `for_stmt` and arm 30 `while_stmt` — resolved only via `ResolveFor/WhileHeader` in
+  StmtIter (semantic_analyzer.zig:1683-1692). lisp/json DO contain `for` loops
+  (builtins.zig:28/61, json main.zig:49/63) but those nodes go through StmtIter (`SP:K73`),
+  never through resolveExpr.
+- Arm 41 `div`, `mod_op`; arm 42 `bit_or`/`bit_xor`/`shl`/`shr` (only `bit_and` hit, lisp 1×);
+  arm 45 `shl_assign`(57)/`shr_assign`(58)/`and_assign`(59)/`xor_assign`(60)/`or_assign`(61).
+- Arm 46 `range_exclusive`/`range_inclusive` — no `for` range headers; also excluded from A4:K
+  by its early return (semantic_analyzer.zig:1361-1363).
+- Arm 35: only `error_set_decl` (9) reaches resolveExpr — as the init of a top-level
+  `pub const X = error{...}` resolved by the phase-level init path (main.zig:375-385;
+  lisp util.zig:1, json file.zig:18 / json.zig:14). `ptr_type`/`slice_type`/`fn_type`/etc. type
+  nodes are resolved by the type resolver (type_resolver.zig), not by resolveExpr.
+
+**Caveats:**
+- Arms 28/37 (`if_stmt`, `return_stmt`) are usually processed in StmtIter; the A4:K hits come
+  from statement nodes appearing in expression position (e.g. a block's last child resolved by
+  `semanticAnalyzerResolveExpr`, semantic_analyzer.zig:1335-1336).
+- Arm 31's kind value 56 collides with `mod_assign` (`swt_ex = 56` AND `mod_assign = 56`,
+  ast.zig:58/76). ResolveExpr checks `swt_ex` first (semantic_analyzer.zig:1137, 1299), so all
+  kind-56 resolutions here are switches. No example contains a genuine `%=`; if one did, it
+  would be mis-routed to the swt_ex arm (latent collision, not exercised).
+
+#### Measured: `@ptrCast(fn(...) T, p)` target type (`[gdb]`)
+
+lisp eval.zig:264 `const f = @ptrCast(fn ([]*value_mod.Value, *sand_mod.Sand) util.LispError!*value_mod.Value, f_ptr);`
+(builtin_call node 2588). The builtin_call arm (semantic_analyzer.zig:1216-1240) treats it as a
+type-value cast: it resolves the value arg first (`f_ptr` — a LOCAL shadow of the
+`.Builtin => |f_ptr|` switch capture, type 40 = `*void`), then passes the fn-type AST node to
+`resolveTypeExprFull`.
+
+GDB at the type-value-cast arm (generated C, `node_idx == 2588`):
+```
+ec[0]=2586 (AST kind 90 = fn_type)  ec[1]=2587 (f_ptr)
+resolveTypeExprFull(2586) -> result = 115
+type[115]: kind=17 (ptr_type) payload_idx=15 size=4     <- ptr-to-fn, NOT the fn type itself
+ptr base = 114
+type[114]: kind=24 (fn_type) payload_idx=48
+FnPayload@48: params_start=88 params_count=2 return_type=59 is_extern=0
+param0=85 ([]*Value)  param1=56 (*Sand)
+return_type 59: kind=22 (error_union_type) error_set=35 (LispError) payload=39 (*Value)
+```
+
+The `@ptrCast(fn(...), p)` **target type is a pointer to the fn type**. The `fn_type` arm of the
+type resolver (type_resolver.zig:729-788) synthesizes a `fn_type` registry entry with a generated
+name `fnt_<ret>_<p1>_...` (type_resolver.zig:749-778), marks it fn-ptr-used
+(`typeRegistryMarkFnPtrUsed`, type_resolver.zig:786), and returns
+`typeRegistryGetOrCreatePtr(fn_type, false)` — a pointer to it (type_resolver.zig:787). The local
+`f` gets this ptr-to-fn type, and `f(args, temp_sand)` works because `semanticAnalyzerResolveFnCall`
+dereferences a ptr callee to its fn type (semantic_analyzer.zig:735-742).
 
 ### semanticAnalyzerResolveArithmetic (`sf/src/semantic_analyzer.zig:487-511`)
 
@@ -360,6 +555,46 @@ Worklist (stack-based) traversal. Pushes stmt children in reverse order for pre-
 - Other → `semanticAnalyzerResolveExpr`.
 
 Skips `fn_decl` children (inner functions handled by outer phase).
+
+#### Worklist strategy: why iterative, not recursive (`[fprintf]` + `[inference]`)
+
+`semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1539-1723) is explicitly iterative: it
+pushes the root statement onto `stmt_work`, then pops/processes in a `while` loop until drained
+back to the entry `sp_base` (semantic_analyzer.zig:1540-1543). Three reasons this design was
+chosen over plain recursion:
+
+1. **Bounded C-call depth for statement trees.** The companion pre-pass `resolveStmtTypes`
+   (main.zig:413-462) is recursive and hard-caps at `depth > 16` (main.zig:414). The real
+   semantic pass must not blow the bootstrap C89 stack on deeply nested blocks; the worklist
+   keeps C-call depth flat regardless of statement nesting.
+2. **Explicit source-order traversal.** Children are pushed in reverse
+   (semantic_analyzer.zig:1553-1562) so the pop order is pre-order source order — the same
+   guarantee a recursive descent gives, without recursion. `constraintCheckerCheckBreakContinue`
+   uses the same explicit-`(node_idx, depth)`-stack pattern (constraint_checker.zig:70-109).
+3. **Per-module lifecycle.** The worklist lives on the `SemanticAnalyzer`, which is created per
+   module (main.zig:356) on the scratch arena (reset at main.zig:345). `sp_base` is captured at
+   entry, so every fn body drains exactly back to its base — the worklist is always empty
+   (at base) between fn bodies and dies with the module's scratch reset.
+
+The worklist is statement-scoped: *expression* subtrees are still resolved recursively via
+`semanticAnalyzerResolveExpr` (semantic_analyzer.zig:1131), which re-enters the worklist only for
+statement-like nodes (var_decl/defer/errdefer, semantic_analyzer.zig:1281-1283). A deep
+expression nest still recurses; the worklist absorbs only statement nesting.
+
+**Measured max worklist depth** (`stmt_work_len`, `[fprintf]` on
+`semanticAnalyzerStmtWorkPush`; max over push records, `[P5W]`):
+
+| Example | Max worklist depth | Deepest fn | Pushes |
+|---------|:------------------:|------------|-------:|
+| mud_server | 13 | main | 159 |
+| game_of_life | 21 | main | 97 |
+| lisp_interpreter_curr | 18 | main | 545 |
+| json_parser | 16 | parseObject | 301 |
+
+The worklist depths stay in the 13-21 range and are never limited by the 16-deep recursion cap
+that `resolveStmtTypes` needs — game_of_life's `main` reaches 21 pending statements, deeper than
+the recursive pre-pass allows. The worklist is what lets statement nesting exceed recursion depth
+without C-stack growth.
 
 ### semanticAnalyzerResolveStmt (`sf/src/semantic_analyzer.zig:1839-1841`)
 
@@ -595,6 +830,38 @@ Deterministic check order:
 16. u8↔c_char: `none` (identity).
 17. ptr→slice: if base matches elem → `string_to_slice`. If src pointee is array and elem matches → `array_to_slice`.
 18. Fallback → `none`.
+
+#### Measured CoercionKind distribution (`[markers]` CCK:ca / CCK:vr / COR:K)
+
+`CCK:ca` (semantic_analyzer.zig:615) logs every `classifyCoercion` result in `tryRecordCoercion`;
+`CCK:vr` (semantic_analyzer.zig:1630) logs the var-decl path; `COR:K` (semantic_analyzer.zig:618)
+logs only coercions actually recorded (`ck != none` or null→ptr). Per-example recorded counts
+(`CCK:ca`, with the recorded subset equal to `COR:K`):
+
+| Example | wrap_optional(1) | wrap_error_success(2) | wrap_error_err(3) | array_to_slice(5) | string_to_slice(8) | const_qualify(12) | int_literal_coerce(15) | wrap_optional_null(16) | none(0, not recorded) |
+|---------|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
+| mud_server | 1 | 0 | 0 | 0 | 10 | 1 | 15 | 2 | 0 |
+| game_of_life | 0 | 0 | 0 | 0 | 0 | 4 | 30 | 0 | 0 |
+| lisp_interpreter_curr | 15 | 60 | 53 | 1 | 53 | 6 | 30 | 1 | 3 |
+| json_parser | 1 | 15 | 14 | 0 | 1 | 1 | 19 | 1 | 2 |
+
+Var-decl path (`CCK:vr`): mud 2×none/2×string_to_slice/5×int_literal_coerce;
+gol 2×none/9×int_literal_coerce; lisp 6×none/18×int_literal_coerce/2×wrap_optional_null;
+json 3×none/8×int_literal_coerce.
+
+Takeaways:
+- `int_literal_coerce` (15) is the most frequent recorded coercion in **all 4 examples**
+  (mud 15, gol 30, lisp 30, json 19): literals resolve to `TYPE_INT_LIT` and are coerced to a
+  concrete numeric at assignment / call-arg / return.
+- Error-union wrapping (`wrap_error_success` 2 + `wrap_error_err` 3) dominates the error-heavy
+  examples lisp (113 recorded) and json (29), and is absent from mud/gol.
+- `string_to_slice` (8) is heavy in mud (10) and lisp (53) — `[*c]u8` string literals coerced to
+  `[]const u8` slices.
+- Never recorded in any example: `unwrap_optional` (4 — added directly, not via
+  `classifyCoercion`, at semantic_analyzer.zig:818/1256), `array_to_many_ptr` (6),
+  `slice_to_many_ptr` (7), `string_to_many_ptr` (9), `string_to_ptr` (10),
+  `ptr_to_optional_ptr` (11), `int_widen` (13), `float_widen` (14). The 4 examples therefore
+  exercise only 8 of the 17 non-`none` variants.
 
 ### CoercionTable (`sf/src/coercion.zig:35-41`)
 
