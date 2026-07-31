@@ -9,8 +9,8 @@
 | Decl kinds registered | 7 | var_decl, fn_decl, test_decl, struct_decl, enum_decl, union_decl, error_set_decl |
 | `DepGraph` edge items | dynamic | Flat array of `DepEdge`, 2x growth, min 8 |
 | `SymbolTable` per module | lazy | Created on first `symbolRegistryGetTable(mod_id)` access |
-| Type stubs populated | 4 | StructPayload, UnionPayload/TaggedUnionPayload, EnumPayload, ErrorSetPayload |
-| Debug markers | ~15+ | `S`, `S0`, `Ra`, `Rs`, `Rf`, `RCA`, `VR`, `VD`, `Vi`, `M5`, `FIX1`, `IMR` |
+| Type stubs populated | 4 kinds | All 4 back-patch paths exist (StructPayload, UnionPayload/TaggedUnionPayload, EnumPayload, ErrorSetPayload); the 4 examples populate only StructPayload + TaggedUnionPayload + ErrorSetPayload (see Evidence) |
+| Debug markers | ~15+ | Phase: `S`, `S0`, `T`, `T0`; registration: `RS`, `Ra`, `D12`, `M5`, `Rs`, `Rf`, `FIX1`, `RCA`, `VR`, `VD`, `Vi`, `IMR`; type-registry (from type_registry.zig): `MC`, `DC`, `X`, `NP`, `RN`, `NGC` |
 
 ---
 
@@ -97,7 +97,7 @@ Two sub-cases based on `child_1` (the init expression):
 
 Default case (no special init): creates `SymbolKind.global`.
 
-All var_decl symbols emit `Ra` (register alias), `D12:n<name_id>` (debug name dump), then `VR`/`VD:<name_id>:<kind_enum>`/`Vi` (variable register/dump/info).
+All var_decl symbols emit `Ra` (register alias), `D12:n<name_id>` (debug name dump), then `VD:<name_id>:<kind_enum>` and `Vi`; `VR` is written additionally only when the insert is rejected as a duplicate (`symbolTableInsert` returned `false` — happens on the pass-2 re-registration, see Evidence).
 
 ### `fn_decl` (line 305)
 
@@ -118,6 +118,14 @@ Registers error set type via `typeRegistryRegisterNamedType` with `TypeKind.erro
 ### `import_expr` (line 373)
 
 Resolves target module via `path_to_id` hash map. If found, creates `SymbolKind.module` with `type_id = typeRegistryGetOrCreateModule(tid)`. Emits `IMR:n<path_id>m<mod_id>` marker.
+
+### `else` default (line 395)
+
+No symbol is created. This is how `@cInclude` decls (`AstKind.c_include`, all 4 examples have 2-3
+top-level) pass through registration silently. Of the 7 switch cases, only `var_decl`, `fn_decl`
+and `else` are exercised by the 4 examples — `test_decl`, standalone `struct_decl`/`enum_decl`/
+`union_decl`, standalone `error_set_decl` and standalone `import_expr` fire nowhere (see Known
+Issue 7).
 
 ---
 
@@ -192,6 +200,13 @@ phase_SymbolRegistration (main.zig:259)
     └─ DepGraph available for phase 3 (type resolution)
 ```
 
+**Double registration:** `phase_TypeResolution` (main.zig:289) re-runs the whole loop — marker
+`"T\n"` (main.zig:290), then `registerModuleSymbols` for every module (main.zig:296) into a fresh
+`depGraphInit`. This is the "re-register" pass: symbol inserts are all rejected as duplicates
+(`VR`), named-type / module-type registration dedups (no new `DC`/`MC`), and `populateTypePayload`
+re-appends duplicate payload entries (see Known Issue 6). Phase 3's type resolution consumes the
+pass-2-built graph (edge counts identical in both passes, verified in Evidence).
+
 ### Data Structures After Symbol Registration
 
 ```
@@ -262,3 +277,161 @@ TypeRegistry (permanent arena, updated with stubs)
 4. **Sentinel root node (from=0) in DepGraph** (symbol_registrator.zig:78): `addTypeDependencies` always uses `from=0` as a sentinel. Type resolution must handle this convention — `tid=0` is not a valid type ID, it means "root/dummy".
 
 5. **Scratch arena dependency** (phase_SymbolRegistration, main.zig:261): `DepGraph` is allocated in scratch arena and invalidated on next phase's `sandReset`. If type resolution (phase 3) needs to reference the graph later, it must snapshot or consume it before reset.
+
+6. **Pass-2 payload duplication on re-registration** (symbol_registrator.zig:84, verified `[fprintf]`): `registerModuleSymbols` runs twice — once in `phase_SymbolRegistration` (main.zig:266) and again inside `phase_TypeResolution` (main.zig:296). The second run re-executes `populateTypePayload`, so every payload array (`fe`, `em`, `xn`, `st`, `tu`, `un`, `en`, `es`) is appended to AGAIN with identical entries, and the back-patch `types_items[types_len-1].payload_idx = <new idx>` (symbol_registrator.zig:112-116, :140-155, :189-193, :205-209) targets the *last type in the registry* — which in pass 2 is NOT the type being re-registered (named-type dedup at type_registry.zig:631 returns the existing id without appending). Observed: json_parser `fe` grows 11→22 and `xn` 11→22 across the two passes; the last registered type (json `Parser`) ends with `payload_idx` pointing at pass-2 duplicates. The duplicated entries are identical (`FieldEntry{name_id, TYPE_VOID, 0}` placeholders) and phase 3 re-resolves fields from the AST by name, so the 4 examples still compile/run correctly — but the payload arrays ~double in size and the final type's `payload_idx` is re-pointed. Latent corruption, not yet observable as a miscompile.
+
+7. **Standalone struct/enum/union/error_set/test/import_expr cases not exercised by the 4 examples** (verified `[markers]` + `[fprintf]`): every top-level decl in all 4 examples is `var_decl`, `fn_decl`, or `c_include` (AstKind 1/2/96 in the `RS`/`S0` dumps); all type declarations are `const X = struct/enum/union(enum)/error{...}` — i.e. a var_decl with an inline-type init. The `test_decl` (symbol_registrator.zig:319), standalone `struct_decl`/`enum_decl`/`union_decl` (:334), standalone `error_set_decl` (:357) and standalone `import_expr` (:373) cases exist in the switch but fire nowhere in these examples.
+
+---
+
+## Evidence: 4 Working Examples (Deep-Dive P2)
+
+Traces: `/tmp/dd/*.mrk` (P0, `zig1 --markers --dump-c89`). Per-module symbol counts/names and
+payload counts obtained by fprintf-instrumenting a bootstrap rebuild of the same
+`sf/src/main.zig` into `/tmp/z1` (scratch only, `[fprintf]`) and running it with `--markers`.
+`RS`/`S0`/`T0` dump lines are `[markers]`.
+
+### Per-module symbol tables (fprintf `[fprintf]`)
+
+`registerModuleSymbols` was instrumented to print each module's `SymbolTable` after registration
+(`MODREG mod=<id> len=<n> g=<globals> f=<functions> ta=<type_aliases> m=<modules>`). `decls(m0)`
+= root module top-level decl-kind counts from the `RS` marker (module 0 only). `var_decl`
+registers into `global`+`type_alias`+`module` combined; `fn_decl` → `function`.
+
+| Example | mod | file | total | function | global | type_alias | module | decls(m0) |
+|---------|:---:|------|:-----:|:--------:|:------:|:----------:|:------:|-----------|
+| mud_server | 0 | main.zig | 26 | 16 | 4 | 4 | 2 | 10 var / 16 fn / 2 c_include |
+| mud_server | 1 | std.zig | 1 | 0 | 0 | 0 | 1 | - |
+| mud_server | 2 | util.zig | 2 | 2 | 0 | 0 | 0 | - |
+| mud_server | 3 | std_debug.zig | 2 | 2 | 0 | 0 | 0 | - |
+| game_of_life | 0 | main.zig | 12 | 7 | 2 | 2 | 1 | 5 var / 7 fn / 2 c_include |
+| game_of_life | 1 | std.zig | 1 | 0 | 0 | 0 | 1 | - |
+| game_of_life | 2 | std_debug.zig | 4 | 4 | 0 | 0 | 0 | - |
+| json_parser | 0 | main.zig | 10 | 7 | 1 | 0 | 2 | 3 var / 7 fn / 3 c_include |
+| json_parser | 1 | file.zig | 14 | 10 | 2 | 2 | 0 | - |
+| json_parser | 2 | json.zig | 20 | 15 | 0 | 4 | 1 | - |
+| lisp_interpreter_curr | 0 | main.zig | 19 | 8 | 2 | 0 | 9 | 11 var / 8 fn / 2 c_include |
+| lisp_interpreter_curr | 1 | sand.zig | 5 | 3 | 0 | 1 | 1 | - |
+| lisp_interpreter_curr | 2 | value.zig | 10 | 7 | 0 | 1 | 2 | - |
+| lisp_interpreter_curr | 3 | token.zig | 9 | 6 | 0 | 2 | 1 | - |
+| lisp_interpreter_curr | 4 | parser.zig | 6 | 2 | 0 | 0 | 4 | - |
+| lisp_interpreter_curr | 5 | env.zig | 7 | 3 | 0 | 1 | 3 | - |
+| lisp_interpreter_curr | 6 | eval.zig | 9 | 4 | 0 | 0 | 5 | - |
+| lisp_interpreter_curr | 7 | builtins.zig | 14 | 11 | 0 | 0 | 3 | - |
+| lisp_interpreter_curr | 8 | util.zig | 4 | 3 | 0 | 1 | 0 | - |
+| lisp_interpreter_curr | 9 | deep_copy.zig | 4 | 1 | 0 | 0 | 3 | - |
+
+Totals: mud_server 31 symbols / 4 modules, game_of_life 17 / 3, json_parser 44 / 3,
+lisp_interpreter_curr 87 / 10. Every symbol is inserted once in pass 1 (dedup accepts) and
+rejected in pass 2 (`VR`); the tables are byte-identical after both passes.
+
+Representative excerpt (`[fprintf]`, json_parser pass 1):
+
+```
+MODREG mod=2 len=20 g=0 f=15 ta=4 m=1
+SYM mod=2 name=file kind=5 type=21 decl=294
+SYM mod=2 name=JsonItem kind=4 type=24 decl=303
+SYM mod=2 name=JsonValue kind=4 type=25 decl=319
+SYM mod=2 name=ParseError kind=4 type=26 decl=321
+SYM mod=2 name=Parser kind=4 type=27 decl=331
+...
+```
+
+### DepGraph evidence
+
+Edges are added only by `addTypeDependencies` (symbol_registrator.zig:70-82), one per `field_decl`
+child, always with `from=0` (sentinel) and `to=<type_id>`. Edge counts therefore equal the total
+field counts of the aggregate types. fprintf `DEPGRAPH phaseS edges=N` and `DEPGRAPH phaseT
+edges=N`:
+
+| Example | edges (pass 1 == pass 2) | Sources (fields / variants / tags) |
+|---------|:------------------------:|------------------------------------|
+| mud_server | 15 | plat_fd_set(1) + Player(5) + Room(5) + Command(4) |
+| game_of_life | 4 | Cell(2) + Point(2) |
+| json_parser | 11 | JsonItem(2) + JsonValue(6) + Parser(3) — error sets contribute 0 |
+| lisp_interpreter_curr | 19 | Sand(3) + Value(6) + Token(5) + Tokenizer(2) + EnvNode(3) — LispError contributes 0 |
+
+Cycles: **none**. Because every edge has `from=0`, no type→type edge exists in the graph, so a
+cycle is structurally impossible. `typeResolverResolve` reports
+`ERR_3005_CIRCULAR_TYPE_DEPENDENCY` (type_resolver.zig:306-320) only if an in-degree > 0 survives
+the worklist drain; grep for `circular type dependency` in all four traces = 0 hits. `[fprintf]` +
+`[markers]`
+
+### Type stubs populated (`S0`/`RS`/`DC:k<TypeKind>` markers)
+
+`DC:k<kind>n<name>t<id>` fires per `typeRegistryAppend` (type_registry.zig:158-170); `X:<id>` per
+struct append (:171-172); `RN:` per named-type registration (:645-654). Payload contents confirmed
+with `PAY <kind> decl=<n> ...` `[fprintf]`. Per example, only the types actually declared get a
+payload:
+
+| Example | StructPayload (fields) | TaggedUnionPayload (variants) | ErrorSetPayload (tags) |
+|---------|:----------------------:|:-----------------------------:|:----------------------:|
+| mud_server | plat_fd_set(1), Player(5), Room(5) | Command(4) | - |
+| game_of_life | Point(2) | Cell(2) | - |
+| json_parser | JsonItem(2), Parser(3) | JsonValue(6) | FileError(4), ParseError(7) |
+| lisp_interpreter_curr | Sand(3), Tokenizer(2), EnvNode(3) | Value(6), Token(5) | LispError(22) |
+
+`fe` (FieldEntry) totals per pass: mud 15, gol 4, json 11, lisp 16 (46 across examples). `xn`
+(error-tag indices) per pass: json 11, lisp 22 (33). **No example declares an `enum` or a plain
+`union`**, so EnumPayload and UnionPayload back-patch paths (symbol_registrator.zig:118-157,
+:158-194) are never populated here.
+
+### Double registration: pass 1 vs pass 2
+
+`registerModuleSymbols` runs in BOTH `phase_SymbolRegistration` (main.zig:266) and
+`phase_TypeResolution` (main.zig:296). The marker streams differ:
+
+| Marker | Pass 1 (S..S0) | Pass 2 (T..) | Cause |
+|--------|:--------------:|:------------:|-------|
+| `S\n` / `T\n` (phase entry) | `S` | `T` | main.zig:260 / :290 |
+| `VR` (duplicate insert) | none | every var_decl | `symbolTableInsert` rejects (symbol_table.zig:55) |
+| `DC:k...`, `X:`, `RN:`, `NP:`, `MC`/`MCDC` (new type) | present | absent | named-type / module-type dedup (type_registry.zig:631, :559-565) |
+| `RCA:p/i/H` (ident alias) | present | present again | `nameCacheGet` re-runs (symbol_registrator.zig:259-271) |
+| `RS` (module-0 dump) | present | present | symbol_registrator.zig:405 |
+
+Symbol tables after both passes are identical (dedup keeps pass-1 entries). Payload arrays are NOT
+idempotent — see Known Issue 6.
+
+### Q5: lisp `LispError` error-set registration
+
+`util.zig:1-24` declares `pub const LispError = error { ...22 members... }`. In the AST this is
+`var_decl` (node 910) whose `child_1` is `error_set_decl` (node 909), so registration flows through
+the **var_decl inline-type path** (symbol_registrator.zig:246-258), not the standalone
+`error_set_decl` case (:357):
+
+1. `typeRegistryRegisterNamedType(m8, name_id=156, TypeKind.error_set_type)` → `t35` (marker
+   `DC:k23n156t35`).
+2. `populateTypePayload(error_set_decl, 909)` — every child (error-tag literal node) is appended to
+   `xn[]` (`xnAppend`, symbol_registrator.zig:198-200); `esAppend` records
+   `ErrorSetPayload{tags_start=0, tags_count=22}`. `[fprintf]`:
+   `PAY error_set decl=909 tags_start=0 tags_count=22`. Members ARE populated at this stage — as
+   AST **node indices**, not interned names (see doc :140-142).
+3. `addTypeDependencies` adds no edge (error-tag children are not `field_decl`).
+4. Symbol inserted: `SymbolKind.type_alias`, `type_id=t35` (`[fprintf]`:
+   `SYM mod=8 name=LispError kind=4 type=35 decl=910`; marker `VD156:4`).
+
+### Questionnaire answers (all with evidence)
+
+1. Per-module symbol counts + decl-kind distribution — tables above. `[fprintf]` + `[markers]`
+2. DepGraph edges: mud 15, gol 4, json 11, lisp 19 (identical in both passes). No cycles possible
+   (all edges `from=0`); 0 `ERR_3005` diagnostics. `[fprintf]` + `[markers]`
+3. Type stubs: 9 StructPayload + 5 TaggedUnionPayload + 3 ErrorSetPayload populated across the 4
+   examples per pass; no EnumPayload or plain UnionPayload. `[markers]` + `[fprintf]`
+4. Double registration IS observable and the markers differ: `VR` appears only in pass 2; new-type
+   markers (`DC`/`X`/`MC`/`RN`/`NP`) only in pass 1; `RCA` re-fires; phase-entry `S` vs `T`.
+   `[markers]`
+5. LispError: var_decl inline error_set path; 22 members populated as node indices in `xn[]`
+   (`ErrorSetPayload{0, 22}`) at registration time. `[markers]` + `[fprintf]`
+6. Tech doc 7 AstKind cases: all documented cases match source line numbers (see inaccuracies
+   table); the `else => {}` default (symbol_registrator.zig:395, which silently skips `c_include`)
+   is undocumented, and only `var_decl`, `fn_decl` and `else` are exercised by the 4 examples
+   (Known Issue 7).
+
+### Doc inaccuracies found (item 6)
+
+| Doc location | Claim | Reality |
+|--------------|-------|---------|
+| this doc :12 | "Type stubs populated | 4 | StructPayload, UnionPayload/TaggedUnionPayload, EnumPayload, ErrorSetPayload" | Only StructPayload, TaggedUnionPayload and ErrorSetPayload are populated by the 4 examples (no enum / plain union declared). All 4 back-patch code paths exist. |
+| this doc :13 | Debug-markers list omits `RS`, `D12`, `MC`, `DC`, `X`, `NP`, `RN`, `NGC` | All fire during registration (type_registry.zig:158-172, :308, :574, :645-654; symbol_registrator.zig:219-221, :405). |
+| this doc :100 | "then `VR`/`VD`/`Vi`" (implies `VR` on every var_decl) | `VR` fires only on duplicate reject (symbol_registrator.zig:286-289); pass 1 has zero `VR`, pass 2 has one per var_decl. |
+| this doc Data Flow (:156-192) | Phase 3 "consumes" the phase-2 DepGraph | Phase 3 re-runs `registerModuleSymbols` and rebuilds the graph itself (main.zig:296); both graphs are identical (same edge counts, verified `[fprintf]`). |
