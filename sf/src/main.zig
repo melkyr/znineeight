@@ -264,7 +264,7 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
-        symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
+        symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph, true);
     }
     var smods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     if (smods.len > @intCast(usize, 0) and smods[0].ast_root != @intCast(u32, 0)) {
@@ -294,7 +294,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
-        symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph);
+        symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph, false);
     }
     const_alias_prepass.constAliasPrepass(ctx.symbol_reg, ctx.typereg, ctx.interner, ctx.store, &ctx.alloc.permanent);
     type_resolver.typeResolverResolveNames(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.resolved_types, ctx.module_reg, &ctx.alloc.permanent);

@@ -210,7 +210,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
     }
 }
 
-fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, mod_id: u32, decl_idx: u32, g: *DepGraph, reg: *mr_mod.ModuleRegistry) void {
+fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, mod_id: u32, decl_idx: u32, g: *DepGraph, reg: *mr_mod.ModuleRegistry, populate: bool) void {
     var node = store.nodes.items[decl_idx];
     switch (node.kind) {
          AstKind.var_decl => {
@@ -252,7 +252,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         else => TypeKind.void_type,
                     };
                     sym_type_id = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-                    populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_reg);
+                    if (populate) { populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_reg); }
                     addTypeDependencies(store, node.child_1, sym_type_id, g);
                     sym_kind = sym_mod.SymbolKind.type_alias;
                     sym_mod_id = mod_id;
@@ -340,7 +340,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 else => TypeKind.void_type,
             };
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-            populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg);
+            if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }
             addTypeDependencies(store, decl_idx, tid, g);
             var sym = sym_mod.Symbol{
                 .name_id = name_id,
@@ -357,7 +357,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         AstKind.error_set_decl => {
             var name_id = node.payload;
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, TypeKind.error_set_type);
-            populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg);
+            if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }
             var sym = sym_mod.Symbol{
                 .name_id = name_id,
                 .type_id = tid,
@@ -396,7 +396,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
     }
 }
 
-pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, module_id: u32, g: *DepGraph) void {
+pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, store: *AstStore, module_id: u32, g: *DepGraph, populate: bool) void {
     var entry = reg.modules.items[@intCast(usize, module_id)];
     if ((entry.state != mr_mod.ModuleState.parsed and entry.state != mr_mod.ModuleState.resolved) or entry.ast_root == 0) return;
     var root = store.nodes.items[@intCast(usize, entry.ast_root)];
@@ -428,7 +428,7 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
     }
     var i: usize = 0;
     while (i < decls.len) {
-        registerDecl(sym_reg, type_reg, store, module_id, decls[i], g, reg);
+        registerDecl(sym_reg, type_reg, store, module_id, decls[i], g, reg, populate);
         i += 1;
     }
 }

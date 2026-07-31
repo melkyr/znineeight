@@ -60,7 +60,7 @@ pub fn main() void {
     entry1.state = mr_mod.ModuleState.resolved;
     entry1.ast_root = root1;
     reg1.modules.items[mid1] = entry1;
-    sym_reg.registerModuleSymbols(&reg1, &sym_table1, &tr1, &store1, mid1, &dg1);
+    sym_reg.registerModuleSymbols(&reg1, &sym_table1, &tr1, &store1, mid1, &dg1, true);
     var resolver1 = type_resolver.typeResolverInit(&tr1, &diag, &sand);
     type_resolver.typeResolverBuild(&resolver1, &dg1);
     type_resolver.typeResolverResolve(&resolver1);
@@ -112,7 +112,7 @@ pub fn main() void {
     entry2.state = mr_mod.ModuleState.resolved;
     entry2.ast_root = root2;
     reg2.modules.items[mid2] = entry2;
-    sym_reg.registerModuleSymbols(&reg2, &sym_table2, &tr2, &store2, mid2, &dg2);
+    sym_reg.registerModuleSymbols(&reg2, &sym_table2, &tr2, &store2, mid2, &dg2, true);
     var resolver2 = type_resolver.typeResolverInit(&tr2, &diag, &sand);
     type_resolver.typeResolverBuild(&resolver2, &dg2);
     type_resolver.typeResolverResolve(&resolver2);
@@ -155,7 +155,7 @@ pub fn main() void {
     entry3.state = mr_mod.ModuleState.resolved;
     entry3.ast_root = root3;
     reg3.modules.items[mid3] = entry3;
-    sym_reg.registerModuleSymbols(&reg3, &sym_table3, &tr3, &store3, mid3, &dg3);
+    sym_reg.registerModuleSymbols(&reg3, &sym_table3, &tr3, &store3, mid3, &dg3, true);
     var resolver3 = type_resolver.typeResolverInit(&tr3, &td3, &sand);
     type_resolver.typeResolverBuild(&resolver3, &dg3);
     type_resolver.typeResolverResolve(&resolver3);

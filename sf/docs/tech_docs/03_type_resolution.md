@@ -788,8 +788,7 @@ type_resolver.zig:793-812), and via GDB distinct-type counts `[gdb]`:
   lisp 48). Known Issue 1 (linear dedup) is therefore not just slow but never actually dedups here.
 - **optional_cache / eu_cache / es_cache**: silent (no markers). Distinct types from GDB:
   optional mud 1 / json 3 / lisp 1 / gol 0; error-union mud 1 / gol 1 / json 4 / lisp 6; error-set
-  (es_len incl. pass-2 duplicates) mud 1 (empty) / gol 1 (empty) / json 4 (2 named ×2) / lisp 2
-  (LispError ×2) — named error sets double their ES payload in pass 2 (Known Issue 6 section below).
+  (es_len) mud 1 (empty) / gol 1 (empty) / json 2 / lisp 2 — [FIXED 2026-07-31: pass-2 no longer doubles ES payload, see Known Issue 6 below].
   lisp's 9 optional resolutions producing 1 distinct type implies 8 optional_cache hits; mud's 3
   resolutions producing 1 distinct implies 2 hits.
 
@@ -819,30 +818,17 @@ before Player even though the array references no aggregate, and a struct refere
 struct by value would still be ordered by TypeId. `sorted_len == types_len` in all 4 examples —
 no type is left unresolved, no `ERR_3005`.
 
-### Known Issue 6 (cross-doc): pass-2 payload back-patch clobbers `types_len-1`
+### Known Issue 6 (cross-doc): [FIXED 2026-07-31] pass-2 payload back-patch clobbers `types_len-1`
 
 `populateTypePayload` (symbol_registrator.zig:84-211) back-patches `types_items[types_len-1]
-.payload_idx` after each `stAppend`/`tuAppend`/`enAppend`/`esAppend`. In pass 1 the last type is the
-just-registered aggregate, so this is correct. In pass 2 (`registerModuleSymbols` re-run inside
-`phase_TypeResolution`, main.zig:296) the named types dedup via `nameCacheGet`
-(type_registry.zig:631) and append nothing, so every back-patch lands on **the last type in the
-registry at that moment** (the final pass-1 type). GDB-verified victim per example:
-
-| Example | clobbered type | its payload_idx after pass 2 | content |
-|---------|----------------|:----------------------------:|---------|
-| mud_server | TID 27 (module std_debug) | 1 | TU1 = Command pass-2 duplicate (garbage) |
-| game_of_life | TID 24 (module std_debug) | 1 | ST1 = Point pass-2 duplicate (garbage) |
-| json_parser | TID 27 (Parser) | 3 | ST3 = Parser pass-2 duplicate — accidentally its own |
-| lisp | TID 35 (LispError) | 1 | ES1 = LispError pass-2 duplicate (identical 22 tags) |
-
-Payload arrays are doubled (GDB `st_len`/`tu_len`/`es_len`: mud 6/2/1, gol 2/2/1, json 4/2/4,
-lisp 7/4/2; lisp's extra ST6 is the anon Cons struct, not a duplicate). For mud/gol the victim is
-an unused module type so the mis-write is harmless; for json it lands on the correct type
-(Parser) by coincidence; for lisp the error-set payload is content-identical. The user aggregates
-keep their pass-1 payload indices (mud 23-26 → ST/TU 0-2/0; gol 22/23 → TU0/ST0; lisp 30-34 →
-ST0/TU0/TU1/ST1/ST2), and `resolveDeclAggregateFieldTypes` resolves those (pass-1) field entries
-(GDB `FE` real types vs all-void pass-2 duplicates). This is the same issue as 02 Known Issue 6;
-here we add per-example proof of which type is clobbered.
+.payload_idx` after each `stAppend`/`tuAppend`/`enAppend`/`esAppend`. Prior to the F3 fix, pass 2
+(`registerModuleSymbols` re-run inside `phase_TypeResolution`, main.zig:296) called
+`populateTypePayload` again, and since named types dedup via `nameCacheGet` (type_registry.zig:631)
+and append nothing, every back-patch landed on the last type in the registry. F3 fix: pass-2 calls
+`registerModuleSymbols` with `populate=false` (symbol_registrator.zig:399), guarding all three
+`populateTypePayload` call sites (:255, :343, :360) while still running `addTypeDependencies` for
+the DepGraph rebuild. Payload arrays are no longer doubled; `payload_idx` values are stable.
+Regression test: `testPayloadStabilityAfterDoublePass` in `test_sym_reg_bin.zig`.
 
 ### Doc inaccuracies found (Deep-Dive P3)
 

@@ -202,10 +202,11 @@ phase_SymbolRegistration (main.zig:259)
 
 **Double registration:** `phase_TypeResolution` (main.zig:289) re-runs the whole loop — marker
 `"T\n"` (main.zig:290), then `registerModuleSymbols` for every module (main.zig:296) into a fresh
-`depGraphInit`. This is the "re-register" pass: symbol inserts are all rejected as duplicates
-(`VR`), named-type / module-type registration dedups (no new `DC`/`MC`), and `populateTypePayload`
-re-appends duplicate payload entries (see Known Issue 6). Phase 3's type resolution consumes the
-pass-2-built graph (edge counts identical in both passes, verified in Evidence).
+`depGraphInit`. This is the "re-register" pass: `registerModuleSymbols` is called with `populate=false`
+(2026-07-31 F3 fix), which skips `populateTypePayload` but still runs `addTypeDependencies` to rebuild
+the DepGraph. Symbol inserts are all rejected as duplicates (`VR`), named-type / module-type
+registration dedups (no new `DC`/`MC`). Phase 3's type resolution consumes the pass-2-built graph
+(edge counts identical in both passes, verified in Evidence).
 
 ### Data Structures After Symbol Registration
 
@@ -278,7 +279,7 @@ TypeRegistry (permanent arena, updated with stubs)
 
 5. **Scratch arena dependency** (phase_SymbolRegistration, main.zig:261): `DepGraph` is allocated in scratch arena and invalidated on next phase's `sandReset`. If type resolution (phase 3) needs to reference the graph later, it must snapshot or consume it before reset. (In practice moot: phase 3 resets scratch itself (`main.zig:291`) and re-runs the identical `registerModuleSymbols` loop (`main.zig:296`), rebuilding an identical graph — same edge counts, `[fprintf]` — so no phase-2 snapshot is relied upon.)
 
-6. **Pass-2 payload duplication on re-registration** (symbol_registrator.zig:84, verified `[fprintf]`): `registerModuleSymbols` runs twice — once in `phase_SymbolRegistration` (main.zig:266) and again inside `phase_TypeResolution` (main.zig:296). The second run re-executes `populateTypePayload`, so every payload array (`fe`, `em`, `xn`, `st`, `tu`, `un`, `en`, `es`) is appended to AGAIN with identical entries, and the back-patch `types_items[types_len-1].payload_idx = <new idx>` (symbol_registrator.zig:112-116, :140-155, :189-193, :205-209) targets the *last type in the registry* — which in pass 2 is NOT the type being re-registered (named-type dedup at type_registry.zig:631 returns the existing id without appending). Observed: json_parser `fe` grows 11→22 and `xn` 11→22 across the two passes; the last registered type (json `Parser`) ends with `payload_idx` pointing at pass-2 duplicates. The duplicated entries are identical (`FieldEntry{name_id, TYPE_VOID, 0}` placeholders) and phase 3 re-resolves fields from the AST by name, so the 4 examples still compile/run correctly — but the payload arrays ~double in size and the final type's `payload_idx` is re-pointed. Latent corruption, not yet observable as a miscompile.
+6. **[FIXED 2026-07-31]** **Pass-2 payload duplication on re-registration** (symbol_registrator.zig:84, fixed by F3): `registerModuleSymbols` runs twice — once in `phase_SymbolRegistration` (main.zig:266) with `populate=true` and again inside `phase_TypeResolution` (main.zig:296) with `populate=false`. The second pass skips `populateTypePayload` (guarded by the `populate` flag per symbol_registrator.zig:255,343,360), so payload arrays are NOT doubled and the back-patch clobber of `types_items[types_len-1].payload_idx` no longer occurs. `addTypeDependencies` still runs in both passes to rebuild the DepGraph for phase 3. Regression test: `testPayloadStabilityAfterDoublePass` in `test_sym_reg_bin.zig` asserts `st_len`/`tu_len`/`es_len`/`fe_len`/`xn_len` and `payload_idx` stability across the double pass.
 
 7. **Standalone struct/enum/union/error_set/test/import_expr cases not exercised by the 4 examples** (verified `[markers]` + `[fprintf]`): every top-level decl in all 4 examples is `var_decl`, `fn_decl`, or `c_include` (AstKind 1/2/96 in the `RS`/`S0` dumps); all type declarations are `const X = struct/enum/union(enum)/error{...}` — i.e. a var_decl with an inline-type init. The `test_decl` (symbol_registrator.zig:319), standalone `struct_decl`/`enum_decl`/`union_decl` (:334), standalone `error_set_decl` (:357) and standalone `import_expr` (:373) cases exist in the switch but fire nowhere in these examples.
 
@@ -390,8 +391,8 @@ payload:
 | `RCA:p/i/H` (ident alias) | present | present again | `nameCacheGet` re-runs (symbol_registrator.zig:259-271) |
 | `RS` (module-0 dump) | present | present | symbol_registrator.zig:406 |
 
-Symbol tables after both passes are identical (dedup keeps pass-1 entries). Payload arrays are NOT
-idempotent — see Known Issue 6.
+Symbol tables after both passes are identical (dedup keeps pass-1 entries). Payload arrays are
+stable — `populateTypePayload` is skipped in pass 2 (populate=false in F3 fix, symbol_registrator.zig:255/343/360).
 
 ### Q5: lisp `LispError` error-set registration
 

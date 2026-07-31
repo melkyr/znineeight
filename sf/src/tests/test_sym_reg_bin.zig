@@ -136,17 +136,17 @@ pub fn main() void {
     entry.ast_root = root;
     reg.modules.items[mod_id] = entry;
 
-    sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store, mod_id, &dep_graph);
+    sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store, mod_id, &dep_graph, true);
     testVarDecl(&sym_table, &interner, mod_id);
 
     entry.ast_root = root2;
     reg.modules.items[mod_id] = entry;
-    sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store2, mod_id, &dep_graph);
+    sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store2, mod_id, &dep_graph, true);
     testFnDecl(&sym_table, &interner, mod_id);
 
     entry.ast_root = root3;
     reg.modules.items[mod_id] = entry;
-    sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store3, mod_id, &dep_graph);
+    sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store3, mod_id, &dep_graph, true);
     testNamedTestDecl(&sym_table, mod_id);
     testUnnamedTestDecl(&sym_table, mod_id);
 
@@ -218,6 +218,8 @@ pub fn main() void {
     testResolvedTypeTableNotFound(&a);
 
     testSemanticAnalyzerInit(&a);
+
+    testPayloadStabilityAfterDoublePass(&interner, &a, &diag);
 
     var msg: []const u8 = "Symbol registration tests passed.\n";
     pal.stdout_write(msg);
@@ -428,7 +430,7 @@ fn testVisibilityAndQualifiedLookup(sym_table: *sym_mod.SymbolRegistry, interner
     ventry.state = mr_mod.ModuleState.resolved;
     ventry.ast_root = root;
     vreg.modules.items[@intCast(usize, vmod_id)] = ventry;
-    sym_reg.registerModuleSymbols(&vreg, sym_table, &vtype_reg, &vstore, vmod_id, &vdep);
+    sym_reg.registerModuleSymbols(&vreg, sym_table, &vtype_reg, &vstore, vmod_id, &vdep, true);
 
     var x_name: []const u8 = "x";
     var x_id = interner_mod.stringInternerIntern(&v_interner, x_name);
@@ -562,7 +564,7 @@ fn testImportModule(reg: *mr_mod.ModuleRegistry, interner: *interner_mod.StringI
     ientry.ast_root = iroot;
     reg.modules.items[@intCast(usize, ireg_mod_id)] = ientry;
 
-    sym_reg.registerModuleSymbols(reg, sym_table, &itype_reg, &istore, ireg_mod_id, &idep);
+    sym_reg.registerModuleSymbols(reg, sym_table, &itype_reg, &istore, ireg_mod_id, &idep, true);
 
     var isym_table = sym_mod.symbolRegistryGetTable(sym_table, ireg_mod_id);
     var ifound = sym_mod.symbolTableLookup(isym_table, iname_id);
@@ -645,8 +647,8 @@ fn testCrossModuleVisibility(reg: *mr_mod.ModuleRegistry, interner: *interner_mo
     type_mod.typeRegistryRegisterPrimitives(&vtype_reg);
     var vdep = sym_reg.depGraphInit(&va);
 
-    sym_reg.registerModuleSymbols(reg, &sym_table3, &vtype_reg, &alib, lib_id, &vdep);
-    sym_reg.registerModuleSymbols(reg, &sym_table3, &vtype_reg, &bstore, main_id, &vdep);
+    sym_reg.registerModuleSymbols(reg, &sym_table3, &vtype_reg, &alib, lib_id, &vdep, true);
+    sym_reg.registerModuleSymbols(reg, &sym_table3, &vtype_reg, &bstore, main_id, &vdep, true);
 
     // Verify lib's symbols
     var lib_table = sym_mod.symbolRegistryGetTable(&sym_table3, lib_id);
@@ -760,8 +762,8 @@ fn testSymbolRegistrationDeterminism(interner: *interner_mod.StringInterner, san
     var st1 = sym_mod.symbolRegistryInit(&da);
     var st2 = sym_mod.symbolRegistryInit(&da);
 
-    sym_reg.registerModuleSymbols(&reg_a, &st1, &t1, &s1, mr_mod_a, &g1);
-    sym_reg.registerModuleSymbols(&reg_b, &st2, &t2, &s1, mr_mod_b, &g2);
+    sym_reg.registerModuleSymbols(&reg_a, &st1, &t1, &s1, mr_mod_a, &g1, true);
+    sym_reg.registerModuleSymbols(&reg_b, &st2, &t2, &s1, mr_mod_b, &g2, true);
 
     var tbl1 = sym_mod.symbolRegistryGetTable(&st1, mr_mod_a);
     var tbl2 = sym_mod.symbolRegistryGetTable(&st2, mr_mod_b);
@@ -839,7 +841,7 @@ fn testMemoryGate50Modules(interner: *interner_mod.StringInterner, sand: *Sand, 
         var entry = reg.modules.items[@intCast(usize, mi)];
         entry.ast_root = root;
         reg.modules.items[@intCast(usize, mi)] = entry;
-        sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store, mi, &g);
+        sym_reg.registerModuleSymbols(&reg, &sym_table, &type_reg, &store, mi, &g, true);
         mi += 1;
     }
 
@@ -1136,7 +1138,7 @@ fn testForwardRefIntegration(interner: *interner_mod.StringInterner, sand: *Sand
     entry.state = mr_mod.ModuleState.resolved;
     entry.ast_root = root;
     reg.modules.items[mid] = entry;
-    sym_reg.registerModuleSymbols(&reg, &sym_table, &tr, &store, mid, &dg);
+    sym_reg.registerModuleSymbols(&reg, &sym_table, &tr, &store, mid, &dg, true);
     var resolver = type_resolver.typeResolverInit(&tr, &td, &a);
     type_resolver.typeResolverBuild(&resolver, &dg);
     type_resolver.typeResolverResolve(&resolver);
@@ -1241,6 +1243,67 @@ fn testResolvedTypeTableNotFound(arena: *Sand) void {
     var opt2 = rtt_mod.resolvedTypeTableGet(&rtt, @intCast(u32, 2));
     if (opt2 != null) { var emsg: []const u8 = "FAIL rtt not-found\n"; pal.stdout_write(emsg); pal.exit(1); }
     var msg: []const u8 = "testResolvedTypeTableNotFound passed.\n";
+    pal.stdout_write(msg);
+}
+
+fn testPayloadStabilityAfterDoublePass(interner: *interner_mod.StringInterner, sand: *Sand, diag: *diag_mod.DiagnosticCollector) void {
+    var tbuf: [131072]u8 = undefined;
+    var ta = alloc_mod.sandInit(tbuf[0..]);
+    var tsm = sm_mod.sourceManagerInit(&ta);
+    var tdiag = diag_mod.diagnosticCollectorInit(&ta, &tsm, interner);
+    token_mod.initKeywordTable(&ta);
+
+    var content: []const u8 = "const Point = struct { x: u32, y: u32, }; const Errors = error{A,B,C};";
+    var tokens: [128]Token = undefined;
+    var tok_len = lexSource(content, interner, &tdiag, &ta, tokens[0..]);
+    var tstore = ast_mod.astStoreInit(&ta);
+    var tp = parser_mod.parserInit(tokens[0..tok_len], content, &tstore, interner, &tdiag, &ta);
+    var root = parser_mod.parserParseModuleRoot(&tp) catch unreachable;
+
+    var treg = mr_mod.moduleRegistryInit(&ta, interner, &tdiag);
+    var tsym = sym_mod.symbolRegistryInit(&ta);
+    var ttr = type_mod.typeRegistryInit(&ta, interner);
+    type_mod.typeRegistryRegisterPrimitives(&ttr);
+    var tdg = sym_reg.depGraphInit(&ta);
+
+    var tmid = mr_mod.moduleRegistryAddModule(&treg, 0);
+    var tentry = treg.modules.items[tmid];
+    tentry.state = mr_mod.ModuleState.resolved;
+    tentry.ast_root = root;
+    treg.modules.items[tmid] = tentry;
+
+    sym_reg.registerModuleSymbols(&treg, &tsym, &ttr, &tstore, tmid, &tdg, true);
+
+    var st1: usize = ttr.st_len;
+    var tu1: usize = ttr.tu_len;
+    var es1: usize = ttr.es_len;
+    var fe1: usize = ttr.fe_len;
+    var xn1: usize = ttr.xn_len;
+    var em1: usize = ttr.em_len;
+    _ = em1;
+
+    var types_len1: usize = ttr.types_len;
+    var last_tid1: u32 = @intCast(u32, types_len1 - @intCast(usize, 1));
+    var last_ty1 = ttr.types_items[@intCast(usize, last_tid1)];
+    var last_payload1: u32 = last_ty1.payload_idx;
+
+    sym_reg.registerModuleSymbols(&treg, &tsym, &ttr, &tstore, tmid, &tdg, false);
+
+    if (ttr.st_len != st1) { var emsg: []const u8 = "FAIL F3: st_len doubled\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (ttr.tu_len != tu1) { var emsg: []const u8 = "FAIL F3: tu_len doubled\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (ttr.es_len != es1) { var emsg: []const u8 = "FAIL F3: es_len doubled\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (ttr.fe_len != fe1) { var emsg: []const u8 = "FAIL F3: fe_len doubled\n"; pal.stdout_write(emsg); pal.exit(1); }
+    if (ttr.xn_len != xn1) { var emsg: []const u8 = "FAIL F3: xn_len doubled\n"; pal.stdout_write(emsg); pal.exit(1); }
+
+    if (ttr.types_len != types_len1) { var emsg: []const u8 = "FAIL F3: types_len changed\n"; pal.stdout_write(emsg); pal.exit(1); }
+
+    var last_ty2 = ttr.types_items[@intCast(usize, last_tid1)];
+    if (last_ty2.payload_idx != last_payload1) {
+        var emsg: []const u8 = "FAIL F3: payload_idx clobbered\n";
+        pal.stdout_write(emsg); pal.exit(1);
+    }
+
+    var msg: []const u8 = "testPayloadStabilityAfterDoublePass passed.\n";
     pal.stdout_write(msg);
 }
 
