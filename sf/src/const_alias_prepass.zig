@@ -1,6 +1,8 @@
-const Sand = @import("allocator.zig").Sand;
+// KEPT (unwired) — const-alias type resolution prepass. Currently unexercised by the 4 working examples (0 CAP hits per P3 deep-dive), but designed for transitive `const X = TypeName;` chains per Import_Symbol_reg.md.
 const alloc_mod = @import("allocator.zig");
 const sym_mod = @import("symbol_table.zig");
+const Sand = @import("allocator.zig").Sand;
+
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const SymbolTable = sym_mod.SymbolTable;
 const type_mod = @import("type_registry.zig");

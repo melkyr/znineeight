@@ -118,6 +118,7 @@ fn printUsize(val: usize) void {
     pal.stderr_write(buf[start..@intCast(usize, 15)]);
 }
 
+// KEPT (unwired) — per-allocation tracking infra for --track-memory / --max-mem enforcement per TEST_HARNESS_p2.md §5. Not currently wired into CompilerAlloc.
 pub const TrackingAllocator = struct {
     arena: *Sand,
     total_allocated: u32,

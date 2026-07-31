@@ -324,6 +324,7 @@ pub fn importQueueDequeue(self: *ImportQueue) ?u32 {
     return importQueuePendingPop(&self.pending_items, &self.pending_len);
 }
 
+// KEPT (unwired) — topological module sort per Import_Symbol_reg.md §3; currently not wired into pipeline (fix pending import-edge attribution bug in parser.zig:641-643). Also exercised by tests (test_mod_reg_bin.zig).
 pub fn moduleRegistrySortModules(reg: *ModuleRegistry) void {
     var mod_count = reg.modules.len;
     var in_degree: [256]u32 = undefined;

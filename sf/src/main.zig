@@ -96,6 +96,7 @@ pub const CompilerContext = struct {
     symbol_reg: *SymbolRegistry,
     resolved_types: *ResolvedTypeTable,
     coercion_table: *CoercionTable,
+    // KEPT (unwired) — cross-phase type dependency graph per TYPE_SYSTEM_p2.md §2.4. Currently not populated in pipeline; live DepGraphs are scratch-local per phase (see 09_pipeline_orchestration.md).
     dep_graph: *symbol_registrator.DepGraph,
     lir_fns: LirFunctionArrayList,
     enum_value_table: hash_mod.U32ToU32Map,
@@ -690,11 +691,7 @@ fn parseArgs() CompilerCli {
         var arg_ptr = pal.argGet(i);
         var arg = cstrToSlice(arg_ptr);
         if (arg.len > 0 and arg[0] == '-') {
-            if (matchFlag(arg, s_dump_types) or matchFlag(arg, s_y)) {
-                cli.dump_types = true;
-            } else if (matchFlag(arg, s_dump_lir) or matchFlag(arg, s_l)) {
-                cli.dump_lir = true;
-            } else if (matchFlag(arg, s_dump_c89)) {
+            if (matchFlag(arg, s_dump_c89)) {
                 cli.dump_c89 = true;
             } else if (matchFlag(arg, s_max_mem) or matchFlag(arg, s_m)) {
                 i += 1;

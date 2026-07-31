@@ -40,29 +40,26 @@ For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89`, then
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
 - `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
-- **Baseline: `OK=162 FAIL=4 ICE=0 CRASH=0` over 166 repros** (2026-07-16: extern-fn ABI-wrap). ICE cleared; the 4 FAILs are out-of-scope: anon_init_orelse_rhs, array_tagged_union_read, field_store_drop, var_declared_void. Must stay `162/4/0/0` or improve.
+- **Baseline: `OK=176 FAIL=8 ICE=0 CRASH=0` over 184 repros** (2026-07-31: measured empirically). Must stay `176/8/0/0` or improve.
 
-### Byte-identical gate (man / gol / mud)  — parent built from a worktree via the REPO zig0
-Entries: `examples/zig0/mandelbrot/mandelbrot.zig`, `examples/zig0/game_of_life/main_lin.zig`,
-`examples/zig0/mud_server/main.zig`.
+### Byte-identical gate (mud / gol / lisp / json) — z98-only, self-consistency check
+
+Gate entries (`examples/z98/` paths, NOT `examples/zig0/`):
 ```bash
-# 1. current zig1 output:
 sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
-# 2. build PARENT zig1 from a worktree of the parent commit, using the REPO's zig0
-#    (the worktree does NOT contain the git-ignored sf/build/zig0):
-git worktree add -d /tmp/wt <PARENT_SHA>
-mkdir -p /tmp/pz
-./sf/build/zig0 --header-priority-include -o /tmp/pz/zig1.c /tmp/wt/sf/src/main.zig
-gcc -m32 -std=c89 -O0 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
-    -Isf/src/include /tmp/pz/*.c -o /tmp/pz/zig1
-/tmp/pz/zig1 --dump-c89 <ENTRY> > /tmp/old.c
-md5sum /tmp/new.c /tmp/old.c   # compare
-git worktree remove --force /tmp/wt
+diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
-- If `/tmp/old.c` is empty (0 lines) the parent build FAILED → false DIFFER; re-run.
-- Do **NOT** compare against `zig0`'s own output directly — `zig0` emits a legacy bootstrap C format
-  (mandelbrot ≈ 96 lines) that is NOT the same as `zig1 --dump-c89` (≈ 545 lines). Always compare
-  parent-zig1 `--dump-c89` vs current-zig1 `--dump-c89`.
+
+| Entry Path | Reference md5 |
+|---|---|
+| `examples/z98/mud_server/main.zig` | `87954d756ae30d32d5c43dcc66a69650` |
+| `examples/z98/game_of_life/main.zig` | `9cc38ab9f6f4d4e441847175069f94cff` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `6a8ca44971256a54205e5cc1b67974ef` |
+| `examples/z98/json_parser/main.zig` | `9492e3b3e62e89b1940aefcaa2a087ee` |
+
+- **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
+- Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
+- Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
 ### Editing source
 Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region
