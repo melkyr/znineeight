@@ -9,7 +9,7 @@
 | `AstKind` variants | 97 (0..96) | `err=0` through `c_include=96`. **BUG: `swt_ex=56` collides with `mod_assign=56`** (ast.zig:76) |
 | `AstNode` size | 24 bytes | Not packed — zig0 rejects packed structs with union fields (token.zig:115-117) |
 | Prec levels | 15 | `none(0)` .. `postfix(14)` (parser.zig:1784-1800) |
-| Debug markers | ~15+ | `LEX`, `PF:`, `BOP:tk`, `PSWE:n`, `PCB:E/T`, `PSTK:k`, `PIF:c`, `PBX:S/T/K`, `PLEN:l`, `ZZZ_*` |
+| Debug markers | ~15+ | Parser: `PF:`, `BOP:tk`, `PSWE:n`, `PCB:E/T`, `PSTK:k`, `PIF:c`, `PBX:S/T/K`, `PLEN:l`, `ZZZ_*`; lexer: bare `LEX` (only for `"neighbors"`); **`LEX:n/k` in traces is from `lower.zig:448`, not the lexer** (P9) |
 
 ---
 
@@ -264,7 +264,7 @@ AST node storage and traversal.
 | `ident_expr` | Index into `identifiers` (interned string ID) |
 | `fn_decl` | Index into `fn_protos` |
 | `fn_call`, `block`, `struct_decl`, `enum_decl`, `union_decl`, `swt_ex`, `tuple_literal`, `struct_init`, `array_init`, `module_root`, `swt_prong`, `error_set_decl` | Extra children packed: `(start << 16) \| count` |
-| `builtin_call` | Interned string ID of builtin name |
+| `builtin_call` | Extra children packed `(start << 16) \| count` for args; **builtin name ID is in `child_0`** (parser.zig:611) |
 | `var_decl`, `field_decl`, `param_decl`, `field_access`, `enum_literal`, `error_literal` | Name ID |
 | `labeled_stmt`, `break_stmt`, `continue_stmt` | Label name ID (0=unlabeled) |
 | `import_expr` | Path string ID |
@@ -338,7 +338,7 @@ Token array ([]Token)
 │  └────────────┘  └───────────────┘  └────────────┘│
 │  Pratt climbing: getInfixInfo → precedence loop     │
 │  Error recovery: parserSynchronize                  │
-│  Debug markers: LEX, PF:, BOP:tk, PSTK:k, etc.     │
+│  Debug markers: PF:, BOP:tk, PSTK:k, etc.             │
 └─────────────────────────────────────────────────────┘
     │
     ▼
@@ -364,14 +364,25 @@ AST tree (root node index = module_root node)
 
 | Flag | Effect |
 |------|--------|
-| `--dump-tokens` | Dumps token stream after lexing |
-| `--dump-ast` | Dumps AST tree after parsing |
+| `--dump-types` | Dumps type info after type resolution |
+| `--dump-lir` | Dumps LIR after lowering |
+| `--dump-c89` | Dumps generated C89 |
+
+> **P9 correction:** the main pipeline (`main.zig` `parseArgs`, main.zig:631-762) does **NOT**
+> implement `--dump-tokens` or `--dump-ast`. Token/AST dumping lives in separate harness binaries
+> (`dump_tokens.zig`, `ast_dump_main.zig`), not in zig1's CLI. Previous versions of this table were
+> inaccurate.
 
 ### Lexer Debug Markers
 
 | Marker | File | Trigger |
 |--------|------|---------|
 | `LEX` | lexer.zig:399 | When identifier text is exactly `"neighbors"` |
+
+> **P9 clarification:** the `LEX:n<node>k<kind>` markers seen in `--markers` traces are emitted by
+> **`lower.zig:448`** (`lowerExpr` entry), NOT the lexer. The lexer's own marker is a bare `LEX`
+> (no `:n…k…` suffix) and fires only for the identifier `"neighbors"` — which appears in none of
+> the 4 examples (`[markers]`: 0 bare `LEX` per trace).
 
 ### Parser Debug Markers
 
@@ -415,3 +426,176 @@ See table in parser section above. All go to stderr via `pal.markerWrite`.
 4. **`lexerScanIdentifierOrKeyword` re-interns** (parser.zig:543): Parser re-interms identifier text rather than using `TokenValue.string_id` directly. Redundant but ensures consistency.
 
 5. **No IEEE float edge cases**: `parseF64` uses naive multiplication loops for scientific notation — potential precision issues on extreme exponents.
+
+---
+
+## 6. Empirical Deep-Dive: Lexer + Parser for 4 Examples (P9)
+
+> Evidence methods: `[fprintf]` = instrumented debug zig1 (bootstrap recipe, `/tmp/z9`; `fprintf` added
+> to generated `import_resolver.c` `moduleRegistryParseModule` + `parser.c` `parserSynchronize`;
+> byte-identical `--dump-c89` vs P0 baselines: mud `87954d75…`, gol `9cc38ab9…`, lisp `6a8ca449…`,
+> json `9492e3b3…`), `[markers]` = P0 `--markers` traces (`/tmp/dd/*.mrk`) + instrumented reruns,
+> `[gdb]` = breakpoints on generated C. Examples:
+> `examples/z98/{mud_server,game_of_life,json_parser,lisp_interpreter_curr}/main.zig` (+ module files).
+> Tokens counts include the trailing `eof` token (1 per module). AST node counts exclude node 0
+> (the `err` sentinel); `IRN:n` markers (import_resolver.zig:157) include it (+1).
+
+### 6.1 Token Streams (Q1)
+
+Per-module token counts `[fprintf]` (P9M output; module ids per P3's import order, paths via the
+registry): totals incl. eof.
+
+| Example | Module (mod id) | Tokens | AST nodes |
+|---------|-----------------|--------|-----------|
+| mud_server (4 modules, **1819 tokens**) | main.zig (0) | 1625 | 843 |
+| | util.zig (2) | 144 | 80 |
+| | std.zig (1) | 10 | 3 |
+| | std_debug.zig (3) | 40 | 17 |
+| game_of_life (3 modules, **1621 tokens**) | main.zig (0) | 1545 | 774 |
+| | std.zig (1) | 10 | 3 |
+| | std_debug.zig (2) | 66 | 29 |
+| lisp_interpreter_curr (10 modules, **7311 tokens**) | main.zig (0) | 1509 | 810 |
+| | sand.zig (1) | 205 | 104 |
+| | value.zig (2) | 409 | 223 |
+| | token.zig (3) | 600 | 355 |
+| | parser.zig (4) | 335 | 178 |
+| | env.zig (5) | 280 | 143 |
+| | eval.zig (6) | 2243 | 1137 |
+| | builtins.zig (7) | 1231 | 655 |
+| | util.zig (8) | 306 | 150 |
+| | deep_copy.zig (9) | 193 | 98 |
+| json_parser (3 modules, **2841 tokens**) | main.zig (0) | 580 | 292 |
+| | file.zig (1) | 418 | 192 |
+| | json.zig (2) | 1843 | 1083 |
+
+Top-5 TokenKinds per example `[fprintf]` (kind ids per token.zig:5-98; aggregated across modules):
+
+| Example | #1 | #2 | #3 | #4 | #5 |
+|---------|----|----|----|----|----|
+| mud_server | identifier(492) | lparen(133) | rparen(133) | semicolon(118) | comma(108) |
+| game_of_life | identifier(400) | comma(160) | integer_literal(111) | rparen(110) | lparen(110) |
+| lisp_interpreter_curr | identifier(2061) | dot(535) | lparen(456) | rparen(456) | comma(434) |
+| json_parser | identifier(773) | lparen(245) | rparen(245) | semicolon(212) | dot(128) |
+
+`identifier` is #1 in every example (23–31% of tokens); `lparen`/`rparen` are always near-tied
+(balanced delimiters). No `percent_eq` token (kind 42, `%=`) appears anywhere — see Q5.
+
+### 6.2 AST Trees (Q2)
+
+| Example | Total AST nodes | incl. sentinel (IRN:n) | Max depth (module) | Most-frequent AstKind |
+|---------|-----------------|------------------------|--------------------|-----------------------|
+| mud_server | **943** | 944 | **23** (main.zig) | `ident_expr` (309) |
+| game_of_life | **806** | 807 | **15** (main.zig) | `ident_expr` (271) |
+| lisp_interpreter_curr | **3853** | 3854 | **41** (eval.zig) | `ident_expr` (1128) |
+| json_parser | **1567** | 1568 | **15** (main.zig) | `ident_expr` (521) |
+
+- Depth measured `[fprintf]` via a recursive traversal from the module_root node (root = depth 0);
+  cross-checked vs `IRN:n`/`IRV:n` markers `[markers]` (import_resolver.zig:145-158) — totals agree
+  modulo the node-0 sentinel.
+- Max-depth per module (lisp, largest): eval.zig 41, main.zig 21, util.zig 16, builtins.zig 14,
+  parser.zig 12, token.zig 11; the shallow `std.zig` stubs are depth 2 everywhere.
+- `ident_expr` dominates in all 4 (identifier-heavy sources); `fn_call`/`field_access`/`block`
+  follow in the bigger examples. lisp is the deepest (nested switch/expression chains in `eval`).
+
+### 6.3 Precedence Climbing: `a + b * c` vs `(a + b) * c` (Q3)
+
+Repro `/tmp/z9/prec_repro.zig` (constructed for this task):
+```zig
+fn f() i32 {
+    var a: i32 = 1;
+    var b: i32 = 2;
+    var c: i32 = 3;
+    var x = a + b * c;
+    var y = (a + b) * c;
+    return x + y;
+}
+```
+
+AST node dump `[fprintf]` (P9NODE, `k`=AstKind, `c0/c1/c2`=child indices, `p`=payload):
+- `x = a + b * c` → node 15 = **add**(k33, c0=11, c1=14); node 14 = **mul**(k35, c0=12=b, c1=13=c).
+  So `add(a, mul(b, c))` — `*` binds tighter than `+`.
+- `y = (a + b) * c` → node 22 = **mul**(k35, c0=20, c1=21=c); node 20 = **paren_expr**(k32, c0=19);
+  node 19 = **add**(k33, c0=17=a, c1=18=b). So `mul(paren(add(a,b)), c)` — parens re-order the tree.
+
+`[markers]` `BOP:tk<kind>ak<astkind>` order confirms climbing (parser.zig:230-282): for `a + b * c`
+the `BOP:tk22ak35` (star→mul) fires BEFORE `BOP:tk20ak33` (plus→add) — the `+`'s RHS is parsed at
+`min_prec = multiply(12)` (left-assoc `+` bumps to `prec+1`, parser.zig:206), so `b * c` is consumed
+inside the nested `parserParseExprPrec` call and the `mul` node is created before the `add` folds
+up. For `(a + b) * c` the inner `add` is created first inside the paren, then `mul`.
+
+Mechanism `[source]`: `parserParseExprPrec` (parser.zig:179-228) loops `getInfixInfo` (parser.zig:1815),
+`next_min = prec+1` for left-assoc (parser.zig:202-207); `parserParseGroupedExpr` (parser.zig:556)
+produces the `paren_expr` node (k32). Repro max AST depth (from module_root) = 7, well under the
+expr-recursion depth-12 panic guard (parser.zig:181-183).
+
+### 6.4 parserSynchronize (Q4)
+
+`[fprintf]`: entry counter added to generated `parserSynchronize` (parser.zig:165) → **0 hits in all
+4 examples** (P9SYNC count 0 each). No error recovery triggered anywhere.
+
+- `[markers]`: no `error[2000]` parse diagnostics and no `ERR_1000-1005` lexer diagnostics in the
+  P0 traces; every example compiled clean.
+- Control test (instrumentation validity) `[fprintf]`: a malformed repro (`var x = ` then newline)
+  produced 2 `P9SYNC:` hits + `error[2000]` — so the zero counts are real, not a no-op probe.
+
+### 6.5 swt_ex=56 / mod_assign=56 Collision (Q5)
+
+`[gdb]` + `[fprintf]` + `[markers]`:
+
+- No `%=` token (kind 42) in any token stream `[fprintf]` (P9TOK histograms) → `parserAddBinary`
+  (parser.zig:257) never emits `mod_assign`.
+- GDB break on generated `parserAddBinary` guarded `tok.kind==42`: **never hit** (lisp run).
+  Break on `parserParseSwitchExpr` (parser.zig:786): **56 hits** (lisp) — every kind-56 node is a
+  switch expression.
+- Cross-check `[markers]`: `PSWE:` (switch-expr marker, parser.zig:814) counts == kind-56 AST node
+  counts per example: mud 1==1, gol 3==3, lisp 56==56, json 2==2.
+
+**Verdict: the `swt_ex`/`mod_assign` collision does NOT affect any of the 4 examples.** All 62
+kind-56 nodes across the 4 examples are `swt_ex`. The hazard stays latent: any downstream
+`switch` that distinguishes the two variants by enum value would misbehave, but no example
+contains `%=` or relies on the distinction.
+
+### 6.6 AstNode Payload Semantics (Q6)
+
+Verified against actual AST usage `[fprintf]` (repro node + store-array dumps) and `[source]`
+consumers:
+
+| AstKind | Doc table claim | Actual usage | Verdict |
+|---------|-----------------|--------------|---------|
+| `int_literal`, `char_literal` | Index into `int_values` | prec_repro nodes p0/p1/p2 → `int_values` `{1,2,3}` | ✓ |
+| `float_literal` | Index into `float_values` | f_repro nodes p0/p1 → `float_values` `{1.5,2.25}` | ✓ |
+| `string_literal` | Index into `string_values` | payload_repro node p0 → `string_values[0]=24` | ✓ |
+| `ident_expr` | Index into `identifiers` | identifiers array holds interned ids (5 5 26 5 5 25 …) | ✓ |
+| `fn_decl` | Index into `fn_protos` | payload_repro nodes p0/p1 → `fn_protos` (g, f) | ✓ |
+| `block` | Extra children packed | node 10 payload 65537 = `(1<<16)\|1` → `extra[1]=9` | ✓ |
+| `module_root` | Extra children packed | node 30 payload 655364 = `(10<<16)\|4` → 4 top-level decls | ✓ |
+| `fn_call` | Extra children packed | node 19 payload 196609 = `(3<<16)\|1` → `extra[3]=18` | ✓ |
+| `builtin_call` | **"Interned string ID of builtin name"** | payload = packed extra children (args); builtin name ID is in **child_0** (parser.zig:611) | **✗ doc wrong** |
+| `var_decl`, `param_decl` | Name ID | payloads 20-25 (std/s/t/x/y), 26/28 (x/p) — interned name ids | ✓ |
+| `field_access` | Name ID | sema.zig:233-234 reads `node.payload` as field name id, base in child_0 | ✓ |
+| `import_expr` | Path string ID | payload_repro node 1 p22 = interned path | ✓ |
+
+- **Doc bug confirmed and fixed (table row above):** `builtin_call`'s payload is the packed
+  extra-children index for its arguments, NOT the builtin name ID. `parserParseBuiltinCall`
+  (parser.zig:565-611) packs args via `astStoreAddExtraChildren` (parser.zig:606-608) and passes the
+  interned name id as `child_0` (parser.zig:611). Consumers confirm: sema.zig:1218 reads args from
+  `node.payload`, sema.zig:1221 compares `node.child_0` to `size_of_name_id`. Same pattern verified
+  in lower.zig:2381 and comptime_eval.zig:175.
+- `parserParseVarDecl` (parser.zig:1318-1319) uses child_0=type, child_1=init, payload=name_id —
+  matches doc.
+- The `block`/`module_root`/`fn_call` packed-payload arithmetic `(start<<16)|count` confirmed
+  against `astStoreAddExtraChildren` (ast.zig:301) and `astStoreGetExtraChildren` (ast.zig:311).
+
+### 6.7 Doc gaps found during P9 (also fixed inline above/below)
+
+1. **`--dump-tokens` / `--dump-ast` don't exist in the main pipeline** (was §5 CLI Flags): `main.zig`
+   `parseArgs` (main.zig:631-762) only handles `--dump-types`/`--dump-lir`/`--dump-c89` (plus
+   non-dump flags). Token/AST dumping lives in separate harnesses (`dump_tokens.zig`,
+   `ast_dump_main.zig`), not in zig1's CLI. **Fix applied (see §5 table).**
+2. **`builtin_call` payload row was wrong** (was §ast payload table) — fixed in §6.6.
+3. **`LEX` marker attribution**: the doc lists `LEX` as a lexer marker (lexer.zig:396-399). It IS
+   emitted there (for identifier `"neighbors"` only), but the `LEX:n<node>k<kind>` markers that
+   flood the P0 traces come from **lower.zig:448** (`lowerExpr` entry), not the lexer. Clarified in
+   §5. No example contains `neighbors`, so the lexer's own `LEX` never fires (`[markers]`: 0 bare
+   `LEX` in all 4 traces).
+
