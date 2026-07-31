@@ -384,7 +384,11 @@ Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule` (`c89_emit.zig:1600`) drives one module's output:
+`emitModule` (`c89_emit.zig:1600`) drives one module's output. Note that `phase_C89Emission`
+(`main.zig:602`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
+fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
+`c89_emit.zig:706-711`), flushes it (`main.zig:620-623`), then calls `emitModule` with the
+hardcoded module name `"output"` (`main.zig:618`) — hence `/* Module: output */` in every dump.
 
 ```
 emitModule(emitter, name, fns, c_includes, ptr_only_ids):
@@ -487,6 +491,7 @@ Resolves field access for `.assign_field`:
 | `E2A:t` | emitSpecialTypes sub-pass 2a | Processing type in pointer-only pass |
 | `E2B:t` | emitSpecialTypes sub-pass 2b | Processing type in value-embedding pass |
 | `D2:t` | emitSpecialTypes 2b | Debug: tagged union type in sub-pass 2b |
+| `D6:t` | getCTypeName | C-name lookup debug — fires for every `tid>=20` type (very noisy) |
 | `ET:t` | emitTypeDefinition | Emitting type definition (tid + kind) |
 | `ES:n` | emitStructType | Struct type emitted (mangled name id) |
 | `FE:` | emitStructType | Field entry detail (name_id:type_id) |
@@ -650,3 +655,203 @@ Markers `P0:`-`P3:`, `D4:`, `D7:`, `D9:`, `HTT:` show the type resolution for ea
 - **Collision warnings**: `collision_mod` map catches duplicate mangled names. Counter suffix appended automatically.
 - **Missing main wrapper**: Check `func.is_pub == 1` and name is exactly `"main"`.
 - **C89 keyword conflicts**: `isC89Keyword` + `mangleC89Keyword` adds `z_` prefix.
+
+---
+
+## 6. Empirical Deep-Dive: 4 Working Examples (P8)
+
+> Evidence methods: `[c89]` = direct inspection of the emitted C (`/tmp/dd/*.c`),
+> `[markers]` = P0 `--markers` traces (`/tmp/dd/*.mrk`), `[source]` = `c89_emit.zig` /
+> `main.zig` / `cinclude.zig`, `[fnv]` = independent FNV-1a recomputation.
+> Examples: `examples/z98/{mud_server,game_of_life,json_parser,lisp_interpreter_curr}/main.zig`.
+> All 4 emitted files gcc-compile to executables (P0 gate), so the observed orders are
+> compilation-valid.
+
+### 6.1 Type Header Emission Order (Q1)
+
+The emitted typedef sequence IS the Kahn sort order: both sub-passes iterate the same
+`sorted = tstTopologicalSort(reg)` array (`[source]` `c89_emit.zig:885`; pass 2a `:911-914`,
+pass 2b `:951-953`), deduped via `emitted_type_set`. Forward declarations for every named
+struct/tagged_union/union are emitted first (`[source]` `c89_emit.zig:887-908`; `[c89]`
+mud_server.c:3-6, game_of_life.c:3-4, json_parser.c:3-5, lisp_interpreter_curr.c:3-8).
+
+Observed definition order per example (first→last) `[c89]` + `[markers]` (E2A/E2B type-id
+sequence, exactly the `sorted` order):
+
+| Example | Type definition order (as emitted) |
+|---------|-----------------------------------|
+| mud_server | i64, u64, Command (tagged_union), Arr_u32[128], Arr_u8[256], Slice_u8, Opt_41, EU_1, Room, plat_fd_set, Player, Arr_Player[10], Arr_Room[2] |
+| game_of_life | i64, u64, Cell (tagged_union), Point, Slice_Cell, Slice_Point, EU_1, Arr_Cell[800], Arr_Point[3], Arr_Point[4], Arr_Point[6], Arr_Point[9] |
+| json_parser | i64, u64, FileError, ParseError, Slice_u8, Opt_29, Slice_JsonValue, Slice_JsonItem, Opt_33, Opt_34, EU_1, EU_92, Parser, JsonItem, JsonValue, EU_45, Slice_c_char, Arr_u8[64], EU_52 |
+| lisp_interpreter_curr | i64, u64, Sand, LispError, Slice_u8, anon_3546 (Cons), Opt_41, Arr_u64[131072], EU_63, EU_93, EU_7, EU_14, Slice_*Value, FP fn-ptr, Token, Tokenizer, EnvNode, EU_24, Arr_char[2], Arr_u8[4096], Arr_u8[1], Value, EU_23 |
+
+**Is it topological? YES.** Every type embedding another by value is emitted after the
+embedded type `[c89]`:
+- mud: Room→Slice_u8, plat_fd_set→Arr_u32[128], Player→Arr_u8[256], Arr_Player[10]→Player, Arr_Room[2]→Room.
+- json: Parser→Slice_u8; JsonItem→Slice_JsonItem; JsonValue→Slice_JsonValue/Slice_JsonItem; EU_52 (payload by value)→JsonValue.
+- lisp: Value→anon_3546 (Cons embedded by value, lisp_interpreter_curr.c:92 vs :41); EU_23 (Token by value)→Token.
+- Pointers to not-yet-defined structs are fine (incomplete type in C): e.g. json Opt_29 uses
+  `zT_E9CE9840_JsonValue*` with only the fwd decl visible (json_parser.c:24 vs :46).
+
+Sub-pass markers fire even for types that emit nothing `[markers]` (dedup or no-op branch):
+mud `E2B:t61` (array, no visible typedef — no `ET:`), mud `E2B:t63` (ptr → no `ET:`),
+gol `E2B:t46..t52` (slices/tuples/ptrs → no visible typedef; the arrays t41-45 in the same
+pass DO emit). The C-visible typedef set is a strict subset of the sorted iteration.
+
+The sorted tail resolves aggregates LAST (mud `…, 26 Command, 25 Room, 23 plat_fd_set,
+24 Player, 62 Arr_Player, 47 Arr_Room, 61 dup`), consistent with P3's documented Kahn
+dynamics (degenerate from=0 edge set). `[markers]` `E2A:t25k25` / `E2B:t23k25n43` confirm the
+sub-pass split matches the `pointer_only` classification from P3.
+
+### 6.2 Mangled Function Names & 31-char Limit (Q2)
+
+`zF_<8-hex>_<name>` for all non-extern functions `[c89]` (fwd-decl section of each `.c`).
+5 key functions per example:
+
+| Example | Mangled names |
+|---------|---------------|
+| mud_server | `zF_00BC8D75_initRooms`, `zF_59D9CF45_parseCommand`, `zF_EA90E208_main`, `zF_E7D5C1AB_processCommand`, `zF_649527FD_eql` |
+| game_of_life | `zF_071EEE2B_setPattern`, `zF_EA90E208_main`, `zF_540CA757_get`, `zF_C6270703_set`, `zF_3313BBE7_countNeighbors` |
+| json_parser | `zF_209CECBA_printSlice`, `zF_67463B19_printValue`, `zF_5B859C63_readFile`, `zF_C0DEFC8E_parseJson`, `zF_12860F5B_parseObject` |
+| lisp_interpreter_curr | `zF_EA90E208_main`, `zF_08D22E0F_eval`, `zF_24BC4A3B_apply`, `zF_9C1A101A_parse_expr`, `zF_0A23CE02_next_token` |
+
+- **FNV-1a confirmed `[fnv]`**: independent recomputation (offset `0x811C9DC5`, prime
+  `0x01000193`) of all 48 unique function names across the 4 examples matches every emitted
+  hash exactly (e.g. `main`→`EA90E208` in all 4, `eval`→`08D22E0F`, `apply`→`24BC4A3B`,
+  `parserSkipWhitespace`→`2C9F470C`). `[source]` `c89_emit.zig:387`.
+- **31-char limit — exactly ONE hit across all 4 examples** `[c89]`:
+  `zF_2C9F470C_parserSkipWhitespac` (json_parser) = 31 chars (name "parserSkipWhitespace"
+  truncated 20→19; json_parser.c:76 fwd, :1040 def, call sites :1249/:1347). Truncation loop
+  `[source]` `c89_emit.zig:401-405` (copy while `p < 31`). Longest other name: 26 chars.
+- **Collision resolution unexercised**: no `_N`-suffixed mangled names in any output
+  (`[c89]` grep for `zF_<hash>_name_N`; the `EU_<n>`/`Opt_<n>`/`Arr_<n>` suffixes are the
+  type-scheme, not collision suffixes). `[source]` collision loop `c89_emit.zig:410-450`.
+- **Caveat**: error-set members emit as `#define zT_<hash>_<Set>_<Member> <N>` macros whose
+  names exceed 31 chars — `zT_91ED3DBA_ParseError_ExpectedCommaOrEnd` (41, json_parser.c:21),
+  `zT_45176AD9_LispError_UnexpectedRParen` (38, lisp:18). Macros compile fine under
+  `gcc -std=c89` (no `-pedantic`); the 31-char mangler limit applies to identifiers, not these
+  `#define` names.
+
+### 6.3 @cInclude Lists & Dedup (Q3)
+
+`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:625`) dedups by interned name_id
+across ALL modules; `emitModuleHeader` emits `zig_compat.h` + `zig_special_types.h` then the
+deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"..."` quoted
+(`:1570-1578`).
+
+| Example | @cInclude directives (by module) | Emitted module-header includes | Dedup |
+|---------|----------------------------------|-------------------------------|-------|
+| mud_server | main.zig:4 zig_runtime.h, :5 net_runtime.h; std_debug.zig:1 zig_runtime.h (dup) | `zig_runtime.h` + `net_runtime.h` (mud_server.c:47-48) | **exercised** — 3 directives → 2 lines |
+| game_of_life | main.zig:3 zig_runtime.h, :4 `<stdlib.h>`; std_debug.zig:1 zig_runtime.h (dup) | `zig_runtime.h` + `<stdlib.h>` (gol.c:30-31) | **exercised** |
+| json_parser | main.zig:4-6 zig_runtime.h, `<stdio.h>`, `<stdlib.h>`; file.zig:1-2 `<stdio.h>`, `<stdlib.h>` (dups) | `zig_runtime.h` + `<stdio.h>` + `<stdlib.h>` (json.c:64-66) | **exercised** — 5 directives → 3 lines |
+| lisp_interpreter_curr | main.zig:11-12 zig_runtime.h, `<stdio.h>` | `zig_runtime.h` + `<stdio.h>` (lisp:100-101) | no dups |
+
+**Observation**: `zig_compat.h` and `zig_runtime.h` appear TWICE in every output — once in the
+fixed `emitIncludes` preamble (`c89_emit.zig:706-711`, flushed from `main.zig:622-623`) and
+once in the module header (`[c89]` mud_server.c:1-2 vs :45-48). Dedup applies only WITHIN the
+collected `@cInclude` list, not against the preamble — benign (include guards), undocumented
+elsewhere.
+
+### 6.4 Function Body Emission Order (Q4)
+
+Emission iterates `fns` in list order, skipping externs (`[source]` `c89_emit.zig:1607-1611`).
+The list is built in module-registration order × source decl order (`[source]` `main.zig:532-574`:
+per module, per top-level `fn_decl`, `lowerFn` appended to `ctx.lir_fns`). Therefore
+**emission order == LIR function order == source declaration order**.
+
+| Example | Emitted fn order (first→last) `[c89]` |
+|---------|--------------------------------------|
+| mud_server | initRooms, parseCommand, main, processCommand, eql (util.zig), copy (util.zig), print (std_debug.zig) |
+| game_of_life | setPattern, main, get, set, countNeighbors, print, printInt (std_debug.zig) |
+| json_parser | printSlice, printIndent, printValue, main, readFile (file.zig), parserPeek, parserAdvance, parserSkipWhitespace, parserExpect, parseJson, parseValue, parseNull, parseBoolean, parseString, parseNumber, isDigit, parseFloat, parseArray, parseObject (json.zig) |
+| lisp_interpreter_curr | print_str, print_value, print_list, read_line, main (main.zig), sand_init, sand_alloc, sand_reset (sand.zig), alloc_value … alloc_builtin (value.zig), is_whitespace, is_digit, skip_whitespace, next_token, peek_token, parse_int_simple (token.zig), parse_expr, parse_list (parser.zig), env_find_node, env_lookup, env_extend (env.zig), eval, env_to_value, apply, value_to_env_real (eval.zig), builtin_cons … builtin_gt (builtins.zig), mem_eql, parse_int, points_to_arena (util.zig), deep_copy (deep_copy.zig) |
+
+Module order == import/registration order: mud main→util→std_debug; gol main→std→std_debug;
+json main→file→json (arena.zig is never imported → its `alloc_bytes` is absent from the
+output; json uses extern `arena_alloc_default`, json.zig:253); lisp main→sand→value→token→
+parser→env→eval→builtins→util→deep_copy (matches main.zig:1-9 import order). Each fn def is
+preceded by a `/* original-name */` comment (`[source]` `c89_emit.zig:1464-1468`), which makes
+the order directly readable from the `.c`.
+
+Count check: emitted bodies 7/7/19/45; P7 LIR totals 20/11/48/32 include the externs
+(mud 12 extern + 8; gol 4 + 7; json 13 + 19; lisp 3 + 45).
+
+### 6.5 2-Phase Output Confirmation (Q5)
+
+**Type definitions precede ANY function body** — guaranteed structurally (`emitSpecialTypes`
+before the fn loop, `[source]` `c89_emit.zig:1605-1611`) and observed in all 4 outputs `[c89]`:
+
+| Example | typedefs end | first fn def |
+|----------|--------------|--------------|
+| mud_server | :43 | :59 |
+| game_of_life | :26 | :42 |
+| json_parser | :60 | :89 |
+| lisp_interpreter_curr | :96 | :150 |
+
+Marker sequence `[markers]`: `C` (main.zig:603) → `FL:p49`/`FE:p0` (preamble flush, main.zig:623)
+→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:627; exactly 1
+per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:620-623) flushed
+before `emitModule`; the module name is hardcoded `"output"` (main.zig:618) — hence
+`/* Module: output */` in every file.
+
+### 6.6 extern "c" Functions (Q6, mud_server)
+
+extern "c" socket functions are emitted as **bare, unmangled C calls with NO declarations in
+the output** (grep `extern` → 0 hits in mud_server.c `[c89]`). Prototypes come from the
+`@cInclude`d `net_runtime.h` (net_runtime.h:6-17). Examples: `zT_0 = plat_socket_init();`
+(mud_server.c:553), `zT_8 = plat_create_tcp_server(zT_6);` (:567),
+`zT_97 = plat_accept(zT_96);` (:798), `zT_159 = plat_socket_fd_isset(zT_153, zT_154);` (:954),
+`plat_close_socket(zT_145);` (:926).
+
+Mechanism `[source]`: signature uses original name if `is_extern` (`c89_emit.zig:1462`); externs
+get no fwd decl (`:1587`) and no body (`:1611`); call sites use the original name
+(`:3142`). Discarded extern results: `_ = plat_send(...)` → `zT_126 = plat_send(...);
+(void)zT_126;` (mud_server.c:883-884, matches `.store_local` `_`→`(void)val;`).
+
+**Extern-return wrapping unexercised**: every extern in the 4 examples returns plain i32/void,
+so the `need_wrap` branch (`c89_emit.zig:3150-3165`) never fires. The only optional-wrapping in
+mud is the non-extern `wrap_optional`+`unwrap_optional_abi` for `plat_socket_select`'s `?*u8`
+arg: `zT_75.has_value = 1; zT_75.value = zT_74;` then `zT_76 = zT_75.has_value ? zT_75.value :
+NULL;` (mud_server.c:707-715).
+
+### 6.7 Instruction Emission vs Actual C89 (Q7)
+
+The §1.9 table matches the actual output for load/store/call (verified against `[source]`
+lines and `[c89]`):
+
+| Inst | Source pattern | Emitted C evidence |
+|------|----------------|--------------------|
+| `.load` | `result = *ptr;` (`:2768`) | lisp:6177 `zT_5 = *fun;`, :5646 `zT_390 = *zT_389;`, :5657 `zT_434 = *zT_433;` |
+| `.store` | `*ptr = val;` (`:2780`) | lisp:2322 `*v = zT_8;`, :5033 `*curr_env = zT_172;`, :5079 `*slot = zT_194;` |
+| `.call` (indirect) | `result = callee(args...);` (`:3103`) | lisp:6198 `zT_12 = f(zT_10, zT_11);` — the ONLY fn-ptr call in all 4 (apply→builtin); counts 0/0/0/1 |
+| `.call_direct` | `result = fn(args...);` (`:3129`, unmangled extern `:3142`) | mud:553 `zT_0 = plat_socket_init();`, :173 `zT_6 = zF_649527FD_eql(zT_1, zT_2);`; MARKER_CALL comments 28/19/127/166 |
+| `.load_index` | `result = base[idx];` (`:2764`) | gol:1232 `zT_15 = zT_11[zT_14];` |
+| `.assign_index` | `base[idx] = src;` (`:2370`) | gol:645 `zT_85[zT_89] = zT_86;` (+23 more) |
+| `.assign` array copy | `{ unsigned int _i=0; while(_i<N){ dst[_i]=src[_i]; _i++; } }` (`:2284`) | gol:490-496 `grid[_i] = zT_1[_i];` |
+| `.undefined_const` tagged-union array | `[_i].tag = 0;` (`:3029`) | gol:482-488 `zT_1[_i].tag = 0;` |
+| `.branch` | `if (c) goto A; else goto B;` (`:2398`) | lisp:6485-6486 |
+| `.store_local` `_` | `(void)val;` (`:2481`) | gol:908 `(void)zT_243;`, mud:884 `(void)zT_126;` |
+
+Also observed live: `.switch_br` (lisp:6180-6184 `switch (zT_6) { case 5: goto z_bb_1; … }`),
+`.ptr_cast` (lisp:6188 `zT_9 = (zT_E323FAA2_FP_zT_4D8485C8_EU_9)f_ptr;`), tagged-union
+`.load_field` (lisp:6179 `zT_6 = zT_5.tag;`, :6187 `f_ptr = zT_5.payload.Builtin._0;`).
+
+**In-output debug comments**: the emitter writes `/*==MARKER_CALL n=<id> m=<mod>==*/`
+(`c89_emit.zig:3130-3139`), `/*==MARKER_ASSIGN dst=<n> src=<n>==*/`, `/*==LF:f0 b5==*/` and
+similar comment markers INTO the emitted C (200 in mud_server.c `[c89]`). These are written
+unconditionally (not gated on `--markers`) and are distinct from the stderr `I`/`BIN:`/… markers
+in §1.16. The `I` marker (per-instruction, `c89_emit.zig:2273`) appears throughout fn-body
+emission — a "stray I\n late in the trace" is this documented marker, not a separate artifact.
+
+### 6.8 Gaps & Unexercised Paths Found
+
+- **Tagged unions: only the integer-tagged path is exercised.** All 5 tagged unions in the
+  corpus (mud Command, gol Cell, json JsonValue, lisp Value/Token) emit
+  `unsigned int tag;` + per-field `#define <name>_<field> <idx>` (`[source]` `c89_emit.zig:1081-1129`;
+  `[c89]` mud_server.c:13-19, gol:7-14, json:40-56, lisp:80-95). The enum-tagged branch
+  (`TU_`/`zTU_` prefixes, `c89_emit.zig:1008-1080`) never fires.
+- **Extern optional/error_union return wrapping unexercised** (see §6.6).
+- **Collision resolution unexercised** (see §6.2).
+- **Error-set `#define` names exceed 31 chars** (see §6.2) — macro names, not mangler output.
+- **Marker-table gap**: `D6` (`c89_emit.zig:511-519`, getCTypeName debug, fires for every
+  `tid>=20` cname lookup) is not listed in §1.16.
