@@ -4,11 +4,11 @@
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 34 | 17 direct + 8 builtin name IDs + 9 internal |
-| Expression kind dispatch arms | 36+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
+| `SemanticAnalyzer` fields | 38 | 29 non-builtin + 9 builtin name IDs |
+| Expression kind dispatch arms | 46+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 18 | `none` through `wrap_optional_null` |
 | Coercion checks in `classifyCoercion` | ~18 | Null, optional, error union, ptr, slice, array, widening |
-| Marker codes | ~40+ | `IDE`, `D7`, `L`, `S`, `STY`, `FAE`, `PFA`, `FAPR`, `COE`, `CCK`, `COR`, `SIF`, etc. |
+| Marker codes | 80+ | `IDE`, `D7`, `L`, `S`, `STY`, `FAE`, `PFA`, `FAPR`, `COE`, `CCK`, `COR`, `SIF`, etc. |
 | Expected-type stack | stack-based | Push/pop in calls, returns, assigns, struct init, var decls |
 | Resolved type table | `node_idx→TypeId` | 2 hash maps (type + source name) |
 | Constraint checks | 3 | Return type, switch exhaust, break/continue validation |
@@ -67,6 +67,24 @@ Key state: expected-type stack for contextual type inference (enum literals, err
 
 Allocates no heap memory in the struct itself. Interns 8 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
 
+### semanticAnalyzerIsTypeValueCast (`sf/src/semantic_analyzer.zig:126-134`)
+
+`[inference: match name_id vs 6 cast builtins → return bool]`
+
+Checks if name_id matches @ptrCast, @intToPtr, @intCast, @floatCast, @intToFloat, or @intToEnum. Used by builtin_call dispatch in ResolveExpr to short-circuit as type-value cast.
+
+### semanticAnalyzerGrowLocalDecls (`sf/src/semantic_analyzer.zig:136-152`)
+
+`[inference: grow-by-doubling from min 8, memcpy name+type arrays]`
+
+Grows the parallel name/type local-decl arrays. Called by registerLocalDecl on overflow.
+
+### registerLocalDecl (`sf/src/semantic_analyzer.zig:154-163`)
+
+`[inference: grow if full → write name_id/type_id → inc count]`
+
+Core local declaration registration. Called by resolveIdent local lookup, resolveFnBody param registration, and if/while/for header captures.
+
 ### pushExpectedType / popExpectedType (`sf/src/semantic_analyzer.zig:1443-1468`)
 
 `[inference: grow-by-doubling from 64, write/inc or dec stack pointer]`
@@ -85,6 +103,12 @@ topExpectedType(self) -> u32:
 ```
 
 Used for contextual type inference: fn call args, return stmts, assigns, struct init fields, var decl init, if/else unification, enum/error literals.
+
+### semanticAnalyzerStmtWorkPush (`sf/src/semantic_analyzer.zig:1427-1441`)
+
+`[inference: grow-by-doubling from 64, write/inc work pointer]`
+
+Worklist growth and push. Grows the statement work array (min 64, doubling). Pushes stmt node index onto the worklist.
 
 ### semanticAnalyzerResolveIdent (`sf/src/semantic_analyzer.zig:174-228`)
 
@@ -239,6 +263,24 @@ Special expected-type push for error/enum literals when the other operand has a 
 - same bool → `TYPE_BOOL`
 - same pointer → `TYPE_BOOL`
 
+### semanticAnalyzerResolveLogical (`sf/src/semantic_analyzer.zig:569-577`)
+
+`[inference: both operands TYPE_BOOL → TYPE_BOOL; else TYPE_VOID]`
+
+Dispatched from ResolveExpr for bool_and/bool_or. Returns TYPE_BOOL only if both lhs and rhs are TYPE_BOOL.
+
+### semanticAnalyzerResolveNegate (`sf/src/semantic_analyzer.zig:579-586`)
+
+`[inference: INT_LIT → INT_LIT; numeric → same type; else VOID]`
+
+Dispatched from ResolveExpr for negate. Returns the inner type if numeric.
+
+### semanticAnalyzerResolveBitNot (`sf/src/semantic_analyzer.zig:588-595`)
+
+`[inference: INT_LIT → INT_LIT; integer → same type; else VOID]`
+
+Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
+
 ### semanticAnalyzerResolveFnCall (`sf/src/semantic_analyzer.zig:649-780`)
 
 `[inference: direct callee → resolve return type → push/pop expected types for params → record coercions]`
@@ -319,6 +361,12 @@ Worklist (stack-based) traversal. Pushes stmt children in reverse order for pre-
 
 Skips `fn_decl` children (inner functions handled by outer phase).
 
+### semanticAnalyzerResolveStmt (`sf/src/semantic_analyzer.zig:1839-1841`)
+
+`[inference: delegate to semanticAnalyzerResolveStmtIter]`
+
+Public entry point. Thin wrapper around semanticAnalyzerResolveStmtIter.
+
 ### semanticAnalyzerResolveTryExpr (`sf/src/semantic_analyzer.zig:782-792`)
 
 `[inference: resolve inner → error_union → payload type]`
@@ -348,6 +396,12 @@ Type unification priority:
 - else is VOID → return then
 - Otherwise → return TYPE_VOID (type mismatch)
 
+### semanticAnalyzerCaptureType (`sf/src/semantic_analyzer.zig:165-172`)
+
+`[inference: if optional → unwrap payload; else return cond_type as-is]`
+
+Unwraps optional types in if/while/for capture expressions. If cond_type is optional, returns the payload type; otherwise returns cond_type unchanged.
+
 ### semanticAnalyzerResolveIfHeader / ForHeader / WhileHeader
 
 `resolveIfHeader` (`sf/src/semantic_analyzer.zig:1470-1489`):
@@ -361,6 +415,12 @@ If payload (capture name), register local decl with element type. If child_2 (in
 `resolveWhileHeader` (`sf/src/semantic_analyzer.zig:1523-1537`):
 `[inference: resolve condition → while_capture → registerLocalDecl]`
 Same capture logic as if-header.
+
+### semaTraceStep (`sf/src/semantic_analyzer.zig:1725-1743`)
+
+`[inference: follow ident_expr → var_decl → slice_expr → ident_expr chain, up to 3 steps]`
+
+Source-tracing helper for index-access error messages. Follows a variable name through up to 3 levels of var_decl/slice_expr indirection to find the original source name. Called by semanticAnalyzerResolveIndexAccess.
 
 ### semanticAnalyzerResolveIndexAccess (`sf/src/semantic_analyzer.zig:1745-1780`)
 
@@ -386,13 +446,19 @@ Each element resolved. If element resolves to VOID, substitutes TYPE_I32. Append
 
 If `child_0` has a resolved array type, return it directly. Otherwise determine element type from first element (special case: char_literal → u8, int_literal → u32, else resolve). Create array type with element count.
 
+### errLitSrcType (`sf/src/semantic_analyzer.zig:622-631`)
+
+`[inference: if child is error_literal and target is error_union → return error_set; else ret_val]`
+
+Helper for tryRecordCoercion and resolveReturnStmt. Extracts the error set type from an error union target when the source node is an error literal.
+
 ### resolveReturnStmt (`sf/src/semantic_analyzer.zig:633-647`)
 
 `[inference: push expected fn return → resolve expr → record coercion]`
 
 If child exists: `pushExpectedType(current_fn_return)` → resolve → `popExpectedType`. If `current_fn_return` is non-zero non-void: `tryRecordCoercion` with `errLitSrcType`.
 
-### tryRecordCoercion (`sf/src/semantic_analyzer.zig:597-620`)
+### tryRecordCoercion (`sf/src/semantic_analyzer.zig:597-618`)
 
 `[inference: classifyCoercion → if non-none or null→ptr, add to coercion table]`
 
@@ -550,6 +616,12 @@ Flat array of `CoercionEntry{node_idx, kind, target_type}` + hash index by node_
 
 If node_idx already in index, update entry in-place. Otherwise ensure capacity, append, add to index.
 
+#### coercionTableEnsureCapacity (`sf/src/coercion.zig:43-53`)
+
+`[inference: grow-by-doubling from 8, memcpy entries, update cap]`
+
+Internal grow helper for CoercionTable. Called by coercionTableAdd when entries_len >= entries_cap.
+
 #### coercionTableGet (`sf/src/coercion.zig:79-83`)
 
 `[inference: index lookup → entry or null]`
@@ -586,6 +658,18 @@ Two separate arrays with independent hash indices:
 #### resolvedTypeTableGet (`sf/src/resolved_type_table.zig:65-71`)
 
 `[inference: hash lookup → ?TypeId]`
+
+#### resolvedTypeTableEnsureCapacity (`sf/src/resolved_type_table.zig:37-49`)
+
+`[inference: grow-by-doubling from 8, memcpy entries, update cap]`
+
+Internal grow helper for ResolvedTypeTable entries array. Called by resolvedTypeTableSet when entries_len >= entries_cap.
+
+#### sourceTableEnsureCapacity (`sf/src/resolved_type_table.zig:73-84`)
+
+`[inference: grow-by-doubling from 8, memcpy u32 items, update cap]`
+
+Internal grow helper for ResolvedTypeTable source items array. Called by resolvedSourceTableSet when source_len >= source_cap.
 
 #### resolvedSourceTableSet / Get (`sf/src/resolved_type_table.zig:86-105`)
 
