@@ -377,7 +377,7 @@ AST tree (root node index = module_root node)
 
 | Marker | File | Trigger |
 |--------|------|---------|
-| `LEX` | lexer.zig:399 | When identifier text is exactly `"neighbors"` |
+| `LEX` | lexer.zig:398 | When identifier text is exactly `"neighbors"` |
 
 > **P9 clarification:** the `LEX:n<node>k<kind>` markers seen in `--markers` traces are emitted by
 > **`lower.zig:448`** (`lowerExpr` entry), NOT the lexer. The lexer's own marker is a bare `LEX`
@@ -572,14 +572,14 @@ consumers:
 | `fn_call` | Extra children packed | node 19 payload 196609 = `(3<<16)\|1` → `extra[3]=18` | ✓ |
 | `builtin_call` | **"Interned string ID of builtin name"** | payload = packed extra children (args); builtin name ID is in **child_0** (parser.zig:611) | **✗ doc wrong** |
 | `var_decl`, `param_decl` | Name ID | payloads 20-25 (std/s/t/x/y), 26/28 (x/p) — interned name ids | ✓ |
-| `field_access` | Name ID | sema.zig:233-234 reads `node.payload` as field name id, base in child_0 | ✓ |
+| `field_access` | Name ID | semantic_analyzer.zig:233-234 reads `node.payload` as field name id, base in child_0 | ✓ |
 | `import_expr` | Path string ID | payload_repro node 1 p22 = interned path | ✓ |
 
 - **Doc bug confirmed and fixed (table row above):** `builtin_call`'s payload is the packed
   extra-children index for its arguments, NOT the builtin name ID. `parserParseBuiltinCall`
   (parser.zig:565-611) packs args via `astStoreAddExtraChildren` (parser.zig:606-608) and passes the
-  interned name id as `child_0` (parser.zig:611). Consumers confirm: sema.zig:1218 reads args from
-  `node.payload`, sema.zig:1221 compares `node.child_0` to `size_of_name_id`. Same pattern verified
+  interned name id as `child_0` (parser.zig:611). Consumers confirm: semantic_analyzer.zig:1217 reads args from
+  `node.payload`, semantic_analyzer.zig:1218 compares `node.child_0` to `size_of_name_id`. Same pattern verified
   in lower.zig:2381 and comptime_eval.zig:175.
 - `parserParseVarDecl` (parser.zig:1318-1319) uses child_0=type, child_1=init, payload=name_id —
   matches doc.
