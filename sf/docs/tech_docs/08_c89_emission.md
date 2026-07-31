@@ -1,0 +1,652 @@
+# 08 — C89 Emission
+
+> Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
+> Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
+
+## Summary
+
+| Key | Value |
+|-----|-------|
+| Input | `LirFunction` list (lowered IR functions per module), `TypeRegistry` |
+| Output | C89 `.c` file via stdout |
+| Phase marker | `C` (entry), `FINAL_FLUSH` (complete) |
+| Key structs | `C89Emitter`, `BufferedWriter`, `NameMangler` |
+| Key functions | `emitModule`, `emitSpecialTypes`, `emitFunctionBody`, `emitInst`, `nameManglerMangle`, `cincludeUnionAll` |
+
+---
+
+## 1. `c89_emit.zig` — C89 Emitter (4032 lines)
+
+### 1.1 2-Phase Output Architecture
+
+Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:1600`):
+
+```
+Phase 1: Type Headers (emitSpecialTypes)
+  ├─ Sub-pass 1: Forward declarations for struct/union/tagged_union types
+  │   (typedef struct Foo Foo;)
+  ├─ Sub-pass 2a: Pointer-only types (fields all through ptr/slice/wrapper)
+  │   (emitTypeDefinition — only if in pointer_only_map)
+  └─ Sub-pass 2b: Value-embedding types (structs with inline fields)
+      (emitTypeDefinition — only if NOT in pointer_only_map)
+
+Phase 2: Function Bodies (emitModuleHeader → emitFunctionSignature → emitFunctionBody)
+  ├─ Module header: includes, forward declarations
+  ├─ Per function: signature + hoisted decls + basic blocks
+  └─ main() wrapper for non-void return types
+```
+
+Phase 1 runs once via `emitSpecialTypes` BEFORE any function body. Phase 2 iterates the function list.
+
+#### Type Topological Sort
+
+Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:846`):
+
+```
+Input: TypeRegistry (all types 0..types_len-1)
+1. Compute indegree for each type — count of C89-relevant field/child types
+   (struct/tagged_union/array/error_union that reference another type)
+2. Enqueue all types with indegree 0
+3. Dequeue → add to result → decrement indegree of dependents → enqueue new 0s
+4. Result order: types with no deps first, then their dependents
+```
+
+`c89NeedsEmitEdge` (`c89_emit.zig:740`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, tuple, unresolved_name.
+
+#### Pointer-only vs Value-embedding Split
+
+`emitModule` receives a `ptr_only_ids` array from the caller (calculated in `phase_C89Emission` in `main.zig`). Types in this set have all their field dependencies reachable through pointers — only a forward declaration is needed for C89 correctness. The split prevents redundant full type definitions:
+
+- **Sub-pass 2a** (`c89_emit.zig:911`): Iterates types in topo order, skips if NOT in `pointer_only_map`. Emits full definition.
+- **Sub-pass 2b** (`c89_emit.zig:949`): Iterates types in topo order, skips if IS in `pointer_only_map`. Emits full definition.
+
+Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string) — same type only emitted once.
+
+### 1.2 BufferedWriter — 4KB Buffered Output
+
+Defined in `c89_emit.zig:27-73`. Fixed-size 4096-byte buffer with auto-flush.
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `buf` | `[4096]u8` | Circular-ish output buffer — written to sequentially, flushed to stdout when full |
+| `pos` | `usize` | Current write cursor (0 = empty, 4096 = full, triggers flush) |
+
+| Function | Line | Purpose |
+|----------|------|---------|
+| `bufferedWriterInit` | 32 | Returns new BufferedWriter with `pos=0`, `buf=undefined` |
+| `bufferedWriterFlush` | 36 | Writes `buf[0..pos]` to stdout via `pal.stdout_write`, resets pos to 0 |
+| `bufferedWriterWrite` | 44 | Writes byte slice to buffer. Loops: copies min(remaining, 4096-pos) bytes into buf, increments pos, flushes if full |
+| `bufferedWriterWriteByte` | 59 | Single byte write, flush-if-full, store at pos, increment |
+| `bufferedWriterWriteIndent` | 65 | Writes `level * 4` spaces (flush-safe, byte-by-byte) |
+
+Markers `FL:p` (flush start, prints current pos) and `FE:p` (flush end, prints 0) bracket each flush.
+
+### 1.3 NameMangler — Deterministic Name Mangling
+
+Defined inline in `c89_emit.zig:83-90`. Separate from the minimal `name_mangler.zig` (which only has a counter — that file is a different/unused impl).
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `hash_seed` | `u32` | Currently always 0 |
+| `cache` | `U64ToU32Map` | Multi-key: `(module_id << 35) \| (kind << 32) \| name_id` → mangled_id |
+| `keyword_set` | `U32ToU32Map` | All 32 C89 keywords (auto..while), interned name_id → 1 |
+| `collision_mod` | `U32ToU32Map` | Mangled name_id → module_id (detects collisions) |
+| `collision_name` | `U32ToU32Map` | Mangled name_id → original name_id (maps collision back) |
+| `interner` | `*StringInterner` | For interning mangled name strings |
+
+#### Mangling Scheme
+
+`nameManglerMangle(name_id, kind, module_id)` (`c89_emit.zig:379`):
+
+```
+Format: z<K>_<8-hex-digits>_<original-name>
+        ↑  ↑         ↑
+        |  kind      hash
+        prefix       (FNV-1a of original name)
+```
+
+1. **Temp/builtin bypass** (`isTempOrBuiltin`, line 113): Names starting with `__tmp`, `__ret`, `__bootstrap` return unmangled.
+
+2. **C89 keyword escape** (`isC89Keyword` → `mangleC89Keyword`, line 125/288): If the name matches a C89 keyword, prefix with `z_` and return. e.g., `int` → `z_int`.
+
+3. **Cache lookup** (line 384): Key = `(module_id << 35) | (kind << 32) | name_id`. If previously mangled, return cached.
+
+4. **Mangle construction** (line 392-406):
+   - `buf[0]` = `'z'` (prefix — avoids leading digit/underscore collision)
+   - `buf[1]` = kind char: `F`=function(0), `G`=global(1), `T`=type(2), `L`=local(default)
+   - `buf[2]` = `'_'`
+   - `buf[3..11]` = 8 hex chars of FNV-1a hash
+   - `buf[11]` = `'_'`
+   - Followed by original name chars, truncated to fit 31 total
+
+5. **31-char limit** (line 401-405): Total mangled name capped at 31 bytes (C89 standard minimum). Original name truncated if needed.
+
+6. **Collision resolution** (line 410-450): If mangled name already used by a different `(module_id, name_id)`, append `_N` suffix with counter. Original name portion truncated further to stay within 31 chars. Digits counted dynamically before truncation.
+
+7. **Cache population** (line 451-454): Store in `collision_mod`, `collision_name`, and `cache`.
+
+#### Temp Name Mangling
+
+`mangleTempName` (`c89_emit.zig:1667`): Format `zT_<temp_id>`. Used for hoisted temporaries in function bodies. No collision check needed — temp_ids are unique per function.
+
+#### Local Name Mangling
+
+`mangleLocalName` (`c89_emit.zig:1436`): If the name_id is a C89 keyword, prefix with `z_`. Otherwise return original name. Used for function parameters and local variables.
+
+### 1.4 C89Emitter — Central Emitter State
+
+Defined `c89_emit.zig:457-480`. Holds all emission context:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `writer` | `BufferedWriter` | 4KB output buffer |
+| `indent` | `u32` | Current indentation level (incremented in fn bodies) |
+| `alloc` | `*Sand` | Scratch arena allocator |
+| `registry` | `*TypeRegistry` | Type system reference |
+| `interner` | `*StringInterner` | String lookups |
+| `mangler` | `*NameMangler` | Name mangling |
+| `diag` | `*DiagnosticCollector` | Error reporting |
+| `switch_cases` | `*SwitchCaseArrayList` | Current function's switch cases |
+| `call_args` | `*U32ArrayList` | Temporary call argument buffer |
+| `current_fn` | `*LirFunction` | Function currently being emitted |
+| `d4_wtype` | `[*]u32` | Type propagation tracking (hoisted temps) |
+| `d4_wflag` | `[*]u8` | Written flag: 0=unwritten, 1=resolved, 2=call-result |
+| `d4_t2p` | `[*]u32` | Temp ID → hoisted_temps index mapping |
+| `dl_hoisted` | `u8` | Whether decl_local hoisting has run (guard against double-emit) |
+| `emitted_type_set` | `U32ToU32Map` | Dedup: type name hash → emitted marker |
+| `fwd_decl_set` | `U32ToU32Map` | Dedup: forward decl name hash → emitted marker |
+| `pointer_only_map` | `U32ToU32Map` | Type ids that need only forward decl |
+| `dedup_names` | `[128]u32` | Local variable dedup during hoisting |
+| `dedup_count` | `u32` | Count of dedup_names |
+| `fl_name_ids` / `fl_temps` | `[128]u32` | Flat lookup: local name_id → temp_id |
+| `fl_count` | `u32` | Count of flat lookup entries |
+
+### 1.5 Type Name Generation
+
+`getCTypeName` (`c89_emit.zig:509`) maps `TypeId` → C89 type name string:
+
+| TypeKind | C89 Name | Notes |
+|----------|----------|-------|
+| `void_type` | `"void"` | Direct |
+| `bool_type` | `"int"` | C89 has no bool |
+| `i8_type` | `"signed char"` | |
+| `i16_type` | `"short"` | |
+| `i32_type` | `"int"` | |
+| `i64_type` | mangled type | `typedef long long zT_<hash>_<name>` |
+| `u8_type` | `"unsigned char"` | |
+| `u16_type` | `"unsigned short"` | |
+| `u32_type` | `"unsigned int"` | |
+| `u64_type` | mangled type | `typedef unsigned long long ...` |
+| `f32_type` | `"float"` | |
+| `f64_type` | `"double"` | |
+| `usize_type` | `"unsigned int"` | |
+| `c_char_type` | `"char"` | |
+| `enum_type` | mangled type | `typedef <backing> <mangled>;` |
+| `array_type` | `Arr_<elem-cname>_<len>` | Typedef'd — `typedef <elem> Arr_<elem>_<len>[<len>];` |
+| `ptr_type` / `many_ptr_type` | `<base>*` | Direct pointer syntax; fn ptr → use fn name |
+| `slice_type` | `Slice_<elem>` | Typedef'd struct: `typedef struct { <elem>* ptr; unsigned int len; } ...;` |
+| `optional_type` | `Opt_<payload>` | Typedef'd struct with `{ <type> value; int has_value; }` |
+| `error_union_type` | `EU_<payload>` | Typedef'd struct with `{ union { <type> payload; int err; } data; int is_error; }` |
+| `fn_type` | `F_<N|P>_<ret>_<p1>_<p2>...` | `F_N_` for non-ptr, `F_P_` for ptr (FN_PTR flag) |
+| `error_set_type` | mangled type | `typedef int <mangled>;` + `#define` for each error tag |
+| `undefined_type` | `"int"` | Fallback |
+| `null_type` | `"int"` | Fallback |
+| `integer_literal_type` | `"int"` | Fallback |
+
+When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by `emitErrorUnionType` for error union types).
+
+### 1.6 Type Emission — emitSpecialTypes
+
+`emitSpecialTypes` (`c89_emit.zig:884`) drives type header output:
+
+```
+emitSpecialTypes(emitter, reg):
+  1. sorted = tstTopologicalSort(reg)           ← Kahn order
+  2. fwd_decl pass: for each struct/tagged_union/union with name_id:
+       emit "typedef struct <cname> <cname>;\n"
+       dedup via fwd_decl_set (hash of cname string)
+  3. pointer-only pass: for each type in sorted:
+       if NOT in pointer_only_map → skip
+       skip void/bool/noreturn/null/undefined/int-lit/type/module type
+       if name_id==0 and not composite type → skip
+       dedup via emitted_type_set (hash of cname string)
+       emitTypeDefinition()
+  4. value-embedding pass: for each type in sorted:
+       if IS in pointer_only_map → skip
+       same skip/filter logic as sub-pass 2a
+       dedup via emitted_type_set
+       emitTypeDefinition()
+```
+
+### 1.7 Type Definition Emission
+
+`emitTypeDefinition` (`c89_emit.zig:1195`) dispatches by `TypeKind`:
+
+| TypeKind | Emitter Function | Output |
+|----------|-----------------|--------|
+| `slice_type` | `emitSliceType` (1334) | `typedef struct { <elem>* ptr; unsigned int len; } Slice_<elem>;` |
+| `optional_type` | `emitOptionalType` (1366) | `typedef struct { <type> value; int has_value; } Opt_<payload>;` (void payload: omit value) |
+| `error_union_type` | `emitErrorUnionType` (1410) | `typedef struct { union { <type> payload; int err; } data; int is_error; } EU_<payload>;` |
+| `error_set_type` | `emitErrorSetType` (1255) | `typedef int <cname>;` + `#define <cname>_<tag> <N>` per tag |
+| `tagged_union_type` | `emitTaggedUnionType` (999) | Complex struct + union + tag constants |
+| `enum_type` | `emitEnumType` (1286) | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member |
+| `struct_type` | `emitStructType` (1132) | `struct <cname> { <type> <field>; ... };` |
+| `union_type` | `emitStructType` (1132) | Same struct format |
+| `array_type` | `emitArrayType` (1163) | `typedef <elem> Arr_<elem>_<len>[<len>];` |
+| `i64_type` | `emitInt64Type` (1316) | `typedef long long <cname>;` |
+| `u64_type` | `emitUint64Type` (1325) | `typedef unsigned long long <cname>;` |
+| `fn_type` | `emitFnPtrType` (1224) | `typedef <ret> (*<cname>)(<params>);` |
+
+#### Tagged Union Emission
+
+`emitTaggedUnionType` (`c89_emit.zig:999`) handles two cases:
+
+**Enum-tagged** (tag type is enum):
+```
+#define TU_<name>_<member> <N>
+struct <name> {
+    <tag-type> tag;
+    union {
+        char _dummy;
+        struct { <field-type> _0; } <field-name>;
+        ...
+    } payload;
+};
+```
+
+**Integer-tagged**:
+```
+#define <name>_<field> <N>
+struct <name> {
+    unsigned int tag;
+    union {
+        char _dummy;
+        struct { <field-type> _0; } <field-name>;
+        ...
+    } payload;
+};
+```
+
+Field constants are `#define`d for integer matching. Tagged union payload access uses `.payload.<field-name>._<sub-field-idx>`.
+
+### 1.8 Function Emission
+
+#### emitFunctionSignature (`c89_emit.zig:1452`)
+
+```
+/* <original-name> */
+<return-type> <mangled-name>(<param-type> <param-name>, ...) {
+```
+
+- Mangled name via `nameManglerMangle(name_id, F, module_id)`
+- `extern` functions: use original name, not mangled
+- Comment with original name above signature for readability
+- Empty params → `(void)`, variadic → `(...)`
+- Opens `{` and increments indent
+
+#### emitHoistedDecls (`c89_emit.zig:1684`)
+
+Emitted immediately after function signature, before body. Two passes:
+
+**Pass 1: Type propagation** (line 1776-2080): Scans all instructions, tracks written types for temporaries via `d4_wtype`/`d4_wflag` arrays. Resolves `TYPE_UNDEFINED` temps to actual types. Keys:
+- `.assign`: propagates src type to dst
+- `.call_direct`/`.call`: marks as type 2 (call result — type resolved at runtime analysis)
+- `.int_const`, `float_const`, `bool_const`, `string_const`, `enum_const` → set types
+- `.binary`/`.unary`: propagates operand types to result
+- `.int_cast`, `float_cast`, `ptr_cast`, `int_to_float`, `int_to_ptr`, `ptr_to_int`: use target type
+- `.load`, `addr_of`, `load_index`, `load_field`, `make_slice`, `load_local`: set type from hoisted_temp or operand
+
+**Pass 2: Declaration emission** (line 2132-2186): For each hoisted temp (skipping params), emits C declaration:
+```
+<type> zT_<temp_id>;
+```
+Skips `TYPE_VOID` temps (type_id == 1). Debug markers `D4:`, `D7:`, `D9:` track type resolution.
+
+#### emitFunctionBody (`c89_emit.zig:3685`)
+
+```
+emitFunctionBody:
+  1. Emit local variable declarations (decl_local hoisting):
+     - Scans all blocks for decl_local instructions
+     - Dedups by name_id (emitter.dedup_names[128])
+     - Emits "type name;\n" for each unique local
+     - Sets dl_hoisted guard
+  2. Emit basic blocks:
+     - Block 0: no label (entry — follows signature directly)
+     - Blocks > 0: label "z_bb_<id>:"
+  3. Emit each instruction via emitInst()
+  4. Close "}\n"
+```
+
+Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Block 0 has no label (entry block).
+
+### 1.9 LirInst → C89 Emission Table
+
+Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
+
+| LirInst | C89 Output | Line |
+|---------|-----------|------|
+| `.nop` | (nothing) | 2275 |
+| `.ret_void` | `return;` | 2276 |
+| `.loop_header` | (nothing — implicit via goto) | 2281 |
+| `.label` | (nothing — waits for block label) | 2282 |
+| `.decl_local` | Emitted by hoisting pass in emitFunctionBody | 2283 |
+| `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`) | 2284 |
+| `.assign_field` | `base.field = src;` (struct/union/ptr/slice/tagged_union) | 2358 |
+| `.assign_index` | `base[idx] = src;` or `(*base)[idx] = src;` | 2370 |
+| `.jump` | `goto z_bb_<id>;` | 2384 |
+| `.branch` | `if (cond) goto z_bb_<then>; else goto z_bb_<else>;` | 2398 |
+| `.ret` | `return val;` | 2423 |
+| `.load_local` | `result = name;` (array: `{ ... for-loop copy ... }`) | 2432 |
+| `.store_local` | `name = val;` (`_` → `(void)val;`) | 2481 |
+| `.load_global` | `result = name;` | 2511 |
+| `.store_global` | `name = val;` | 2522 |
+| `.load_field` | `result = base.field;` (slice → `.ptr`/`.len`; tagged_union → `.tag`/`.payload`; ptr → `->field`; struct → `.field`) | 2533 |
+| `.store_field` | `base.field = val;` (same field resolution as load_field) | 2654 |
+| `.load_index` | `result = base[idx];` or `result = (*base)[idx];` | 2764 |
+| `.load` | `result = *ptr;` | 2768 |
+| `.store` | `*ptr = val;` | 2780 |
+| `.addr_of` | `result = &operand;` | 2793 |
+| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`) | 2804 |
+| `.unary` | `result = op operand;` (op: `-` `!` `~`) | 2841 |
+| `.int_const` | `result = <value>;` (signed: cast + neg magnitude to avoid warnings; tagged_union: `.tag = <value>;`) | 2854 |
+| `.enum_const` | `result = <type>_<member>;` | 2928 |
+| `.float_const` | `result = <d.ddd>;` (via `formatF64`) | 2945 |
+| `.string_const` | `result = "<escaped>";` (escape: `\n`, `\t`, `\r`, `\\`, `\"`) | 2962 |
+| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) | 2996 |
+| `.set_optional_null` | `result.has_value = 0;` | 3010 |
+| `.bool_const` | `result = 1;` or `result = 0;` | 3017 |
+| `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 3029 |
+| `.call` | `result = callee(args...);` (indirect call through function pointer) | 3103 |
+| `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 3129 |
+| `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 3262 |
+| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 3304 |
+| `.int_cast` | `result = (type)src;` (checked: `result = std_checked_cast_<N>(src);`) | 3330 |
+| `.int_to_float` | `result = (type)src;` | 3366 |
+| `.float_cast` | `result = (type)src;` | 3381 |
+| `.make_slice` | `result.ptr = ptr;\n result.len = len;` | 3396 |
+| `.print_str` | `std_print("literal");` | 3415 |
+| `.print_val` | `std_print_<type>(val);` (slice → `std_print_str(val.ptr, val.len)`) | 3424 |
+| `.ptr_cast` | `result = (type)src;` | 3444 |
+| `.check_error` | `result = src.is_error;` | 3459 |
+| `.unwrap_error_payload` | `result = src.data.payload;` | 3470 |
+| `.unwrap_error_code` | `result = src.data.err;` (void-payload → `src.err;`) | 3496 |
+| `.wrap_error_ok` | `result.data.payload = src;\n result.is_error = 0;` (void-payload → `result.err = 0;\n result.is_error = 0;`) | 3525 |
+| `.wrap_error_err` | `result.data.err = src;\n result.is_error = 1;` (void-payload → same pattern, `.err`) | 3554 |
+| `.check_optional` | `result = src.has_value;` | 3586 |
+| `.unwrap_optional` | `result = src.value;` (void-payload → nothing) | 3599 |
+| `.unwrap_optional_abi` | `result = src.has_value ? src.value : NULL;` | 3625 |
+| `.int_to_ptr` | `result = (type)(unsigned int)src;` | 3639 |
+| `.ptr_to_int` | `result = (usize)src;` | 3654 |
+| `.func_ref` | `result = fn_name;` (function pointer) | 3669 |
+
+Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
+
+### 1.10 emitModule — Top-Level Orchestration
+
+`emitModule` (`c89_emit.zig:1600`) drives one module's output:
+
+```
+emitModule(emitter, name, fns, c_includes, ptr_only_ids):
+  1. Populate pointer_only_map from ptr_only_ids
+  2. emitSpecialTypes(emitter, registry)      ← Phase 1: type headers
+  3. emitModuleHeader(name, fns, c_includes)  ← Phase 2a: includes + fwd decls
+  4. For each function (if not extern):
+     a. emitter.switch_cases = &func.switch_cases
+     b. emitFunctionSignature(emitter, &func)
+     c. emitHoistedDecls(emitter, &func)      ← temp declarations
+     d. emitFunctionBody(emitter, &func)       ← basic block insts
+     e. If func.is_pub and name=="main":
+        - Emit int main(void) wrapper
+        - Handles void/error_union/normal return types
+  5. emitModuleFooter()                       ← "/* EOF */\n"
+```
+
+#### main() Wrapper
+
+When a public function named `main` is found, an additional `int main(void)` wrapper is emitted:
+
+| Return Type | Wrapper |
+|------------|---------|
+| `void` | `int main(void) { zF_<hash>_main(); return 0; }` |
+| `error_union` (void payload) | `int main(void) { ... return result.is_error ? result.err : 0; }` |
+| `error_union` (non-void payload) | `int main(void) { ... return result.is_error ? result.data.err : (int)result.data.payload; }` |
+| normal | `int main(void) { return (int)zF_<hash>_main(); }` |
+
+#### emitModuleHeader (`c89_emit.zig:1558`)
+
+```
+/* Module: <name> */
+#include "zig_compat.h"
+#include "zig_special_types.h"
+<c-includes...>
+
+/* Forward declarations */
+<func-forward-decls...>
+```
+
+C-includes: if starts with `<`, emit raw (`#include <foo.h>`). Otherwise wrap in quotes (`#include "foo.h"`).
+
+### 1.11 emitModuleFooter (`c89_emit.zig:1595`)
+
+```
+/* EOF */
+```
+
+### 1.12 emitFunctionForwardDecl (`c89_emit.zig:1518`)
+
+Emits `return-type fn-name(param-types...);` — same mangling as signature but without param names.
+
+### 1.13 emitBaseIdxAccess (`c89_emit.zig:144`)
+
+Handles indexed load/store with ptr-to-array detection:
+
+- Ptr-to-array: `result = (*base)[idx];` or `(*base)[idx] = src;`
+- Normal: `result = base[idx];` or `base[idx] = src;`
+
+`isBasePtrToArray` (`c89_emit.zig:130`) checks if a temp's type is ptr-to-array.
+
+### 1.14 emitFieldAssign (`c89_emit.zig:181`)
+
+Resolves field access for `.assign_field`:
+
+| Base Type | Access Pattern |
+|-----------|---------------|
+| `slice_type` | `.ptr` (field 0), `.len` (field 1), `.f_<N>` (N>1) |
+| `tagged_union_type` | `.tag` (field 0), `.payload.<variant-name>._<sub>` or `.payload` (field 1) |
+| `ptr_type`/`many_ptr_type` → `struct_type` | `->field` |
+| `struct_type` | `.field` (with array copy: `{ ... while(_j < len) { base.field[_j] = src[_j]; _j++; } }`) |
+| unknown | `.f_<field_id>` (numeric fallback) |
+
+### 1.15 Helper Functions
+
+| Function | Line | Purpose |
+|----------|------|---------|
+| `getBinOpStr` | 2189 | Maps binary op u8 → C operator string (+, -, *, /, %, &, \|, ^, <<, >>, ==, !=, <, <=, >, >=) |
+| `getUnOpStr` | 2209 | Maps unary op u8 → C operator string (-, !, ~) |
+| `getCheckedCastFnName` | 2215 | Maps TypeId → checked cast function name (std_checked_cast_i8/u8/i16/u16/i32/u32/i64/u64) |
+| `getPrintFnName` | 2229 | Maps TypeId → print function name (std_print_u32/u64/i64/f64/bool/char/str) |
+| `emitCStringLiteral` | 2241 | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
+| `resolveTempName` | 2259 | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to mangleTempName |
+| `getTempTypeByIndex` | 696 | Find type_id for a temp_id by scanning hoisted_temps |
+| `mangleTempName` | 1667 | Format `zT_<temp_id>` for temp variables |
+| `mangleLocalName` | 1436 | Format local: keyword-safe (z_ prefix) or original |
+| `writeHex` | 92 | Write 8 hex digits of u32 to buffer |
+| `isTempOrBuiltin` | 113 | Check if name starts with `__tmp`, `__ret`, `__bootstrap` |
+| `isC89Keyword` | 125 | Check if name_id is in keyword_set |
+| `dbgPrintU32` | 75 | Debug: write u32 to stderr |
+
+### 1.16 Marker Reference
+
+| Marker | Location | Meaning |
+|--------|----------|---------|
+| `C` | emitModule | Start of C89 emission phase |
+| `FINAL_FLUSH` | main.zig | Final buffer flush, emission complete |
+| `FL:p` | bufferedWriterFlush | Flush start (pos value) |
+| `FE:p` | bufferedWriterFlush | Flush end (0) |
+| `E2A:t` | emitSpecialTypes sub-pass 2a | Processing type in pointer-only pass |
+| `E2B:t` | emitSpecialTypes sub-pass 2b | Processing type in value-embedding pass |
+| `D2:t` | emitSpecialTypes 2b | Debug: tagged union type in sub-pass 2b |
+| `ET:t` | emitTypeDefinition | Emitting type definition (tid + kind) |
+| `ES:n` | emitStructType | Struct type emitted (mangled name id) |
+| `FE:` | emitStructType | Field entry detail (name_id:type_id) |
+| `FWD:n=` | emitFunctionSignature | Forward decl detail (name_id, module_id) |
+| `HTT:` | emitHoistedDecls | Hoisted temp type tracking (temp_id, type_id) |
+| `P0:` | emitHoistedDecls | Parameter/local count |
+| `P1:` | emitHoistedDecls | Local decl discovery (temp, type_id, name_id) |
+| `P2:` | emitHoistedDecls | Final local count |
+| `P3:` | emitHoistedDecls | Assign propagation (dst, src, type) |
+| `D4:` | emitHoistedDecls | Type propagation debug summary |
+| `D7:` | emitHoistedDecls | Written type detail |
+| `D9:` | emitHoistedDecls | Call-result type (type 2) detail |
+| `RST:t` | resolveTempName | Temp resolution (temp_id → name_id) |
+| `I` | emitInst | Instruction start |
+| `BIN:` | emitInst (.binary) | Binary inst debug (dst, lhs, rhs) |
+| `BNR:` | emitInst (.binary) | Binary name resolution lengths |
+| `ASX:` | emitInst (.assign) | Assign debug (dst, src) |
+| `AS:t` | emitInst (.assign) | Assign type lookup |
+| `AIDX:` | emitInst (.assign_index) | Index assign debug (base, index, src) |
+| `AFE:` | emitInst (.assign_field) | Field assign debug (base, field_id) |
+| `LFD:` | emitInst (.load_field) | Load field debug (base, result) |
+| `LFU:` | emitInst (.load_field) | Load field unresolved (field_id) |
+| `LL:` | emitInst (.load_local) | Load local debug (name_id, result) |
+| `LLd:` | emitHoistedDecls (.load_local) | Load local type debug |
+| `STL:` | emitInst (.store_local) | Store local debug (name_id, value) |
+| `STN:` | emitInst (.store_local) | Store local name=value |
+| `DC2:` | emitInst (.call_direct) | Direct call debug (name_id, result) |
+| `AD:` | emitInst (.call) | Call arg count |
+| `INSTA:` | emitInst | Instantiation detail (optw, optt, optu, tulf, eup, euc) |
+| `INSTC:` | emitInst (.binary) | Constant RHS |
+| `VFLOW:` | emitInst | Variable flow tracking (cdv, ldv, spv, rnt, dlt, ehd, ehdv, ehdd, opV, oTV) |
+| `WRAP:main` | emitModule | main() wrapper emitted |
+| `GAPC:` | emitInst | Gap check markers (coe, cos) |
+| `JXP` | emitInst (.jump) | Jump instruction |
+| `MTP:ti` | emitHoistedDecls | Type 1 (void) temp skip |
+| `T4U:` | emitFunctionBody | Type 4 (?) temp declaration in body |
+| `INSTB:` | emitFunctionBody | Instance temp body |
+| `DxA:` | emitFunctionBody | Duplicate local skipped |
+
+---
+
+## 2. `cinclude.zig` — @cInclude Dedup (26 lines)
+
+### Function
+
+`cincludeUnionAll` (`cinclude.zig:7`):
+
+```
+cincludeUnionAll(module_reg, alloc) → []u32:
+  1. temp = u32ArrayListInit(alloc)   ← result accumulator
+  2. seen = u32ToU32MapInit(alloc)    ← dedup tracker
+  3. For each module in module_reg:
+     a. For each c_include name_id in module.c_includes:
+        i. If seen[ name_id ] exists → skip duplicate
+        ii. Else: seen[name_id] = 1, append name_id to temp
+  4. Return temp slice
+```
+
+This produces a flat deduplicated list of all `@cInclude` directives across all modules. Used by `emitModuleHeader` to emit `#include` lines per module.
+
+### Struct — ModuleEntry Fields Touched
+
+From `module_registry.zig`: `ModuleEntry` contains `c_includes: U32ArrayList` — a list of interned name_ids for `@cInclude` strings.
+
+---
+
+## 3. `name_mangler.zig` — Minimal Counter (7 lines)
+
+The standalone `name_mangler.zig` file contains only:
+
+```
+pub const NameMangler = struct { counter: u32 };
+pub fn nameManglerInit() NameMangler { return .{ .counter = 0 }; }
+```
+
+**This file is NOT the primary mangler used by `c89_emit.zig`.** The actual `NameMangler` with hash/cache/keyword handling is defined inline in `c89_emit.zig:83-90`. The standalone file appears to be a separate or deprecated implementation. See §1.3 above for the actual mangler.
+
+---
+
+## 4. Data Flow
+
+```
+LirFunction list (per module)
+    │
+    ▼
+emitModule(c89_emit.zig:1600)
+    │
+    ├─ pointer_only_map populated from caller-provided ids
+    │
+    ├─ emitSpecialTypes (type headers, topological order)
+    │   ├─ tstTopologicalSort (Kahn) ← TypeRegistry
+    │   ├─ Forward decls (typedef struct X X;)
+    │   ├─ Pointer-only type definitions
+    │   └─ Value-embedding type definitions
+    │
+    ├─ emitModuleHeader (includes + fn forward decls)
+    │   └─ cincludeUnionAll → deduped #include lines
+    │
+    ├─ For each function:
+    │   ├─ emitFunctionSignature → "return-type name(params) {"
+    │   ├─ emitHoistedDecls → local temp variables
+    │   └─ emitFunctionBody:
+    │       ├─ decl_local hoisting (dedup)
+    │       └─ Basic blocks w/ emitInst
+    │
+    └─ emitModuleFooter → "/* EOF */\n"
+            │
+            ▼
+        stdout (via BufferedWriter 4KB)
+```
+
+### Arena Usage
+
+| Arena | Usage |
+|-------|-------|
+| Scratch (reset per phase) | `C89Emitter` struct, `NameMangler` hash maps (cache, keyword_set, collision maps), template arrays (dedup_names[128], fl_name_ids[128], fl_temps[128]), type propagation arrays (d4_wtype, d4_wflag, d4_t2p) |
+
+---
+
+## 5. Debugging
+
+### Marker Activation
+
+Run compiler with `--markers` to emit phase trace to stderr:
+```
+$ zig1 --markers source.zig
+C            ← Phase 8 start
+FL:p<pos>    ← Buffer flush (Writes to stdout)
+FE:p0        ← Flush done
+...
+FINAL_FLUSH  ← Emission complete
+```
+
+### C89 Output Comparison Against zig0
+
+zig0 has `--dump-c89` flag that outputs its generated C89. zig1's output using the same input can be diffed:
+
+```
+$ zig0 --dump-c89 source.zig > /tmp/zig0.c 2>/dev/null
+$ zig1 source.zig > /tmp/zig1.c
+$ diff /tmp/zig0.c /tmp/zig1.c
+```
+
+Differences are expected due to:
+- Name mangling scheme differences
+- zig0 may emit dead code zig1 optimizes out
+- zig0 works around C89 portability issues differently
+
+### Type Emission Debug
+
+Markers `D2:t`, `E2A:t`, `E2B:t`, `ET:t`, `ES:n`, `FE:` trace type emission order. Check that types are emitted before they are used in function bodies.
+
+### Temp Type Propagation Debug
+
+Markers `P0:`-`P3:`, `D4:`, `D7:`, `D9:`, `HTT:` show the type resolution for each hoisted temporary. `D7:` shows resolved type vs hoisted type. `D4: MISMATCH` indicates a type mismatch between hoisted and resolved type.
+
+### Common Issues
+
+- **Undefined C89 identifiers**: Check type emission order (topo sort). Forward declarations sufficient for pointer-only types.
+- **Identifier too long**: 31-char C89 limit enforced in `nameManglerMangle`. Verify truncated names are still unique.
+- **Collision warnings**: `collision_mod` map catches duplicate mangled names. Counter suffix appended automatically.
+- **Missing main wrapper**: Check `func.is_pub == 1` and name is exactly `"main"`.
+- **C89 keyword conflicts**: `isC89Keyword` + `mangleC89Keyword` adds `z_` prefix.
