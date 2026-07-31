@@ -386,10 +386,11 @@ omitted; the table is hit-frequency only.
 - Arms 28/37 (`if_stmt`, `return_stmt`) are usually processed in StmtIter; the A4:K hits come
   from statement nodes appearing in expression position (e.g. a block's last child resolved by
   `semanticAnalyzerResolveExpr`, semantic_analyzer.zig:1335-1336).
-- Arm 31's kind value 56 collides with `mod_assign` (`swt_ex = 56` AND `mod_assign = 56`,
-  ast.zig:58/76). ResolveExpr checks `swt_ex` first (semantic_analyzer.zig:1137, 1299), so all
-  kind-56 resolutions here are switches. No example contains a genuine `%=`; if one did, it
-  would be mis-routed to the swt_ex arm (latent collision, not exercised).
+- Arm 31's kind value (swt_ex) now resolves correctly independently — `mod_assign=74` (was 56, F5 fix).
+  Previously `swt_ex = 56` collided with `mod_assign = 56` (ast.zig:58/76).
+  ResolveExpr checked `swt_ex` first (semantic_analyzer.zig:1137, 1299), so all
+  kind-56 resolutions were switches. No example contained a genuine `%=`; if one did, it
+  would have been mis-routed to the swt_ex arm (latent collision, fixed by F5).
 
 #### Measured: `@ptrCast(fn(...) T, p)` target type (`[gdb]`)
 

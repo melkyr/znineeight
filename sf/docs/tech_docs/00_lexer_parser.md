@@ -6,7 +6,7 @@
 |----------|-------|-------|
 | `TokenKind` variants | 92 | 0..91, `err_token(91)` for error recovery |
 | Keywords | 36 | `const, var, fn, pub, extern, export, test, struct, enum, union, if, else, while, for, switch, return, break, continue, defer, errdefer, try, catch, orelse, error, and, or, true, false, null, undefined, unreachable, void, bool, noreturn, c_char, anytype` |
-| `AstKind` variants | 97 (0..96) | `err=0` through `c_include=96`. **BUG: `swt_ex=56` collides with `mod_assign=56`** (ast.zig:76) |
+| `AstKind` variants | 97 (0..96) | `err=0` through `c_include=96`. **[FIXED] `mod_assign=74` (was 56, collided with `swt_ex=56`)** (F5, ast.zig:58) |
 | `AstNode` size | 24 bytes | Not packed — zig0 rejects packed structs with union fields (token.zig:115-117) |
 | Prec levels | 15 | `none(0)` .. `postfix(14)` (parser.zig:1784-1800) |
 | Debug markers | ~15+ | Parser: `PF:`, `BOP:tk`, `PSWE:n`, `PCB:E/T`, `PSTK:k`, `PIF:c`, `PBX:S/T/K`, `PLEN:l`, `ZZZ_*`; lexer: bare `LEX` (only for `"neighbors"`); **`LEX:n/k` in traces is from `lower.zig:448`, not the lexer** (P9) |
@@ -249,7 +249,7 @@ AST node storage and traversal.
 
 | Type | Line | Description |
 |------|------|-------------|
-| `AstKind` (enum u8) | 1 | 97 variants (0..96). **BUG (ast.zig:76):** `swt_ex=56` collides with `mod_assign=56`. |
+| `AstKind` (enum u8) | 1 | 97 variants (0..96). [FIXED] `mod_assign=74`, distinct from `swt_ex=56` (F5). |
 | `AstNode` (struct) | 101 | 24 bytes: `kind(u8)`, `flags(u8)`, `span_len(u16)`, `span_start(u32)`, `child_0/1/2(u32)`, `payload(u32)`. Offsets: 0,1,2,4,8,12,16,20. Verification string at line 113. |
 | `FnProto` (struct) | 115 | `name_id(u32)`, `params_start(u16)`, `params_count(u16)`, `return_type_node(u32)` |
 | `AstStore` (struct) | 212 | 8 parallel arrays: `nodes([]AstNode)`, `extra_children([]u32)`, `identifiers([]u32)`, `int_values([]u64)`, `float_values([]f64)`, `string_values([]u32)`, `fn_protos([]FnProto)`, `allocator(*Sand)` |
@@ -419,7 +419,7 @@ See table in parser section above. All go to stderr via `pal.markerWrite`.
 
 1. **Token packed layout** (token.zig:115-117): Desired 16-byte packed struct rejected by zig0 due to union field in `TokenValue`. Actual size: 24 bytes.
 
-2. **AstKind collision** (ast.zig:56,76): `AstKind.swt_ex = 56` collides with `AstKind.mod_assign = 56`. Two enum variants share the same discriminant. This will cause incorrect AST kind matching for switch expressions vs. modulus-assign operators.
+2. **AstKind collision** (ast.zig:58,76): [FIXED — F5] Previously `AstKind.swt_ex = 56` collided with `AstKind.mod_assign = 56`. Now `mod_assign = 74` (free discriminant between `for_stmt=73` and `swt_prong=75`), `swt_ex` unchanged at 56. All 97 discriminants are unique.
 
 3. **`nodes` size overestimate** (ast.zig:404): `astStoreComputeMemory` uses 28 bytes per node, but `AstNode` is 24 bytes. Discrepancy of 4 bytes per node.
 
@@ -538,9 +538,11 @@ expr-recursion depth-12 panic guard (parser.zig:181-183).
 - Control test (instrumentation validity) `[fprintf]`: a malformed repro (`var x = ` then newline)
   produced 2 `P9SYNC:` hits + `error[2000]` — so the zero counts are real, not a no-op probe.
 
-### 6.5 swt_ex=56 / mod_assign=56 Collision (Q5)
+### 6.5 swt_ex=56 / mod_assign=74 Collision (Q5) — [FIXED by F5]
 
-`[gdb]` + `[fprintf]` + `[markers]`:
+**Originally:** `swt_ex=56` collided with `mod_assign=56`. **F5 fix:** `mod_assign=74`; `swt_ex` unchanged at 56. All 97 discriminants now unique.
+
+`[gdb]` + `[fprintf]` + `[markers]` (pre-fix investigation):
 
 - No `%=` token (kind 42) in any token stream `[fprintf]` (P9TOK histograms) → `parserAddBinary`
   (parser.zig:257) never emits `mod_assign`.

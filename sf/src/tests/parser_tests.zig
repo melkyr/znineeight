@@ -648,30 +648,9 @@ fn testGapC_BreakExpr() void {
 }
 
 fn testGapC_SwitchBreak() void {
-    var buf: [65536]u8 = undefined;
-    var a = alloc_mod.sandInit(buf[0..]);
-    var in_ = interner_mod.stringInternerInit(&a, 4);
-    var sm = sm_mod.sourceManagerInit(&a);
-    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
     var s: []const u8 = "switch (x) { 1 => break :loop, else => {} }";
-    var tokens: [32]Token = undefined;
-    var lex = lexer_mod.lexerInit(s, @intCast(u32, 0), &in_, &d, &a);
-    var i: usize = 0;
-    while (i < 32) {
-        var tok = parser_mod.parserReadToken(&p) catch break;
-        tokens[i] = tok;
-        i += @intCast(usize, 1);
-    }
-    var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
-    var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
-}
-    var store = ast_mod.astStoreInit(&a);
-    var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
-    var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
-    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
+    var kind = lexAndKind(s);
+    assertEqU32(kind, @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
 
 fn testGapB_IfExprBody_Chain() void {
@@ -1135,6 +1114,7 @@ fn testParseExprPrecDepth() void {
 }
 pub fn runCriticalPatternTests() void {
     testParenExprNode();
+    testModAssignParse();
     testWhileCaptureNode();
     testForStmtName();
 }
@@ -1232,6 +1212,33 @@ fn testSwitchEmptyProngError() void {
 fn testParenExprNode() void {
     var ek: u32 = @intCast(u32, @enumToInt(AstKind.paren_expr));
     assertEqU32(ek, @intCast(u32, 32));
+}
+fn testModAssignParse() void {
+    var buf: [65536]u8 = undefined;
+    var a = alloc_mod.sandInit(buf[0..]);
+    var in_ = interner_mod.stringInternerInit(&a, 4);
+    var sm = sm_mod.sourceManagerInit(&a);
+    var d = diag_mod.diagnosticCollectorInit(&a, &sm, &in_);
+    token_mod.initKeywordTable(&a);
+    var tokens: [32]Token = undefined;
+    var src: []const u8 = "x %= y;";
+    var lex = lexer_mod.lexerInit(src, @intCast(u32, 0), &in_, &d, &a);
+    var i: usize = 0;
+    while (i < 32) {
+        var tok = lexer_mod.lexerNextToken(&lex);
+        tokens[i] = tok;
+        i += 1;
+        if (tok.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&a);
+    var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
+    var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
+    var node = store.nodes.items[root];
+    assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
+    var ec = ast_mod.astStoreGetExtraChildren(&store, node.payload);
+    var stmt = store.nodes.items[ec[@intCast(usize, 0)]];
+    assertEqU32(@intCast(u32, @enumToInt(stmt.kind)), @intCast(u32, @enumToInt(AstKind.mod_assign)));
+    assertEqU32(@intCast(u32, @enumToInt(AstKind.mod_assign)), @intCast(u32, 74));
 }
 fn testWhileCaptureNode() void {
     var buf: [65536]u8 = undefined;

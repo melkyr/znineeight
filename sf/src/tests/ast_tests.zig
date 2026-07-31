@@ -34,6 +34,7 @@ pub fn runAstUnitTests() void {
     testValidityValid();
     testValidityBadChild();
     testValidityBadPayload();
+    testAstKindCollisionFree();
     testAstMemoryBudget();
     //testVisitCombined();
     //testVisitDeep();
@@ -278,6 +279,10 @@ fn testValidityBadPayload() void {
         @intCast(u32, 0), @intCast(u32, 2),
         @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 999));
     assertTrue(!astStoreValidate(&store, bad));
+}
+
+fn testAstKindCollisionFree() void {
+    assertTrue(@enumToInt(AstKind.mod_assign) != @enumToInt(AstKind.swt_ex));
 }
 
 fn testAstMemoryBudget() void {
