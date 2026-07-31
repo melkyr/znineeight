@@ -203,14 +203,18 @@ Q1:FL2 Q1:KL3 Q1:TL54 Q1:FN88                       <- cross-module field (funct
 ```
 `[fprintf]` + `[markers]`.
 
-**Known quirk (sentinel):** `_stub_0` is both the discard sentinel (semantic_analyzer.zig:49,109)
+**Known quirk (sentinel) — [FIXED F6]:** `_stub_0` was both the discard sentinel (semantic_analyzer.zig:49,109)
 and a scratch register reused by `semanticAnalyzerResolveIndexAccess` / `ResolveSliceExpr` /
 `ResolveTupleLiteral` / `ResolveArrayInit` (semantic_analyzer.zig:1749, 1784, 1811, 1830). After
-any of those resolve, `_stub_0` holds a TypeId, so a later `_` ident misses stage 4 and returns
-TYPE_VOID instead of TYPE_UNDEFINED. Observed: mud 3× `_`→VOID (main.zig:164/173/202), gol 1×,
+any of those resolve, `_stub_0` held a TypeId, so a later `_` ident missed stage 4 and returned
+TYPE_VOID instead of TYPE_UNDEFINED. Observed pre-F6: mud 3× `_`→VOID (main.zig:164/173/202), gol 1×,
 lisp 1× (parser.zig:30), json 1× `_`→VOID + 1× `_`→DISCARD (main.zig:88, resolved before any
-index_access clobber). Benign: `resolveAssign` handles `_` by comparing the lhs name against a
-fresh interner lookup (semantic_analyzer.zig:977-982), not via `_stub_0`.
+index_access clobber).
+
+**Fix (F6, 2026-07-31):** Each clobber function now saves `_stub_0` at entry and restores it
+at all exit points (via `saved` local + restore before each `return`). The `resolveAssign`
+shield (semantic_analyzer.zig:977-982, comparing lhs name against a fresh interner lookup)
+remains as belt-and-suspenders for `_ = expr`. See F6-report for gate results.
 
 ### semanticAnalyzerResolveFieldAccess (`sf/src/semantic_analyzer.zig:230-485`)
 
