@@ -371,10 +371,11 @@ payload:
 | json_parser | JsonItem(2), Parser(3) | JsonValue(6) | FileError(4), ParseError(7) |
 | lisp_interpreter_curr | Sand(3), Tokenizer(2), EnvNode(3) | Value(6), Token(5) | LispError(22) |
 
-`fe` (FieldEntry) totals per pass: mud 15, gol 4, json 11, lisp 16 (46 across examples). `xn`
+`fe` (FieldEntry) totals per pass: mud 15, gol 4, json 11, lisp 19 (49 across examples). `xn`
 (error-tag indices) per pass: json 11, lisp 22 (33). **No example declares an `enum` or a plain
 `union`**, so EnumPayload and UnionPayload back-patch paths (symbol_registrator.zig:118-157,
-:158-194) are never populated here.
+:158-194) are never populated here. `RS` module-0 decl-kind dump (mud_server pass 1, quoted):
+`RS18939932:2=1 4=1 5=96 6=96 ... 842=2` (one per pass).
 
 ### Double registration: pass 1 vs pass 2
 
@@ -387,7 +388,7 @@ payload:
 | `VR` (duplicate insert) | none | every var_decl | `symbolTableInsert` rejects (symbol_table.zig:55) |
 | `DC:k...`, `X:`, `RN:`, `NP:`, `MC`/`MCDC` (new type) | present | absent | named-type / module-type dedup (type_registry.zig:631, :559-565) |
 | `RCA:p/i/H` (ident alias) | present | present again | `nameCacheGet` re-runs (symbol_registrator.zig:259-271) |
-| `RS` (module-0 dump) | present | present | symbol_registrator.zig:405 |
+| `RS` (module-0 dump) | present | present | symbol_registrator.zig:406 |
 
 Symbol tables after both passes are identical (dedup keeps pass-1 entries). Payload arrays are NOT
 idempotent — see Known Issue 6.
@@ -425,13 +426,13 @@ the **var_decl inline-type path** (symbol_registrator.zig:246-258), not the stan
 6. Tech doc 7 AstKind cases: all documented cases match source line numbers (see inaccuracies
    table); the `else => {}` default (symbol_registrator.zig:395, which silently skips `c_include`)
    is undocumented, and only `var_decl`, `fn_decl` and `else` are exercised by the 4 examples
-   (Known Issue 7).
+   (Known Issue 7). `[markers]` + `[fprintf]`
 
 ### Doc inaccuracies found (item 6)
 
 | Doc location | Claim | Reality |
 |--------------|-------|---------|
 | this doc :12 | "Type stubs populated | 4 | StructPayload, UnionPayload/TaggedUnionPayload, EnumPayload, ErrorSetPayload" | Only StructPayload, TaggedUnionPayload and ErrorSetPayload are populated by the 4 examples (no enum / plain union declared). All 4 back-patch code paths exist. |
-| this doc :13 | Debug-markers list omits `RS`, `D12`, `MC`, `DC`, `X`, `NP`, `RN`, `NGC` | All fire during registration (type_registry.zig:158-172, :308, :574, :645-654; symbol_registrator.zig:219-221, :405). |
+| this doc :13 | Debug-markers list omits `RS`, `D12`, `MC`, `DC`, `X`, `NP`, `RN`, `NGC` | All fire during registration: type_registry.zig:161 (DC), :172 (X), :308 (NGC), :318 (NP), :574-575 (MC/MCDC), :648 (RN); symbol_registrator.zig:219 (D12), :406 (RS). |
 | this doc :100 | "then `VR`/`VD`/`Vi`" (implies `VR` on every var_decl) | `VR` fires only on duplicate reject (symbol_registrator.zig:286-289); pass 1 has zero `VR`, pass 2 has one per var_decl. |
 | this doc Data Flow (:156-192) | Phase 3 "consumes" the phase-2 DepGraph | Phase 3 re-runs `registerModuleSymbols` and rebuilds the graph itself (main.zig:296); both graphs are identical (same edge counts, verified `[fprintf]`). |
