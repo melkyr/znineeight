@@ -2296,6 +2296,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                      break;
                  }
              }
+             if (pal.isMarkersEnabled()) {
              var mkb: []const u8 = "/*==MARKER_ASSIGN dst=";
             bufferedWriterWrite(&emitter.writer, mkb);
             var mkdst = resolveTempName(emitter, a.dst);
@@ -2306,6 +2307,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, mksrc);
             var mkend: []const u8 = "==*/\n";
             bufferedWriterWrite(&emitter.writer, mkend);
+            }
             var dst = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.dst);
             var src = resolveTempName(emitter, a.src);
             var rfli: u32 = emitter.fl_count;
@@ -2548,11 +2550,13 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     }
                 }
                 if (lf_res_void == @intCast(u8, 0)) {
+             if (pal.isMarkersEnabled()) {
                 var lfcm: []const u8 = "/*==LF:f"; bufferedWriterWrite(&emitter.writer, lfcm);
                 var lfcfb: [10]u8 = undefined; var lfcfl = itoa_mod.itoa(lf.field_id, lfcfb[0..]); var lfcfs: usize = @intCast(usize, 9) - @intCast(usize, lfcfl); bufferedWriterWrite(&emitter.writer, lfcfb[lfcfs..@intCast(usize, 9)]);
                 var lfcm2: []const u8 = " b"; bufferedWriterWrite(&emitter.writer, lfcm2);
                 var lfcbb: [10]u8 = undefined; var lfcbl = itoa_mod.itoa(lf.base, lfcbb[0..]); var lfcbs: usize = @intCast(usize, 9) - @intCast(usize, lfcbl); bufferedWriterWrite(&emitter.writer, lfcbb[lfcbs..@intCast(usize, 9)]);
                 var lfcm3: []const u8 = "==*/\n"; bufferedWriterWrite(&emitter.writer, lfcm3);
+                }
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               bufferedWriterWrite(&emitter.writer, result);
               var s: []const u8 = " = ";
@@ -3127,6 +3131,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
          .call_direct => |c| {
+            if (pal.isMarkersEnabled()) {
             var mkc: []const u8 = "/*==MARKER_CALL n=";
             bufferedWriterWrite(&emitter.writer, mkc);
             var mknb: [10]u8 = undefined; var mknl = itoa_mod.itoa(c.name_id, mknb[0..]); var mkns: usize = @intCast(usize, 9) - @intCast(usize, mknl);
@@ -3137,6 +3142,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, mkmmb[mkmms..@intCast(usize, 9)]);
             var mkend: []const u8 = "==*/\n";
             bufferedWriterWrite(&emitter.writer, mkend);
+            }
             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
             var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
              if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }

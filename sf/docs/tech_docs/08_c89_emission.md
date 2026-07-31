@@ -842,9 +842,10 @@ Also observed live: `.switch_br` (lisp:6180-6184 `switch (zT_6) { case 5: goto z
 
 **In-output debug comments**: the emitter writes `/*==MARKER_CALL n=<id> m=<mod>==*/`
 (`c89_emit.zig:3130-3139`), `/*==MARKER_ASSIGN dst=<n> src=<n>==*/`, `/*==LF:f0 b5==*/` and
-similar comment markers INTO the emitted C (200 in mud_server.c `[c89]`). These are written
-unconditionally (not gated on `--markers`) and are distinct from the stderr `I`/`BIN:`/… markers
-in §1.16. The `I` marker (per-instruction, `c89_emit.zig:2273`) appears throughout fn-body
+similar comment markers INTO the emitted C (200 in mud_server.c `[c89]`). These are gated on
+`pal.isMarkersEnabled()` (controlled by `--markers` CLI flag) and are distinct from the stderr
+`I`/`BIN:`/… markers in §1.16. Without `--markers`, zero MARKER_ comments appear in C89 output.
+[updated: 2026-07-31] The `I` marker (per-instruction, `c89_emit.zig:2273`) appears throughout fn-body
 emission — a "stray I\n late in the trace" is this documented marker, not a separate artifact.
 
 ### 6.8 Gaps & Unexercised Paths Found

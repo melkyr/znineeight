@@ -91,6 +91,10 @@ pub fn markersEnabled(on: u32) void {
     g_markers_enabled = on;
 }
 
+pub fn isMarkersEnabled() bool {
+    return g_markers_enabled != 0;
+}
+
 const itoa_mod = @import("util/itoa.zig");
 
 pub fn markerWrite(msg: []const u8) void {
