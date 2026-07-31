@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/rogue_mud/main.zig -o build/rogue_mud
+./sf/build/zig0 examples/zig0/rogue_mud/main.zig -o build/rogue_mud
 ```
 
 ### zig1 (dump C89)

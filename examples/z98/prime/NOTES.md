@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/prime/main.zig -o build/prime
+./sf/build/zig0 examples/zig0/prime/main.zig -o build/prime
 ```
 
 ### zig1 (dump C89)

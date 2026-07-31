@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/json_parser/main.zig -o build/json_parser
+./sf/build/zig0 examples/zig0/json_parser/main.zig -o build/json_parser
 ```
 
 ### zig1 (dump C89)

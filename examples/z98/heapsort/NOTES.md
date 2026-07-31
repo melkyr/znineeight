@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/heapsort/main.zig -o build/heapsort
+./sf/build/zig0 examples/zig0/heapsort/main.zig -o build/heapsort
 ```
 
 ### zig1 (dump C89)

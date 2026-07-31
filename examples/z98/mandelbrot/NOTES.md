@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/mandelbrot/mandelbrot.zig -o build/mandelbrot
+./sf/build/zig0 examples/zig0/mandelbrot/mandelbrot.zig -o build/mandelbrot
 ```
 
 ### zig1 (dump C89)

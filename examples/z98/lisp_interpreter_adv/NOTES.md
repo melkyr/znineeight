@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/lisp_interpreter_adv/main.zig -o build/lisp_interpreter_adv
+./sf/build/zig0 examples/zig0/lisp_interpreter_adv/main.zig -o build/lisp_interpreter_adv
 ```
 
 ### zig1 (dump C89)

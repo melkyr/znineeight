@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/fibonacci/main.zig -o build/fibonacci
+./sf/build/zig0 examples/zig0/fibonacci/main.zig -o build/fibonacci
 ```
 
 ### zig1 (dump C89)

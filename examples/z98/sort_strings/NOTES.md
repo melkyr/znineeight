@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/sort_strings/sort_strings.zig -o build/sort_strings
+./sf/build/zig0 examples/zig0/sort_strings/sort_strings.zig -o build/sort_strings
 ```
 
 ### zig1 (dump C89)

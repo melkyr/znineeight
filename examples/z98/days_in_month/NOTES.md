@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/days_in_month/main.zig -o build/days_in_month
+./sf/build/zig0 examples/zig0/days_in_month/main.zig -o build/days_in_month
 ```
 
 ### zig1 (dump C89)

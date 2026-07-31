@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/quicksort/quicksort.zig -o build/quicksort
+./sf/build/zig0 examples/zig0/quicksort/quicksort.zig -o build/quicksort
 ```
 
 ### zig1 (dump C89)

@@ -12,7 +12,7 @@
 
 ### zig0
 ```bash
-./sf/build/zig0 examples/z98/func_ptr_return/func_ptr_return.zig -o build/func_ptr_return
+./sf/build/zig0 examples/zig0/func_ptr_return/func_ptr_return.zig -o build/func_ptr_return
 ```
 
 ### zig1 (dump C89)
