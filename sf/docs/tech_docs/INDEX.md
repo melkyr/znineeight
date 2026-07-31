@@ -89,7 +89,7 @@ zig0 is a C++98 bootstrap compiler. It emits valid C89 but:
 | 2 | `phase_SymbolRegistration` | symbol_registrator.zig, symbol_table.zig | `S`, `S0`, `Vi` | scratch |
 | 3 | `phase_TypeResolution` | type_resolver.zig, type_registry.zig, const_alias_prepass.zig | `T`, `T0` | permanent |
 | 4 | `phase_ComptimeEvaluation` | comptime_eval.zig | `CE` | (none) |
-| 5 | `phase_SemanticAnalysis` | semantic_analyzer.zig, coercion.zig, resolved_type_table.zig, constraint_checker.zig | `RS`, `DN`, `SA`, `sA` | scratch |
+| 5 | `phase_SemanticAnalysis` | semantic_analyzer.zig, coercion.zig, resolved_type_table.zig, constraint_checker.zig | `RS`, `MZ`, `AD`, `DSE`, `DN`, `SA`, `sA`, `P0-P3`, `V2`, `REG` | scratch |
 | 6 | `phase_StaticAnalyzers` | analyzer.zig, state_map.zig | `A` | scratch |
 | 7 | `phase_LIRLowering` | lower.zig, lir.zig | `L`, `M`, `R`, `F` | scratch |
 | 8 | `phase_C89Emission` | c89_emit.zig, name_mangler.zig, cinclude.zig | `C`, `FINAL_FLUSH` | scratch |
@@ -293,7 +293,7 @@ zig0 is a C++98 bootstrap compiler. It emits valid C89 but:
 | `SymbolKind` | symbol_table.zig:14 | local/param/global/function/type_alias/module/test_sym |
 | `SymbolTable` | symbol_table.zig:24 | Per-module symbol array |
 | `ModuleEntry` | module_registry.zig:23 | Module descriptor (id, path_id, state, ast_root, imports, symbol_table, type_offset) |
-| `ModuleRegistry` | module_registry.zig:— | Module graph registry |
+| `ModuleRegistry` | module_registry.zig:163 | Module graph registry |
 | `ModuleState` | module_registry.zig:15 | pending/parsing/parsed/resolved/failed |
 | `StateMap` | state_map.zig:9 | Delta-linked parent chain for forking state |
 | `StateEntry` | state_map.zig:4 | name_id + state byte |
