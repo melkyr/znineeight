@@ -24,7 +24,7 @@
 > `decl.child_1` (analyzer.zig:780), but the parser stores the function body in
 > `child_0` (parser.zig:1417 — `astStoreAddNode(..., body_node, 0, 0, proto_idx)`),
 > and both sema and LIR read the body from `child_0`
-> (semantic_analyzer.zig:1391/1421, lower.zig:4192). `child_1` is therefore
+> (semantic_analyzer.zig:1391/1421, lower.zig:4164). `child_1` is therefore
 > **always 0** for `fn_decl`s, so `if (decl.child_1 == 0) continue;` fires for
 > every function and no analyzer pass ever executes. Verified by:
 > `[gdb]` (breakpoints on all 4 pass entry points: 0 hits; decl dump shows
@@ -39,13 +39,15 @@
 
 ### Per-example analysis counts (4 working examples)
 
-`[markers]` counts from the LIR per-module/per-decl loop (main.zig:535 `M`,
-main.zig:569 `F`) — the only per-decl marker source in the pipeline; the static
+`[markers]` counts from the LIR per-module/per-decl loop (main.zig:535 `M`); the
+per-fn_decl count uses the `FNL` marker (lower.zig:4108, emitted once per lowered
+`fn_decl`) — **not** the bare `F` marker (main.zig:569), whose raw bytes in the
+traces are dominated by F-prefixed LIR markers (FND/FNT/FNR/...). The static
 analyzer phase itself emits only the `A` phase marker (main.zig:471) and
 `analyzer.zig`/`state_map.zig` contain **zero** `markerWrite` calls. Cross-checked
 with `[fprintf]` decl-kind dumps from an instrumented build.
 
-| Example | modules | fn_decls (markers `F`) | fn_decls (fprintf dump) | fn_decls with body (`child_0!=0`) | functions analyzed |
+| Example | modules | fn_decls (markers `FNL`) | fn_decls (fprintf dump) | fn_decls with body (`child_0!=0`) | functions analyzed |
 |---------|---------|------------------------|-------------------------|-----------------------------------|--------------------|
 | mud_server | 4 | 20 | 20 | 7 | 0 |
 | game_of_life | 3 | 11 | 11 | 7 | 0 |
@@ -58,7 +60,8 @@ example (0 breakpoint hits on every pass entry point; 0 per-pass fprintf reports
 ### StateMap fork/merge evidence
 
 Because no function is analyzed, StateMap is never forked/merged in the pipeline
-(`[fprintf]` counters `forks/merges/unknown_writes/drops` all 0; no
+(`[fprintf]` counters were never printed — no function analyzed; fork/merge counts
+are therefore 0 by construction; no
 `budget_peak` output → `PER_FUNC_BUDGET` check at analyzer.zig:797 is
 unreachable today). The merge **semantics** were verified standalone via a
 direct harness of `state_map.zig` (`[fprintf]`):
@@ -549,7 +552,7 @@ Each pass resets the scratch arena (`alloc_mod.sandReset`) after completion, so 
 **⚠️ Verified gap (`[gdb]`/`[fprintf]`, 2026-07-31):** the "no-body" guard at
 analyzer.zig:780 (`if (decl.child_1 == 0) continue;`) reads `child_1`, but the
 parser stores the fn body in `child_0` (parser.zig:1417) and sema/lower read
-`child_0` (semantic_analyzer.zig:1391/1421, lower.zig:4192). Since `child_1` is
+`child_0` (semantic_analyzer.zig:1391/1421, lower.zig:4164). Since `child_1` is
 always 0 for fn_decls, **every function is skipped** and none of the 4 passes
 runs — see Deep-Dive Evidence above. Correct guard: `decl.child_0`.
 
@@ -624,7 +627,7 @@ Fork pattern:
 
 ---
 
-### stateMapMergeStates (`sf/src/analyzer.zig:73-105`)
+### stateMapMergeStates (`sf/src/state_map.zig:73-105`)
 
 `[inference: iterate branch_a entries, iterate branch_b entries → if a_state != b_state → set parent with unknown_state; else set parent with common state; if only in a or only in b → check parent for divergence]`
 
