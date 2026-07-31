@@ -449,8 +449,15 @@ Combined: 4 MB (DEV_MAX_MEM=8 MB allows 2x headroom)
 | Arena | Contents | Reset Behavior |
 |-------|----------|----------------|
 | Permanent | StringInterner, SourceManager, DiagnosticCollector, interned strings, ModuleRegistry, SymbolRegistry, TypeRegistry, hash maps, const_alias_prepass, type_resolver intermediates | Never reset |
-| Module | AstStore (all AST nodes), ResolvedTypeTable, CoercionTable, LirFunctionArrayList, DepGraph, call_arg_types/comptime_values | Never reset |
-| Scratch | Per-phase temporaries: parser tokens, DepGraph per run, TypeResolver workspace, analyzer state, lowerer BasicBlocks, c89 emitter | Reset at phase start |
+| Module | AstStore (all AST nodes), ResolvedTypeTable, CoercionTable, LirFunctionArrayList, call_arg_types/comptime_values | Never reset |
+| Scratch | Per-phase temporaries: parser tokens, DepGraph per phase, TypeResolver workspace, analyzer state, lowerer BasicBlocks, c89 emitter | Reset at phase start |
+
+> **DepGraph correction (P10, `[fprintf]`):** the live DepGraph is **scratch-local, one per
+> phase**. `phase_SymbolRegistration` (`main.zig:262`) and `phase_TypeResolution`
+> (`main.zig:292`) each call `depGraphInit(&ctx.alloc.scratch)` after their `sandReset`;
+> phase 3 does not consume phase 2's graph. The module-arena DepGraph referenced here is the
+> `ctx.dep_graph` field (`main.zig:154`), which the pipeline **never populates** (len stays 0
+> in all 4 example runs) — it is a dead field.
 
 ### CompilerAlloc Init Sequence (main.zig)
 
@@ -470,6 +477,12 @@ Then subsystems allocate from permanent arena:
 
 ### TrackingAllocator Per-Phase
 
+> **P10 correction `[grep]`:** the pattern below is **aspirational — not used.** No phase in
+> `sf/src/` calls `trackingAllocatorInit`/`trackingAlloc`/`trackingReset`/`trackingPeak`;
+> `TrackingAllocator` (allocator.zig:121-151) is only defined, never wired in. Phases allocate
+> directly through `sandAlloc`. Per-phase peaks were measured in P10 by reading each tier's
+> `peak` field at phase boundaries, not via `TrackingAllocatorReport`.
+
 Each phase that tracks memory creates a `TrackingAllocator` wrapping the scratch arena:
 
 ```
@@ -483,6 +496,41 @@ trackingReset(&track);  // also sandReset(scratch)
 ### Memory Budget Checkpoints
 
 `checkCombinedPeak` is called at phase boundaries (after import resolution, after type resolution). If `perm_kb + mod_kb + scr_kb > max_mem_kb`, compiler exits with error.
+
+### Empirical Arena Peaks — P10 evidence `[markers]` + `[fprintf]`
+
+`--track-memory` final values (release zig1, all 4 examples, exit 0, zero diagnostics) confirm
+the tier sizing is ample:
+
+| Example | perm | mod | scr | total |
+|---------|------|-----|-----|-------|
+| `mud_server` | 72K | 103K | 184K | 359K |
+| `game_of_life` | 65K | 92K | 186K | 343K |
+| `lisp_interpreter_curr` | 118K | 412K | 844K | 1374K |
+| `json_parser` | 52K | 197K | 376K | 625K |
+
+**Behavior confirmed empirically** `[fprintf]` (per-phase `peak` reads at each phase boundary,
+debug build — identical to release `--track-memory` final values):
+
+1. **`sandResetPeak` (allocator.zig:51) masks earlier scratch usage.** `phase_StaticAnalyzers`
+   calls `sandReset` + `sandResetPeak` at entry (`main.zig:472-473`), zeroing the scratch
+   `peak`. The final `track-memory` `scr=` therefore reports only the max of LIR lowering /
+   C89 emission scratch (phases 6-8), **not** the pipeline-wide high-water mark. Pre-reset
+   scratch peaks (phases 1-5) were ~100K (mud/gol/json) and ~208K (lisp) — all below the
+   post-reset phase-8 values here, so the reported `scr=` happens to be the global max, but
+   only by coincidence.
+2. **Scratch is dominated by C89 emission**, not parsing: per-example max scratch was
+   import≈103/100/208/101K but c89 reached 184/186/844/376K.
+3. **Module arena grows most during sema** (ResolvedTypeTable/CoercionTable/enum_value_table
+   writes): mud 62→96K, gol 61→90K, lisp 238→399K, json 121→191K across phase 5.
+4. **Permanent arena grows most during C89 emission** (type/ident name interning): mud 33→72K,
+   gol 19→65K, lisp 87→118K across phase 8.
+5. **`TrackingAllocator` is currently unused by `main.zig`** — the pipeline calls plain
+   `sandAlloc`; `trackingAlloc*`/`trackingReset` exist in `allocator.zig:121-151` but no phase
+   wires one in. Per-phase peaks were obtained in P10 by reading `peak` directly, not via
+   `TrackingAllocatorReport`.
+6. The **`TypeRegistry` type_db sand** is a separate 128KB **stack** buffer (`main.zig:145-146`),
+   not part of `CompilerAlloc`; `track-memory` does not include it.
 
 ---
 

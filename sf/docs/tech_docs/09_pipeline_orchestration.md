@@ -66,7 +66,7 @@ Both define `CompilerCli`, `CompilerContext`, `matchFlag`, `cstrToSlice`, `parse
 | 10 | `symbol_reg` | `*SymbolRegistry` | permanent | Symbol table per module |
 | 11 | `resolved_types` | `*ResolvedTypeTable` | module | Type expr → TypeId mapping |
 | 12 | `coercion_table` | `*CoercionTable` | module | Coercion rule storage |
-| 13 | `dep_graph` | `*symbol_registrator.DepGraph` | module | Symbol dependency graph |
+| 13 | `dep_graph` | `*symbol_registrator.DepGraph` | module (UNUSED) | Symbol dependency graph — **dead field**: initialized at `main.zig:154` but never populated/consumed by the pipeline (see §5 DepGraph Lifecycle). Live graphs are scratch-local per phase. |
 | 14 | `lir_fns` | `LirFunctionArrayList` | module | Compiled LIR functions |
 | 15 | `enum_value_table` | `hash_mod.U32ToU32Map` | module | Enum field → value mapping |
 | 16 | `call_arg_types` | `hash_mod.U32ToU32Map` | module | Per-call argument types |
@@ -221,6 +221,113 @@ runCompiler(ctx)
 | After phase 6 | `diagnosticCollectorHasErrors` | 2 |
 | After phase 7 | `diagnosticCollectorHasErrors` | 2 |
 | After phase 8 | `warnings_as_errors or warn_error` + warning count > 0 | 1 |
+
+### Empirical Arena Peaks — `--track-memory` (P10 evidence) `[markers]` + `[fprintf]`
+
+Final `--track-memory` line (`main.zig:226-245`) on the release zig1, all 4 examples
+(`--markers --track-memory --dump-c89`, exit 0, zero diagnostics):
+
+| Example | perm | mod | scr | total | AST nodes (`L\nnodes=` `main.zig:507`) |
+|---------|------|-----|-----|-------|----------------------------------------|
+| `mud_server` | 72K | 103K | 184K | 359K | 944 |
+| `game_of_life` | 65K | 92K | 186K | 343K | 807 |
+| `lisp_interpreter_curr` | 118K | 412K | 844K | 1374K | 3854 |
+| `json_parser` | 52K | 197K | 376K | 625K | 1568 |
+
+All well under the 4 MB static arena total (`allocator.zig:74-76`) and 8 MB `DEV_MAX_MEM`
+(`allocator.zig:78`).
+
+**Per-phase peaks** `[fprintf]` (debug build `/tmp/z1`, values in KB; perm/mod/scr = `peak` of
+each tier read at the phase boundary — matches release `--track-memory` byte-for-byte):
+
+| Phase boundary | mud perm/mod/scr | gol perm/mod/scr | lisp perm/mod/scr | json perm/mod/scr |
+|----------------|------------------|------------------|-------------------|-------------------|
+| after import | 26/57/103 | 15/58/100 | 75/229/208 | 29/114/101 |
+| after symreg | 28/57/103 | 16/58/100 | 79/229/208 | 32/114/101 |
+| after typeres | 32/61/103 | 19/59/100 | 87/237/208 | 37/120/101 |
+| after comptime | 32/62/103 | 19/61/100 | 87/238/208 | 37/121/101 |
+| after sema | 32/96/103 | 19/90/100 | 87/399/208 | 37/191/101 |
+| after analyzers | 32/96/**0** | 19/90/**0** | 87/399/**0** | 37/191/**0** |
+| after lir | 33/103/155 | 19/92/162 | 87/412/715 | 37/197/319 |
+| after c89 | 72/103/184 | 65/92/186 | 118/412/844 | 52/197/376 |
+
+Observations:
+- **scratch `scr=` drops to 0 after phase 6**: `phase_StaticAnalyzers` calls
+  `sandResetPeak` (`main.zig:473`) right after `sandReset`. The final `track-memory` `scr=`
+  therefore reports the peak of **phases 6-8 only** (max of LIR lowering / C89 emission) — any
+  earlier-phase scratch pressure (phases 1-5 here peak ~100-208K) is masked by the reset.
+- **module `mod=` grows most during phase 5** (sema): mud 62→96K, gol 61→90K, lisp 238→399K,
+  json 121→191K — `ResolvedTypeTable`/`CoercionTable`/`enum_value_table` writes in module arena.
+- **permanent `perm=` grows most during phase 8** (C89 emission): mud 33→72K, gol 19→65K,
+  lisp 87→118K — the emitter interns emitted type/ident names into the permanent arena.
+- The `TypeRegistry` type_db sand is a **separate 128KB stack buffer** (`main.zig:145-146`),
+  not part of the 3-tier arena and not included in `track-memory`.
+
+### DepGraph Lifecycle — Cross-Phase Data Persistence (Q3) `[fprintf]`
+
+The pre-plan audit asked "how does DepGraph survive phase 2→3?". Answer: **it does not, and it
+does not need to — each phase builds its own scratch-local graph, and phase 3 rebuilds it.**
+Evidence from instrumenting the generated C89 (`/tmp/z1`, `main.c` phase functions):
+
+```
+mud:  DG:S2:init  local dg=0xff9d5b8c scratch.pos=0  ctx->dep_graph=0xff9d6194 module-dg.len=0
+      DG:S2:end   local dg len=15 scratch.pos=192  module-dg.len=0
+      DG:T3:entry PRE-reset scratch.pos=192        ← phase-2 edges still physically present
+      DG:T3:post-reset scratch.pos=0               ← sandReset (main.zig:291) wipes them
+      DG:T3:after reg local dg len=15              ← phase 3 rebuilt the SAME 15 edges
+```
+
+Edge counts (identical between phase 2 and phase 3, proving full rebuild): mud 15, gol 4,
+lisp 19, json 11.
+
+- `phase_SymbolRegistration` creates a **local** `dep_graph` in scratch (`main.zig:262`) and
+  passes it only to `registerModuleSymbols`; the graph is **never consumed inside phase 2**
+  (no `typeResolverBuild`). It is write-only work.
+- `phase_TypeResolution` resets scratch (`main.zig:291`), wiping the phase-2 edges, then
+  creates its **own** local `dep_graph` in scratch (`main.zig:292`), re-runs the identical
+  `registerModuleSymbols` loop (`main.zig:296`), and consumes it via `typeResolverBuild`
+  (`main.zig:301`), which copies the edges into the TypeResolver's own `depend_items` arrays.
+- `ctx.dep_graph` (the module-arena field initialized at `main.zig:154`) is **never populated
+  by the pipeline** — `module-dg.len` stays 0 for all 4 examples. It is a dead field.
+  → Correct the CompilerContext table (row 13): the live DepGraph is scratch-local and per-phase;
+  the module-arena `ctx.dep_graph` is unused.
+- **Implication for phase isolation:** no cross-phase heap handoff is relied upon for DepGraph;
+  the 00 doc "Module arena contains DepGraph" claim (00_shared_infra.md "Who Allocates Where")
+  describes the dead `ctx.dep_graph` field, not the live pipeline.
+
+### Phase Timing — marker deltas (Q4) `[fprintf]`
+
+Markers carry no timestamps, so per-phase wall-clock was measured by instrumenting the
+generated C89 with `gettimeofday` at each phase boundary in `runCompiler` (`/tmp/z1/main.c`).
+Values are wall-clock ms on this Linux host, 32-bit `-O0` debug build — treat as **relative**
+proportions, not absolute perf.
+
+**lisp_interpreter_curr** (largest example):
+
+| Phase | ms | % |
+|-------|----|---|
+| import | 48.8 | 9.2% |
+| symreg | 1.0 | 0.2% |
+| typeres | 10.1 | 1.9% |
+| comptime | 0.5 | 0.1% |
+| sema | 125.8 | 23.7% |
+| analyzers | 0.01 | ~0% |
+| lir | 118.3 | 22.3% |
+| c89 | 226.4 | 42.7% |
+
+C89 emission dominates (~43%), then sema (~24%), then LIR lowering (~22%). Import is ~9%.
+Smaller examples share the shape: mud 12.3/0.4/3.3/0.6/30.7/0.01/27.3/41.0 ms;
+gol 9.7/0.2/1.5/1.0/19.7/0.01/24.0/44.4 ms; json 20.0/0.4/4.2/0.2/51.4/0.01/52.1/91.9 ms.
+Phases 2, 4, 6 are negligible on all 4 examples.
+
+### `--dump-c89` vs no-dump — phase skipping (Q5) `[markers]` + source
+
+**No pipeline phase is skipped when `--dump-c89` is absent.** Only `phase_C89Emission`
+early-returns (`main.zig:604` `if (!ctx.cli.dump_c89) return;`). Evidence: a no-dump run
+emits the same `I Z S T CE RS A L C` marker set and LIR lowering still builds `lir_fns`, but
+no `FINAL_FLUSH` marker (`main.zig:627`) and 0 bytes to stdout. `--dump-types` and `--dump-lir`
+are parsed (`main.zig:693-696`) but **no phase consults them** — they have no effect on the
+current pipeline. The LIR lowering + scratch work for an un-emitted build is wasted.
 
 ---
 
@@ -582,6 +689,39 @@ Each phase resets the scratch arena on entry (`alloc_mod.sandReset(&ctx.alloc.sc
 2. **Trace phase entry/exit:** Enable `--markers` and grep for phase markers
 3. **Inspect AST before a phase:** Add a `dump_ast` call at the phase entry
 4. **Force error exit:** Trigger `diagnosticCollectorHasErrors` early to test error path
+
+### Marker Coverage Assessment (Q6) `[markers]` + `[fprintf]`
+
+Per-phase marker inventory (`main.zig` line refs):
+
+| Phase | Markers | Density |
+|-------|---------|---------|
+| 1 import | `I`, `Z` (`250`, `256`) | thin — entry/exit only, no per-module detail |
+| 2 symreg | `S`, `S0` + per-decl AstKind values (`260`, `274-283`) | dense — one line per root decl |
+| 3 typeres | `T`, `T0` + per-decl AstKind values (`290`, `311-320`) | dense |
+| 4 comptime | `CE` (`327`) | thin — single marker, no per-node detail |
+| 5 sema | `RS MZ AD DSE DN SA sA V2: V49:p/t/k REG:tl/tt P0-P3 R0n R1t R2s AI FI` (`344-406`) | densest |
+| 6 analyzers | `A` (`471`) | thin — single marker, no per-function detail |
+| 7 lir | `L nodes= extra= M R F A0` (`506-584`) | dense |
+| 8 c89 | `C`, `FINAL_FLUSH` (`603`, `627`) | thin — entry/exit only |
+
+Gaps: phases 1, 4, 6, 8 have entry/exit markers only; internal behavior of comptime eval,
+static analyzers, and C89 emission is invisible to `--markers` alone.
+
+**The 5 pre-plan tech-doc gaps — resolution method classification** (which need markers vs
+GDB/fprintf):
+
+| Gap | Resolved by | Marker-resolvable? |
+|-----|-------------|--------------------|
+| 1 comptime scope incomplete | P4 (`[markers]`+`[fprintf]`+`[inference]`) | Partially — the sema/lower boundary needed fprintf/source |
+| 2 cross-phase DepGraph persistence | **P10 this task** (`[fprintf]`) | **No** — no marker exposes arena state or edge counts |
+| 3 symbol resolution priority order | P5 (`[fprintf]` primary, `[markers]` confirm paths) | Partially — markers show which path fired, not the order |
+| 4 coercion table 5→7 handoff | P7 (`[markers]` CEM/CEP per lowerExpr + `[fprintf]`) | **Yes** — CEP/CEM markers distinguish the paths |
+| 5 StateMap fork/merge precision | P6 (`[markers]`+`[fprintf]`+`[gdb]`) | Partially — merge-to-99/branch-drop visible via markers; counters needed fprintf |
+| (new) phase timing | P10 this task (`[fprintf]`) | **No** — markers carry no timestamps |
+
+**Method summary:** 1 gap fully marker-resolvable (4), 3 partially (1, 3, 5), 2 need fprintf
+(2, 6/timing). None required GDB on this task; P5/P6 used GDB for specific values.
 
 ---
 
