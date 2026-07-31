@@ -46,7 +46,7 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `is_pub` | `u8` | Public visibility flag |
 | `is_variadic` | `u8` | Variadic parameter flag |
 
-### All 47 LirInst Variants `sf/src/lir.zig:22`
+### All 54 LirInst Variants `sf/src/lir.zig:22`
 
 #### Declarations
 | Variant | Fields | Purpose |
@@ -526,6 +526,8 @@ lowerStmtBody(node)  // recurses into block children
 - For `defer` (kind=0): always emits the body
 - For `errdefer` (kind=1): only emits when `is_error_path != 0`
 
+**Important (verified, P7):** the expansion **pops** the action — `self.defer_stack.len = i` at `lower.zig:3931` (errdefer at `:3935`) — before lowering its body. A `defer`/`errdefer` is therefore lowered at exactly **one** scope exit, not at every exit. The design doc (`docs/sf/AST_LIR_Lowering_p2.md:406-421`) shows the same loop **without** the pop; the implementation deviates. See the P7 `readFile`/`fclose` trace below (item 3): only the first-lowered return path gets the inlined `fclose`, the other return paths leak the `FILE*`.
+
 Called at:
 - Scope exit in `lowerStmtBody` (target_depth = self.scope_depth, is_error_path = 0)
 - `return_stmt` (target_depth = 0, is_error_path = 0)
@@ -548,7 +550,7 @@ This means all temporaries are declared at function entry, before any control fl
 
 ## TCO (Tail Call Optimization) Pattern
 
-The lowerer does **not** implement TCO. No tail-call elimination or sibling-call optimization is performed. Function calls always produce a `call` or `call_direct` instruction regardless of position.
+The lowerer does **not** implement TCO. No tail-call elimination or sibling-call optimization is performed. Function calls always produce a `call` or `call_direct` instruction regardless of position. The `loop_header` LirInst variant (lir.zig:31) exists but is never emitted by the lowerer. See the P7 evidence below (item 5) for the lisp `eval` trampoline trace.
 
 ---
 
@@ -586,22 +588,138 @@ Blocks are created lazily via `createBlock()`. Every branch/switch terminator se
 
 ---
 
+## Experimental Evidence (P7 Deep-Dive, 2026-07-31)
+
+Verified on the 4 working examples (`examples/z98/{mud_server,game_of_life,lisp_interpreter_curr,json_parser}/main.zig`) with two independent methods:
+
+- `[markers]` — the P0 traces `/tmp/dd/*.mrk` (`zig1 --markers --dump-c89`). The LIR-phase region runs from the `L\n` marker (`main.zig:506`) through the per-module `M<idx>:<ast_root>:R<decls>:<kinds>` markers (`main.zig:535`), the per-fn `FNL:<name_id>` markers (`lower.zig:4108`) and `D3HT:` temp dumps (`lower.zig:4175`), up to `A0 <kinds>` (`main.zig:584`) and the closing `C\n` (`main.zig:603`).
+- `[fprintf]` — a debug build of zig1 (`zig0` bootstrap into a fresh dir, `gcc -g -O0`) with `emitInst`, `expandDefers`, `pushDefer`, `applyCoercion`, `materializeInto` and the `@ptrCast` builtin site instrumented in the generated `lower.c` (`fprintf` to stderr). Instrumentation does **not** perturb codegen: `--dump-c89` output is byte-identical to the P0 baselines (md5 mud `87954d75…`, gol `9cc38ab9…`, lisp `6a8ca449…`, json `9492e3b3…`).
+
+Phase-scope summary `[markers]`:
+
+| Example | `nodes=`/`extra=` | modules | fn_decls lowered (`FNL`) | fns with bodies (emitted C) | `A0` (module-0 decl kinds) |
+|---------|------------------|---------|--------------------------|------------------------------|----------------------------|
+| mud_server | 944 / 343 | 4 (`M0:843:R28` `M1:926:R1` `M2:923:R2` `M3:943:R3`) | 20 | 7 | `1 1 96 96 2 2 2 2 2 2 2 2 1 2 2 2 2 1 1 1 1 1 1 2 1 2 2 2` |
+| game_of_life | 807 / 382 | 3 (`M0:774:R14` `M1:777:R1` `M2:806:R5`) | 11 | 7 | `1 96 96 2 2 1 1 1 1 2 2 2 2 2` |
+| lisp_interpreter_curr | 3854 / 1307 | 10 (`M0:810:R21` … `M9:908:R4`) | 48 | 45 | `1 1 1 1 1 1 1 1 1 96 96 2 …` |
+| json_parser | 1568 / 534 | 3 (`M0:292:R13` `M1:1567:R16` `M2:1375:R20`) | 32 | 19 | `1 1 96 96 96 2 2 1 2 2 2 2 2` |
+
+(Per-module `M` counts sum to the `FNL` totals; the fn_decl count matches the P6 static-analyzer count on the same traces.)
+
+### 1. LirInst variant distribution
+
+Total instructions **emitted via `emitInst`** per example `[fprintf]` (note: `decl_temp` is prepended by `hoistTemps` directly into the entry block — `lower.zig:3953` — so it never passes through `emitInst`; add the `D3HT` temp totals below to get the full instruction count):
+
+| Example | insts via emitInst | + hoisted `decl_temp` | total |
+|---------|--------------------|------------------------|-------|
+| mud_server | 686 | 454 | 1140 |
+| game_of_life | 698 | 462 | 1160 |
+| lisp_interpreter_curr | 3634 | 2256 | 5890 |
+| json_parser | 1452 | 945 | 2397 |
+
+Top variants per example `[fprintf]`:
+
+| Example | top LirInst variants (count) |
+|---------|------------------------------|
+| mud_server | assign 116, int_const 81, load_field 56, jump 55, binary 53, branch 41, store_local 41 |
+| game_of_life | int_const 157, assign 138, jump 56, assign_field 56, binary 54, int_cast 45, store_local 36 |
+| lisp_interpreter_curr | assign 703, jump 318, load_field 304, int_const 263, decl_local 219, ret 203, branch 199 |
+| json_parser | assign 254, int_const 144, jump 143, call_direct 127, load_field 124, binary 123, branch 102 |
+
+Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every example** — a straight-line, alloca-based, jump-heavy IR. json_parser is the most call-heavy (127 `call_direct`, its parser is deeply recursive), lisp the most branch/switch-heavy (21 `switch_br` in `eval` alone). Per-function detail `[fprintf]` (top function per example): mud `main` 427 insts (assign 84, int_const 43, binary 41, jump 40); gol `main` 496 (int_const 133, assign 99, assign_field 54); lisp `eval` 826 (assign 182, load_field 75, jump 74); json `parseObject` 214 (assign 46, call_direct 24, jump 19). 44 of the 54 variants fire via `emitInst`; the 10 that never fire in these examples are `decl_temp` (only via `hoistTemps`, `lower.zig:3953`), `loop_header`, `label`, `float_cast`, `int_to_float`, `int_to_ptr`, `float_const`, `enum_const`, `load_global`, `store_global` — and `unary` is rare (13 total across all 4).
+
+### 2. Temp counts per function / hoisting
+
+`D3HT:<tid,type>|…` is emitted once per lowered fn (`lower.zig:4175`); its entry count = total temporaries for that function (params included — each param gets a `nextTemp`, `lower.zig:4135`, then its type is patched in `hoisted_temps`, `lower.zig:4145`). `[markers]`:
+
+| Example | fns | total temps | avg | max temp count |
+|---------|-----|-------------|-----|----------------|
+| mud_server | 20 | 454 | 22.7 | 264 (`main`) |
+| game_of_life | 11 | 462 | 42.0 | 339 (`main`) |
+| lisp_interpreter_curr | 48 | 2256 | 47.0 | 462 (`eval`) |
+| json_parser | 32 | 945 | 29.5 | 126 (`parseObject`) |
+
+Temp hoisting does create many temporaries: every intermediate (each literal, field load, call result, wrapper) gets its own temp, and `hoistTemps` (lower.zig:3942) prepends a `decl_temp` for **all** of them (skipping `TYPE_VOID`, lower.zig:3949) to the entry block. Consequence visible in emitted C: `eval` declares 461 `zT_` temps at function top (lisp_interpreter_curr.c:3915-4438); `readFile` declares 79 `zT_` temps (json_parser.c:704-788; its D3HT count of 81 includes the 2 params). All temps are effectively `alloca` slots — the IR has no SSA/phi discipline.
+
+### 3. Defer/errdefer expansion trace (json_parser `fclose`)
+
+Only **one** `defer` exists across all 4 examples: `readFile` in `examples/z98/json_parser/file.zig:30` (`defer { _ = fclose(f); }`). No `errdefer` anywhere. `[fprintf]` trace of `readFile` (FNL:74, 111 insts, 81 temps):
+
+```
+P7PD:0,1491              <- pushDefer(kind=0 defer, ast_node=1491)
+P7XD:0,0                 <- first return site (fseek(END)!=0): expands the defer
+   P7CD:139,32           <- fclose() call inlined at this return
+P7XD:3,0 ... P7XD:0,0    <- subsequent return sites (size<0, fseek(SET)!=0,
+P7XD:0,0 ... P7XD:0,0       bytes_read!=size, ferror!=0, success): NO fclose
+```
+
+`expandDefers` counts `[fprintf]`: pushDefer 0/0/0/1, expandDefers calls 86/55/593/195 for mud/gol/lisp/json. **Finding (single-use defer):** `expandDefers` pops the action it expands — `self.defer_stack.len = i` at `lower.zig:3931` (and `:3935` for errdefer) — so a `defer` is lowered at exactly **one** exit site, not at every scope exit. In `readFile` only the first-lowered return path (the `fseek(f,0,SEEK_END)!=0` error, json_parser.c:848-851) contains the `fclose(zT_31)` call; the other return paths (json_parser.c:854, :872, :892, :933, :946, :955) return without closing `f`. The design doc `docs/sf/AST_LIR_Lowering_p2.md:406-421` shows `expandDefers` **without** the pop — this is an implementation deviation with real correctness impact (FILE* leak on every path except the first return). Not fixed here (documentation-only task).
+
+### 4. `@ptrCast` lowering: scalar vs tagged-union vs fn-pointer
+
+The builtin path (`lower.zig:2381-2466`) emits `.ptr_cast{ value, target, result }` **uniformly** — the source expression is lowered without any source-kind check (`val_temp = lowerExpr(ec[1])`, lower.zig:2424), so pointer-to-pointer, pointer-to-many-ptr and fn-pointer casts all produce the same LirInst. The only differentiation is **target type resolution** (`lower.zig:2425-2445`):
+
+- If the type argument is a `fn(...)` type: `resolveTypeExprFull` + `typeRegistryMarkFnPtrUsed` (lower.zig:2435-2438), emitting the `FNT:t` marker (lower.zig:2439) and registering the fn-ptr type so the C emitter can emit the `typedef`.
+- Otherwise: plain `resolveTypeExprFull` (lower.zig:2442-2444); a `CASTDFLT` marker fires if the target defaults to `TYPE_U32` (lower.zig:2446).
+
+`[fprintf]` per-site evidence (value-type kind → target-type kind, both `ptr_type`(17) / `many_ptr_type`(18)):
+
+| Example | site | source kind → target kind |
+|---------|------|---------------------------|
+| lisp `apply` (eval.zig:264, fn-pointer) | `*void` → ptr-to-fn | 17 → 17, `FNT:t` fired (the only FNT:t in all 4 examples) |
+| lisp `main` (main.zig:107-108) | `*[1048576]u64` → `[*]u8` | 17 → 18 |
+| lisp `main` (main.zig:116-126, 11 sites) | ptr-to-fn → `*void` | 17 → 17 |
+| json `readFile` (file.zig:28-29,38) | `*[2]c_char` / `*void` → `[*]u8` | 17 → 18, 17 → 18, 17 → 18 |
+| json `parseObject`/`parseArray`/`parseJson` | `*void` → `[*]T` / `*T` | 17 → 18 / 17 → 17 |
+
+There is **no scalar (non-pointer) or tagged-union `@ptrCast`** anywhere in the 4 examples, so those two cases are not exercised; from the code the only distinguishing mechanism is the fn-type target path above. (The `@ptrCast([*]const c_char, "rb")` string case is likewise a uniform `ptr_cast` — file.zig:28.)
+
+### 5. TCO assessment (lisp `eval` loop)
+
+**No TCO is detectable — confirmed.** Evidence:
+
+- `[fprintf]` the `loop_header` LirInst (lir.zig:31) is **never emitted** by the lowerer (0 in all 4 examples). `while_stmt` lowering (lower.zig:3302-3388) builds a plain 4-block CFG (entry → cond → body → cont → back-edge to cond) with `jump`/`branch` only; `loop_header` exists as a variant but is dead code (c89_emit.zig:2281 consumes it as a no-op).
+- `[fprintf]` `eval`'s manual `while (true)` trampoline (eval.zig:12) lowers to: `jump cond` (entry), `bool_const(1)` + `branch` (cond block BB1), body with the expr-type `switch_br` (21 of them), and a back-edge `jump` to BB1. The source-level `continue`s (eval.zig:56,61,222) become plain `goto`/`jump` to the loop header — they are loop branches, not tail calls.
+- `[markers]`/`[fprintf]` the tail-position `return try apply(fun, args, …)` (eval.zig:169) emits `call_direct` → `check_error` → `branch` → (err: `ret`; ok: `unwrap_error_payload`) — a **real, frame-preserving call**, not a jump. The emitted C shows it verbatim: `zT_340 = zF_24BC4A3B_apply(zT_335,…)` with `return zT_340` on the error path (lisp_interpreter_curr.c:5480-5492). `eval` itself also contains 3 plain recursive `zF_08D22E0F_eval(...)` calls (lisp_interpreter_curr.c:4636, :4753, :4990).
+
+The doc's existing claim ("The lowerer does not implement TCO", §TCO above) is **correct**; this section adds the concrete evidence. The recursive Lisp engine therefore relies on the C stack for deep recursion.
+
+### 6. Coercion application: `applyCoercion` vs `materializeInto`
+
+`applyCoercion` (lower.zig:3991) dispatches exactly as the §Type Coercions table describes: the 5 wrapper kinds (`wrap_optional_null`, `wrap_optional`, `wrap_error_success`, `wrap_error_err`, `ptr_to_optional_ptr`) and `none`-with-null delegate to `materializeInto` (lower.zig:852), which walks up to 8 optional/error-union layers (lower.zig:859-895) and emits `set_optional_null`/`wrap_optional`/`wrap_error_ok`/`wrap_error_err`, optionally preceded by an inner `int_cast`/`float_cast` (lower.zig:898-910). `[fprintf]` call counts:
+
+| Example | applyCoercion calls | materializeInto calls | dominant kinds |
+|---------|---------------------|------------------------|----------------|
+| mud_server | 51 | 8 | int_literal_coerce 20, none 14, string_to_slice 12 |
+| game_of_life | 99 | 10 | none 52, int_literal_coerce 39, const_qualify 8 |
+| lisp_interpreter_curr | 595 | 135 | none 329, wrap_error_success 60, string_to_slice 53, wrap_error_err 53, int_literal_coerce 48 |
+| json_parser | 159 | 34 | none 95, int_literal_coerce 27, wrap_error_success 15, wrap_error_err 14 |
+
+Cross-check `[markers]`: the `CEM`/`CEP` markers are emitted **per `lowerExpr`** call (lower.zig:446-468) — `CEP:n…k<kind>` when a coercion entry exists (→ `applyCoercion`), `CEM:n…` when missing. `[markers]` CEP counts (mud 36, gol 43, lisp 261, json 63) and the CEP-kind distribution (int_literal_coerce / string_to_slice / wrap_error_* / unwrap_optional / wrap_optional_null, exactly the table's kinds) agree with the `[fprintf]` `applyCoercion` kinds. The `[fprintf]` totals are higher because `applyCoercion` also fires at non-`lowerExpr` sites (call args `lower.zig:5967`, return values, compound-assign sites `lower.zig:1391`); the `none` kind (52 in gol) comes from `applyNoneCoercion` (lower.zig:3967), which rewrites `null` → optional-null / `int_const(0)` pointer.
+
+---
+
 ## Debugging
 
-The lowerer emits verbose marker output prefixed with `"L"` (for LIR lowering). Enable with `--dump-lir` flag to see per-node tracing:
+The lowerer emits verbose marker output prefixed with `"L"` (for LIR lowering). **The `--dump-lir` flag is DEAD**: it is parsed and stored (`main.zig:695-696` sets `cli.dump_lir`) but never read anywhere in the pipeline. Marker output is instead gated on the `--markers` flag via `pal.markerWrite()`/`markerWriteInt()`, which check `g_markers_enabled` (`sf/src/pal.zig:96-103`). Run `zig1 --markers --dump-c89 <file>` and capture stderr to see the per-node tracing below.
 
 | Marker | Meaning |
 |--------|---------|
-| `LEX` | Entering lowerExpr |
-| `CT:t` | Creating temp with type_id |
-| `NXT:i` | nextTemp warning for void type |
+| `LEX:n<idx>k<kind>` | Entering lowerExpr (node + kind) |
+| `CT:t<type>r<tid>` | Creating temp with type_id (nextTemp) |
+| `NXT:i<idx>k<kind>t<tid>` | nextTemp warning for void/undefined type |
 | `GBL` | Global lowering context |
 | `BB` | Struct init entry |
 | `ILR` | Int literal |
 | `STK` | Statement kind |
 | `BLC` | Block child processing |
-| `FNL` | Function lowering |
-| `D3HT` | Hoisted temps dump |
-| `CEM/CEP` | Coercion check (missing/present) |
+| `FNL:<name_id>` | Function lowering — one per lowered fn_decl (`lower.zig:4108`) |
+| `D3HT:<tid,type>\|...` | Hoisted temps dump — one per fn, entry count = total temp count (`lower.zig:4175`) |
+| `CEM:n<idx>` | Coercion check — coercion missing (per lowerExpr, `lower.zig:463`) |
+| `CEP:n<idx>k<kind>` | Coercion check — coercion present, kind emitted (`lower.zig:456`) |
+| `COE/CO2` | Compound-assign coercion sites (`lower.zig:1391`) |
+| `XD:<depth>,<err>` / `PD:<kind>,<node>` | expandDefers / pushDefer tracing (instrumented builds; see P7 evidence above) |
 
-All markers use `pal.markerWrite()` which outputs to stderr when tracing is enabled.
+All markers use `pal.markerWrite()` which outputs to stderr when `--markers` is enabled.
+
+
