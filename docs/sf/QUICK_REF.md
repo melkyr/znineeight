@@ -582,3 +582,20 @@ ZIG_INLINE ZIG_UNUSED DST_T __bootstrap_DST_from_SRC(SRC_T x) {
 **Common link error:** `undefined reference to '__bootstrap_U64_from_I64'`
 → This exact helper is **missing** from `src/include/zig_runtime.h`.
 Add it per the inline pattern above. (Added 2026-06-29 for enum(u8) support.)
+
+### Tech Docs (as-built pipeline reference)
+Location: sf/docs/tech_docs/
+INDEX.md — master cross-reference (error→phase, function→file, marker→meaning)
+00_shared_infra.md — Allocator, Interner, Diagnostics, PAL, Source Manager, utility modules
+00_lexer_parser.md — Lexer, Parser, AST
+01_import_resolution.md — Module graph & import resolution
+02_symbol_registration.md — Symbol table registration
+03_type_resolution.md — Type resolution & registry
+04_comptime_eval.md — Compile-time evaluation
+05_semantic_analysis.md — Semantic analysis (resolveExpr, resolveStmtDepth)
+06_static_analyzers.md — Flow-sensitive static analyzers
+07_lir_lowering.md — LIR lowering & control-flow flattening
+08_c89_emission.md — C89 code emission & name mangling
+09_pipeline_orchestration.md — Pipeline orchestration (main.zig, main_dump.zig)
+10_c_runtime.md — C runtime layer (zig_runtime.c/h, zig_pal.c/h)
+11_build_system.md — Build scripts & output isolation

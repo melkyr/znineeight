@@ -56,6 +56,17 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 7. **Clarification Requests**: When encountering ambiguity, ask explicitly rather than assuming.
 8. **No Scope Creep**: Execute only the task requested. Do not batch-implement adjacent tasks without approval. "Plan the next 3 tasks" is plan-only — execution requires explicit user confirmation per task.
 
+### 1.1.1 Technical Documentation Maintenance
+
+When modifying any compiler pipeline code (lexer, parser, type system,
+semantic analysis, static analyzers, LIR lowering, C89 emission, or
+pipeline orchestration), the agent MUST update the corresponding document
+in sf/docs/tech_docs/:
+
+- Check INDEX.md Table A to find which doc covers the modified file
+- Update function signatures, descriptions, data flow, and markers
+- Add `[updated: date]` annotation at top of changed section
+
 ### 1.2 Development Environment
 
 - **Host OS**: Linux (Ubuntu 20.04+ or equivalent)
