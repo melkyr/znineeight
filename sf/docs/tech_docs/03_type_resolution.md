@@ -92,6 +92,8 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | Function | Line | Scope | `[inference]` | Description |
 |----------|------|-------|---------------|-------------|
 | `typeRegistryInit` | 271 | pub | `[inference: zero-init all arrays, init 8 caches via u64ToU32MapInit/u32ToU32MapInit, return TypeRegistry]` | Creates empty registry. Arrays start with undefined/null items, len=cap=0. All 8 hash maps initialized. |
+| `nameCacheGet` | 304 | pub | `[inference: u64ToU32MapGet on name_cache, return value or null; emit NGC:g1 marker for key_lo==1]` | Looks up a (module<<32)\|name_id key in name_cache. Used by resolveTypeExprFull and constAliasPrepass. Returns cached TypeId or null. |
+| `nameCachePut` | 313 | pub | `[inference: u64ToU32MapPut on name_cache, emit NP:k<key_lo_16bits>v<value> marker]` | Stores a (module<<32)\|name_id→TypeId mapping in name_cache. Emits NP:k<key_lo>v<type_id> debug marker. |
 | `typeRegistryAppend` | 153 | private | `[inference: ensure capacity, write Type at types_len, increment len, emit DC:k<n>t marker, emit X:id for struct_type]` | Core append to `types_items`. Returns the new `TypeId` (old `types_len`). Emits `DC:k<kind_enum>n<name_id>t<type_id>` debug marker. For struct_type, also emits `X:<id>`. |
 | `registerPrimitive` | 246 | private | `[inference: call typeRegistryAppend with state=2, given kind/size/alignment, zero name_id/c_name_id/module_id/payload_idx]` | Appends a resolved (state=2) primitive type. |
 | `typeRegistryRegisterPrimitives` | 579 | pub | `[inference: registerPrimitive for 20 primitives (1-20), then registerPrimitiveName for named ones]` | Populates sentinel TypeIds 1-20. Calls `registerPrimitiveName` for void, bool, i8-i64, u8-u64, isize, usize, c_char, f32, f64, null, undefined, type. |
@@ -124,6 +126,7 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | `typeRegistryGetStructFields` | 778 | pub | `[inference: resolve StructPayload, return slice of fe_items]` | Returns struct field entries (includes computed offsets). |
 | `typeRegistryIsAssignable` | 786 | pub | `[inference: ~30 rule branches for implicit coercion]` | Type assignability check. See [typeRegistryIsAssignable Rules](#typeregistryisassignable-rules). |
 | `canLiteralFitInType` | 884 | pub | `[inference: range check per integer type, true for f32/f64]` | Whether an `i64` value fits in the given integer type. |
+| `alignUp` | 261 | pub | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns value `v` up to alignment `a`. Used by optional/error_union size computation in typeRegistryGetOrCreateOptional/ErrorUnion. |
 
 ### *Append Helpers
 
@@ -208,9 +211,15 @@ Depends-on-graph topological sort and layout computation for all compound types.
 | `typeResolverInit` | 225 | pub | `[inference: zero-init TypeResolver with undefined items, len/cap=0]` | Creates empty resolver. |
 | `typeResolverAddEdge` | 62 | pub | `[inference: dependEnsureCapacity (2x growth, min 8), store DepEdge{from,to}, increment depend_len]` | Appends a dependency edge. |
 | `dependEnsureCapacity` | 52 | private | `[inference: 2x growth, min 8, sand alloc 8-byte edges]` | Grows the dependency edge array. |
+| `worklistEnsureCapacity` | 68 | private | `[inference: 2x growth (min 64), sandAlloc for worklist u32 array, copy old items, update pointers and cap]` | Grows the worklist array used by Kahn's algorithm. |
+| `worklistPush` | 78 | private | `[inference: call worklistEnsureCapacity, write id at worklist_len, increment len]` | Pushes a TypeId onto the Kahn worklist. |
+| `worklistPop` | 84 | private | `[inference: return null if empty, decrement len, return worklist_items[len]]` | Pops a TypeId from the Kahn worklist (LIFO). |
+| `inDegreeEnsureCapacity` | 90 | private | `[inference: grow in_degree array to requested capacity (min 64), sandAlloc, update pointer and cap]` | Ensures the in_degree array is large enough for the given number of types. |
+| `alignUp` | 99 | private | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns value `v` up to alignment `a`. Used by typeResolverResolveLayout for struct/union/tagged_union layout. |
 | `typeResolverBuild` | 243 | pub | `[inference: copy dep edges, alloc in_degree array of size types_len, zero-init, count edges per target]` | Initializes in-degree array from dependency graph edges. Allocates `sorted_items` array (same size as types). |
 | `typeResolverResolve` | 268 | pub | `[inference: Kahn's algorithm — push zero-in-degree nodes, pop→resolveLayout→set state=2, decrement dependents' in-degree, push new zeros; detect circular deps]` | Topological sort + layout resolution. See [Kahn's Algorithm](#kahns-algorithm). |
 | `typeResolverResolveLayout` | 103 | private | `[inference: switch on kind, compute size/alignment, update Type in registry]` | Computes size/alignment for a single type. See [Layout Resolution](#layout-resolution). |
+| `varDeclInitNeedsNameCache` | 937 | private | `[inference: return false for struct/union/enum/error_set/ident/import/fn decl, true otherwise]` | Filters var_decl init types that need name_cache registration. Used by resolveNamedTypeExpressions. |
 | `typeResolverGetSorted` | 553 | pub | `[inference: return sorted_items[0..sorted_len]]` | Returns topological order slice. |
 | `classifyTypeEmissionGroups` | 332 | pub | `[inference: compute PO (pointer-only) set via forward+backward propagation, return sorted ids]` | Classifies types as pointer-only vs value-emitted for C89 codegen. |
 | `typeResolverResolveNames` | 1060 | pub | `[inference: create TypeResolveEnv, call resolveNamedTypeExpressions, resolveAggregateFieldTypesAll, resolveFnSignatures]` | **Phase entry point.** Resolves all type expressions across all modules. |
@@ -282,7 +291,7 @@ Internal helpers:
 
 #### `resolveTypeExprFull`
 
-`type_resolver.zig:587-882` — recursive type expression resolver. Depth-limited to 16. Emits `RTD:n<node>k<kind>` markers.
+`type_resolver.zig:587-882` — `[inference: switch on AstKind (ident/struct/field_access/error_union/fn/ptr/many_ptr/slice/optional/array), resolve each child recursively, depth-limit 16, return tid or TYPE_UNDEFINED, emit RTD/NF/N2/UND markers]` recursive type expression resolver.
 
 | AST Kind | Lines | Behavior |
 |----------|-------|----------|
@@ -299,7 +308,7 @@ Internal helpers:
 
 #### `evalConstU32Full`
 
-`type_resolver.zig:557-576` — constant u32 expression evaluator:
+`type_resolver.zig:557-576` — `[inference: return int_literal int_values[node.payload], recurse into ident_expr decl.child_1, fallback 0xFFFFFFFF sentinel]` constant u32 expression evaluator:
 
 1. **int_literal**: returns stored `int_values[node.payload]`
 2. **ident_expr**: looks up symbol. If symbol `type_id == 0` and `flags & 0x01 == 0`, recursively evaluates `decl.child_1`
@@ -309,19 +318,19 @@ Helper `symbolLookupAllModules` (line 578): linear scan of all symbol tables for
 
 #### `resolveDeclAggregateFieldTypes`
 
-`type_resolver.zig:884-935` — resolves field type annotations for struct/tagged_union declarations that have inline field type expressions. Walks `init.payload` (extra children of the init expression), resolves each `field_decl.child_0`, and writes the result back to `fe_items[].type_id`. Emits `B2`, `FSW`, `DFT`, `FTW`, `DTWR`, `TUI` markers.
+`type_resolver.zig:884-935` — `[inference: nameCacheGet lookup by (mod<<32)|name_id, walk field children, resolveTypeExprFull each field_decl.child_0, write result to fe_items[].type_id, emit B2/FSW/DFT/FTW/DTWR/TUI markers]` resolves field type annotations for struct/tagged_union declarations that have inline field type expressions.
 
 #### `resolveNamedTypeExpressions`
 
-`type_resolver.zig:949-971` — iterates top-level `var_decl`s where init expression is a type expression (not an inline type decl, import, ident, or fn_decl). Resolves via `resolveTypeExprFull`, stores result in `nameCachePut` under `(module_id << 32) | name_id`.
+`type_resolver.zig:949-971` — `[inference: iterate modules/decls, filter by varDeclInitNeedsNameCache, resolveTypeExprFull on init, nameCachePut under (mod<<32)|name_id]` iterates top-level `var_decl`s where init expression is a type expression (not an inline type decl, import, ident, or fn_decl).
 
 #### `resolveAggregateFieldTypesAll`
 
-`type_resolver.zig:973-991` — iterates all modules' top-level var_decls whose init is `struct_decl` or `union_decl`. Calls `resolveDeclAggregateFieldTypes` for each.
+`type_resolver.zig:973-991` — `[inference: iterate modules/decls, filter struct_decl/union_decl inits, call resolveDeclAggregateFieldTypes for each]` iterates all modules' top-level var_decls whose init is `struct_decl` or `union_decl`.
 
 #### `resolveFnSignatures`
 
-`type_resolver.zig:993-1058` — iterates all modules:
+`type_resolver.zig:993-1058` — `[inference: iterate modules/decls, resolve fn return/param types via resolveTypeExprFull, create fn via typeRegistryGetOrCreateFn, resolve var_decl type annotations, update symbol.type_id and ResolvedTypeTable]` iterates all modules:
 - **fn_decl**: resolves return type and param types via `resolveTypeExprFull`, creates fn type via `typeRegistryGetOrCreateFn`, records in `ResolvedTypeTable`, sets `symbol.type_id`.
 - **var_decl with explicit type annotation** (child_0 != 0): resolves type expression, records in `ResolvedTypeTable`, sets `symbol.type_id`.
 
@@ -343,6 +352,7 @@ Resolves `const Alias = TypeName` patterns where the RHS is a simple identifier 
 | Function | Line | Scope | `[inference]` | Description |
 |----------|------|-------|---------------|-------------|
 | `resolveWellKnownTypeName` | 15 | private | `[inference: switch on string length (2-5), byte-compare for built-in type names, return sentinel or TYPE_UNDEFINED]` | Matches string names to TypeId sentinels: void(4), bool(4), i32/u32(3), u64/i64(3), f32/f64(3), i8/u8(2), usize/isize(5). Returns `TYPE_UNDEFINED` for non-well-known. |
+| `growDep` | 41 | private | `[inference: 2x growth (min 16), sandAlloc for to/next arrays, copy old elements, update pointers and cap]` | Grows the dependency tracking arrays (`to_ptr`, `next_ptr`) used during constAliasPrepass catalog phase. |
 | `constAliasPrepass` | 58 | pub | `[inference: 3-phase Kahn worklist: catalog global const aliases, seed resolvable ones, propagate resolved types through dep chain]` | Resolves `const X = Y` type aliases before full type resolution. |
 
 ### constAliasPrepass — Three Phases
