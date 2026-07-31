@@ -55,7 +55,7 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 | `examples/z98/mud_server/main.zig` | `87954d756ae30d32d5c43dcc66a69650` |
 | `examples/z98/game_of_life/main.zig` | `9cc38ab9f6f4d4e441847175069f94cff` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `6a8ca44971256a54205e5cc1b67974ef` |
-| `examples/z98/json_parser/main.zig` | `9492e3b3e62e89b1940aefcaa2a087ee` |
+| `examples/z98/json_parser/main.zig` | `6d52e479b3d9cb195e555c0f75d7d181` |
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
