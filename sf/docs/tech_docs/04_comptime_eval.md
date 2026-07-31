@@ -172,8 +172,12 @@ CEV                                   ← int_const folded, comptime value consu
 ```
 
 `[fprintf]` + `[markers]`; run: `/tmp/z1/zig1 --markers --dump-c89 examples/z98/json_parser/main.zig`.
-The same node folds again identically at nodes 1104, 1256, 1313 (all `@sizeOf(JsonValue)`,
-json.zig:178/220/233), each with a `CEV`.
+The `[P4CE]`/`[P4LW]` lines are reconstructed from the instrumented run — the `.mrk` files
+contain only the marker-stream side. These node numbers and the fold values are from the
+`/tmp/z1` instrumented run, which reproduces the P0 marker sections byte-identically; the fold
+values are cross-checked against the P3 layout table.
+The @sizeOf builtin folds again at nodes 1104, 1256, 1313 (json.zig:178/220/233; 178 and 233
+are `@sizeOf(JsonValue)` = 16, 220 is `@sizeOf(JsonItem)`).
 
 ### `@ptrCast` boundary trace [fprintf]
 
