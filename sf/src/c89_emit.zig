@@ -756,6 +756,8 @@ fn c89NeedsEmitEdge(kind: TypeKind) bool {
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.optional_type) return true;
     if (kind == TypeKind.error_union_type) return true;
+    if (kind == TypeKind.enum_type) return true;            // ADD — embeddable by value
+    if (kind == TypeKind.error_set_type) return true;       // ADD — embeddable by value
     if (kind == TypeKind.tuple_type) return true;
     if (kind == TypeKind.unresolved_name) return true;
     return false;
@@ -788,6 +790,21 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
     } else if (ty.kind == TypeKind.error_union_type) {
         var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
+    } else if (ty.kind == TypeKind.optional_type) {                              // ADD
+        var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
+        var opk = reg.types_items[@intCast(usize, op)].kind;
+        if (c89NeedsEmitEdge(opk) and op != ti and (opk == TypeKind.enum_type or opk == TypeKind.error_set_type)) c += 1;
+    } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
+        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        var sek = reg.types_items[@intCast(usize, se)].kind;
+        if (c89NeedsEmitEdge(sek) and se != ti and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) c += 1;
+    } else if (ty.kind == TypeKind.union_type) {                                 // ADD
+        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, up.fields_count)) : (i += 1) {
+            var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+        }
     }
     return c;
 }
@@ -826,6 +843,27 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
             tgt[@intCast(usize, off)] = eup; off += 1;
         }
+    } else if (ty.kind == TypeKind.optional_type) {                              // ADD
+        var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
+        var opk = reg.types_items[@intCast(usize, op)].kind;
+        if (c89NeedsEmitEdge(opk) and op != ti and (opk == TypeKind.enum_type or opk == TypeKind.error_set_type)) {
+            tgt[@intCast(usize, off)] = op; off += 1;
+        }
+    } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
+        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        var sek = reg.types_items[@intCast(usize, se)].kind;
+        if (c89NeedsEmitEdge(sek) and se != ti and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) {
+            tgt[@intCast(usize, off)] = se; off += 1;
+        }
+    } else if (ty.kind == TypeKind.union_type) {                                 // ADD
+        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, up.fields_count)) : (i += 1) {
+            var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+                tgt[@intCast(usize, off)] = ft; off += 1;
+            }
+        }
     }
 }
 
@@ -850,6 +888,20 @@ fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
 
     } else if (ty.kind == TypeKind.error_union_type) {
         if (reg.eu_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
+    } else if (ty.kind == TypeKind.optional_type) {                              // ADD
+        var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
+        var opk = reg.types_items[@intCast(usize, op)].kind;
+        if (op == target and (opk == TypeKind.enum_type or opk == TypeKind.error_set_type)) return true;
+    } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
+        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        var sek = reg.types_items[@intCast(usize, se)].kind;
+        if (se == target and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) return true;
+    } else if (ty.kind == TypeKind.union_type) {                                 // ADD
+        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, up.fields_count)) : (i += 1) {
+            if (reg.fe_items[@intCast(usize, up.fields_start) + i].type_id == target) return true;
+        }
     }
     return false;
 }

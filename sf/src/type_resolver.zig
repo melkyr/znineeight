@@ -326,6 +326,8 @@ fn fieldEmbedsByValue(kind: TypeKind) bool {
     if (kind == TypeKind.union_type) return true;
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.enum_type) return true;          // ADD — inline typedef integer alias
+    if (kind == TypeKind.error_set_type) return true;     // ADD — inline typedef integer alias
     return false;
 }
 
