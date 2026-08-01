@@ -1838,6 +1838,49 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
     bufferedWriterWrite(&emitter.writer, s);
 }
 
+pub fn moduleQualifiedName(emitter: *C89Emitter, module_id: u32) []const u8 {
+    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    var path_str = interner_mod.stringInternerGet(emitter.interner, mods[@intCast(usize, module_id)].path_id);
+    var last_slash: usize = @intCast(usize, 0);
+    var has_slash: u8 = @intCast(u8, 0);
+    var ps_i: usize = @intCast(usize, 0);
+    while (ps_i < path_str.len) : (ps_i += @intCast(usize, 1)) {
+        if (path_str[ps_i] == @intCast(u8, '/')) { last_slash = ps_i; has_slash = @intCast(u8, 1); }
+    }
+    var base: []const u8 = undefined;
+    if (has_slash != @intCast(u8, 0)) {
+        var dbl_start: usize = last_slash + @intCast(usize, 1);
+        base = path_str[dbl_start..path_str.len];
+    } else {
+        base = path_str;
+    }
+    var bl = base.len;
+    if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, 'i') and base[bl - @intCast(usize, 1)] == @intCast(u8, 'g')) {
+        var bl4: usize = bl - @intCast(usize, 4);
+        base = base[0..bl4];
+    } else if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, '9') and base[bl - @intCast(usize, 1)] == @intCast(u8, '8')) {
+        var bl4: usize = bl - @intCast(usize, 4);
+        base = base[0..bl4];
+    }
+    bl = base.len;
+    if (bl > @intCast(usize, 64)) {
+        base = base[0..@intCast(usize, 64)];
+    }
+    var hash = hash_mod.fnv1a(path_str);
+    var buf: [96]u8 = undefined;
+    var pos: usize = @intCast(usize, 0);
+    var bi: usize = @intCast(usize, 0);
+    while (bi < base.len) : (bi += @intCast(usize, 1)) {
+        buf[pos] = base[bi];
+        pos += @intCast(usize, 1);
+    }
+    buf[pos] = @intCast(u8, '_');
+    pos += @intCast(usize, 1);
+    writeHex(buf[0..], &pos, hash);
+    var qid = interner_mod.stringInternerIntern(emitter.interner, buf[0..pos]);
+    return interner_mod.stringInternerGet(emitter.interner, qid);
+}
+
 pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction, c_includes: []u32, dep_mod_ids: []u32, sorted: [*]u32) void {
     var gname: [128]u8 = undefined;
     var gn: usize = @intCast(usize, 0);
@@ -1883,32 +1926,10 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     while (di < dep_mod_ids.len) : (di += @intCast(usize, 1)) {
         var d = dep_mod_ids[di];
         if (d == module_id) continue;
-        var dep_mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
-        var dep_path = interner_mod.stringInternerGet(emitter.interner, dep_mods[@intCast(usize, d)].path_id);
-        var dl_slash: usize = @intCast(usize, 0);
-        var dl_has: u8 = @intCast(u8, 0);
-        var dl_i: usize = @intCast(usize, 0);
-        while (dl_i < dep_path.len) : (dl_i += @intCast(usize, 1)) {
-            if (dep_path[dl_i] == @intCast(u8, '/')) { dl_slash = dl_i; dl_has = @intCast(u8, 1); }
-        }
-        var dbase: []const u8 = undefined;
-        if (dl_has != @intCast(u8, 0)) {
-            var dbl_start: usize = dl_slash + @intCast(usize, 1);
-            dbase = dep_path[dbl_start..dep_path.len];
-        } else {
-            dbase = dep_path;
-        }
-        var dbl = dbase.len;
-        if (dbl >= @intCast(usize, 4) and dbase[dbl - @intCast(usize, 4)] == @intCast(u8, '.') and dbase[dbl - @intCast(usize, 3)] == @intCast(u8, 'z') and dbase[dbl - @intCast(usize, 2)] == @intCast(u8, 'i') and dbase[dbl - @intCast(usize, 1)] == @intCast(u8, 'g')) {
-            var dbl4: usize = dbl - @intCast(usize, 4);
-            dbase = dbase[0..dbl4];
-        } else if (dbl >= @intCast(usize, 4) and dbase[dbl - @intCast(usize, 4)] == @intCast(u8, '.') and dbase[dbl - @intCast(usize, 3)] == @intCast(u8, 'z') and dbase[dbl - @intCast(usize, 2)] == @intCast(u8, '9') and dbase[dbl - @intCast(usize, 1)] == @intCast(u8, '8')) {
-            var dbl4: usize = dbl - @intCast(usize, 4);
-            dbase = dbase[0..dbl4];
-        }
+        var dstem = moduleQualifiedName(emitter, d);
         var ic0: []const u8 = "#include \"";
         bufferedWriterWrite(&emitter.writer, ic0);
-        bufferedWriterWrite(&emitter.writer, dbase);
+        bufferedWriterWrite(&emitter.writer, dstem);
         var ic1: []const u8 = ".h\"\n";
         bufferedWriterWrite(&emitter.writer, ic1);
     }
@@ -4400,6 +4421,10 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l110);
 }
 
+// Reference-only: emitBuildTargetSh/Bat/OwcBat are never called by any pipeline
+// path (grep of the repo finds only these definitions). They hardcode the legacy
+// root module filename "main.c"; since F-S7 the root module is emitted as
+// main_<HEX8>.c, so these templates are stale. Kept as reference; do not emit.
 pub fn emitBuildTargetSh(writer: *BufferedWriter, out_name: []const u8) void {
     var l01: []const u8 = "#!/bin/sh\n# build_target.sh - generated by zig1\nTARGET=${1:-linux}\nCFLAGS=\"-std=c89 -pedantic -Wall -Werror\"\n";
     bufferedWriterWrite(writer, l01);

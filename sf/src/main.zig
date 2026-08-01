@@ -655,27 +655,11 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var fn_start: usize = fn_cursor;
             while (fn_cursor < fns.len and fns[fn_cursor].module_id == m.id) : (fn_cursor += @intCast(usize, 1)) {}
             var fn_slice = fns[fn_start..fn_cursor];
-            var path_str = interner_mod.stringInternerGet(ctx.interner, m.path_id);
-            var last_slash: usize = @intCast(usize, 0);
-            var has_slash: u8 = @intCast(u8, 0);
-            var ps_i: usize = @intCast(usize, 0);
-            while (ps_i < path_str.len) : (ps_i += @intCast(usize, 1)) {
-                if (path_str[ps_i] == @intCast(u8, '/')) { last_slash = ps_i; has_slash = @intCast(u8, 1); }
-            }
-            var base: []const u8 = undefined;
-            if (has_slash != @intCast(u8, 0)) {
-                var dbl_start: usize = last_slash + @intCast(usize, 1);
-                base = path_str[dbl_start..path_str.len];
-            } else {
-                base = path_str;
-            }
-            var bl = base.len;
-            if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, 'i') and base[bl - @intCast(usize, 1)] == @intCast(u8, 'g')) {
-                var bl4: usize = bl - @intCast(usize, 4);
-                base = base[0..bl4];
-            } else if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, '9') and base[bl - @intCast(usize, 1)] == @intCast(u8, '8')) {
-                var bl4: usize = bl - @intCast(usize, 4);
-                base = base[0..bl4];
+            var base = c89_mod.moduleQualifiedName(&emitter, m.id);
+            if (od.len + @intCast(usize, 1) + base.len + @intCast(usize, 3) > @intCast(usize, 511)) {
+                var lmsg: []const u8 = "error: output filename too long\n";
+                pal.stderr_write(lmsg);
+                pal.exit(@intCast(u8, 1));
             }
             var hp2: usize = @intCast(usize, 0);
             var hi2: usize = @intCast(usize, 0);
