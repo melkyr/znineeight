@@ -368,7 +368,7 @@ AST tree (root node index = module_root node)
 | `--dump-lir` | Dumps LIR after lowering (DEAD — parsed at main.zig:695-696, never consulted) |
 | `--dump-c89` | Dumps generated C89 |
 
-> **P9 correction:** the main pipeline (`main.zig` `parseArgs`, main.zig:631-762) does **NOT**
+> **P9 correction:** the main pipeline (`main.zig` `parseArgs`, main.zig:744-873) does **NOT**
 > implement `--dump-tokens` or `--dump-ast`. Token/AST dumping lives in separate harness binaries
 > (`dump_tokens.zig`, `ast_dump_main.zig`), not in zig1's CLI. Previous versions of this table were
 > inaccurate.
@@ -591,7 +591,7 @@ consumers:
 ### 6.7 Doc gaps found during P9 (also fixed inline above/below)
 
 1. **`--dump-tokens` / `--dump-ast` don't exist in the main pipeline** (was §5 CLI Flags): `main.zig`
-   `parseArgs` (main.zig:631-762) only handles `--dump-types`/`--dump-lir`/`--dump-c89` (plus
+   `parseArgs` (main.zig:744-873) only handles `--dump-types`/`--dump-lir`/`--dump-c89` (plus
    non-dump flags). Token/AST dumping lives in separate harnesses (`dump_tokens.zig`,
    `ast_dump_main.zig`), not in zig1's CLI. **Fix applied (see §5 table).**
 2. **`builtin_call` payload row was wrong** (was §ast payload table) — fixed in §6.6.

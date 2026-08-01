@@ -561,6 +561,7 @@ Markers are conditionally written — disabled by default, enabled via `markersE
 zig1 compiles to C89. The generated C can be debugged with GDB directly:
 
 ```
+$ mkdir -p /tmp/out
 $ zig1 --dump-c89 --output-dir /tmp/out source.zig   # N .c + N .h + zig_special_types.h
 $ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c /tmp/out/*.c
 $ gcc -m32 /tmp/out/*.o sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/out/prog

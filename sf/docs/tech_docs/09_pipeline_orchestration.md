@@ -330,7 +330,7 @@ Phases 2, 4, 6 are negligible on all 4 examples.
 **No pipeline phase is skipped when `--dump-c89` is absent.** Only `phase_C89Emission`
 early-returns (`main.zig:604` `if (!ctx.cli.dump_c89) return;`). Evidence: a no-dump run
 emits the same `I Z S T CE RS A L C` marker set and LIR lowering still builds `lir_fns`, but
-no `FINAL_FLUSH` marker (`main.zig:627`) and 0 bytes to stdout. `--dump-types` and `--dump-lir`
+no `FINAL_FLUSH` marker (`main.zig:740`) and 0 bytes to stdout. `--dump-types` and `--dump-lir`
 are parsed (`main.zig:693-696`) but **no phase consults them** — they have no effect on the
 current pipeline. The LIR lowering + scratch work for an un-emitted build is wasted.
 
@@ -452,7 +452,7 @@ Built on the fly — no allocation. Returns `TYPE_UNDEFINED` if resolution fails
 
 **Arena:** Sand reset (scratch) at entry. Per-function memory (BasicBlocks, insts) in scratch.
 
-### `phase_C89Emission` — `main.zig:602-629`
+### `phase_C89Emission` — `main.zig:604-742`
 
 [updated: 2026-08-01] Branches on `--output-dir` (with `--dump-c89`):
 - **Stdout branch (no `--output-dir`)** — the classic single-file path below, kept byte-identical:
@@ -488,7 +488,7 @@ Built on the fly — no allocation. Returns `TYPE_UNDEFINED` if resolution fails
 
 ## 7. CLI Helper Functions
 
-### `parseArgs` — `main.zig:631-762`
+### `parseArgs` — `main.zig:744-873`
 
 Iterates `pal.argCount()` from index 1, dispatches by `matchFlag`:
 
@@ -513,7 +513,7 @@ parseArgs() → CompilerCli
 
 Unrecognized flags are treated as positional input_file (no error).
 
-### `matchFlag` — `main.zig:764-772`
+### `matchFlag` — `main.zig:875-883`
 
 Exact-length byte-by-byte comparison:
 ```zig

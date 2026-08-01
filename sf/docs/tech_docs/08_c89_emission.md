@@ -398,10 +398,10 @@ path only** (bare `--dump-c89`). [updated: 2026-08-01] When `--dump-c89 --output
 set, `phase_C89Emission` instead emits `zig_special_types.h` once via `emitSharedHeader` and
 loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
 (see §1.17); `emitModule` is unchanged for the stdout path. Note that `phase_C89Emission`
-(`main.zig:602`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
+(`main.zig:604`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
 fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
-`c89_emit.zig:716-721`), flushes it (`main.zig:620-623`), then calls `emitModule` with the
-hardcoded module name `"output"` (`main.zig:618`) — hence `/* Module: output */` in every dump.
+`c89_emit.zig:716-721`), flushes it (`main.zig:733-736`), then calls `emitModule` with the
+hardcoded module name `"output"` (`main.zig:739`) — hence `/* Module: output */` in every dump.
 
 ```
 emitModule(emitter, name, fns, c_includes, ptr_only_ids):
@@ -785,7 +785,7 @@ sub-pass split matches the `pointer_only` classification from P3.
 
 ### 6.3 @cInclude Lists & Dedup (Q3)
 
-`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:625`) dedups by interned name_id
+`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:738`) dedups by interned name_id
 across ALL modules; `emitModuleHeader` emits `zig_compat.h` + `zig_special_types.h` then the
 deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"..."` quoted
 (`:1570-1578`).
@@ -798,7 +798,7 @@ deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"
 | lisp_interpreter_curr | main.zig:11-12 zig_runtime.h, `<stdio.h>` | `zig_runtime.h` + `<stdio.h>` (lisp:100-101) | no dups |
 
 **Observation**: `zig_compat.h` and `zig_runtime.h` appear TWICE in every output — once in the
-fixed `emitIncludes` preamble (`c89_emit.zig:706-711`, flushed from `main.zig:622-623`) and
+fixed `emitIncludes` preamble (`c89_emit.zig:706-711`, flushed from `main.zig:733-736`) and
 once in the module header (`[c89]` mud_server.c:1-2 vs :45-48). Dedup applies only WITHIN the
 collected `@cInclude` list, not against the preamble — benign (include guards), undocumented
 elsewhere.
@@ -841,10 +841,10 @@ before the fn loop, `[source]` `c89_emit.zig:1605-1611`) and observed in all 4 o
 | json_parser | :60 | :89 |
 | lisp_interpreter_curr | :96 | :150 |
 
-Marker sequence `[markers]`: `C` (main.zig:603) → `FL:p49`/`FE:p0` (preamble flush, main.zig:623)
-→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:627; exactly 1
-per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:620-623) flushed
-before `emitModule`; the module name is hardcoded `"output"` (main.zig:618) — hence
+Marker sequence `[markers]`: `C` (main.zig:605) → `FL:p49`/`FE:p0` (preamble flush, main.zig:736)
+→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:740; exactly 1
+per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:733-736) flushed
+before `emitModule`; the module name is hardcoded `"output"` (main.zig:739) — hence
 `/* Module: output */` in every file.
 
 ### 6.6 extern "c" Functions (Q6, mud_server)

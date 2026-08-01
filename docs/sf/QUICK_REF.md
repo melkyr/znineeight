@@ -64,13 +64,13 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
-## Multi-Module Build
+### Multi-Module Build
 
 ```bash
+mkdir -p DIR
 zig1 --dump-c89 --output-dir DIR <entry>
 # produces: DIR/*.c + DIR/*.h + DIR/zig_special_types.h
 
-mkdir -p DIR
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c DIR/*.c
 gcc -m32 DIR/*.o sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o DIR/prog
 ```
