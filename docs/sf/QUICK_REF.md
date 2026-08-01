@@ -66,6 +66,10 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     `inferred_errorset_xmod`.
   - error[3000] type-mismatch: `eu_assign_incompat_payload`, `field_access_optional`.
   - error[2000] parse: `catch_block_value_producing`.
+- **Runtime-gap repro (`comptime_neg_int`, added 2026-08-01):** `const N = @intCast(i32, -5);`
+  compiles (dump rc=0, gcc clean) but emits WRONG code — `N` is declared but never assigned
+  (comptime-folded negative dropped). Run prints garbage, not `-5`. Classifies OK by the compile-only
+  corpus gate but is a real semantic gap; tracked via runtime gate, not the gcc classifier.
 - **Historical note:** the earlier `176/8/0/0` figure (plan + F-S5 + prior QUICK_REF) counted the 12
   frontend gaps as OK via the empty-DIR-is-OK convention (IM6 C2 Option-1 per-file loop never runs on
   an empty dir). That convention is DISCONTINUED (2026-08-01, operator): a valid-Z98 repro that fails
