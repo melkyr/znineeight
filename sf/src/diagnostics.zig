@@ -64,6 +64,7 @@ pub const ErrorCode = enum(u16) {
     ERR_9000_OOM,
     ERR_9001_ICE,
     ERR_9999_TOO_MANY_ERRORS,
+    ERR_3048_CANNOT_READ_FILE = 3048,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

@@ -136,6 +136,12 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
+    var source = pal.readFile(cli.input_file, &compiler_alloc.permanent) orelse {
+        const msg: []const u8 = "error: could not read input file\n";
+        pal.stderr_write(msg);
+        pal.exit(@intCast(u8, 1));
+        return;
+    };
      var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4);
      var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
      var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);

@@ -8,6 +8,7 @@ const lexer_mod = @import("lexer.zig");
 const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
+const diag_mod = @import("diagnostics.zig");
 const itoa_mod = @import("util/itoa.zig");
 const sm_mod = @import("source_manager.zig");
 const AstKind = @import("ast.zig").AstKind;
@@ -93,6 +94,11 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
 
             var path_s = interner_mod.stringInternerGet(reg.interner, entry.path_id);
             var content = pal_mod.readFile(path_s, scratch) orelse {
+                var p1: []const u8 = "could not read imported file '";
+                var p2: []const u8 = "'";
+                var parts: [3][]const u8 = [3][]const u8{ p1, path_s, p2 };
+                var msg = diag_mod.diagnosticBuilderMakeMsg(reg.interner, &parts[0], @intCast(u32, 3));
+                diag_mod.diagnosticCollectorAdd(reg.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3048_CANNOT_READ_FILE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
                 entry.state = mr_mod.ModuleState.failed;
                 reg.modules.items[mod_id] = entry;
                 continue;

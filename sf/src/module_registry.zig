@@ -260,7 +260,14 @@ pub fn moduleRegistryAddImport(self: *ModuleRegistry, importer_id: u32, imported
 pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer_id: u32, scratch: *Sand) ?u32 {
     var path_s = interner_mod.stringInternerGet(self.interner, path_id);
     var importer_path = interner_mod.stringInternerGet(self.interner, self.modules.items[importer_id].path_id);
-    var resolved_path_id = moduleResolverResolve(&self.resolver, importer_path, path_s, scratch) orelse return null;
+    var resolved_path_id = moduleResolverResolve(&self.resolver, importer_path, path_s, scratch) orelse {
+        var p1: []const u8 = "could not resolve imported file '";
+        var p2: []const u8 = "'";
+        var parts: [3][]const u8 = [3][]const u8{ p1, path_s, p2 };
+        var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3048_CANNOT_READ_FILE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+        return null;
+    };
     var mod_id = moduleRegistryGetOrCreateModule(self, resolved_path_id);
     moduleRegistryAddImport(self, importer_id, mod_id);
     importQueueEnqueue(&self.import_queue, mod_id);
