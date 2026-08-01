@@ -1988,45 +1988,73 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_
             emitFunctionBody(emitter, &func);
         }
             if (func.is_pub == @intCast(u8, 1)) {
-                var wur_name = interner_mod.stringInternerGet(emitter.interner, func.name_id);
-                if (wur_name.len == @intCast(usize, 4) and wur_name[0] == 'm' and wur_name[1] == 'a' and wur_name[2] == 'i' and wur_name[3] == 'n') {
-                    var wfn_mid = nameManglerMangle(emitter.mangler, func.name_id, @intCast(u8, 0), func.module_id);
-                    var wfn_name = interner_mod.stringInternerGet(emitter.interner, wfn_mid);
-                    var wrty = emitter.registry.types_items[@intCast(usize, func.return_type)];
-                    var ws1: []const u8 = "int main(void) {\n"; bufferedWriterWrite(&emitter.writer, ws1);
-                    if (wrty.kind == type_mod.TypeKind.void_type) {
-                        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-                        bufferedWriterWrite(&emitter.writer, wfn_name);
-                        var wv1: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, wv1);
-                        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-                        var wv2: []const u8 = "return 0;\n"; bufferedWriterWrite(&emitter.writer, wv2);
-                    } else if (wrty.kind == type_mod.TypeKind.error_union_type) {
-                        var weu_c = getCTypeName(emitter.registry, emitter.mangler, func.return_type);
-                        var wep = emitter.registry.eu_items[@intCast(usize, wrty.payload_idx)];
-                        var wpay = emitter.registry.types_items[@intCast(usize, wep.payload)];
-                        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-                        bufferedWriterWrite(&emitter.writer, weu_c);
-                        var we1: []const u8 = " zT_main_result;\n"; bufferedWriterWrite(&emitter.writer, we1);
-                        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-                        var we2: []const u8 = "zT_main_result = "; bufferedWriterWrite(&emitter.writer, we2);
-                        bufferedWriterWrite(&emitter.writer, wfn_name);
-                        var we3: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, we3);
-                        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-                        if (wpay.kind == type_mod.TypeKind.void_type) {
-                            var we4: []const u8 = "return zT_main_result.is_error ? zT_main_result.err : 0;\n"; bufferedWriterWrite(&emitter.writer, we4);
-                        } else {
-                            var we5: []const u8 = "return zT_main_result.is_error ? zT_main_result.data.err : (int)zT_main_result.data.payload;\n"; bufferedWriterWrite(&emitter.writer, we5);
-                        }
-                    } else {
-                        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-                        var wi1: []const u8 = "return (int)"; bufferedWriterWrite(&emitter.writer, wi1);
-                        bufferedWriterWrite(&emitter.writer, wfn_name);
-                        var wi2: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, wi2);
-                    }
-                    var ws4: []const u8 = "}\n\n"; bufferedWriterWrite(&emitter.writer, ws4);
-                    var wm: []const u8 = "WRAP:main\n"; pal.markerWrite(wm);
-                }
+                emitMainWrapper(emitter, func);
             }
+    }
+    emitModuleFooter(emitter);
+}
+
+fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
+    var wur_name = interner_mod.stringInternerGet(emitter.interner, func.name_id);
+    if (wur_name.len == @intCast(usize, 4) and wur_name[0] == 'm' and wur_name[1] == 'a' and wur_name[2] == 'i' and wur_name[3] == 'n') {
+        var wfn_mid = nameManglerMangle(emitter.mangler, func.name_id, @intCast(u8, 0), func.module_id);
+        var wfn_name = interner_mod.stringInternerGet(emitter.interner, wfn_mid);
+        var wrty = emitter.registry.types_items[@intCast(usize, func.return_type)];
+        var ws1: []const u8 = "int main(void) {\n"; bufferedWriterWrite(&emitter.writer, ws1);
+        if (wrty.kind == type_mod.TypeKind.void_type) {
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            bufferedWriterWrite(&emitter.writer, wfn_name);
+            var wv1: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, wv1);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            var wv2: []const u8 = "return 0;\n"; bufferedWriterWrite(&emitter.writer, wv2);
+        } else if (wrty.kind == type_mod.TypeKind.error_union_type) {
+            var weu_c = getCTypeName(emitter.registry, emitter.mangler, func.return_type);
+            var wep = emitter.registry.eu_items[@intCast(usize, wrty.payload_idx)];
+            var wpay = emitter.registry.types_items[@intCast(usize, wep.payload)];
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            bufferedWriterWrite(&emitter.writer, weu_c);
+            var we1: []const u8 = " zT_main_result;\n"; bufferedWriterWrite(&emitter.writer, we1);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            var we2: []const u8 = "zT_main_result = "; bufferedWriterWrite(&emitter.writer, we2);
+            bufferedWriterWrite(&emitter.writer, wfn_name);
+            var we3: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, we3);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            if (wpay.kind == type_mod.TypeKind.void_type) {
+                var we4: []const u8 = "return zT_main_result.is_error ? zT_main_result.err : 0;\n"; bufferedWriterWrite(&emitter.writer, we4);
+            } else {
+                var we5: []const u8 = "return zT_main_result.is_error ? zT_main_result.data.err : (int)zT_main_result.data.payload;\n"; bufferedWriterWrite(&emitter.writer, we5);
+            }
+        } else {
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            var wi1: []const u8 = "return (int)"; bufferedWriterWrite(&emitter.writer, wi1);
+            bufferedWriterWrite(&emitter.writer, wfn_name);
+            var wi2: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, wi2);
+        }
+        var ws4: []const u8 = "}\n\n"; bufferedWriterWrite(&emitter.writer, ws4);
+        var wm: []const u8 = "WRAP:main\n"; pal.markerWrite(wm);
+    }
+}
+
+pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction) void {
+    var h0: []const u8 = "#include \"";
+    bufferedWriterWrite(&emitter.writer, h0);
+    bufferedWriterWrite(&emitter.writer, mod_name);
+    var h1: []const u8 = ".h\"\n";
+    bufferedWriterWrite(&emitter.writer, h1);
+    var i: usize = @intCast(usize, 0);
+    while (i < fns.len) : (i += @intCast(usize, 1)) {
+        if (fns[i].is_extern != @intCast(u8, 0)) continue;
+        emitter.switch_cases = &fns[i].switch_cases;
+        emitFunctionSignature(emitter, &fns[i]);
+        emitHoistedDecls(emitter, &fns[i]);
+        emitter.dl_hoisted = @intCast(u8, 0);
+        emitFunctionBody(emitter, &fns[i]);
+        if (module_id == @intCast(u32, 0) and fns[i].is_pub == @intCast(u8, 1)) {
+            var wmn = interner_mod.stringInternerGet(emitter.interner, fns[i].name_id);
+            if (wmn.len == @intCast(usize, 4) and wmn[0] == 'm' and wmn[1] == 'a' and wmn[2] == 'i' and wmn[3] == 'n') {
+                emitMainWrapper(emitter, fns[i]);
+            }
+        }
     }
     emitModuleFooter(emitter);
 }

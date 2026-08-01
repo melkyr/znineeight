@@ -703,6 +703,29 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(fd2);
             var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
+            var cpath: [512]u8 = undefined;
+            var cp2: usize = @intCast(usize, 0);
+            var ci2: usize = @intCast(usize, 0);
+            while (ci2 < od.len and cp2 < @intCast(usize, 510)) : (ci2 += 1) { cpath[cp2] = od[ci2]; cp2 += 1; }
+            cpath[cp2] = @intCast(u8, '/'); cp2 += 1;
+            var cbi: usize = @intCast(usize, 0);
+            while (cbi < base.len and cp2 < @intCast(usize, 510)) : (cbi += 1) { cpath[cp2] = base[cbi]; cp2 += 1; }
+            var cext: []const u8 = ".c";
+            var cx: usize = @intCast(usize, 0);
+            while (cx < cext.len and cp2 < @intCast(usize, 511)) : (cx += 1) { cpath[cp2] = cext[cx]; cp2 += 1; }
+            var cfd: i32 = pal.fileOpen(cpath[0..cp2], @intCast(i32, 0));
+            if (cfd == -1) {
+                var emsg3: []const u8 = "error: cannot open output file\n";
+                pal.stderr_write(emsg3);
+                pal.exit(@intCast(u8, 1));
+            }
+            var cw: c89_mod.BufferedWriter = undefined;
+            cw = c89_mod.bufferedWriterInitFd(cfd);
+            emitter.writer = cw;
+            c89_mod.emitModuleFile(&emitter, m.id, base, fn_slice);
+            c89_mod.bufferedWriterFlush(&emitter.writer);
+            pal.fileClose(cfd);
+            var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
         }
         return;
     }
