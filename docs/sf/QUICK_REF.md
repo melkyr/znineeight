@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (166 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
+### Corpus gate (184 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -44,6 +44,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   stderr-emptiness classifier gives false counts like 68/63).
 - `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
 - **Baseline: `OK=176 FAIL=8 ICE=0 CRASH=0` over 184 repros** (2026-07-31: measured empirically). Must stay `176/8/0/0` or improve.
+- **Corpus convention (IM6 C2 Option-1):** the 176/8/0/0 baseline uses the IM6 C2 Option-1 classifier: a repro whose dump emits 0 `.c` files (frontend error) is counted OK (the per-file `for f in DIR/*.c` loop never runs). A stricter variant counting empty-DIR as FAIL yields 164/20/0/0. Both are equivalent on the 8 true emission FAILs; zero emission regression. Convention: empty-DIR = OK (matches base 44ccc246).
 
 ### Byte-identical gate (mud / gol / lisp / json) — z98-only, self-consistency check
 
@@ -71,12 +72,14 @@ mkdir -p DIR
 zig1 --dump-c89 --output-dir DIR <entry>
 # produces: DIR/*.c + DIR/*.h + DIR/zig_special_types.h
 
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c DIR/*.c
-gcc -m32 DIR/*.o sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o DIR/prog
+cd DIR
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c
+gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o prog
 ```
-- `-I sf/src/include` is REQUIRED — zig1 does not copy `zig_compat.h`/`zig_runtime.h` into DIR (zig0 does; zig1 does not).
-- For **mud_server** add `sf/src/include/net_runtime.c` to the link step.
-- For **json_parser** use the legacy `src/runtime/zig_runtime.c` object per its NOTES.md.
+- `-I /workspace/znineeight/sf/src/include` is REQUIRED — zig1 does not copy `zig_compat.h`/`zig_runtime.h` into DIR (zig0 does; zig1 does not). Use the absolute repo path: the recipe `cd`s into DIR, so relative `sf/...` paths would break.
+- Run `gcc -c` INSIDE DIR — `gcc -c DIR/*.c` from outside writes the `.o` files to the caller's CWD, so the `*.o` link glob fails (`cannot find DIR/*.o`).
+- For **mud_server** add `/workspace/znineeight/sf/src/include/net_runtime.c` to the link step.
+- For **json_parser** use the legacy `src/runtime/zig_runtime.c` object (compiled with `-c`) per its NOTES.md.
 
 ### Editing source
 Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region

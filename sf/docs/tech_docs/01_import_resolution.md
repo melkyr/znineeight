@@ -325,13 +325,13 @@ cycle-safe. This is the `emitModuleHeaderFile` dep-include loop (08 §1.17) — 
 |------|--------|
 | `--dump-ast` | Dumps AST tree (phase-independent, but AST populated during import resolution) |
 
-### Phase Entry/Exit Markers
+### Phase Entry/Exit Markers — [updated: 2026-08-01]
 
 | Marker | Function | Description |
 |--------|----------|-------------|
 | `I` | phase_ImportResolution (main.zig:250) | Phase entry — start of import resolution. **NOTE:** `c89_emit.zig:2273` also emits `I\n` during C89 emission, so only the first `I` (plus the `Z` immediately after `IRE:x`) bounds the import-resolution phase |
 | `Z` | phase_ImportResolution (main.zig:256) | Phase exit — queue drained, all modules parsed |
-| `M` | post-importResolve (main.zig:535) | Module dump — iterates modules, writes `M<id>:<ast_root>:R<decl_count>` |
+| `M` | post-importResolve (main.zig:537) | Module dump — iterates modules, writes `M<id>:<ast_root>:R<decl_count>` |
 
 ### Import Resolution Parse Markers (import_resolver.zig)
 

@@ -360,12 +360,12 @@ AST tree (root node index = module_root node)
 
 ## Debugging
 
-### CLI Flags (referenced in pipeline)
+### CLI Flags (referenced in pipeline) — [updated: 2026-08-01]
 
 | Flag | Effect |
 |------|--------|
-| `--dump-types` | Dumps type info after type resolution (DEAD — parsed at main.zig:693-694, never consulted) |
-| `--dump-lir` | Dumps LIR after lowering (DEAD — parsed at main.zig:695-696, never consulted) |
+| `--dump-types` | Dumps type info after type resolution (DEAD — declared at main.zig:774, never matched in parseArgs) |
+| `--dump-lir` | Dumps LIR after lowering (DEAD — declared at main.zig:775, never matched in parseArgs) |
 | `--dump-c89` | Dumps generated C89 |
 
 > **P9 correction:** the main pipeline (`main.zig` `parseArgs`, main.zig:744-873) does **NOT**

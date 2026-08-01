@@ -24,8 +24,9 @@ sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/out examples/z98/quicksor
 
 ### GCC compile + link + run
 ```bash
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c /tmp/out/*.c
-gcc -m32 /tmp/out/*.o sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/out/prog
+cd /tmp/out
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c
+gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o prog
 /tmp/out/prog
 ```
 

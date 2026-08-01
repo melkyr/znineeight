@@ -37,13 +37,13 @@
 > vacuously. The correct guard is `child_0`. Untouched here (documentation-only
 > task; flagged as a concern).
 
-### Per-example analysis counts (4 working examples)
+### Per-example analysis counts (4 working examples) — [updated: 2026-08-01]
 
-`[markers]` counts from the LIR per-module/per-decl loop (main.zig:535 `M`); the
+`[markers]` counts from the LIR per-module/per-decl loop (main.zig:537 `M`); the
 per-fn_decl count uses the `FNL` marker (lower.zig:4108, emitted once per lowered
-`fn_decl`) — **not** the bare `F` marker (main.zig:569), whose raw bytes in the
+`fn_decl`) — **not** the bare `F` marker (main.zig:571), whose raw bytes in the
 traces are dominated by F-prefixed LIR markers (FND/FNT/FNR/...). The static
-analyzer phase itself emits only the `A` phase marker (main.zig:471) and
+analyzer phase itself emits only the `A` phase marker (main.zig:473) and
 `analyzer.zig`/`state_map.zig` contain **zero** `markerWrite` calls. Cross-checked
 with `[fprintf]` decl-kind dumps from an instrumented build.
 

@@ -227,12 +227,12 @@ runCompiler(ctx)
 | After phase 7 | `diagnosticCollectorHasErrors` | 2 |
 | After phase 8 | `warnings_as_errors or warn_error` + warning count > 0 | 1 |
 
-### Empirical Arena Peaks — `--track-memory` (P10 evidence) `[markers]` + `[fprintf]`
+### Empirical Arena Peaks — `--track-memory` (P10 evidence) `[markers]` + `[fprintf]` — [updated: 2026-08-01]
 
 Final `--track-memory` line (`main.zig:226-245`) on the release zig1, all 4 examples
 (`--markers --track-memory --dump-c89`, exit 0, zero diagnostics):
 
-| Example | perm | mod | scr | total | AST nodes (`L\nnodes=` `main.zig:507`) |
+| Example | perm | mod | scr | total | AST nodes (`L\nnodes=` `main.zig:509`) |
 |---------|------|-----|-----|-------|----------------------------------------|
 | `mud_server` | 72K | 103K | 184K | 359K | 944 |
 | `game_of_life` | 65K | 92K | 186K | 343K | 807 |
@@ -325,14 +325,14 @@ Smaller examples share the shape: mud 12.3/0.4/3.3/0.6/30.7/0.01/27.3/41.0 ms;
 gol 9.7/0.2/1.5/1.0/19.7/0.01/24.0/44.4 ms; json 20.0/0.4/4.2/0.2/51.4/0.01/52.1/91.9 ms.
 Phases 2, 4, 6 are negligible on all 4 examples.
 
-### `--dump-c89` vs no-dump — phase skipping (Q5) `[markers]` + source
+### `--dump-c89` vs no-dump — phase skipping (Q5) `[markers]` + source — [updated: 2026-08-01]
 
 **No pipeline phase is skipped when `--dump-c89` is absent.** Only `phase_C89Emission`
 early-returns (`main.zig:604` `if (!ctx.cli.dump_c89) return;`). Evidence: a no-dump run
 emits the same `I Z S T CE RS A L C` marker set and LIR lowering still builds `lir_fns`, but
 no `FINAL_FLUSH` marker (`main.zig:740`) and 0 bytes to stdout. `--dump-types` and `--dump-lir`
-are parsed (`main.zig:693-696`) but **no phase consults them** — they have no effect on the
-current pipeline. The LIR lowering + scratch work for an un-emitted build is wasted.
+are declared (`main.zig:774-775`) but never matched in `parseArgs` and **no phase consults them** —
+they have no effect on the current pipeline. The LIR lowering + scratch work for an un-emitted build is wasted.
 
 ---
 
@@ -440,7 +440,7 @@ Built on the fly — no allocation. Returns `TYPE_UNDEFINED` if resolution fails
 
 **Arena:** Sand reset + reset peak (scratch) at entry. StateMap, defer queues in scratch.
 
-### `phase_LIRLowering` — `main.zig:505-600`
+### `phase_LIRLowering` — `main.zig:507-602` — [updated: 2026-08-01]
 
 **Calls:**
 - `lower_mod.lowererInit` — init LIR lowerer per function

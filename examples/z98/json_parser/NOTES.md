@@ -24,9 +24,10 @@ sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/out examples/z98/json_par
 
 ### GCC compile + link + run
 ```bash
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c /tmp/out/*.c
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isrc/include src/runtime/zig_runtime.c -o /tmp/rt.o
-gcc -m32 /tmp/out/*.o /tmp/rt.o sf/src/include/zig_pal.c -o /tmp/out/prog
+cd /tmp/out
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/src/include -c /workspace/znineeight/src/runtime/zig_runtime.c -o /tmp/rt.o
+gcc -m32 *.o /tmp/rt.o /workspace/znineeight/sf/src/include/zig_pal.c -o prog
 /tmp/out/prog
 ```
 

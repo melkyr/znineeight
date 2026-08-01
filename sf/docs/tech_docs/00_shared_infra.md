@@ -563,17 +563,21 @@ zig1 compiles to C89. The generated C can be debugged with GDB directly:
 ```
 $ mkdir -p /tmp/out
 $ zig1 --dump-c89 --output-dir /tmp/out source.zig   # N .c + N .h + zig_special_types.h
-$ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c /tmp/out/*.c
-$ gcc -m32 /tmp/out/*.o sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/out/prog
-$ /tmp/out/prog
-$ gdb /tmp/out/prog
+$ cd /tmp/out
+$ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c
+$ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o prog
+$ ./prog
+$ gdb ./prog
 ```
 
 [updated: 2026-08-01] The multi-module build recipe: `--dump-c89 --output-dir DIR` emits
 per-module `.c`/`.h` + `zig_special_types.h`; compile each `.c` (`-c`) then link all `.o` with
-`zig_runtime.c` + `zig_pal.c`. `-I sf/src/include` is REQUIRED (zig1 does not copy
-`zig_compat.h`/`zig_runtime.h` into the output dir). Bare `--dump-c89` (no `--output-dir`)
-keeps the stdout single-file path; `--output-dir` without `--dump-c89` is still a no-op.
+`zig_runtime.c` + `zig_pal.c`. Run gcc from INSIDE DIR (`cd DIR`, then `-c *.c`) — `gcc -c DIR/*.c`
+from outside writes the `.o` files to the caller's CWD and the `*.o` link glob fails. Use absolute
+repo paths (`-I /workspace/znineeight/sf/src/include`) since the recipe `cd`s into DIR. `-I` is
+REQUIRED (zig1 does not copy `zig_compat.h`/`zig_runtime.h` into the output dir). Bare `--dump-c89`
+(no `--output-dir`) keeps the stdout single-file path; `--output-dir` without `--dump-c89` is still
+a no-op.
 
 The compiler's `--markers` flag emits phase trace to stderr, which helps identify where in the pipeline a crash occurs. Markers appear interleaved with diagnostic output.
 

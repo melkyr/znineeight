@@ -588,11 +588,11 @@ Blocks are created lazily via `createBlock()`. Every branch/switch terminator se
 
 ---
 
-## Experimental Evidence (P7 Deep-Dive, 2026-07-31)
+## Experimental Evidence (P7 Deep-Dive, 2026-07-31) — [updated: 2026-08-01]
 
 Verified on the 4 working examples (`examples/z98/{mud_server,game_of_life,lisp_interpreter_curr,json_parser}/main.zig`) with two independent methods:
 
-- `[markers]` — the P0 traces `/tmp/dd/*.mrk` (`zig1 --markers --dump-c89`). The LIR-phase region runs from the `L\n` marker (`main.zig:506`) through the per-module `M<idx>:<ast_root>:R<decls>:<kinds>` markers (`main.zig:535`), the per-fn `FNL:<name_id>` markers (`lower.zig:4108`) and `D3HT:` temp dumps (`lower.zig:4175`), up to `A0 <kinds>` (`main.zig:584`) and the closing `C\n` (`main.zig:605`).
+- `[markers]` — the P0 traces `/tmp/dd/*.mrk` (`zig1 --markers --dump-c89`). The LIR-phase region runs from the `L\n` marker (`main.zig:508`) through the per-module `M<idx>:<ast_root>:R<decls>:<kinds>` markers (`main.zig:537`), the per-fn `FNL:<name_id>` markers (`lower.zig:4108`) and `D3HT:` temp dumps (`lower.zig:4175`), up to `A0 <kinds>` (`main.zig:586`) and the closing `C\n` (`main.zig:605`).
 - `[fprintf]` — a debug build of zig1 (`zig0` bootstrap into a fresh dir, `gcc -g -O0`) with `emitInst`, `expandDefers`, `pushDefer`, `applyCoercion`, `materializeInto` and the `@ptrCast` builtin site instrumented in the generated `lower.c` (`fprintf` to stderr). Instrumentation does **not** perturb codegen: `--dump-c89` output is byte-identical to the P0 baselines (md5 mud `87954d75…`, gol `9cc38ab9…`, lisp `6a8ca449…`, json `9492e3b3…`).
 
 Phase-scope summary `[markers]`:
@@ -699,9 +699,9 @@ Cross-check `[markers]`: the `CEM`/`CEP` markers are emitted **per `lowerExpr`**
 
 ---
 
-## Debugging
+## Debugging — [updated: 2026-08-01]
 
-The lowerer emits verbose marker output prefixed with `"L"` (for LIR lowering). **The `--dump-lir` flag is DEAD**: it is parsed and stored (`main.zig:695-696` sets `cli.dump_lir`) but never read anywhere in the pipeline. Marker output is instead gated on the `--markers` flag via `pal.markerWrite()`/`markerWriteInt()`, which check `g_markers_enabled` (`sf/src/pal.zig:96-103`). Run `zig1 --markers --dump-c89 <file>` and capture stderr to see the per-node tracing below.
+The lowerer emits verbose marker output prefixed with `"L"` (for LIR lowering). **The `--dump-lir` flag is DEAD**: its flag string is declared (`main.zig:775`) but never matched in `parseArgs`, so `cli.dump_lir` stays `false` and nothing reads it anywhere in the pipeline. Marker output is instead gated on the `--markers` flag via `pal.markerWrite()`/`markerWriteInt()`, which check `g_markers_enabled` (`sf/src/pal.zig:96-103`). Run `zig1 --markers --dump-c89 <file>` and capture stderr to see the per-node tracing below.
 
 | Marker | Meaning |
 |--------|---------|
