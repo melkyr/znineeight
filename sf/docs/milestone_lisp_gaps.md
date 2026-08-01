@@ -689,7 +689,7 @@ pal_markerWrite("FTR:D\n");                        // footer done
 # Diagnostic build
 rm -rf out_release && mkdir out_release
 ./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1_dbg
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1_dbg
 
 # Trace markers
 echo 'pub fn main() void {}' > /tmp/t75_empty.zig
@@ -1236,7 +1236,7 @@ grep -c "zT_811C9DC5_" /tmp/t19.c  # Expect 0 — no stale name
 # Build zig1
 rm -rf out_release && mkdir out_release
 ./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
 test -f out_release/zig1 && echo "BUILD OK" || echo "BUILD FAILED"
 
 # Compile lisp
@@ -1279,7 +1279,7 @@ g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o sf/build/zig0
 ./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
 
 # GCC compiles C89 → zig1 binary
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
 
 # zig1 compiles examples
 ./out_release/zig1 --dump-c89 <source.zig> > out.c

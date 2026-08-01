@@ -410,6 +410,8 @@ Two pre-made scripts isolate output per target:
 | `sf/scripts/build_release.sh` | `sf/src/main.zig` → zig1 binary | `sf/build/out_release/` |
 | `sf/scripts/build_test.sh` | Test binaries (`test_*_bin.zig`) | `sf/build/out_test_<name>/` (one per test) |
 
+**Note:** `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary. This is required since `pal.zig` gained the `pal_file_open`/`pal_file_write`/`pal_file_close` externs — without it every test binary fails to link.
+
 **Usage:**
 ```bash
 # Release
