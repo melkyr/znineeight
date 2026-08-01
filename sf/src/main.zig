@@ -616,10 +616,11 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         undefined,
         &ctx.alloc.scratch,
     );
+    emitter.module_reg = ctx.module_reg;
     var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
     var module_name: []const u8 = "output";
 
-    if (ctx.cli.output_dir_set and ctx.cli.dump_c89) {
+    if (ctx.cli.output_dir_set) {
         var poi: u32 = @intCast(u32, 0);
         while (poi < ctx.pointer_only_len) : (poi += 1) {
             hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ctx.pointer_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
@@ -646,7 +647,64 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         c89_mod.emitSharedHeader(&emitter, ctx.typereg, sorted);
         c89_mod.bufferedWriterFlush(&emitter.writer);
         pal.fileClose(fd);
-        emitter.writer = c89_mod.bufferedWriterInit();
+        var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+        var fn_cursor: usize = @intCast(usize, 0);
+        var mi: usize = @intCast(usize, 0);
+        while (mi < mods.len) : (mi += 1) {
+            var m = mods[mi];
+            var fn_start: usize = fn_cursor;
+            while (fn_cursor < fns.len and fns[fn_cursor].module_id == m.id) : (fn_cursor += @intCast(usize, 1)) {}
+            var fn_slice = fns[fn_start..fn_cursor];
+            var path_str = interner_mod.stringInternerGet(ctx.interner, m.path_id);
+            var last_slash: usize = @intCast(usize, 0);
+            var has_slash: u8 = @intCast(u8, 0);
+            var ps_i: usize = @intCast(usize, 0);
+            while (ps_i < path_str.len) : (ps_i += @intCast(usize, 1)) {
+                if (path_str[ps_i] == @intCast(u8, '/')) { last_slash = ps_i; has_slash = @intCast(u8, 1); }
+            }
+            var base: []const u8 = undefined;
+            if (has_slash != @intCast(u8, 0)) {
+                var dbl_start: usize = last_slash + @intCast(usize, 1);
+                base = path_str[dbl_start..path_str.len];
+            } else {
+                base = path_str;
+            }
+            var bl = base.len;
+            if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, 'i') and base[bl - @intCast(usize, 1)] == @intCast(u8, 'g')) {
+                var bl4: usize = bl - @intCast(usize, 4);
+                base = base[0..bl4];
+            } else if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, '9') and base[bl - @intCast(usize, 1)] == @intCast(u8, '8')) {
+                var bl4: usize = bl - @intCast(usize, 4);
+                base = base[0..bl4];
+            }
+            var hp2: usize = @intCast(usize, 0);
+            var hi2: usize = @intCast(usize, 0);
+            while (hi2 < od.len and hp2 < @intCast(usize, 510)) : (hi2 += 1) { hpath[hp2] = od[hi2]; hp2 += 1; }
+            hpath[hp2] = @intCast(u8, '/'); hp2 += 1;
+            var bi: usize = @intCast(usize, 0);
+            while (bi < base.len and hp2 < @intCast(usize, 510)) : (bi += 1) { hpath[hp2] = base[bi]; hp2 += 1; }
+            var hext: []const u8 = ".h";
+            var hx: usize = @intCast(usize, 0);
+            while (hx < hext.len and hp2 < @intCast(usize, 511)) : (hx += 1) { hpath[hp2] = hext[hx]; hp2 += 1; }
+            var fd2: i32 = pal.fileOpen(hpath[0..hp2], @intCast(i32, 0));
+            if (fd2 == -1) {
+                var emsg2: []const u8 = "error: cannot open output file\n";
+                pal.stderr_write(emsg2);
+                pal.exit(@intCast(u8, 1));
+            }
+            var hw2: c89_mod.BufferedWriter = undefined;
+            hw2 = c89_mod.bufferedWriterInitFd(fd2);
+            emitter.writer = hw2;
+            var dep_start: usize = @intCast(usize, m.imports_start);
+            var dep_end: usize = dep_start + @intCast(usize, m.import_count);
+            var dep_ids = ctx.module_reg.import_edges_items[dep_start..dep_end];
+            var m_c_incs = m.c_includes.items[0..m.c_includes.len];
+            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, fn_slice, m_c_incs, dep_ids, sorted);
+            c89_mod.bufferedWriterFlush(&emitter.writer);
+            pal.fileClose(fd2);
+            var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
+        }
+        return;
     }
 
     var cwriter: c89_mod.BufferedWriter = undefined;

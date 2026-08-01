@@ -14,6 +14,7 @@ const Sand = @import("allocator.zig").Sand;
 const hash_mod = @import("util/hash.zig");
 const interner_mod = @import("string_interner.zig");
 const type_mod = @import("type_registry.zig");
+const mr_mod = @import("module_registry.zig");
 
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
@@ -478,6 +479,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      fwd_decl_set: U32ToU32Map,
      pointer_only_map: U32ToU32Map,
      shared_set: U32ToU32Map,
+     module_reg: *mr_mod.ModuleRegistry,
      dedup_names: [128]u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
@@ -505,6 +507,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .fwd_decl_set = hash_mod.u32ToU32MapInit(alloc),
          .pointer_only_map = hash_mod.u32ToU32MapInit(alloc),
          .shared_set = hash_mod.u32ToU32MapInit(alloc),
+         .module_reg = undefined,
           .dedup_names = undefined,
           .dedup_count = @intCast(u32, 0),
            .fl_name_ids = undefined,
@@ -1833,6 +1836,131 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, 
 fn emitModuleFooter(emitter: *C89Emitter) void {
     var s: []const u8 = "/* EOF */\n";
     bufferedWriterWrite(&emitter.writer, s);
+}
+
+pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction, c_includes: []u32, dep_mod_ids: []u32, sorted: [*]u32) void {
+    var gname: [128]u8 = undefined;
+    var gn: usize = @intCast(usize, 0);
+    var g_i: usize = @intCast(usize, 0);
+    while (g_i < mod_name.len and gn < @intCast(usize, 127)) : (g_i += @intCast(usize, 1)) {
+        var c = mod_name[g_i];
+        if (c >= @intCast(u8, 'a') and c <= @intCast(u8, 'z')) {
+            gname[gn] = c - @intCast(u8, 'a') + @intCast(u8, 'A');
+        } else if ((c >= @intCast(u8, 'A') and c <= @intCast(u8, 'Z')) or (c >= @intCast(u8, '0') and c <= @intCast(u8, '9'))) {
+            gname[gn] = c;
+        } else {
+            gname[gn] = @intCast(u8, '_');
+        }
+        gn += @intCast(usize, 1);
+    }
+    var m0: []const u8 = "#ifndef ZIG_MODULE_"; bufferedWriterWrite(&emitter.writer, m0);
+    bufferedWriterWrite(&emitter.writer, gname[0..gn]);
+    var m1: []const u8 = "_H\n#define ZIG_MODULE_"; bufferedWriterWrite(&emitter.writer, m1);
+    bufferedWriterWrite(&emitter.writer, gname[0..gn]);
+    var m2: []const u8 = "_H\n\n"; bufferedWriterWrite(&emitter.writer, m2);
+    var h0: []const u8 = "#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
+    bufferedWriterWrite(&emitter.writer, h0);
+    var ci: usize = @intCast(usize, 0);
+    while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
+        var inc_id = c_includes[ci];
+        var inc_str = interner_mod.stringInternerGet(emitter.interner, inc_id);
+        var is1: []const u8 = "#include ";
+        bufferedWriterWrite(&emitter.writer, is1);
+        if (inc_str.len > @intCast(usize, 0)) {
+            if (inc_str.ptr[0] == @intCast(u8, '<')) {
+                bufferedWriterWrite(&emitter.writer, inc_str);
+            } else {
+                var qs: []const u8 = "\"";
+                bufferedWriterWrite(&emitter.writer, qs);
+                bufferedWriterWrite(&emitter.writer, inc_str);
+                bufferedWriterWrite(&emitter.writer, qs);
+            }
+        }
+        var inl: []const u8 = "\n";
+        bufferedWriterWrite(&emitter.writer, inl);
+    }
+    var di: usize = @intCast(usize, 0);
+    while (di < dep_mod_ids.len) : (di += @intCast(usize, 1)) {
+        var d = dep_mod_ids[di];
+        if (d == module_id) continue;
+        var dep_mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+        var dep_path = interner_mod.stringInternerGet(emitter.interner, dep_mods[@intCast(usize, d)].path_id);
+        var dl_slash: usize = @intCast(usize, 0);
+        var dl_has: u8 = @intCast(u8, 0);
+        var dl_i: usize = @intCast(usize, 0);
+        while (dl_i < dep_path.len) : (dl_i += @intCast(usize, 1)) {
+            if (dep_path[dl_i] == @intCast(u8, '/')) { dl_slash = dl_i; dl_has = @intCast(u8, 1); }
+        }
+        var dbase: []const u8 = undefined;
+        if (dl_has != @intCast(u8, 0)) {
+            var dbl_start: usize = dl_slash + @intCast(usize, 1);
+            dbase = dep_path[dbl_start..dep_path.len];
+        } else {
+            dbase = dep_path;
+        }
+        var dbl = dbase.len;
+        if (dbl >= @intCast(usize, 4) and dbase[dbl - @intCast(usize, 4)] == @intCast(u8, '.') and dbase[dbl - @intCast(usize, 3)] == @intCast(u8, 'z') and dbase[dbl - @intCast(usize, 2)] == @intCast(u8, 'i') and dbase[dbl - @intCast(usize, 1)] == @intCast(u8, 'g')) {
+            var dbl4: usize = dbl - @intCast(usize, 4);
+            dbase = dbase[0..dbl4];
+        } else if (dbl >= @intCast(usize, 4) and dbase[dbl - @intCast(usize, 4)] == @intCast(u8, '.') and dbase[dbl - @intCast(usize, 3)] == @intCast(u8, 'z') and dbase[dbl - @intCast(usize, 2)] == @intCast(u8, '9') and dbase[dbl - @intCast(usize, 1)] == @intCast(u8, '8')) {
+            var dbl4: usize = dbl - @intCast(usize, 4);
+            dbase = dbase[0..dbl4];
+        }
+        var ic0: []const u8 = "#include \"";
+        bufferedWriterWrite(&emitter.writer, ic0);
+        bufferedWriterWrite(&emitter.writer, dbase);
+        var ic1: []const u8 = ".h\"\n";
+        bufferedWriterWrite(&emitter.writer, ic1);
+    }
+    var dn: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, dn);
+    var tsi: usize = @intCast(usize, 0);
+    while (tsi < emitter.registry.types_len) : (tsi += @intCast(usize, 1)) {
+        var tid = sorted[tsi];
+        var ty = emitter.registry.types_items[@intCast(usize, tid)];
+        if (ty.name_id == @intCast(u32, 0)) continue;
+        if (ty.module_id != module_id) continue;
+        if (ty.kind != TypeKind.struct_type and ty.kind != TypeKind.tagged_union_type and ty.kind != TypeKind.union_type and ty.kind != TypeKind.enum_type and ty.kind != TypeKind.error_set_type) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.shared_set, tid) != null) continue;
+        var cname = getCTypeName(emitter.registry, emitter.mangler, tid);
+        var dedup_key: u32 = @intCast(u32, 0);
+        var h_ci: usize = @intCast(usize, 0);
+        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
+            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+        }
+        if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key)) |_| continue;
+        hash_mod.u32ToU32MapPut(&emitter.emitted_type_set, dedup_key, @intCast(u32, 1));
+        var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
+        emitTypeDefinition(emitter, tid);
+        var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+    }
+    var tn: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, tn);
+    var fwd0: []const u8 = "/* Forward declarations */\n";
+    bufferedWriterWrite(&emitter.writer, fwd0);
+    var fi: usize = @intCast(usize, 0);
+    while (fi < fns.len) : (fi += @intCast(usize, 1)) {
+        if (fns[fi].is_extern == @intCast(u8, 0)) {
+            emitFunctionForwardDecl(emitter, fns[fi]);
+        }
+    }
+    var fnl: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, fnl);
+    var e0: []const u8 = "#endif /* ZIG_MODULE_";
+    bufferedWriterWrite(&emitter.writer, e0);
+    bufferedWriterWrite(&emitter.writer, gname[0..gn]);
+    var e1: []const u8 = "_H */\n";
+    bufferedWriterWrite(&emitter.writer, e1);
 }
 
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
