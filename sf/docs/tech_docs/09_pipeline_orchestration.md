@@ -141,7 +141,12 @@ main(argc, argv)
 
 ### Output Directory Isolation
 
-The output directory is **not created or checked in main()**. It is stored in `cli.output_dir` (default `"."`) and used only by `phase_C89Emission` when `--dump-c89` is set. The C89 emitter writes to stdout via `BufferedWriter` — output directory is metadata for future file output.
+[updated: 2026-08-01] `cli.output_dir` is now **live**: when `--dump-c89 --output-dir DIR` is
+set, `phase_C89Emission` writes per-module `.c`/`.h` files plus `zig_special_types.h` into `DIR`
+(via the `BufferedWriter` fd sink + `pal.fileOpen`/`fileWrite`/`fileClose`). The output directory
+is still **not created or checked in main()** — callers must `mkdir -p DIR` first (the
+QUICK_REF/NOTES.md recipes do). Bare `--dump-c89` (no `--output-dir`, default `"."` unchanged)
+keeps the stdout single-file path byte-identical — stdout-path preservation is a hard gate.
 
 ---
 
@@ -449,18 +454,33 @@ Built on the fly — no allocation. Returns `TYPE_UNDEFINED` if resolution fails
 
 ### `phase_C89Emission` — `main.zig:602-629`
 
-**Calls:**
+[updated: 2026-08-01] Branches on `--output-dir` (with `--dump-c89`):
+- **Stdout branch (no `--output-dir`)** — the classic single-file path below, kept byte-identical:
+  `emitIncludes` preamble → `cincludeUnionAll` → `emitModule("output", …)` → final flush.
+- **Multi-module branch (`--output-dir DIR`)** — `tstTopologicalSort` once →
+  `emitSharedHeader` (writes `DIR/zig_special_types.h`) → per-module loop over
+  `moduleRegistryGetModules`: derive basename from `path_id` (strip `.zig`/`.z98`), build the
+  module's fn slice + dep-module-id list from
+  `import_edges_items[M.imports_start .. M.imports_start+M.import_count]`, then
+  `pal.fileOpen(DIR/<basename>.h)` → `bufferedWriterInitFd` → `emitModuleHeaderFile` →
+  flush/close, then the same for `.c` via `emitModuleFile`. Per-file `FINAL_FLUSH`.
+
+**Calls (stdout branch):**
 - `c89_mod.nameManglerInit` — init name mangler
 - `c89_mod.c89EmitterInit` — init C89 emitter
-- `c89_mod.bufferedWriterInit` — init buffered writer
+- `c89_mod.bufferedWriterInit` — init buffered writer (fd=1 stdout)
 - `c89_mod.emitIncludes` — emit C #include directives
 - `cinclude.cincludeUnionAll` — collect all C includes
 - `c89_mod.emitModule` — emit module to C89
 - `c89_mod.bufferedWriterFlush` — final flush
 
-**Early exit:** If `!ctx.cli.dump_c89` — return immediately (no emission).
+**Calls (multi-module branch):** `c89_mod.tstTopologicalSort`, `c89_mod.emitSharedHeader`,
+`c89_mod.emitModuleHeaderFile`, `c89_mod.emitModuleFile`, plus
+`pal.fileOpen`/`pal.fileWrite`/`pal.fileClose` via `bufferedWriterInitFd`/`bufferedWriterFlush`.
 
-**Markers:** `C` (start), `FINAL_FLUSH` (done)
+**Early exit:** If `!ctx.cli.dump_c89` — return immediately (no emission, no files written).
+
+**Markers:** `C` (start), `FINAL_FLUSH` (per file in multi-module mode; once for stdout).
 
 **Arena:** Sand reset (scratch) at entry. BufferedWriter, NameMangler, C89Emitter in scratch.
 
@@ -623,8 +643,10 @@ runCompiler(ctx)
     ├─ phase_LIRLowering           → LirFunctionArrayList (lir_fns)
     └─ phase_C89Emission         → C89 output via BufferedWriter
                                         │
-                                        ▼
-                                   output.c
+                    ┌───────────────────┴────────────────────┐
+                    ▼                                        ▼
+   stdout single-file (bare --dump-c89)      DIR/*.c + DIR/*.h + DIR/zig_special_types.h
+                output.c                     (multi-module, --output-dir DIR)
 ```
 
 ### Field Producers → Consumers
@@ -632,7 +654,7 @@ runCompiler(ctx)
 | Field | Produced By | Consumed By |
 |-------|-------------|-------------|
 | `cli.input_file` | `parseArgs` | `phase_ImportResolution` (path → module) |
-| `cli.output_dir` | `parseArgs` | `phase_C89Emission` (future use) |
+| `cli.output_dir` | `parseArgs` | `phase_C89Emission` (live — multi-module file emission, `[updated: 2026-08-01]`) |
 | `cli.dump_*` flags | `parseArgs` | `phase_LIRLowering`, `phase_C89Emission` |
 | `cli.*_check` flags | `parseArgs` | `phase_StaticAnalyzers` |
 | `cli.track_memory` | `parseArgs` | `runCompiler` (final print) |

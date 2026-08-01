@@ -64,20 +64,25 @@ Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string
 
 ### 1.2 BufferedWriter — 4KB Buffered Output
 
-Defined in `c89_emit.zig:27-73`. Fixed-size 4096-byte buffer with auto-flush.
+Defined in `c89_emit.zig:27-79`. Fixed-size 4096-byte buffer with auto-flush.
+[updated: 2026-08-01] BufferedWriter now carries a **file-descriptor sink** (`fd: i32`) so the
+multi-module path can flush each `.h`/`.c`/`zig_special_types.h` to its own open file. Stdout
+remains the default (`fd=1`), so the bare `--dump-c89` byte-identical gate is preserved.
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `buf` | `[4096]u8` | Circular-ish output buffer — written to sequentially, flushed to stdout when full |
+| `buf` | `[4096]u8` | Circular-ish output buffer — written to sequentially, flushed to sink when full |
 | `pos` | `usize` | Current write cursor (0 = empty, 4096 = full, triggers flush) |
+| `fd` | `i32` | Output sink fd. `1` (stdout) by default; set per-file via `bufferedWriterInitFd` |
 
 | Function | Line | Purpose |
 |----------|------|---------|
-| `bufferedWriterInit` | 32 | Returns new BufferedWriter with `pos=0`, `buf=undefined` |
-| `bufferedWriterFlush` | 36 | Writes `buf[0..pos]` to stdout via `pal.stdout_write`, resets pos to 0 |
-| `bufferedWriterWrite` | 44 | Writes byte slice to buffer. Loops: copies min(remaining, 4096-pos) bytes into buf, increments pos, flushes if full |
-| `bufferedWriterWriteByte` | 59 | Single byte write, flush-if-full, store at pos, increment |
-| `bufferedWriterWriteIndent` | 65 | Writes `level * 4` spaces (flush-safe, byte-by-byte) |
+| `bufferedWriterInit` | 34 | Returns new BufferedWriter with `pos=0`, `buf=undefined`, `fd=1` (stdout) |
+| `bufferedWriterInitFd` | 38 | Returns new BufferedWriter writing to the given fd (multi-module per-file sink) |
+| `bufferedWriterFlush` | 42 | Writes `buf[0..pos]` to `self.fd` via `pal.fileWrite`, resets pos to 0 |
+| `bufferedWriterWrite` | 50 | Writes byte slice to buffer. Loops: copies min(remaining, 4096-pos) bytes into buf, increments pos, flushes if full |
+| `bufferedWriterWriteByte` | 65 | Single byte write, flush-if-full, store at pos, increment |
+| `bufferedWriterWriteIndent` | 71 | Writes `level * 4` spaces (flush-safe, byte-by-byte) |
 
 Markers `FL:p` (flush start, prints current pos) and `FE:p` (flush end, prints 0) bracket each flush.
 
@@ -156,6 +161,7 @@ Defined `c89_emit.zig:457-480`. Holds all emission context:
 | `emitted_type_set` | `U32ToU32Map` | Dedup: type name hash → emitted marker |
 | `fwd_decl_set` | `U32ToU32Map` | Dedup: forward decl name hash → emitted marker |
 | `pointer_only_map` | `U32ToU32Map` | Type ids that need only forward decl |
+| `shared_set` | `U32ToU32Map` | [updated: 2026-08-01] Type ids emitted into the shared `zig_special_types.h` — synthetics ∪ CLS:v ∪ i64/u64 ∪ named fn_type, plus CLS:p closure (see `computeSharedSet`) |
 | `dedup_names` | `[128]u32` | Local variable dedup during hoisting |
 | `dedup_count` | `u32` | Count of dedup_names |
 | `fl_name_ids` / `fl_temps` | `[128]u32` | Flat lookup: local name_id → temp_id |
@@ -197,7 +203,10 @@ When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by 
 
 ### 1.6 Type Emission — emitSpecialTypes
 
-`emitSpecialTypes` (`c89_emit.zig:884`) drives type header output:
+`emitSpecialTypes` (`c89_emit.zig:1126`) drives type header output for the stdout single-file
+path. For the multi-module path (`--output-dir`), the shared-header writer
+`emitSharedHeader` (`c89_emit.zig:983`) performs the equivalent partition into
+`zig_special_types.h` (see §1.17):
 
 ```
 emitSpecialTypes(emitter, reg):
@@ -384,10 +393,14 @@ Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule` (`c89_emit.zig:1600`) drives one module's output. Note that `phase_C89Emission`
+`emitModule` (`c89_emit.zig:1966`) drives one module's output for the **stdout single-file
+path only** (bare `--dump-c89`). [updated: 2026-08-01] When `--dump-c89 --output-dir DIR` is
+set, `phase_C89Emission` instead emits `zig_special_types.h` once via `emitSharedHeader` and
+loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
+(see §1.17); `emitModule` is unchanged for the stdout path. Note that `phase_C89Emission`
 (`main.zig:602`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
 fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
-`c89_emit.zig:706-711`), flushes it (`main.zig:620-623`), then calls `emitModule` with the
+`c89_emit.zig:716-721`), flushes it (`main.zig:620-623`), then calls `emitModule` with the
 hardcoded module name `"output"` (`main.zig:618`) — hence `/* Module: output */` in every dump.
 
 ```
@@ -531,6 +544,39 @@ Resolves field access for `.assign_field`:
 | `INSTB:` | emitFunctionBody | Instance temp body |
 | `DxA:` | emitFunctionBody | Duplicate local skipped |
 
+### 1.17 Multi-Module Emission (`--output-dir`) — [updated: 2026-08-01]
+
+With `--dump-c89 --output-dir DIR`, `phase_C89Emission` (`main.zig`) switches from the single
+stdout stream to **per-module file emission**. Output set: `DIR/<module>.c` (one per module) +
+`DIR/<module>.h` (one per module) + `DIR/zig_special_types.h`. Bare `--dump-c89` (no
+`--output-dir`) keeps the stdout single-file path (§1.10) byte-identical — the two paths are
+branched on the CLI, never mixed.
+
+- **Shared header** — `emitSharedHeader` (`c89_emit.zig:983`): calls `computeSharedSet`
+  (`c89_emit.zig:923`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
+  preamble `#include "zig_compat.h"` + `#include "zig_runtime.h"`, an unfiltered fwd-decl pass
+  (`typedef struct X X;` for every named struct/tagged_union/union), sub-pass 2a restricted to
+  `shared_set` (guarded), and all of sub-pass 2b. `computeSharedSet` seeds synthetics
+  (`name_id==0` in slice/optional/error_union/tagged_union/union/array/fn_type) ∪ value-embedding
+  named types (CLS:v, `pointer_only_map` miss) ∪ i64/u64 ∪ named fn_type, then closes over
+  pointer-only named types referenced by-value by shared members (fixpoint over `reg.types_len`).
+- **Guard scheme** — every type definition is wrapped
+  `#ifndef ZIG_<TAG>_<cname> / #define ZIG_<TAG>_<cname> / <def> / #endif`. Tag from
+  `ctypeGuardWrite` (`c89_emit.zig:895`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
+  `ZIG_ERROR_SET_`, `ZIG_SLICE_`, `ZIG_OPTIONAL_`, `ZIG_ERRORUNION_`, `ZIG_ARRAY_`,
+  `ZIG_FNPTR_`, `ZIG_I64_`, `ZIG_U64_`, fallback `ZIG_TYPE_`.
+- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:1841`): module guard
+  `ZIG_MODULE_<NAME>_H` (NAME = uppercased basename, non-alnum → `_`); includes `zig_compat.h`
+  + `zig_special_types.h`; the module's own `@cInclude` directives (`entry.c_includes`,
+  per-module — NOT the global `cincludeUnionAll` union); each direct-import dep's `.h` by bare
+  basename (`#include "dep.h"`, skipping self, `.zig`/`.z98` stripped); owned CLS:p
+  type full-definitions (name_id≠0, `module_id==M.id`, struct/TU/union/enum/error_set,
+  `pointer_only_map`, not in `shared_set` — each guarded); fn fwd-decls (non-extern).
+- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2041`): `#include "<mod>.h"`, then the
+  module's own fn bodies (externs skipped; `switch_cases`/`dl_hoisted` reset per fn). The
+  `int main(void)` wrapper is emitted only for `module_id==0`'s public `main`
+  (`emitMainWrapper`, `c89_emit.zig:2000`).
+
 ---
 
 ## 2. `cinclude.zig` — @cInclude Dedup (26 lines)
@@ -550,7 +596,10 @@ cincludeUnionAll(module_reg, alloc) → []u32:
   4. Return temp slice
 ```
 
-This produces a flat deduplicated list of all `@cInclude` directives across all modules. Used by `emitModuleHeader` to emit `#include` lines per module.
+This produces a flat deduplicated list of all `@cInclude` directives across all modules. Used by `emitModuleHeader` to emit `#include` lines per module — this applies to the stdout single-file path.
+[updated: 2026-08-01] In the multi-module path (§1.17), `emitModuleHeaderFile` does NOT use the
+global union — each module `.h` emits its own `entry.c_includes` directives directly (per-module
+`@cInclude`), so a directive only appears in the header of the module that declared it.
 
 ### Struct — ModuleEntry Fields Touched
 

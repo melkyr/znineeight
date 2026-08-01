@@ -17,13 +17,17 @@
 
 ### zig1 (dump C89)
 ```bash
-sf/build/out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig
+mkdir -p /tmp/out
+sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/out examples/z98/json_parser/main.zig
+# produces: /tmp/out/*.c + /tmp/out/*.h + /tmp/out/zig_special_types.h
 ```
 
-### GCC compile + link
+### GCC compile + link + run
 ```bash
-gcc -m32 -std=c89 -c -Wno-long-long -Wno-pointer-sign -Isrc/include src/runtime/zig_runtime.c -o /tmp/rt.o
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include /tmp/x.c /tmp/rt.o sf/src/include/zig_pal.c -o /tmp/x
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c /tmp/out/*.c
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isrc/include src/runtime/zig_runtime.c -o /tmp/rt.o
+gcc -m32 /tmp/out/*.o /tmp/rt.o sf/src/include/zig_pal.c -o /tmp/out/prog
+/tmp/out/prog
 ```
 
 ## Expected Output

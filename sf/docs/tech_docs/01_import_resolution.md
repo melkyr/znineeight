@@ -302,6 +302,19 @@ moduleRegistryResolveImport
 ModuleEntry created (pending) → eventually parsed by main loop
 ```
 
+### Per-Module Header Include Chain (multi-module emission) — [updated: 2026-08-01]
+
+In the multi-module C89 output (`zig1 --dump-c89 --output-dir DIR`), each module's emitted header
+`<module>.h` includes the `.h` of every **direct** import — the import-edge targets
+`import_edges_items[M.imports_start .. M.imports_start+M.import_count]` (recorded by
+`moduleRegistryAddImport`, module_registry.zig:252) — as `#include "dep.h"` using the dep's bare
+basename (path after the last `/`, `.zig`/`.z98` stripped; the self edge is skipped). The order
+follows the direct-edge iteration, i.e. `@import` declaration order. Transitive includes resolve
+through the deps' own headers plus the shared `zig_special_types.h`; include guards
+(`ZIG_MODULE_<NAME>_H`, and the per-type `ZIG_<TAG>_<cname>` guards) make the include graph
+cycle-safe. This is the `emitModuleHeaderFile` dep-include loop (08 §1.17) — the emission uses
+**direct-edge iteration**, not `moduleRegistrySortModules`.
+
 ---
 
 ## Debugging

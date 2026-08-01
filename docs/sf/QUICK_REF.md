@@ -35,8 +35,11 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   on **stdout** (`/tmp/x.c`), not stderr.
 
 ### Corpus gate (166 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
-For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89`, then
-`gcc -m32 -std=c89 -c -Wno-long-long -Wno-pointer-sign -I sf/src/include` the output.
+For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
+every emitted per-module `.c` file:
+```bash
+for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c "$f" -o /dev/null || exit 1; done
+```
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
 - `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
@@ -60,6 +63,20 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
+
+## Multi-Module Build
+
+```bash
+zig1 --dump-c89 --output-dir DIR <entry>
+# produces: DIR/*.c + DIR/*.h + DIR/zig_special_types.h
+
+mkdir -p DIR
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c DIR/*.c
+gcc -m32 DIR/*.o sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o DIR/prog
+```
+- `-I sf/src/include` is REQUIRED — zig1 does not copy `zig_compat.h`/`zig_runtime.h` into DIR (zig0 does; zig1 does not).
+- For **mud_server** add `sf/src/include/net_runtime.c` to the link step.
+- For **json_parser** use the legacy `src/runtime/zig_runtime.c` object per its NOTES.md.
 
 ### Editing source
 Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region
