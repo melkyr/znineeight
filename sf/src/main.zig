@@ -635,8 +635,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         var hfn: []const u8 = "zig_special_types.h";
         var hfi: usize = @intCast(usize, 0);
         while (hfi < hfn.len and hp < @intCast(usize, 511)) : (hfi += 1) { hpath[hp] = hfn[hfi]; hp += 1; }
-        var fd: i32 = pal.fileOpen(hpath[0..hp], @intCast(i32, 0));
-        if (fd == -1) {
+        var fd: usize = pal.fileOpen(hpath[0..hp], @intCast(i32, 0));
+        if (fd == pal.INVALID_FD) {
             var emsg: []const u8 = "error: cannot open output file\n";
             pal.stderr_write(emsg);
             pal.exit(@intCast(u8, 1));
@@ -670,8 +670,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var hext: []const u8 = ".h";
             var hx: usize = @intCast(usize, 0);
             while (hx < hext.len and hp2 < @intCast(usize, 511)) : (hx += 1) { hpath[hp2] = hext[hx]; hp2 += 1; }
-            var fd2: i32 = pal.fileOpen(hpath[0..hp2], @intCast(i32, 0));
-            if (fd2 == -1) {
+            var fd2: usize = pal.fileOpen(hpath[0..hp2], @intCast(i32, 0));
+            if (fd2 == pal.INVALID_FD) {
                 var emsg2: []const u8 = "error: cannot open output file\n";
                 pal.stderr_write(emsg2);
                 pal.exit(@intCast(u8, 1));
@@ -697,8 +697,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var cext: []const u8 = ".c";
             var cx: usize = @intCast(usize, 0);
             while (cx < cext.len and cp2 < @intCast(usize, 511)) : (cx += 1) { cpath[cp2] = cext[cx]; cp2 += 1; }
-            var cfd: i32 = pal.fileOpen(cpath[0..cp2], @intCast(i32, 0));
-            if (cfd == -1) {
+            var cfd: usize = pal.fileOpen(cpath[0..cp2], @intCast(i32, 0));
+            if (cfd == pal.INVALID_FD) {
                 var emsg3: []const u8 = "error: cannot open output file\n";
                 pal.stderr_write(emsg3);
                 pal.exit(@intCast(u8, 1));

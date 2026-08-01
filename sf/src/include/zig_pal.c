@@ -14,7 +14,7 @@
 
 #ifdef _WIN32
 typedef void* PlatFile;
-#define PLAT_INVALID_FILE ((void*)(isize)-1)
+#define PLAT_INVALID_FILE ((void*)-1)
 #else
 typedef int PlatFile;
 #define PLAT_INVALID_FILE (-1)
@@ -178,20 +178,20 @@ int pal_f64_to_str(f64 value, char* buf, int bufsize)
     return pos;
 }
 
-int pal_file_open(const char* path, int flags) {
+PlatFile pal_file_open(const char* path, int flags) {
 #ifdef _WIN32
     HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return -1;
-    return (int)(size_t)h;
+    if (h == INVALID_HANDLE_VALUE) return PLAT_INVALID_FILE;
+    return h;
 #else
-    if (!path) return -1;
+    if (!path) return PLAT_INVALID_FILE;
     return open(path, O_WRONLY | O_CREAT | O_TRUNC | flags, 0644);
 #endif
 }
-int pal_file_write(int fd, const char* buf, unsigned int len) {
+int pal_file_write(PlatFile fd, const char* buf, unsigned int len) {
 #ifdef _WIN32
-    HANDLE h = (HANDLE)(size_t)fd; DWORD w = 0;
+    HANDLE h = (HANDLE)fd; DWORD w = 0;
     if (!buf || !WriteFile(h, buf, (DWORD)len, &w, NULL)) return -1;
     return (int)w;
 #else
@@ -204,9 +204,9 @@ int pal_file_write(int fd, const char* buf, unsigned int len) {
     return (int)off;
 #endif
 }
-int pal_file_close(int fd) {
+int pal_file_close(PlatFile fd) {
 #ifdef _WIN32
-    return CloseHandle((HANDLE)(size_t)fd) ? 0 : -1;
+    return CloseHandle((HANDLE)fd) ? 0 : -1;
 #else
     return close(fd);
 #endif
