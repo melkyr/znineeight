@@ -1988,7 +1988,10 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_
             emitFunctionBody(emitter, &func);
         }
             if (func.is_pub == @intCast(u8, 1)) {
-                emitMainWrapper(emitter, func);
+                var wr_name = interner_mod.stringInternerGet(emitter.interner, func.name_id);
+                if (wr_name.len == @intCast(usize, 4) and wr_name[0] == 'm' and wr_name[1] == 'a' and wr_name[2] == 'i' and wr_name[3] == 'n') {
+                    emitMainWrapper(emitter, func);
+                }
             }
     }
     emitModuleFooter(emitter);
