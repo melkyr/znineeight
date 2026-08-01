@@ -477,6 +477,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      emitted_type_set: U32ToU32Map,
      fwd_decl_set: U32ToU32Map,
      pointer_only_map: U32ToU32Map,
+     shared_set: U32ToU32Map,
      dedup_names: [128]u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
@@ -503,6 +504,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
          .fwd_decl_set = hash_mod.u32ToU32MapInit(alloc),
          .pointer_only_map = hash_mod.u32ToU32MapInit(alloc),
+         .shared_set = hash_mod.u32ToU32MapInit(alloc),
           .dedup_names = undefined,
           .dedup_count = @intCast(u32, 0),
            .fl_name_ids = undefined,
@@ -849,7 +851,7 @@ fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
     return false;
 }
 
-fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
+pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     var tl: usize = reg.types_len;
     var indegree_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
     var indegree: [*]u32 = @ptrCast([*]u32, indegree_raw);
@@ -887,8 +889,238 @@ fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     return result;
 }
 
-pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) void {
-    var sorted: [*]u32 = tstTopologicalSort(reg, emitter.alloc);
+fn ctypeGuardWrite(writer: *BufferedWriter, kind: TypeKind) void {
+    if (kind == TypeKind.struct_type or kind == TypeKind.tagged_union_type) {
+        var tag: []const u8 = "ZIG_STRUCT_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.union_type) {
+        var tag: []const u8 = "ZIG_UNION_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.enum_type) {
+        var tag: []const u8 = "ZIG_ENUM_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.error_set_type) {
+        var tag: []const u8 = "ZIG_ERROR_SET_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.slice_type) {
+        var tag: []const u8 = "ZIG_SLICE_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.optional_type) {
+        var tag: []const u8 = "ZIG_OPTIONAL_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.error_union_type) {
+        var tag: []const u8 = "ZIG_ERRORUNION_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.array_type) {
+        var tag: []const u8 = "ZIG_ARRAY_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.fn_type) {
+        var tag: []const u8 = "ZIG_FNPTR_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.i64_type) {
+        var tag: []const u8 = "ZIG_I64_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.u64_type) {
+        var tag: []const u8 = "ZIG_U64_"; bufferedWriterWrite(writer, tag);
+    } else {
+        var tag: []const u8 = "ZIG_TYPE_"; bufferedWriterWrite(writer, tag);
+    }
+}
+
+pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) void {
+    var ti: u32 = @intCast(u32, 0);
+    while (@intCast(usize, ti) < reg.types_len) : (ti += 1) {
+        var ty = reg.types_items[@intCast(usize, ti)];
+        var is_synthetic: u8 = @intCast(u8, 0);
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (ty.kind == TypeKind.slice_type or
+                ty.kind == TypeKind.optional_type or
+                ty.kind == TypeKind.error_union_type or
+                ty.kind == TypeKind.tagged_union_type or
+                ty.kind == TypeKind.union_type or
+                ty.kind == TypeKind.array_type or
+                ty.kind == TypeKind.fn_type)
+            {
+                is_synthetic = @intCast(u8, 1);
+            }
+        }
+        var is_clsv: u8 = @intCast(u8, 0);
+        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, ti) == null) {
+            is_clsv = @intCast(u8, 1);
+        }
+        var is_i64u64: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type) {
+            is_i64u64 = @intCast(u8, 1);
+        }
+        var is_fn_named: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) {
+            is_fn_named = @intCast(u8, 1);
+        }
+        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_i64u64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&emitter.shared_set, ti, @intCast(u32, 1));
+        }
+    }
+    var changed: u32 = @intCast(u32, 1);
+    while (changed != @intCast(u32, 0)) {
+        changed = @intCast(u32, 0);
+        var ti2: u32 = @intCast(u32, 0);
+        while (@intCast(usize, ti2) < reg.types_len) : (ti2 += 1) {
+            var ty2 = reg.types_items[@intCast(usize, ti2)];
+            if (ty2.name_id == @intCast(u32, 0)) continue;
+            if (hash_mod.u32ToU32MapGet(&emitter.shared_set, ti2) != null) continue;
+            if (ty2.kind != TypeKind.struct_type and
+                ty2.kind != TypeKind.tagged_union_type and
+                ty2.kind != TypeKind.union_type and
+                ty2.kind != TypeKind.enum_type and
+                ty2.kind != TypeKind.error_set_type) continue;
+            if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, ti2) == null) continue;
+            var sj: u32 = @intCast(u32, 0);
+            while (@intCast(usize, sj) < reg.types_len) : (sj += 1) {
+                if (hash_mod.u32ToU32MapGet(&emitter.shared_set, sj) == null) continue;
+                if (tstIsDep(reg, sj, ti2)) {
+                    hash_mod.u32ToU32MapPut(&emitter.shared_set, ti2, @intCast(u32, 1));
+                    changed = @intCast(u32, 1);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32) void {
+    computeSharedSet(reg, emitter, emitter.alloc);
+    var fg0: []const u8 = "#ifndef ZIG_SPECIAL_TYPES_H\n";
+    bufferedWriterWrite(&emitter.writer, fg0);
+    var fg1: []const u8 = "#define ZIG_SPECIAL_TYPES_H\n";
+    bufferedWriterWrite(&emitter.writer, fg1);
+    var fg2: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, fg2);
+    var pg0: []const u8 = "#include \"zig_compat.h\"\n";
+    bufferedWriterWrite(&emitter.writer, pg0);
+    var pg1: []const u8 = "#include \"zig_runtime.h\"\n";
+    bufferedWriterWrite(&emitter.writer, pg1);
+    var pg2: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, pg2);
+    var lfwd: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInit(emitter.alloc);
+    var lemit: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInit(emitter.alloc);
+    var tsi: usize = @intCast(usize, 0);
+    while (tsi < reg.types_len) : (tsi += 1) {
+        var tid = sorted[tsi];
+        var ty = reg.types_items[@intCast(usize, tid)];
+        if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type) {
+            if (ty.name_id != @intCast(u32, 0)) {
+                var cname = getCTypeName(reg, emitter.mangler, tid);
+                var dedup_key: u32 = @intCast(u32, 0);
+                var h_ci: usize = @intCast(usize, 0);
+                while (h_ci < cname.len) : (h_ci += 1) {
+                    dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+                }
+                if (hash_mod.u32ToU32MapGet(&lfwd, dedup_key) == null) {
+                    var pre_s: []const u8 = "typedef struct "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    bufferedWriterWrite(&emitter.writer, cname);
+                    var pre_s2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, pre_s2);
+                    bufferedWriterWrite(&emitter.writer, cname);
+                    var pre_s3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, pre_s3);
+                    hash_mod.u32ToU32MapPut(&lfwd, dedup_key, @intCast(u32, 1));
+                }
+            }
+        }
+    }
+    // Sub-pass 2a: emit pointer-only types that are in the shared set
+    tsi = @intCast(usize, 0);
+    while (tsi < reg.types_len) : (tsi += 1) {
+        var tid = sorted[tsi];
+        if (hash_mod.u32ToU32MapGet(&emitter.shared_set, tid) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
+        var ty = reg.types_items[@intCast(usize, tid)];
+        var e2m: []const u8 = "E2A:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
+        if (ty.kind == TypeKind.void_type) { var vfs_m: []const u8 = "VFLOW:spv\n"; pal.markerWrite(vfs_m); continue; }
+        if (ty.kind == TypeKind.bool_type) continue;
+        if (ty.kind == TypeKind.noreturn_type) continue;
+        if (ty.kind == TypeKind.null_type) continue;
+        if (ty.kind == TypeKind.undefined_type) continue;
+        if (ty.kind == TypeKind.integer_literal_type) continue;
+        if (ty.kind == TypeKind.type_type) continue;
+        if (ty.kind == TypeKind.module_type) continue;
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (ty.kind != TypeKind.slice_type and
+                ty.kind != TypeKind.optional_type and
+                ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.tagged_union_type and
+                ty.kind != TypeKind.union_type and
+                ty.kind != TypeKind.array_type and
+                ty.kind != TypeKind.fn_type)
+            {
+                var est_m: []const u8 = "ESTA:t"; pal.markerWrite(est_m); var est_b: [10]u8 = undefined; var est_l = itoa_mod.itoa(tid, est_b[0..]); var est_s: usize = @intCast(usize, 9) - @intCast(usize, est_l); pal.markerWrite(est_b[est_s..@intCast(usize, 9)]); var est_km: []const u8 = "k"; pal.markerWrite(est_km); var est_kb: [10]u8 = undefined; var est_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), est_kb[0..]); var est_ks: usize = @intCast(usize, 9) - @intCast(usize, est_kl); pal.markerWrite(est_kb[est_ks..@intCast(usize, 9)]); var est_nm: []const u8 = "n"; pal.markerWrite(est_nm); var est_nb: [10]u8 = undefined; var est_nl2 = itoa_mod.itoa(ty.name_id, est_nb[0..]); var est_ns: usize = @intCast(usize, 9) - @intCast(usize, est_nl2); pal.markerWrite(est_nb[est_ns..@intCast(usize, 9)]); var est_nl: []const u8 = "\n"; pal.markerWrite(est_nl);
+                continue;
+            }
+        }
+        var cname = getCTypeName(reg, emitter.mangler, tid);
+        var dedup_key: u32 = @intCast(u32, 0);
+        var h_ci: usize = @intCast(usize, 0);
+        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
+            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+        }
+        if (hash_mod.u32ToU32MapGet(&lemit, dedup_key)) |_| continue;
+        hash_mod.u32ToU32MapPut(&lemit, dedup_key, @intCast(u32, 1));
+        var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
+        emitTypeDefinition(emitter, tid);
+        var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+    }
+
+    // Sub-pass 2b: emit value-embedding types entirely
+    tsi = @intCast(usize, 0);
+    while (tsi < reg.types_len) : (tsi += 1) {
+        var tid = sorted[tsi];
+        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) != null) continue;
+        var ty = reg.types_items[@intCast(usize, tid)];
+        var e2m: []const u8 = "E2B:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nm: []const u8 = "n"; pal.markerWrite(e2nm); var e2nb: [10]u8 = undefined; var e2nl3 = itoa_mod.itoa(ty.name_id, e2nb[0..]); var e2ns: usize = @intCast(usize, 9) - @intCast(usize, e2nl3); pal.markerWrite(e2nb[e2ns..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
+        if (ty.kind == TypeKind.void_type) { var vfs_m: []const u8 = "VFLOW:spv\n"; pal.markerWrite(vfs_m); continue; }
+        if (ty.kind == TypeKind.bool_type) continue;
+        if (ty.kind == TypeKind.noreturn_type) continue;
+        if (ty.kind == TypeKind.null_type) continue;
+        if (ty.kind == TypeKind.undefined_type) continue;
+        if (ty.kind == TypeKind.integer_literal_type) continue;
+        if (ty.kind == TypeKind.type_type) continue;
+        if (ty.kind == TypeKind.module_type) continue;
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (ty.kind != TypeKind.slice_type and
+                ty.kind != TypeKind.optional_type and
+                ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.tagged_union_type and
+                ty.kind != TypeKind.union_type and
+                ty.kind != TypeKind.array_type and
+                ty.kind != TypeKind.fn_type)
+            {
+                var est_m: []const u8 = "ESTB:t"; pal.markerWrite(est_m); var est_b: [10]u8 = undefined; var est_l = itoa_mod.itoa(tid, est_b[0..]); var est_s: usize = @intCast(usize, 9) - @intCast(usize, est_l); pal.markerWrite(est_b[est_s..@intCast(usize, 9)]); var est_km: []const u8 = "k"; pal.markerWrite(est_km); var est_kb: [10]u8 = undefined; var est_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), est_kb[0..]); var est_ks: usize = @intCast(usize, 9) - @intCast(usize, est_kl); pal.markerWrite(est_kb[est_ks..@intCast(usize, 9)]); var est_nm: []const u8 = "n"; pal.markerWrite(est_nm); var est_nb: [10]u8 = undefined; var est_nl2 = itoa_mod.itoa(ty.name_id, est_nb[0..]); var est_ns: usize = @intCast(usize, 9) - @intCast(usize, est_nl2); pal.markerWrite(est_nb[est_ns..@intCast(usize, 9)]); var est_nl: []const u8 = "\n"; pal.markerWrite(est_nl);
+                continue;
+            }
+        }
+        var cname = getCTypeName(reg, emitter.mangler, tid);
+        var dedup_key: u32 = @intCast(u32, 0);
+        var h_ci: usize = @intCast(usize, 0);
+        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
+            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+        }
+        if (hash_mod.u32ToU32MapGet(&lemit, dedup_key)) |_| continue;
+        hash_mod.u32ToU32MapPut(&lemit, dedup_key, @intCast(u32, 1));
+        var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
+        emitTypeDefinition(emitter, tid);
+        var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
+        ctypeGuardWrite(&emitter.writer, ty.kind);
+        bufferedWriterWrite(&emitter.writer, cname);
+        var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+    }
+    var eg0: []const u8 = "#endif /* ZIG_SPECIAL_TYPES_H */\n";
+    bufferedWriterWrite(&emitter.writer, eg0);
+}
+
+pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32) void {
     var tsi: usize = @intCast(usize, 0);
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
@@ -1608,7 +1840,8 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_
     while (poi < ptr_only_len) : (poi += 1) {
         hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ptr_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
     }
-    emitSpecialTypes(emitter, emitter.registry);
+    var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
+    emitSpecialTypes(emitter, emitter.registry, sorted);
     emitModuleHeader(emitter, name, fns, c_includes);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {

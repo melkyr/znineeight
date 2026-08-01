@@ -61,6 +61,7 @@ pub const ErrorFormat = enum(u8) {
 pub const CompilerCli = struct {
     input_file: []const u8,
     output_dir: []const u8,
+    output_dir_set: bool,
     dump_types: bool,
     dump_lir: bool,
     dump_c89: bool,
@@ -618,6 +619,36 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
     var module_name: []const u8 = "output";
 
+    if (ctx.cli.output_dir_set and ctx.cli.dump_c89) {
+        var poi: u32 = @intCast(u32, 0);
+        while (poi < ctx.pointer_only_len) : (poi += 1) {
+            hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ctx.pointer_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
+        }
+        var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.scratch);
+        var hpath: [512]u8 = undefined;
+        var hp: usize = @intCast(usize, 0);
+        var od = ctx.cli.output_dir;
+        var hi: usize = @intCast(usize, 0);
+        while (hi < od.len and hp < @intCast(usize, 510)) : (hi += 1) { hpath[hp] = od[hi]; hp += 1; }
+        hpath[hp] = @intCast(u8, '/'); hp += 1;
+        var hfn: []const u8 = "zig_special_types.h";
+        var hfi: usize = @intCast(usize, 0);
+        while (hfi < hfn.len and hp < @intCast(usize, 511)) : (hfi += 1) { hpath[hp] = hfn[hfi]; hp += 1; }
+        var fd: i32 = pal.fileOpen(hpath[0..hp], @intCast(i32, 0));
+        if (fd == -1) {
+            var emsg: []const u8 = "error: cannot open output file\n";
+            pal.stderr_write(emsg);
+            pal.exit(@intCast(u8, 1));
+        }
+        var hw: c89_mod.BufferedWriter = undefined;
+        hw = c89_mod.bufferedWriterInitFd(fd);
+        emitter.writer = hw;
+        c89_mod.emitSharedHeader(&emitter, ctx.typereg, sorted);
+        c89_mod.bufferedWriterFlush(&emitter.writer);
+        pal.fileClose(fd);
+        emitter.writer = c89_mod.bufferedWriterInit();
+    }
+
     var cwriter: c89_mod.BufferedWriter = undefined;
     cwriter = c89_mod.bufferedWriterInit();
     c89_mod.emitIncludes(&cwriter);
@@ -635,6 +666,7 @@ fn parseArgs() CompilerCli {
     var cli = CompilerCli{
         .input_file = empty_str,
         .output_dir = dot_str,
+        .output_dir_set = false,
         .dump_types = false,
         .dump_lir = false,
         .dump_c89 = false,
@@ -707,6 +739,7 @@ fn parseArgs() CompilerCli {
                 i += 1;
                 if (i < argc) {
                     cli.output_dir = cstrToSlice(pal.argGet(i));
+                    cli.output_dir_set = true;
                 }
             } else if (matchFlag(arg, s_quiet) or matchFlag(arg, s_q)) {
                 cli.quiet = true;
