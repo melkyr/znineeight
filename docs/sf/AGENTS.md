@@ -127,7 +127,9 @@ g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 make clean
 
 # 2. Compile zig1 using zig0
-zig0 src/main.zig -o build/zig1
+./sf/build/zig0 --header-priority-include -o build/out_release/zig1.c sf/src/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
+    -Iinclude build/out_release/*.c sf/src/include/zig_pal.c -o build/out_release/zig1
 
 # 3. Run unit tests
 ./sf/build/zig1 --test
@@ -425,7 +427,7 @@ When building manually, NEVER reuse the same output directory:
 OUT=sf/build/out_release
 rm -rf $OUT && mkdir -p $OUT
 ./sf/build/zig0 --header-priority-include -o $OUT/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude $OUT/*.c -o $OUT/zig1
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude $OUT/*.c sf/src/include/zig_pal.c -o $OUT/zig1
 
 # Test (isolated per binary)
 OUT=sf/build/out_test_foo

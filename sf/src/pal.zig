@@ -8,6 +8,9 @@ extern "c" fn fclose(file: *void) i32;
 extern "c" fn fseek(file: *void, offset: i32, whence: i32) i32;
 extern "c" fn ftell(file: *void) i32;
 extern "c" fn c_exit(code: i32) void;
+extern "c" fn pal_file_open(path: [*]const u8, flags: i32) i32;
+extern "c" fn pal_file_write(fd: i32, buf: [*]const u8, len: u32) i32;
+extern "c" fn pal_file_close(fd: i32) i32;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;
@@ -62,6 +65,26 @@ pub fn stdout_write(msg: []const u8) void {
 
 pub fn stderr_write(msg: []const u8) void {
     _ = ext_c.write(2, msg.ptr, @intCast(i32, msg.len));
+}
+
+pub fn fileOpen(path: []const u8, flags: i32) i32 {
+    var c_path: [512]u8 = undefined;
+    var i: usize = 0;
+    while (i < path.len and i < 511) {
+        c_path[i] = path[i];
+        i += 1;
+    }
+    if (i >= 511) return -1;
+    c_path[i] = 0;
+    return pal_file_open(&c_path[0], flags);
+}
+
+pub fn fileWrite(fd: i32, msg: []const u8) void {
+    _ = pal_file_write(fd, msg.ptr, @intCast(u32, msg.len));
+}
+
+pub fn fileClose(fd: i32) void {
+    _ = pal_file_close(fd);
 }
 
 pub fn exit(code: u8) void {

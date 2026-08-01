@@ -84,7 +84,7 @@ All declarations at `sf/src/include/zig_runtime.h`.
 | `std_checked_cast_i64` | 106 | extern | Bounds-check u64→i64 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 9223372036854775807. [inference] |
 | `std_checked_cast_u64` | 111 | extern | Identity pass-through | zig1 emitted checked casts | none | none | No-op — u64 fits in u64. [inference] |
 
-### `zig_pal.c` — Platform Abstraction Layer (`sf/src/include/zig_pal.c:1-189`)
+### `zig_pal.c` — Platform Abstraction Layer (`sf/src/include/zig_pal.c:1-224`)
 
 | Function | Line | Visibility | Purpose | Called By | Calls | Data Touched | Key Decisions |
 |----------|------|-----------|---------|-----------|-------|-------------|---------------|
@@ -98,7 +98,10 @@ All declarations at `sf/src/include/zig_runtime.h`.
 | `pal_i64_to_str` | 115 | extern | Signed 64-bit to decimal string | `std_print_i32`, `std_print_i64` | `pal_u64_to_str_buf` | local buf | Two's complement safe neg: `-(value+1)+1`. [inference] |
 | `pal_u64_to_str` | 136 | extern | Unsigned 64-bit to decimal string | `std_print_u32`, `std_print_u64` | `pal_u64_to_str_buf` | local buf | Thin wrapper. [inference] |
 | `pal_f64_to_str` | 141 | extern | Double to decimal string (6 fractional digits) | `std_print_f64` | `pal_i64_to_str` | local buf | Strips trailing zeros. Integer part via i64 conv, fraction via loop*10. [inference] |
-| `mainCRTStartup` | 182 | Win32 only | CRT-less Win32 entry point | Win32 loader | `main`, `ExitProcess` | none | Only compiled with `ZIG_NO_CRT`. [inference] |
+| `pal_file_open` | 181 | extern | Open/create/truncate file for writing, return fd | zig1 `fileOpen` | `open` (Unix) or `CreateFileA` (Win32) | none | POSIX `O_WRONLY\|O_CREAT\|O_TRUNC\|flags, 0644`; Win32 returns `(int)(size_t)HANDLE`; -1 on failure. Added in F-S1. [inference] |
+| `pal_file_write` | 192 | extern | Write `len` bytes to fd with partial-write loop | zig1 `fileWrite` | `write` (Unix) or `WriteFile` (Win32) | none | Loops until all bytes written; -1 on error. Added in F-S1. [inference] |
+| `pal_file_close` | 207 | extern | Close file descriptor | zig1 `fileClose` | `close` (Unix) or `CloseHandle` (Win32) | none | Added in F-S1. [inference] |
+| `mainCRTStartup` | 217 | Win32 only | CRT-less Win32 entry point | Win32 loader | `main`, `ExitProcess` | none | Only compiled with `ZIG_NO_CRT`. [inference] |
 
 ### `zig_special_types.h` — Stub (`sf/src/include/zig_special_types.h:1-4`)
 
@@ -147,11 +150,17 @@ zig_compat.h → i8/u8/i16/u16/i32/u32/i64/u64/f32/f64/usize/bool
 gcc -m32 -std=c89 ... /tmp/x.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/x
 ```
 
+**zig1's own build** (`sf/scripts/build_release.sh`, since F-S1) links `sf/src/include/zig_pal.c`
+into the compiler binary — it defines `pal_file_*`, which the `pal.zig` wrappers
+(`fileOpen`/`fileWrite`/`fileClose`) call. Any manual zig1 rebuild MUST include it in the
+gcc line, else the link fails with `undefined reference to 'pal_file_open'` /
+`pal_file_write` / `pal_file_close`.
+
 ---
 
 ## Debugging
 
-- **Link errors `undefined reference`** — missing `sf/src/include/zig_runtime.c` or `sf/src/include/zig_pal.c` in gcc link step. Both must be linked explicitly.
+- **Link errors `undefined reference`** — missing `sf/src/include/zig_runtime.c` or `sf/src/include/zig_pal.c` in gcc link step. Both must be linked explicitly. This includes zig1's own build: `build_release.sh` links `zig_pal.c` (F-S1); manual zig1 rebuilds must too.
 - **Assert/panic at runtime** — `std_panic` / `std_checked_cast_*` reachable. Check overflow values or add `pal_print_stderr` markers before the panic site.
 - **`arena_alloc_default` not found** — this symbol is in the legacy `src/runtime/zig_runtime.c`, NOT in `sf/src/include/`. For sf-linked binaries, zig1 emits its own arena allocator; the legacy symbol is only for zig0-output programs.
 - **Slice/Optional/ErrorUnion struct layout** — these are NOT in any header; zig1's C89 emission generates type-specific structs per module. Layout is: Slice = `{ ptr; len }`, Optional = `{ payload; has_value }`, ErrorUnion = `{ payload; error_code }`.

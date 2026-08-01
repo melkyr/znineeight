@@ -82,12 +82,12 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
 cd /workspace/znineeight
 rm -rf out_release && mkdir -p out_release
 ./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
 ```
 
 Debug build:
 ```bash
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
 ```
 
 ## LISP refactor testing building zig1 pipeline
@@ -101,7 +101,7 @@ output directory and gcc *warning* flags do NOT change the resulting compiler.
 OUT=/tmp/z1
 rm -rf "$OUT" && mkdir -p "$OUT"          # always clean: stale .c/.h cause false Slice_* type errors
 ./sf/build/zig0 --header-priority-include -o "$OUT/zig1.c" sf/src/main.zig   # emits 35 per-module .c
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign "$OUT"/*.c -o "$OUT/zig1"
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign "$OUT"/*.c sf/src/include/zig_pal.c -o "$OUT/zig1"
 ```
 Debug build (for GDB): append `-g -O0 -Wno-implicit-function-declaration` to the gcc line.
 
@@ -164,7 +164,7 @@ gcc -m32 -std=c89 -Wno-pointer-sign \
 cd /workspace/znineeight
 rm -rf out_release && mkdir -p out_release
 ./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
 ./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > /tmp/mud.c
 gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
   /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c \
@@ -186,7 +186,7 @@ cd /workspace/znineeight && ./sf/scripts/build_test.sh
 
 ### Build with debug symbols
 ```bash
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c -o out_release/zig1
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
 ```
 
 ### Find function in generated C

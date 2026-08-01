@@ -25,6 +25,7 @@ gcc -m32 -std=c89 -O0 -Wall -fsanitize=address \
     -Wno-implicit-function-declaration \
     -Iinclude \
     "$OUT_DIR"/*.c \
+    "$ROOT_DIR/src/include/zig_pal.c" \
     -o "$OUT_DIR/zig1"
 
 echo "=== [release] Done: $OUT_DIR/zig1 ==="

@@ -24,12 +24,17 @@
 | Build zig0 | 11-12 | Compile bootstrap compiler from C++98 | `g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o build/zig0` | `build/zig0` | C++ compile error [inference] |
 | Clean output dir | 15-16 | Isolate release output — remove stale `.c`/`.h` | `rm -rf build/out_release && mkdir -p build/out_release` | `build/out_release/` (empty) | (none) [inference] |
 | zig0 → C89 | 19 | Translate `sf/src/main.zig` to C89 | `build/zig0 --header-priority-include -o build/out_release/zig1.c sf/src/main.zig` | `build/out_release/*.c` (35+ files) | zig0 compile error [inference] |
-| gcc compile | 22-28 | Compile C89 to binary with ASan | `gcc -m32 -std=c89 -O0 -Wall -fsanitize=address -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_release/*.c -o build/out_release/zig1` | `build/out_release/zig1` | gcc error [inference] |
-| zig1-dump (disabled) | 37-48 | (Commented out) Build dump binary from `main_dump.zig` | (disabled — pre-existing break) | (none) | Would fail on `main_dump.zig` [inference] |
+| gcc compile | 22-29 | Compile C89 + link PAL to binary with ASan | `gcc -m32 -std=c89 -O0 -Wall -fsanitize=address -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_release/*.c sf/src/include/zig_pal.c -o build/out_release/zig1` | `build/out_release/zig1` | gcc error [inference] |
+| zig1-dump (disabled) | 33-50 | (Commented out) Build dump binary from `main_dump.zig` | (disabled — pre-existing break) | (none) | Would fail on `main_dump.zig` [inference] |
 
-**Gate line:** `=== [release] Done: sf/build/out_release/zig1 ===` (`build_release.sh:30`)
+**Gate line:** `=== [release] Done: sf/build/out_release/zig1 ===` (`build_release.sh:31`)
 **Resulting binary:** `sf/build/out_release/zig1`
 **Oracle reference:** `sf/build/zig0`
+
+**PAL link (F-S1):** the gcc step links `sf/src/include/zig_pal.c` into zig1 — it defines
+`pal_file_open`/`pal_file_write`/`pal_file_close`, which the `pal.zig` wrappers
+(`fileOpen`/`fileWrite`/`fileClose`) call. Any manual zig1 rebuild must add it to the gcc
+line, else the link fails with `undefined reference to 'pal_file_*'`.
 
 ### `build_test.sh` — Test Build + Run (`sf/scripts/build_test.sh:1-66`)
 

@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 
 #ifdef _WIN32
@@ -175,6 +176,40 @@ int pal_f64_to_str(f64 value, char* buf, int bufsize)
     if (buf[pos - 1] == '.') pos++;
     buf[pos] = '\0';
     return pos;
+}
+
+int pal_file_open(const char* path, int flags) {
+#ifdef _WIN32
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    return (int)(size_t)h;
+#else
+    if (!path) return -1;
+    return open(path, O_WRONLY | O_CREAT | O_TRUNC | flags, 0644);
+#endif
+}
+int pal_file_write(int fd, const char* buf, unsigned int len) {
+#ifdef _WIN32
+    HANDLE h = (HANDLE)(size_t)fd; DWORD w = 0;
+    if (!buf || !WriteFile(h, buf, (DWORD)len, &w, NULL)) return -1;
+    return (int)w;
+#else
+    size_t off = 0; if (!buf) return -1;
+    while (off < (size_t)len) {
+        ssize_t n = write(fd, buf + off, (size_t)len - off);
+        if (n <= 0) return -1;
+        off += (size_t)n;
+    }
+    return (int)off;
+#endif
+}
+int pal_file_close(int fd) {
+#ifdef _WIN32
+    return CloseHandle((HANDLE)(size_t)fd) ? 0 : -1;
+#else
+    return close(fd);
+#endif
 }
 
 #if defined(_WIN32) && defined(ZIG_NO_CRT)
