@@ -43,7 +43,7 @@ line, else the link fails with `undefined reference to 'pal_file_*'`.
 | Zig0 check | 9-12 | Build zig0 if missing | `g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o build/zig0` | Conditional — only runs if `build/zig0` missing [inference] |
 | `build_and_run` function | 18-53 | Per-binary build+compile+run pipeline | (see below) | Shared logic for all 9 test binaries [inference] |
 | `build_and_run` — zig0→C89 | 27 | Translate test `.zig` to C89 | `zig0 --header-priority-include -o build/out_test_<name>/<name>.c sf/src/tests/<name>.zig` | Failure → counted as FAIL [inference] |
-| `build_and_run` — gcc compile | 34-43 | Compile C89 to binary | `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_test_<name>/*.c -o build/out_test_<name>/<name>` | No ASan, no `-O0`, no `-Wall`. Failure → counted as FAIL [inference] |
+| `build_and_run` — gcc compile | 34-44 | Compile C89 to binary | `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -Iinclude build/out_test_<name>/*.c sf/src/include/zig_pal.c -o build/out_test_<name>/<name>` | No ASan, no `-O0`, no `-Wall`. Failure → counted as FAIL [inference]. `zig_pal.c` linked (added 2026-08-01) so `pal.zig`'s `pal_file_*` externs resolve |
 | `build_and_run` — execute | 46-49 | Run the test binary | `build/out_test_<name>/<name>` | Nonzero exit → FAIL [inference] |
 | Test invocations | 56-64 | All 9 test entries | `build_and_run "test_<name>_bin"` | Each gets isolated output dir [inference] |
 | Results summary | 66 | Final tally | `echo "Results: $PASS passed, $FAIL failed"` | [inference] |

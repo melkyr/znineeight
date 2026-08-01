@@ -182,6 +182,10 @@ gcc ... 2>&1 | grep -c "error:"
 cd /workspace/znineeight && ./sf/scripts/build_test.sh
 ```
 
+Note: `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary (required since
+`pal.zig` gained the `pal_file_*` file-I/O externs; without it every test binary fails to link).
+
+
 ## Debug with GDB on zig1
 
 ### Build with debug symbols

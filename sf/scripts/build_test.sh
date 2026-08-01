@@ -37,6 +37,7 @@ build_and_run() {
         -Wno-implicit-function-declaration \
         -Iinclude \
         $c_files \
+        "$ROOT_DIR/src/include/zig_pal.c" \
         -o "$out_dir/$name"; then
         echo "  FAIL (gcc): $name"
         FAIL=$((FAIL + 1))

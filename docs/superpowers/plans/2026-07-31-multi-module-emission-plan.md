@@ -177,42 +177,143 @@
 
 ---
 
-### Task F-A: Implement multi-module C89 emission (Option A)
+### Task F-S1: PAL File I/O + BufferedWriter fd sink (IM3)
 
 **Files:**
-- Modify: `sf/src/c89_emit.zig` (BufferedWriter sink, emitSpecialTypes partition, emitModule restructure)
-- Modify: `sf/src/main.zig` (phase_C89Emission loop, CLI activation, `--output-dir` consumption)
-- Modify: `sf/src/pal.zig` (file_open/file_write/file_close API)
-- Modify: `sf/src/include/zig_pal.c` (POSIX file I/O implementation)
-- Possibly modify: `sf/src/module_registry.zig` (cap increase if needed)
-- Update: `sf/docs/tech_docs/08_c89_emission.md`, `09_pipeline_orchestration.md`, `01_import_resolution.md`
-- Update: all 18 `examples/z98/*/NOTES.md` (new multi-module build recipes)
+- Modify: `sf/src/include/zig_pal.c` (+fcntl.h, +pal_file_open/write/close)
+- Modify: `sf/src/pal.zig` (+externs, +fileOpen/fileWrite/fileClose wrappers)
+- Modify: `sf/src/c89_emit.zig` (BufferedWriter.fd field, bufferedWriterInitFd, flush→fileWrite, emitZigPalC sync)
+- Modify: `sf/scripts/build_release.sh` (+link `sf/src/include/zig_pal.c` into zig1)
+- Update: all docs describing how zig1 is built (QUICK_REF.md manual bootstrap recipes, AGENTS.md §2.2/§9.3, `docs/Building.md`, `sf/docs/tech_docs/10_c_runtime.md`, `sf/docs/tech_docs/11_build_system.md`)
 
-**Pre-requisites:** All 6 I-reports (IM1–IM6) with exact edit targets (file:line). F-A consumes ALL of them.
+**Pre-requisite:** IM3-report.md §D (exact code for zig_pal.c + pal.zig + BufferedWriter changes).
 
-**Implementation per I-reports:**
+**Scope — ONLY PAL I/O + its link/build wiring + build docs. No emission restructuring. No shared header. No main.zig changes.**
 
-- [ ] **Step 1:** Write failing test — assert `--dump-c89 --output-dir DIR` produces N `.c` + N `.h` + 1 `zig_special_types.h` for a multi-module input
-- [ ] **Step 2:** Implement PAL file I/O (IM3) + BufferedWriter sink (IM3)
-- [ ] **Step 3:** Implement shared header partitioning (IM4) — generate `zig_special_types.h`
-- [ ] **Step 4:** Implement per-module `.h` emission (IM1 — type ownership, IM2 — import ordering)
-- [ ] **Step 5:** Implement per-module `.c` emission (IM5 — `emitModule` restructure, fn grouping, per-module `@cInclude`, `main()` wrapper placement)
-- [ ] **Step 6:** Implement CLI activation + `phase_C89Emission` loop (IM5 + IM6)
-- [ ] **Step 7:** Gate: corpus 184 repros (each `.c` compiles standalone → link → gcc exit code classifies). Target: 176/8/0/0
-- [ ] **Step 8:** Gate: all 18 Z98 examples build per-module → link → run → output matches NOTES.md reference
-- [ ] **Step 9:** Gate: byte-identical gate re-baseline — recapture man/gol/lisp/json hashes with new output format
-- [ ] **Step 10:** Update NOTES.md for all 18 examples with new multi-module recipes
-- [ ] **Step 11:** Update QUICK_REF.md — add Multi-Module Build section, re-baseline hashes
-- [ ] **Step 12:** Update tech docs 08/09/01 with new evidence `[c89]` + `[markers]` (emission loop, CLI activation, type ownership tables)
-- [ ] **Step 13:** Commit `feat: FA implement multi-module C89 emission`
+- [ ] **Step 1 — zig_pal.c:** Add `#include <fcntl.h>` after `<unistd.h>` in non-Win32 block. Add `pal_file_open` (POSIX open/Win32 CreateFileA), `pal_file_write` (partial-write loop), `pal_file_close` (close/CloseHandle) after `pal_f64_to_str`, before footer. Exact C code from IM3-report.md §D.1.
+- [ ] **Step 2 — pal.zig:** Add 3 `extern "c" fn pal_file_open/write/close(...)` declarations (pattern: pal.zig:5-10). Add `pub fn fileOpen/fileWrite/fileClose` wrappers (pattern: pal.zig:59-65, c_path copy:17-24). Path length cap 511.
+- [ ] **Step 3 — BufferedWriter (c89_emit.zig:27-73):** Add `fd: i32` to struct (after pos). `bufferedWriterInit` sets `.fd = @intCast(i32, 1)`. Add `pub fn bufferedWriterInitFd(fd: i32) BufferedWriter`. `bufferedWriterFlush (:36-42)`: change `pal.stdout_write(self.buf...)` to `pal.fileWrite(self.fd, self.buf...)`. Keep FL:p/FE:p markers.
+- [ ] **Step 4 — emitZigPalC (c89_emit.zig:724-738):** Update embedded string literals to include pal_file_open/write/close (match updated zig_pal.c). The h12 footer moves to h13.
+- [ ] **Step 5 — build_release.sh link (OPERATOR RULING 2026-08-01):** Append `"$ROOT_DIR/src/include/zig_pal.c"` to the gcc link line so zig1 itself links the PAL (which defines the new `pal_file_*` symbols). Without this, `pal.zig`'s new externs are undefined at zig1 link time. (Discovered by F-S1: `zig_pal.c` is only linked into *generated programs*, never into zig1. Option A chosen over `zig_runtime.c` duplication.)
+- [ ] **Step 6 — build docs (OPERATOR RULING 2026-08-01):** Update EVERY manual zig1 build recipe to include `sf/src/include/zig_pal.c` in the gcc link (someone manually compiling would otherwise hit the same undefined-reference error): QUICK_REF.md bootstrap recipes (:81-85, :99-105, :164-167), AGENTS.md §2.2/§9.3, `docs/Building.md`, `sf/docs/tech_docs/10_c_runtime.md`, `sf/docs/tech_docs/11_build_system.md`.
+- [ ] **Step 7 — Gate:** `bash sf/scripts/build_release.sh` → 0 zig0 errors + gcc 0 errors + `[release] Done`. `sf/build/out_release/zig1 --dump-c89 examples/z98/lisp_interpreter_curr/main.zig | md5sum` == `0ad0204088f91c1eae7c040da8f99a1c` (byte-identical fd=1 path). Verify fd=1 byte-identity: compile+run any example, output matches reference. `nm sf/build/out_release/zig1 | grep pal_file_` shows all three defined once, no conflicts.
+- [ ] **Step 7b — build_test.sh link (OPERATOR RULING 2026-08-01):** Append `"$ROOT_DIR/src/include/zig_pal.c"` to the gcc link line in `sf/scripts/build_test.sh` (after `$c_files`). Without this, all 9 test binaries FAIL to link (undefined `pal_file_*` from emitted `pal.c`). Update any doc recipe referencing build_test.sh (QUICK_REF "Build and Run Tests", AGENTS.md §9.2) to note the link. Verify: `bash sf/scripts/build_test.sh` → all 9 PASS.
+- [ ] **Step 8 — Commit checkpoint:** `build: F-S1 PAL file I/O + BufferedWriter fd sink + zig_pal link`
+
+**STOP HERE — do not proceed to F-S2 unless all gates pass.**
+
+---
+
+### Task F-S2: Shared Header `zig_special_types.h` Generation (IM1 + IM4)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (tstTopologicalSort→pub, computeSharedSet, emitSharedHeader, ctypeGuardWrite, shared_set on C89Emitter, emitSpecialTypes signature change)
+- Modify: `sf/src/main.zig` (output_dir_set field, emitSharedHeader call when --output-dir set)
+
+**Pre-requisites:** F-S1 DONE + IM1-report.md §D + IM4-report.md §D.
+
+**AMENDMENT 1 (operator confirmed):** Add `kind == fn_type(24)` to shared_set initial seed. fn types have `name_id != 0` but `module_id == 0` — partition drops them otherwise. They go to shared header.
+
+**AMENDMENT 2 (operator confirmed):** Add `output_dir_set: bool` field to CompilerCli struct (default false, set true when --output-dir/-o parsed at main.zig:706-710). Branch on this bool, NOT on `output_dir != "."` sentinel.
+
+**Scope — ONLY: shared header generation infrastructure. Per-module .h/.c emission NOT in this stage.**
+
+- [ ] **Step 1 — tstTopologicalSort → pub (c89_emit.zig:846):** Change `fn` → `pub fn`.
+- [ ] **Step 2 — emitSpecialTypes signature (c89_emit.zig:884):** Change to `pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32) void`. Delete internal sort call at :885. In emitModule (:1602), call `tstTopologicalSort` then pass result to emitSpecialTypes.
+- [ ] **Step 3 — shared_set on C89Emitter (c89_emit.zig:457):** Add `shared_set: U32ToU32Map` field. Init in c89EmitterInit with `hash_mod.u32ToU32MapInit(alloc)`.
+- [ ] **Step 4 — ctypeGuardWrite (new fn in c89_emit.zig):** Writes `ZIG_<TAG>_` prefix for each TypeKind. Tag table from IM4-report.md §A Q2: struct/tagged_union→ZIG_STRUCT_, union→ZIG_UNION_, enum→ZIG_ENUM_, error_set→ZIG_ERROR_SET_, slice→ZIG_SLICE_, optional→ZIG_OPTIONAL_, error_union→ZIG_ERRORUNION_, array→ZIG_ARRAY_, fn_type→ZIG_FNPTR_, i64→ZIG_I64_, u64→ZIG_U64_.
+- [ ] **Step 5 — computeSharedSet (new fn in c89_emit.zig):** Seed: synthetics (name_id==0 passing 2a/2b allow-list) ∪ CLS:v (pointer_only_map miss) ∪ i64/u64 ∪ fn_type(24) named (AMENDMENT 1). Closure: add named CLS:p types by-value-referenced by shared_set members (via tstIsDep, c89_emit.zig:821-844). Iterate to fixpoint over FINAL reg.types_len.
+- [ ] **Step 6 — emitSharedHeader (new pub fn in c89_emit.zig):** Calls computeSharedSet. Opens output file via pal.fileOpen(output_dir ++ "/zig_special_types.h"). File guard ZIG_SPECIAL_TYPES_H. Preamble: #include zig_compat.h + zig_runtime.h. Unfiltered fwd-decl pass (typedef struct X X; for every named struct/TU/union). Sub-pass 2a filtered to shared_set (each typedef guarded ZIG_<TAG>_<cname>). Sub-pass 2b entirely. End guard. Flush+close. E2A/E2B/ESTA/ESTB markers preserved.
+- [ ] **Step 7 — main.zig CompilerCli (Amendment 2):** Add `output_dir_set: bool` field (after output_dir at :62). Init to `false` in parseArgs struct init (:637 area). Set `cli.output_dir_set = true` in the --output-dir/-o parse branch (:706-710).
+- [ ] **Step 8 — main.zig phase_C89Emission:** After emitter init (:617), add branch: if `ctx.cli.output_dir_set` AND `ctx.cli.dump_c89`: run `tstTopologicalSort` once, call `emitSharedHeader`, keep stdout path afterward. Else: keep :618-629 verbatim (stdout unchanged). Note: per-module loop NOT wired yet.
+- [ ] **Step 9 — Gate:** `bash sf/scripts/build_release.sh` → 0 errors. `sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/s2 examples/z98/lisp_interpreter_curr/main.zig` → produces `/tmp/s2/zig_special_types.h` (non-empty, gcc-compiles standalone). `sf/build/out_release/zig1 --dump-c89 examples/z98/lisp_interpreter_curr/main.zig | md5sum` == `0ad0204088f91c1eae7c040da8f99a1c` (stdout unchanged). Verify guards are `#ifndef ZIG_<TAG>_<cname>` format.
+- [ ] **Step 10 — Commit checkpoint:** `build: F-S2 shared header zig_special_types.h generation`
+
+**STOP HERE — do not proceed to F-S3 unless all gates pass.**
+
+---
+
+### Task F-S3: Per-Module `.h` Emission (IM1 + IM2 + IM4)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (emitModuleHeaderFile: module guard, dep includes, owned CLS:p type defs, fn fwd-decls)
+- Modify: `sf/src/main.zig` (module loop for .h files only — NOT .c files)
+
+**Pre-requisites:** F-S2 DONE + IM1-report.md §D + IM2-report.md §D + IM4-report.md §D.
+
+**Scope — ONLY per-module .h files. Per-module .c files NOT in this stage.**
+
+- [ ] **Step 1 — Add mr_mod import to c89_emit.zig:** `const mr_mod = @import("module_registry.zig");` after existing imports. Verify no circular import (module_registry.zig must NOT import c89_emit.zig).
+- [ ] **Step 2 — emitModuleHeaderFile (new pub fn in c89_emit.zig):** Signature takes `emitter, mod_name, fns, c_includes, dep_mod_ids, sorted`. Module file guard `#ifndef ZIG_MODULE_<NAME>_H` (NAME = uppercased basename, non-alnum→_). Include zig_compat.h + zig_special_types.h. Per-module @cInclude from c_includes (use existing logic :1564-1582). Dep .h includes from dep_mod_ids (skipping self, bare basename). Per-module owned CLS:p type defs: iterate sorted, emit full defs with guards for `name_id!=0 && module_id==M.id && kind in {struct(25),tu(28),union(27),enum(26),error_set(23)} && pointer_only_map && NOT in shared_set`. Fn fwd-decls for module's non-extern fns. End guard.
+- [ ] **Step 3 — main.zig per-module loop (.h only):** Extend F-S2's branch: after emitSharedHeader, loop `mr_mod.moduleRegistryGetModules(ctx.module_reg)`. For each module M: derive basename from path_id (after last /, strip .zig/.z98). Build dep module ids from import_edges_items[M.imports_start .. M.imports_start+M.import_count]. Build M's fn slice (scan ctx.lir_fns for contiguous module_id block). Open `<output_dir>/<basename>.h`: fd=pal.fileOpen(path,0), on -1: diag+pal.exit(1). emitter.writer = bufferedWriterInitFd(fd). emitModuleHeaderFile. Flush. Close. Do NOT emit .c files yet.
+- [ ] **Step 4 — Gate:** `bash sf/scripts/build_release.sh` → 0 errors. `zig1 --dump-c89 --output-dir /tmp/s3 examples/z98/lisp_interpreter_curr/main.zig` → produces 10 .h files + zig_special_types.h (NO .c files). Each .h gcc-compiles standalone: `gcc -m32 -std=c89 -c -I sf/src/include -o /dev/null -x c <file>.h`. main.h `#include`s dep .h basenames in order. Bare --dump-c89 md5 unchanged.
+- [ ] **Step 5 — Commit checkpoint:** `build: F-S3 per-module .h emission`
+
+**STOP HERE — do not proceed to F-S4 unless all gates pass.**
+
+---
+
+### Task F-S4: Per-Module `.c` Emission (IM5)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (extract emitMainWrapper, add emitModuleFile)
+- Modify: `sf/src/main.zig` (complete .c emission in module loop)
+
+**Pre-requisites:** F-S3 DONE + IM5-report.md §D.
+
+**Scope — ONLY per-module .c files. This completes the emission pipeline.**
+
+- [ ] **Step 1 — Extract emitMainWrapper (c89_emit.zig:1623-1662):** Move the inline main() wrapper block into `fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void`. In emitModule (:1623), replace the inline block with `emitMainWrapper(emitter, func)` (keeping is_pub==1 && name=="main" guard around the call). **Gate:** build zig1, bare --dump-c89 lisp md5 == baseline. This must be behavior-neutral.
+- [ ] **Step 2 — emitModuleFile (new pub fn in c89_emit.zig):** Signature `pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction) void`. Write `#include "<mod_name>.h"\n`. Fn loop (mirror emitModule:1607-1663 minus type header+header calls): skip extern. set switch_cases. emitFunctionSignature. emitHoistedDecls. dl_hoisted=0. emitFunctionBody. Main wrapper: `if (module_id==0 && fns[i].is_pub==1 && name=="main") { emitMainWrapper(&fns[i]); }`. End with emitModuleFooter.
+- [ ] **Step 3 — main.zig complete .c loop:** Extend F-S3's per-module loop. After .h flush+close: open `<output_dir>/<basename>.c`. emitter.writer = bufferedWriterInitFd(fd). emitModuleFile(...). Flush. Close. Per-file FINAL_FLUSH marker. Keep stdout branch (:618-629) verbatim.
+- [ ] **Step 4 — Gate:** `bash sf/scripts/build_release.sh` → 0 errors. `zig1 --dump-c89 --output-dir /tmp/s4 examples/z98/lisp_interpreter_curr/main.zig` → 10 .c + 10 .h + zig_special_types.h. Each .c gcc-compiles standalone. Link all: `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include /tmp/s4/*.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/s4/lisp`. Run: `printf '(+ 1 2)\n' | /tmp/s4/lisp` → `> 3`. Bare --dump-c89 md5 matches baseline.
+- [ ] **Step 5 — Commit checkpoint:** `build: F-S4 per-module .c emission`
+
+**STOP HERE — do not proceed to F-S5 unless all gates pass.**
+
+---
+
+### Task F-S5: Gate Sweep (Corpus + 18 Examples)
+
+**Files:**
+- No source changes. Gate harness scripts (scratch).
+
+**Pre-requisite:** F-S4 DONE.
+
+- [ ] **Step 1 — Corpus gate (184 repros):** For each tracked repro in `repro/mi_matrix/*/main.zig` (exclude `test_stub_0/`): `rm -rf $DIR && mkdir -p $DIR`, `zig1 --dump-c89 --output-dir $DIR <repro>`. Per-file gcc: `for f in $DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c "$f" -o /dev/null || ok=0; done`. Classifier: dump rc≥128=CRASH, stderr error[(48|3042|9001)]=ICE, gcc rc==0=OK, else=FAIL. Target: OK=176 FAIL=8 ICE=0 CRASH=0. **STOP if any regression from baseline.**
+- [ ] **Step 2 — 18 examples runtime:** For each `examples/z98/*/NOTES.md` entry: `zig1 --dump-c89 --output-dir /tmp/out <entry>`, `gcc -c /tmp/out/*.c` per-file, link with zig_runtime.c+zig_pal.c (+net_runtime.c for mud), run → output matches reference. 3 BROKEN stay BROKEN. **STOP if any passing example regresses.**
+- [ ] **Step 3 — Stdout md5 preservation:** Bare `--dump-c89` on mud/gol/lisp/json → md5s match QUICK_REF baselines. DO NOT overwrite.
+- [ ] **Step 4 — Commit checkpoint:** `build: F-S5 gate sweep verified`
+
+**STOP HERE — do not proceed to F-S6 unless all gates pass.**
+
+---
+
+### Task F-S6: Documentation + Final Commit
+
+**Files:**
+- Update: all 18 `examples/z98/*/NOTES.md`
+- Update: `docs/sf/QUICK_REF.md`
+- Update: `sf/docs/tech_docs/08_c89_emission.md`, `09_pipeline_orchestration.md`, `01_import_resolution.md`, `00_shared_infra.md`
+
+**Pre-requisite:** F-S5 DONE.
+
+- [ ] **Step 1 — NOTES.md (18 files):** Replace zig1 dump + gcc recipe blocks with multi-module recipe: `mkdir -p /tmp/out`, `zig1 --dump-c89 --output-dir /tmp/out <entry>`, `gcc -m32 -std=c89 ... -I sf/src/include -c /tmp/out/*.c`, link with runtime. Preserve special cases: mud (+net_runtime.c), json_parser (legacy runtime), 3 BROKEN status N/A, non-main.zig entry names.
+- [ ] **Step 2 — QUICK_REF.md:** Add "Multi-Module Build" section after byte-identical gate. Update corpus-gate gcc invocation to per-file loop. Keep stdout md5 baselines.
+- [ ] **Step 3 — Tech docs:** Update 08 (BufferedWriter fd, shared header writer, guards), 09 (output_dir live, phase-8 per-module loop), 01 (dep .h include chain), 00_shared_infra (multi-module recipe). Annotate with `[updated: 2026-08-01]`.
+- [ ] **Step 4 — Final commit:** `feat: implement multi-module C89 emission`
 
 ---
 
 ## Execution Notes
 
-- **Execution order:** IM1 → IM2 → IM3 → IM4 → IM5 → IM6 → F-A. IM1 establishes type ownership (depended on by IM4). IM2 establishes import ordering (depended on by IM5). IM3 is independent (PAL API). IM4 depends on IM1. IM5 depends on IM2 + IM4. IM6 is independent (read-only, gates) but ran last before F-A to update all edge-case recipes.
-- **I-tasks SUBAGENT-DISPATCHED** — one subagent per I-task. Empty checkpoint commits. Reports are the deliverables.
-- **F-A SUBAGENT-DISPATCHED** — consumes all 6 I-reports from `.superpowers/sdd/IM1-report.md` through `IM6-report.md`. Must read ALL 6 before implementing.
-- **I-task review gates:** Each I-task reviewed (spec + quality) before the next I-task dispatches. Clean review = ledger update, proceed to next.
-- **After IM6, BEFORE F-A:** controller presents all 6 I-report summaries to operator for go/no-go.
+- **Execution order:** F-S1 → F-S2 → F-S3 → F-S4 → F-S5 → F-S6. Sequential. Each stage MUST complete its gate before the next stage begins. NO SKIPPING.
+- **Stage-specific subagents:** One subagent per F-S stage. Fresh context. Each subagent reads its pre-requisite I-reports before implementing.
+- **Gate enforcement:** After each stage, verify gates CLEAN. If any gate fails, STOP. Fix the current stage before proceeding. Do NOT accumulate unverified changes across stages.
+- **Dirty state prevention:** If an early stage fails compilation, do NOT start editing the next stage's files. Fix the compilation error in the current stage's scope only.
+- **Single commit per stage:** Each F-S task produces one checkpoint commit with its task label. F-S6 produces the final commit.
+- **QUICK_REF.md consultation:** Every subagent MUST read `docs/sf/QUICK_REF.md` before any build/compile/run command. All recipes (build, compile+run, md5 check) come from QUICK_REF.
+- **fastedit/edit only:** Source edits via `edit` or `fastedit`. Read target region before each edit. Edit bottom-to-top. No sed/python/bulk transforms. Per AGENTS.md §X.7.
+- **Z98 string literal rule:** Always `var msg: []const u8 = "text";` before passing to PAL functions.
 - **Compression FORBIDDEN during execution** — per operator standing order.
+- **Plan says A, do A.** If ambiguity, STOP. No out-of-plan fixes.
