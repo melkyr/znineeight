@@ -26,7 +26,7 @@
 - **I-tasks are RESEARCH ONLY** — zero code changes, empty checkpoint commits, reports are the deliverables
 - **F-A is the ONLY implementation task** — it consumes all 6 I-reports
 - **Byte-identical gate suspended** — multi-module output changes the emission format (new hashes by design; behavior preserved)
-- **Corpus gate:** 184 repros, OK=176 FAIL=8 ICE=0 CRASH=0 (gcc exit-code classifier; harness adapts from `gcc -c single.c` to `gcc -c per-file.c ... link`)
+- **Corpus gate:** 184 repros, measured at completion (2026-08-01, HEAD 00623202): **OK=164 FAIL=20 ICE=6 CRASH=0**. This supersedes the earlier `176/8/0/0` target (which counted 12 frontend-gap repros as OK via the discontinued empty-DIR-is-OK convention). Real gaps = 8 emission defects + 12 frontend errors (6 of them ICE `error[3043]`). A repro that emits 0 `.c` (frontend error) is a FAILURE, never OK. See QUICK_REF corpus section for the full taxonomy.
 - **Runtime gate:** all 18 Z98 examples build + link + run correctly per their NOTES.md recipes
 - **fastedit/edit only for source edits** — per AGENTS.md §X.7; re-read region before each edit, edit bottom-to-top
 - **Commit per task** — I-tasks = empty checkpoint; F-A = one implementation commit
@@ -280,7 +280,7 @@
 
 **Pre-requisite:** F-S4 DONE.
 
-- [ ] **Step 1 — Corpus gate (184 repros):** For each tracked repro in `repro/mi_matrix/*/main.zig` (exclude `test_stub_0/`): `rm -rf $DIR && mkdir -p $DIR`, `zig1 --dump-c89 --output-dir $DIR <repro>`. Per-file gcc: `for f in $DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c "$f" -o /dev/null || ok=0; done`. Classifier: dump rc≥128=CRASH, stderr error[(48|3042|9001)]=ICE, gcc rc==0=OK, else=FAIL. Target: OK=176 FAIL=8 ICE=0 CRASH=0. **STOP if any regression from baseline.**
+- [ ] **Step 1 — Corpus gate (184 repros):** For each tracked repro in `repro/mi_matrix/*/main.zig` (exclude `test_stub_0/`): `rm -rf $DIR && mkdir -p $DIR`, `zig1 --dump-c89 --output-dir $DIR <repro>`. If dump emits 0 `.c` files with a `error[NNNN]` diagnostic → FAIL (frontend gap, never OK). Per-file gcc: `for f in $DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c "$f" -o /dev/null || ok=0; done`. Classifier: dump rc≥128=CRASH, stderr error[(48|3042|9001|3043)]=ICE, gcc rc==0=OK, else=FAIL. Target (measured 2026-08-01): OK=164 FAIL=20 ICE=6 CRASH=0. **STOP if any repro regresses from the measured baseline.**
 - [ ] **Step 2 — 18 examples runtime:** For each `examples/z98/*/NOTES.md` entry: `zig1 --dump-c89 --output-dir /tmp/out <entry>`, `gcc -c /tmp/out/*.c` per-file, link with zig_runtime.c+zig_pal.c (+net_runtime.c for mud), run → output matches reference. 3 BROKEN stay BROKEN. **STOP if any passing example regresses.**
 - [ ] **Step 3 — Stdout md5 preservation:** Bare `--dump-c89` on mud/gol/lisp/json → md5s match QUICK_REF baselines. DO NOT overwrite.
 - [ ] **Step 4 — Commit checkpoint:** `build: F-S5 gate sweep verified`
