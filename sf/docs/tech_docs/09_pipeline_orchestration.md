@@ -229,7 +229,7 @@ runCompiler(ctx)
 
 ### Empirical Arena Peaks — `--track-memory` (P10 evidence) `[markers]` + `[fprintf]` — [updated: 2026-08-01]
 
-Final `--track-memory` line (`main.zig:226-245`) on the release zig1, all 4 examples
+Final `--track-memory` line (`main.zig:228-247`) on the release zig1, all 4 examples
 (`--markers --track-memory --dump-c89`, exit 0, zero diagnostics):
 
 | Example | perm | mod | scr | total | AST nodes (`L\nnodes=` `main.zig:509`) |
@@ -328,7 +328,7 @@ Phases 2, 4, 6 are negligible on all 4 examples.
 ### `--dump-c89` vs no-dump — phase skipping (Q5) `[markers]` + source — [updated: 2026-08-01]
 
 **No pipeline phase is skipped when `--dump-c89` is absent.** Only `phase_C89Emission`
-early-returns (`main.zig:604` `if (!ctx.cli.dump_c89) return;`). Evidence: a no-dump run
+early-returns (`main.zig:606` `if (!ctx.cli.dump_c89) return;`). Evidence: a no-dump run
 emits the same `I Z S T CE RS A L C` marker set and LIR lowering still builds `lir_fns`, but
 no `FINAL_FLUSH` marker (`main.zig:740`) and 0 bytes to stdout. `--dump-types` and `--dump-lir`
 are declared (`main.zig:774-775`) but never matched in `parseArgs` and **no phase consults them** —
@@ -712,20 +712,20 @@ Each phase resets the scratch arena on entry (`alloc_mod.sandReset(&ctx.alloc.sc
 3. **Inspect AST before a phase:** Add a `dump_ast` call at the phase entry
 4. **Force error exit:** Trigger `diagnosticCollectorHasErrors` early to test error path
 
-### Marker Coverage Assessment (Q6) `[markers]` + `[fprintf]`
+### Marker Coverage Assessment (Q6) `[markers]` + `[fprintf]` — [updated: 2026-08-01]
 
 Per-phase marker inventory (`main.zig` line refs):
 
 | Phase | Markers | Density |
 |-------|---------|---------|
-| 1 import | `I`, `Z` (`250`, `256`) | thin — entry/exit only, no per-module detail |
-| 2 symreg | `S`, `S0` + per-decl AstKind values (`260`, `274-283`) | dense — one line per root decl |
-| 3 typeres | `T`, `T0` + per-decl AstKind values (`290`, `311-320`) | dense |
-| 4 comptime | `CE` (`327`) | thin — single marker, no per-node detail |
+| 1 import | `I`, `Z` (`252`, `258`) | thin — entry/exit only, no per-module detail |
+| 2 symreg | `S`, `S0` + per-decl AstKind values (`262`, `274-283`) | dense — one line per root decl |
+| 3 typeres | `T`, `T0` + per-decl AstKind values (`292`, `311-320`) | dense |
+| 4 comptime | `CE` (`329`) | thin — single marker, no per-node detail |
 | 5 sema | `RS MZ AD DSE DN SA sA V2: V49:p/t/k REG:tl/tt P0-P3 R0n R1t R2s AI FI` (`344-406`) | densest |
-| 6 analyzers | `A` (`471`) | thin — single marker, no per-function detail |
-| 7 lir | `L nodes= extra= M R F A0` (`506-584`) | dense |
-| 8 c89 | `C`, `FINAL_FLUSH` (`603`, `627`) | thin — entry/exit only |
+| 6 analyzers | `A` (`473`) | thin — single marker, no per-function detail |
+| 7 lir | `L nodes= extra= M R F A0` (`508-586`) | dense |
+| 8 c89 | `C`, `FINAL_FLUSH` (`605`, `740`) | thin — entry/exit only |
 
 Gaps: phases 1, 4, 6, 8 have entry/exit markers only; internal behavior of comptime eval,
 static analyzers, and C89 emission is invisible to `--markers` alone.

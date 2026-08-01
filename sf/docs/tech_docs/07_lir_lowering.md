@@ -592,7 +592,7 @@ Blocks are created lazily via `createBlock()`. Every branch/switch terminator se
 
 Verified on the 4 working examples (`examples/z98/{mud_server,game_of_life,lisp_interpreter_curr,json_parser}/main.zig`) with two independent methods:
 
-- `[markers]` — the P0 traces `/tmp/dd/*.mrk` (`zig1 --markers --dump-c89`). The LIR-phase region runs from the `L\n` marker (`main.zig:508`) through the per-module `M<idx>:<ast_root>:R<decls>:<kinds>` markers (`main.zig:537`), the per-fn `FNL:<name_id>` markers (`lower.zig:4108`) and `D3HT:` temp dumps (`lower.zig:4175`), up to `A0 <kinds>` (`main.zig:586`) and the closing `C\n` (`main.zig:605`).
+- `[markers]` — the P0 traces `/tmp/dd/*.mrk` (`zig1 --markers --dump-c89`). The LIR-phase region runs from the `L\n` marker (`main.zig:508`) through the per-module `M<idx>:<ast_root>:R<decls>:<kinds>` markers (`main.zig:537`), the per-fn `FNL:<name_id>` markers (`lower.zig:4116`) and `D3HT:` temp dumps (`lower.zig:4183`), up to `A0 <kinds>` (`main.zig:586`) and the closing `C\n` (`main.zig:605`).
 - `[fprintf]` — a debug build of zig1 (`zig0` bootstrap into a fresh dir, `gcc -g -O0`) with `emitInst`, `expandDefers`, `pushDefer`, `applyCoercion`, `materializeInto` and the `@ptrCast` builtin site instrumented in the generated `lower.c` (`fprintf` to stderr). Instrumentation does **not** perturb codegen: `--dump-c89` output is byte-identical to the P0 baselines (md5 mud `87954d75…`, gol `9cc38ab9…`, lisp `6a8ca449…`, json `9492e3b3…`).
 
 Phase-scope summary `[markers]`:
@@ -630,7 +630,7 @@ Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every e
 
 ### 2. Temp counts per function / hoisting
 
-`D3HT:<tid,type>|…` is emitted once per lowered fn (`lower.zig:4175`); its entry count = total temporaries for that function (params included — each param gets a `nextTemp`, `lower.zig:4135`, then its type is patched in `hoisted_temps`, `lower.zig:4145`). `[markers]`:
+`D3HT:<tid,type>|…` is emitted once per lowered fn (`lower.zig:4183`); its entry count = total temporaries for that function (params included — each param gets a `nextTemp`, `lower.zig:4135`, then its type is patched in `hoisted_temps`, `lower.zig:4145`). `[markers]`:
 
 | Example | fns | total temps | avg | max temp count |
 |---------|-----|-------------|-----|----------------|
@@ -713,8 +713,8 @@ The lowerer emits verbose marker output prefixed with `"L"` (for LIR lowering). 
 | `ILR` | Int literal |
 | `STK` | Statement kind |
 | `BLC` | Block child processing |
-| `FNL:<name_id>` | Function lowering — one per lowered fn_decl (`lower.zig:4108`) |
-| `D3HT:<tid,type>\|...` | Hoisted temps dump — one per fn, entry count = total temp count (`lower.zig:4175`) |
+| `FNL:<name_id>` | Function lowering — one per lowered fn_decl (`lower.zig:4116`) |
+| `D3HT:<tid,type>\|...` | Hoisted temps dump — one per fn, entry count = total temp count (`lower.zig:4183`) |
 | `CEM:n<idx>` | Coercion check — coercion missing (per lowerExpr, `lower.zig:463`) |
 | `CEP:n<idx>k<kind>` | Coercion check — coercion present, kind emitted (`lower.zig:456`) |
 | `COE/CO2` | Compound-assign coercion sites (`lower.zig:1391`) |
