@@ -2239,6 +2239,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                           }
                     }
                 },
+                .tail_call => {},
                 else => {},
             }
         }
@@ -2365,6 +2366,26 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                             var p3rb: [20]u8 = undefined; var p3rl = itoa_mod.itoa(cd.result, p3rb[0..]); var p3rs: usize = @intCast(usize, 19) - @intCast(usize, p3rl); pal.markerWrite(p3rb[p3rs..@intCast(usize, 19)]);
                             var p3tn: []const u8 = "T"; pal.markerWrite(p3tn);
                             var p3tb: [20]u8 = undefined; var p3tl = itoa_mod.itoa(cd.return_type, p3tb[0..]); var p3ts: usize = @intCast(usize, 19) - @intCast(usize, p3tl); pal.markerWrite(p3tb[p3ts..@intCast(usize, 19)]);
+                            var p3wn: []const u8 = "W"; pal.markerWrite(p3wn);
+                            var p3wb: [20]u8 = undefined; var p3wl = itoa_mod.itoa(written_type[@intCast(usize, dp)], p3wb[0..]); var p3ws: usize = @intCast(usize, 19) - @intCast(usize, p3wl); pal.markerWrite(p3wb[p3ws..@intCast(usize, 19)]);
+                            var p3nl: []const u8 = "\n"; pal.markerWrite(p3nl);
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 2);
+                        }
+                    }
+                },
+                .tail_call => |tc| {
+                    if (tc.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, tc.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            if (tc.return_type != type_mod.TYPE_UNDEFINED) {
+                                written_type[@intCast(usize, dp)] = tc.return_type;
+                            } else {
+                                written_type[@intCast(usize, dp)] = type_mod.TYPE_UNDEFINED;
+                            }
+                            var p3m: []const u8 = "P3:r"; pal.markerWrite(p3m);
+                            var p3rb: [20]u8 = undefined; var p3rl = itoa_mod.itoa(tc.result, p3rb[0..]); var p3rs: usize = @intCast(usize, 19) - @intCast(usize, p3rl); pal.markerWrite(p3rb[p3rs..@intCast(usize, 19)]);
+                            var p3tn: []const u8 = "T"; pal.markerWrite(p3tn);
+                            var p3tb: [20]u8 = undefined; var p3tl = itoa_mod.itoa(tc.return_type, p3tb[0..]); var p3ts: usize = @intCast(usize, 19) - @intCast(usize, p3tl); pal.markerWrite(p3tb[p3ts..@intCast(usize, 19)]);
                             var p3wn: []const u8 = "W"; pal.markerWrite(p3wn);
                             var p3wb: [20]u8 = undefined; var p3wl = itoa_mod.itoa(written_type[@intCast(usize, dp)], p3wb[0..]); var p3ws: usize = @intCast(usize, 19) - @intCast(usize, p3wl); pal.markerWrite(p3wb[p3ws..@intCast(usize, 19)]);
                             var p3nl: []const u8 = "\n"; pal.markerWrite(p3nl);
@@ -2753,6 +2774,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         },
         .loop_header => {},
         .label => {},
+        .tail_call => {},
          .decl_local => |dl| {},
             .assign => |a| {
              var asx_m: []const u8 = "ASX:d"; pal.markerWrite(asx_m);
@@ -4213,6 +4235,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                         bufferedWriterWrite(&emitter.writer, sm1);
                         }
                     },
+                    .tail_call => {},
                     else => {},
                 }
             }
