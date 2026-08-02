@@ -285,6 +285,16 @@ Computes which types can be emitted as pointer-only forward declarations (C89 re
 
 Internal helpers:
 - `fieldEmbedsByValue` (line 323): returns true for `struct/tagged_union/union/array/tuple` — these kinds require the full type definition when used as fields.
+  [updated: 2026-08-01] F-S8 added **`enum_type` and `error_set_type`** — both emit as inline integer
+  typedef aliases (`typedef <backing> <cname>;` / `typedef int <cname>;`), so a holder whose field is an
+  enum/error_set embeds it by value and must NOT be classified pointer-only. A struct whose *only*
+  by-value content is an enum/error_set (e.g. `struct { color: Color, next: *Node }`) moves CLS:p → CLS:v.
+  **Note this is a classification-only fix**: `classifyTypeEmissionGroups` has NO `enum_type`/`error_set_type`
+  branch, so the enum/error_set **itself** always stays CLS:p (`is_po = 1`, default). Enums are never seeded
+  into `shared_set` by classification — their promotion happens via the `computeSharedSet` fixpoint
+  (`c89_emit.zig:977`) when a shared member references them (F-S8 `c89NeedsEmitEdge` enum/error_set target
+  support). Do not "fix" this by adding an enum CLS:v branch: it would push every enum into the shared
+  header and break slice/optional-of-enum ordering (08 §1.17).
 - `growWpEdges` (line 535): 2x growth for the backward edge adjacency list.
 
 ### Type Expression Resolution

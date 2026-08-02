@@ -19,7 +19,7 @@
 
 ### 1.1 2-Phase Output Architecture
 
-Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:1600`):
+Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:2041`):
 
 ```
 Phase 1: Type Headers (emitSpecialTypes)
@@ -40,7 +40,7 @@ Phase 1 runs once via `emitSpecialTypes` BEFORE any function body. Phase 2 itera
 
 #### Type Topological Sort
 
-Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:846`):
+Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:911`):
 
 ```
 Input: TypeRegistry (all types 0..types_len-1)
@@ -51,7 +51,14 @@ Input: TypeRegistry (all types 0..types_len-1)
 4. Result order: types with no deps first, then their dependents
 ```
 
-`c89NeedsEmitEdge` (`c89_emit.zig:740`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, tuple, unresolved_name.
+`c89NeedsEmitEdge` (`c89_emit.zig:753`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, **enum, error_set**, tuple, unresolved_name.
+[updated: 2026-08-01] `enum_type`/`error_set_type` were added in F-S8 — both are embeddable by value
+(inline integer typedef aliases), so a target enum/error_set **must** have an emit edge or the fixpoint
+(`computeSharedSet` §1.17) never promotes it into `zig_special_types.h`, leaving shared struct bodies
+referencing an unknown `typedef`. `tstIsDep` (`c89_emit.zig:872`), `tstEdgesCount` (`c89_emit.zig:771`),
+and `tstEdgesFill` (`c89_emit.zig:814`) all gate their source-kind branches on this helper, so the
+enum/error_set target support flows through every source branch automatically; no enum/error_set
+*source* branch is needed (backing_type/tags are plain integers).
 
 #### Pointer-only vs Value-embedding Split
 
@@ -65,7 +72,7 @@ Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string
 ### 1.2 BufferedWriter — 4KB Buffered Output
 
 Defined in `c89_emit.zig:27-79`. Fixed-size 4096-byte buffer with auto-flush.
-[updated: 2026-08-01] BufferedWriter now carries a **file-descriptor sink** (`fd: i32`) so the
+[updated: 2026-08-01] BufferedWriter now carries a **file-descriptor sink** (`fd: usize`) so the
 multi-module path can flush each `.h`/`.c`/`zig_special_types.h` to its own open file. Stdout
 remains the default (`fd=1`), so the bare `--dump-c89` byte-identical gate is preserved.
 
@@ -73,7 +80,7 @@ remains the default (`fd=1`), so the bare `--dump-c89` byte-identical gate is pr
 |-------|------|---------|
 | `buf` | `[4096]u8` | Circular-ish output buffer — written to sequentially, flushed to sink when full |
 | `pos` | `usize` | Current write cursor (0 = empty, 4096 = full, triggers flush) |
-| `fd` | `i32` | Output sink fd. `1` (stdout) by default; set per-file via `bufferedWriterInitFd` |
+| `fd` | `usize` | Output sink fd. `1` (stdout) by default; set per-file via `bufferedWriterInitFd`. `usize` since F-S9 (was `i32`) — an all-ones `INVALID_FD` sentinel (`pal.zig:70`) replaces the `-1` open-fail test |
 
 | Function | Line | Purpose |
 |----------|------|---------|
@@ -161,7 +168,7 @@ Defined `c89_emit.zig:457-480`. Holds all emission context:
 | `emitted_type_set` | `U32ToU32Map` | Dedup: type name hash → emitted marker |
 | `fwd_decl_set` | `U32ToU32Map` | Dedup: forward decl name hash → emitted marker |
 | `pointer_only_map` | `U32ToU32Map` | Type ids that need only forward decl |
-| `shared_set` | `U32ToU32Map` | [updated: 2026-08-01] Type ids emitted into the shared `zig_special_types.h` — synthetics ∪ CLS:v ∪ i64/u64 ∪ named fn_type, plus CLS:p closure (see `computeSharedSet`) |
+| `shared_set` | `U32ToU32Map` | [updated: 2026-08-01] Type ids emitted into the shared `zig_special_types.h` — synthetics ∪ CLS:v ∪ i64/u64 ∪ named fn_type, plus CLS:p closure (see `computeSharedSet`). Closure criterion (F-S8): a type joins when it is referenced **by value OR in a way that requires the C type name in scope** — typedef'd kinds (enum/error_set) need the name in scope even through a pointer/slice (a `struct` tag can be implicitly forward-declared, a typedef cannot) |
 | `dedup_names` | `[128]u32` | Local variable dedup during hoisting |
 | `dedup_count` | `u32` | Count of dedup_names |
 | `fl_name_ids` / `fl_temps` | `[128]u32` | Flat lookup: local name_id → temp_id |
@@ -203,9 +210,9 @@ When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by 
 
 ### 1.6 Type Emission — emitSpecialTypes
 
-`emitSpecialTypes` (`c89_emit.zig:1126`) drives type header output for the stdout single-file
+`emitSpecialTypes` (`c89_emit.zig:1180`) drives type header output for the stdout single-file
 path. For the multi-module path (`--output-dir`), the shared-header writer
-`emitSharedHeader` (`c89_emit.zig:983`) performs the equivalent partition into
+`emitSharedHeader` (`c89_emit.zig:1037`) performs the equivalent partition into
 `zig_special_types.h` (see §1.17):
 
 ```
@@ -393,15 +400,15 @@ Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule` (`c89_emit.zig:1966`) drives one module's output for the **stdout single-file
+`emitModule` (`c89_emit.zig:2041`) drives one module's output for the **stdout single-file
 path only** (bare `--dump-c89`). [updated: 2026-08-01] When `--dump-c89 --output-dir DIR` is
 set, `phase_C89Emission` instead emits `zig_special_types.h` once via `emitSharedHeader` and
 loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
 (see §1.17); `emitModule` is unchanged for the stdout path. Note that `phase_C89Emission`
-(`main.zig:604`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
+(`main.zig:610`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
 fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
-`c89_emit.zig:716-721`), flushes it (`main.zig:733-736`), then calls `emitModule` with the
-hardcoded module name `"output"` (`main.zig:739`) — hence `/* Module: output */` in every dump.
+`c89_emit.zig:716-721`), flushes it (`main.zig:723-726`), then calls `emitModule` with the
+hardcoded module name `"output"` (`main.zig:627`) — hence `/* Module: output */` in every dump.
 
 ```
 emitModule(emitter, name, fns, c_includes, ptr_only_ids):
@@ -546,36 +553,74 @@ Resolves field access for `.assign_field`:
 
 ### 1.17 Multi-Module Emission (`--output-dir`) — [updated: 2026-08-01]
 
-With `--dump-c89 --output-dir DIR`, `phase_C89Emission` (`main.zig`) switches from the single
-stdout stream to **per-module file emission**. Output set: `DIR/<module>.c` (one per module) +
-`DIR/<module>.h` (one per module) + `DIR/zig_special_types.h`. Bare `--dump-c89` (no
+With `--dump-c89 --output-dir DIR`, `phase_C89Emission` (`main.zig:610`) switches from the single
+stdout stream to **per-module file emission**. Output set: `DIR/<qualified>.c` (one per module) +
+`DIR/<qualified>.h` (one per module) + `DIR/zig_special_types.h`. Bare `--dump-c89` (no
 `--output-dir`) keeps the stdout single-file path (§1.10) byte-identical — the two paths are
 branched on the CLI, never mixed.
 
-- **Shared header** — `emitSharedHeader` (`c89_emit.zig:983`): calls `computeSharedSet`
-  (`c89_emit.zig:923`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
+- **Qualified filename scheme (F-S7)** — output stems come from `moduleQualifiedName`
+  (`c89_emit.zig:1895`): `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the
+  module path's last `/` component with `.zig`/`.z98` stripped (clamped to 64 chars) and
+  `<FNV1a8>` is the 8-uppercase-hex FNV-1a hash of the **full module path**
+  (`hash_mod.fnv1a` + `writeHex`, the same pair the mangler uses). **NO module_id** in the
+  filename. This eliminates the F-S7 basename-collision bug (two same-named files in different
+  dirs silently overwrote each other in `DIR/`); every filename is unique per path, so a module
+  importing two same-basename deps now gets two distinct `.h` files and two distinct `#include`
+  lines (previously the same `#include "util.h"` was emitted twice).
+- **Length guard (F-S7)** — `main.zig:665` checks `od.len + 1 + base.len + 3 > 511` before
+  constructing each path; if exceeded, `error: output filename too long` + `pal.exit(1)`. This
+  replaces the old silent truncation at `main.zig:685`/`:712` (bytes were dropped past 510/511
+  with no diagnostic, and the truncated filename mismatched the include chain).
+- **Shared header** — `emitSharedHeader` (`c89_emit.zig:1037`): calls `computeSharedSet`
+  (`c89_emit.zig:977`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
   preamble `#include "zig_compat.h"` + `#include "zig_runtime.h"`, an unfiltered fwd-decl pass
   (`typedef struct X X;` for every named struct/tagged_union/union), sub-pass 2a restricted to
   `shared_set` (guarded), and all of sub-pass 2b. `computeSharedSet` seeds synthetics
   (`name_id==0` in slice/optional/error_union/tagged_union/union/array/fn_type) ∪ value-embedding
   named types (CLS:v, `pointer_only_map` miss) ∪ i64/u64 ∪ named fn_type, then closes over
-  pointer-only named types referenced by-value by shared members (fixpoint over `reg.types_len`).
+  pointer-only named types referenced by shared members (fixpoint over `reg.types_len`, via
+  `tstIsDep` `c89_emit.zig:872`).
+- **Closure-edge model (F-S8)** — the closure criterion is: a type joins `shared_set` when it is
+  referenced **by value OR in a way that requires the C type name in scope** (typedef'd kinds —
+  enum/error_set — need the name in scope even behind a pointer/slice, since a typedef cannot be
+  implicitly forward-declared like a `struct` tag can). `c89NeedsEmitEdge` admits enum/error_set
+  targets; `tstIsDep`/`tstEdgesCount`/`tstEdgesFill` gained **optional_type / slice_type / union_type
+  source branches**. Per operator ruling (2026-08-01, F-S8 amendment 4), the optional/slice edges are
+  **RESTRICTED** — they only fire when the element target is `enum_type`/`error_set_type`. This
+  prevents the recursive-slice 2-cycle hazard (`[]T` inside `T` where `T` is a CLS:p struct would
+  otherwise create a shared-set cycle); unrestricted slice/optional edges would also bloat the shared
+  header by promoting any CLS:p struct used only as a slice element. `union_type` is unrestricted
+  (by-value fields).
+- **Slice-elem type-name-in-scope note** — a `Slice_<elem>` holds a *pointer* to `elem`
+  (`<elem>* ptr;`), so it is not by-value; but the **elem's C name must still be in scope** when
+  the typedef is emitted. For a `struct` elem a fwd-decl suffices; for an **enum/error_set** elem
+  (a typedef) the full typedef must precede the slice — this is exactly the F-S8 fix's slice-elem
+  target support.
 - **Guard scheme** — every type definition is wrapped
   `#ifndef ZIG_<TAG>_<cname> / #define ZIG_<TAG>_<cname> / <def> / #endif`. Tag from
-  `ctypeGuardWrite` (`c89_emit.zig:895`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
+  `ctypeGuardWrite` (`c89_emit.zig:949`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
   `ZIG_ERROR_SET_`, `ZIG_SLICE_`, `ZIG_OPTIONAL_`, `ZIG_ERRORUNION_`, `ZIG_ARRAY_`,
   `ZIG_FNPTR_`, `ZIG_I64_`, `ZIG_U64_`, fallback `ZIG_TYPE_`.
-- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:1841`): module guard
-  `ZIG_MODULE_<NAME>_H` (NAME = uppercased basename, non-alnum → `_`); includes `zig_compat.h`
+- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:1938`): module guard
+  `ZIG_MODULE_<UPPER(qualified)>_H` (the **qualified** stem uppercased, non-alnum → `_`; since
+  F-S7 the stem already embeds the unique path hash, so guards auto-unique even for two
+  same-basename modules — e.g. `ZIG_MODULE_UTIL_7F9D0FD1_H`); includes `zig_compat.h`
   + `zig_special_types.h`; the module's own `@cInclude` directives (`entry.c_includes`,
-  per-module — NOT the global `cincludeUnionAll` union); each direct-import dep's `.h` by bare
-  basename (`#include "dep.h"`, skipping self, `.zig`/`.z98` stripped); owned CLS:p
+  per-module — NOT the global `cincludeUnionAll` union); each direct-import dep's `.h` by its
+  **qualified** name (`#include "<moduleQualifiedName(emitter,d)>.h"`, skipping self —
+  `c89_emit.zig:1983`); owned CLS:p
   type full-definitions (name_id≠0, `module_id==M.id`, struct/TU/union/enum/error_set,
   `pointer_only_map`, not in `shared_set` — each guarded); fn fwd-decls (non-extern).
-- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2041`): `#include "<mod>.h"`, then the
+- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2116`): `#include "<qualified>.h"`, then the
   module's own fn bodies (externs skipped; `switch_cases`/`dl_hoisted` reset per fn). The
   `int main(void)` wrapper is emitted only for `module_id==0`'s public `main`
-  (`emitMainWrapper`, `c89_emit.zig:2000`).
+  (`emitMainWrapper`, `c89_emit.zig:2075`).
+- **Embedded build-script templates are DEAD CODE** — `emitBuildTargetSh` (`c89_emit.zig:4482`) /
+  `emitBuildTargetBat` (`c89_emit.zig:4495`) / `emitBuildTargetOwcBat` are never called by any
+  pipeline path (explicit `// Reference-only:` comment at `c89_emit.zig:4478`). They exist as
+  frozen templates only; the real multi-module build flow is the glob-based gcc recipe in
+  QUICK_REF/NOTES.md.
 
 ---
 
@@ -626,7 +671,7 @@ pub fn nameManglerInit() NameMangler { return .{ .counter = 0 }; }
 LirFunction list (per module)
     │
     ▼
-emitModule(c89_emit.zig:1600)
+emitModule(c89_emit.zig:2041)
     │
     ├─ pointer_only_map populated from caller-provided ids
     │
@@ -785,7 +830,7 @@ sub-pass split matches the `pointer_only` classification from P3.
 
 ### 6.3 @cInclude Lists & Dedup (Q3)
 
-`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:738`) dedups by interned name_id
+`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:728`) dedups by interned name_id
 across ALL modules; `emitModuleHeader` emits `zig_compat.h` + `zig_special_types.h` then the
 deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"..."` quoted
 (`:1570-1578`).
@@ -798,7 +843,7 @@ deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"
 | lisp_interpreter_curr | main.zig:11-12 zig_runtime.h, `<stdio.h>` | `zig_runtime.h` + `<stdio.h>` (lisp:100-101) | no dups |
 
 **Observation**: `zig_compat.h` and `zig_runtime.h` appear TWICE in every output — once in the
-fixed `emitIncludes` preamble (`c89_emit.zig:706-711`, flushed from `main.zig:733-736`) and
+fixed `emitIncludes` preamble (`c89_emit.zig:716-721`, flushed from `main.zig:723-726`) and
 once in the module header (`[c89]` mud_server.c:1-2 vs :45-48). Dedup applies only WITHIN the
 collected `@cInclude` list, not against the preamble — benign (include guards), undocumented
 elsewhere.
@@ -806,7 +851,7 @@ elsewhere.
 ### 6.4 Function Body Emission Order (Q4)
 
 Emission iterates `fns` in list order, skipping externs (`[source]` `c89_emit.zig:1607-1611`).
-The list is built in module-registration order × source decl order (`[source]` `main.zig:532-574`:
+The list is built in module-registration order × source decl order (`[source]` `main.zig:513-608`:
 per module, per top-level `fn_decl`, `lowerFn` appended to `ctx.lir_fns`). Therefore
 **emission order == LIR function order == source declaration order**.
 
@@ -841,10 +886,10 @@ before the fn loop, `[source]` `c89_emit.zig:1605-1611`) and observed in all 4 o
 | json_parser | :60 | :89 |
 | lisp_interpreter_curr | :96 | :150 |
 
-Marker sequence `[markers]`: `C` (main.zig:605) → `FL:p49`/`FE:p0` (preamble flush, main.zig:736)
-→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:740; exactly 1
-per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:733-736) flushed
-before `emitModule`; the module name is hardcoded `"output"` (main.zig:739) — hence
+Marker sequence `[markers]`: `C` (main.zig:611) → `FL:p49`/`FE:p0` (preamble flush, main.zig:726)
+→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:730; exactly 1
+per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:723-726) flushed
+before `emitModule`; the module name is hardcoded `"output"` (main.zig:627) — hence
 `/* Module: output */` in every file.
 
 ### 6.6 extern "c" Functions (Q6, mud_server)

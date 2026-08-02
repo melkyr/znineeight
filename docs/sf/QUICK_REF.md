@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (184 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE
+### Corpus gate (186 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-01]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -43,25 +43,31 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
 - `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001|3043)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
+  (Note: `error[3048]` is deliberately NOT in the ICE regex — the F-S10 file diagnostics must
+  classify as ordinary FAIL, not ICE.)
 - **A repro that fails the frontend (dump emits 0 `.c` files with a `error[NNNN]` diagnostic) is a
   FAILURE — a real compiler gap — NOT "OK".** Do NOT count an empty output dir as OK. The per-file
   gcc loop above is only the emission check; a frontend error must be checked separately:
   ```bash
   if [ -z "$(ls DIR/*.c 2>/dev/null)" ]; then result=FAIL; fi   # 0 .c emitted = frontend gap
   ```
-- **Baseline (2026-08-01, HEAD 00623202): `OK=164 FAIL=20 ICE=6 CRASH=0` over 184 repros.**
-  - 164 fully OK (frontend + emission + gcc all clean).
-  - **20 FAIL** = 8 emission defects (dump ok, gcc rejects C) + 12 frontend gaps (dump emits 0 `.c`).
-  - **ICE=6** of the 12 frontend gaps are `error[3043]` ("internal: unsupported field-store base") —
-    internal compiler errors, counted separately from ordinary frontend FAILs.
-  - Must stay `164/20/6/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
-- **The 8 emission-defect repros** (`dump_rc=0`, gcc fails): `anon_init_orelse_rhs`,
-  `array_tagged_union_read`, `field_store_drop`, `module_var_mutable`, `ptrcast_slice_field_type`,
+- **Baseline (2026-08-01, after F-S7..F-S10, operator ruling A): `OK=165 FAIL=15 ICE=6 CRASH=0` over 186 repros.**
+  - 165 fully OK (frontend + emission + gcc all clean).
+  - **15 FAIL** (non-ICE) = 7 emission defects (dump ok, gcc rejects C) + 8 non-ICE frontend gaps (dump emits 0 `.c`).
+  - **6 ICE** are `error[3043]` ("internal: unsupported field-store base") — internal compiler
+    errors, counted separately from ordinary frontend FAILs (this baseline counts ICE apart from
+    FAIL: `OK 165 + FAIL 15 + ICE 6 = 186`).
+  - Must stay `165/15/6/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
+- **The 7 emission-defect repros** (`dump_rc=0`, gcc fails): `anon_init_orelse_rhs`,
+  `array_tagged_union_read`, `module_var_mutable`, `ptrcast_slice_field_type`,
   `ptroint_arena_offset`, `tu_uninit_data_void`, `var_declared_void`.
-- **The 12 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
+- **The 14 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
   - ICE (error[3043]): `ptrcast_slice_field_void`, `ptrcast_slice_field_xmod`,
     `struct_field_store_subscript`, `tu_field_store_ptr`, `tu_ptrcast_copy`,
     `xmod_amp_arena_union_store`.
+  - error[3048] cannot-read/cannot-resolve file: `field_store_drop` (re-bucketed from emission
+    defect → frontend gap, F-S10), `test_stub_0` (imports nonexistent `"std"` — FAIL via
+    `error[3048]` today; will pass when zig1 gains a real std lib — planned).
   - error[3011] error-literal-not-found: `bare_error_union_return`, `inferred_errorset_fnptr`,
     `inferred_errorset_xmod`.
   - error[3000] type-mismatch: `eu_assign_incompat_payload`, `field_access_optional`.
@@ -75,6 +81,11 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   an empty dir). That convention is DISCONTINUED (2026-08-01, operator): a valid-Z98 repro that fails
   to emit is a failure, not a pass. The 8 emission defects are identical under both conventions;
   the correction only re-buckets the 12 frontend gaps from OK to FAIL (6 of them ICE).
+- **F-S7..F-S10 are transparent to the (glob-based) build recipes.** Multi-module filenames are
+  now `DIR/<basename>_<FNV1a8>.c/.h` (unique per path), but every NOTES.md/QUICK_REF recipe uses
+  globs (`*.c`, `*.h`, `gcc -c *.c`), so no recipe changes were needed. `zig1 --dump-c89
+  <missing-or-empty.zig>` now exits **1** with `error: could not read input file` on stderr
+  (was silent exit 0 + boilerplate).
 
 ### Byte-identical gate (mud / gol / lisp / json) — z98-only, self-consistency check
 

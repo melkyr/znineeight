@@ -240,7 +240,7 @@ sourceManagerGetLocation(manager, file_id, offset):
 
 ---
 
-## 5. `pal.zig` — Platform Abstraction Layer (113 lines)
+## 5. `pal.zig` — Platform Abstraction Layer (142 lines)
 
 ### C Externs
 
@@ -248,21 +248,34 @@ sourceManagerGetLocation(manager, file_id, offset):
 
 File I/O constants: `SEEK_END=2`, `SEEK_SET=0`, `MODE_READ="rb"`. (`pal.zig:12-14`) [inference]
 
+[updated: 2026-08-01] **F-S9 fd-type change** — the PAL file descriptors are now `usize`
+(32-bit `unsigned int` in C89), not `i32`. The sentinel is
+`INVALID_FD: usize = @intCast(usize, 0xFFFFFFFF)` (`pal.zig:70`) — all-ones matches both the
+POSIX `-1` failure return (as `unsigned int`) and Win32 `INVALID_HANDLE_VALUE` at 32-bit width.
+Callers test `fd == pal.INVALID_FD` instead of `fd == -1`. This fixes the Win32 handle
+truncation bug (a `HANDLE` with bit 31 set was round-tripped through `int` and sign-extended
+back to a different pointer). The C side (`zig_pal.c`) now returns/accepts the `PlatFile`
+typedef (`void*` on Win32 / `int` on POSIX) and `PLAT_INVALID_FILE` is `((void*)-1)` (the
+undefined `isize` in the old macro was removed — any `_WIN32` compile was a preprocessor error).
+
 ### Function Walkthrough
 
 | Function | Line | Vis. | Purpose | Called By | Calls | Data Touched | Key Decisions | Markers |
 |----------|------|------|---------|-----------|-------|-------------|---------------|---------|
-| `readFile` | 16 | pub | Read entire file into arena memory. Copies path to null-terminated C buffer (max 511 bytes). Opens with `fopen` ("rb"), seeks to end for size, allocates arena buffer, reads content. Returns `?[]u8`. | parser / import resolver | `fopen`, `fseek`, `ftell`, `fclose`, `fread`, `sandAlloc` | Sand arena, file system | Max path 511 bytes. Binary read. Arena allocation freed only by reset. OOM returns null (not panic). | None [inference] |
-| `fileExists` | 45 | pub | Check if file exists by attempting `fopen("rb")`. Returns bool. Max path 511 bytes. | import resolution | `fopen`, `fclose` | file system | Opens and closes; no memory allocation. | None [inference] |
-| `stdout_write` | 59 | pub | Write bytes to stdout (fd 1) via `ext_c.write`. | `c89_emit.zig` output | `ext_c.write` | stdout | Direct syscall wrapper. | None [inference] |
-| `stderr_write` | 63 | pub | Write bytes to stderr (fd 2) via `ext_c.write`. | diagnostics, allocator OOM, panic | `ext_c.write` | stderr | Direct syscall wrapper. | None [inference] |
-| `exit` | 67 | pub | Exit process with code via `c_exit`. Infinite loop after as safety net. | `diagnosticCollectorFlushAndExit`, OOM/ICE | `c_exit` | process | Hard exit. | None [inference] |
-| `initArgs` | 75 | pub | Store argc/argv from C `main()` into module-level globals. | `main.zig` entry | (none) | `saved_argc`, `saved_argv` | Called once from C main. | None [inference] |
-| `argCount` | 80 | pub | Return saved argc. | CLI parsing | (none) | `saved_argc` | Accessor. | None [inference] |
-| `argGet` | 84 | pub | Return argv[i] as `[*]const u8`. | CLI parsing | (none) | `saved_argv` | Direct pointer access. | None [inference] |
-| `markersEnabled` | 90 | pub | Set `g_markers_enabled` flag (0=off, nonzero=on). | `main.zig` CLI arg parsing (`--markers`) | (none) | `g_markers_enabled` | Enable/disable debug markers. | None [inference] |
-| `markerWrite` | 96 | pub | Conditional stderr write: if `g_markers_enabled != 0`, writes message. | `markerWriteInt`, phase debug code | `stderr_write` | stderr | Guarded by global flag — zero-cost when disabled (just one cmp). | None [inference] |
-| `markerWriteInt` | 102 | pub | Conditional stderr write with int suffix: writes prefix + decimal value + newline. Uses `itoa` for formatting. | `stringInternerIntern` (INT: markers), phase markers | `markerWrite`, `itoa_mod.itoa` | stderr, local buf | Fixed-width format. | `INT:tl`, `INT:t0`, `INT:dup`, `INT:new` [inference] |
+| `readFile` | 19 | pub | Read entire file into arena memory. Copies path to null-terminated C buffer (max 511 bytes). Opens with `fopen` ("rb"), seeks to end for size, allocates arena buffer, reads content. Returns `?[]u8`. | parser / import resolver, main.zig root check (F-S10) | `fopen`, `fseek`, `ftell`, `fclose`, `fread`, `sandAlloc` | Sand arena, file system | Max path 511 bytes. Binary read. Arena allocation freed only by reset. OOM returns null (not panic). Null covers missing, empty (`ftell <= 0`), and oversize paths indistinguishably. | None [inference] |
+| `fileExists` | 48 | pub | Check if file exists by attempting `fopen("rb")`. Returns bool. Max path 511 bytes. | import resolution | `fopen`, `fclose` | file system | Opens and closes; no memory allocation. Returns true for empty files (can't distinguish empty). | None [inference] |
+| `fileOpen` | 72 | pub | Open/create/truncate a file for writing, return `usize` fd (`pal_file_open`). | `phase_C89Emission` multi-module branch | `pal_file_open` | file system | Returns `INVALID_FD` on failure (`pal.zig:79`); path capped 511 bytes. `flags` stays `i32`. | None [inference] |
+| `fileWrite` | 84 | pub | Write bytes to fd via `pal_file_write(fd: usize, …)`. | `bufferedWriterFlush` | `pal_file_write` | file system | fd is `usize` (F-S9). | None [inference] |
+| `fileClose` | 88 | pub | Close fd via `pal_file_close(fd: usize)`. | `phase_C89Emission` multi-module branch | `pal_file_close` | file system | fd is `usize` (F-S9). | None [inference] |
+| `stdout_write` | 62 | pub | Write bytes to stdout (fd 1) via `ext_c.write`. | `c89_emit.zig` output | `ext_c.write` | stdout | Direct syscall wrapper. | None [inference] |
+| `stderr_write` | 66 | pub | Write bytes to stderr (fd 2) via `ext_c.write`. | diagnostics, allocator OOM, panic, main.zig F-S10 root check | `ext_c.write` | stderr | Direct syscall wrapper. | None [inference] |
+| `exit` | 92 | pub | Exit process with code via `c_exit`. Infinite loop after as safety net. | `diagnosticCollectorFlushAndExit`, OOM/ICE, main.zig error paths | `c_exit` | process | Hard exit. `main.zig` uses `pal.exit(1)` for the F-S10 input-file check. | None [inference] |
+| `initArgs` | 100 | pub | Store argc/argv from C `main()` into module-level globals. | `main.zig` entry | (none) | `saved_argc`, `saved_argv` | Called once from C main. | None [inference] |
+| `argCount` | 105 | pub | Return saved argc. | CLI parsing | (none) | `saved_argc` | Accessor. | None [inference] |
+| `argGet` | 109 | pub | Return argv[i] as `[*]const u8`. | CLI parsing | (none) | `saved_argv` | Direct pointer access. | None [inference] |
+| `markersEnabled` | 115 | pub | Set `g_markers_enabled` flag (0=off, nonzero=on). | `main.zig` CLI arg parsing (`--markers`) | (none) | `g_markers_enabled` | Enable/disable debug markers. | None [inference] |
+| `markerWrite` | 125 | pub | Conditional stderr write: if `g_markers_enabled != 0`, writes message. | `markerWriteInt`, phase debug code | `stderr_write` | stderr | Guarded by global flag — zero-cost when disabled (just one cmp). | None [inference] |
+| `markerWriteInt` | 131 | pub | Conditional stderr write with int suffix: writes prefix + decimal value + newline. Uses `itoa` for formatting. | `stringInternerIntern` (INT: markers), phase markers | `markerWrite`, `itoa_mod.itoa` | stderr, local buf | Fixed-width format. | `INT:tl`, `INT:t0`, `INT:dup`, `INT:new` [inference] |
 
 ---
 

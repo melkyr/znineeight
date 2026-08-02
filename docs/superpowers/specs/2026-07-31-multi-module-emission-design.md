@@ -22,6 +22,13 @@ zig1 --dump-c89 -o <outdir> <entry.zig>
       Makefile                  (generated build script)
 ```
 
+> **Note (2026-08-01, F-S7, [updated: 2026-08-01]):** per-module output filenames are now `basename_<FNV1a8>` — e.g.
+> `main_7F9D0FD1.c`/`main_7F9D0FD1.h` (basename clamped to 64 + `_` + 8 uppercase hex digits of
+> the FNV-1a hash of the full module path; NO module_id). The `main.c`/`sand.c` names above are
+> the pre-F-S7 illustrative form; the scheme is otherwise pattern-identical. This change was
+> required to make filenames unique for same-basename modules in different directories
+> (F-S7 basename-collision fix; `moduleQualifiedName`, `c89_emit.zig:1895`).
+
 ## 3. Output per module
 
 ### module.h

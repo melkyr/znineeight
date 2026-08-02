@@ -24,7 +24,7 @@
 | `z64`/`zu64` typedefs | 6-14 | global | 64-bit integer platform abstraction | MSC → `__int64`, else → `long long` [inference] |
 | `i8`..`u64` types | 17-27 | global | Fixed-width integer types | Guarded by `!__cplusplus` [inference] |
 | `f32`/`f64` | 25-26 | global | Float types | Just `float`/`double` [inference] |
-| `usize` | 27 | global | Pointer-sized unsigned | `unsigned int` [inference] |
+| `usize` | 27 | global | 32-bit unsigned (C `unsigned int`) — NOT pointer-sized | `unsigned int` [inference] [updated: 2026-08-01] Z98 `usize` always compiles to `unsigned int` (32-bit) regardless of `-m32`/`-m64` (Language_Spec_Z98.md:15). The prior "Pointer-sized unsigned" label was wrong on 64-bit hosts and is exactly why the F-S9 "pointer-width" fd fix stays 32-bit everywhere. |
 | `bool`/`true`/`false` | 30-32 | global | Boolean type | C89 has no `_Bool`; typedef to `int` [inference] |
 
 All typedefs at `sf/src/include/zig_compat.h`.
@@ -98,10 +98,32 @@ All declarations at `sf/src/include/zig_runtime.h`.
 | `pal_i64_to_str` | 115 | extern | Signed 64-bit to decimal string | `std_print_i32`, `std_print_i64` | `pal_u64_to_str_buf` | local buf | Two's complement safe neg: `-(value+1)+1`. [inference] |
 | `pal_u64_to_str` | 136 | extern | Unsigned 64-bit to decimal string | `std_print_u32`, `std_print_u64` | `pal_u64_to_str_buf` | local buf | Thin wrapper. [inference] |
 | `pal_f64_to_str` | 141 | extern | Double to decimal string (6 fractional digits) | `std_print_f64` | `pal_i64_to_str` | local buf | Strips trailing zeros. Integer part via i64 conv, fraction via loop*10. [inference] |
-| `pal_file_open` | 181 | extern | Open/create/truncate file for writing, return fd | zig1 `fileOpen` | `open` (Unix) or `CreateFileA` (Win32) | none | POSIX `O_WRONLY\|O_CREAT\|O_TRUNC\|flags, 0644`; Win32 returns `(int)(size_t)HANDLE`; -1 on failure. Added in F-S1. [inference] |
-| `pal_file_write` | 192 | extern | Write `len` bytes to fd with partial-write loop | zig1 `fileWrite` | `write` (Unix) or `WriteFile` (Win32) | none | Loops until all bytes written; -1 on error. Added in F-S1. [inference] |
-| `pal_file_close` | 207 | extern | Close file descriptor | zig1 `fileClose` | `close` (Unix) or `CloseHandle` (Win32) | none | Added in F-S1. [inference] |
+| `pal_file_open` | 181 | extern | Open/create/truncate file for writing, return a `PlatFile` | zig1 `fileOpen` | `open` (Unix) or `CreateFileA` (Win32) | none | POSIX `O_WRONLY\|O_CREAT\|O_TRUNC\|flags, 0644`; Win32 returns the raw `HANDLE`. On failure returns `PLAT_INVALID_FILE`. Added in F-S1; **reactivated in F-S9** (see rows below). [inference] |
+| `pal_file_write` | 192 | extern | Write `len` bytes to `PlatFile` with partial-write loop | zig1 `fileWrite` | `write` (Unix) or `WriteFile` (Win32) | none | Loops until all bytes written; -1 on error. Added in F-S1. [inference] |
+| `pal_file_close` | 207 | extern | Close `PlatFile` | zig1 `fileClose` | `close` (Unix) or `CloseHandle` (Win32) | none | Added in F-S1. [inference] |
 | `mainCRTStartup` | 217 | Win32 only | CRT-less Win32 entry point | Win32 loader | `main`, `ExitProcess` | none | Only compiled with `ZIG_NO_CRT`. [inference] |
+
+[updated: 2026-08-01] **F-S9 PlatFile reactivation + `isize` fix:**
+
+| Decl | Location | Purpose |
+|------|----------|---------|
+| `PlatFile` typedef | `zig_pal.c:16-20` | `void*` on Win32 / `int` on POSIX. Matches the design spec (`RUNTIME_PAL_p2.md:214-221`). Was dead since birth (`3967819a`); F-S1's `pal_file_*` used hardcoded `int` instead. F-S9 reactivated it as the return/param type of `pal_file_open`/`pal_file_write`/`pal_file_close` (rows above now show `PlatFile`). |
+| `PLAT_INVALID_FILE` | `zig_pal.c:17,20` | Win32 branch: `((void*)-1)` — the undefined `isize` in the old macro (`((void*)(isize)-1)`) was removed. `isize` has no typedef anywhere in `zig_compat.h`, so any `_WIN32` compile of `zig_pal.c` was a preprocessor error. `(void*)-1` is all-ones on both Win32/Win64 = `INVALID_HANDLE_VALUE`. POSIX branch: plain `(-1)`. |
+
+**F-S9 rationale:** the old Win32 chain truncated the handle — `(int)(size_t)HANDLE` reinterprets a
+handle with bit 31 set as negative, and `(HANDLE)(size_t)fd` sign-extends it back to a different
+64-bit pointer on Win64. Now the `HANDLE` is returned/consumed directly as `PlatFile`. Zig side
+reads it as `usize` (`unsigned int`, 32-bit), and `INVALID_FD` (`pal.zig:70`) is the all-ones
+sentinel that matches both POSIX `-1` (as `unsigned int`) and Win32 `INVALID_HANDLE_VALUE`.
+The 64-bit-Windows HANDLE still would not fit — a pre-existing, out-of-scope limitation (target is
+32-bit Windows 9x/NT per `docs/sf/AGENTS.md` §0.1).
+
+**F-S9 embedded-mirror sync constraint:** `c89_emit.zig` embeds byte-identical copies of
+`zig_pal.c` (`emitZigPalC`, `c89_emit.zig:736`) and `zig_compat.h` (`emitZigCompatH`,
+`c89_emit.zig:723`). **Both are dead code** — neither is called from the pipeline
+(`main.zig:653` calls only `emitSharedHeader`), so the embedded strings are never emitted at
+runtime. They are the frozen spec/mirror: any future `zig_pal.c`/`zig_compat.h` change MUST be
+applied to the embedded literals too or the mirror silently drifts.
 
 ### `zig_special_types.h` — Stub (`sf/src/include/zig_special_types.h:1-4`)
 

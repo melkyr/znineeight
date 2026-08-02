@@ -145,11 +145,13 @@ Module graph data structures + topological sort. Contains `ModuleState`, `Module
          │      └───────────┘
          │
          │      ┌──────────┐
-         └──────│  failed  │ ←── readFile fail OR parse error OR circular dep
+         └──────│  failed  │ ←── readFile fail (now ERR_3048 diagnostic, F-S10) OR parse error OR circular dep
                 └──────────┘
 ```
 
 **Key:** `failed` is a sink state. `resolved` is only reached via Kahn's algorithm, not during the parsing loop. **In the compile pipeline `resolved` is never reached** — `moduleRegistrySortModules` is not called from `main.zig`, so every parsed module stays `parsed` and later phases never consult `state`. Modules in `failed` state are excluded from topological sort (in_degree set to 0 but `state == failed` check skips them).
+
+[updated: 2026-08-01] **How phases actually skip failed modules — `ast_root == 0`, NOT `ModuleState.failed`:** no later phase checks `ModuleState.failed` at all. The per-phase skip is by `ast_root == 0` — a module that failed to read (F-S10) or failed to parse never gets `ast_root` set (it stays 0), and each phase tests `mods[i].ast_root != 0` before walking the AST (e.g. `main.zig:314` `T0` gate). This is undocumented elsewhere: `ModuleState.failed` is set by the import resolver for bookkeeping but is invisible to phases 2-8.
 
 ---
 
@@ -167,7 +169,8 @@ while queue not empty:
     entry.state = parsing
 
     content = readFile(path)          ← file I/O
-    if content missing → state = failed, continue
+    if content missing → emit ERR_3048 diagnostic, state = failed, continue   ← F-S10
+      (was silent pre-F-S10; now `error[3048]: could not read imported file '<path>'`)
 
     ast_root = moduleRegistryParseModule(
         reg, mod_id, content,         ← lex → tokenize → parse
@@ -182,6 +185,15 @@ while queue not empty:
         if imported_module.state == pending:
             queue.enqueue(imported_module_id)
 ```
+
+[updated: 2026-08-01] **F-S10 missing-dependency choke point:** a dep that never resolves in the
+3-tier search fails *before* `readFile` — `moduleResolverResolve` (`module_registry.zig:144-161`)
+gates on `fileExists` and returns null, so `moduleRegistryResolveImport`
+(`module_registry.zig:260-274`) returns null and emits `error[3048]: could not resolve imported
+file '<path>'` at the resolve-null point (`module_registry.zig:263-270`). Pre-F-S10 this was
+silent: `parser.zig:641-643` discarded the null result, no module was registered, and no
+`readFile` was attempted. So the import_resolver.zig:96 site only fires for **empty** deps; the
+module_registry.zig:263 site covers genuinely **missing** deps.
 
 Then a verification pass (import_resolver.zig:139-159) iterates all modules, dumping `IRV:m`/`IRV:c`/`IRV:n` markers, and finally writes `IRN:n` (total node count) and `IRE:x` (extra children count).
 
@@ -307,13 +319,16 @@ ModuleEntry created (pending) → eventually parsed by main loop
 In the multi-module C89 output (`zig1 --dump-c89 --output-dir DIR`), each module's emitted header
 `<module>.h` includes the `.h` of every **direct** import — the import-edge targets
 `import_edges_items[M.imports_start .. M.imports_start+M.import_count]` (recorded by
-`moduleRegistryAddImport`, module_registry.zig:252) — as `#include "dep.h"` using the dep's bare
-basename (path after the last `/`, `.zig`/`.z98` stripped; the self edge is skipped). The order
+`moduleRegistryAddImport`, module_registry.zig:252) — as `#include "<dep>.h"` using the dep's
+**qualified** name (`moduleQualifiedName`, `c89_emit.zig:1895`: `<basename clamped 64>_<FNV1a8>`,
+the same scheme as the filenames — see 08 §1.17; the self edge is skipped). The order
 follows the direct-edge iteration, i.e. `@import` declaration order. Transitive includes resolve
 through the deps' own headers plus the shared `zig_special_types.h`; include guards
 (`ZIG_MODULE_<NAME>_H`, and the per-type `ZIG_<TAG>_<cname>` guards) make the include graph
-cycle-safe. This is the `emitModuleHeaderFile` dep-include loop (08 §1.17) — the emission uses
-**direct-edge iteration**, not `moduleRegistrySortModules`.
+cycle-safe. This is the `emitModuleHeaderFile` dep-include loop (`c89_emit.zig:1980-1988`) — the
+emission uses **direct-edge iteration**, not `moduleRegistrySortModules`. F-S7 changed the include
+name from the bare basename to the qualified stem (the old bare-basename scheme silently overwrote
+same-named modules and emitted duplicate `#include "util.h"` lines).
 
 ---
 
@@ -371,11 +386,12 @@ cycle-safe. This is the `emitModuleHeaderFile` dep-include loop (08 §1.17) — 
 |--------|----------|-------------|
 | `circular import detected in module '...'` | moduleRegistrySortModules (line 400) | Diagnostic message for circular dependency |
 
-### Diagnostic Error Codes
+### Diagnostic Error Codes — [updated: 2026-08-01]
 
 | Code | Constant | Description |
 |------|----------|-------------|
 | `ERR_3005` | `CIRCULAR_TYPE_DEPENDENCY` | Circular import detected during topological sort |
+| `ERR_3048` | `CANNOT_READ_FILE` | **F-S10** — dependency file unreadable/unresolvable. Two call sites: empty dep at `import_resolver.zig:96-105` → `error[3048]: could not read imported file '<path>'`; missing dep (never resolves in the 3-tier search) at the resolve-null choke point `module_registry.zig:263-270` → `error[3048]: could not resolve imported file '<path>'`. Both are level-0 diagnostics → `error_count` → exit 2 at `main.zig:205`. |
 | `ERR_4000` | `INVALID_CONTROL_FLOW` | Topological sort violation — import not resolved |
 
 ### Known Issues [updated: 2026-07-31]
