@@ -318,7 +318,7 @@ Emitted immediately after function signature, before body. Two passes:
 ```
 Skips `TYPE_VOID` temps (type_id == 1). Debug markers `D4:`, `D7:`, `D9:` track type resolution.
 
-#### emitFunctionBody (`c89_emit.zig:3685`)
+#### emitFunctionBody (`c89_emit.zig:4236`)
 
 ```
 emitFunctionBody:
@@ -328,13 +328,33 @@ emitFunctionBody:
      - Emits "type name;\n" for each unique local
      - Sets dl_hoisted guard
   2. Emit basic blocks:
-     - Block 0: no label (entry — follows signature directly)
+     - Block 0: label "z_bb_0:" (emitted by the .loop_header inst — see §1.9)
      - Blocks > 0: label "z_bb_<id>:"
   3. Emit each instruction via emitInst()
   4. Close "}\n"
 ```
 
-Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Block 0 has no label (entry block).
+Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Since the TCO feature (F-S2 injects
+`loop_header(0)` as the first entry-block inst, lower.zig:4350; F-S3 activates the `.loop_header`
+arm, c89_emit.zig:2775), **every function** also gets a `z_bb_0:` label for its entry block,
+emitted after the hoisted temp decls and local decls and before the first entry-block statement:
+
+```
+ret_zF_fn(params) {
+    <hoisted temp decls zT_N;>      (emitHoistedDecls)
+    <local decls name;>             (emitFunctionBody decl_local hoist)
+    z_bb_0:                         ← .loop_header arm (c89_emit.zig:2775)
+    <bb0 entry-block insts>
+z_bb_1:
+    <bb1 insts>
+    ...
+}
+```
+
+This is the TCO self-recursion jump target: self-tail calls emit rebind assigns + `goto z_bb_0;`
+(back-edge to the entry block) instead of a recursive C call — O(1) stack for self-recursion. The
+unused-`z_bb_0:` label in functions with no tail call produces a `-Wunused-label` gcc warning
+(tolerated; gate is 0 errors). `[updated: 2026-08-03]`
 
 ### 1.9 LirInst → C89 Emission Table
 
@@ -344,7 +364,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 |---------|-----------|------|
 | `.nop` | (nothing) | 2275 |
 | `.ret_void` | `return;` | 2276 |
-| `.loop_header` | (nothing — implicit via goto) | 2281 |
+| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; since F-S3 emits `z_bb_0:\n`, NOT `tco_restart:`) | 2775 |
 | `.label` | (nothing — waits for block label) | 2282 |
 | `.decl_local` | Emitted by hoisting pass in emitFunctionBody | 2283 |
 | `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`) | 2284 |
@@ -375,6 +395,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 3029 |
 | `.call` | `result = callee(args...);` (indirect call through function pointer) | 3103 |
 | `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 3129 |
+| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 3767 |
 | `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 3262 |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 3304 |
 | `.int_cast` | `result = (type)src;` (checked: `result = std_checked_cast_<N>(src);`) | 3330 |
@@ -397,6 +418,15 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.func_ref` | `result = fn_name;` (function pointer) | 3669 |
 
 Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
+
+**C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:3767) is
+emitted as a **call followed by a `return`** (`zT = fn(args); return zT;`), i.e. it preserves a C
+stack frame — it is semantically a tail call but not a jump. Only **self-recursion** TCO achieves
+O(1) stack (rebind assigns + `goto z_bb_0;` back-edge to the entry label). Real frame-reusing
+cross-function tail calls (jump to the callee without a new frame) require a backend that can emit a
+proper tail-jump; until such an asm backend exists, cross-function TCO is call+ret. The `.tail_call`
+written-type-scan case (`c89_emit.zig:2376`) marks the result temp as a call-result (written_flag=2)
+so it is not flagged UNWRITTEN by the decl pass.
 
 ### 1.10 emitModule — Top-Level Orchestration
 

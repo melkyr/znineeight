@@ -548,9 +548,51 @@ This means all temporaries are declared at function entry, before any control fl
 
 ---
 
-## TCO (Tail Call Optimization) Pattern
+## TCO (Tail Call Optimization) Pattern — [updated: 2026-08-03]
 
-The lowerer does **not** implement TCO. No tail-call elimination or sibling-call optimization is performed. Function calls always produce a `call` or `call_direct` instruction regardless of position. The `loop_header` LirInst variant (lir.zig:31) exists but is never emitted by the lowerer. See the P7 evidence below (item 5) for the lisp `eval` trampoline trace.
+The lowerer implements **tail-call elimination for self-recursion** and a **`tail_call` LIR variant**
+for same-type cross-function tails. TCO feature commits: df412714 (F-S1, variant), 4702e9c8 + b0a53387
+(F-S2, detection + try-CFG elimination), fa3cee16 (F-S3, C89 emission), 6dcf112e (F-S2 AMENDMENT 11,
+same-type-only cross guard).
+
+### `loop_header` injection at entry block — `sf/src/lower.zig:4349-4350`
+
+Every function gets `loop_header(0)` as the first entry-block instruction. In `lowerFn`, immediately
+after `self.current_bb = createBlock(self);` (:4349) the lowerer emits
+`emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });` (:4350). The entry block id is always 0
+(nothing allocates a block before lowerFn's entry createBlock). `hoistTemps` (:4362) prepends
+`decl_temp` instructions to block 0, so the final entry-block order is
+`decl_temp*, loop_header, body` — the C89 emitter's `.loop_header` arm emits `z_bb_0:` at that point,
+landing the label after every temp/local declaration (see 08_c89_emission.md §1.8/§1.9).
+
+### `findTailCall` — `sf/src/lower.zig:4138-4193`
+
+Bounded **5-hop def-use walk** from the return temp (`hops < 5`, :4141). Each hop scans all blocks /
+instructions for the inst whose `.result == cur`:
+- `.call_direct` → `CallInfo{ is_self = (name_id == self.func.name_id and module_id == self.func.module_id) (:4153), is_indirect=0, is_extern = inst.call_direct.is_extern, callee, module_id, args_start, args_count, result, return_type, call_block_idx, call_inst_idx }` (:4156).
+- `.call` (indirect) → `CallInfo{ is_self=0, is_indirect=1, is_extern=0, callee = inst.callee, module_id=0, return_type = TYPE_UNDEFINED, … }` (:4160).
+- `.unwrap_error_payload` / `.unwrap_error_code` / `.wrap_error_ok` / `.wrap_error_err` with `.result == cur` → follow `.value` (:4162-4185) — this is what lets `return try self(...)` (ok-path payload) and `return <coerced>` (wrap chain) resolve back to the underlying call.
+
+A hop that finds no defining inst returns `null` (:4190). `CallInfo` struct at `sf/src/lower.zig:4124-4136`.
+
+### `return_stmt` TCO — `sf/src/lower.zig:3614-3673`
+
+After `expandDefers` (:3615) and `lowerExpr` (:3618), guarded by `self.func.is_extern == 0` (:3629):
+- `var tci = findTailCall(self, val);` (:3630). `null` → unchanged plain `ret` (:3666-3668).
+- **Self-recursion** (`ci.is_self == 1 and ci.args_count == params.len`, :3632): `zeroCallCFG` first (:3633), then param-rebind assigns `param_temp_i = args_start + i` for every param (:3638-3641), then `emitInst(LirInst{ .jump = 0 })` back to the entry `loop_header` (:3642), then `block_terminated = 1` (:3644) — the old `ret` is suppressed by the `if (block_terminated == 0)` guard (:3666).
+- **Cross-function** (`ci.is_self == 0 and ci.return_type == self.func.return_type`, :3645 — AMENDMENT 11): `zeroCallCFG` (:3646), then emit `tail_call` LIR with all 8 fields from CallInfo (:3651-3660), `block_terminated = 1` (:3662). The type-equality guard means type-changing coercions fall back to the plain `ret` path; indirect calls (`.call`, `return_type == TYPE_UNDEFINED`) never cross-TCO.
+- Params mismatch (`args_count != params.len`) or `is_extern` fn → normal `ret` (defensive).
+
+### try-CFG elimination — `sf/src/lower.zig:4195-4263` (AMENDMENT 7)
+
+When the tail resolves through a try, the dead call CFG is zeroed out of the emitted blocks:
+- `zeroCallCFG` (:4243): nops the defining call at `blocks[call_block_idx].insts[call_inst_idx]` (:4245), the following `check_error`/`check_optional` if present (:4246-4253), and the following `branch` if present (:4254-4261).
+- `zeroChainInsts` (:4195): mirrors findTailCall's 5-hop walk, nop-ing the intermediate `unwrap_error_payload`/`unwrap_error_code`/`wrap_error_ok`/`wrap_error_err` insts that read the nop'd call result (:4207-4235).
+- Rebind assigns / `tail_call` are emitted into the **CALL block** (`self.current_bb = ci.call_block_idx` when it differs from the current block, :3634-3637 / :3647-3650), then the original current block is restored. `block_terminated = 1` also suppresses the join-block `ret` (the `if (block_terminated == 0)` guard at :3666).
+
+### Statement-form if/switch
+
+Per-branch `return_stmt` sites inside `if_stmt`/`switch_stmt` bodies reach this same `return_stmt` handler and get TCO automatically. Expression-form `return if/switch (...)` (join-temp results) is out of scope (AMENDMENT 3) — the walk starts at the return temp and cannot resolve a join temp to one call without full dataflow, so those fall back to plain `ret`.
 
 ---
 
@@ -626,7 +668,7 @@ Top variants per example `[fprintf]`:
 | lisp_interpreter_curr | assign 703, jump 318, load_field 304, int_const 263, decl_local 219, ret 203, branch 199 |
 | json_parser | assign 254, int_const 144, jump 143, call_direct 127, load_field 124, binary 123, branch 102 |
 
-Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every example** — a straight-line, alloca-based, jump-heavy IR. json_parser is the most call-heavy (127 `call_direct`, its parser is deeply recursive), lisp the most branch/switch-heavy (21 `switch_br` in `eval` alone). Per-function detail `[fprintf]` (top function per example): mud `main` 427 insts (assign 84, int_const 43, binary 41, jump 40); gol `main` 496 (int_const 133, assign 99, assign_field 54); lisp `eval` 826 (assign 182, load_field 75, jump 74); json `parseObject` 214 (assign 46, call_direct 24, jump 19). 44 of the 54 variants fire via `emitInst`; the 10 that never fire in these examples are `decl_temp` (only via `hoistTemps`, `lower.zig:3953`), `loop_header`, `label`, `float_cast`, `int_to_float`, `int_to_ptr`, `float_const`, `enum_const`, `load_global`, `store_global` — and `unary` is rare (13 total across all 4).
+Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every example** — a straight-line, alloca-based, jump-heavy IR. json_parser is the most call-heavy (127 `call_direct`, its parser is deeply recursive), lisp the most branch/switch-heavy (21 `switch_br` in `eval` alone). Per-function detail `[fprintf]` (top function per example): mud `main` 427 insts (assign 84, int_const 43, binary 41, jump 40); gol `main` 496 (int_const 133, assign 99, assign_field 54); lisp `eval` 826 (assign 182, load_field 75, jump 74); json `parseObject` 214 (assign 46, call_direct 24, jump 19). 44 of the 54 variants fire via `emitInst`; the 10 that never fire in these examples are `decl_temp` (only via `hoistTemps`, `lower.zig:3953`), `loop_header`, `label`, `float_cast`, `int_to_float`, `int_to_ptr`, `float_const`, `enum_const`, `load_global`, `store_global` — and `unary` is rare (13 total across all 4). `[updated: 2026-08-03]` Since the TCO feature (F-S2, `lowerFn` at `lower.zig:4350`) the `loop_header` variant now fires **once per function** (first entry-block inst) in every example; it was 0 in the 2026-07-31 P7 capture. The `tail_call` variant fires for every cross-function same-type tail (eval.zig:169 `return try apply(...)`, json extern `file.strtod`, etc.).
 
 ### 2. Temp counts per function / hoisting
 
@@ -674,15 +716,40 @@ The builtin path (`lower.zig:2381-2466`) emits `.ptr_cast{ value, target, result
 
 There is **no scalar (non-pointer) or tagged-union `@ptrCast`** anywhere in the 4 examples, so those two cases are not exercised; from the code the only distinguishing mechanism is the fn-type target path above. (The `@ptrCast([*]const c_char, "rb")` string case is likewise a uniform `ptr_cast` — file.zig:28.)
 
-### 5. TCO assessment (lisp `eval` loop)
+### 5. TCO assessment (lisp `eval` loop) — [updated: 2026-08-03]
 
-**No TCO is detectable — confirmed.** Evidence:
+**TCO is now detectable — implemented** (F-S1/F-S2/F-S3, see §TCO above). The 2026-07-31 "no TCO"
+findings below were the pre-TCO state; each item is re-assessed:
 
-- `[fprintf]` the `loop_header` LirInst (lir.zig:31) is **never emitted** by the lowerer (0 in all 4 examples). `while_stmt` lowering (lower.zig:3302-3388) builds a plain 5-block CFG (entry → cond → body → exit → cont, back-edge cont → cond) with `jump`/`branch` only; `loop_header` exists as a variant but is dead code (c89_emit.zig:2281 consumes it as a no-op).
-- `[fprintf]` `eval`'s manual `while (true)` trampoline (eval.zig:12) lowers to: `jump cond` (entry), `bool_const(1)` + `branch` (cond block BB1), body with the expr-type `switch_br` (21 of them), and a back-edge `jump` to BB1. The source-level `continue`s (eval.zig:56,61,222) become plain `goto`/`jump` to the loop header — they are loop branches, not tail calls.
-- `[markers]`/`[fprintf]` the tail-position `return try apply(fun, args, …)` (eval.zig:169) emits `call_direct` → `check_error` → `branch` → (err: `ret`; ok: `unwrap_error_payload`) — a **real, frame-preserving call**, not a jump. The emitted C shows it verbatim: `zT_340 = zF_24BC4A3B_apply(zT_335,…)` with `return zT_340` on the error path (lisp_interpreter_curr.c:5480-5509; the error-path `return zT_340` is at :5509, block `z_bb_160`). `eval` itself also contains 4 plain recursive `zF_08D22E0F_eval(...)` calls (lisp_interpreter_curr.c:4636, :4753, :4990, :5440).
+- `loop_header` (lir.zig:31) is **now emitted once per function** — `lowerFn` injects
+  `LirInst{ .loop_header = 0 }` as the first entry-block inst (`lower.zig:4350`). `while_stmt`
+  lowering (lower.zig:3302-3388) still builds the plain 5-block CFG (entry → cond → body → exit →
+  cont, back-edge cont → cond) with `jump`/`branch` only; the entry `loop_header` is the self-TCO
+  jump target, not a loop-marking inst.
+- `eval`'s manual `while (true)` trampoline (eval.zig:12) still lowers to: `jump cond` (entry),
+  `bool_const(1)` + `branch` (cond block BB1), body with the expr-type `switch_br` (21 of them), and
+  a back-edge `jump` to BB1. The source-level `continue`s (eval.zig:56,61,222) remain plain
+  `goto`/`jump` to the loop header — loop branches, not tail calls.
+- The tail-position `return try apply(fun, args, …)` (eval.zig:169, `.Builtin` prong) is a **direct
+  cross-function call with matching return type** → `findTailCall` resolves it, `zeroCallCFG` +
+  `zeroChainInsts` nop the `call_direct`/`check_error`/`branch`/unwrap chain, and a `tail_call` LIR
+  inst is emitted in the call block. The C89 emitter's `.tail_call` arm produces
+  `zT_N = zF_24BC4A3B_apply(zT_…,…); return zT_N;` — a call+ret (not a jump; see the C89 cross-function
+  limitation in 08_c89_emission.md). This replaced the old full try-CFG trace
+  (previously `lisp_interpreter_curr.c:5480-5509`).
+- `apply`'s tail-position `return try f(args, temp_sand)` (eval.zig:265) is an **indirect fn-pointer
+  call** → `findTailCall` carries `return_type = TYPE_UNDEFINED` for `.call`, and the AMENDMENT-11
+  same-type guard (`lower.zig:3645`) disables cross TCO → falls back to the normal ret path, which
+  re-emits the full `check_error`/unwrap/`.is_error = 0` re-wrap. Indirect cross-TCO is conservatively
+  disabled even when the fn-pointer callee shares the enclosing fn's return type (a missed
+  optimization, accepted by ruling).
+- `eval`'s 4 plain recursive `zF_08D22E0F_eval(...)` calls (lisp_interpreter_curr.c:4636, :4753,
+  :4990, :5440) are non-tail (mid-loop / argument positions) and remain frame-preserving calls — the
+  self-recursion trampoline only benefits from TCO at direct tail sites.
 
-The doc's existing claim ("The lowerer does not implement TCO", §TCO above) is **correct**; this section adds the concrete evidence. The recursive Lisp engine therefore relies on the C stack for deep recursion.
+**Byte-identity note:** the `z_bb_0:` label emitted in every function (AMENDMENT 8) and the
+try-CFG collapse to `zT = f(args); return zT;` are accepted baseline changes — the lisp stdout md5
+was re-baselined from `0ad02040…` to `10d09c99f77c68e680f6ccce33eb81ed` (see QUICK_REF.md).
 
 ### 6. Coercion application: `applyCoercion` vs `materializeInto`
 

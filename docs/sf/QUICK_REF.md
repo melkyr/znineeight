@@ -97,14 +97,58 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 |
 |---|---|
-| `examples/z98/mud_server/main.zig` | `5fb57e70c2d637276ab0264c1401cd0d` |
-| `examples/z98/game_of_life/main.zig` | `f855c9f93c73422f56378f3f73231727` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `0ad0204088f91c1eae7c040da8f99a1c` |
-| `examples/z98/json_parser/main.zig` | `11a5db1d3d43acf4880e2d157590abe3` |
+| `examples/z98/mud_server/main.zig` | `9fde02d8a05e951de738e2df5d12b4f7` |
+| `examples/z98/game_of_life/main.zig` | `d0d3051d1cb1bd0db3ffd29495a2e18e` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `10d09c99f77c68e680f6ccce33eb81ed` |
+| `examples/z98/json_parser/main.zig` | `3492a935883ee91258feece576ba23d5` |
+
+- **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
+  `5fb57e70…`, gol `f855c9f9…`, lisp `0ad02040…`, json `11a5db1d…`) are STALE — replaced. Two
+  accepted changes cause the new values: (1) **every** emitted function now carries a `z_bb_0:` label
+  (AMENDMENT 8 — the `.loop_header` arm emits `z_bb_0:\n`; matches `.jump`'s `goto z_bb_0;`), and (2)
+  lisp/json cross-function tails collapse the try-CFG to `zT = f(args); return zT;`. Both are
+  semantically correct and gcc-clean; warnings are tolerated, 0 errors required.
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
+
+### TCO gate recipes (examples/z98/tco_*) — [updated: 2026-08-03]
+
+Self-recursion TCO: emitted C must contain a `z_bb_0:` label in the recursive fn + rebind assigns +
+`goto z_bb_0;` back-edge (NO retained self `call`). Deep recursion (100k) must run with O(1) stack.
+
+```bash
+# tco_factorial (self-recursion, i32)
+sf/build/out_release/zig1 --dump-c89 examples/z98/tco_factorial/main.zig > /tmp/tf.c ; echo "dump rc=$?"
+grep -n "goto z_bb_0;" /tmp/tf.c            # expect: fact() has rebind assigns + back-edge
+grep -c "zF_.*_fact(" /tmp/tf.c             # fwd-decl + def + main call sites only; NO self-call in fact body
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
+    /tmp/tf.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tf ; echo "gcc rc=$?"
+/tmp/tf ; echo "run rc=$?"                  # expect: "fact(10) = 3628800" then "deep ok", rc=0
+
+# tco_return_try (self-recursion through E!i32 try)
+sf/build/out_release/zig1 --dump-c89 examples/z98/tco_return_try/main.zig > /tmp/tr.c ; echo "dump rc=$?"
+grep -n "goto z_bb_0;" /tmp/tr.c             # expect: count() back-edge (try-CFG eliminated)
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
+    /tmp/tr.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tr ; echo "gcc rc=$?"
+/tmp/tr ; echo "run rc=$?"                  # expect: "count(10) = 10" then "count(100000) = 100000", rc=0
+```
+
+Gate: dump rc=0, gcc rc=0, run rc=0, `goto z_bb_0;` present, no self-call retained in the emitted
+recursive fn. A compiler ICE shows as `dump rc=134` with a `PANIC:` line (may land on stdout).
+`gcc -Wunused-label` warnings for `z_bb_0:` are expected and harmless.
+
+### z_bb_0: labels in every function — [updated: 2026-08-03]
+
+Since the TCO feature (F-S2/F-S3), **every** emitted function body contains a `z_bb_0:` label
+(AMENDMENT 8). It is the entry-block label emitted by the `.loop_header` LirInst arm
+(`c89_emit.zig:2775`), and it is the target of self-TCO `goto z_bb_0;` back-edges. It is EXPECTED:
+- For self-recursive fns it is the live TCO jump target.
+- For all other fns it is an unused label → `gcc -Wunused-label` warning (tolerated; the md5-gate
+  baselines already include the label).
+
+Do NOT treat `z_bb_0:` or the unused-label warning as a regression.
 
 ### Multi-Module Build
 
