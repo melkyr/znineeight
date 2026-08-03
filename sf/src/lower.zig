@@ -3612,7 +3612,15 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
     } else if (node.kind == AstKind.return_stmt) {
+        var pre_defer_bb = self.current_bb;
+        var pre_defer_blk_p = &self.func.blocks.items[@intCast(usize, pre_defer_bb)];
+        var pre_defer_len: usize = pre_defer_blk_p.insts.len;
         expandDefers(self, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0));
+        var post_defer_len: usize = pre_defer_blk_p.insts.len;
+        var defer_bb_unchanged: u8 = @intCast(u8, 0);
+        if (self.current_bb == pre_defer_bb) {
+            defer_bb_unchanged = @intCast(u8, 1);
+        }
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
@@ -3630,6 +3638,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var tci = findTailCall(self, val);
                     if (tci) |ci| {
                         if (ci.is_self == @intCast(u8, 1) and ci.args_count == @intCast(u32, self.func.params.len)) {
+                            if (defer_bb_unchanged == @intCast(u8, 1)) {
+                                var di: usize = pre_defer_len;
+                                while (di < post_defer_len) : (di += @intCast(usize, 1)) {
+                                    pre_defer_blk_p.insts.items[di] = LirInst{ .nop = {} };
+                                }
+                            }
                             zeroCallCFG(self, ci, val);
                             var saved_bb = self.current_bb;
                             if (ci.call_block_idx != saved_bb) {
