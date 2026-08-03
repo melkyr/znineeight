@@ -43,7 +43,7 @@ pub const LirInst = union(enum) {
     addr_of: struct { operand: u32, result: u32 },
     wrap_optional: struct { value: u32, result: u32, type_id: TypeId },
     call_direct: struct { name_id: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32, is_extern: u8 },
-    tail_call: struct { callee: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32, is_indirect: u8 },
+    tail_call: struct { callee: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32, is_indirect: u8, is_extern: u8 },
     func_ref: struct { name_id: u32, module_id: u32, result: u32 },
      unwrap_optional: struct { value: u32, result: u32 },
      unwrap_optional_abi: struct { value: u32, result: u32 },
