@@ -640,7 +640,7 @@ pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_
     ctx.current_depth = saved_depth;
 }
 
-pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on_stmt: fn(*AnalyzerContext, *StateMap, u32) void) void {
+pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on_stmt: fn(*AnalyzerContext, *StateMap, u32) void, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
     if (node_idx == @intCast(u32, 0)) return;
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     var kind = node.kind;
@@ -654,8 +654,8 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
                 smap_mod.stateMapSet(then_state, node.payload, @enumToInt(PtrState.safe));
             }
         }
-        walkBlock(ctx, then_state, node.child_1, on_stmt);
-        if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, on_stmt);
+        walkBlock(ctx, then_state, node.child_1, visit_fn);
+        if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, visit_fn);
         smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
     } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
         analyzeExpr(ctx, state, node.child_0);
@@ -663,7 +663,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.while_capture) {
             smap_mod.stateMapSet(body_state, node.payload, @enumToInt(PtrState.safe));
         }
-        walkBlock(ctx, body_state, node.child_1, on_stmt);
+        walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.swt_ex) {
         var prongs = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
@@ -671,12 +671,12 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         while (si < prongs.len) : (si += 1) {
             var prong = ctx.store.nodes.items[@intCast(usize, prongs[si])];
             var ps = smap_mod.stateMapFork(state, ctx.alloc);
-            walkBlock(ctx, ps, prong.child_0, on_stmt);
+            walkBlock(ctx, ps, prong.child_0, visit_fn);
             smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
         }
     } else if (kind == AstKind.for_stmt) {
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
-        walkBlock(ctx, body_state, node.child_0, on_stmt);
+        walkBlock(ctx, body_state, node.child_0, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.return_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {

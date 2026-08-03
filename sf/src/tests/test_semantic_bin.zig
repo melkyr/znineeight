@@ -1609,7 +1609,7 @@ fn testBranchIfMerge() void {
     var then_body = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
     var else_body = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
     var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, else_body, @intCast(u32, 0));
-    az_mod.visitStatement(&ac, &st, if_idx, branchVisitSet);
+    az_mod.visitStatement(&ac, &st, if_idx, branchVisitSet, branchVisitSet);
     var result = smap_mod.stateMapGet(&st, @intCast(u32, 42));
     if (result) |v| {
         if (v != @intCast(u8, 3)) { var fmsg: []const u8 = "testBranchIfMerge expected 3"; fail(fmsg); return; }
@@ -1646,7 +1646,7 @@ fn testBranchIfDiverges() void {
     var then_body = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
     var else_body = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var if_idx = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, then_body, else_body, @intCast(u32, 0));
-    az_mod.visitStatement(&ac, &st, if_idx, branchVisitSet);
+    az_mod.visitStatement(&ac, &st, if_idx, branchVisitSet, branchVisitSet);
     var result = smap_mod.stateMapGet(&st, @intCast(u32, 42));
     if (result) |v| {
         if (v != @intCast(u8, 99)) { var fmsg: []const u8 = "testBranchIfDiverges expected 99"; fail(fmsg); return; }
@@ -1755,7 +1755,7 @@ fn testForLoopAnalysis() void {
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var for_idx = ast_mod.astStoreAddNode(&store, AstKind.for_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    az_mod.visitStatement(&ac, &st, for_idx, countVisitCb);
+    az_mod.visitStatement(&ac, &st, for_idx, countVisitCb, countVisitCb);
     if (g_visit_count != @intCast(u32, 1)) { var fmsg: []const u8 = "testForLoopAnalysis expected 1 visit"; fail(fmsg); return; }
     var emsg: []const u8 = "testForLoopAnalysis";
     ok(emsg);
@@ -1795,7 +1795,7 @@ fn testDeferPushedNotWalked() void {
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    az_mod.visitStatement(&ac, &st, defer_node, deferVisitCb);
+    az_mod.visitStatement(&ac, &st, defer_node, deferVisitCb, deferVisitCb);
     if (g_defer_test != @intCast(u32, 0)) { var fmsg: []const u8 = "testDeferPushedNotWalked expected 0 visits"; fail(fmsg); return; }
     var emsg: []const u8 = "testDeferPushedNotWalked";
     ok(emsg);
