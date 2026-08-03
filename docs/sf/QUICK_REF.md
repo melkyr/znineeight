@@ -133,11 +133,25 @@ grep -n "goto z_bb_0;" /tmp/tr.c             # expect: count() back-edge (try-CF
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
     /tmp/tr.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tr ; echo "gcc rc=$?"
 /tmp/tr ; echo "run rc=$?"                  # expect: "count(10) = 10" then "count(100000) = 100000", rc=0
+
+# tco_defer (self-recursion with defer — defer fires ONCE at terminal return, not per-iteration)
+# [updated: 2026-08-03]
+sf/build/out_release/zig1 --dump-c89 examples/z98/tco_defer/main.zig > /tmp/td.c ; echo "dump rc=$?"
+grep -n "goto z_bb_0;" /tmp/td.c               # expect: back-edge present
+# Verify defer body NOT in the self-TCO rebind/jump block (nop'd by lower.zig:3641-3645)
+# Verify defer body PRESENT in terminal-return path before the final `return` (emitted at lowerFn:4457)
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
+    /tmp/td.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/td ; echo "gcc rc=$?"
+/tmp/td ; echo "run rc=$?"                     # expect: defer fires exactly once at end, rc=0
 ```
 
 Gate: dump rc=0, gcc rc=0, run rc=0, `goto z_bb_0;` present, no self-call retained in the emitted
 recursive fn. A compiler ICE shows as `dump rc=134` with a `PANIC:` line (may land on stdout).
 `gcc -Wunused-label` warnings for `z_bb_0:` are expected and harmless.
+
+**Consumer-guard note:** `hasOtherConsumers` (`lower.zig:4265`) scans all blocks before
+`zeroCallCFG` to ensure no secondary consumers of the call result exist. Defensive — not
+triggerable by current Z98 patterns. [updated: 2026-08-03]
 
 ### z_bb_0: labels in every function — [updated: 2026-08-03]
 

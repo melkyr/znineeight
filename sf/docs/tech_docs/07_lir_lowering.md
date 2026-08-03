@@ -594,6 +594,29 @@ When the tail resolves through a try, the dead call CFG is zeroed out of the emi
 
 Per-branch `return_stmt` sites inside `if_stmt`/`switch_stmt` bodies reach this same `return_stmt` handler and get TCO automatically. Expression-form `return if/switch (...)` (join-temp results) is out of scope (AMENDMENT 3) — the walk starts at the return temp and cannot resolve a join temp to one call without full dataflow, so those fall back to plain `ret`.
 
+### Defer-after-TCO ordering — `sf/src/lower.zig:3618-3694` [updated: 2026-08-03]
+
+`expandDefers(self, 0, 0, 0)` is called **once at the top of `return_stmt`** (:3618), before any TCO decision. The self-TCO branch then **nops the freshly-emitted defer instructions** when the defer stayed in the same block (`defer_bb_unchanged` guard, :3641-3645). `cross`/non-TCO branches preserve the defer instructions.
+
+| Branch | expandDefers call | Defer behavior |
+|--------|-------------------|----------------|
+| Self-TCO | :3618 (emit) → :3641-3645 (nop) | Defer body nop'd per-iteration. Fires once at terminal exit via `expandDefers(self, 0, 0, 1)` at `lowerFn:4457`. |
+| Cross TCO | :3618 (emit, preserved) | Defer fires once before `tail_call` emission. |
+| No TCO (fallback ret) | :3618 (emit, preserved) | Existing behavior — defer fires before `ret`. |
+
+The try-expr err-path (:2489) and terminal-exit (:4457) `expandDefers` calls are untouched. `pop=1` at :4457 ensures the defer is removed after the terminal re-emit, matching the hybrid pop semantics (see §Defer/Errdefer Expansion).
+
+### `hasOtherConsumers` single-consumer guard — `sf/src/lower.zig:4265-4340` [updated: 2026-08-03]
+
+Defensive guard called **before `zeroCallCFG`** in both self (:3647) and cross (:3664) TCO branches. **Scans ALL blocks** for any instruction referencing `call_result` that is NOT a recognized chain consumer:
+
+- **Skipped (chain consumers):** `call_direct`, `call`, `unwrap_error_payload`, `unwrap_error_code`, `wrap_error_ok`, `wrap_error_err`, `check_error`, `ret` (for `ret_temp` only), `nop`.
+- **Checked (all other variants):** every input field is compared against `call_result` — `.value`, `.src`, `.operand`, `.ptr`, `.base`, `.cond`, `.lhs`, `.rhs`, `.index`, `.callee` (for `tail_call`).
+- **Returns `true`** → TCO is **skipped entirely** (falls through to normal `ret` path at :3688-3690).
+- **Returns `false`** → `zeroCallCFG` + TCO emission proceeds normally.
+
+This guard is **purely defensive** — no valid Z98 pattern triggers it today. It future-proofs against instrumentation/debug/optimization passes that might create secondary consumers of the call result temp after the recognized chain. The full false-return path (all recognized consumers, no false positive) is exercised by the existing tco_factorial and tco_return_try examples.
+
 ---
 
 ## Type Coercions `sf/src/lower.zig:3991`
