@@ -380,6 +380,10 @@ pub const AnalyzerContext = struct {
     skip_lifetime_check: u8,
     skip_doublefree_check: u8,
     warn_all: u8,
+    on_stmt_cb: fn(*AnalyzerContext, *StateMap, u32) void,
+    in_defer_exec: u8,
+    lifetime_analysis_mode: u8,
+    doublefree_analysis_mode: u8,
 };
 
 pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
@@ -608,6 +612,7 @@ pub fn handleNullAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) 
 }
 
 pub fn executeDeferQueue(ctx: *AnalyzerContext, state: *StateMap, target_depth: u32, is_error: u8, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
+    ctx.in_defer_exec = @intCast(u8, 1);
     while (ctx.defer_queue_len > @intCast(usize, 0)) {
         var idx = ctx.defer_queue_len - @intCast(usize, 1);
         var entry = ctx.defer_queue_items[idx];
@@ -619,6 +624,7 @@ pub fn executeDeferQueue(ctx: *AnalyzerContext, state: *StateMap, target_depth: 
             visit_fn(ctx, state, entry.stmt_idx);
         }
     }
+    ctx.in_defer_exec = @intCast(u8, 0);
 }
 
 pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
@@ -680,11 +686,15 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.return_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
-            checkReturnProvenance(ctx, state, node.child_0, node_idx);
-            handleOwnershipReturn(ctx, state, node.child_0);
+            if (ctx.lifetime_analysis_mode != @intCast(u8, 0)) {
+                checkReturnProvenance(ctx, state, node.child_0, node_idx);
+            }
+            if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+                handleOwnershipReturn(ctx, state, node.child_0);
+            }
         }
         on_stmt(ctx, state, node_idx);
-    } else if (kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) {
+    } else if ((kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) and ctx.in_defer_exec == @intCast(u8, 0)) {
         var dk: u8 = @intCast(u8, 0);
         if (kind == AstKind.errdefer_stmt) dk = @intCast(u8, 1);
         deferQueueEnsureCapacity(ctx, ctx.defer_queue_len + @intCast(usize, 1));
@@ -703,7 +713,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     }
 }
 
-fn onNullStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+pub fn onNullStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     _ = ctx; _ = state; _ = node_idx;
 }
 
@@ -735,6 +745,7 @@ fn onDoubleFreeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void
          handleAllocAssign(ctx, state, node_idx);
     }
     if (node.kind == AstKind.fn_call) {
+        handleFreeCall(ctx, state, node_idx);
         handleOwnershipPass(ctx, state, node_idx);
     }
 }
@@ -743,10 +754,15 @@ pub fn runSignatureAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32) void {
     analyzeSignature(ctx, fn_decl_idx);
 }
 
+fn detectorVisit(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    visitStatement(ctx, state, node_idx, ctx.on_stmt_cb, detectorVisit);
+}
+
 pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
     ctx.null_analysis_mode = @intCast(u8, 1);
-    walkBlock(ctx, &state, fn_body_idx, onNullStmt);
+    ctx.on_stmt_cb = onNullStmt;
+    walkBlock(ctx, &state, fn_body_idx, detectorVisit);
     ctx.null_analysis_mode = @intCast(u8, 0);
 }
 
@@ -765,12 +781,18 @@ pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx:
             }
         }
     }
-    walkBlock(ctx, &state, fn_body_idx, onLifetimeStmt);
+    ctx.lifetime_analysis_mode = @intCast(u8, 1);
+    ctx.on_stmt_cb = onLifetimeStmt;
+    walkBlock(ctx, &state, fn_body_idx, detectorVisit);
+    ctx.lifetime_analysis_mode = @intCast(u8, 0);
 }
 
 pub fn runDoubleFreeAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
-    walkBlock(ctx, &state, fn_body_idx, onDoubleFreeStmt);
+    ctx.doublefree_analysis_mode = @intCast(u8, 1);
+    ctx.on_stmt_cb = onDoubleFreeStmt;
+    walkBlock(ctx, &state, fn_body_idx, detectorVisit);
+    ctx.doublefree_analysis_mode = @intCast(u8, 0);
 }
 
 pub const PER_FUNC_BUDGET: usize = 512 * 1024;

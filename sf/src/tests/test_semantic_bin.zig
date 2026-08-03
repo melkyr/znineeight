@@ -1603,6 +1603,10 @@ fn testBranchIfMerge() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     smap_mod.stateMapSet(&st, @intCast(u32, 42), @intCast(u8, 5));
     var cond = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 0));
@@ -1640,6 +1644,10 @@ fn testBranchIfDiverges() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     smap_mod.stateMapSet(&st, @intCast(u32, 42), @intCast(u8, 5));
     var cond = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 0));
@@ -1677,6 +1685,10 @@ fn testWalkBlockCounts() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     var s1 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var s2 = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1713,6 +1725,10 @@ fn testWalkBlockBraceless() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     var single = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     az_mod.walkBlock(&ac, &st, single, walkTestVisit);
@@ -1752,6 +1768,10 @@ fn testForLoopAnalysis() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var for_idx = ast_mod.astStoreAddNode(&store, AstKind.for_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1792,6 +1812,10 @@ fn testDeferPushedNotWalked() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1823,6 +1847,10 @@ fn testDeferExecutedAtExit() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var defer_node = ast_mod.astStoreAddNode(&store, AstKind.defer_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1859,6 +1887,10 @@ fn testErrdeferNotExecuted() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var entry = az_mod.DeferEntry{ .kind = @intCast(u8, 1), .stmt_idx = body, .scope_depth = @intCast(u32, 1) };

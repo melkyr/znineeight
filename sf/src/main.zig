@@ -504,6 +504,10 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
                 .skip_lifetime_check   = @intCast(u8, if (ctx.cli.no_lifetime_check) 1 else 0),
                 .skip_doublefree_check = @intCast(u8, if (ctx.cli.no_leak_check) 1 else 0),
                 .warn_all          = @intCast(u8, if (ctx.cli.warn_all) 1 else 0),
+                .on_stmt_cb = az_mod.onNullStmt,
+                .in_defer_exec = @intCast(u8, 0),
+                .lifetime_analysis_mode = @intCast(u8, 0),
+                .doublefree_analysis_mode = @intCast(u8, 0),
             };
             az_mod.runAllAnalyzers(&ac, ast_root);
         }

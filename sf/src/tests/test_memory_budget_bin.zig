@@ -89,6 +89,10 @@ pub fn main() void {
         .skip_lifetime_check = @intCast(u8, 0),
         .skip_doublefree_check = @intCast(u8, 0),
         .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
     };
     az_mod.runAllAnalyzers(&ac, ast_root);
 
