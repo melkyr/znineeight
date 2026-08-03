@@ -3644,36 +3644,44 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                                     pre_defer_blk_p.insts.items[di] = LirInst{ .nop = {} };
                                 }
                             }
-                            zeroCallCFG(self, ci, val);
-                            var saved_bb = self.current_bb;
-                            if (ci.call_block_idx != saved_bb) {
-                                self.current_bb = ci.call_block_idx;
+                            if (hasOtherConsumers(self, ci.result, val)) {
+                                {}
+                            } else {
+                                zeroCallCFG(self, ci, val);
+                                var saved_bb = self.current_bb;
+                                if (ci.call_block_idx != saved_bb) {
+                                    self.current_bb = ci.call_block_idx;
+                                }
+                                var pi: usize = @intCast(usize, 0);
+                                while (pi < self.func.params.len) : (pi += @intCast(usize, 1)) {
+                                    emitInst(self, LirInst{ .assign = .{ .name_id = self.func.params.items[pi].name_id, .dst = self.func.params.items[pi].temp_id, .src = ci.args_start + @intCast(u32, pi) } });
+                                }
+                                emitInst(self, LirInst{ .jump = @intCast(u32, 0) });
+                                self.current_bb = saved_bb;
+                                self.block_terminated = @intCast(u8, 1);
                             }
-                            var pi: usize = @intCast(usize, 0);
-                            while (pi < self.func.params.len) : (pi += @intCast(usize, 1)) {
-                                emitInst(self, LirInst{ .assign = .{ .name_id = self.func.params.items[pi].name_id, .dst = self.func.params.items[pi].temp_id, .src = ci.args_start + @intCast(u32, pi) } });
-                            }
-                            emitInst(self, LirInst{ .jump = @intCast(u32, 0) });
-                            self.current_bb = saved_bb;
-                            self.block_terminated = @intCast(u8, 1);
                         } else if (ci.is_self == @intCast(u8, 0) and ci.return_type == self.func.return_type) {
-                            zeroCallCFG(self, ci, val);
-                            var saved_bb = self.current_bb;
-                            if (ci.call_block_idx != saved_bb) {
-                                self.current_bb = ci.call_block_idx;
+                            if (hasOtherConsumers(self, ci.result, val)) {
+                                {}
+                            } else {
+                                zeroCallCFG(self, ci, val);
+                                var saved_bb = self.current_bb;
+                                if (ci.call_block_idx != saved_bb) {
+                                    self.current_bb = ci.call_block_idx;
+                                }
+                                emitInst(self, LirInst{ .tail_call = .{
+                                    .callee = ci.callee,
+                                    .module_id = ci.module_id,
+                                    .args_start = ci.args_start,
+                                    .args_count = ci.args_count,
+                                    .result = ci.result,
+                                    .return_type = ci.return_type,
+                                    .is_indirect = ci.is_indirect,
+                                    .is_extern = ci.is_extern,
+                                } });
+                                self.current_bb = saved_bb;
+                                self.block_terminated = @intCast(u8, 1);
                             }
-                            emitInst(self, LirInst{ .tail_call = .{
-                                .callee = ci.callee,
-                                .module_id = ci.module_id,
-                                .args_start = ci.args_start,
-                                .args_count = ci.args_count,
-                                .result = ci.result,
-                                .return_type = ci.return_type,
-                                .is_indirect = ci.is_indirect,
-                                .is_extern = ci.is_extern,
-                            } });
-                            self.current_bb = saved_bb;
-                            self.block_terminated = @intCast(u8, 1);
                         }
                     }
                 }
@@ -4252,6 +4260,83 @@ fn zeroChainInsts(self: *LirLowerer, ret_temp: u32) void {
         }
         if (found_any == @intCast(u8, 0)) { return; }
     }
+}
+
+fn hasOtherConsumers(self: *LirLowerer, call_result: u32, ret_temp: u32) bool {
+    var bi: usize = @intCast(usize, 0);
+    while (bi < self.func.blocks.len) : (bi += @intCast(usize, 1)) {
+        var blk = self.func.blocks.items[bi];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < blk.insts.len) : (ii += @intCast(usize, 1)) {
+            var inst = blk.insts.items[ii];
+            var tg = @enumToInt(inst.tag);
+            if (tg == @enumToInt(LirInst.call_direct) or tg == @enumToInt(LirInst.call) or
+                tg == @enumToInt(LirInst.unwrap_error_payload) or tg == @enumToInt(LirInst.unwrap_error_code) or
+                tg == @enumToInt(LirInst.wrap_error_ok) or tg == @enumToInt(LirInst.wrap_error_err) or
+                tg == @enumToInt(LirInst.check_error) or tg == @enumToInt(LirInst.nop)) {
+                {}
+            } else if (tg == @enumToInt(LirInst.ret)) {
+                if (inst.ret != ret_temp) {
+                    {}
+                }
+            } else if (tg == @enumToInt(LirInst.binary)) {
+                if (inst.binary.lhs == call_result or inst.binary.rhs == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.unary)) {
+                if (inst.unary.operand == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.addr_of)) {
+                if (inst.addr_of.operand == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.load_field)) {
+                if (inst.load_field.base == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.store_field)) {
+                if (inst.store_field.base == call_result or inst.store_field.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.load_index)) {
+                if (inst.load_index.base == call_result or inst.load_index.index == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.load)) {
+                if (inst.load.ptr == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.store)) {
+                if (inst.store.ptr == call_result or inst.store.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.assign)) {
+                if (inst.assign.src == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.assign_field)) {
+                if (inst.assign_field.base == call_result or inst.assign_field.src == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.assign_index)) {
+                if (inst.assign_index.base == call_result or inst.assign_index.index == call_result or inst.assign_index.src == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.branch)) {
+                if (inst.branch.cond == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.switch_br)) {
+                if (inst.switch_br.cond == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.store_local)) {
+                if (inst.store_local.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.store_global)) {
+                if (inst.store_global.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.print_val)) {
+                if (inst.print_val.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.wrap_optional)) {
+                if (inst.wrap_optional.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.unwrap_optional)) {
+                if (inst.unwrap_optional.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.check_optional)) {
+                if (inst.check_optional.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.int_cast)) {
+                if (inst.int_cast.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.float_cast)) {
+                if (inst.float_cast.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.ptr_cast)) {
+                if (inst.ptr_cast.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.int_to_float)) {
+                if (inst.int_to_float.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.ptr_to_int)) {
+                if (inst.ptr_to_int.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.int_to_ptr)) {
+                if (inst.int_to_ptr.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.make_slice)) {
+                if (inst.make_slice.ptr == call_result or inst.make_slice.len == call_result) return true;
+            } else {
+                {}
+            }
+        }
+    }
+    return false;
 }
 
 fn zeroCallCFG(self: *LirLowerer, ci: CallInfo, ret_temp: u32) void {
