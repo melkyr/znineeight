@@ -2772,9 +2772,13 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s: []const u8 = "return;\n";
             bufferedWriterWrite(&emitter.writer, s);
         },
-        .loop_header => {},
+        .loop_header => |hdr| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var label_s: []const u8 = "z_bb_0:\n";
+            bufferedWriterWrite(&emitter.writer, label_s);
+        },
         .label => {},
-        .tail_call => {},
+
          .decl_local => |dl| {},
             .assign => |a| {
              var asx_m: []const u8 = "ASX:d"; pal.markerWrite(asx_m);
@@ -3759,6 +3763,52 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
                }
+        },
+         .tail_call => |tc| {
+            var fn_name: []const u8 = undefined;
+            if (tc.is_indirect == @intCast(u8, 1)) {
+                fn_name = resolveTempName(emitter, tc.callee);
+            } else {
+                var mangled_id = nameManglerMangle(emitter.mangler, tc.callee, @intCast(u8, 0), tc.module_id);
+                fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+            }
+            if (tc.is_extern == @intCast(u8, 1)) {
+                var orig_c = interner_mod.stringInternerGet(emitter.interner, tc.callee);
+                fn_name = orig_c;
+            }
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            if (tc.return_type != type_mod.TYPE_VOID) {
+                var result = resolveTempName(emitter, tc.result);
+                bufferedWriterWrite(&emitter.writer, result);
+                var eq: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, eq);
+            }
+            bufferedWriterWrite(&emitter.writer, fn_name);
+            var op: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, op);
+            var ai: u32 = @intCast(u32, 0);
+            while (ai < tc.args_count) : (ai += @intCast(u32, 1)) {
+                if (ai > @intCast(u32, 0)) {
+                    var sc: []const u8 = ", ";
+                    bufferedWriterWrite(&emitter.writer, sc);
+                }
+                var arg = resolveTempName(emitter, tc.args_start + ai);
+                bufferedWriterWrite(&emitter.writer, arg);
+            }
+            var cl: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, cl);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            if (tc.return_type != type_mod.TYPE_VOID) {
+                var r: []const u8 = "return ";
+                bufferedWriterWrite(&emitter.writer, r);
+                var rv = resolveTempName(emitter, tc.result);
+                bufferedWriterWrite(&emitter.writer, rv);
+                var rs: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, rs);
+            } else {
+                var rv: []const u8 = "return;\n";
+                bufferedWriterWrite(&emitter.writer, rv);
+            }
         },
         .switch_br => |s| {
             var s1: []const u8 = "switch (";
