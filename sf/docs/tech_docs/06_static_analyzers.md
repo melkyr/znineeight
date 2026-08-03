@@ -427,7 +427,7 @@ Updates null tracking state on assignments. Only handles `ident_expr` LHS.
 
 ---
 
-### executeDeferQueue (`sf/src/analyzer.zig:604-616`)
+### executeDeferQueue (`sf/src/analyzer.zig:614-628`)
 
 `[inference: pop entries from end while scope_depth >= target_depth → execute kind==0 always, kind==1 only if is_error]`
 
@@ -435,7 +435,7 @@ Executes deferred statements on scope exit. Normal defers (kind=0) always run; e
 
 ---
 
-### walkBlock (`sf/src/analyzer.zig:618-635`)
+### walkBlock (`sf/src/analyzer.zig:630-649`)
 
 `[inference: increment depth → visit child statements → execute defer queue at saved depth → check leaks → restore depth]`
 
@@ -469,7 +469,7 @@ entry point routes its statement handler through `visitStatement` for full
 control-flow-aware analysis instead of flat `walkBlock` dispatch. A single wrapper
 function `detectorVisit` (`sf/src/analyzer.zig:759`) calls
 `visitStatement(ctx, state, node_idx, ctx.on_stmt_cb, detectorVisit)`; each pass
-stores its handler in `AnalyzerContext.on_stmt_cb` (`analyzer.zig:383`).
+stores its handler in `AnalyzerContext.on_stmt_cb` (`sf/src/analyzer.zig:383`).
 
 | Entry point | Statement handler | Diagnostics enabled |
 |-------------|-------------------|---------------------|
@@ -483,7 +483,7 @@ calls `handleFreeCall` before `handleOwnershipPass` for fn_call nodes.
 
 ---
 
-### onNullStmt (`sf/src/analyzer.zig:700-702`)
+### onNullStmt (`sf/src/analyzer.zig:718-720`)
 
 `[inference: no-op]`
 
@@ -491,7 +491,7 @@ Placeholder statement handler for the null analyzer. All null analysis is done i
 
 ---
 
-### onLifetimeStmt (`sf/src/analyzer.zig:704-721`)
+### onLifetimeStmt (`sf/src/analyzer.zig:722-739`)
 
 `[inference: var_decl → classifyProvenance(init) → stateMapSet; plain_assign → classifyProvenance(rhs) → stateMapSet(lhs)]`
 
@@ -499,15 +499,15 @@ Statement handler for the lifetime analyzer. Tracks provenance on variable decla
 
 ---
 
-### onDoubleFreeStmt (`sf/src/analyzer.zig:723-734`)
+### onDoubleFreeStmt (`sf/src/analyzer.zig:741-753`)
 
-`[inference: var_decl → handleAllocCall; plain_assign → handleAllocAssign; fn_call → handleOwnershipPass]`
+`[inference: var_decl → handleAllocCall; plain_assign → handleAllocAssign; fn_call → handleFreeCall then handleOwnershipPass]`
 
 Statement handler for the double-free analyzer. Routes to the appropriate alloc-state transition function.
 
 ---
 
-### runSignatureAnalyzer (`sf/src/analyzer.zig:736-738`)
+### runSignatureAnalyzer (`sf/src/analyzer.zig:755-757`)
 
 `[inference: delegate to analyzeSignature(fn_decl_idx)]`
 
@@ -515,7 +515,7 @@ Thin entry point that calls `analyzeSignature` on the function declaration node.
 
 ---
 
-### runNullAnalyzer (`sf/src/analyzer.zig:740-745`)
+### runNullAnalyzer (`sf/src/analyzer.zig:763-769`)
 
 `[inference: stateMapInit → set null_analysis_mode → walkBlock with onNullStmt → clear null_analysis_mode]`
 
@@ -523,7 +523,7 @@ Entry point for the null pointer analysis pass. Creates a fresh `StateMap`, enab
 
 ---
 
-### runLifetimeAnalyzer (`sf/src/analyzer.zig:747-763`)
+### runLifetimeAnalyzer (`sf/src/analyzer.zig:771-790`)
 
 `[inference: stateMapInit → iterate params → stateMapSet(param, Provenance.param) → walkBlock with onLifetimeStmt]`
 
@@ -531,7 +531,7 @@ Entry point for the lifetime/dangling-pointer analysis pass. Pre-populates the `
 
 ---
 
-### runDoubleFreeAnalyzer (`sf/src/analyzer.zig:765-768`)
+### runDoubleFreeAnalyzer (`sf/src/analyzer.zig:792-798`)
 
 `[inference: stateMapInit → walkBlock with onDoubleFreeStmt]`
 
@@ -539,7 +539,7 @@ Entry point for the double-free/memory-leak analysis pass. Creates a fresh `Stat
 
 ---
 
-### runAllAnalyzers (`sf/src/analyzer.zig:772-803`)
+### runAllAnalyzers (`sf/src/analyzer.zig:802-833`)
 
 `[inference: iterate module_root decls → skip non-fn_decl + no-body → sandResetPeak → runSignatureAnalyzer → sandReset → [optional runNullAnalyzer → sandReset] → [optional runLifetimeAnalyzer → sandReset] → [optional runDoubleFreeAnalyzer → sandReset] → check peak vs PER_FUNC_BUDGET]`
 
