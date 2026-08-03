@@ -22,10 +22,10 @@ pub const DeferEntry = struct {
 };
 
 pub const PtrState = enum(u8) {
-    uninit,
-    is_null,
-    safe,
-    maybe,
+    uninit = 10,
+    is_null = 11,
+    safe = 12,
+    maybe = 13,
 };
 
 pub const Provenance = enum(u8) {
@@ -642,7 +642,9 @@ pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_
         visit_fn(ctx, state, children[i]);
     }
     executeDeferQueue(ctx, state, saved_depth, @intCast(u8, 0), visit_fn);
-    checkLeaksOnScopeExit(ctx, state);
+    if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+        checkLeaksOnScopeExit(ctx, state);
+    }
     ctx.current_depth = saved_depth;
 }
 
