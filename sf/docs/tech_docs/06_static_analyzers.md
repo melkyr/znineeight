@@ -19,23 +19,17 @@
 
 ## Deep-Dive Evidence (P6, 2026-07-31)
 
-> ⚠️ **Critical finding:** in the current pipeline the static analyzers analyze
-> **zero** functions. `runAllAnalyzers` gates each `fn_decl` on
-> `decl.child_1` (analyzer.zig:780), but the parser stores the function body in
-> `child_0` (parser.zig:1417 — `astStoreAddNode(..., body_node, 0, 0, proto_idx)`),
-> and both sema and LIR read the body from `child_0`
-> (semantic_analyzer.zig:1391/1421, lower.zig:4164). `child_1` is therefore
-> **always 0** for `fn_decl`s, so `if (decl.child_1 == 0) continue;` fires for
-> every function and no analyzer pass ever executes. Verified by:
-> `[gdb]` (breakpoints on all 4 pass entry points: 0 hits; decl dump shows
-> `child_1=0` for all fn_decls, `child_0!=0` for those with bodies),
-> `[fprintf]` (0 `[ZZ] fn=` per-function reports), and `[repro]`
-> (double-free/leak/untracked-free program compiles with zero diagnostics).
-> The design doc repeats the same mistake (`docs/sf/STATIC_ANALYZERS_p2.md:917`),
-> and `testRunAllAnalyzers` (test_analyzer_bin.zig:1274) builds its fn_decl with
-> the body in `child_0` yet only asserts `error_count == 0`, so it passes
-> vacuously. The correct guard is `child_0`. Untouched here (documentation-only
-> task; flagged as a concern).
+> **Status (2026-07-31):** Fixed. The guard at analyzer.zig:780 previously tested
+> `decl.child_1` (always 0 for fn_decls); corrected to `decl.child_0` (the function
+> body, per parser.zig:1417). All 4 analyzers now run on functions with bodies.
+> Additionally, ~21 sites that read `ident_expr.payload` directly as a name_id
+> were corrected to resolve via `store.identifiers.items[payload]`
+> (per ast.zig:346-350 — the payload is an index into `store.identifiers`, not a
+> raw name_id). Before this fix, false diagnostics appeared (ERR_2010 on valid
+> code, WARN_6005 on non-allocated variables). Verified by:
+> `[gdb]` (breakpoints on all 4 pass entry points: hits now match fn bodies),
+> `[fprintf]` (per-function `[ZZ] fn=` reports now appear), and `[repro]`
+> (double-free/leak program now emits WARN_6005).
 
 ### Per-example analysis counts (4 working examples) — [updated: 2026-08-01]
 
@@ -468,13 +462,14 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 
 Central statement dispatch for all analyzers. The null analysis if/else/loop state forking logic is the most complex part — each path gets a forked `StateMap`, and after both paths execute, `stateMapMergeStates` computes a conservative merge.
 
-⚠️ **Reachability (`[gdb]`, 2026-07-31):** `visitStatement` (and thus all the
-fork/merge paths above) is **never reached in the current pipeline** — see
-Deep-Dive Evidence: `runNullAnalyzer`/`runLifetimeAnalyzer`/`runDoubleFreeAnalyzer`
-each get 0 breakpoint hits because `runAllAnalyzers` skips every fn_decl. The
-branching/merge machinery is exercised only by unit tests
-(`test_analyzer_bin.zig`: `testBranchMergeDiff`, `testIfCaptureRefinement`, ...)
-and the standalone `state_map.zig` harness.
+⚠️ **Reachability (`[grep]`, 2026-07-31):** `visitStatement` has **zero production
+callers** — even after the guard fix, the null/lifetime/doublefree *detection*
+paths remain dead. `runNullAnalyzer` calls `walkBlock` with `onNullStmt` (an
+empty body), so null analysis is a no-op. `handleFreeCall` (double-free
+emission) has zero production callers; `onDoubleFreeStmt` routes `fn_call`
+children to `handleOwnershipPass`, never to `handleFreeCall`. The branching/merge
+machinery (`stateMapFork`/`stateMapMergeStates`) is exercised only by unit tests
+and the standalone harness. See Deep-Dive Evidence above.
 
 ---
 
