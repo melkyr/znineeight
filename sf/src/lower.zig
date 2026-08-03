@@ -3629,16 +3629,25 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (self.func.is_extern == @intCast(u8, 0)) {
                     var tci = findTailCall(self, val);
                     if (tci) |ci| {
-                        if (ci.is_self == @intCast(u8, 1)) {
-                            if (ci.args_count == @intCast(u32, self.func.params.len)) {
-                                var pi: usize = @intCast(usize, 0);
-                                while (pi < self.func.params.len) : (pi += @intCast(usize, 1)) {
-                                    emitInst(self, LirInst{ .assign = .{ .name_id = self.func.params.items[pi].name_id, .dst = self.func.params.items[pi].temp_id, .src = ci.args_start + @intCast(u32, pi) } });
-                                }
-                                emitInst(self, LirInst{ .jump = @intCast(u32, 0) });
-                                self.block_terminated = @intCast(u8, 1);
+                        if (ci.is_self == @intCast(u8, 1) and ci.args_count == @intCast(u32, self.func.params.len)) {
+                            zeroCallCFG(self, ci, val);
+                            var saved_bb = self.current_bb;
+                            if (ci.call_block_idx != saved_bb) {
+                                self.current_bb = ci.call_block_idx;
                             }
-                        } else {
+                            var pi: usize = @intCast(usize, 0);
+                            while (pi < self.func.params.len) : (pi += @intCast(usize, 1)) {
+                                emitInst(self, LirInst{ .assign = .{ .name_id = self.func.params.items[pi].name_id, .dst = self.func.params.items[pi].temp_id, .src = ci.args_start + @intCast(u32, pi) } });
+                            }
+                            emitInst(self, LirInst{ .jump = @intCast(u32, 0) });
+                            self.current_bb = saved_bb;
+                            self.block_terminated = @intCast(u8, 1);
+                        } else if (ci.is_self == @intCast(u8, 0)) {
+                            zeroCallCFG(self, ci, val);
+                            var saved_bb = self.current_bb;
+                            if (ci.call_block_idx != saved_bb) {
+                                self.current_bb = ci.call_block_idx;
+                            }
                             emitInst(self, LirInst{ .tail_call = .{
                                 .callee = ci.callee,
                                 .module_id = ci.module_id,
@@ -3649,6 +3658,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                                 .is_indirect = ci.is_indirect,
                                 .is_extern = ci.is_extern,
                             } });
+                            self.current_bb = saved_bb;
                             self.block_terminated = @intCast(u8, 1);
                         }
                     }
@@ -4121,6 +4131,8 @@ const CallInfo = struct {
     args_count: u32,
     result: u32,
     return_type: u32,
+    call_block_idx: u32,
+    call_inst_idx: u32,
 };
 
 fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
@@ -4141,11 +4153,11 @@ fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
                         if (inst.call_direct.name_id == self.func.name_id and inst.call_direct.module_id == self.func.module_id) {
                             is_self = @intCast(u8, 1);
                         }
-                        return CallInfo{ .is_self = is_self, .is_indirect = @intCast(u8, 0), .is_extern = inst.call_direct.is_extern, .callee = inst.call_direct.name_id, .module_id = inst.call_direct.module_id, .args_start = inst.call_direct.args_start, .args_count = inst.call_direct.args_count, .result = inst.call_direct.result, .return_type = inst.call_direct.return_type };
+                        return CallInfo{ .is_self = is_self, .is_indirect = @intCast(u8, 0), .is_extern = inst.call_direct.is_extern, .callee = inst.call_direct.name_id, .module_id = inst.call_direct.module_id, .args_start = inst.call_direct.args_start, .args_count = inst.call_direct.args_count, .result = inst.call_direct.result, .return_type = inst.call_direct.return_type, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
                     }
                 } else if (tg == @enumToInt(LirInst.call)) {
                     if (inst.call.result == cur) {
-                        return CallInfo{ .is_self = @intCast(u8, 0), .is_indirect = @intCast(u8, 1), .is_extern = @intCast(u8, 0), .callee = inst.call.callee, .module_id = @intCast(u32, 0), .args_start = inst.call.args_start, .args_count = inst.call.args_count, .result = inst.call.result, .return_type = type_mod.TYPE_UNDEFINED };
+                        return CallInfo{ .is_self = @intCast(u8, 0), .is_indirect = @intCast(u8, 1), .is_extern = @intCast(u8, 0), .callee = inst.call.callee, .module_id = @intCast(u32, 0), .args_start = inst.call.args_start, .args_count = inst.call.args_count, .result = inst.call.result, .return_type = type_mod.TYPE_UNDEFINED, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
                     }
                 } else if (tg == @enumToInt(LirInst.unwrap_error_payload)) {
                     if (inst.unwrap_error_payload.result == cur) {
@@ -4159,6 +4171,18 @@ fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
                         found_any = @intCast(u8, 1);
                         break;
                     }
+                } else if (tg == @enumToInt(LirInst.wrap_error_ok)) {
+                    if (inst.wrap_error_ok.result == cur) {
+                        cur = inst.wrap_error_ok.value;
+                        found_any = @intCast(u8, 1);
+                        break;
+                    }
+                } else if (tg == @enumToInt(LirInst.wrap_error_err)) {
+                    if (inst.wrap_error_err.result == cur) {
+                        cur = inst.wrap_error_err.value;
+                        found_any = @intCast(u8, 1);
+                        break;
+                    }
                 }
             }
             if (found_any == @intCast(u8, 1)) { break; }
@@ -4166,6 +4190,76 @@ fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
         if (found_any == @intCast(u8, 0)) { return null; }
     }
     return null;
+}
+
+fn zeroChainInsts(self: *LirLowerer, ret_temp: u32) void {
+    var cur = ret_temp;
+    var hops: u32 = @intCast(u32, 0);
+    while (hops < @intCast(u32, 5)) : (hops += @intCast(u32, 1)) {
+        var found_any: u8 = @intCast(u8, 0);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < self.func.blocks.len) : (bi += @intCast(usize, 1)) {
+            var blk = self.func.blocks.items[bi];
+            var ii: usize = @intCast(usize, 0);
+            while (ii < blk.insts.len) : (ii += @intCast(usize, 1)) {
+                var inst = blk.insts.items[ii];
+                var tg = @enumToInt(inst.tag);
+                if (tg == @enumToInt(LirInst.unwrap_error_payload)) {
+                    if (inst.unwrap_error_payload.result == cur) {
+                        blk.insts.items[ii] = LirInst{ .nop = {} };
+                        cur = inst.unwrap_error_payload.value;
+                        found_any = @intCast(u8, 1);
+                        break;
+                    }
+                } else if (tg == @enumToInt(LirInst.unwrap_error_code)) {
+                    if (inst.unwrap_error_code.result == cur) {
+                        blk.insts.items[ii] = LirInst{ .nop = {} };
+                        cur = inst.unwrap_error_code.value;
+                        found_any = @intCast(u8, 1);
+                        break;
+                    }
+                } else if (tg == @enumToInt(LirInst.wrap_error_ok)) {
+                    if (inst.wrap_error_ok.result == cur) {
+                        blk.insts.items[ii] = LirInst{ .nop = {} };
+                        cur = inst.wrap_error_ok.value;
+                        found_any = @intCast(u8, 1);
+                        break;
+                    }
+                } else if (tg == @enumToInt(LirInst.wrap_error_err)) {
+                    if (inst.wrap_error_err.result == cur) {
+                        blk.insts.items[ii] = LirInst{ .nop = {} };
+                        cur = inst.wrap_error_err.value;
+                        found_any = @intCast(u8, 1);
+                        break;
+                    }
+                }
+            }
+            if (found_any == @intCast(u8, 1)) { break; }
+        }
+        if (found_any == @intCast(u8, 0)) { return; }
+    }
+}
+
+fn zeroCallCFG(self: *LirLowerer, ci: CallInfo, ret_temp: u32) void {
+    var callblk = &self.func.blocks.items[@intCast(usize, ci.call_block_idx)];
+    callblk.insts.items[@intCast(usize, ci.call_inst_idx)] = LirInst{ .nop = {} };
+    var j1: u32 = ci.call_inst_idx + @intCast(u32, 1);
+    if (j1 < @intCast(u32, callblk.insts.len)) {
+        var i1 = callblk.insts.items[@intCast(usize, j1)];
+        var tg1 = @enumToInt(i1.tag);
+        if (tg1 == @enumToInt(LirInst.check_error) or tg1 == @enumToInt(LirInst.check_optional)) {
+            callblk.insts.items[@intCast(usize, j1)] = LirInst{ .nop = {} };
+        }
+    }
+    var j2: u32 = ci.call_inst_idx + @intCast(u32, 2);
+    if (j2 < @intCast(u32, callblk.insts.len)) {
+        var i2 = callblk.insts.items[@intCast(usize, j2)];
+        var tg2 = @enumToInt(i2.tag);
+        if (tg2 == @enumToInt(LirInst.branch)) {
+            callblk.insts.items[@intCast(usize, j2)] = LirInst{ .nop = {} };
+        }
+    }
+    zeroChainInsts(self, ret_temp);
 }
 
 fn emitValuelessReturn(self: *LirLowerer) void {
