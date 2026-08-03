@@ -174,4 +174,17 @@ Full json_parser_workaround chain: `&zig_default_arena` (address-of extern var) 
 |----------|-------|-------|-----|---------|
 | H1 | `xmod_amp_arena_union_store` | OK | ICE(3043) | &extern_var + extern alloc + @ptrCast + union field-store |
 
-**Total active repros in v15: 185. Classification: OK=168, FAIL=7, ICE=11, CRASH=0.**
+## Std-Lib Phase 1 — 2026-08-03 (6 repros, std-lib migration syntax-gap candidates)
+
+Defensive repros for the std-lib migration design spec — each probes a Z98 syntax feature with ZERO prior corpus coverage. Classified per QUICK_REF (dump + per-file gcc -c). Full evidence in each dir's `NOTES.md`.
+
+| Pattern | Repro | Result | Note |
+|---------|-------|--------|------|
+| struct fn-ptr field (vtable) | `fn_ptr_struct_field` | FAIL | gcc `'write_fn' declared void` — fn-ptr struct field emitted as `void` |
+| pub module var (scalar) | `module_pub_var_int` | OK | gcc-clean; RUNTIME gap — `= 42` init dropped, read via uninit temp (garbage) |
+| pub module var (struct) | `module_pub_var_struct` | OK | gcc-clean; RUNTIME gap — read via stale temp, not `out.tag` (garbage) |
+| module const fn-call init | `module_const_fn_call` | OK | gcc-clean; RUNTIME gap — `getInit()` never called, uninit read (garbage) |
+| local fn-ptr (bare, no errset) | `fn_ptr_local_bare` | OK | gcc-clean, runs correctly (prints 3); sema warning[3000] non-fatal |
+| cross-module `extern "c"` | `import_extern_c` | OK | 2 .c emitted, gcc-clean, runs correctly (prints hello) |
+
+**Total active repros in v16: 192. Classification: OK=173, FAIL=8, ICE=11, CRASH=0.**
