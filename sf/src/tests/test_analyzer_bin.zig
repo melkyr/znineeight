@@ -27,7 +27,7 @@ fn testSignatureVoidParam() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_VOID);
+    var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, type_mod.TYPE_VOID, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var param_buf: [1]u32 = undefined;
     param_buf[0] = param_node;
@@ -49,7 +49,7 @@ fn testSignatureLargeReturn() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_U8);
+    var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, type_mod.TYPE_U8, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, 0), .params_count = @intCast(u16, 0), .return_type_node = type_node };
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
@@ -71,7 +71,7 @@ fn testSignatureIncompleteType() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fnid);
+    var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, fnid, @intCast(u32, 0), @intCast(u32, 0));
     var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), type_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var param_buf: [1]u32 = undefined;
     param_buf[0] = param_node;
@@ -99,7 +99,7 @@ fn testSignatureAnyType() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var as: []const u8 = "anytype";
     var anid = interner_mod.stringInternerIntern(&interner, as);
-    var type_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), anid);
+    var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, anid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     az_mod.validateSignatureType(&ac, type_node, @intCast(u32, 0));
     if (diag.error_count == @intCast(usize, 0)) {
         var fmsg: []const u8 = "testSignatureAnyType expected diagnostic\n";
@@ -157,7 +157,7 @@ fn testClassifyIdentFromState() void {
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var st = smap_mod.stateMapInit(&arena);
     smap_mod.stateMapSet(&st, @intCast(u32, 42), @enumToInt(az_mod.PtrState.safe));
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 42));
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 42), @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
@@ -237,7 +237,7 @@ fn testNullAssignNull() void {
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
      var as_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
      var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
@@ -265,7 +265,7 @@ fn testNullGuardCmpNe() void {
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var cmp = ast_mod.astStoreAddNode(&store, AstKind.cmp_ne, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
     var parent = smap_mod.stateMapInit(&arena);
@@ -304,7 +304,7 @@ fn testNullGuardCmpEq() void {
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var cmp = ast_mod.astStoreAddNode(&store, AstKind.cmp_eq, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
     var parent = smap_mod.stateMapInit(&arena);
@@ -343,7 +343,7 @@ fn testNullGuardBoolNot() void {
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var eq_node = ast_mod.astStoreAddNode(&store, AstKind.cmp_eq, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
     var not_node = ast_mod.astStoreAddNode(&store, AstKind.bool_not, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), eq_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -383,7 +383,7 @@ fn testNullGuardIdentExpr() void {
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var parent = smap_mod.stateMapInit(&arena);
     var then_state = smap_mod.stateMapFork(&parent, &arena);
     var else_state = smap_mod.stateMapFork(&parent, &arena);
@@ -420,7 +420,7 @@ fn testDerefIsNull() void {
     helpers.initTest(&arena, &interner, &typereg, &store, &diag);
     var st = smap_mod.stateMapInit(&arena);
     smap_mod.stateMapSet(&st, @intCast(u32, 99), @enumToInt(az_mod.PtrState.is_null));
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 10), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 99));
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 99), @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 10));
     var deref_node = ast_mod.astStoreAddNode(&store, AstKind.deref, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
@@ -539,7 +539,7 @@ fn testClassifyAddrLocal() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var result = az_mod.classifyProvenance(&ac, &st, addr_node);
     var pl: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.local));
@@ -565,7 +565,7 @@ fn testClassifyAddrParam() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var result = az_mod.classifyProvenance(&ac, &st, addr_node);
     var pa: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.param_addr));
@@ -609,7 +609,7 @@ fn testClassifyIdent() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 77));
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 77), @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var result = az_mod.classifyProvenance(&ac, &st, id_node);
     var pm: u8 = @intCast(u8, @enumToInt(az_mod.Provenance.param));
     if (result != pm) {
@@ -634,7 +634,7 @@ fn testReturnAddrLocal() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     az_mod.checkReturnProvenance(&ac, &st, addr_node, ret_node);
@@ -661,7 +661,7 @@ fn testReturnAddrParam() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     az_mod.checkReturnProvenance(&ac, &st, addr_node, ret_node);
@@ -688,11 +688,11 @@ fn testReturnPtrViaLocal() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var pn: []const u8 = "p";
     var pid = interner_mod.stringInternerIntern(&interner, pn);
-    var p_id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), pid);
+    var p_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, pid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     smap_mod.stateMapSet(&st, pid, @enumToInt(az_mod.Provenance.local));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), p_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     _ = addr_node;
@@ -720,7 +720,7 @@ fn testReturnSliceLocal() void {
     var nid = interner_mod.stringInternerIntern(&interner, ns);
     var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
-    var arr_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var arr_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var slice_node = ast_mod.astStoreAddNode(&store, AstKind.slice_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), arr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.Provenance.local));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), slice_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -756,7 +756,7 @@ fn testIsAllocCall() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var sa: []const u8 = "sandAlloc";
     var sand_nid = interner_mod.stringInternerIntern(&interner, sa);
-    var callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sand_nid);
+    var callee = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, sand_nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var alloc_call = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     if (!az_mod.isAllocCall(&ac, alloc_call)) {
         var msg: []const u8 = "testIsAllocCall: expected true for sandAlloc call\n";
@@ -769,7 +769,7 @@ fn testIsAllocCall() void {
     }
     var ofs: []const u8 = "otherFunc";
     var other_nid = interner_mod.stringInternerIntern(&interner, ofs);
-    var other_callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), other_nid);
+    var other_callee = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, other_nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var other_call = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), other_callee, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     if (az_mod.isAllocCall(&ac, other_call)) {
         var msg: []const u8 = "testIsAllocCall: expected false for otherFunc\n";
@@ -799,9 +799,9 @@ fn testIsFreeCall() void {
     var nid = interner_mod.stringInternerIntern(&interner, ps);
     var free_s: []const u8 = "arena_free";
     var free_nid = interner_mod.stringInternerIntern(&interner, free_s);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), free_nid);
-    var ptr_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
-    var arg0_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 99));
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, free_nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var ptr_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var arg0_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 99), @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [2]u32 = undefined;
     arg_buf[0] = arg0_node;
     arg_buf[1] = ptr_node;
@@ -820,7 +820,7 @@ fn testIsFreeCall() void {
 
     var other_s: []const u8 = "otherFunc";
     var other_nid = interner_mod.stringInternerIntern(&interner, other_s);
-    var other_callee = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), other_nid);
+    var other_callee = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, other_nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var other_payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
     var other_call = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), other_callee, @intCast(u32, 0), @intCast(u32, 0), other_payload);
     var result2 = az_mod.isFreeCall(&ac, other_call);
@@ -854,7 +854,7 @@ fn testHandleAllocCall() void {
     var st = smap_mod.stateMapInit(&arena);
     var sa: []const u8 = "sandAlloc";
     var sa_id = interner_mod.stringInternerIntern(&interner, sa);
-    var sa_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sa_id);
+    var sa_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, sa_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), sa_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ps: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ps);
@@ -889,8 +889,8 @@ fn testHandleFreeCall() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
     var af: []const u8 = "arena_free";
     var af_id = interner_mod.stringInternerIntern(&interner, af);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
-    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, af_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var pid_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [2]u32 = undefined;
     arg_buf[0] = @intCast(u32, 0);
     arg_buf[1] = pid_node;
@@ -927,8 +927,8 @@ fn testHandleDoubleFree() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.freed));
     var af: []const u8 = "arena_free";
     var af_id = interner_mod.stringInternerIntern(&interner, af);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
-    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, af_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var pid_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [2]u32 = undefined;
     arg_buf[0] = @intCast(u32, 0);
     arg_buf[1] = pid_node;
@@ -1023,10 +1023,10 @@ fn testFreeUntracked() void {
     var nid = interner_mod.stringInternerIntern(&interner, pn);
     var af: []const u8 = "arena_free";
     var af_id = interner_mod.stringInternerIntern(&interner, af);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, af_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [2]u32 = undefined;
     arg_buf[0] = @intCast(u32, 0);
-    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var pid_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     arg_buf[1] = pid_node;
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
     var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
@@ -1055,10 +1055,10 @@ fn testOwnershipNoTransfer() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
     var pr_name: []const u8 = "std.debug.print";
     var pr_id = interner_mod.stringInternerIntern(&interner, pr_name);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), pr_id);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, pr_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [2]u32 = undefined;
     arg_buf[0] = @intCast(u32, 0);
-    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var pid_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     arg_buf[1] = pid_node;
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
     var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
@@ -1090,10 +1090,10 @@ fn testDoubleFreeNested() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.freed));
     var af: []const u8 = "arena_free";
     var af_id = interner_mod.stringInternerIntern(&interner, af);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, af_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [2]u32 = undefined;
     arg_buf[0] = @intCast(u32, 0);
-    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var pid_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     arg_buf[1] = pid_node;
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..2]);
     var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 5), @intCast(u32, 15), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
@@ -1122,13 +1122,13 @@ fn testAllocAssignLeak() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
     var sa: []const u8 = "sandAlloc";
     var sa_id = interner_mod.stringInternerIntern(&interner, sa);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), sa_id);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, sa_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf2: [2]u32 = undefined;
     arg_buf2[0] = @intCast(u32, 0);
     arg_buf2[1] = @intCast(u32, 0);
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf2[0..2]);
     var alloc_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), payload);
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
      var as_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, alloc_node, @intCast(u32, 0), @intCast(u32, 0));
      az_mod.handleAllocAssign(&ac, &st, as_node);
     if (diag.warning_count == @intCast(usize, 0)) {
@@ -1154,7 +1154,7 @@ fn testAllocAssignNull() void {
     var nid = interner_mod.stringInternerIntern(&interner, ps);
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
     var null_node = ast_mod.astStoreAddNode(&store, AstKind.null_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
      var as_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, null_node, @intCast(u32, 0), @intCast(u32, 0));
      az_mod.handleAllocAssign(&ac, &st, as_node);
     if (diag.warning_count == @intCast(usize, 0)) {
@@ -1179,7 +1179,7 @@ fn testOwnershipReturn() void {
     var ps: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ps);
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
-    var id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     az_mod.handleOwnershipReturn(&ac, &st, id_node);
     var result = smap_mod.stateMapGet(&st, nid);
     if (result) |v| {
@@ -1209,11 +1209,11 @@ fn testOwnershipPassArg() void {
     var ps: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ps);
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
-    var ptr_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var ptr_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var arg_buf: [1]u32 = undefined;
     arg_buf[0] = ptr_node;
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..1]);
-    var callee_id_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var callee_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_id_node, @intCast(u32, 0), @intCast(u32, 0), payload);
     az_mod.handleOwnershipPass(&ac, &st, call_node);
     var result = smap_mod.stateMapGet(&st, nid);
@@ -1246,8 +1246,8 @@ fn testDeferFree() void {
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.AllocState.allocated));
     var af: []const u8 = "arena_free";
     var af_id = interner_mod.stringInternerIntern(&interner, af);
-    var callee_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), af_id);
-    var pid_node = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nid);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, af_id, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var pid_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var argb: [2]u32 = undefined;
     argb[0] = @intCast(u32, 0);
     argb[1] = pid_node;
@@ -1281,10 +1281,19 @@ fn testRunAllAnalyzers() void {
     var sym_table = sym_mod.symbolTableInit(&arena);
     var ac: AnalyzerContext = undefined;
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var ret_buf: [1]u32 = undefined;
-    ret_buf[0] = ret_node;
-    var block_payload = ast_mod.astStoreAddExtraChildren(&store, ret_buf[0..1]);
+    var s_sandAlloc: []const u8 = "sandAlloc";
+    var sandAlloc_nid = interner_mod.stringInternerIntern(&interner, s_sandAlloc);
+    var callee_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, sandAlloc_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var argb: [1]u32 = undefined;
+    argb[0] = @intCast(u32, 0);
+    var call_payload = ast_mod.astStoreAddExtraChildren(&store, argb[0..1]);
+    var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_node, @intCast(u32, 0), @intCast(u32, 0), call_payload);
+    var pname: []const u8 = "p";
+    var p_nid = interner_mod.stringInternerIntern(&interner, pname);
+    var decl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), call_node, @intCast(u32, 0), p_nid);
+    var stmt_buf: [1]u32 = undefined;
+    stmt_buf[0] = decl_node;
+    var block_payload = ast_mod.astStoreAddExtraChildren(&store, stmt_buf[0..1]);
     var body_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), block_payload);
     var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u16, 0), .params_count = @intCast(u16, 0), .return_type_node = @intCast(u32, 0) };
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
@@ -1294,8 +1303,8 @@ fn testRunAllAnalyzers() void {
     var mr_payload = ast_mod.astStoreAddExtraChildren(&store, decl_buf[0..1]);
     var mr_node = ast_mod.astStoreAddNode(&store, AstKind.module_root, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), mr_payload);
     az_mod.runAllAnalyzers(&ac, mr_node);
-    if (diag.error_count != @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testRunAllAnalyzers: expected 0 errors\n";
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testRunAllAnalyzers: expected warnings (leak detected)\n";
         pal.stdout_write(fmsg); pal.exit(1);
     }
     var ok_msg: []const u8 = "testRunAllAnalyzers";
