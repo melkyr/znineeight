@@ -46,11 +46,15 @@ pub const AllocState = enum(u8) {
     unknown = 5,
 };
 
+fn identNameId(store: *AstStore, payload: u32) u32 {
+    return store.identifiers.items[@intCast(usize, payload)];
+}
+
 fn resolveOrigin(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     if (expr_idx == @intCast(u32, 0)) return null;
     var node = ctx.store.nodes.items[@intCast(usize, expr_idx)];
     var kind = node.kind;
-    if (kind == AstKind.ident_expr) return node.payload;
+    if (kind == AstKind.ident_expr) return identNameId(ctx.store, node.payload);
     if (kind == AstKind.field_access) return resolveOrigin(ctx, node.child_0);
     if (kind == AstKind.index_access) return resolveOrigin(ctx, node.child_0);
     if (kind == AstKind.deref) return null;
@@ -92,7 +96,7 @@ pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
     if (kind == AstKind.ident_expr) {
-        var result = smap_mod.stateMapGet(state, node.payload);
+        var result = smap_mod.stateMapGet(state, identNameId(ctx.store, node.payload));
         if (result) |v| return v;
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
@@ -176,7 +180,7 @@ pub fn isAllocCall(ctx: *AnalyzerContext, expr_idx: u32) bool {
     if (node.kind != AstKind.fn_call) return false;
     var callee = ctx.store.nodes.items[@intCast(usize, node.child_0)];
     if (callee.kind != AstKind.ident_expr) return false;
-    var name_id = callee.payload;
+    var name_id = identNameId(ctx.store, callee.payload);
     var s_sandAlloc: []const u8 = "sandAlloc";
     var sand_nid = interner_mod.stringInternerIntern(ctx.interner, s_sandAlloc);
     if (name_id == sand_nid) return true;
@@ -195,7 +199,7 @@ pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     if (node.kind != AstKind.fn_call) return null;
     var callee = ctx.store.nodes.items[@intCast(usize, node.child_0)];
     if (callee.kind != AstKind.ident_expr) return null;
-    var name_id = callee.payload;
+    var name_id = identNameId(ctx.store, callee.payload);
     var s_arena_free: []const u8 = "arena_free";
     var arena_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_arena_free);
     var s_sand_free: []const u8 = "sandFree";
@@ -204,7 +208,7 @@ pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     var args = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
     if (args.len < @intCast(usize, 2)) return null;
     var ptr_arg = ctx.store.nodes.items[@intCast(usize, args[1])];
-    if (ptr_arg.kind == AstKind.ident_expr) return ptr_arg.payload;
+    if (ptr_arg.kind == AstKind.ident_expr) return identNameId(ctx.store, ptr_arg.payload);
     return null;
 }
 
@@ -288,10 +292,11 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
     var rhs_idx = node.child_1;
     var lhs_node = ctx.store.nodes.items[@intCast(usize, lhs_idx)];
     if (lhs_node.kind != AstKind.ident_expr) return;
-    var current = smap_mod.stateMapGet(state, lhs_node.payload);
+    var lhs_name_id = identNameId(ctx.store, lhs_node.payload);
+    var current = smap_mod.stateMapGet(state, lhs_name_id);
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
-            var pn = interner_mod.stringInternerGet(ctx.interner, lhs_node.payload);
+            var pn = interner_mod.stringInternerGet(ctx.interner, lhs_name_id);
             var op1: []const u8 = "memory leak: pointer '";
             var op2: []const u8 = "' overwritten before free";
             var oparts: [3][]const u8 = [3][]const u8{op1, pn, op2};
@@ -300,27 +305,27 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
         }
     }
     if (isAllocCall(ctx, rhs_idx)) {
-        smap_mod.stateMapSet(state, lhs_node.payload, @enumToInt(AllocState.allocated));
+        smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.allocated));
         return;
     }
     if (rhs_idx != @intCast(u32, 0)) {
         var rhs_node = ctx.store.nodes.items[@intCast(usize, rhs_idx)];
         if (rhs_node.kind == AstKind.null_literal) {
-            smap_mod.stateMapSet(state, lhs_node.payload, @enumToInt(AllocState.untracked));
+            smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.untracked));
             return;
         }
     }
-    smap_mod.stateMapSet(state, lhs_node.payload, @enumToInt(AllocState.unknown));
+    smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.unknown));
 }
 
 pub fn handleOwnershipReturn(ctx: *AnalyzerContext, state: *StateMap, ret_expr_idx: u32) void {
     if (ret_expr_idx == @intCast(u32, 0)) return;
     var node = ctx.store.nodes.items[@intCast(usize, ret_expr_idx)];
     if (node.kind != AstKind.ident_expr) return;
-    var current = smap_mod.stateMapGet(state, node.payload);
+    var current = smap_mod.stateMapGet(state, identNameId(ctx.store, node.payload));
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
-            smap_mod.stateMapSet(state, node.payload, @enumToInt(AllocState.returned_val));
+            smap_mod.stateMapSet(state, identNameId(ctx.store, node.payload), @enumToInt(AllocState.returned_val));
         }
     }
 }
@@ -334,11 +339,12 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
     while (ai < args.len) : (ai += 1) {
         var arg_node = ctx.store.nodes.items[@intCast(usize, args[ai])];
         if (arg_node.kind != AstKind.ident_expr) continue;
-        var current = smap_mod.stateMapGet(state, arg_node.payload);
+        var arg_name_id = identNameId(ctx.store, arg_node.payload);
+        var current = smap_mod.stateMapGet(state, arg_name_id);
         if (current) |c| {
             if (c == @enumToInt(AllocState.allocated)) {
-                smap_mod.stateMapSet(state, arg_node.payload, @enumToInt(AllocState.transferred));
-                var pn = interner_mod.stringInternerGet(ctx.interner, arg_node.payload);
+                smap_mod.stateMapSet(state, arg_name_id, @enumToInt(AllocState.transferred));
+                var pn = interner_mod.stringInternerGet(ctx.interner, arg_name_id);
                 var tp1: []const u8 = "ownership of '";
                 var tp2: []const u8 = "' transferred to function";
                 var tparts: [3][]const u8 = [3][]const u8{tp1, pn, tp2};
@@ -409,7 +415,7 @@ pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) void {
 pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_return: u32) void {
     var tnode = ctx.store.nodes.items[@intCast(usize, type_node_idx)];
     if (tnode.kind == AstKind.ident_expr) {
-        var name_id = tnode.payload;
+        var name_id = identNameId(ctx.store, tnode.payload);
         var key = @intCast(u64, name_id);
         var tid = type_mod.nameCacheGet(ctx.registry, key);
         if (tid) |ttid| {
@@ -487,7 +493,7 @@ pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void 
         var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var new_st = classifyExpr(ctx, state, node.child_1);
-            smap_mod.stateMapSet(state, lhs_node.payload, new_st);
+            smap_mod.stateMapSet(state, identNameId(ctx.store, lhs_node.payload), new_st);
         }
         return;
     }
@@ -512,7 +518,7 @@ pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
         return @enumToInt(PtrState.safe);
     }
     if (kind == AstKind.ident_expr) {
-        var result = smap_mod.stateMapGet(state, node.payload);
+        var result = smap_mod.stateMapGet(state, identNameId(ctx.store, node.payload));
         if (result) |v| return v;
     }
     return @enumToInt(PtrState.maybe);
@@ -532,7 +538,7 @@ fn isNullExpr(store: *AstStore, idx: u32) u8 {
 fn isIdentExpr(store: *AstStore, idx: u32) ?u32 {
     if (idx == @intCast(u32, 0)) return null;
     var node = store.nodes.items[@intCast(usize, idx)];
-    if (node.kind == AstKind.ident_expr) return node.payload;
+    if (node.kind == AstKind.ident_expr) return identNameId(store, node.payload);
     return null;
 }
 
@@ -555,7 +561,7 @@ pub fn detectNullGuard(store: *AstStore, cond_idx: u32) ?NullGuard {
         return null;
     }
     if (ck == AstKind.ident_expr) {
-        return NullGuard{ .name_id = cond.payload, .is_not_null = @intCast(u8, 1) };
+        return NullGuard{ .name_id = identNameId(store, cond.payload), .is_not_null = @intCast(u8, 1) };
     }
     if (ck == AstKind.bool_not) {
         var inner = detectNullGuard(store, cond.child_0);
@@ -597,7 +603,7 @@ pub fn handleNullAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) 
     var lhs_idx = node.child_0;
     var lhs_node = ctx.store.nodes.items[@intCast(usize, lhs_idx)];
     if (lhs_node.kind == AstKind.ident_expr) {
-        smap_mod.stateMapSet(state, lhs_node.payload, rhs_state);
+        smap_mod.stateMapSet(state, identNameId(ctx.store, lhs_node.payload), rhs_state);
     }
 }
 
