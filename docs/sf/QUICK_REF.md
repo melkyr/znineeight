@@ -87,6 +87,11 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   <missing-or-empty.zig>` now exits **1** with `error: could not read input file` on stderr
   (was silent exit 0 + boilerplate).
 
+**Analyzer detection paths activated (2026-08-03):** null, lifetime, and doublefree
+detection now route through `visitStatement` for full control-flow-aware analysis.
+Single wrapper function `detectorVisit` (`sf/src/analyzer.zig:759`); per-pass
+statement handler stored in `AnalyzerContext.on_stmt_cb` (`sf/src/analyzer.zig:383`).
+
 ### Byte-identical gate (mud / gol / lisp / json) — z98-only, self-consistency check
 
 Gate entries (`examples/z98/` paths, NOT `examples/zig0/`):

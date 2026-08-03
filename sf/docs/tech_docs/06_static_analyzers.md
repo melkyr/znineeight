@@ -443,7 +443,7 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 
 ---
 
-### visitStatement (`sf/src/analyzer.zig:637-698`)
+### visitStatement (`sf/src/analyzer.zig:651-716`) — [updated: 2026-08-03]
 
 `[inference: AstKind dispatch — handles branching (fork+merge), loops, switch, return, defer, null analysis, fallback]`
 
@@ -462,14 +462,24 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 
 Central statement dispatch for all analyzers. The null analysis if/else/loop state forking logic is the most complex part — each path gets a forked `StateMap`, and after both paths execute, `stateMapMergeStates` computes a conservative merge.
 
-⚠️ **Reachability (`[grep]`, 2026-07-31):** `visitStatement` has **zero production
-callers** — even after the guard fix, the null/lifetime/doublefree *detection*
-paths remain dead. `runNullAnalyzer` calls `walkBlock` with `onNullStmt` (an
-empty body), so null analysis is a no-op. `handleFreeCall` (double-free
-emission) has zero production callers; `onDoubleFreeStmt` routes `fn_call`
-children to `handleOwnershipPass`, never to `handleFreeCall`. The branching/merge
-machinery (`stateMapFork`/`stateMapMergeStates`) is exercised only by unit tests
-and the standalone harness. See Deep-Dive Evidence above.
+#### Detection Wiring (activated 2026-08-03)
+
+The null/lifetime/doublefree detection paths are now live: each `run*Analyzer`
+entry point routes its statement handler through `visitStatement` for full
+control-flow-aware analysis instead of flat `walkBlock` dispatch. A single wrapper
+function `detectorVisit` (`sf/src/analyzer.zig:759`) calls
+`visitStatement(ctx, state, node_idx, ctx.on_stmt_cb, detectorVisit)`; each pass
+stores its handler in `AnalyzerContext.on_stmt_cb` (`analyzer.zig:383`).
+
+| Entry point | Statement handler | Diagnostics enabled |
+|-------------|-------------------|---------------------|
+| `runNullAnalyzer` (:763) | `onNullStmt` | ERR_2004, WARN_6001, WARN_6002 |
+| `runLifetimeAnalyzer` (:771) | `onLifetimeStmt` | ERR_2020, ERR_2021, WARN_6010, WARN_6011 |
+| `runDoubleFreeAnalyzer` (:792) | `onDoubleFreeStmt` | ERR_2005, WARN_6006, WARN_6005 |
+
+Because `detectorVisit` recurses through `visitStatement`, nested control flow
+(if/while/switch/for) is analyzed recursively. `onDoubleFreeStmt` additionally
+calls `handleFreeCall` before `handleOwnershipPass` for fn_call nodes.
 
 ---
 
