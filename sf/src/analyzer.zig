@@ -777,21 +777,21 @@ pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
     while (di < decls.len) : (di += 1) {
         var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
         if (decl.kind != AstKind.fn_decl) continue;
-        if (decl.child_1 == @intCast(u32, 0)) continue;
+        if (decl.child_0 == @intCast(u32, 0)) continue;
         alloc_mod.sandResetPeak(ctx.alloc);
         ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, decl.payload)].name_id;
         runSignatureAnalyzer(ctx, decls[di]);
         alloc_mod.sandReset(ctx.alloc);
         if (ctx.skip_null_check == @intCast(u8, 0)) {
-            runNullAnalyzer(ctx, decl.child_1);
+            runNullAnalyzer(ctx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
         }
         if (ctx.skip_lifetime_check == @intCast(u8, 0)) {
-            runLifetimeAnalyzer(ctx, decls[di], decl.child_1);
+            runLifetimeAnalyzer(ctx, decls[di], decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
         }
         if (ctx.skip_doublefree_check == @intCast(u8, 0)) {
-            runDoubleFreeAnalyzer(ctx, decl.child_1);
+            runDoubleFreeAnalyzer(ctx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
         }
         if (ctx.alloc.peak > PER_FUNC_BUDGET) {
