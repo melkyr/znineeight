@@ -3642,7 +3642,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                             emitInst(self, LirInst{ .jump = @intCast(u32, 0) });
                             self.current_bb = saved_bb;
                             self.block_terminated = @intCast(u8, 1);
-                        } else if (ci.is_self == @intCast(u8, 0)) {
+                        } else if (ci.is_self == @intCast(u8, 0) and ci.return_type == self.func.return_type) {
                             zeroCallCFG(self, ci, val);
                             var saved_bb = self.current_bb;
                             if (ci.call_block_idx != saved_bb) {
