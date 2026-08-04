@@ -320,6 +320,86 @@ git commit -m "docs(P1): full 18-example runtime battery + lisp stressed verific
 
 ---
 
+### Task P1-4: Fix Analyzer `analyzeExpr` builtin_call crash (lzw) — AMENDMENT 2
+
+> **AMENDMENT 2 (operator ruling, 2026-08-04):** P1-3 battery found `examples/z98/lzw` crashes zig1 (`--dump-c89` rc=139 SIGSEGV; rc=1 on ASan build). Investigation (`.superpowers/sdd/I-lzw-regression-report.md`) bisected the regression to commit `532420cb` (analyzer-detection wiring, Task 2 of the 2026-08-03 plan), last-good `7bc6e4d1`. Root cause: `analyzeExpr`'s generic child-fallback (analyzer.zig:504-506) recurses into `node.child_0/1/2` for every kind, but for `builtin_call` `child_0` is a **string name_id, not an AST node index** (parser.zig:611). In lzw `main.zig:17`, name_id 38 collides with node 38 (the enclosing `if_stmt`) → cycle `38→36→31→30→38` → infinite recursion → stack overflow. The `--no-*-check` flags only bypass the analyzer (rejected as a workaround by the operator — the analyzer must be fixed with proper behavior, not disabled). This task fixes the analyzer and guards it with a mi_matrix repro.
+
+**Files:** `sf/src/analyzer.zig` (analyzeExpr) + new `repro/mi_matrix/lzw_builtin_call_crash/` + `repro/mi_matrix/EXPECTED_FAIL.md`
+
+**Scope:** Make `analyzeExpr` handle `builtin_call` correctly — walk its ARGUMENT nodes (stored in `payload` as extra children), not the `child_0` name_id. Mirror the existing `fn_call` branch (analyzer.zig:487-493) and the sema/lower pattern (`astStoreGetExtraChildren(store, node.payload)`; sema:1234, lower:2440). `classifyExpr` needs NO change (verified: it has no generic child recursion — falls back to `PtrState.maybe`).
+
+- [ ] **Step 1: Add the `builtin_call` branch to analyzeExpr**
+
+In `sf/src/analyzer.zig`, `analyzeExpr` (fn at :459), add a `builtin_call` branch before the generic fallback (before :504), mirroring the `fn_call` branch:
+```zig
+    if (kind == AstKind.builtin_call) {
+        var bargs = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+        var bi: usize = 0;
+        while (bi < bargs.len) : (bi += 1) {
+            analyzeExpr(ctx, state, bargs[bi]);
+        }
+        return;
+    }
+```
+Adapt identifiers to the real source. Verify `ast_mod` is already imported in analyzer.zig.
+
+- [ ] **Step 2: Scan for other child_0-as-name_id exposures**
+
+Defensively scan the analyzer for any OTHER walk site that could recurse/descend into a name_id held in a child slot. Known-safe: `classifyExpr` (no generic recursion), `resolveOrigin` (child_0 only for field/index/slice — all node indices), `isAllocCall` (child_0 callee node), `visitStatement`/`walkBlock` (statement-level). If you find another exposure, STOP and report it (do not fix silently).
+
+- [ ] **Step 3: Create the guard repro**
+
+Create `repro/mi_matrix/lzw_builtin_call_crash/`:
+- `main.zig`: a minimal program reproducing the name_id-vs-node-index collision — an `@intCast` (or other builtin) inside an `if` condition such that the builtin's name_id equals the enclosing node's index. Use the standalone no-import repro pattern the investigation confirmed crashes identically. Include a `NOTES.md` documenting: guards the analyzer builtin_call crash (regression 532420cb), pre-fix = SIGSEGV rc=139, post-fix = compiles + runs.
+- Optionally a `main_green.zig` control.
+- Add a row to `repro/mi_matrix/EXPECTED_FAIL.md` documenting the pre-fix classification (FAIL — crash) and post-fix OK.
+
+- [ ] **Step 4: Build + gate**
+
+```bash
+OUT=/tmp/p1d
+rm -rf "$OUT" && mkdir -p "$OUT"
+./sf/build/zig0 --header-priority-include -o "$OUT/zig1.c" sf/src/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign "$OUT"/*.c sf/src/include/zig_pal.c -o "$OUT/zig1"
+```
+Gate: 0 gcc errors.
+
+```bash
+# lzw end-to-end (must NOT crash; must compile, link, and run)
+"$OUT/zig1" --dump-c89 --output-dir /tmp/p1lzw examples/z98/lzw/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/p1lzw/*.c
+gcc -m32 /tmp/p1lzw/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/p1lzw/prog
+timeout 10 /tmp/p1lzw/prog
+```
+Expected: dump rc=0, gcc-clean, lzw runs (interactive `c`/`d` prompt or as far as it gets under timeout).
+
+```bash
+# guard repro now OK
+"$OUT/zig1" --dump-c89 --output-dir /tmp/p1g2 repro/mi_matrix/lzw_builtin_call_crash/main.zig
+# + gcc -c + link + run as appropriate
+```
+
+```bash
+# MD5 gate (all 4 byte-identical)
+"$OUT/zig1" --dump-c89 examples/z98/lisp_interpreter_curr/main.zig | md5sum
+"$OUT/zig1" --dump-c89 examples/z98/json_parser/main.zig | md5sum
+"$OUT/zig1" --dump-c89 examples/z98/mud_server/main.zig | md5sum
+"$OUT/zig1" --dump-c89 examples/z98/game_of_life/main.zig | md5sum
+```
+All match baselines.
+
+**Corpus check:** re-run the QUICK_REF corpus classifier. FAIL count must NOT increase vs the P1-3 baseline (187/9/0/0 @196). The fix changes analyzer behavior (previously spurious child_0 walks), so verify no repro flips OK→FAIL; a repro flipping FAIL→OK is a fix.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/analyzer.zig repro/mi_matrix/lzw_builtin_call_crash/ repro/mi_matrix/EXPECTED_FAIL.md
+git commit -m "fix(P1): analyzer analyzeExpr handles builtin_call args (lzw crash) + guard repro"
+```
+
+---
+
 ## Amendments Record
 
 - **AMENDMENT 1 (2026-08-04, operator ruling):** P1-2 widened from lower.zig-only to lower.zig + c89_emit.zig. See the amendment note in Task P1-2. Rationale: the module header is the declaration-propagation layer; without header `extern` decls, cross-module `load_global`/`store_global` references are undeclared in consumers (`'zG_...' undeclared`). Upstream completion of the F-7 I-1 deferred gap.
+- **AMENDMENT 2 (2026-08-04, operator ruling):** P1-3 battery exposed the lzw compiler crash (dump rc=139). Added Task P1-4 to properly fix the analyzer (rejected the `--no-*-check` workaround — the operator ruled the analyzer must behave correctly, not be bypassed). Root cause: analyzeExpr generic fallback treats builtin_call's name_id child_0 as an AST node index (regression from 532420cb).
