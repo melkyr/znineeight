@@ -1010,11 +1010,37 @@ git commit -m "fix(F-6): orelse RHS resolution — resolve child_1 with expected
 
 ---
 
+### Task I-7: Investigate Module-Global Init Design (I-R1#1 + I-R7 comptime) — RUNS BEFORE F-7
+
+**Added by operator ruling 2026-08-04 (m1250):** F-7 is the largest architectural task (~150 lines, 3 files, new pipeline concept). The plan's own Step 4 is self-declared wrong, and Step 3 contains a verified-wrong assumption (emitter `load_global`/`store_global` use `mangleLocalName` at c89_emit.zig:3043/:3054, NOT `nameManglerMangle(kind=3)` as the plan states). Investigation FIRST, amend F-7 with a concrete design, THEN STOP for operator decision before implementing.
+
+**Files to investigate:**
+- `sf/src/main.zig:570-589` (phase_LIRLowering module-decl loop — empty `else {}` at :587-588, only `fn_decl` lowered)
+- `sf/src/lower.zig:1032-1041` (lowerGlobalRef — emits `decl_local`, not `load_global`)
+- `sf/src/lower.zig:256` (lowererInit), `:4404` (lowerFn — how a LirFunction is built: blocks, hoisted_temps, params)
+- `sf/src/lir.zig:73-74` (load_global/store_global variants), `sf/src/lir.zig:326-338` (LirFunction struct)
+- `sf/src/c89_emit.zig:3041-3060` (load_global/store_global C emission — note `mangleLocalName`, NOT global mangler)
+- `sf/src/c89_emit.zig:2105-2138` (emitModuleFile — where global declarations must be emitted), `:2041-2073` (emitModule stdout path)
+- `sf/src/symbol_table.zig` (Symbol struct: kind, flags, type_id, decl_node)
+- `sf/src/main.zig:600-612` (phase_LIRLowering tail — module-registry handling after decl loop)
+
+**Investigation questions (write report to `.superpowers/sdd/I-R11-report.md`):**
+1. **Module-decl lowering path:** Exactly how does main.zig:587-588 skip module-level var_decl/const? What is the full set of module-scope decl kinds (var_decl with init, const, type-alias, import)? Which need global C declarations + init, which are type-only (already handled)?
+2. **store_global/load_global flow:** The LIR variants exist (lir.zig:73-74) and the C emitter handles them (c89_emit.zig:3041-3060) — but emits via `mangleLocalName`. What C name does a global get? Is `mangleLocalName` correct for globals, or is a global-mangler needed (nameManglerMangle kind=3)? Verify what C identifier a `store_global{name_id}` would produce and whether two modules with same-named globals would collide.
+3. **Global declaration emission:** Where must `int x;` / `struct Writer out;` C declarations be emitted? In emitModuleFile (per-module .c, before fn loop at :2122)? In emitModule (stdout)? How does the emitter discover which globals to declare — from the fn list's load_global/store_global references, or from the symbol table (SymbolKind.global, type_id via resolved_type_table)?
+4. **__module_init synthesis:** How is a LirFunction constructed (lowerFn pattern at lower.zig:4404)? Can a synthetic function be created with params_count=0, return_type=VOID, name_id=intern("__module_init")? How are `store_global` instructions emitted into its entry block? How does main.zig append it to ctx.lir_fns? How is it marked so the emitter emits it AND calls it before user main()?
+5. **Init value lowering per kind:** module-level var_decl inits: int/float/char literal, fn call, struct-init, array-init, comptime-folded (comptime_values map). Which lower cleanly via lowerExpr into a temp then store_global? Which need special handling (comptime value lookup at lower.zig:2393-2407 intcast fold, module_const_fn_call needs fn call)?
+6. **Immutable const globals:** `const x: i32 = 42;` — currently `lowerGlobalRef` emits decl_local for the READ (uninitialized local shadow). Does F-7 need to change const-reads too, or only mutable? Should const-literal globals emit a C `const`/initialized global, or inline the literal at use site? (module_var_mutable GREEN uses const and works today — how?)
+7. **Interaction with existing green paths:** module_var_mutable/main_green.zig (`const x = 42`) works today — trace how (literal-inline path at lower.zig:1497-1549?). Ensure F-7 doesn't break it.
+8. **Blast radius + A/B/C design:** What's the minimal correct design? Option A: synthesize __module_init + emit global decls + load_global/store_global. Option B: inline const literal at use, only mutable gets global+init. Option C: C-initializer for literal globals (int x = 42;) + __module_init only for fn-call inits. Recommend one with exact file:line targets. Consider MD5 impact on the 4 gated examples (do any have module-scope var/const? if yes, F-7 changes their emission).
+
+**Output:** `.superpowers/sdd/I-R11-report.md` with A/B/C options + exact edit targets. No source changes. Empty gate commit optional. This is an INVESTIGATION task — NO implementation.
+
+---
+
 ### Task F-7: Module-Global Init (I-R1#1 + I-R7 comptime, 6 repros)
 
-**Files:** `sf/src/main.zig:587-588`, `sf/src/lower.zig:1020-1028`, `sf/src/c89_emit.zig`
-
-**Pre-requisites:** F-4 (cross-module cache) should complete first — ptrcast_slice_field_type shares cross-module type gap.
+**Pre-requisites:** I-7 report complete. **STOP for operator decision** on the I-7 A/B/C design before implementing this task.
 
 **Scope:** Pipeline wall — `phase_LIRLowering` only handles `fn_decl`. Module-scope `var_decl`/`const` correctly parsed + type-resolved + analyzed, but never lowered. Fix: synthesize module-constructor function + emit global C declarations + wire `load_global`/`store_global` (LIR insts exist at lir.zig:73-74, C89 emission at c89_emit.zig:3012-3033, but never emitted by lowerer). This is new architecture — the largest single fix, ~100-150 lines across 3 files.
 
@@ -1227,8 +1253,8 @@ git commit -m "fix(F-7): module-global init — constructor synthesis + global e
 ## Execution Order
 
 ```
-F-1 → F-2 → F-3 → F-4 → F-5 → F-6 → F-7 → I-8 → F-8
+F-1 → F-2 → F-3 → F-4 → F-5 → F-6 → I-7 → [STOP for operator decision] → F-7 → I-8 → F-8
 ```
 
-F-1..F-6 independent. F-7 module-global init is largest (subagent design decisions). I-8 investigation after F-7 (per operator ruling — keep main plan focus first). F-8 completes the F-6-exposed header-ordering bug.
+F-1..F-6 independent. **I-7 (investigate module-global init design) runs BEFORE F-7, then STOP for operator ruling on the A/B/C design** (operator ruling 2026-08-04). F-7 implements after ruling. I-8 (investigate shared-header ordering, added m1241) then F-8 completes the F-6-exposed header-ordering bug.
 
