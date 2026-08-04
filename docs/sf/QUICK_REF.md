@@ -51,18 +51,18 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   ```bash
   if [ -z "$(ls DIR/*.c 2>/dev/null)" ]; then result=FAIL; fi   # 0 .c emitted = frontend gap
   ```
-- **Baseline (2026-08-04, after F-1..F-8, measured with /tmp/zb/zig1): `OK=181 FAIL=11 ICE=0 CRASH=0` over 192 repros.**
-  - 181 fully OK (frontend + emission + gcc all clean).
-  - **11 FAIL** (non-ICE) = 6 emission defects (dump ok, gcc rejects C) + 5 frontend gaps (dump emits 0 `.c`).
+- **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
+  - 184 fully OK (frontend + emission + gcc all clean).
+  - **8 FAIL** (non-ICE) = 3 emission defects (dump ok, gcc rejects C) + 5 frontend gaps (dump emits 0 `.c`).
   - **0 ICE** — the F-1..F-8 fixes eliminated the `error[3043]` ("internal: unsupported field-store
-    base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 181 + FAIL 11 + ICE 0 = 192`).
-  - Must stay `181/11/0/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
-- **The 6 emission-defect repros** (`dump_rc=0`, gcc fails): `array_tagged_union_read`,
-  `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch`, `ptroint_arena_offset`,
-  `var_declared_void`.
-  - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were documented OK at the
-    2026-08-01 baseline but now fail gcc (undeclared `zT_0` temp / incompatible int→`Opt_` assign).
-    Attribution to F-1..F-8 not confirmed at doc time; see EXPECTED_FAIL.md.
+    base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 184 + FAIL 8 + ICE 0 = 192`).
+  - Must stay `184/8/0/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
+- **The 3 emission-defect repros** (`dump_rc=0`, gcc fails): `array_tagged_union_read`,
+  `ptroint_arena_offset`, `var_declared_void`.
+  - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
+    baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now OK — **fixed F-9
+    2026-08-04** (Option B optional-of-EU unwrap + module `TEMP_NONE`) and restored to OK. See
+    EXPECTED_FAIL.md.
 - **The 5 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
   - error[3048] cannot-read/cannot-resolve file: `field_store_drop` (`const pal = @import("pal")` →
     `error[3048]: could not resolve imported file 'pal'` — pre-existing import-resolver gap; a user

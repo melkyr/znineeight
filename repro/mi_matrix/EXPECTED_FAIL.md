@@ -91,7 +91,9 @@ Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. **As of 2026-0
 ## Repro added 2026-07-16
 
 - `module_as_value` — **OK (warning[3023] non-fatal)**. Bare module ident in value position (`_ = h;`) emits `warning[3023]: module used as value expression`. VOID temp prevents C-decl pollution (TYPE_VOID=1 skipped by c89_emit decl loop). zig0 oracle: accepts silently (rc=0). C compiles cleanly (gcc 0 errors). Class: OK.
-  - **REGRESSION NOTICE (post-F-1..F-8):** measured 2026-08-04 with /tmp/zb/zig1 classifies this as **FAIL** — emitted `main_6D0C3706.c` has `(void)zT_0;` with `zT_0` undeclared. Verified passing gcc on a pre-F-1..F-8 worktree build; regression commit not yet isolated. See F-1..F-8 section.
+  - **REGRESSION + F-9 FIX (2026-08-04):** post-F-1..F-8 this was FAIL — emitted `main_6D0C3706.c` had
+    `(void)zT_0;` with `zT_0` undeclared (module-ident branch returned a VOID temp). **Fixed F-9** (module
+    branch now returns `TEMP_NONE`) — classified **OK** again.
 
 ---
 
@@ -188,13 +190,13 @@ Defensive repros for the std-lib migration design spec — each probes a Z98 syn
 | local fn-ptr (bare, no errset) | `fn_ptr_local_bare` | OK | gcc-clean, runs correctly (prints 3); sema warning[3000] non-fatal |
 | cross-module `extern "c"` | `import_extern_c` | OK | 2 .c emitted, gcc-clean, runs correctly (prints hello) |
 
-**Total active repros in v16: 192. Classification: OK=173, FAIL=8, ICE=11, CRASH=0.** *(pre-F-1..F-8 snapshot — see F-1..F-8 section for post-fix OK=181 / FAIL=11 / ICE=0)*
+**Total active repros in v16: 192. Classification: OK=173, FAIL=8, ICE=11, CRASH=0.** *(pre-F-1..F-8 snapshot — see F-1..F-9 section for post-fix OK=184 / FAIL=8 / ICE=0)*
 
 ---
 
-## F-1..F-8 corpus-RED fixes — 2026-08-04 (measured with /tmp/zb/zig1)
+## F-1..F-9 corpus-RED fixes — 2026-08-04 (measured with /tmp/zb/zig1)
 
-Post-fix state: **OK=181 / FAIL=11 / ICE=0 / CRASH=0** over 192 repros.
+Post-fix state: **OK=184 / FAIL=8 / ICE=0 / CRASH=0** over 192 repros.
 
 All 6 pre-fix `error[3043]` ICEs eliminated (moved to OK):
 - `tu_field_store_ptr`, `tu_ptrcast_copy`, `xmod_amp_arena_union_store`, `struct_field_store_subscript`
@@ -208,16 +210,17 @@ Former FAIL/ICE repros now OK (verified per-file gcc clean):
 - `ptrcast_slice_field_type`, `ptrcast_slice_field_void`, `ptrcast_slice_field_xmod` (F-4)
 - `anon_init_orelse_rhs` (F-6+F-8)
 - `module_var_mutable` (F-7)
+- `opteu_err_if_expr`, `opteu_err_switch`, `module_as_value` (F-9)
 - Runtime gaps now FIXED (run-verified): `comptime_neg_int` → `-5`, `module_pub_var_int` → `43`,
   `module_pub_var_struct` → `7`, `module_const_fn_call` → `42`.
 
-Remaining 11 FAIL (0 ICE):
-- **Emission defects (6, dump rc=0, gcc rejects):** `array_tagged_union_read`, `module_as_value`,
-  `opteu_err_if_expr`, `opteu_err_switch`, `ptroint_arena_offset`, `var_declared_void`.
-  - CONCERN: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were documented OK at the
-    2026-08-01 baseline but now fail gcc. Verified on a pre-F1 worktree build they passed gcc; the
-    FAIL appears post-F-1..F-8, but exact regression commit NOT confirmed at doc time. Flagged for
-    review; the doc reflects measured reality either way.
+Remaining 8 FAIL (0 ICE):
+- **Emission defects (3, dump rc=0, gcc rejects):** `array_tagged_union_read`,
+  `ptroint_arena_offset`, `var_declared_void`.
+  - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
+    baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now **OK — fixed F-9
+    2026-08-04** (Option B optional-of-EU unwrap in the error-literal sema handler + module branch
+    `TEMP_NONE`). Verified per-file gcc clean; see "Former FAIL/ICE repros now OK" above.
 - **Frontend gaps (5, 0 `.c` emitted):** `catch_block_value_producing` (error[2000]),
   `eu_assign_incompat_payload` (error[3000]), `field_access_optional` (error[3000]),
   `field_store_drop` (error[3048], pal-import — see QUICK_REF known-issues), `test_stub_0`
