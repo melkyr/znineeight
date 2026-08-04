@@ -1288,11 +1288,51 @@ git commit -m "fix(F-8): shared-header ordering for by-value optional/slice — 
 
 ---
 
+### Task I-9: Investigate Error-Literal Handler — Optional-of-EU Unwrap (F-1 regression)
+
+**Added by operator ruling 2026-08-04 (m1306):** F-D3 exposed a regression — 3 repros OK at 2026-08-01 baseline now FAIL gcc (module_as_value, opteu_err_if_expr, opteu_err_switch). Root cause hypothesis: F-1's bare-error-set wildcard at `semantic_analyzer.zig:1182` (`es==0 → result=top`) fires when the expected type is an `optional_type` wrapping an error-union (`?E!i32`), because neither the error_set nor error_union branch matches an optional → `error.Bad` resolves to the optional wrapper type → lowerer emits raw int error code into the optional struct → gcc type error. This is VALID code. Investigation FIRST, then fix as F-9. **Operator: Option B preferred (architecturally correct — unwrap optional_type to find inner EU/error_set), even if it requires its own I task / series.**
+
+**Files to investigate:** `sf/src/semantic_analyzer.zig` (error_literal handler :1160-1184, expected_type_stack mechanics, if-expr/switch/var-init expected-type pushes, semanticAnalyzerResolveOrelseExpr :794-820), `sf/src/lower.zig` (error_literal lowering :1151-1162, catch handling).
+
+**Repros that exercise it:** `opteu_err_if_expr`, `opteu_err_switch` (primary — `?E!i32` + error literal), `module_as_value` (secondary — module-as-value temp), `inferred_errorset_fnptr/xmod` (bare-! must NOT break), all 4 gated examples (must stay byte-identical).
+
+**Investigation questions (write report to `.superpowers/sdd/I-R12-report.md`):**
+1. **Full trace of the 3 regressed repros:** What expected type is on the stack at the error_literal node? Does `top` resolve to the optional wrapper? What was the pre-F-1 resolution (TYPE_VOID) and how did it work before? What is the post-F-1 resolution (optional wrapper → broken)?
+2. **Expected_type_stack for optionals:** In `var r: ?E!i32 = if (c) error.Bad else 0;`, what does `pushExpectedType` push for the if-expr arms / switch prongs / var init? Does sema push the optional, the EU, or the error set? Same for the F-6 orelse handler.
+3. **Unwrap surface:** If the handler unwraps `optional_type → opt.payload` and finds an EU, does the existing `tty.kind == error_union_type` branch (es = `eu_items[payload_idx].error_set`) work correctly with the inner EU's error_set? Does the explicit error set E resolve its members?
+4. **Bare-! in optional context:** Does Z98 allow `?(!i32)` (optional of bare error union)? If not, the unwrap only applies to explicit `?E!T`, and F-1's wildcard (bare-! only) should be gated to `tty.kind == error_union_type and es == 0` regardless.
+5. **F-1 wildcard scope correction:** After the optional unwrap, the F-1 `es==0 → result=top` wildcard should ONLY fire when the effective type (after unwrapping any optionals) is a bare error_union (error_set==0). Verify the correct gate.
+6. **Blast radius:** Which repros/gates change? The 3 regressed repros must be fixed (or restored to pre-F-1 state). Bare-! repros must still pass. All 4 MD5 gates must stay byte-identical (verify none use `?E!i32` error literal).
+7. **Exact edit targets:** file:line for the optional unwrap + F-1 wildcard gate correction. Assess whether this is one edit or a series (operator: "even if it requires its own I task / series of tasks").
+
+**Output:** `.superpowers/sdd/I-R12-report.md`. No source changes. Empty gate commit optional.
+
+---
+
+### Task F-9: Fix Error-Literal Handler — Optional-of-EU Unwrap (F-1 regression, Option B)
+
+**Pre-requisites:** I-9 (I-R12) report complete.
+
+**Scope:** Implement the I-9-approved root fix so the error_literal handler correctly resolves `error.Bad` in `?E!i32` (and other optional-of-EU) contexts, AND restores the 3 regressed repros. Option B (operator ruling 2026-08-04): unwrap optional_type to find the inner EU/error_set in the error_literal handler; gate F-1's wildcard to bare error_union only. Exact design per I-9.
+
+**Gates:**
+- Build 0 errors
+- `opteu_err_if_expr`, `opteu_err_switch`, `module_as_value`: restored to OK (or gcc-clean / pre-F-1 behavior) — no regression from the 2026-08-01 baseline
+- `inferred_errorset_fnptr`, `inferred_errorset_xmod` (bare-!): still OK (F-1 must not break)
+- Regression: `orelse_void`, `optstar_void_orelse`, `field_access_optional` behavior unchanged
+- 4 MD5s byte-identical: lisp `f84c8748e6d0580ffac811d75e34e0e7`, json `3492a935883ee91258feece576ba23d5`, mud `4644ad1349c55af80fa1a18fe0e17989`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`
+- Corpus: no NEW regressions (restores any F-1-damaged repros)
+- Runtime: lisp `> 3`, mud listening, json parses, gol glider
+
+**Commit:** `fix(F-9): error-literal handler optional-of-EU unwrap — Option B (F-1 regression)`
+
+---
+
 ## Execution Order
 
 ```
-F-1 → F-2 → F-3 → F-4 → F-5 → F-6 → I-7 → [STOP for operator decision] → F-7 → I-8 → F-8
+F-1 → F-2 → F-3 → F-4 → F-5 → F-6 → I-7 → [STOP] → F-7 → I-8 → F-8 → F-D3 → I-9 → [STOP] → F-9
 ```
 
-F-1..F-6 independent. **I-7 (investigate module-global init design) runs BEFORE F-7, then STOP for operator ruling on the A/B/C design** (operator ruling 2026-08-04). F-7 implements after ruling. I-8 (investigate shared-header ordering, added m1241) then F-8 completes the F-6-exposed header-ordering bug.
+F-1..F-6 independent. I-7/F-7 (module-global init), I-8/F-8 (shared-header ordering) complete. F-D3 (docs) complete but exposed the F-1 regression. **I-9 (investigate error-literal optional-of-EU unwrap) runs BEFORE F-9, then STOP for operator ruling on the I-9 design** (operator ruling 2026-08-04). F-9 implements after ruling.
 
