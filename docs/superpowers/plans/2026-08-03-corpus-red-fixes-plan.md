@@ -690,52 +690,120 @@ git commit -m "fix(F-3): bare union type resolution + field-store (I-R5 T1b + I-
 
 ---
 
-### Task F-4: Cross-Module Resolved Type Cache (I-R1#2 + I-R5 T2, 3 repros)
+### Task F-4: Cross-Module Import-Alias Type Resolution (I-R1#2 + I-R5 T2, 3 repros)
 
-**Files:** `sf/src/semantic_analyzer.zig:475, :937, :965`
+**Files:** `sf/src/type_resolver.zig` only (new `resolveImportFieldAliases` pass). NO `semantic_analyzer.zig` edits.
 
-**Pre-requisites:** None.
+**Pre-requisites:** None. **MANDATORY pre-reading:** `.superpowers/sdd/I-R9-report.md` (2026-08-04 investigation — the authoritative design) AND `.superpowers/sdd/task-F4-report.md` (the REJECTED first proposal — read it as precedent, do NOT reapply its sema patch).
 
-**Scope:** Lowerer queries `resolvedTypeTableGet` at two sites: (1) `lower.zig:3755` for `var s = S{...}` init expression, (2) `lower.zig:751` for `s.key = ...` field-store base. Cross-module types resolve correctly in sema but the cache entry at the query node is missing. Fix: ensure `resolvedTypeTableSet` fires at the struct_init node (:937/:965) and at the field_access node (:475) for cross-module as well as local types. Extend commit `9672c45f` precedent.
+**Scope:** Root cause: `const S = @import("types.zig").S` registers symbol `S` as `SymbolKind.global` with `type_id=0` (symbol_registrator.zig:216-273 — field_access init falls through all type-alias branches) because `resolveTypeExprFull` has NO `import_expr` branch (type_resolver.zig:589-883; import_expr has no children, parser.zig:644, falls to TYPE_UNDEFINED at :883) and `TypeResolveEnv` (type_resolver.zig:23-29) has no module_reg. So `S.type_id` never gets set at definition time → sema resolves it TYPE_VOID → struct_init cache writes VOID → var_decl infers VOID → gcc FAIL / ICE 3043.
 
-- [ ] **Step 1: Read source context**
+**Fix (Approach B, definition-time, path-accurate):** A dedicated pass in the type-resolution phase that resolves `const X = @import("path").Field` via `module_reg.path_to_id` (which `typeResolverResolveNames` already receives as a param at :1079) and writes `symbol.type_id` + the module-qualified nameCache key — mirroring the existing working named-module mechanism (symbol_registrator.zig:227-245 registers `const t = @import(...)` as a module symbol; the field_access branch resolves module bases at type_resolver.zig:702-712). The existing sema cache writes (:937/:965/:475) and lowerer queries (:3755/:751) are ALREADY correct — they fire once the symbol carries a correct type_id. The rejected proposal's sema `resolveIdent` patch is NOT reapplied.
 
-Read `sf/src/semantic_analyzer.zig:903-969` (semanticAnalyzerResolveStructInit — tagged_union :912-938, struct :940-967). Note existing `resolvedTypeTableSet(self.type_table, node_idx, target_type)` at :937/:965.
-Read `sf/src/semantic_analyzer.zig:460-485` (semanticAnalyzerResolveFieldAccess — note `resolvedTypeTableSet(self.type_table, node_idx, result)` at :475).
-Read `sf/src/lower.zig:3748-3756` (var_decl lowering — queries `resolvedTypeTableGet(node.child_1)`).
-Read `sf/src/lower.zig:750-751` (field-store base — queries `resolvedTypeTableGet(fa_node.child_0)`).
+- [ ] **Step 1: Read evidence + source context**
 
-- [ ] **Step 2: Verify existing cache writes, add missing ones**
+Read `.superpowers/sdd/I-R9-report.md` (Sections A/C/D are authoritative — exact code + insertion targets).
+Read `.superpowers/sdd/task-F4-report.md` (rejected proposal — root-cause evidence §1, why sema patch was a patch §2, known limitations).
+Read `sf/src/type_resolver.zig:589-717` (resolveTypeExprFull — field_access branch :674-717; the two module-base success paths :679-698 ident-module fallback and :702-712 module_type; import_expr NOT handled).
+Read `sf/src/type_resolver.zig:949-991` (resolveNamedTypeExpressions + resolveAggregateFieldTypesAll — the pass layer, where the new pass slots in).
+Read `sf/src/type_resolver.zig:1073-1088` (typeResolverResolveNames — module_reg param at :1079, sub-pass call order).
+Read `sf/src/symbol_registrator.zig:227-245` (named-module registration precedent) and `:373-394` (inline import registers no symbol).
+Read `sf/src/module_registry.zig:170-180` (path_to_id map).
 
-The existing code at :937 (tagged_union struct_init) and :965 (struct struct_init) DOES write `resolvedTypeTableSet(self.type_table, node_idx, target_type)`. The field_access handler at :475 writes `resolvedTypeTableSet(self.type_table, node_idx, result)`.
+- [ ] **Step 2: Add hash_mod import (type_resolver.zig)**
 
-Verify whether these writes fire for cross-module types. The `target_type` at :937/:965 comes from `topExpectedType` or explicit `child_0` resolution. For imported structs, `topExpectedType` should be set by the var_decl init's `pushExpectedType(decl_type)` at `semantic_analyzer.zig:1602`.
+After line 21 (`const rtt_mod = ...`), ADD:
+```zig
+const hash_mod = @import("util/hash.zig");
+```
 
-If the writes DO fire (verified by marker trace or GDB at build time), the gap is in the lowerer querying the WRONG node. Check: does `lower.zig:3755` query `node.child_1` (the init expression node) — the same node that sema writes at :937/:965? Yes, they should be the same `AstKind.struct_init` node_idx.
+- [ ] **Step 3: Add resolveImportFieldAlias + resolveImportFieldAliases (type_resolver.zig)**
 
-If there IS a cache mismatch, the fix is to ALSO write the cache entry at the var_decl level: in the var_decl handler at `semantic_analyzer.zig:1658-1660`, extend to always write `resolvedTypeTableSet(self.type_table, node.child_1, decl_type)` for cross-module struct types, including when `decl_type` was inferred.
+Insert between line 984 (`}` closing `resolveNamedTypeExpressions`) and line 986 (`fn resolveAggregateFieldTypesAll`). Z98 dialect — capture syntax only (no `.?`), while loops, `@intCast`:
 
-For field_store: the field_access node's `child_0` is the ident_expr for `s` in `s.key = ...`. The field_access handler at :475 writes `resolvedTypeTableSet(self.type_table, node_idx, result)` where `node_idx` is the field_access node and `result` is the individual field type. The lowerer at `lower.zig:751` queries `fa_node.child_0` which is the BASE ident_expr, not the field_access. So the cache write at :475 puts it at the wrong node — the lowerer queries a different node.
+```zig
+fn resolveImportFieldAlias(env: *TypeResolveEnv, module_reg: *mr_mod.ModuleRegistry,
+    importer_mod_id: u32, target_mod_id: u32, field_name_id: u32, depth: u32) u32 {
+    if (depth > @intCast(u32, 8)) return type_mod.TYPE_UNDEFINED;
+    var fs = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, target_mod_id, field_name_id);
+    if (fs) |fss| {
+        if (fss.type_id != @intCast(u32, 0)) return fss.type_id;
+        var fd = env.store.nodes.items[@intCast(usize, fss.decl_node)];
+        if (fd.kind != AstKind.var_decl) return type_mod.TYPE_UNDEFINED;
+        var fi = env.store.nodes.items[@intCast(usize, fd.child_1)];
+        if (fi.kind != AstKind.field_access) return type_mod.TYPE_UNDEFINED;
+        var fb = env.store.nodes.items[@intCast(usize, fi.child_0)];
+        if (fb.kind != AstKind.import_expr) return type_mod.TYPE_UNDEFINED;
+        var t2 = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, fb.payload);
+        if (t2) |m2| return resolveImportFieldAlias(env, module_reg, importer_mod_id, m2, fi.payload, depth + @intCast(u32, 1));
+    }
+    return type_mod.TYPE_UNDEFINED;
+}
 
-Fix for field_store: ALSO write the BASE type at the field_access node. After line 475, also set `resolvedTypeTableSet(self.type_table, node_idx, base_type)` where `base_type` is the type of the field_access base (e.g., the struct type). The lowerer needs this to determine `kind` for field_store dispatch.
+fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, module_reg: *mr_mod.ModuleRegistry) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var rnode = env.store.nodes.items[@intCast(usize, root)];
+        var decls = ast_mod.astStoreGetExtraChildren(env.store, rnode.payload);
+        var di: usize = 0;
+        while (di < decls.len) : (di += 1) {
+            var decl = env.store.nodes.items[@intCast(usize, decls[di])];
+            if (decl.kind != AstKind.var_decl) { di += 1; continue; }
+            if (decl.child_1 == @intCast(u32, 0)) { di += 1; continue; }
+            var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
+            if (init.kind != AstKind.field_access) { di += 1; continue; }
+            var base = env.store.nodes.items[@intCast(usize, init.child_0)];
+            if (base.kind != AstKind.import_expr) { di += 1; continue; }
+            var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, base.payload);
+            if (target) |mtid| {
+                var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, init.payload, @intCast(u32, 0));
+                if (resolved != type_mod.TYPE_UNDEFINED) {
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, decl.payload);
+                    if (sym) |sp| {
+                        sp.type_id = resolved;
+                    }
+                    var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, decl.payload);
+                    type_mod.nameCachePut(env.typereg, ck, resolved);
+                }
+            }
+            di += 1;
+        }
+    }
+}
+```
 
-- [ ] **Step 3: Build + gate**
+Notes: recursion handles transitive aliases (`const A = @import("m").B` where `B = const B = @import("n").C`) with depth guard 8. Writes `sp.type_id` only (kind stays `global` — sema fast path at semantic_analyzer.zig:197 returns any non-zero type_id). The nameCache key `(mod_id << 32) | name_id` mirrors `resolveNamedTypeExpressions` at :977-978.
+
+- [ ] **Step 4: Wire into the phase (typeResolverResolveNames)**
+
+At `sf/src/type_resolver.zig:1085` (between `resolveNamedTypeExpressions(&env, mods);` and `resolveAggregateFieldTypesAll(&env, mods);`), INSERT:
+```zig
+resolveImportFieldAliases(&env, mods, module_reg);
+```
+
+- [ ] **Step 5: Build + gate**
 
 ```bash
 bash sf/scripts/build_release.sh
 ```
+Expected: `=== [release] Done ===`, 0 gcc errors (grep for `\.c:[0-9]+:[0-9]+: error`).
 
 ```bash
 # Repros: all 3 must go from FAIL/ICE to OK
+mkdir -p /tmp/f4/a /tmp/f4/b /tmp/f4/c
 sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f4/a repro/mi_matrix/ptrcast_slice_field_type/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f4/a/*.c 2>&1
 # Expected: gcc clean (was 's' undeclared)
 
 sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f4/b repro/mi_matrix/ptrcast_slice_field_void/main.zig
-# Expected: rc=0 (was ICE 3043)
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f4/b/*.c 2>&1
+# Expected: rc=0, gcc clean (was ICE 3043)
 
 sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f4/c repro/mi_matrix/ptrcast_slice_field_xmod/main.zig
-# Expected: rc=0 (was ICE 3043)
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f4/c/*.c 2>&1
+# Expected: rc=0, gcc clean (was ICE 3043)
 ```
 
 ```bash
@@ -745,12 +813,13 @@ sf/build/out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig | md5sum
 sf/build/out_release/zig1 --dump-c89 examples/z98/mud_server/main.zig | md5sum
 sf/build/out_release/zig1 --dump-c89 examples/z98/game_of_life/main.zig | md5sum
 ```
+All 4 must match baselines: mud `9fde02d8a05e951de738e2df5d12b4f7`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `10d09c99f77c68e680f6ccce33eb81ed`, json `3492a935883ee91258feece576ba23d5`. (The 4 baselines have zero `@import` — verified — so the pass is a byte-identical no-op for them.)
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add sf/src/semantic_analyzer.zig
-git commit -m "fix(F-4): cross-module resolved type cache (I-R1#2 + I-R5 T2)"
+git add sf/src/type_resolver.zig
+git commit -m "fix(F-4): cross-module import-alias type resolution at definition time (I-R1#2 + I-R5 T2)"
 ```
 
 ---
