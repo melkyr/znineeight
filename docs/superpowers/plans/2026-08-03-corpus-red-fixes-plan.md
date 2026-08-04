@@ -1038,174 +1038,155 @@ git commit -m "fix(F-6): orelse RHS resolution — resolve child_1 with expected
 
 ---
 
-### Task F-7: Module-Global Init (I-R1#1 + I-R7 comptime, 6 repros)
+### Task F-7: Module-Global Init (I-R1#1 + I-R7 comptime, 6 repros) — OPTION B
 
-**Pre-requisites:** I-7 report complete. **STOP for operator decision** on the I-7 A/B/C design before implementing this task.
+**Pre-requisites:** I-7 (I-R11) report complete. **OPERATOR RULING 2026-08-04: Option B** (assessed A/B/C against architecture/scalability/maintainability — B approved). Full design in `.superpowers/sdd/I-R11-report.md`.
 
-**Scope:** Pipeline wall — `phase_LIRLowering` only handles `fn_decl`. Module-scope `var_decl`/`const` correctly parsed + type-resolved + analyzed, but never lowered. Fix: synthesize module-constructor function + emit global C declarations + wire `load_global`/`store_global` (LIR insts exist at lir.zig:73-74, C89 emission at c89_emit.zig:3012-3033, but never emitted by lowerer). This is new architecture — the largest single fix, ~100-150 lines across 3 files.
+**Design (Option B):** inline literal consts stay inlined (lower.zig:1517-1570, compile-time constants — correct); mutable vars + non-literal consts become real globals via `load_global`/`store_global` + a synthesized `__module_init` function. Global mangler = `nameManglerMangle(kind=1)` (zG_hash_name, the natural third namespace; kind=3 in the old plan text was WRONG — falls to L prefix). **Must add `module_id` field to load_global/store_global LIR insts** (lir.zig:73-74) or cross-module globals collide. lisp+mud re-baseline (they have mutable module vars — correctness fix); json+gol byte-identical.
 
-- [ ] **Step 1: Read evidence + source**
+**Files:** `sf/src/lir.zig`, `sf/src/main.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`. ~150 lines across 4 files.
 
-Read `.superpowers/sdd/I-R1-report.md` for full root cause analysis.
-Read `sf/src/main.zig:575-594` (phase_LIRLowering module-decl loop — note empty else at :587-588).
-Read `sf/src/lower.zig:1020-1029` (lowerGlobalRef — emits decl_local, should emit load_global for mutable globals).
-Read `sf/src/c89_emit.zig:2041-2073` (emitModule — stdout path, no global decl emission).
-Read `sf/src/c89_emit.zig:2116-2138` (emitModuleFile — per-module .c path, no global decl emission).
-Read `sf/src/lir.zig:73-74` (load_global + store_global variants — already defined, C89 handlers at c89_emit.zig:3012-3033).
-Read `sf/src/lower.zig:4420-4455` (lowerFn — param temp assignment, shows how function-level temps work).
+- [ ] **Step 1: Read I-7 evidence + source**
 
-- [ ] **Step 2: Synthesize module-constructor function in main.zig:587-588**
+Read `.superpowers/sdd/I-R11-report.md` (full design, 9 edit targets). Read `.superpowers/sdd/I-R1-report.md`.
+Read current source at the 9 target sites (line numbers below are from I-R11; verify against source before editing):
+1. `lir.zig:73-74` — load_global/store_global (add module_id)
+2. `main.zig:580-588` — phase_LIRLowering decl loop (empty else)
+3. `lower.zig:4404` — lowerFn scaffolding (mirror for lowerModuleInit)
+4. `lower.zig:1032-1041` — lowerGlobalRef (decl_local → load_global)
+5. `lower.zig:1517-1570` — literal-inline path (KEEP untouched)
+6. `c89_emit.zig:3041-3062` — load_global/store_global C emission (mangleLocalName → nameManglerMangle kind=1 + module_id; array copy-loop)
+7. `c89_emit.zig:2145-2167` — emitModuleFile (global decl pass before fn loop)
+8. `c89_emit.zig:2070-2102` — emitModule stdout (global decl pass before fn loop)
+9. `c89_emit.zig:2104-2139` — emitMainWrapper (call __module_init before user main, only for modules with storage globals)
 
-Read `sf/src/main.zig:575-588`. The empty `else {}` at :587-588 needs to:
+- [ ] **Step 2: lir.zig — add module_id to load_global/store_global**
 
-For each `var_decl` with `child_1 != 0` (has init expression):
-- Lower the init expression via `lowerExpr`
-- Emit `store_global` LIR instruction with the symbol's `name_id` and init value temp
-
-BUT — the lowerer operates on function bodies, and `store_global` needs to be emitted inside a LIR function. The approach:
-
-1. Collect all var_decl init expressions that need lowering
-2. Synthesize a new `LirFunction` called `__module_init` with:
-   - `name_id = intern("__module_init")`
-   - `module_id = mods[mi].id`
-   - `params_count = 0`
-   - `return_type = TYPE_VOID`
-3. For each var_decl init, lower the init into temps and emit `store_global` into the synthesized function's entry block
-4. Append the function to `ctx.lir_fns`
-5. Mark it with `is_pub = 1` so the emitter includes it
-
-The actual lowerer invocation: create a fresh `LirLowerer` for the module (same pattern as `:582-583` for fn_decl), then lower each init. However, `lowerExpr` requires a function context (hoisted_temps, blocks, etc.). The synthesized function provides this.
-
-Simpler approach for this task: scope to the `lowerGlobalRef` fix FIRST (Step 3), then the emission pass (Step 4), then the constructor synthesis (Step 5). Each step is independently gatable.
-
-- [ ] **Step 3: Fix lowerGlobalRef — emit load_global for mutable/non-literal globals**
-
-Read `sf/src/lower.zig:1020-1029`. Current code always emits `decl_local`:
-
-```zig
-fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
-    ...
-    var tid = nextTemp(self, tid_type);
-    emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid } });
-    return tid;
-}
+Read `sf/src/lir.zig:68-78`. Change:
+```
+OLD: load_global: struct { name_id: u32, result: u32 },
+     store_global: struct { name_id: u32, value: u32 },
+NEW: load_global: struct { name_id: u32, module_id: u32, result: u32 },
+     store_global: struct { name_id: u32, module_id: u32, value: u32 },
 ```
 
-For mutable globals (`s.flags & 1 == 1`, i.e. `var` not `const`) and for non-literal inits, switch to `load_global`:
+- [ ] **Step 3: lower.zig — new lowerModuleInit (mirror lowerFn scaffolding)**
 
-```zig
-fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
-    var lgr_m: []const u8 = "LGR:n"; pal.markerWrite(lgr_m);
-    var lgr_b: [20]u8 = undefined; var lgr_l = itoa_mod.itoa(name_id, lgr_b[0..]); var lgr_s: usize = @intCast(usize, 19) - @intCast(usize, lgr_l); pal.markerWrite(lgr_b[lgr_s..@intCast(usize, 19)]);
-    var lgr_nl: []const u8 = " "; pal.markerWrite(lgr_nl);
-    var dn_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, s.decl_node);
-    var tid_type = if (dn_type) |dt| dt else type_mod.TYPE_UNDEFINED;
-    var is_mutable: u8 = @intCast(u8, (@intCast(u16, s.flags) & @intCast(u16, 1)));
-    if (is_mutable != @intCast(u8, 0)) {
-        var tid = nextTemp(self, tid_type);
-        emitInst(self, LirInst{ .load_global = .{ .name_id = name_id, .result = tid } });
-        return tid;
-    }
-    var tid = nextTemp(self, tid_type);
-    emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid } });
-    return tid;
-}
-```
+Read `sf/src/lower.zig:4404-4501` (lowerFn). Add a new `pub fn lowerModuleInit(self: *LirLowerer, decls: []u32) LirFunction`:
+- SandAlloc LirFunction, name_id = intern("__module_init"), return_type = TYPE_VOID, empty params, is_extern=0, is_pub=0
+- Set self.func, current_bb = createBlock, emit loop_header, temp_counter = 0
+- For each decl that is `var_decl` with a storage-global symbol and a runtime init (NOT undefined, NOT literal-const-inline, NOT type-only):
+  - `var t = lowerExpr(self, node.child_1);`
+  - `emitInst(LirInst{ .store_global = .{ .name_id, .module_id = <module>, .value = t } });`
+- Skip `undefined` inits entirely (bare zero-init declaration)
+- emit ret_void, hoistTemps, set func_ptr.hoisted_temps
 
-Existing `load_global` C89 handler at `c89_emit.zig:3012-3026` emits `result = zG_<hash>_<name>;` — uses `nameManglerMangle(mangler, name_id, 3, 0)` (kind 3 = global). The `store_global` counterpart at :3027-3033 emits `zG_<hash>_<name> = src;`.
+- [ ] **Step 4: main.zig:580-588 — scan storage globals + build global registry + append __module_init**
 
-- [ ] **Step 4: Emit global C declarations in emitModule/emitModuleFile**
+Read `sf/src/main.zig:570-612`. Replace the empty `else {}` at :587-588 with:
+1. For each module decl, classify via symbol table: `SymbolKind.global` storage global (mutable `var` OR non-literal `const`) → record `{ name_id, module_id, type_id (from resolvedTypeTableGet), has_runtime_init }` into a per-module global registry (new ctx-level structure)
+2. Skip type-only (module/type_alias), literal-const (inline path), fn_decl (existing), test_decl, c_include
+3. After the module's decl loop completes, if the module has any runtime-init storage globals: create a fresh lowerer (pattern :582-583), call `lowerModuleInit(&lowerer, decls)`, append result to `ctx.lir_fns` — appended AFTER the module's fns so lir_fns stays module-grouped (main.zig:663-667 slicing is load-bearing)
 
-Read `sf/src/c89_emit.zig:2116-2138` (emitModuleFile). Before the fn loop at :2122, ADD a global variable declaration pass:
+- [ ] **Step 5: lower.zig:1032-1041 — lowerGlobalRef emits load_global for non-inline globals**
 
-```zig
-// Global variable declarations
-var ig: usize = @intCast(usize, 0);
-while (ig < emitter.registry.types_len) : (ig += @intCast(usize, 1)) {
-    var gty = emitter.registry.types_items[ig];
-    if (gty.kind != type_mod.TypeKind.struct_type and gty.kind != type_mod.TypeKind.tagged_union_type and gty.kind != type_mod.TypeKind.union_type and gty.kind != type_mod.TypeKind.enum_type and gty.kind != type_mod.TypeKind.error_set_type) {
-        // Check if this type is a module-scope global via symbol table
-        // For now: scan for globals registered with kind=SymbolKind.global and is_mutable=1
-    }
-}
-```
+Read `sf/src/lower.zig:1032-1041`. Keep the literal-inline path at :1517-1570. For globals that reach lowerGlobalRef (mutable var OR non-literal const), emit `load_global{ name_id, module_id (from symbol), result }` instead of `decl_local`. `module_id` comes from the resolved symbol.
 
-THIS APPROACH IS WRONG — global declarations need to come from symbol tables, not type registry. The correct approach: scan module's symbol table for `SymbolKind.global` with `is_mutable=1`, emit `type name;` for each (and optionally `= init_value` for literal inits). This requires access to the symbol tables which are available in `main.zig:604` (phase_C89Emission context) and can be threaded into the emitter.
+- [ ] **Step 6: lower.zig — global-name base handling for field/index/addr ops**
 
-**Design decision for this subagent:** The exact emission pass design is complex. The implementer should:
-1. In `emitModuleFile` / `emitModule`, scan the function list for any `load_global`/`store_global` references
-2. For each unique `name_id` referenced by `load_global`, find the symbol's type from the type registry (via module's symbol table or the resolved_type_table)
-3. Emit `type zG_<hash>_<name>;` C declaration at the top of the .c file (before function bodies)
-4. Also scan for `__module_init` function in the fn list — if present, call it in the main wrapper before the user's main
+For `load_field`/`load_index`/`assign_field`/`addr_of` whose base resolves to a global, preserve the global `name_id` in the LIR inst's name_id field (name path already supported by C handlers at c89_emit.zig:2790/2889/3064). Required for: module_pub_var_struct (`out.tag`), mud (`rooms[i]`), lisp (`&perm_buf_u64`). This is the array-global sub-piece.
 
-This is the most involved step. The subagent should verify gate correctness after each incremental edit.
+- [ ] **Step 7: c89_emit.zig:3041-3062 — global mangler + array copy-loop**
 
-- [ ] **Step 5: Build + gate**
+Read `sf/src/c89_emit.zig:3041-3062`. Change:
+- `mangleLocalName` → `nameManglerMangle(mangler, name_id, 1, module_id)` for both load_global and store_global (kind=1 = G prefix)
+- Add array copy-loop for `load_global` when the global type is an array (mirror load_local at :2985-2994) and for `store_global` (mirror .assign at :2858-2877) — or rely on name-base access for arrays (Step 6) and only copy in value contexts
 
-```bash
-bash sf/scripts/build_release.sh
-```
+- [ ] **Step 8: c89_emit.zig — emit global C declarations**
+
+In `emitModuleFile` (:2145-2167): after the `#include "<mod>.h"` line, before the fn loop, iterate the global registry filtered by module_id, emit `getCTypeName(type) zG_<hash>_<name>;` for each.
+In `emitModule` (:2070-2102): after emitModuleHeader, before the fn loop, same pass.
+
+- [ ] **Step 9: c89_emit.zig:2104-2139 — call __module_init before user main**
+
+In `emitMainWrapper`, before `wfn_name();`, emit a call to each module's `__module_init` (mangled nameManglerMangle kind=0, module_id) — ONLY for modules that have storage globals (from the global registry), in module_reg order.
+
+- [ ] **Step 10: main.zig phase_C89Emission — inject global registry into emitter**
+
+Read `sf/src/main.zig:633-735`. Inject the global registry into the emitter (pattern: pointer_only_map injection at :636).
+
+- [ ] **Step 11: Build + gate (in /tmp/zb per operator ruling)**
+
+Build in /tmp/zb (reuse /tmp/zb/zig0; zig0 → C; gcc link). 0 gcc errors.
 
 ```bash
 # Repro 1: module_var_mutable — was FAIL ('x' undeclared), should now be gcc clean
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f7/a repro/mi_matrix/module_var_mutable/main.zig
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f7/a repro/mi_matrix/module_var_mutable/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f7/a/*.c 2>&1
 ```
+Expected: gcc clean.
 
 ```bash
 # Repro 2: module_pub_var_int — was runtime gap, should print 43
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f7/b repro/mi_matrix/module_pub_var_int/main.zig
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f7/b repro/mi_matrix/module_pub_var_int/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f7/b/*.c && gcc -m32 /tmp/f7/b/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/f7/prog2 && /tmp/f7/prog2
 ```
 Expected: prints `43`.
 
 ```bash
 # Repro 3: module_pub_var_struct — was runtime gap, should print 7
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f7/c repro/mi_matrix/module_pub_var_struct/main.zig
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f7/c repro/mi_matrix/module_pub_var_struct/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f7/c/*.c && gcc -m32 /tmp/f7/c/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/f7/prog3 && /tmp/f7/prog3
 ```
 Expected: prints `7`.
 
 ```bash
 # Repro 4: module_const_fn_call — was runtime gap, should print 42
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f7/d repro/mi_matrix/module_const_fn_call/main.zig
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f7/d repro/mi_matrix/module_const_fn_call/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f7/d/*.c && gcc -m32 /tmp/f7/d/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/f7/prog4 && /tmp/f7/prog4
 ```
 Expected: prints `42`.
 
 ```bash
 # Repro 5: comptime_neg_int — was runtime gap, should print -5
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f7/e repro/mi_matrix/comptime_neg_int/main.zig
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f7/e repro/mi_matrix/comptime_neg_int/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f7/e/*.c && gcc -m32 /tmp/f7/e/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/f7/prog5 && /tmp/f7/prog5
 ```
 Expected: prints `-5`.
 
 ```bash
 # Repro 6: var_declared_void — was FAIL, may still fail if sema doesn't reject void vars
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f7/f repro/mi_matrix/var_declared_void/main.zig
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f7/f repro/mi_matrix/var_declared_void/main.zig
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f7/f/*.c 2>&1
 ```
-Expected: may stay FAIL (gcc error on void var) — the deeper fix is sema rejecting void vars, out of scope.
+Expected: may stay FAIL (gcc error on void var) — deeper fix is sema rejecting void vars, out of scope.
 
 ```bash
-# MD5 gate
-sf/build/out_release/zig1 --dump-c89 examples/z98/lisp_interpreter_curr/main.zig | md5sum
-sf/build/out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig | md5sum
-sf/build/out_release/zig1 --dump-c89 examples/z98/mud_server/main.zig | md5sum
-sf/build/out_release/zig1 --dump-c89 examples/z98/game_of_life/main.zig | md5sum
+# MD5 gate (Option B: lisp + mud RE-BASELINE; json + gol must stay byte-identical)
+/tmp/zb/zig1 --dump-c89 examples/z98/lisp_interpreter_curr/main.zig 2>/dev/null | md5sum   # NEW (has mutable vars)
+/tmp/zb/zig1 --dump-c89 examples/z98/json_parser/main.zig 2>/dev/null | md5sum            # 3492a935... (must match)
+/tmp/zb/zig1 --dump-c89 examples/z98/mud_server/main.zig 2>/dev/null | md5sum             # NEW (has mutable vars)
+/tmp/zb/zig1 --dump-c89 examples/z98/game_of_life/main.zig 2>/dev/null | md5sum           # d0d3051d... (must match)
+```
+Capture NEW lisp+mud hashes. json/gol must stay byte-identical.
+
+```bash
+# Runtime verification (PRIMARY gate per AMENDMENT F-5-B): all 4 examples behave correctly
+# lisp: printf '(+ 1 2)\n' | prog -> > 3 ; mud: "listening on port 4000" ; json: parses test.json ; gol: glider
 ```
 
 ```bash
-# Corpus sweep — must not regress from 165/15/6/0
-# Full classifier per QUICK_REF.md recipe
+# Corpus sweep — must not regress beyond pre-existing (QUICK_REF classifier, /tmp/zb/zig1)
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
-git add sf/src/main.zig sf/src/lower.zig sf/src/c89_emit.zig
-git commit -m "fix(F-7): module-global init — constructor synthesis + global emission (I-R1#1 + I-R7 comptime)"
+git add sf/src/lir.zig sf/src/main.zig sf/src/lower.zig sf/src/c89_emit.zig
+git commit -m "fix(F-7): module-global init — constructor synthesis + global emission, Option B (I-R1#1 + I-R7 comptime)"
 ```
+
+**After F-7 commit:** update QUICK_REF.md MD5 table with the NEW lisp/mud hashes (F-D3 doc task, or note for final review).
 
 ---
 
