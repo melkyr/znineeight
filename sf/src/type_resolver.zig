@@ -19,6 +19,7 @@ const SymbolRegistry = sym_mod.SymbolRegistry;
 const ast_mod = @import("ast.zig");
 const mr_mod = @import("module_registry.zig");
 const rtt_mod = @import("resolved_type_table.zig");
+const hash_mod = @import("util/hash.zig");
 
 pub const TypeResolveEnv = struct {
 
@@ -983,6 +984,57 @@ fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry)
     }
 }
 
+fn resolveImportFieldAlias(env: *TypeResolveEnv, module_reg: *mr_mod.ModuleRegistry,
+    importer_mod_id: u32, target_mod_id: u32, field_name_id: u32, depth: u32) u32 {
+    if (depth > @intCast(u32, 8)) return type_mod.TYPE_UNDEFINED;
+    var fs = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, target_mod_id, field_name_id);
+    if (fs) |fss| {
+        if (fss.type_id != @intCast(u32, 0)) return fss.type_id;
+        var fd = env.store.nodes.items[@intCast(usize, fss.decl_node)];
+        if (fd.kind != AstKind.var_decl) return type_mod.TYPE_UNDEFINED;
+        var fi = env.store.nodes.items[@intCast(usize, fd.child_1)];
+        if (fi.kind != AstKind.field_access) return type_mod.TYPE_UNDEFINED;
+        var fb = env.store.nodes.items[@intCast(usize, fi.child_0)];
+        if (fb.kind != AstKind.import_expr) return type_mod.TYPE_UNDEFINED;
+        var t2 = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, fb.payload);
+        if (t2) |m2| return resolveImportFieldAlias(env, module_reg, importer_mod_id, m2, fi.payload, depth + @intCast(u32, 1));
+    }
+    return type_mod.TYPE_UNDEFINED;
+}
+
+fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, module_reg: *mr_mod.ModuleRegistry) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var rnode = env.store.nodes.items[@intCast(usize, root)];
+        var decls = ast_mod.astStoreGetExtraChildren(env.store, rnode.payload);
+        var di: usize = 0;
+        while (di < decls.len) : (di += 1) {
+            var decl = env.store.nodes.items[@intCast(usize, decls[di])];
+            if (decl.kind != AstKind.var_decl) { di += 1; continue; }
+            if (decl.child_1 == @intCast(u32, 0)) { di += 1; continue; }
+            var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
+            if (init.kind != AstKind.field_access) { di += 1; continue; }
+            var base = env.store.nodes.items[@intCast(usize, init.child_0)];
+            if (base.kind != AstKind.import_expr) { di += 1; continue; }
+            var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, base.payload);
+            if (target) |mtid| {
+                var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, init.payload, @intCast(u32, 0));
+                if (resolved != type_mod.TYPE_UNDEFINED) {
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, decl.payload);
+                    if (sym) |sp| {
+                        sp.type_id = resolved;
+                    }
+                    var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, decl.payload);
+                    type_mod.nameCachePut(env.typereg, ck, resolved);
+                }
+            }
+            di += 1;
+        }
+    }
+}
+
 fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry) void {
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
@@ -1083,6 +1135,7 @@ pub fn typeResolverResolveNames(
     var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner };
     _ = perm_alloc;
     resolveNamedTypeExpressions(&env, mods);
+    resolveImportFieldAliases(&env, mods, module_reg);
     resolveAggregateFieldTypesAll(&env, mods);
     resolveFnSignatures(&env, mods, resolved_types);
 }
