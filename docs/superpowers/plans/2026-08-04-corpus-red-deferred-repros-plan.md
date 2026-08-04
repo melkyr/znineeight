@@ -172,11 +172,13 @@ git commit -m "repro(P1): 4 defensive repros for deferred items + EXPECTED_FAIL 
 
 ### Task P1-2: Fix Cross-Module Global Field Access
 
-**Files:** `sf/src/lower.zig:1850-1871`
+**Files:** `sf/src/lower.zig:1850-1871` + `sf/src/c89_emit.zig` (emitModuleHeaderFile)
 
 **Pre-requisites:** P1-1 (repro exists).
 
-**Scope:** Add a `SymbolKind.global` branch to the module field-access path so `lib.counter` reads the actual global via `load_global`.
+**Scope:** Add a `SymbolKind.global` branch to the module field-access path so `lib.counter` reads the actual global via `load_global`, AND emit `extern` declarations of a module's storage globals in that module's header so consumers see them (mirrors the existing function forward-declaration mechanism).
+
+> **AMENDMENT 1 (operator ruling, 2026-08-04):** P1-2 was originally lower.zig-only. The implementer BLOCKED: lower.zig-only converts the xmod runtime gap (prints 1) into a gcc FAIL (`'zG_<hash>_counter' undeclared` in the consumer's `.c`) because `c89_emit.zig` emits no declaration for globals owned by another module — globals are defined in the owning module's `.c` (emitGlobalDecls, c89_emit.zig:2149) but never declared in the header chain. Investigation confirmed this is UPSTREAM, not a patch: the module header (emitModuleHeaderFile, c89_emit.zig:1969) is the declaration-propagation layer — it carries type definitions + function forward decls (c89_emit.zig:2057-2062) and `#include`s dep module headers (:2011-2020); globals are the only symbol kind missing a header declaration. Completes the documented F-7 I-1 deferred gap (module_id wiring was made future-proof in F-7). The 4 MD5 baselines reference no cross-module globals → must stay byte-identical.
 
 - [ ] **Step 1: Read the module field-access path**
 
@@ -194,6 +196,16 @@ Inside the `if (res_sym) |ts| {` block, after the `function` branch (:1860-1869)
                             emitInst(self, LirInst{ .load_global = .{ .name_id = ts.name_id, .module_id = target_mod, .result = gtemp } });
                             return gtemp;
 ```
+
+- [ ] **Step 2b: Emit header extern decls for storage globals (c89_emit.zig)**
+
+In `emitModuleHeaderFile` (c89_emit.zig:1969), after the function forward-declaration loop (:2057-2062, before the closing `#endif`), add a storage-global `extern` declaration pass mirroring `emitGlobalDecls` (c89_emit.zig:2149) but scoped to `module_id` and prefixed `extern`. For each `emitter.global_decls[gi]` with `g.module_id == module_id`, emit:
+```c
+extern <gtype> <gname>;
+```
+where `<gtype>`/`<gname>` come from `getCTypeName(emitter.registry, emitter.mangler, g.type_id)` and `stringInternerGet(emitter.interner, nameManglerMangle(emitter.mangler, g.name_id, 1, g.module_id))` — exactly as `emitGlobalDecls` computes them, plus the `extern` keyword. Consumers include the owning module's header via the dep-module `#include` chain (c89_emit.zig:2011-2020), so the extern decl becomes visible. The owning module's `.c` keeps the plain (non-extern) definitions from `emitGlobalDecls` — the standard C header-declaration/`.c`-definition pattern.
+
+Adapt the exact code shape to the real source identifiers. If the real code makes this impossible without inventing new behavior, STOP and report BLOCKED.
 
 - [ ] **Step 3: Build + gate**
 
@@ -226,8 +238,8 @@ All match baselines.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add sf/src/lower.zig
-git commit -m "fix(P1): cross-module global field access via load_global"
+git add sf/src/lower.zig sf/src/c89_emit.zig
+git commit -m "fix(P1): cross-module global field access via load_global + header extern decls"
 ```
 
 ---
@@ -305,3 +317,9 @@ Write `.superpowers/sdd/P1-battery-report.md` with the per-example table (dump r
 git add repro/mi_matrix/EXPECTED_FAIL.md examples/z98/*/NOTES.md
 git commit -m "docs(P1): full 18-example runtime battery + lisp stressed verification"
 ```
+
+---
+
+## Amendments Record
+
+- **AMENDMENT 1 (2026-08-04, operator ruling):** P1-2 widened from lower.zig-only to lower.zig + c89_emit.zig. See the amendment note in Task P1-2. Rationale: the module header is the declaration-propagation layer; without header `extern` decls, cross-module `load_global`/`store_global` references are undeclared in consumers (`'zG_...' undeclared`). Upstream completion of the F-7 I-1 deferred gap.
