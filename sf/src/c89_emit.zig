@@ -1445,11 +1445,13 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
         var fe_nl2: []const u8 = "\n"; pal.markerWrite(fe_nl2);
         var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
         var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
-        var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
-        bufferedWriterWrite(&emitter.writer, ftype);
-        var es2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, es2);
-        bufferedWriterWrite(&emitter.writer, fname);
-        var es3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es3);
+        if (fe.type_id != type_mod.TYPE_VOID) {
+            var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
+            bufferedWriterWrite(&emitter.writer, ftype);
+            var es2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, es2);
+            bufferedWriterWrite(&emitter.writer, fname);
+            var es3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es3);
+        }
     }
     var es4: []const u8 = "};\n"; bufferedWriterWrite(&emitter.writer, es4);
     var es_m: []const u8 = "ES:n"; pal.markerWriteInt(es_m, mangled_id);
