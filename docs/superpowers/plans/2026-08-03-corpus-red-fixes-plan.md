@@ -345,6 +345,47 @@ Replace the `else` branch (``} else { result = type_mod.TYPE_VOID; }` on line 11
 
 `es == 0` = inferred. Accept any error literal — store the full error_union_type (`top`) as result. Consistent with Z98 spec §73 wildcard coercion.
 
+**Note (OPERATOR RULING 2026-08-03 "expand scope"):** Step 3 makes the anonymous error literal resolve to the EU type at sema. The lowerer's `error_literal` arm (`lower.zig:1151-1157`) previously assumed the result was always `error_set_type` (GREEN path: int_const + caller-side wrap_error_err). With an EU-typed result, `literalTempType` returns the EU struct type and `int_const` emits `zT_EU = <value>;` → gcc type error. The lowerer needs a matching codegen path: when the resolved type is an EU (anonymous set), construct the EU value directly via `wrap_error_err`. This is the codegen half of the SAME F-1 design — not a separate fix. Step 3b implements it.
+
+- [ ] **Step 3b: Add anonymous-EU construction in lower.zig error_literal arm**
+
+Read `sf/src/lower.zig:1151-1157` (error_literal arm). Current code:
+
+```zig
+    } else if (node.kind == AstKind.error_literal) {
+        var val = @intCast(u64, node.payload);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        if (ev) |v| { val = @intCast(u64, v); }
+        var tid = nextTemp(self, literalTempType(self, node_idx));
+        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+        return tid;
+```
+
+Edit to: when the resolved type (from `literalTempType`) is `TypeKind.error_union_type`, emit an error-code int temp then `wrap_error_err` to build the EU struct:
+
+```zig
+    } else if (node.kind == AstKind.error_literal) {
+        var val = @intCast(u64, node.payload);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        if (ev) |v| { val = @intCast(u64, v); }
+        var rtype = literalTempType(self, node_idx);
+        var rty = self.ctx.registry.types_items[@intCast(usize, rtype)];
+        if (rty.kind == type_mod.TypeKind.error_union_type) {
+            var code_temp = nextTemp(self, type_mod.TYPE_I32);
+            emitInst(self, LirInst{ .int_const = .{ .value = val, .result = code_temp } });
+            var eu_temp = nextTemp(self, rtype);
+            emitInst(self, LirInst{ .wrap_error_err = .{ .value = code_temp, .result = eu_temp, .type_id = rtype } });
+            return eu_temp;
+        }
+        var tid = nextTemp(self, rtype);
+        emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
+        return tid;
+```
+
+`wrap_error_err` C89 emission (c89_emit.zig:4105-4136) writes `dst.data.err = src; dst.is_error = 1;` (or `dst.err = src` for void payload). The error code value `val` is the error name_id when no enum_value_table entry exists (anonymous case) — acceptable; the `is_error` flag is the semantic signal for anonymous sets. The GREEN path (error_set_type result) is untouched — `rty.kind != error_union_type` falls through to the original `int_const` path.
+
+**Correctness note:** For `inferred_errorset_fnptr`, the return path emits `ret <eu_temp>` where eu_temp is `zT_EU` built by `wrap_error_err` → C89: `zT_EU.data.err = 21; zT_EU.is_error = 1; return zT_EU;` — gcc-clean, runtime prints 0 (catch on the anonymous set falls to the catch-all → 0). This matches the plan gate.
+
 - [ ] **Step 4: Build + gate**
 
 ```bash
@@ -461,25 +502,51 @@ git commit -m "fix(F-2): struct FieldEntries back-patch + void-field guard (I-R3
 
 ### Task F-3: Bare Union Type Resolution + Field-Store (I-R5 T1b + I-R7 void-union, 4 repros)
 
-**Files:** `sf/src/type_resolver.zig:935`, `sf/src/lower.zig:792`
+**Files:** `sf/src/type_resolver.zig:935`, `sf/src/type_registry.zig:784`, `sf/src/lower.zig:792` (+`lower.zig:1947` read path), `sf/src/c89_emit.zig:1511` (dispatch), `:3220` (store_field emission), `:3116`/`:3126` (load_field emission)
 
-**Pre-requisites:** None.
+**Pre-requisites:** None. **MANDATORY pre-reading:** `.superpowers/sdd/I-R8-report.md` (2026-08-04 investigation) — this task was RE-WRITTEN per its findings. The original plan had the wrong payload array.
 
-**Scope:** `resolveDeclAggregateFieldTypes` (:886-937) has no `union_type` branch → bare union fields stay TYPE_VOID. Two symptoms: (a) emitStructType emits `void fieldname;` (I-R7 tu_uninit_data_void), (b) lowerFieldStore ICEs at :793 (I-R5 T1b). Fix: add union_type branch to resolveDeclAggregateFieldTypes + union_type branch to lowerFieldStore (mirrors struct_type).
+**Scope:** Bare `union_type` fields are stored in **`un_items` (UnionPayload)**, NOT `st_items` (StructPayload). Four coordinated defects:
+1. `resolveDeclAggregateFieldTypes` (:886-937) has no `union_type` branch → bare union FieldEntries stay `TYPE_VOID` (the `symbol_registrator.zig:127` placeholder) forever
+2. `lowerFieldStore` (:763-793) has no `union_type` branch → ICE `error[3043]` at :793 (3 repros)
+3. `emitStructType` (:1511 dispatches union_type there) reads `st_items` for a union → emits ANOTHER struct's body (tu_uninit_data_void emits Value's body for Data → gcc `field 'data' has incomplete type`)
+4. `store_field` C-emission (:3220) handles `struct_type` only → union store ICEs at `:3247` even after the lowerer fix
+5. Latent: field-READ path `lower.zig:1947` dispatches struct/union/tagged_union to `typeRegistryGetStructFields` (st_items) → mis-index for unions
 
-- [ ] **Step 1: Read source context**
+**Key layout fact:** `type_registry.zig:80` `UnionPayload = { fields_start: u16, fields_count: u16, tag_type: TypeId }`. Bare unions registered via `unAppend` → `un_items[payload_idx]` (`symbol_registrator.zig:145-155`). Structs use `st_items`. Tagged unions use `tu_items`. THREE separate arrays — never index the wrong one.
 
-Read `sf/src/type_resolver.zig:886-937` (full function — note struct_type :894-910, tagged_union_type :911-934, NO union_type branch).
-Read `sf/src/lower.zig:755-798` (lowerFieldStore — struct_type :763-774, slice :775-779, tagged_union :780-791, else/ICE :792-793).
-Read `sf/src/type_registry.zig` for `UnionPayload` struct (find field layout — bare union uses same `st_items[payload_idx]` with `fields_start`/`fields_count`).
+- [ ] **Step 1: Read evidence + source context**
 
-- [ ] **Step 2: Add union_type branch to resolveDeclAggregateFieldTypes**
+Read `.superpowers/sdd/I-R8-report.md` (full investigation — Sections A/C/D are the authoritative design).
+Read `sf/src/type_registry.zig:78-110` (payload structs + arrays), `:778-784` (typeRegistryGetStructFields — reads st_items), `:213-220` (unAppend/tuAppend).
+Read `sf/src/symbol_registrator.zig:118-157` (union registration — `:127` TYPE_VOID placeholder, `:145-155` bare unAppend).
+Read `sf/src/type_resolver.zig:886-937` (resolveDeclAggregateFieldTypes — struct :894-910, tagged_union :911-934, NO union branch).
+Read `sf/src/lower.zig:734-798` (lowerFieldStore), `:1944-1959` (field-access READ path).
+Read `sf/src/c89_emit.zig:1427-1458` (emitStructType — reads st_items at :1432), `:1505-1517` (emitTypeDefinition dispatch — union→emitStructType at :1511), `:3100-3135` (load_field), `:3200-3248` (store_field + ICE fallback).
 
-At `sf/src/type_resolver.zig:935` (after tagged_union_type closing `}`, before the final `}` of the while/if), ADD:
+- [ ] **Step 2: Add typeRegistryGetUnionFields helper (type_registry.zig)**
+
+After `typeRegistryGetStructFields` (`:778-784`), ADD:
+
+```zig
+pub fn typeRegistryGetUnionFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {
+    var ty = self.types_items[tid];
+    var up = self.un_items[ty.payload_idx];
+    var fstart: usize = @intCast(usize, up.fields_start);
+    var fcount: usize = @intCast(usize, up.fields_count);
+    out.* = self.fe_items[fstart .. fstart + fcount];
+}
+```
+
+Mirror of `typeRegistryGetStructFields` but reading `un_items` (UnionPayload).
+
+- [ ] **Step 3: Add union_type branch to resolveDeclAggregateFieldTypes (type_resolver.zig)**
+
+At `sf/src/type_resolver.zig:935` (after tagged_union_type closing `}`, before the final `}` of the `if (spid)` block), ADD:
 
 ```zig
         } else if (sty.kind == type_mod.TypeKind.union_type) {
-            var up = env.typereg.st_items[@intCast(usize, sty.payload_idx)];
+            var up = env.typereg.un_items[@intCast(usize, sty.payload_idx)];
             while (fi2 < @intCast(usize, up.fields_count)) : (fi2 += 1) {
                 var fd = env.store.nodes.items[@intCast(usize, fchildren[fi2])];
                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
@@ -491,16 +558,16 @@ At `sf/src/type_resolver.zig:935` (after tagged_union_type closing `}`, before t
             }
 ```
 
-This mirrors the struct_type branch at :894-910. Bare unions use `st_items[payload_idx]` (same StructPayload layout as struct_type).
+**CRITICAL:** `un_items` (NOT `st_items`). `up` is a `UnionPayload`. Mirrors the struct_type branch at :894-910 but reads the union payload array.
 
-- [ ] **Step 3: Add union_type branch to lowerFieldStore**
+- [ ] **Step 4: Add union_type branch to lowerFieldStore (lower.zig)**
 
 At `sf/src/lower.zig:792` (before `} else { iceFieldStoreUnsupported(...); }`), ADD:
 
 ```zig
         } else if (kind == type_mod.TypeKind.union_type) {
             var fields: []FieldEntry = undefined;
-            type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
+            type_mod.typeRegistryGetUnionFields(self.ctx.registry, type_box[0], &fields);
             var fi: usize = 0;
             var field_id: u32 = @intCast(u32, 0);
             while (fi < fields.len) : (fi += 1) {
@@ -510,24 +577,100 @@ At `sf/src/lower.zig:792` (before `} else { iceFieldStoreUnsupported(...); }`), 
                 }
             }
             emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+        }
 ```
 
-This mirrors the struct_type branch at :763-774. Bare unions have identical C struct representation — same field access/store pattern.
+**CRITICAL:** `typeRegistryGetUnionFields` (NOT `typeRegistryGetStructFields`). Mirrors the struct_type branch at :763-774.
 
-- [ ] **Step 4: Build + gate**
+- [ ] **Step 5: Fix field-READ path mis-index (lower.zig:1944-1959)**
+
+The field-access READ handler currently dispatches `struct_type or union_type or tagged_union_type` together and calls `typeRegistryGetStructFields` at :1947 — mis-indexes for unions. Split union_type to use the new helper. Read `sf/src/lower.zig:1944-1959`, then restructure so the `union_type` case calls `typeRegistryGetUnionFields` (same match loop body as the struct case). If the match loop is shared verbatim, factor the loop into a local `var fields` populated by the right helper per kind.
+
+- [ ] **Step 6: Add emitUnionType + dispatch (c89_emit.zig)**
+
+Add a `emitUnionType` mirroring `emitStructType` (`:1427-1458`) but reading `un_items`, with the TYPE_VOID field guard:
+
+```zig
+fn emitUnionType(emitter: *C89Emitter, tid: u32) void {
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var up = reg.un_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, up.fields_start);
+    var fcount: usize = @intCast(usize, up.fields_count);
+    var es0a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, es0a);
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    var es0: []const u8 = " {\n"; bufferedWriterWrite(&emitter.writer, es0);
+    var i: usize = @intCast(usize, 0);
+    while (i < fcount) : (i += 1) {
+        var fe = reg.fe_items[fstart + i];
+        if (fe.type_id != type_mod.TYPE_VOID) {
+            var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+            var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
+            var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
+            bufferedWriterWrite(&emitter.writer, ftype);
+            var es2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, es2);
+            bufferedWriterWrite(&emitter.writer, fname);
+            var es3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, es3);
+        }
+    }
+    var es4: []const u8 = "};\n"; bufferedWriterWrite(&emitter.writer, es4);
+}
+```
+
+Then change the dispatch at `:1511`:
+```
+OLD: if (ty.kind == TypeKind.union_type) { emitStructType(emitter, tid); return; }
+NEW: if (ty.kind == TypeKind.union_type) { emitUnionType(emitter, tid); return; }
+```
+
+The `fe.type_id != TYPE_VOID` guard prevents `void Int;` if any union field still resolves to TYPE_VOID (defense-in-depth, matches F-2 pattern).
+
+- [ ] **Step 7: Add union_type branch to store_field C-emission (c89_emit.zig)**
+
+Read `sf/src/c89_emit.zig:3200-3248` (store_field emission). The value-base branch handles `struct_type` only at `:3220-3233`; a union base falls to `found2 == 0` → ICE at `:3247`. After the struct_type branch (before the closing `}` at :3233), ADD:
+
+```zig
+                            } else if (bty.kind == type_mod.TypeKind.union_type) {
+                               var dot_s: []const u8 = ".";
+                               bufferedWriterWrite(&emitter.writer, dot_s);
+                               var up = emitter.registry.un_items[@intCast(usize, bty.payload_idx)];
+                               var fe: type_mod.FieldEntry = emitter.registry.fe_items[@intCast(usize, up.fields_start) + @intCast(usize, sf.field_id)];
+                               var fname: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+                               bufferedWriterWrite(&emitter.writer, fname);
+                               found2 = @intCast(u8, 1);
+                            }
+```
+
+Check whether the ptr-base branch (`:3208-3219`) also needs the same union handling — mirror if so.
+
+- [ ] **Step 8: Fix load_field emission union mis-index (c89_emit.zig)**
+
+Read `sf/src/c89_emit.zig:3100-3135` (load_field emission). The ptr (`:3111-3123`) and value (`:3124-3133`) branches already list `union_type` but read `st_items` (`:3116`, `:3126`). Change the union case to read `un_items` (add an `else if (kind == union_type)` branch reading `up.fields_start/count` from `un_items`, mirroring Step 7). Verify the field-name lookup resolves correctly.
+
+- [ ] **Step 9: Build + gate**
 
 ```bash
 bash sf/scripts/build_release.sh
 ```
+Expected: `=== [release] Done ===`, 0 gcc errors (grep for `\.c:[0-9]+:[0-9]+: error`).
 
 ```bash
 # Repros: all 4 must go from ICE/FAIL to OK
 for d in tu_field_store_ptr tu_ptrcast_copy xmod_amp_arena_union_store tu_uninit_data_void; do
     sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f3/$d repro/mi_matrix/$d/main.zig
+    echo "=== $d ==="
     gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f3/$d/*.c 2>&1 | head -5
 done
 ```
-Expected: all gcc clean, no ICE.
+Expected: dump rc=0 (no 3043), all gcc clean.
+
+```bash
+# tu_uninit_data_void header check: union body must list Data's OWN field, NOT Value's body
+grep -A4 'struct zT_3F5279C5_Data' /tmp/f3/tu_uninit_data_void/zig_special_types.h
+```
+Expected: `struct zT_3F5279C5_Data { <i32-type> Int; };` — its own field, NOT `tag`/`data` (Value's body).
 
 ```bash
 # MD5 gate
@@ -536,11 +679,12 @@ sf/build/out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig | md5sum
 sf/build/out_release/zig1 --dump-c89 examples/z98/mud_server/main.zig | md5sum
 sf/build/out_release/zig1 --dump-c89 examples/z98/game_of_life/main.zig | md5sum
 ```
+All 4 must match baselines: mud `9fde02d8a05e951de738e2df5d12b4f7`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `10d09c99f77c68e680f6ccce33eb81ed`, json `3492a935883ee91258feece576ba23d5`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add sf/src/type_resolver.zig sf/src/lower.zig
+git add sf/src/type_resolver.zig sf/src/type_registry.zig sf/src/lower.zig sf/src/c89_emit.zig
 git commit -m "fix(F-3): bare union type resolution + field-store (I-R5 T1b + I-R7 void-union)"
 ```
 
