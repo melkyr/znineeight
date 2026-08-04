@@ -783,6 +783,14 @@ pub fn typeRegistryGetStructFields(self: *TypeRegistry, tid: u32, out: *[]FieldE
     out.* = self.fe_items[fstart .. fstart + fcount];
 }
 
+pub fn typeRegistryGetUnionFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {
+    var ty = self.types_items[tid];
+    var up = self.un_items[ty.payload_idx];
+    var fstart: usize = @intCast(usize, up.fields_start);
+    var fcount: usize = @intCast(usize, up.fields_count);
+    out.* = self.fe_items[fstart .. fstart + fcount];
+}
+
 pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: TypeId) bool {
     if (source == target) return true;
     var src = self.types_items[@intCast(usize, source)];

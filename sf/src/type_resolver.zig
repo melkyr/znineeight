@@ -932,6 +932,17 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                     }
                 }
             }
+        } else if (sty.kind == type_mod.TypeKind.union_type) {
+            var up = env.typereg.un_items[@intCast(usize, sty.payload_idx)];
+            while (fi2 < @intCast(usize, up.fields_count)) : (fi2 += 1) {
+                var fd = env.store.nodes.items[@intCast(usize, fchildren[fi2])];
+                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                    var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        env.typereg.fe_items[@intCast(usize, up.fields_start) + fi2].type_id = ft;
+                    }
+                }
+            }
         }
     }
 }
