@@ -884,16 +884,16 @@ NEW: var arr_temp: u32 = TEMP_NONE;
 **Edit A1 — `sf/src/c89_emit.zig:3064`** (load_field base resolution — REQUIRED, prevents SEGV):
 ```
 OLD: var base = if (lf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
-NEW: var base = if (lf.name_id != TEMP_NONE) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
+NEW: var base = if (lf.name_id != @intCast(u32, 0) and lf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
 ```
-(If `TEMP_NONE` is not already in scope in c89_emit.zig, use `@intCast(u32, 0xFFFFFFFF)`.)
+COMBINED GUARD (AMENDMENT F-5-A2, operator ruling 2026-08-04): accepts BOTH no-name sentinels — legacy `0` (hardcoded producers: lower.zig load_field :2845,:2943,:3016,:3616) AND `0xFFFFFFFF` (== TEMP_NONE, nameMapGet producers after Edit 3). Either → `resolveTempName` (use temp base). Any real name_id → mangle. A single `!= 0xFFFFFFFF` breaks the hardcoded-0 producers (0 passes → mangleLocalName(0) → empty base → broken C).
 
-**Edit A2 — `sf/src/c89_emit.zig:3207`** (store_field base resolution — defensive symmetry, same contract):
+**Edit A2 — `sf/src/c89_emit.zig:3207`** (store_field base resolution — same combined guard):
 ```
 OLD: var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
-NEW: var base = if (sf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
+NEW: var base = if (sf.name_id != @intCast(u32, 0) and sf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
 ```
-Current lower.zig store_field producers all emit `name_id = 0`, so this is inert today — defensive symmetry so a future TEMP_NONE producer can't crash. AMENDMENT rationale (operator ruling 2026-08-04): the sentinel swap is ONE fix at two contract points (producer=lower.zig, consumer=c89_emit.zig); updating the consumer is the same design correction, NOT a patch.
+All 5 store_field producers in lower.zig emit hardcoded `name_id = 0` today; combined guard keeps them on the use-temp path while also covering a future TEMP_NONE producer. AMENDMENT rationale (operator ruling 2026-08-04): the sentinel swap is ONE fix at two contract points (producer=lower.zig, consumer=c89_emit.zig); updating the consumer is the same design correction, NOT a patch.
 
 - [ ] **Step 6: Build + gate**
 
