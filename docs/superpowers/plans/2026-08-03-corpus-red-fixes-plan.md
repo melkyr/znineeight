@@ -1183,10 +1183,52 @@ git commit -m "fix(F-7): module-global init — constructor synthesis + global e
 
 ---
 
+### Task I-8: Investigate Shared-Header Ordering for By-Value Optional/Slice (I-R4 Bug 2 pre-blocker)
+
+**Added by operator ruling 2026-08-04 (m1241):** F-6 exposed a pre-existing, independent bug blocking the `anon_init_orelse_rhs` gcc-clean gate. It is NOT covered by F-1..F-7 but IS in the whole-plan scope (resolve the corpus RED issues). Investigation FIRST, then fix as F-8.
+
+**Files to investigate:** `sf/src/c89_emit.zig` (emitSharedHeader :983-1121, shared_set computation, ctypeGuardWrite), `sf/src/type_resolver.zig` (typeRegistryGetOrCreateOptional), `sf/src/c89_emit.zig` tstIsDep/c89NeedsEmitEdge (closure-edge model).
+
+**Repros that exercise it:** `anon_init_orelse_rhs` (primary — optional-of-Command-by-value), `optstar_void_orelse`, any optional/slice of a by-value struct.
+
+**Known symptom (from F-6 report):** `zig_special_types.h` emits optional `zT_..._Opt_21 { zT_C67C8F52_Command value; int has_value; }` while `Command` (by-value struct/tagged_union) is only forward-declared there → gcc `field 'value' has incomplete type`. Header byte-identical pre/post F-6.
+
+**Known root-cause hypothesis (from F-6 report):** F-S8 AMENDMENT-4/Option-3 restricted `tstIsDep` optional/slice source branches to enum_type/error_set_type element targets ONLY. A shared synthetic optional embedding a by-value struct by value does NOT promote that struct into `shared_set` → the optional wrapper lands in the shared header before/without the full struct definition → fwd-decl insufficient for by-value embedding.
+
+**Investigation questions (write report to `.superpowers/sdd/I-R10-report.md`):**
+1. Confirm the exact emission order in `emitSharedHeader`: where does the optional wrapper get emitted relative to the struct it embeds by value? Is the struct even in `shared_set`?
+2. Confirm whether `tstIsDep`'s optional/slice branch (restricted to enum/error_set) is the reason the by-value struct is NOT promoted. Does the synthetic optional (`name_id==0`, always in shared_set) create an edge to the struct via `fieldEmbedsByValue`/`tstIsDep`?
+3. Determine the correct fix location: (a) extend tstIsDep optional/slice branches to also promote by-value struct/tagged_union/union targets (NOT just enum/error_set), or (b) reorder emitSharedHeader so by-value embedded structs are emitted before the wrappers, or (c) both.
+4. Blast radius: which corpus repros + 4 gated examples would change if optional/slice-of-struct now promotes the struct into shared_set? Could this re-order types in the shared header for lisp/json/mud/gol (MD5 impact)?
+5. Verify against the F-S8 rationale (b2): the fwd-decl pass emits `typedef struct X X;` for all named struct/TU/union — fwd-decl is sufficient ONLY when the reference is through a POINTER. Confirm optional-by-value embeds the struct INLINE (not via pointer) so fwd-decl is genuinely insufficient.
+6. A/B/C fix options with exact file:line targets.
+
+**Output:** `.superpowers/sdd/I-R10-report.md`. No source changes. Empty gate commit optional.
+
+---
+
+### Task F-8: Fix Shared-Header Ordering for By-Value Optional/Slice (I-R4 Bug 2)
+
+**Pre-requisites:** I-8 report complete.
+
+**Scope:** Implement the I-8-approved root fix so `anon_init_orelse_rhs` reaches gcc-clean + prints 6. Likely: extend the closure-edge model so a shared synthetic optional/slice embedding a by-value struct promotes that struct into shared_set (and/or reorder emitSharedHeader). Exact design per I-8.
+
+**Gates:**
+- Build 0 errors
+- `anon_init_orelse_rhs`: dump rc=0, gcc clean, link+run prints `6` (completes F-6's unsatisfiable gate)
+- Regression: `orelse_void`, `optstar_void_orelse`, `field_access_optional` behavior unchanged
+- 4 MD5s: lisp `10d09c99f77c68e680f6ccce33eb81ed`, json `3492a935883ee91258feece576ba23d5`, mud `685e6caa654dfb32645704a58864ecba` (F-5 re-baseline), gol `d0d3051d1cb1bd0db3ffd29495a2e18e` — RE-BASELINE any that legitimately re-order the shared header, per AMENDMENT F-5-B runtime-behavior principle
+- Corpus: no NEW regressions
+
+**Commit:** `fix(F-8): shared-header ordering for by-value optional/slice (I-R4 Bug 2)`
+
+---
+
 ## Execution Order
 
 ```
-F-1 → F-2 → F-3 → F-4 → F-5 → F-6 → F-7
+F-1 → F-2 → F-3 → F-4 → F-5 → F-6 → F-7 → I-8 → F-8
 ```
 
-All are independent (no functional dependency). F-7 is recommended last as the most complex (requires subagent design decisions).
+F-1..F-6 independent. F-7 module-global init is largest (subagent design decisions). I-8 investigation after F-7 (per operator ruling — keep main plan focus first). F-8 completes the F-6-exposed header-ordering bug.
+
