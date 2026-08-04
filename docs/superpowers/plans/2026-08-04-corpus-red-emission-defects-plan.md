@@ -21,7 +21,7 @@
   ```
   Gate: 0 gcc errors (`error:` count == 0).
 - 4 MD5 baselines byte-identical throughout: mud `4644ad1349c55af80fa1a18fe0e17989`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `f84c8748e6d0580ffac811d75e34e0e7`, json `3492a935883ee91258feece576ba23d5`
-- Corpus: 184/8/0/0 baseline over 192 repros. FAIL count must not increase. Emission-defect fixes decrease FAIL.
+- Corpus: **188/9/0/0 baseline over 197 repros** (post-Plan-1, 2026-08-04; Plan 1 added 5 repros — 4 defensive + lzw guard — and the xmod repro became OK). FAIL count must not increase. Emission-defect fixes decrease FAIL. The 9 FAILs = 3 emission defects (`array_tagged_union_read`, `ptroint_arena_offset`, `var_declared_void`) + 5 frontend gaps (`catch_block_value_producing`, `eu_assign_incompat_payload`, `field_access_optional`, `field_store_drop`, `test_stub_0`) + 1 documented residual (`self_embed_optional_cycle`).
 - test_analyzer_bin PASS. build_test.sh identical to baseline (5/4). test_semantic_bin KNOWN pre-existing broken (operator ruling A).
 - fastedit/edit only for source edits. Read region before each edit. Bottom-to-top. NO scope creep.
 - Z98 idioms: `@intCast` everywhere, `var msg: []const u8 = "text";` before PAL, if/else-if chains.
@@ -96,7 +96,7 @@ gcc -m32 -std=c89 -I /workspace/znineeight/sf/src/include -c /tmp/p2a/*.c
 gcc -m32 /tmp/p2a/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/p2a/prog
 /tmp/p2a/prog
 ```
-Expected: gcc-clean, prints `7` (was 6). 4 MD5s byte-identical. Corpus FAIL 8→7.
+Expected: gcc-clean, prints `7` (was 6). 4 MD5s byte-identical. Corpus FAIL 9→8.
 
 - [ ] **Step 5: Commit**
 
@@ -172,7 +172,7 @@ gcc -m32 -std=c89 -I /workspace/znineeight/sf/src/include -c /tmp/p2p/*.c
 gcc -m32 /tmp/p2p/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/p2p/prog
 /tmp/p2p/prog
 ```
-Expected: gcc-clean, correct arena offset behavior. 4 MD5s byte-identical. Corpus FAIL 8→7 (or 7→6 counting the var_declared_void reclassification).
+Expected: gcc-clean, correct arena offset behavior. 4 MD5s byte-identical. Corpus FAIL 9→8 (or 8→7 counting the var_declared_void reclassification).
 
 - [ ] **Step 3: Commit**
 
@@ -180,3 +180,9 @@ Expected: gcc-clean, correct arena offset behavior. 4 MD5s byte-identical. Corpu
 git add <fixed files>
 git commit -m "fix(P2): ptroint arena offset undeclared temp (P2-1 investigation)"
 ```
+
+---
+
+## Amendments Record
+
+- **AMENDMENT P2-0 (2026-08-04, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plan-1 `184/8/0/0 @192` to the post-Plan-1 **`188/9/0/0 @197`** (Plan 1 added 5 repros; xmod became OK). FAIL expectations in P2-2/P2-4 renumbered accordingly (9→8 / 9→8-or-8→7). MD5 baselines unchanged and current.
