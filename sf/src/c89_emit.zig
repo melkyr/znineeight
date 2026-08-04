@@ -2060,6 +2060,25 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
             emitFunctionForwardDecl(emitter, fns[fi]);
         }
     }
+    var gd0: []const u8 = "/* Storage globals (extern decls) */\n";
+    bufferedWriterWrite(&emitter.writer, gd0);
+    var ggi: u32 = @intCast(u32, 0);
+    while (ggi < emitter.global_decls_len) : (ggi += @intCast(u32, 1)) {
+        var ggl = emitter.global_decls[@intCast(usize, ggi)];
+        if (ggl.module_id != module_id) continue;
+        var gg_mid = nameManglerMangle(emitter.mangler, ggl.name_id, @intCast(u8, 1), ggl.module_id);
+        var gg_name = interner_mod.stringInternerGet(emitter.interner, gg_mid);
+        var gg_type = getCTypeName(emitter.registry, emitter.mangler, ggl.type_id);
+        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
+        var gg_x: []const u8 = "extern ";
+        bufferedWriterWrite(&emitter.writer, gg_x);
+        bufferedWriterWrite(&emitter.writer, gg_type);
+        var gg_sp: []const u8 = " ";
+        bufferedWriterWrite(&emitter.writer, gg_sp);
+        bufferedWriterWrite(&emitter.writer, gg_name);
+        var gg_sc: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, gg_sc);
+    }
     var fnl: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, fnl);
     var e0: []const u8 = "#endif /* ZIG_MODULE_";

@@ -1866,6 +1866,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 emitInst(self, LirInst{ .func_ref = .{ .name_id = ts.name_id, .module_id = target_mod, .result = fr_res } });
                                 return fr_res;
                             }
+                        } else if (ts.kind == sym_mod.SymbolKind.global) {
+                            var gbl_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ts.decl_node);
+                            var gbl_tid = if (gbl_type) |gt| gt else type_mod.TYPE_UNDEFINED;
+                            var gtemp = nextTemp(self, gbl_tid);
+                            emitInst(self, LirInst{ .load_global = .{ .name_id = ts.name_id, .module_id = target_mod, .result = gtemp } });
+                            return gtemp;
                         }
                     }
                 }
