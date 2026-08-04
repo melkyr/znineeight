@@ -13,6 +13,7 @@
 - Build gate: `bash sf/scripts/build_release.sh` → `=== [release] Done ===`, 0 gcc errors
 - Corpus: no regression from baseline `165/15/6/0` (FAIL count may decrease, must NOT increase)
 - 4 MD5 baselines byte-identical: mud `9fde02d8a05e951de738e2df5d12b4f7`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `10d09c99f77c68e680f6ccce33eb81ed`, json `3492a935883ee91258feece576ba23d5`
+  - **AMENDMENT F-5-B (operator ruling 2026-08-04):** F-5 re-baselines mud. The temp-zero fix's purpose is to emit stores previously dropped, so mud output legitimately changes. Runtime behavior is the gate — verify unaltered, re-baseline mud hash, record in QUICK_REF.md. lisp/json/gol stay byte-identical.
 - test_analyzer_bin PASS (test_semantic_bin KNOWN pre-existing broken at :61, operator ruling A)
 - build_test.sh identical to baseline (5 pass / 4 fail)
 - `git checkout` NEVER to undo. sed/python bulk transforms FORBIDDEN.
@@ -876,31 +877,62 @@ OLD: var arr_temp: u32 = @intCast(u32, 0);
 NEW: var arr_temp: u32 = TEMP_NONE;
 ```
 
-- [ ] **Step 5: Build + gate**
+- [ ] **Step 5: Emitter companion — TEMP_NONE sentinel in c89_emit.zig (AMENDMENT F-5-A)**
+
+`nameMapGet` (Edit 3) now returns `TEMP_NONE` (0xFFFFFFFF) for not-found. The C89 emitter consumes `load_field.name_id` / `store_field.name_id` with a `!= 0` sentinel, so `TEMP_NONE` passes the `!= 0` check → `mangleLocalName(0xFFFFFFFF)` → OOB → SEGV. Update both consumer sites to use `TEMP_NONE` as the "no name, use temp" sentinel — same sentinel contract, consumer side.
+
+**Edit A1 — `sf/src/c89_emit.zig:3064`** (load_field base resolution — REQUIRED, prevents SEGV):
+```
+OLD: var base = if (lf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
+NEW: var base = if (lf.name_id != TEMP_NONE) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
+```
+(If `TEMP_NONE` is not already in scope in c89_emit.zig, use `@intCast(u32, 0xFFFFFFFF)`.)
+
+**Edit A2 — `sf/src/c89_emit.zig:3207`** (store_field base resolution — defensive symmetry, same contract):
+```
+OLD: var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
+NEW: var base = if (sf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
+```
+Current lower.zig store_field producers all emit `name_id = 0`, so this is inert today — defensive symmetry so a future TEMP_NONE producer can't crash. AMENDMENT rationale (operator ruling 2026-08-04): the sentinel swap is ONE fix at two contract points (producer=lower.zig, consumer=c89_emit.zig); updating the consumer is the same design correction, NOT a patch.
+
+- [ ] **Step 6: Build + gate**
 
 ```bash
-bash sf/scripts/build_release.sh
+# Build in /tmp/zb (operator ruling — DO NOT use sf/build/out_release/):
+# reuse /tmp/zb/zig0; zig0 --header-priority-include -o /tmp/zb/zig1.c sf/src/main.zig; gcc link per QUICK_REF with /tmp/zb/*.c + src/include/zig_pal.c
 ```
 
 ```bash
-# Repro: was FAIL (undeclared zT_N), should now be OK
-sf/build/out_release/zig1 --dump-c89 --output-dir /tmp/f5 repro/mi_matrix/field_store_drop/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c /tmp/f5/*.c 2>&1
-```
-Expected: gcc clean.
-
-```bash
-# MD5 gate
-sf/build/out_release/zig1 --dump-c89 examples/z98/lisp_interpreter_curr/main.zig | md5sum
-sf/build/out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig | md5sum
-sf/build/out_release/zig1 --dump-c89 examples/z98/mud_server/main.zig | md5sum
-sf/build/out_release/zig1 --dump-c89 examples/z98/game_of_life/main.zig | md5sum
+# Runtime-verification gate (primary; replaces byte-identity for mud per AMENDMENT F-5-B):
+# The fix's purpose is to emit stores previously dropped (first-param RHS). Different C output
+# for CORRECT runtime behavior is intended, not a regression. Verify runtime behavior unchanged:
+#   mud: build+run, confirm server still listens on port 4000
+#   lisp: build+run, confirm (+ 1 2) -> > 3
+#   json: build+run, confirm parses test.json
+#   gol:  build+run, confirm glider pattern
+#   tco examples: build+run unchanged
 ```
 
-- [ ] **Step 6: Commit**
+```bash
+# MD5 gate (AMENDMENT F-5-B: re-baselined):
+#   lisp: 10d09c99f77c68e680f6ccce33eb81ed  (must stay byte-identical — verified Edit3-alone is crash trigger)
+#   json: 3492a935883ee91258feece576ba23d5  (must stay byte-identical)
+#   gol:  d0d3051d1cb1bd0db3ffd29495a2e18e  (must stay byte-identical)
+#   mud:  RE-BASELINE — capture new hash after fix; mud legitimately changes (first-param store now emitted)
+# Capture new mud hash and record it in QUICK_REF.md
+```
 
 ```bash
-git add sf/src/lower.zig
+# Repro field_store_drop (AMENDMENT F-5-C):
+# NOTE: fails frontend error[3048]: could not resolve imported file 'pal' on BOTH pristine and fixed builds —
+# pre-existing import-resolver gap (F-S10 re-bucketed). NOT an F-5 deliverable. Document as known issue,
+# do NOT fix here. F-5 validity comes from mud/lisp/json/gol runtime verification.
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add sf/src/lower.zig sf/src/c89_emit.zig
 git commit -m "fix(F-5): temp-zero sentinel removal — use TEMP_NONE consistently (I-R6)"
 ```
 
