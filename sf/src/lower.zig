@@ -1642,11 +1642,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       }
                       return lowerGlobalRef(self, s.*, name_id);
                 } else if (s.kind == sym_mod.SymbolKind.module) {
-                    var mtemp = nextTemp(self, type_mod.TYPE_VOID);
                     var mam: []const u8 = "module used as value expression";
                     _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_3023_MODULE_AS_VALUE)),
                         @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), mam);
-                    return mtemp;
+                    return TEMP_NONE;
                 } else if (s.kind == sym_mod.SymbolKind.function) {
                     var s_t: u32 = s.type_id;
                     if (s_t != @intCast(u32, 0)) {

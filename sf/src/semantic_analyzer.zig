@@ -1171,7 +1171,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (top != 0) {
                 var es: u32 = 0;
                 var tty = self.registry.types_items[@intCast(usize, top)];
-                if (tty.kind == type_mod.TypeKind.error_set_type) { es = top; }
+                var eff_top: u32 = top;
+                if (tty.kind == type_mod.TypeKind.optional_type) {
+                    var opt_pay = self.registry.opt_items[@intCast(usize, tty.payload_idx)].payload;
+                    tty = self.registry.types_items[@intCast(usize, opt_pay)];
+                    eff_top = opt_pay;
+                }
+                if (tty.kind == type_mod.TypeKind.error_set_type) { es = eff_top; }
                 else if (tty.kind == type_mod.TypeKind.error_union_type) { es = self.registry.eu_items[@intCast(usize, tty.payload_idx)].error_set; }
                 if (es != 0) {
                     var name_id: u32 = node.payload;
@@ -1187,10 +1193,10 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3011_ERROR_LITERAL_NOT_IN_SET)), self.source_file_id, sp, ep, eln_msg);
                         result = type_mod.TYPE_VOID;
                     }
-                } else {
-                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, top);
-                    result = top;
-                }
+                } else if (tty.kind == type_mod.TypeKind.error_union_type) {
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, eff_top);
+                    result = eff_top;
+                } else { result = type_mod.TYPE_VOID; }
             } else { result = type_mod.TYPE_VOID; }
         } else { result = type_mod.TYPE_VOID; }
     } else if (node.kind == AstKind.ident_expr) {
