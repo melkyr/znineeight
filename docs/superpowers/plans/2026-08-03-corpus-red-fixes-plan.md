@@ -750,12 +750,12 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = env.store.nodes.items[@intCast(usize, decls[di])];
-            if (decl.kind != AstKind.var_decl) { di += 1; continue; }
-            if (decl.child_1 == @intCast(u32, 0)) { di += 1; continue; }
+            if (decl.kind != AstKind.var_decl) { continue; }
+            if (decl.child_1 == @intCast(u32, 0)) { continue; }
             var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
-            if (init.kind != AstKind.field_access) { di += 1; continue; }
+            if (init.kind != AstKind.field_access) { continue; }
             var base = env.store.nodes.items[@intCast(usize, init.child_0)];
-            if (base.kind != AstKind.import_expr) { di += 1; continue; }
+            if (base.kind != AstKind.import_expr) { continue; }
             var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, base.payload);
             if (target) |mtid| {
                 var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, init.payload, @intCast(u32, 0));
@@ -768,13 +768,14 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
                     type_mod.nameCachePut(env.typereg, ck, resolved);
                 }
             }
-            di += 1;
         }
     }
 }
 ```
 
 Notes: recursion handles transitive aliases (`const A = @import("m").B` where `B = const B = @import("n").C`) with depth guard 8. Writes `sp.type_id` only (kind stays `global` — sema fast path at semantic_analyzer.zig:197 returns any non-zero type_id). The nameCache key `(mod_id << 32) | name_id` mirrors `resolveNamedTypeExpressions` at :977-978.
+
+**Plan fix (2026-08-04, reviewer Important + empirical confirmation):** The loop must NOT manually advance `di` — the `while (…): (di += 1)` continuation does it. Earlier draft had `di += 1` inside the four guards and at the tail (net +2/iteration), silently skipping every other top-level decl (odd-index import aliases unresolved → gcc `'s' undeclared`). Empirically confirmed: alias at index 0 resolves, alias at index 1 fails. Removed all manual `di += 1` — now matches the plain `while (…): (di += 1)` idiom of `resolveNamedTypeExpressions` / `resolveAggregateFieldTypesAll` / `resolveFnSignatures`.
 
 - [ ] **Step 4: Wire into the phase (typeResolverResolveNames)**
 
