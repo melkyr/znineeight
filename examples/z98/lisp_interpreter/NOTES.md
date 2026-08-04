@@ -36,4 +36,6 @@ N/A — does not build
 ```
 
 ## Notes
-Multi-file: 9 modules. Dump rc=2, stderr errors. Uses hand-rolled tagged unions (struct+tag+union) instead of `union(enum)`. Uses bare `!` (inferred error sets) instead of explicit `LispError`. Key error: `error[3011] error literal not found in error set` in `eval.zig` at `@ptrCast(fn(...) !*Value, builtin_ptr)` — inferred error set can't be populated through ptrCast. Incompatible with zig1, needs upgrade to tagged-union syntax.
+Multi-file: 9 modules. Uses hand-rolled tagged unions (struct+tag+union) instead of `union(enum)`. Uses bare `!` (inferred error sets) instead of explicit `LispError`. Incompatible with zig1, needs upgrade to tagged-union syntax.
+
+**[updated 2026-08-04 — P1-3 battery re-measure, HEAD 60337a84]** Dump rc=3, emits 2 `.c` (main, sand), stderr shows `error[3043]: internal: store_field unresolved field (field_id 1)` (plus a `warning[3000]` type-mismatch note). The old key error `error[3011] error literal not found in error set` (inferred error set through `@ptrCast(fn(...) !*Value, builtin_ptr)`) is GONE — the F-1 error[3011] fix removed it — and the current blocker is now the error[3043] store_field ICE instead.

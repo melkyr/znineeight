@@ -36,4 +36,6 @@ N/A — does not build
 ```
 
 ## Notes
-Multi-file: `main.zig` imports `file.zig` and `json.zig`. Dump rc=3 (ICE/PANIC). Uses hand-rolled tagged unions (struct+tag+union) with field-store through @ptrCast pointer: `val_ptr.data = val.data` triggers `error[3043]: unsupported field-store base`. ICE, hand-rolled tagged union incompatible with zig1.
+Multi-file: `main.zig` imports `file.zig` and `json.zig`. Uses hand-rolled tagged unions (struct+tag+union) with field-store through @ptrCast pointer. Hand-rolled tagged union incompatible with zig1.
+
+**[updated 2026-08-04 — P1-3 battery re-measure, HEAD 60337a84]** The `error[3043]: unsupported field-store base` ICE is GONE (F-3 fixed the field-store ICE). Dump now rc=0 and emits 3 `.c` files. However gcc rejects the emitted C: 6 errors in `main_A50966CE.c` (`zT_10`, `zT_16`, `zT_28`, `zT_34`, `zT_46`, `zT_91` undeclared). Classification changed from **ICE → emission defect** (dump ok, gcc fails).
