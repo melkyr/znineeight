@@ -198,9 +198,9 @@ Defensive repros for the std-lib migration design spec — each probes a Z98 syn
 
 Post-fix state: **OK=184 / FAIL=8 / ICE=0 / CRASH=0** over 192 repros.
 
-Post-P1 state (this file, 196 repros): **OK=187 / FAIL=9 / ICE=0 / CRASH=0** — see
+Post-P1+guard state (this file, 197 repros): **OK=188 / FAIL=9 / ICE=0 / CRASH=0** — see
 "Defensive repros (Plan 1, 2026-08-04)" below. The +1 FAIL is `self_embed_optional_cycle`
-(its own documented F-8 residual); the other 3 new repros classify OK.
+(its own documented F-8 residual); the other 4 new repros classify OK.
 
 All 6 pre-fix `error[3043]` ICEs eliminated (moved to OK):
 - `tu_field_store_ptr`, `tu_ptrcast_copy`, `xmod_amp_arena_union_store`, `struct_field_store_subscript`
@@ -241,7 +241,7 @@ error-set comparison). Classified with `/tmp/zb/zig1` per the QUICK_REF corpus c
 
 | Repro | RED | GREEN | Classification (measured) | Guards |
 |-------|-----|-------|---------------------------|--------|
-| `xmod_global_field_access` | runtime gap | OK (prints 2) | **OK** per compile-only gate (dump rc=0, 2 `.c`, gcc rc=0); **RUNTIME GAP** — `warning[3023]` module-as-value + uninit temp read, prints `1` not `2` | F-7 review I-1: cross-module global field-access (lower.zig module field-access handles type_alias/function, NOT SymbolKind.global) — fix is Plan 1 Task P1-2 |
+| `xmod_global_field_access` | runtime gap | OK (prints 2) | **FIXED (P1-2)** — dump rc=0, gcc-clean, prints `2` (two bumps → counter=2) | F-7 review I-1: cross-module global field-access — FIXED by Plan 1 Task P1-2 (lower.zig SymbolKind.global branch + header extern decls) |
 | `self_embed_optional_cycle` | FAIL | — | **FAIL** — dump rc=0, 1 `.c`, gcc `unknown type name 'zT_DD0C1E27_X'` (incomplete-type) | F-8 residual: `struct X { next: ?X }` → infinite-size C type; guards, not fixes |
 | `load_global_array_copy` | OK | — | **OK** — dump rc=0, 1 `.c`, gcc clean, runs: prints `3` and `15` (concatenated `315`, print_int adds no newline) | F-7 array `load_global` copy-loop correctness (dead copy-temps, correct but wasteful) |
 | `anon_errset_comparison` | OK (prints 1) | OK (prints 1) | **OK** — dump rc=0, 1 `.c`, gcc clean, RED prints `1`, GREEN prints `1` (no runtime gap observed today) | bare-`!` error-set member comparison (`err == error.Bad`) — investigation deferred to Plan 3 Task P3-3 |
@@ -252,9 +252,7 @@ classify OK, so the FAIL increase does not exceed the new repros' own documented
 regressions in the existing 192.
 
 **Notes:**
-- `xmod_global_field_access` counts OK in the compile-only corpus gate (gcc rc==0, included in the
-  OK=187 total) but is a real runtime gap — same tracking pattern as `comptime_neg_int` (counted
-  as OK in the totals, RUNTIME GAP annotated separately). Fix owned by Plan 1 Task P1-2.
+- `xmod_global_field_access` was a RUNTIME GAP (counted OK in the compile-only gate) and is now **FIXED by Plan 1 Task P1-2** — prints `2` (was 1).
 - `self_embed_optional_cycle` FAIL is the documented F-8 residual. Naive C emission would produce
   `struct X { struct X next; int has_value; }`; today the struct typedef is dropped entirely
   (`unknown type name`), so the residual is guarded, not fixed.

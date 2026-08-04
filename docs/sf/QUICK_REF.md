@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (192 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-04]
+### Corpus gate (197 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-04]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -52,11 +52,12 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   if [ -z "$(ls DIR/*.c 2>/dev/null)" ]; then result=FAIL; fi   # 0 .c emitted = frontend gap
   ```
 - **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
+- **Post-Plan-1 baseline (2026-08-04, 5 new repros): `OK=188 FAIL=9 ICE=0 CRASH=0` over 197 repros.**
   - 184 fully OK (frontend + emission + gcc all clean).
   - **8 FAIL** (non-ICE) = 3 emission defects (dump ok, gcc rejects C) + 5 frontend gaps (dump emits 0 `.c`).
   - **0 ICE** — the F-1..F-8 fixes eliminated the `error[3043]` ("internal: unsupported field-store
     base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 184 + FAIL 8 + ICE 0 = 192`).
-  - Must stay `184/8/0/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
+  - Must stay `188/9/0/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
 - **The 3 emission-defect repros** (`dump_rc=0`, gcc fails): `array_tagged_union_read`,
   `ptroint_arena_offset`, `var_declared_void`.
   - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
@@ -77,10 +78,10 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   correctly now; no longer runtime-gap tracked.
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
-- **Cross-module global field access gap (F-7 review I-1):** the module field-access path
-  (lower.zig:1851-1872) handles `type_alias`/`function` but NOT global symbols — `lib.counter`
-  hits `warning[3023]` + uninit-temp. Unreachable today (no repro uses it); deferred, documented.
-  F-7's `module_id` wiring is future-proof.
+- **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
+  field-access path (lower.zig:1869-1875) gained a `SymbolKind.global` branch emitting `load_global`,
+  and module headers now carry `extern` decls for storage globals (c89_emit.zig:2063-2081). Guard
+  repro `xmod_global_field_access` prints `2` (was 1).
 - **`field_store_drop` blocked on pal-import (F-5 AMENDMENT C):**
   `repro/mi_matrix/field_store_drop/main.zig` does `const pal = @import("pal")` — fails
   `error[3048]: could not resolve imported file 'pal'` on pristine AND fixed builds. Pre-existing
