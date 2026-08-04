@@ -1313,7 +1313,11 @@ git commit -m "fix(F-8): shared-header ordering for by-value optional/slice — 
 
 **Pre-requisites:** I-9 (I-R12) report complete.
 
-**Scope:** Implement the I-9-approved root fix so the error_literal handler correctly resolves `error.Bad` in `?E!i32` (and other optional-of-EU) contexts, AND restores the 3 regressed repros. Option B (operator ruling 2026-08-04): unwrap optional_type to find the inner EU/error_set in the error_literal handler; gate F-1's wildcard to bare error_union only. Exact design per I-9.
+**Scope (TWO edits, operator ruling 2026-08-04 m1317):** Implement the I-9-approved root fix so the error_literal handler correctly resolves `error.Bad` in `?E!i32` (and other optional-of-EU) contexts, AND restores the 3 regressed repros. I-R12 found TWO distinct regressions:
+- **Edit 1 (F-1 regression — opteu_err_if_expr, opteu_err_switch):** Option B unwrap. In `semantic_analyzer.zig:1168-1195` (error_literal handler): (a) after `var tty = ...top`, unwrap `optional_type → opt.payload` (`eff_top`), and `es = eff_top` for the error_set case; (b) gate F-1's wildcard (`:1190-1193`) to `} else if (tty.kind == error_union_type) { resolvedTypeTableSet(node_idx, eff_top); result = eff_top; } else { result = TYPE_VOID; }`. Restores pre-F-1 `TYPE_VOID` for non-error contexts; keeps bare-! behavior.
+- **Edit 2 (F-5 regression — module_as_value):** In `lower.zig:1644-1649` (module branch), delete `var mtemp = nextTemp(self, type_mod.TYPE_VOID);` and change `return mtemp;` → `return TEMP_NONE;`. (NOT the hunk-3 revert — that changes the mud gate to 6ec60b2f, verified.) Fixes `(void)zT_0;` undeclared.
+
+Exact scratch-verified patches in I-R12 report. One implementation task (F-9) covers both edits.
 
 **Gates:**
 - Build 0 errors
