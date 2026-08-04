@@ -19,7 +19,7 @@
 
 ### 1.1 2-Phase Output Architecture
 
-Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:2041`):
+Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:2072`):
 
 ```
 Phase 1: Type Headers (emitSpecialTypes)
@@ -40,7 +40,7 @@ Phase 1 runs once via `emitSpecialTypes` BEFORE any function body. Phase 2 itera
 
 #### Type Topological Sort
 
-Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:911`):
+Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:913`):
 
 ```
 Input: TypeRegistry (all types 0..types_len-1)
@@ -51,12 +51,12 @@ Input: TypeRegistry (all types 0..types_len-1)
 4. Result order: types with no deps first, then their dependents
 ```
 
-`c89NeedsEmitEdge` (`c89_emit.zig:753`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, **enum, error_set**, tuple, unresolved_name.
+`c89NeedsEmitEdge` (`c89_emit.zig:759`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, **enum, error_set**, tuple, unresolved_name.
 [updated: 2026-08-01] `enum_type`/`error_set_type` were added in F-S8 — both are embeddable by value
 (inline integer typedef aliases), so a target enum/error_set **must** have an emit edge or the fixpoint
 (`computeSharedSet` §1.17) never promotes it into `zig_special_types.h`, leaving shared struct bodies
-referencing an unknown `typedef`. `tstIsDep` (`c89_emit.zig:872`), `tstEdgesCount` (`c89_emit.zig:771`),
-and `tstEdgesFill` (`c89_emit.zig:814`) all gate their source-kind branches on this helper, so the
+referencing an unknown `typedef`. `tstIsDep` (`c89_emit.zig:876`), `tstEdgesCount` (`c89_emit.zig:777`),
+and `tstEdgesFill` (`c89_emit.zig:819`) all gate their source-kind branches on this helper, so the
 enum/error_set target support flows through every source branch automatically; no enum/error_set
 *source* branch is needed (backing_type/tags are plain integers).
 
@@ -64,8 +64,8 @@ enum/error_set target support flows through every source branch automatically; n
 
 `emitModule` receives a `ptr_only_ids` array from the caller (calculated in `phase_C89Emission` in `main.zig`). Types in this set have all their field dependencies reachable through pointers — only a forward declaration is needed for C89 correctness. The split prevents redundant full type definitions:
 
-- **Sub-pass 2a** (`c89_emit.zig:911`): Iterates types in topo order, skips if NOT in `pointer_only_map`. Emits full definition.
-- **Sub-pass 2b** (`c89_emit.zig:949`): Iterates types in topo order, skips if IS in `pointer_only_map`. Emits full definition.
+- **Sub-pass 2a** (`c89_emit.zig:913`): Iterates types in topo order, skips if NOT in `pointer_only_map`. Emits full definition.
+- **Sub-pass 2b** (`c89_emit.zig:951`): Iterates types in topo order, skips if IS in `pointer_only_map`. Emits full definition.
 
 Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string) — same type only emitted once.
 
@@ -210,9 +210,9 @@ When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by 
 
 ### 1.6 Type Emission — emitSpecialTypes
 
-`emitSpecialTypes` (`c89_emit.zig:1180`) drives type header output for the stdout single-file
+`emitSpecialTypes` (`c89_emit.zig:1182`) drives type header output for the stdout single-file
 path. For the multi-module path (`--output-dir`), the shared-header writer
-`emitSharedHeader` (`c89_emit.zig:1037`) performs the equivalent partition into
+`emitSharedHeader` (`c89_emit.zig:1039`) performs the equivalent partition into
 `zig_special_types.h` (see §1.17):
 
 ```
@@ -318,7 +318,7 @@ Emitted immediately after function signature, before body. Two passes:
 ```
 Skips `TYPE_VOID` temps (type_id == 1). Debug markers `D4:`, `D7:`, `D9:` track type resolution.
 
-#### emitFunctionBody (`c89_emit.zig:4236`)
+#### emitFunctionBody (`c89_emit.zig:4423`)
 
 ```
 emitFunctionBody:
@@ -336,14 +336,14 @@ emitFunctionBody:
 
 Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Since the TCO feature (F-S2 injects
 `loop_header(0)` as the first entry-block inst, lower.zig:4350; F-S3 activates the `.loop_header`
-arm, c89_emit.zig:2775), **every function** also gets a `z_bb_0:` label for its entry block,
+arm, c89_emit.zig:2857), **every function** also gets a `z_bb_0:` label for its entry block,
 emitted after the hoisted temp decls and local decls and before the first entry-block statement:
 
 ```
 ret_zF_fn(params) {
     <hoisted temp decls zT_N;>      (emitHoistedDecls)
     <local decls name;>             (emitFunctionBody decl_local hoist)
-    z_bb_0:                         ← .loop_header arm (c89_emit.zig:2775)
+    z_bb_0:                         ← .loop_header arm (c89_emit.zig:2857)
     <bb0 entry-block insts>
 z_bb_1:
     <bb1 insts>
@@ -364,7 +364,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 |---------|-----------|------|
 | `.nop` | (nothing) | 2275 |
 | `.ret_void` | `return;` | 2276 |
-| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; since F-S3 emits `z_bb_0:\n`, NOT `tco_restart:`) | 2775 |
+| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; since F-S3 emits `z_bb_0:\n`, NOT `tco_restart:`) | 2857 |
 | `.label` | (nothing — waits for block label) | 2282 |
 | `.decl_local` | Emitted by hoisting pass in emitFunctionBody | 2283 |
 | `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`) | 2284 |
@@ -375,8 +375,8 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.ret` | `return val;` | 2423 |
 | `.load_local` | `result = name;` (array: `{ ... for-loop copy ... }`) | 2432 |
 | `.store_local` | `name = val;` (`_` → `(void)val;`) | 2481 |
-| `.load_global` | `result = name;` | 2511 |
-| `.store_global` | `name = val;` | 2522 |
+| `.load_global` | `result = name;` | 3094 |
+| `.store_global` | `name = val;` | 3140 |
 | `.load_field` | `result = base.field;` (slice → `.ptr`/`.len`; tagged_union → `.tag`/`.payload`; ptr → `->field`; struct → `.field`) | 2533 |
 | `.store_field` | `base.field = val;` (same field resolution as load_field) | 2654 |
 | `.load_index` | `result = base[idx];` or `result = (*base)[idx];` | 2764 |
@@ -395,7 +395,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 3029 |
 | `.call` | `result = callee(args...);` (indirect call through function pointer) | 3103 |
 | `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 3129 |
-| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 3767 |
+| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 3954 |
 | `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 3262 |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 3304 |
 | `.int_cast` | `result = (type)src;` (checked: `result = std_checked_cast_<N>(src);`) | 3330 |
@@ -419,7 +419,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 
 Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
 
-**C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:3767) is
+**C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:3954) is
 emitted as a **call followed by a `return`** (`zT = fn(args); return zT;`), i.e. it preserves a C
 stack frame — it is semantically a tail call but not a jump. Only **self-recursion** TCO achieves
 O(1) stack (rebind assigns + `goto z_bb_0;` back-edge to the entry label). Real frame-reusing
@@ -430,14 +430,14 @@ so it is not flagged UNWRITTEN by the decl pass.
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule` (`c89_emit.zig:2041`) drives one module's output for the **stdout single-file
+`emitModule` (`c89_emit.zig:2072`) drives one module's output for the **stdout single-file
 path only** (bare `--dump-c89`). [updated: 2026-08-01] When `--dump-c89 --output-dir DIR` is
 set, `phase_C89Emission` instead emits `zig_special_types.h` once via `emitSharedHeader` and
 loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
 (see §1.17); `emitModule` is unchanged for the stdout path. Note that `phase_C89Emission`
 (`main.zig:610`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
 fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
-`c89_emit.zig:716-721`), flushes it (`main.zig:723-726`), then calls `emitModule` with the
+`c89_emit.zig:722-727`), flushes it (`main.zig:723-726`), then calls `emitModule` with the
 hardcoded module name `"output"` (`main.zig:627`) — hence `/* Module: output */` in every dump.
 
 ```
@@ -590,7 +590,7 @@ stdout stream to **per-module file emission**. Output set: `DIR/<qualified>.c` (
 branched on the CLI, never mixed.
 
 - **Qualified filename scheme (F-S7)** — output stems come from `moduleQualifiedName`
-  (`c89_emit.zig:1895`): `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the
+  (`c89_emit.zig:1926`): `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the
   module path's last `/` component with `.zig`/`.z98` stripped (clamped to 64 chars) and
   `<FNV1a8>` is the 8-uppercase-hex FNV-1a hash of the **full module path**
   (`hash_mod.fnv1a` + `writeHex`, the same pair the mangler uses). **NO module_id** in the
@@ -602,15 +602,15 @@ branched on the CLI, never mixed.
   constructing each path; if exceeded, `error: output filename too long` + `pal.exit(1)`. This
   replaces the old silent truncation at `main.zig:685`/`:712` (bytes were dropped past 510/511
   with no diagnostic, and the truncated filename mismatched the include chain).
-- **Shared header** — `emitSharedHeader` (`c89_emit.zig:1037`): calls `computeSharedSet`
-  (`c89_emit.zig:977`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
+- **Shared header** — `emitSharedHeader` (`c89_emit.zig:1039`): calls `computeSharedSet`
+  (`c89_emit.zig:979`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
   preamble `#include "zig_compat.h"` + `#include "zig_runtime.h"`, an unfiltered fwd-decl pass
   (`typedef struct X X;` for every named struct/tagged_union/union), sub-pass 2a restricted to
   `shared_set` (guarded), and all of sub-pass 2b. `computeSharedSet` seeds synthetics
   (`name_id==0` in slice/optional/error_union/tagged_union/union/array/fn_type) ∪ value-embedding
   named types (CLS:v, `pointer_only_map` miss) ∪ i64/u64 ∪ named fn_type, then closes over
   pointer-only named types referenced by shared members (fixpoint over `reg.types_len`, via
-  `tstIsDep` `c89_emit.zig:872`).
+  `tstIsDep` `c89_emit.zig:876`).
 - **Closure-edge model (F-S8)** — the closure criterion is: a type joins `shared_set` when it is
   referenced **by value OR in a way that requires the C type name in scope** (typedef'd kinds —
   enum/error_set — need the name in scope even behind a pointer/slice, since a typedef cannot be
@@ -629,10 +629,10 @@ branched on the CLI, never mixed.
   target support.
 - **Guard scheme** — every type definition is wrapped
   `#ifndef ZIG_<TAG>_<cname> / #define ZIG_<TAG>_<cname> / <def> / #endif`. Tag from
-  `ctypeGuardWrite` (`c89_emit.zig:949`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
+  `ctypeGuardWrite` (`c89_emit.zig:951`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
   `ZIG_ERROR_SET_`, `ZIG_SLICE_`, `ZIG_OPTIONAL_`, `ZIG_ERRORUNION_`, `ZIG_ARRAY_`,
   `ZIG_FNPTR_`, `ZIG_I64_`, `ZIG_U64_`, fallback `ZIG_TYPE_`.
-- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:1938`): module guard
+- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:1969`): module guard
   `ZIG_MODULE_<UPPER(qualified)>_H` (the **qualified** stem uppercased, non-alnum → `_`; since
   F-S7 the stem already embeds the unique path hash, so guards auto-unique even for two
   same-basename modules — e.g. `ZIG_MODULE_UTIL_7F9D0FD1_H`); includes `zig_compat.h`
@@ -642,10 +642,10 @@ branched on the CLI, never mixed.
   `c89_emit.zig:1983`); owned CLS:p
   type full-definitions (name_id≠0, `module_id==M.id`, struct/TU/union/enum/error_set,
   `pointer_only_map`, not in `shared_set` — each guarded); fn fwd-decls (non-extern).
-- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2116`): `#include "<qualified>.h"`, then the
+- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2193`): `#include "<qualified>.h"`, then the
   module's own fn bodies (externs skipped; `switch_cases`/`dl_hoisted` reset per fn). The
   `int main(void)` wrapper is emitted only for `module_id==0`'s public `main`
-  (`emitMainWrapper`, `c89_emit.zig:2075`).
+  (`emitMainWrapper`, `c89_emit.zig:2107`).
 - **Embedded build-script templates are DEAD CODE** — `emitBuildTargetSh` (`c89_emit.zig:4482`) /
   `emitBuildTargetBat` (`c89_emit.zig:4495`) / `emitBuildTargetOwcBat` are never called by any
   pipeline path (explicit `// Reference-only:` comment at `c89_emit.zig:4478`). They exist as
@@ -701,7 +701,7 @@ pub fn nameManglerInit() NameMangler { return .{ .counter = 0 }; }
 LirFunction list (per module)
     │
     ▼
-emitModule(c89_emit.zig:2041)
+emitModule(c89_emit.zig:2072)
     │
     ├─ pointer_only_map populated from caller-provided ids
     │
@@ -873,7 +873,7 @@ deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"
 | lisp_interpreter_curr | main.zig:11-12 zig_runtime.h, `<stdio.h>` | `zig_runtime.h` + `<stdio.h>` (lisp:100-101) | no dups |
 
 **Observation**: `zig_compat.h` and `zig_runtime.h` appear TWICE in every output — once in the
-fixed `emitIncludes` preamble (`c89_emit.zig:716-721`, flushed from `main.zig:723-726`) and
+fixed `emitIncludes` preamble (`c89_emit.zig:722-727`, flushed from `main.zig:723-726`) and
 once in the module header (`[c89]` mud_server.c:1-2 vs :45-48). Dedup applies only WITHIN the
 collected `@cInclude` list, not against the preamble — benign (include guards), undocumented
 elsewhere.

@@ -169,7 +169,7 @@ Note: `xtAppend` and `xnAppend` use `elem_size=4` (u32), unlike the struct-paylo
 
 ### typeRegistryIsAssignable Rules
 
-Implicit coercion rules (`typeRegistryIsAssignable`, `type_registry.zig:786-882`):
+Implicit coercion rules (`typeRegistryIsAssignable`, `type_registry.zig:794-890`):
 
 1. **Identity**: `source == target` → true
 2. **Integer literal → numeric**: `integer_literal_type → any numeric type` → true
@@ -226,7 +226,7 @@ Depends-on-graph topological sort and layout computation for all compound types.
 
 ### Kahn's Algorithm
 
-`typeResolverResolve` (`type_resolver.zig:268-321`):
+`typeResolverResolve` (`type_resolver.zig:269-322`):
 
 ```
 in_degree[0..type_count] = count of unsatisfied dependencies per type
@@ -255,7 +255,7 @@ Phase 3 — Cycle detection:
 
 ### Layout Resolution
 
-`typeResolverResolveLayout` (`type_resolver.zig:103-223`):
+`typeResolverResolveLayout` (`type_resolver.zig:104-224`):
 
 | Kind | Logic |
 |------|-------|
@@ -292,7 +292,7 @@ Internal helpers:
   **Note this is a classification-only fix**: `classifyTypeEmissionGroups` has NO `enum_type`/`error_set_type`
   branch, so the enum/error_set **itself** always stays CLS:p (`is_po = 1`, default). Enums are never seeded
   into `shared_set` by classification — their promotion happens via the `computeSharedSet` fixpoint
-  (`c89_emit.zig:977`) when a shared member references them (F-S8 `c89NeedsEmitEdge` enum/error_set target
+  (`c89_emit.zig:979`) when a shared member references them (F-S8 `c89NeedsEmitEdge` enum/error_set target
   support). Do not "fix" this by adding an enum CLS:v branch: it would push every enum into the shared
   header and break slice/optional-of-enum ordering (08 §1.17).
 - `growWpEdges` (line 535): 2x growth for the backward edge adjacency list.
@@ -439,16 +439,16 @@ phase_TypeResolution (main.zig)
     │       ├─ → ResolvedTypeTable.set
     │       └─ → symbol.type_id = resolved
     │
-    ├─ typeResolverInit (type_resolver.zig:225)
+    ├─ typeResolverInit (type_resolver.zig:226)
     │   └─ zero init
     │
-    ├─ typeResolverBuild (type_resolver.zig:243)
+    ├─ typeResolverBuild (type_resolver.zig:244)
     │   ├─ copy DepGraph edges from symbol_registrator
     │   ├─ alloc sorted_items[0..types_len]
     │   ├─ alloc in_degree_items[0..types_len]
     │   └─ count edges per target type
     │
-    ├─ typeResolverResolve (type_resolver.zig:268)
+    ├─ typeResolverResolve (type_resolver.zig:269)
     │   │  Kahn's algorithm:
     │   │
     │   ├─ Seed: push zero-in-degree types to worklist
@@ -695,7 +695,7 @@ same dense sequence: mud 28 (array), 29 (array), 30 (slice) ... 60 (fn); json 28
 
 ### Q2. Layout sizes for key structs (GDB `[gdb]`)
 
-`typeResolverResolveLayout` (type_resolver.zig:103-223) computes size/alignment; field offsets are
+`typeResolverResolveLayout` (type_resolver.zig:104-224) computes size/alignment; field offsets are
 written back into `fe_items[].offset`. Final values:
 
 | Example | Type | TID | size | align | fields (offset: type) |
@@ -748,9 +748,9 @@ emitted types (everything else is pointer-only):
 Counts: mud `CLS:c58` (58 pointer-only), gol 41, json 75, lisp 103. Note gol has **zero**
 value-emitted types even though Cell/Point are used as values in the program — the classification
 is purely structural (field/element embedding), not usage-based. The doc's rule "field of kind
-struct/tagged_union/union/array/tuple → NOT pointer-only" (type_resolver.zig:323-329, 359-471)
+struct/tagged_union/union/array/tuple → NOT pointer-only" (type_resolver.zig:324-330, 371-483)
 exactly predicts these sets. The optional/error_union backward-edge path
-(type_resolver.zig:367-373) is exercised by json's `?*JsonValue` (JsonItem field) but its payload
+(type_resolver.zig:379-385) is exercised by json's `?*JsonValue` (JsonItem field) but its payload
 is a pointer, so it never flips a parent.
 
 ### Q4. const_alias_prepass (`CAP:`/`GATE:`/`CAT:` markers `[markers]`)
@@ -779,7 +779,7 @@ runs to Phase 2/3 in these examples.
 Observable via markers `[markers]` (slice_cache `U2H`/`U2N` type_registry.zig:361-384; array_cache
 `O1H`/`O2N` type_registry.zig:453-482; fn-type linear scan `P2:n...H` type_registry.zig:504-505;
 ptr/many_ptr `PTR:i...c<child>` + inline `P<tid>`/`M<tid>` on hit vs `DC:` on miss
-type_resolver.zig:793-812), and via GDB distinct-type counts `[gdb]`:
+type_resolver.zig:813-832), and via GDB distinct-type counts `[gdb]`:
 
 | Example | ptr_cache (hit/miss) | slice_cache (U2H/U2N) | array_cache (O1H/O2N) | fn linear scan hits | optional resolutions (distinct) |
 |---------|:--------------------:|:---------------------:|:---------------------:|:-------------------:|:-------------------------------:|
@@ -804,7 +804,7 @@ type_resolver.zig:793-812), and via GDB distinct-type counts `[gdb]`:
 
 ### Q6. Kahn algorithm vs actual "topological" order (GDB `[gdb]`)
 
-The doc's Kahn pseudocode (type_resolver.zig:268-321, seed / pop→layout→state=2→decrement→push /
+The doc's Kahn pseudocode (type_resolver.zig:269-322, seed / pop→layout→state=2→decrement→push /
 cycle-check) is **mechanically exact** vs source. What it does not say: the DepGraph edge set is
 degenerate — every edge is `(from=0, to=<owner type>)` from `addTypeDependencies`
 (symbol_registrator.zig:78), so `in_degree` counts only *field counts per aggregate*, and no

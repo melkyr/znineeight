@@ -3,7 +3,7 @@
 ## Totals (179 repros)
 
 - **CURRENT: OK=165 / FAIL=6 / ICE=7 / CRASH=0** (2026-07-30: syntax coverage — 13 new repros for categories A-E: hand-rolled tagged unions, bare error sets, catch blocks, ptr-to-int arena, module var, define-mutate-closure. 7 ICEs are hand-rolled tagged union field-stores (A1-A3) and inferred error set function pointers (B1-B2). All GREEN regression guards pass. 2 new FAILs from uninitialized union data (A2) and @intToPtr arena (D).)
-- **2026-08-01 ADD: `comptime_neg_int`** — RUNTIME GAP, not counted in the compile-only totals above. `const N = @intCast(i32, -5);` dumps rc=0, gcc clean, but emitted C never assigns `N` (comptime-folded negative dropped) → run prints garbage not `-5`. Tracks via runtime gate; the gcc-exit classifier reports it OK. Reproduces "comptime int cannot be negative".
+- **2026-08-01 ADD: `comptime_neg_int`** — RUNTIME GAP, not counted in the compile-only totals above. `const N = @intCast(i32, -5);` dumps rc=0, gcc clean, but emitted C never assigns `N` (comptime-folded negative dropped) → run prints garbage not `-5`. Tracks via runtime gate; the gcc-exit classifier reports it OK. Reproduces "comptime int cannot be negative". **FIXED post-F-1..F-8 (2026-08-04): prints `-5` correctly.**
 - Prior: OK=162 / FAIL=4 / ICE=0 / CRASH=0 (2026-07-16: extern-fn ABI-wrap — c89_emit .call_direct wrapping for extern fn optional/EU returns; 5/5 extern-fn repros fixed; opt_extern_ptr_file FIXED; json_parser HARD gate 0 errors; EU representation (3) now FIXED by error-set pipeline)
 - Prior: OK=148 / FAIL=14 / ICE=0 / CRASH=0 (2026-07-16: folded 13 ungated RED repros from top-level `repro/` tree into gated corpus)
 - Prior: OK=148 / FAIL=1 / ICE=0 / CRASH=0 (2026-07-16: error-set crash fix chain — F-SEMA Gap A/B sema arms + shared helper `typeRegistryErrorSetMemberIndex`; F-C5C7 Fix A+B valid module/type_alias temps + Fix C symreg `populateTypePayload` error_set_decl case + Fix E/F lowerer member lookups + module-base field_access branch; F-LISP module-qualified fn refs via func_ref machinery; F-C6 c89_emit `emitErrorSetType` typedef + per-member `#define` constants; F-TEMPNONE dedicated temp-index sentinel `TEMP_NONE=0xFFFFFFFF`; F-REMOVE unconditional 3042 tripwire + module-as-value warning[3023] + observability repro)
@@ -60,19 +60,19 @@
 - `opt_extern_ptr_file` — **FIXED (F-ABI)** — was deferred `??*T FILE* gateway`. extern-fn ABI-wrap (`c89_emit .call_direct` wrapping for extern fn optional/EU returns) now wraps raw `FILE*` into `Opt_*` type. gcc 0 errors. No longer deferred.
 ---
 
-## FAIL (6)
+## FAIL (6) — [2 remain FAIL post-F-1..F-8; see F-1..F-8 section above]
 
 ### VOID decl-skip / undeclared-temp (2) — out-of-scope
-- `var_declared_void` — gcc `'x' undeclared` (VOID-typed variable skipped in C decl emission).
-- `field_store_drop` — gcc `'zT_23'/'zT_32' undeclared` (undeclared temps from field-store lowering; related to var_declared_void VOID-decl-skip path).
+- `var_declared_void` — gcc `'x' undeclared` (VOID-typed variable skipped in C decl emission). **Still FAIL post-F-1..F-8** (sema doesn't reject void vars).
+- `field_store_drop` — **STILL FAIL post-F-1..F-8** — now via `error[3048]: could not resolve imported file 'pal'` (its `const pal = @import("pal")` can't be resolved — pre-existing import-resolver gap; F-5 AMENDMENT C).
 
 ### Aggregate / anon-init (2) — out-of-scope
-- `anon_init_orelse_rhs` — gcc `incompatible types` (anonymous init on orelse RHS).
-- `array_tagged_union_read` — gcc `incompatible types` (tagged union indexing on array).
+- `anon_init_orelse_rhs` — gcc `incompatible types` (anonymous init on orelse RHS). **FIXED post-F-1..F-8 (F-6+F-8)** → OK.
+- `array_tagged_union_read` — gcc `incompatible types` (tagged union indexing on array). **Still FAIL post-F-1..F-8** (union payload assigned from `unsigned int`).
 
 ### Syntax coverage new FAILs (2) — 2026-07-30
-- `tu_uninit_data_void` — gcc `void tag/data declared` (hand-rolled tagged union with uninitialized data variant).
-- `module_var_mutable` — gcc `'x' undeclared` (global mutable var, C emission misses global declaration).
+- `tu_uninit_data_void` — gcc `void tag/data declared` (hand-rolled tagged union with uninitialized data variant). **FIXED post-F-1..F-8 (F-3)** → OK.
+- `module_var_mutable` — gcc `'x' undeclared` (global mutable var, C emission misses global declaration). **FIXED post-F-1..F-8 (F-7)** → OK.
 
 Note: FAIL=4 count reflects 2 remaining out-of-scope families (VOID decl-skip, aggregate/anon-init) = 4 repros total (2+2). EU representation (3 repros: eu_err_ret, eu_value_ret, mi_eu_err) now FIXED by error-set pipeline (F-C5C7 Fix A/B) — gcc 0 errors.
 
@@ -91,6 +91,7 @@ Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. **As of 2026-0
 ## Repro added 2026-07-16
 
 - `module_as_value` — **OK (warning[3023] non-fatal)**. Bare module ident in value position (`_ = h;`) emits `warning[3023]: module used as value expression`. VOID temp prevents C-decl pollution (TYPE_VOID=1 skipped by c89_emit decl loop). zig0 oracle: accepts silently (rc=0). C compiles cleanly (gcc 0 errors). Class: OK.
+  - **REGRESSION NOTICE (post-F-1..F-8):** measured 2026-08-04 with /tmp/zb/zig1 classifies this as **FAIL** — emitted `main_6D0C3706.c` has `(void)zT_0;` with `zT_0` undeclared. Verified passing gcc on a pre-F-1..F-8 worktree build; regression commit not yet isolated. See F-1..F-8 section.
 
 ---
 
@@ -138,14 +139,14 @@ Repros discovered from broken examples (lisp_interpreter, json_parser_workaround
 
 | Category | Repro | GREEN | RED | Pattern |
 |----------|-------|-------|-----|---------|
-| A1 | `tu_field_store_ptr` | OK | ICE(3043) | union field-store through @ptrCast ptr |
-| A2 | `tu_uninit_data_void` | — | FAIL | uninitialized union data for void tag |
-| A3 | `tu_ptrcast_copy` | — | ICE(3043) | hand-rolled tagged union copy |
-| B1 | `inferred_errorset_fnptr` | OK | ICE(3011) | @ptrCast to fn(!T) through *void |
-| B2 | `inferred_errorset_xmod` | OK | ICE(3011) | cross-module bare ! error set |
+| A1 | `tu_field_store_ptr` | OK | **OK (F-3)** | union field-store through @ptrCast ptr |
+| A2 | `tu_uninit_data_void` | — | **OK (F-3)** | uninitialized union data for void tag |
+| A3 | `tu_ptrcast_copy` | — | **OK (F-3)** | hand-rolled tagged union copy |
+| B1 | `inferred_errorset_fnptr` | OK | **OK (F-1)** | @ptrCast to fn(!T) through *void |
+| B2 | `inferred_errorset_xmod` | OK | **OK (F-1)** | cross-module bare ! error set |
 | C1 | `catch_block_implicit_expr` | OK | OK(no RED) | catch block expression works |
 | D | `ptroint_arena_offset` | OK | FAIL | @intToPtr/@ptrToInt arena arithmetic |
-| E | `module_var_mutable` | OK | FAIL | global mutable var missing C decl |
+| E | `module_var_mutable` | OK | **OK (F-7)** | global mutable var missing C decl |
 | F | `define_mutate_closure` | ICE(2000) | ICE(2000) | fn ptr type not parseable by zig1 |
 
 **Total (A-F): 13 new (10 unique + 3 GREEN guards), 2 new FAILs, 7 ICEs, 4 OK (all GREEN + C1 RED that unexpectedly passes)**
@@ -158,9 +159,9 @@ Cross-module struct literal pattern discovered from json_parser_workaround. Crea
 
 | Category | Repro | GREEN | RED | Pattern |
 |----------|-------|-------|-----|---------|
-| G1 | `ptrcast_slice_field_void` | OK | ICE(3043) | xmod struct + slice field + field-store |
-| G2 | `ptrcast_slice_field_xmod` | OK | ICE(3043) | xmod struct + scalar fields + field-store |
-| G3 | `ptrcast_slice_field_type` | OK | FAIL | xmod struct literal only (no field-store, undeclared var) |
+| G1 | `ptrcast_slice_field_void` | OK | **OK (F-4)** | xmod struct + slice field + field-store |
+| G2 | `ptrcast_slice_field_xmod` | OK | **OK (F-4)** | xmod struct + scalar fields + field-store |
+| G3 | `ptrcast_slice_field_type` | OK | **OK (F-4)** | xmod struct literal only (no field-store, undeclared var) |
 
 **Note:** Category F (define_mutate_closure) removed from corpus — `fn (i32) i32` syntax not parseable by zig1.
 
@@ -172,7 +173,7 @@ Full json_parser_workaround chain: `&zig_default_arena` (address-of extern var) 
 
 | Category | Repro | GREEN | RED | Pattern |
 |----------|-------|-------|-----|---------|
-| H1 | `xmod_amp_arena_union_store` | OK | ICE(3043) | &extern_var + extern alloc + @ptrCast + union field-store |
+| H1 | `xmod_amp_arena_union_store` | OK | **OK (F-3)** | &extern_var + extern alloc + @ptrCast + union field-store |
 
 ## Std-Lib Phase 1 — 2026-08-03 (6 repros, std-lib migration syntax-gap candidates)
 
@@ -180,11 +181,44 @@ Defensive repros for the std-lib migration design spec — each probes a Z98 syn
 
 | Pattern | Repro | Result | Note |
 |---------|-------|--------|------|
-| struct fn-ptr field (vtable) | `fn_ptr_struct_field` | FAIL | gcc `'write_fn' declared void` — fn-ptr struct field emitted as `void` |
-| pub module var (scalar) | `module_pub_var_int` | OK | gcc-clean; RUNTIME gap — `= 42` init dropped, read via uninit temp (garbage) |
-| pub module var (struct) | `module_pub_var_struct` | OK | gcc-clean; RUNTIME gap — read via stale temp, not `out.tag` (garbage) |
-| module const fn-call init | `module_const_fn_call` | OK | gcc-clean; RUNTIME gap — `getInit()` never called, uninit read (garbage) |
+| struct fn-ptr field (vtable) | `fn_ptr_struct_field` | OK | **FIXED (F-2)** — was FAIL (`'write_fn' declared void`); struct FieldEntries back-patch + void-field guard |
+| pub module var (scalar) | `module_pub_var_int` | OK | **runtime gap FIXED (F-7)** — `= 42` init now emitted; prints `43` |
+| pub module var (struct) | `module_pub_var_struct` | OK | **runtime gap FIXED (F-7)** — prints `7` |
+| module const fn-call init | `module_const_fn_call` | OK | **runtime gap FIXED (F-7)** — `getInit()` now called; prints `42` |
 | local fn-ptr (bare, no errset) | `fn_ptr_local_bare` | OK | gcc-clean, runs correctly (prints 3); sema warning[3000] non-fatal |
 | cross-module `extern "c"` | `import_extern_c` | OK | 2 .c emitted, gcc-clean, runs correctly (prints hello) |
 
-**Total active repros in v16: 192. Classification: OK=173, FAIL=8, ICE=11, CRASH=0.**
+**Total active repros in v16: 192. Classification: OK=173, FAIL=8, ICE=11, CRASH=0.** *(pre-F-1..F-8 snapshot — see F-1..F-8 section for post-fix OK=181 / FAIL=11 / ICE=0)*
+
+---
+
+## F-1..F-8 corpus-RED fixes — 2026-08-04 (measured with /tmp/zb/zig1)
+
+Post-fix state: **OK=181 / FAIL=11 / ICE=0 / CRASH=0** over 192 repros.
+
+All 6 pre-fix `error[3043]` ICEs eliminated (moved to OK):
+- `tu_field_store_ptr`, `tu_ptrcast_copy`, `xmod_amp_arena_union_store`, `struct_field_store_subscript`
+  (F-3), `ptrcast_slice_field_void`, `ptrcast_slice_field_xmod` (F-4).
+
+Former FAIL/ICE repros now OK (verified per-file gcc clean):
+- `inferred_errorset_fnptr`, `inferred_errorset_xmod`, `bare_error_union_return` (F-1 error[3011] fixed)
+- `fn_ptr_struct_field` (F-2)
+- `tu_uninit_data_void`, `tu_field_store_ptr`, `tu_ptrcast_copy`, `xmod_amp_arena_union_store`,
+  `struct_field_store_subscript` (F-3)
+- `ptrcast_slice_field_type`, `ptrcast_slice_field_void`, `ptrcast_slice_field_xmod` (F-4)
+- `anon_init_orelse_rhs` (F-6+F-8)
+- `module_var_mutable` (F-7)
+- Runtime gaps now FIXED (run-verified): `comptime_neg_int` → `-5`, `module_pub_var_int` → `43`,
+  `module_pub_var_struct` → `7`, `module_const_fn_call` → `42`.
+
+Remaining 11 FAIL (0 ICE):
+- **Emission defects (6, dump rc=0, gcc rejects):** `array_tagged_union_read`, `module_as_value`,
+  `opteu_err_if_expr`, `opteu_err_switch`, `ptroint_arena_offset`, `var_declared_void`.
+  - CONCERN: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were documented OK at the
+    2026-08-01 baseline but now fail gcc. Verified on a pre-F1 worktree build they passed gcc; the
+    FAIL appears post-F-1..F-8, but exact regression commit NOT confirmed at doc time. Flagged for
+    review; the doc reflects measured reality either way.
+- **Frontend gaps (5, 0 `.c` emitted):** `catch_block_value_producing` (error[2000]),
+  `eu_assign_incompat_payload` (error[3000]), `field_access_optional` (error[3000]),
+  `field_store_drop` (error[3048], pal-import — see QUICK_REF known-issues), `test_stub_0`
+  (error[3048], imports nonexistent `"std"`).

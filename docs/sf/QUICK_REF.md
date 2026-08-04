@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (186 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-01]
+### Corpus gate (192 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-04]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -51,31 +51,46 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   ```bash
   if [ -z "$(ls DIR/*.c 2>/dev/null)" ]; then result=FAIL; fi   # 0 .c emitted = frontend gap
   ```
-- **Baseline (2026-08-01, after F-S7..F-S10, operator ruling A): `OK=165 FAIL=15 ICE=6 CRASH=0` over 186 repros.**
-  - 165 fully OK (frontend + emission + gcc all clean).
-  - **15 FAIL** (non-ICE) = 7 emission defects (dump ok, gcc rejects C) + 8 non-ICE frontend gaps (dump emits 0 `.c`).
-  - **6 ICE** are `error[3043]` ("internal: unsupported field-store base") — internal compiler
-    errors, counted separately from ordinary frontend FAILs (this baseline counts ICE apart from
-    FAIL: `OK 165 + FAIL 15 + ICE 6 = 186`).
-  - Must stay `165/15/6/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
-- **The 7 emission-defect repros** (`dump_rc=0`, gcc fails): `anon_init_orelse_rhs`,
-  `array_tagged_union_read`, `module_var_mutable`, `ptrcast_slice_field_type`,
-  `ptroint_arena_offset`, `tu_uninit_data_void`, `var_declared_void`.
-- **The 14 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
-  - ICE (error[3043]): `ptrcast_slice_field_void`, `ptrcast_slice_field_xmod`,
-    `struct_field_store_subscript`, `tu_field_store_ptr`, `tu_ptrcast_copy`,
-    `xmod_amp_arena_union_store`.
-  - error[3048] cannot-read/cannot-resolve file: `field_store_drop` (re-bucketed from emission
-    defect → frontend gap, F-S10), `test_stub_0` (imports nonexistent `"std"` — FAIL via
-    `error[3048]` today; will pass when zig1 gains a real std lib — planned).
-  - error[3011] error-literal-not-found: `bare_error_union_return`, `inferred_errorset_fnptr`,
-    `inferred_errorset_xmod`.
+- **Baseline (2026-08-04, after F-1..F-8, measured with /tmp/zb/zig1): `OK=181 FAIL=11 ICE=0 CRASH=0` over 192 repros.**
+  - 181 fully OK (frontend + emission + gcc all clean).
+  - **11 FAIL** (non-ICE) = 6 emission defects (dump ok, gcc rejects C) + 5 frontend gaps (dump emits 0 `.c`).
+  - **0 ICE** — the F-1..F-8 fixes eliminated the `error[3043]` ("internal: unsupported field-store
+    base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 181 + FAIL 11 + ICE 0 = 192`).
+  - Must stay `181/11/0/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
+- **The 6 emission-defect repros** (`dump_rc=0`, gcc fails): `array_tagged_union_read`,
+  `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch`, `ptroint_arena_offset`,
+  `var_declared_void`.
+  - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were documented OK at the
+    2026-08-01 baseline but now fail gcc (undeclared `zT_0` temp / incompatible int→`Opt_` assign).
+    Attribution to F-1..F-8 not confirmed at doc time; see EXPECTED_FAIL.md.
+- **The 5 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
+  - error[3048] cannot-read/cannot-resolve file: `field_store_drop` (`const pal = @import("pal")` →
+    `error[3048]: could not resolve imported file 'pal'` — pre-existing import-resolver gap; a user
+    program cannot import compiler-internal modules. Will pass when zig1 gains a real std lib),
+    `test_stub_0` (imports nonexistent `"std"` — FAIL via `error[3048]` today; will pass when zig1
+    gains a real std lib — planned).
   - error[3000] type-mismatch: `eu_assign_incompat_payload`, `field_access_optional`.
   - error[2000] parse: `catch_block_value_producing`.
-- **Runtime-gap repro (`comptime_neg_int`, added 2026-08-01):** `const N = @intCast(i32, -5);`
-  compiles (dump rc=0, gcc clean) but emits WRONG code — `N` is declared but never assigned
-  (comptime-folded negative dropped). Run prints garbage, not `-5`. Classifies OK by the compile-only
-  corpus gate but is a real semantic gap; tracked via runtime gate, not the gcc classifier.
+- **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
+  (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
+  `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run
+  correctly now; no longer runtime-gap tracked.
+
+**Known issues exposed by F-1..F-8 (documented 2026-08-04):**
+- **Cross-module global field access gap (F-7 review I-1):** the module field-access path
+  (lower.zig:1851-1872) handles `type_alias`/`function` but NOT global symbols — `lib.counter`
+  hits `warning[3023]` + uninit-temp. Unreachable today (no repro uses it); deferred, documented.
+  F-7's `module_id` wiring is future-proof.
+- **`field_store_drop` blocked on pal-import (F-5 AMENDMENT C):**
+  `repro/mi_matrix/field_store_drop/main.zig` does `const pal = @import("pal")` — fails
+  `error[3048]: could not resolve imported file 'pal'` on pristine AND fixed builds. Pre-existing
+  import-resolver gap (a user program can't import compiler-internal modules). Not an F-5 defect;
+  documented as known issue. Will pass when zig1 gains a real std lib.
+- **Array `load_global` copy-loop (F-7 review I-2):** lisp's 1MB buffers emit dead copy temps +
+  stack arrays; correct but wasteful — follow-up optimization.
+- **MD5 re-baseline note (F-5 AMENDMENT B):** mud+lisp re-baselined because F-5/F-7 emit
+  stores/globals that were previously dropped — runtime behavior is the gate, not byte-identity.
+
 - **Historical note:** the earlier `176/8/0/0` figure (plan + F-S5 + prior QUICK_REF) counted the 12
   frontend gaps as OK via the empty-DIR-is-OK convention (IM6 C2 Option-1 per-file loop never runs on
   an empty dir). That convention is DISCONTINUED (2026-08-01, operator): a valid-Z98 repro that fails
@@ -100,11 +115,11 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 |
-|---|---|
-| `examples/z98/mud_server/main.zig` | `9fde02d8a05e951de738e2df5d12b4f7` |
+| Entry Path | Reference md5 | [updated: 2026-08-04] |
+|---|---|---|
+| `examples/z98/mud_server/main.zig` | `4644ad1349c55af80fa1a18fe0e17989` |
 | `examples/z98/game_of_life/main.zig` | `d0d3051d1cb1bd0db3ffd29495a2e18e` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `10d09c99f77c68e680f6ccce33eb81ed` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `f84c8748e6d0580ffac811d75e34e0e7` |
 | `examples/z98/json_parser/main.zig` | `3492a935883ee91258feece576ba23d5` |
 
 - **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
@@ -113,6 +128,10 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   (AMENDMENT 8 — the `.loop_header` arm emits `z_bb_0:\n`; matches `.jump`'s `goto z_bb_0;`), and (2)
   lisp/json cross-function tails collapse the try-CFG to `zT = f(args); return zT;`. Both are
   semantically correct and gcc-clean; warnings are tolerated, 0 errors required.
+
+- **Re-baselined 2026-08-04 (F-5/F-7, AMENDMENT F-5-B).** mud + lisp re-baselined again because F-5/F-7
+  now emit `load_global`/`store_global` stores and module-global init that were previously dropped —
+  runtime behavior is the gate, not byte-identity. gol + json unchanged. [updated: 2026-08-04]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
