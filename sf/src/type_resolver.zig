@@ -1012,12 +1012,12 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = env.store.nodes.items[@intCast(usize, decls[di])];
-            if (decl.kind != AstKind.var_decl) { di += 1; continue; }
-            if (decl.child_1 == @intCast(u32, 0)) { di += 1; continue; }
+            if (decl.kind != AstKind.var_decl) { continue; }
+            if (decl.child_1 == @intCast(u32, 0)) { continue; }
             var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
-            if (init.kind != AstKind.field_access) { di += 1; continue; }
+            if (init.kind != AstKind.field_access) { continue; }
             var base = env.store.nodes.items[@intCast(usize, init.child_0)];
-            if (base.kind != AstKind.import_expr) { di += 1; continue; }
+            if (base.kind != AstKind.import_expr) { continue; }
             var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, base.payload);
             if (target) |mtid| {
                 var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, init.payload, @intCast(u32, 0));
@@ -1030,7 +1030,7 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
                     type_mod.nameCachePut(env.typereg, ck, resolved);
                 }
             }
-            di += 1;
+
         }
     }
 }
