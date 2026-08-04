@@ -816,6 +816,14 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     }
     var opt = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
     coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, opt.payload);
+    if (node.child_1 != @intCast(u32, 0)) {
+        pushExpectedType(self, opt.payload);
+        var rhs_result = semanticAnalyzerResolveExpr(self, node.child_1);
+        popExpectedType(self);
+        if (rhs_result != @intCast(u32, 0) and rhs_result != type_mod.TYPE_VOID) {
+            tryRecordCoercion(self, node.child_1, rhs_result, opt.payload);
+        }
+    }
     return opt.payload;
 }
 
