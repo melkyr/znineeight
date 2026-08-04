@@ -3061,7 +3061,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
         },
            .load_field => |lf| {
-               var base = if (lf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
+               var base = if (lf.name_id != @intCast(u32, 0) and lf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
                var result = resolveTempName(emitter, lf.result);
                var lfd_m: []const u8 = "LFD:b"; pal.markerWrite(lfd_m);
                var lfd_bb: [10]u8 = undefined; var lfd_bl = itoa_mod.itoa(lf.base, lfd_bb[0..]); var lfd_bs: usize = @intCast(usize, 9) - @intCast(usize, lfd_bl); pal.markerWrite(lfd_bb[lfd_bs..@intCast(usize, 9)]);
@@ -3204,7 +3204,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 }
            },
         .store_field => |sf| {
-            var base = if (sf.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
+            var base = if (sf.name_id != @intCast(u32, 0) and sf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
               var val = resolveTempName(emitter, sf.value);
              var is_arr2: u8 = @intCast(u8, 0);
              var arr_len2: u32 = @intCast(u32, 0);

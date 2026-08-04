@@ -659,7 +659,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
             if (self.local_decl_names[li] == name_id) { is_local = true; loc_kind = self.local_decl_kinds[li]; break; }
         }
         var is_agg: bool = (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.array_type))) or (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.slice_type))) or (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.tagged_union_type))) or (loc_kind == @intCast(u8, @enumToInt(type_mod.TypeKind.struct_type)));
-        var operand_temp: u32 = @intCast(u32, 0);
+        var operand_temp: u32 = TEMP_NONE;
         if (is_local and !is_agg) {
             if (findLocalTemp(self, name_id)) |temp| { operand_temp = temp; }
         } else {
@@ -946,7 +946,7 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
 fn nameMapGet(self: *LirLowerer, temp_id: u32) u32 {
     var result = hash_mod.u32ToU32MapGet(&self.local_decl_name_map, temp_id);
     if (result) |v| return v;
-    return @intCast(u32, 0);
+    return TEMP_NONE;
 }
 
 fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
@@ -1416,7 +1416,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var coe_nb: [10]u8 = undefined; var coe_nl = itoa_mod.itoa(node_idx, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl); pal.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
          var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
           var src = lowerExpr(self, node.child_1);
-          if (src == TEMP_NONE or src == @intCast(u32, 0)) {
+          if (src == TEMP_NONE) {
               var rhs_node = store.nodes.items[@intCast(usize, node.child_1)];
               var is_resolved: u8 = @intCast(u8, 0);
               if (rhs_node.kind == AstKind.ident_expr) {
@@ -1428,7 +1428,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                   return @intCast(u32, 0);
               }
           }
-          if (src != TEMP_NONE and src != @intCast(u32, 0) and getTempType(self, src) == type_mod.TYPE_VOID) {
+           if (src != TEMP_NONE and getTempType(self, src) == type_mod.TYPE_VOID) {
              var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
          }
         lowerAssignLValue(self, node.child_0, src, node_idx);
@@ -1644,7 +1644,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          }
         }
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
-        var arr_temp: u32 = @intCast(u32, 0);
+        var arr_temp: u32 = TEMP_NONE;
         if (findLocalTemp(self, name_id)) |fnd| { arr_temp = fnd; }
         var fnd_m: []const u8 = "FND:n"; pal.markerWrite(fnd_m);
         var fnd_nb: [10]u8 = undefined; var fnd_nl = itoa_mod.itoa(name_id, fnd_nb[0..]); var fnd_ns: usize = @intCast(usize, 9) - @intCast(usize, fnd_nl); pal.markerWrite(fnd_nb[fnd_ns..@intCast(usize, 9)]);
