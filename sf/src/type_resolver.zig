@@ -332,6 +332,17 @@ fn fieldEmbedsByValue(kind: TypeKind) bool {
     return false;
 }
 
+fn requiresFullDef(kind: TypeKind) bool {
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.optional_type) return true;
+    if (kind == TypeKind.error_union_type) return true;
+    return false;
+}
+
 pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) ClassificationResult {
     var tl: usize = self.registry.types_len;
 
@@ -368,18 +379,16 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
                 if (fieldEmbedsByValue(ft.kind)) {
                     is_po = @intCast(u8, 0);
                 } else if (ft.kind == TypeKind.optional_type) {
-                    var payload = self.registry.opt_items[@intCast(usize, ft.payload_idx)].payload;
                     growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                     wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
                     wp_count += @intCast(u32, 1);
                 } else if (ft.kind == TypeKind.error_union_type) {
-                    var payload = self.registry.eu_items[@intCast(usize, ft.payload_idx)].payload;
                     growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                     wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
                     wp_count += @intCast(u32, 1);
                 }
             }
@@ -392,18 +401,16 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
                 if (fieldEmbedsByValue(ft.kind)) {
                     is_po = @intCast(u8, 0);
                 } else if (ft.kind == TypeKind.optional_type) {
-                    var payload = self.registry.opt_items[@intCast(usize, ft.payload_idx)].payload;
                     growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                     wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
                     wp_count += @intCast(u32, 1);
                 } else if (ft.kind == TypeKind.error_union_type) {
-                    var payload = self.registry.eu_items[@intCast(usize, ft.payload_idx)].payload;
                     growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                     wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
                     wp_count += @intCast(u32, 1);
                 }
             }
@@ -416,18 +423,16 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
                 if (fieldEmbedsByValue(ft.kind)) {
                     is_po = @intCast(u8, 0);
                 } else if (ft.kind == TypeKind.optional_type) {
-                    var payload = self.registry.opt_items[@intCast(usize, ft.payload_idx)].payload;
                     growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                     wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
                     wp_count += @intCast(u32, 1);
                 } else if (ft.kind == TypeKind.error_union_type) {
-                    var payload = self.registry.eu_items[@intCast(usize, ft.payload_idx)].payload;
                     growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                     wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                    wp_head[@intCast(usize, payload)] = wp_count;
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
                     wp_count += @intCast(u32, 1);
                 }
             }
@@ -437,18 +442,16 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
             if (fieldEmbedsByValue(et_ty.kind)) {
                 is_po = @intCast(u8, 0);
             } else if (et_ty.kind == TypeKind.optional_type) {
-                var payload = self.registry.opt_items[@intCast(usize, et_ty.payload_idx)].payload;
                 growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                 wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, et)];
+                wp_head[@intCast(usize, et)] = wp_count;
                 wp_count += @intCast(u32, 1);
             } else if (et_ty.kind == TypeKind.error_union_type) {
-                var payload = self.registry.eu_items[@intCast(usize, et_ty.payload_idx)].payload;
                 growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                 wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, et)];
+                wp_head[@intCast(usize, et)] = wp_count;
                 wp_count += @intCast(u32, 1);
             }
         } else if (ty.kind == TypeKind.error_union_type) {
@@ -457,18 +460,34 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
             if (fieldEmbedsByValue(eup_ty.kind)) {
                 is_po = @intCast(u8, 0);
             } else if (eup_ty.kind == TypeKind.optional_type) {
-                var payload = self.registry.opt_items[@intCast(usize, eup_ty.payload_idx)].payload;
                 growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                 wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, eup)];
+                wp_head[@intCast(usize, eup)] = wp_count;
                 wp_count += @intCast(u32, 1);
             } else if (eup_ty.kind == TypeKind.error_union_type) {
-                var payload = self.registry.eu_items[@intCast(usize, eup_ty.payload_idx)].payload;
                 growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
                 wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
-                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, payload)];
-                wp_head[@intCast(usize, payload)] = wp_count;
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, eup)];
+                wp_head[@intCast(usize, eup)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            }
+        } else if (ty.kind == TypeKind.optional_type) {
+            var op_p = self.registry.opt_items[@intCast(usize, ty.payload_idx)].payload;
+            var op_ty = self.registry.types_items[@intCast(usize, op_p)];
+            if (requiresFullDef(op_ty.kind)) {
+                is_po = @intCast(u8, 0);
+            } else if (op_ty.kind == TypeKind.optional_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, op_p)];
+                wp_head[@intCast(usize, op_p)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            } else if (op_ty.kind == TypeKind.error_union_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, op_p)];
+                wp_head[@intCast(usize, op_p)] = wp_count;
                 wp_count += @intCast(u32, 1);
             }
         }

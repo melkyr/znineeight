@@ -800,8 +800,7 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
     } else if (ty.kind == TypeKind.optional_type) {                              // ADD
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
-        var opk = reg.types_items[@intCast(usize, op)].kind;
-        if (c89NeedsEmitEdge(opk) and op != ti and (opk == TypeKind.enum_type or opk == TypeKind.error_set_type)) c += 1;
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, op)].kind) and op != ti) c += 1;
     } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
         var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
         var sek = reg.types_items[@intCast(usize, se)].kind;
@@ -853,8 +852,7 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         }
     } else if (ty.kind == TypeKind.optional_type) {                              // ADD
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
-        var opk = reg.types_items[@intCast(usize, op)].kind;
-        if (c89NeedsEmitEdge(opk) and op != ti and (opk == TypeKind.enum_type or opk == TypeKind.error_set_type)) {
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, op)].kind) and op != ti) {
             tgt[@intCast(usize, off)] = op; off += 1;
         }
     } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
@@ -897,9 +895,7 @@ fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
     } else if (ty.kind == TypeKind.error_union_type) {
         if (reg.eu_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
     } else if (ty.kind == TypeKind.optional_type) {                              // ADD
-        var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
-        var opk = reg.types_items[@intCast(usize, op)].kind;
-        if (op == target and (opk == TypeKind.enum_type or opk == TypeKind.error_set_type)) return true;
+        if (reg.opt_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
     } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
         var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
         var sek = reg.types_items[@intCast(usize, se)].kind;
