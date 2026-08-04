@@ -198,7 +198,7 @@ Defensive repros for the std-lib migration design spec — each probes a Z98 syn
 
 Post-fix state: **OK=184 / FAIL=8 / ICE=0 / CRASH=0** over 192 repros.
 
-Post-P1 state (this file, 196 repros): **OK=186 / FAIL=9 / ICE=0 / CRASH=0** — see
+Post-P1 state (this file, 196 repros): **OK=187 / FAIL=9 / ICE=0 / CRASH=0** — see
 "Defensive repros (Plan 1, 2026-08-04)" below. The +1 FAIL is `self_embed_optional_cycle`
 (its own documented F-8 residual); the other 3 new repros classify OK.
 
@@ -246,15 +246,15 @@ error-set comparison). Classified with `/tmp/zb/zig1` per the QUICK_REF corpus c
 | `load_global_array_copy` | OK | — | **OK** — dump rc=0, 1 `.c`, gcc clean, runs: prints `3` and `15` (concatenated `315`, print_int adds no newline) | F-7 array `load_global` copy-loop correctness (dead copy-temps, correct but wasteful) |
 | `anon_errset_comparison` | OK (prints 1) | OK (prints 1) | **OK** — dump rc=0, 1 `.c`, gcc clean, RED prints `1`, GREEN prints `1` (no runtime gap observed today) | bare-`!` error-set member comparison (`err == error.Bad`) — investigation deferred to Plan 3 Task P3-3 |
 
-**Updated totals: OK=186 / FAIL=9 / ICE=0 / CRASH=0 over 196 repros.** The +1 FAIL is exactly
+**Updated totals: OK=187 / FAIL=9 / ICE=0 / CRASH=0 over 196 repros.** The +1 FAIL is exactly
 `self_embed_optional_cycle`'s own documented status (F-8 residual). The other 3 new repros
 classify OK, so the FAIL increase does not exceed the new repros' own documented status; no
 regressions in the existing 192.
 
 **Notes:**
-- `xmod_global_field_access` counts OK in the compile-only corpus gate (gcc rc==0) but is a real
-  runtime gap — same tracking pattern as `comptime_neg_int` (RUNTIME GAP, not counted in the
-  compile-only totals). Fix owned by Plan 1 Task P1-2.
+- `xmod_global_field_access` counts OK in the compile-only corpus gate (gcc rc==0, included in the
+  OK=187 total) but is a real runtime gap — same tracking pattern as `comptime_neg_int` (counted
+  as OK in the totals, RUNTIME GAP annotated separately). Fix owned by Plan 1 Task P1-2.
 - `self_embed_optional_cycle` FAIL is the documented F-8 residual. Naive C emission would produce
   `struct X { struct X next; int has_value; }`; today the struct typedef is dropped entirely
   (`unknown type name`), so the residual is guarded, not fixed.
