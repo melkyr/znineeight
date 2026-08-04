@@ -1152,7 +1152,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var val = @intCast(u64, node.payload);
         var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
         if (ev) |v| { val = @intCast(u64, v); }
-        var tid = nextTemp(self, literalTempType(self, node_idx));
+        var rtype = literalTempType(self, node_idx);
+        var rty = self.ctx.registry.types_items[@intCast(usize, rtype)];
+        if (rty.kind == type_mod.TypeKind.error_union_type) {
+            var code_temp = nextTemp(self, type_mod.TYPE_I32);
+            emitInst(self, LirInst{ .int_const = .{ .value = val, .result = code_temp } });
+            var eu_temp = nextTemp(self, rtype);
+            emitInst(self, LirInst{ .wrap_error_err = .{ .value = code_temp, .result = eu_temp, .type_id = rtype } });
+            return eu_temp;
+        }
+        var tid = nextTemp(self, rtype);
         emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.unreachable_expr) {

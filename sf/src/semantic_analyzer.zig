@@ -1179,7 +1179,10 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3011_ERROR_LITERAL_NOT_IN_SET)), self.source_file_id, sp, ep, eln_msg);
                         result = type_mod.TYPE_VOID;
                     }
-                } else { result = type_mod.TYPE_VOID; }
+                } else {
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, top);
+                    result = top;
+                }
             } else { result = type_mod.TYPE_VOID; }
         } else { result = type_mod.TYPE_VOID; }
     } else if (node.kind == AstKind.ident_expr) {

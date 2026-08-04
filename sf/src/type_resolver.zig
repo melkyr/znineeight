@@ -724,7 +724,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             if (eu_resolved_es == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
             eu_es_box[0] = eu_resolved_es;
         } else {
-            eu_es_box[0] = type_mod.typeRegistryGetOrCreateErrorSet(env.typereg, @intCast(u16, 0), @intCast(u16, 0));
+            eu_es_box[0] = @intCast(u32, 0);
         }
         return type_mod.typeRegistryGetOrCreateErrorUnion(env.typereg, eu_payload_type, eu_es_box[0]);
     }
