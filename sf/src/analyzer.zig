@@ -492,6 +492,14 @@ pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void 
         }
         return;
     }
+    if (kind == AstKind.builtin_call) {
+        var bargs = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
+        var bi: usize = 0;
+        while (bi < bargs.len) : (bi += 1) {
+            analyzeExpr(ctx, state, bargs[bi]);
+        }
+        return;
+    }
     if (kind == AstKind.plain_assign) {
         analyzeExpr(ctx, state, node.child_1);
         var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];

@@ -260,3 +260,22 @@ regressions in the existing 192.
   (`unknown type name`), so the residual is guarded, not fixed.
 - `anon_errset_comparison`: RED and GREEN both print `1` today — the bare-`!` set comparison
   currently works. Investigation of any name_id edge is still deferred to Plan 3 Task P3-3.
+
+---
+
+## Task P1-4 guard repro — 2026-08-04 (+1 repro, 196 → 197)
+
+Guards the analyzer `analyzeExpr` builtin_call crash that crashed `examples/z98/lzw` at HEAD
+(regression `532420cb`, last-good `7bc6e4d1`). Single-file repro of `main.zig:17`:
+`@intCast` inside an `if` condition. `builtin_call.child_0` is the builtin's **name_id**, not a
+node index (parser.zig:611); `analyzeExpr`'s generic child fallback recursed into it and formed a
+cycle when the name_id collided with the enclosing `if_stmt`'s node index → infinite recursion →
+stack overflow. Full analysis: `.superpowers/sdd/I-lzw-regression-report.md`.
+
+| Repro | RED | Classification (measured) | Guards |
+|-------|-----|---------------------------|--------|
+| `lzw_builtin_call_crash` | CRASH pre-fix | **CRASH pre-fix** (dump rc=139 SIGSEGV, 0 `.c`; bypassed by `--no-null-check --no-lifetime-check --no-leak-check`); **OK post-fix** (dump rc=0, gcc-clean, links, runs → prints `invalid` on stdin EOF) | P1-4 analyzer `builtin_call` arg-walk fix (analyzer.zig:495-502) |
+
+**Updated totals post-fix: OK=188 / FAIL=9 / ICE=0 / CRASH=0 over 197 repros.** The +1 total is
+the new repro, which counts OK post-fix. FAIL count unchanged (9) vs the P1-3 baseline; no existing
+repro flipped OK→FAIL; the lzw example itself now dumps, compiles, links, and runs.
