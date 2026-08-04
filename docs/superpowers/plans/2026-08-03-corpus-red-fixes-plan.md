@@ -1224,7 +1224,7 @@ git commit -m "fix(F-7): module-global init — constructor synthesis + global e
 - Build 0 errors
 - `anon_init_orelse_rhs`: dump rc=0, gcc clean, link+run prints `6` (completes F-6's unsatisfiable gate)
 - Regression: `orelse_void`, `optstar_void_orelse`, `field_access_optional` behavior unchanged
-- 4 MD5s: lisp `10d09c99f77c68e680f6ccce33eb81ed`, json `3492a935883ee91258feece576ba23d5`, mud `685e6caa654dfb32645704a58864ecba` (F-5 re-baseline), gol `d0d3051d1cb1bd0db3ffd29495a2e18e` — RE-BASELINE any that legitimately re-order the shared header, per AMENDMENT F-5-B runtime-behavior principle
+- 4 MD5s (current post-F-7 baselines): lisp `f84c8748e6d0580ffac811d75e34e0e7`, json `3492a935883ee91258feece576ba23d5`, mud `4644ad1349c55af80fa1a18fe0e17989` (F-7 re-baselines), gol `d0d3051d1cb1bd0db3ffd29495a2e18e` — RE-BASELINE any that legitimately re-order the shared header, per AMENDMENT F-5-B runtime-behavior principle
 - Corpus: no NEW regressions
 
 **Commit:** `fix(F-8): shared-header ordering for by-value optional/slice (I-R4 Bug 2)`
