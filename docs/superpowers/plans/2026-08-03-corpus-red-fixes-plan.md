@@ -1214,20 +1214,77 @@ git commit -m "fix(F-7): module-global init — constructor synthesis + global e
 
 ---
 
-### Task F-8: Fix Shared-Header Ordering for By-Value Optional/Slice (I-R4 Bug 2)
+### Task F-8: Fix Shared-Header Ordering for By-Value Optional/Slice (I-R4 Bug 2) — OPTION C
 
-**Pre-requisites:** I-8 report complete.
+**Pre-requisites:** I-8 (I-R10) report complete. **OPERATOR RULING 2026-08-04: Option C** (mirror the working error_union model). Full design + evidence in `.superpowers/sdd/I-R10-report.md`.
 
-**Scope:** Implement the I-8-approved root fix so `anon_init_orelse_rhs` reaches gcc-clean + prints 6. Likely: extend the closure-edge model so a shared synthetic optional/slice embedding a by-value struct promotes that struct into shared_set (and/or reorder emitSharedHeader). Exact design per I-8.
+**Design (Option C):** extend the `optional_type` closure/topo branches (NOT slice_type — pointer embed, json `[]JsonValue` cycle) + classify the optional wrapper as value-embedding when its payload is an aggregate + propagate non-pointer-only through optional/error_union fields. Zero blast radius (empirically proven in /tmp/ir10/fixout3/zig1).
 
-**Gates:**
-- Build 0 errors
-- `anon_init_orelse_rhs`: dump rc=0, gcc clean, link+run prints `6` (completes F-6's unsatisfiable gate)
-- Regression: `orelse_void`, `optstar_void_orelse`, `field_access_optional` behavior unchanged
-- 4 MD5s (current post-F-7 baselines): lisp `f84c8748e6d0580ffac811d75e34e0e7`, json `3492a935883ee91258feece576ba23d5`, mud `4644ad1349c55af80fa1a18fe0e17989` (F-7 re-baselines), gol `d0d3051d1cb1bd0db3ffd29495a2e18e` — RE-BASELINE any that legitimately re-order the shared header, per AMENDMENT F-5-B runtime-behavior principle
-- Corpus: no NEW regressions
+**Files:** `sf/src/c89_emit.zig`, `sf/src/type_resolver.zig`.
 
-**Commit:** `fix(F-8): shared-header ordering for by-value optional/slice (I-R4 Bug 2)`
+- [ ] **Step 1: Read I-8 evidence + source**
+
+Read `.superpowers/sdd/I-R10-report.md` (full design, 6 edit targets, exact line numbers, verification trail).
+
+- [ ] **Step 2: type_resolver.zig — edit 6 (requiresFullDef helper), 4 (optional_type classify branch), 5 (wp-edges)**
+
+Read the relevant regions. Edit bottom-to-top:
+- Edit 6: after `fieldEmbedsByValue` (:324-333), add `fn requiresFullDef(kind: TypeKind) bool` — true for struct/tagged_union/union/array/tuple/optional/error_union (recursive aggregate kinds); false for enum/error_set/primitive/pointer/slice.
+- Edit 4: in `classifyTypeEmissionGroups`, after the error_union branch (:474), add an `optional_type` source branch: `is_po = 0` when the payload `requiresFullDef(kind)`. Exclude enum/error_set payloads (handled by existing enum/error_set closure edge + 2a typedef emission).
+- Edit 5: the optional/error_union FIELD wp-edges (struct :370-376, tagged_union :394-400, union :418-424, array :439-445, error_union :459-465) — index `wp_head[]` with the FIELD TYPE id (ft_id/et/eup) instead of the payload id, so a struct containing an optional-of-aggregate field is classified non-pointer-only.
+
+- [ ] **Step 3: c89_emit.zig — edits 1, 2, 3 (unrestrict optional branches)**
+
+Read the regions. Edit bottom-to-top:
+- Edit 3: `tstEdgesFill` optional branch (:854-858) → unrestricted (mirror error_union :849-852)
+- Edit 2: `tstEdgesCount` optional branch (:801-804) → unrestricted (mirror :798-800)
+- Edit 1: `tstIsDep` optional branch (:899-902) → `if (reg.opt_items[...].payload == target) return true;` (mirror :897-898)
+
+- [ ] **Step 4: KEEP slice branches restricted — do NOT touch**
+
+The `slice_type` branches at c89_emit.zig:805-808, :860-864, :903-906 stay restricted (pointer embed, cycle hazard). Verify they are untouched.
+
+- [ ] **Step 5: Build + gate (in /tmp/zb per operator ruling)**
+
+Build in /tmp/zb (reuse /tmp/zb/zig0). 0 gcc errors.
+
+```bash
+# Primary: anon_init_orelse_rhs — F-6's blocked gate, now must complete
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f8 repro/mi_matrix/anon_init_orelse_rhs/main.zig
+cd /tmp/f8 && gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c && gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/f8/prog && /tmp/f8/prog
+```
+Expected: gcc clean, prints `6`.
+
+```bash
+# Regression: orelse_void, optstar_void_orelse, field_access_optional behavior unchanged
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f8/r1 repro/mi_matrix/orelse_void/main.zig 2>&1 | head -1
+/tmp/zb/zig1 --dump-c89 --output-dir /tmp/f8/r2 repro/mi_matrix/optstar_void_orelse/main.zig 2>&1 | head -1
+```
+
+```bash
+# MD5 gate (Option C: ZERO blast radius expected — all 4 must stay byte-identical)
+/tmp/zb/zig1 --dump-c89 examples/z98/lisp_interpreter_curr/main.zig 2>/dev/null | md5sum   # f84c8748...
+/tmp/zb/zig1 --dump-c89 examples/z98/json_parser/main.zig 2>/dev/null | md5sum            # 3492a935...
+/tmp/zb/zig1 --dump-c89 examples/z98/mud_server/main.zig 2>/dev/null | md5sum             # 4644ad13...
+/tmp/zb/zig1 --dump-c89 examples/z98/game_of_life/main.zig 2>/dev/null | md5sum           # d0d3051d...
+```
+All 4 byte-identical. If any differ, STOP and report (investigation said zero impact).
+
+```bash
+# Runtime verification: lisp -> > 3, mud listening, json parses, gol glider
+```
+
+```bash
+# Corpus: dump-rc identical (no new failures); only benign gcc-clean header reorders
+# (QUICK_REF classifier, /tmp/zb/zig1)
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add sf/src/c89_emit.zig sf/src/type_resolver.zig
+git commit -m "fix(F-8): shared-header ordering for by-value optional/slice — Option C (I-R4 Bug 2)"
+```
 
 ---
 
