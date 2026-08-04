@@ -696,6 +696,13 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
     var lv_node = store.nodes.items[@intCast(usize, lv_node_idx)];
     if (lv_node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, lv_node.payload)];
+        if (isStorageGlobal(self, name_id)) {
+            var gs_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
+            if (gs_sym) |gss2| {
+                emitInst(self, LirInst{ .store_global = .{ .name_id = name_id, .module_id = gss2.module_id, .value = value_temp } });
+            }
+            return;
+        }
         emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = value_temp } });
         if (findLocalTemp(self, name_id)) |reg| {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = value_temp } });
@@ -716,6 +723,10 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
             if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
             if (is_slice == @intCast(u8, 0)) { ai_ni = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, lv_node.child_0)].payload)]; }
         }
+        }
+        if (store.nodes.items[@intCast(usize, lv_node.child_0)].kind == AstKind.ident_expr) {
+            var ai_c0_name = store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, lv_node.child_0)].payload)];
+            if (isStorageGlobal(self, ai_c0_name)) { ai_ni = @intCast(u32, 0); }
         }
         if (base_temp != ai_orig_base) { ai_ni = @intCast(u32, 0); }
         emitInst(self, LirInst{ .assign_index = .{ .name_id = ai_ni, .base = base_temp, .index = idx_temp, .src = value_temp } });
@@ -1029,14 +1040,31 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
     emitInst(self, LirInst{ .decl_local = .{ .name_id = cap_name, .type_id = cap_type, .temp = cap_temp } });
 }
 
+fn isStorageGlobal(self: *LirLowerer, name_id: u32) bool {
+    if (self.ctx.has_symbols == @intCast(u8, 0)) return false;
+    var sg_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
+    if (sg_sym) |sgss| {
+        if (sgss.kind == sym_mod.SymbolKind.global) {
+            if ((@intCast(u16, sgss.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) return false;
+            return true;
+        }
+    }
+    return false;
+}
+
 fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
     var lgr_m: []const u8 = "LGR:n"; pal.markerWrite(lgr_m);
     var lgr_b: [20]u8 = undefined; var lgr_l = itoa_mod.itoa(name_id, lgr_b[0..]); var lgr_s: usize = @intCast(usize, 19) - @intCast(usize, lgr_l); pal.markerWrite(lgr_b[lgr_s..@intCast(usize, 19)]);
     var lgr_nl: []const u8 = " "; pal.markerWrite(lgr_nl);
     var dn_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, s.decl_node);
     var tid_type = if (dn_type) |dt| dt else type_mod.TYPE_UNDEFINED;
+    if ((@intCast(u16, s.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) {
+        var tid_e = nextTemp(self, tid_type);
+        emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid_e } });
+        return tid_e;
+    }
     var tid = nextTemp(self, tid_type);
-    emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid } });
+    emitInst(self, LirInst{ .load_global = .{ .name_id = name_id, .module_id = s.module_id, .result = tid } });
     return tid;
 }
 
@@ -4496,6 +4524,59 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
         }
     }
     var htnl: []const u8 = "\n"; pal.markerWrite(htnl);
+    func_ptr.hoisted_temps = self.hoisted_temps;
+    return func_ptr.*;
+}
+
+pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFunction {
+    var store = self.ctx.store;
+    var init_s: []const u8 = "__module_init";
+    var init_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, init_s);
+    var func_raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
+    var func_ptr = @ptrCast(*LirFunction, func_raw);
+    func_ptr.name_id = init_name_id;
+    func_ptr.module_id = mod_id;
+    func_ptr.return_type = type_mod.TYPE_VOID;
+    func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);
+    func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
+    func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
+    func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
+    func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
+    func_ptr.is_extern = @intCast(u8, 0);
+    func_ptr.is_pub = @intCast(u8, 0);
+    func_ptr.is_variadic = @intCast(u8, 0);
+    self.func = func_ptr;
+    self.current_bb = createBlock(self);
+    emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });
+    self.scope_depth = @intCast(u32, 0);
+    self.temp_counter = @intCast(u32, 0);
+    var di: usize = @intCast(usize, 0);
+    while (di < decls.len) : (di += @intCast(usize, 1)) {
+        var dcl = store.nodes.items[@intCast(usize, decls[di])];
+        if (dcl.kind != AstKind.var_decl) continue;
+        if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) continue;
+        if (dcl.child_1 == @intCast(u32, 0)) continue;
+        var g_name_id = dcl.payload;
+        var g_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mod_id, g_name_id);
+        if (g_sym) |gss| {
+            if (gss.kind != sym_mod.SymbolKind.global) continue;
+            var ginit = store.nodes.items[@intCast(usize, dcl.child_1)];
+            if (ginit.kind == AstKind.undefined_literal) continue;
+            if (ginit.kind == AstKind.import_expr) continue;
+            if (ginit.kind == AstKind.struct_decl or ginit.kind == AstKind.enum_decl or ginit.kind == AstKind.union_decl or ginit.kind == AstKind.error_set_decl) continue;
+            if (ginit.kind == AstKind.field_access) {
+                var fa_base2 = store.nodes.items[@intCast(usize, ginit.child_0)];
+                if (fa_base2.kind == AstKind.import_expr) continue;
+            }
+            if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                if (ginit.kind == AstKind.int_literal or ginit.kind == AstKind.float_literal or ginit.kind == AstKind.char_literal) continue;
+            }
+            var val_t = lowerExpr(self, dcl.child_1);
+            emitInst(self, LirInst{ .store_global = .{ .name_id = g_name_id, .module_id = gss.module_id, .value = val_t } });
+        }
+    }
+    emitValuelessReturn(self);
+    hoistTemps(self);
     func_ptr.hoisted_temps = self.hoisted_temps;
     return func_ptr.*;
 }

@@ -485,6 +485,9 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      fl_name_ids: [128]u32,
       fl_temps: [128]u32,
        fl_count: u32,
+      temp_global_map: U32ToU32Map,
+      global_decls: [*]lir_mod.ModuleGlobalDecl,
+      global_decls_len: u32,
    };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
@@ -513,6 +516,9 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .fl_name_ids = undefined,
            .fl_temps = undefined,
            .fl_count = @intCast(u32, 0),
+           .temp_global_map = hash_mod.u32ToU32MapInit(alloc),
+           .global_decls = undefined,
+           .global_decls_len = @intCast(u32, 0),
        };
 }
 
@@ -2075,6 +2081,7 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_
     var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
     emitSpecialTypes(emitter, emitter.registry, sorted);
     emitModuleHeader(emitter, name, fns, c_includes);
+    emitGlobalDecls(emitter, @intCast(u32, 0), @intCast(u8, 1));
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         var func = fns[i];
@@ -2108,6 +2115,7 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
         var wfn_name = interner_mod.stringInternerGet(emitter.interner, wfn_mid);
         var wrty = emitter.registry.types_items[@intCast(usize, func.return_type)];
         var ws1: []const u8 = "int main(void) {\n"; bufferedWriterWrite(&emitter.writer, ws1);
+        emitModuleInitCalls(emitter);
         if (wrty.kind == type_mod.TypeKind.void_type) {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             bufferedWriterWrite(&emitter.writer, wfn_name);
@@ -2142,12 +2150,57 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
     }
 }
 
+fn emitGlobalDecls(emitter: *C89Emitter, module_id: u32, all: u8) void {
+    var gi: u32 = @intCast(u32, 0);
+    while (gi < emitter.global_decls_len) : (gi += @intCast(u32, 1)) {
+        var g = emitter.global_decls[@intCast(usize, gi)];
+        if (all == @intCast(u8, 0) and g.module_id != module_id) continue;
+        var gmid = nameManglerMangle(emitter.mangler, g.name_id, @intCast(u8, 1), g.module_id);
+        var gname = interner_mod.stringInternerGet(emitter.interner, gmid);
+        var gtype = getCTypeName(emitter.registry, emitter.mangler, g.type_id);
+        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
+        bufferedWriterWrite(&emitter.writer, gtype);
+        var sp: []const u8 = " ";
+        bufferedWriterWrite(&emitter.writer, sp);
+        bufferedWriterWrite(&emitter.writer, gname);
+        var sc: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, sc);
+    }
+}
+
+fn moduleHasRuntimeInit(emitter: *C89Emitter, module_id: u32) bool {
+    var gi: u32 = @intCast(u32, 0);
+    while (gi < emitter.global_decls_len) : (gi += @intCast(u32, 1)) {
+        var g = emitter.global_decls[@intCast(usize, gi)];
+        if (g.module_id == module_id and g.has_runtime_init != @intCast(u8, 0)) return true;
+    }
+    return false;
+}
+
+fn emitModuleInitCalls(emitter: *C89Emitter) void {
+    var mm = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    var mi2: usize = @intCast(usize, 0);
+    while (mi2 < mm.len) : (mi2 += @intCast(usize, 1)) {
+        if (moduleHasRuntimeInit(emitter, mm[mi2].id)) {
+            var mi_s: []const u8 = "__module_init";
+            var mi_id = interner_mod.stringInternerIntern(emitter.interner, mi_s);
+            var mi_mid = nameManglerMangle(emitter.mangler, mi_id, @intCast(u8, 0), mm[mi2].id);
+            var mi_name = interner_mod.stringInternerGet(emitter.interner, mi_mid);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            bufferedWriterWrite(&emitter.writer, mi_name);
+            var mi_cc: []const u8 = "();\n";
+            bufferedWriterWrite(&emitter.writer, mi_cc);
+        }
+    }
+}
+
 pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction) void {
     var h0: []const u8 = "#include \"";
     bufferedWriterWrite(&emitter.writer, h0);
     bufferedWriterWrite(&emitter.writer, mod_name);
     var h1: []const u8 = ".h\"\n";
     bufferedWriterWrite(&emitter.writer, h1);
+    emitGlobalDecls(emitter, module_id, @intCast(u8, 0));
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
         if (fns[i].is_extern != @intCast(u8, 0)) continue;
@@ -2788,6 +2841,10 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
          var rst_nb: [10]u8 = undefined; var rst_nl = itoa_mod.itoa(emitter.fl_name_ids[@intCast(usize, rti)], rst_nb[0..]); var rst_ns: usize = @intCast(usize, 9) - @intCast(usize, rst_nl); pal.markerWrite(rst_nb[rst_ns..@intCast(usize, 9)]);
          var rst_nl2: []const u8 = "\n"; pal.markerWrite(rst_nl2);
          return mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rti)]); } }
+     var tgn_r = hash_mod.u32ToU32MapGet(&emitter.temp_global_map, temp_id);
+     if (tgn_r) |tgi| {
+         return interner_mod.stringInternerGet(emitter.interner, tgi);
+     }
      var vflow_rnt: []const u8 = "VFLOW:rnt"; pal.markerWriteInt(vflow_rnt, temp_id);
      return mangleTempName(emitter.interner, temp_id);
  }
@@ -3039,26 +3096,95 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .load_global => |lg| {
-            var result = resolveTempName(emitter, lg.result);
-            var name = mangleLocalName(emitter.mangler, emitter.interner, lg.name_id);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, name);
-            var s2: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            var gmid = nameManglerMangle(emitter.mangler, lg.name_id, @intCast(u8, 1), lg.module_id);
+            var gname = interner_mod.stringInternerGet(emitter.interner, gmid);
+            hash_mod.u32ToU32MapPut(&emitter.temp_global_map, lg.result, gmid);
+            var result = mangleTempName(emitter.interner, lg.result);
+            var lg_is_arr: u8 = @intCast(u8, 0);
+            var lg_arr_len: u32 = @intCast(u32, 0);
+            var lg_tj: usize = @intCast(usize, 0);
+            while (lg_tj < emitter.current_fn.hoisted_temps.len) : (lg_tj += @intCast(usize, 1)) {
+                var lg_ht = emitter.current_fn.hoisted_temps.items[lg_tj];
+                if (lg_ht.temp_id == lg.result) {
+                    var lg_dty = emitter.registry.types_items[@intCast(usize, lg_ht.type_id)];
+                    if (lg_dty.kind == type_mod.TypeKind.array_type) {
+                        lg_is_arr = @intCast(u8, 1);
+                        var lg_ap = emitter.registry.array_items[@intCast(usize, lg_dty.payload_idx)];
+                        lg_arr_len = lg_ap.length;
+                    }
+                    break;
+                }
+            }
+            if (lg_is_arr == @intCast(u8, 1)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var loop_begin: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < ";
+                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var alb: [20]u8 = undefined;
+                var all = itoa_mod.itoa(lg_arr_len, alb[0..]);
+                var als: usize = @intCast(usize, 19) - @intCast(usize, all);
+                bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
+                var loop_body: []const u8 = ") {\n        ";
+                bufferedWriterWrite(&emitter.writer, loop_body);
+                bufferedWriterWrite(&emitter.writer, result);
+                var lb: []const u8 = "[_i] = ";
+                bufferedWriterWrite(&emitter.writer, lb);
+                bufferedWriterWrite(&emitter.writer, gname);
+                var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
+                bufferedWriterWrite(&emitter.writer, rb);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+                bufferedWriterWrite(&emitter.writer, gname);
+                var s2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .store_global => |sg| {
             var val = resolveTempName(emitter, sg.value);
-            var name = mangleLocalName(emitter.mangler, emitter.interner, sg.name_id);
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, name);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, val);
-            var s2: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, s2);
+            var sgmid = nameManglerMangle(emitter.mangler, sg.name_id, @intCast(u8, 1), sg.module_id);
+            var name = interner_mod.stringInternerGet(emitter.interner, sgmid);
+            var sg_is_arr: u8 = @intCast(u8, 0);
+            var sg_arr_len: u32 = @intCast(u32, 0);
+            var sg_tj: usize = @intCast(usize, 0);
+            while (sg_tj < emitter.current_fn.hoisted_temps.len) : (sg_tj += @intCast(usize, 1)) {
+                var sg_ht = emitter.current_fn.hoisted_temps.items[sg_tj];
+                if (sg_ht.temp_id == sg.value) {
+                    var sg_dty = emitter.registry.types_items[@intCast(usize, sg_ht.type_id)];
+                    if (sg_dty.kind == type_mod.TypeKind.array_type) {
+                        sg_is_arr = @intCast(u8, 1);
+                        var sg_ap = emitter.registry.array_items[@intCast(usize, sg_dty.payload_idx)];
+                        sg_arr_len = sg_ap.length;
+                    }
+                    break;
+                }
+            }
+            if (sg_is_arr == @intCast(u8, 1)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var loop_begin: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < ";
+                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var alb: [20]u8 = undefined;
+                var all = itoa_mod.itoa(sg_arr_len, alb[0..]);
+                var als: usize = @intCast(usize, 19) - @intCast(usize, all);
+                bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
+                var loop_body: []const u8 = ") {\n        ";
+                bufferedWriterWrite(&emitter.writer, loop_body);
+                bufferedWriterWrite(&emitter.writer, name);
+                var lb: []const u8 = "[_i] = ";
+                bufferedWriterWrite(&emitter.writer, lb);
+                bufferedWriterWrite(&emitter.writer, val);
+                var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
+                bufferedWriterWrite(&emitter.writer, rb);
+            } else {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, name);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+                bufferedWriterWrite(&emitter.writer, val);
+                var s2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
            .load_field => |lf| {
                var base = if (lf.name_id != @intCast(u32, 0) and lf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
@@ -4305,6 +4431,11 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     var bfn_nl: []const u8 = "\n"; pal.markerWrite(bfn_nl);
     emitter.current_fn = lir_fn;
     emitter.dedup_count = @intCast(u32, 0);
+    emitter.temp_global_map.count = @intCast(usize, 0);
+    var tg_cap: usize = @intCast(usize, 0);
+    while (tg_cap < emitter.temp_global_map.capacity) : (tg_cap += @intCast(usize, 1)) {
+        emitter.temp_global_map.occupied[tg_cap] = @intCast(u8, 0);
+    }
     if (emitter.dl_hoisted == @intCast(u8, 0)) {
         var bb_idx: usize = @intCast(usize, 0);
         while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {

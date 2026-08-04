@@ -106,6 +106,7 @@ pub const CompilerContext = struct {
     comptime_values: hash_mod.U32ToU64Map,
     pointer_only_ids: [*]u32,
     pointer_only_len: u32,
+    global_decls: lir_mod.GlobalDeclArrayList,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -185,6 +186,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .comptime_values = comptime_values,
         .pointer_only_ids = undefined,
         .pointer_only_len = @intCast(u32, 0),
+        .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.module),
     };
     runCompiler(&ctx);
 }
@@ -567,6 +569,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                 pal.markerWrite(dcount_buf[dstart..@intCast(usize, 19)]);
                 pal.markerWrite(msep);
                 mr_mod.moduleRegistryCollectIncludes(ctx.store, decls, &mods[mi].c_includes);
+                var mod_has_ri: u8 = @intCast(u8, 0);
                 var di: usize = @intCast(usize, 0);
                 while (di < decls.len) : (di += @intCast(usize, 1)) {
                     var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -585,7 +588,59 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
                     } else {
+                if (decl.kind == AstKind.var_decl) {
+                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
+                        var gv_name = decl.payload;
+                        var gv_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mods[mi].id, gv_name);
+                        if (gv_sym) |gvs| {
+                            if (gvs.kind == sym_mod.SymbolKind.global) {
+                                var gv_is_storage: u8 = @intCast(u8, 0);
+                                if ((@intCast(u16, decl.flags) & @intCast(u16, 0x01)) != @intCast(u16, 0)) {
+                                    gv_is_storage = @intCast(u8, 1);
+                                } else if (decl.child_1 != @intCast(u32, 0)) {
+                                    var gv_init = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
+                                    if (gv_init.kind != AstKind.int_literal and gv_init.kind != AstKind.float_literal and gv_init.kind != AstKind.char_literal) {
+                                        gv_is_storage = @intCast(u8, 1);
+                                    }
+                                }
+                                if (gv_is_storage == @intCast(u8, 1)) {
+                                    if (decl.child_1 != @intCast(u32, 0)) {
+                                        var gv_init3 = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
+                                        if (gv_init3.kind == AstKind.import_expr) { gv_is_storage = @intCast(u8, 0); }
+                                        if (gv_init3.kind == AstKind.field_access) {
+                                            var gv_fb = ctx.store.nodes.items[@intCast(usize, gv_init3.child_0)];
+                                            if (gv_fb.kind == AstKind.import_expr) { gv_is_storage = @intCast(u8, 0); }
+                                        }
+                                    }
+                                }
+                                if (gv_is_storage == @intCast(u8, 1)) {
+                                    var gv_has_ri: u8 = @intCast(u8, 0);
+                                    if (decl.child_1 != @intCast(u32, 0)) {
+                                        var gv_init2 = ctx.store.nodes.items[@intCast(usize, decl.child_1)];
+                                        if (gv_init2.kind != AstKind.undefined_literal) { gv_has_ri = @intCast(u8, 1); }
+                                    }
+                                    if (gv_has_ri == @intCast(u8, 1)) { mod_has_ri = @intCast(u8, 1); }
+                                    var gv_rt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decls[di]);
+                                    var gv_tid: u32 = if (gv_rt) |grt| grt else type_mod.TYPE_UNDEFINED;
+                                    lir_mod.globalDeclArrayListAppend(&ctx.global_decls, lir_mod.ModuleGlobalDecl{
+                                        .name_id = gv_name,
+                                        .module_id = mods[mi].id,
+                                        .type_id = gv_tid,
+                                        .has_runtime_init = gv_has_ri,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
         }
+    }
+    if (mod_has_ri != @intCast(u8, 0)) {
+        var ilowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
+        ilowerer.module_id = mods[mi].id;
+        ilowerer.module_reg = ctx.module_reg;
+        var imf = lower_mod.lowerModuleInit(&ilowerer, decls, mods[mi].id);
+        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, imf);
     }
     var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
@@ -627,6 +682,9 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         &ctx.alloc.scratch,
     );
     emitter.module_reg = ctx.module_reg;
+    var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
+    emitter.global_decls = gd_slice.ptr;
+    emitter.global_decls_len = @intCast(u32, gd_slice.len);
     var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
     var module_name: []const u8 = "output";
 

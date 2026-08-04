@@ -70,8 +70,8 @@ pub const LirInst = union(enum) {
     enum_const: struct { value: u64, result: u32, type_id: TypeId, member_name_id: u32 },
     load_local: struct { name_id: u32, result: u32 },
     store_local: struct { name_id: u32, value: u32 },
-    load_global: struct { name_id: u32, result: u32 },
-    store_global: struct { name_id: u32, value: u32 },
+    load_global: struct { name_id: u32, module_id: u32, result: u32 },
+    store_global: struct { name_id: u32, module_id: u32, value: u32 },
     print_str: struct { string_id: u32 },
     print_val: struct { value: u32, type_id: TypeId, fmt: u8 },
     nop: void,
@@ -337,3 +337,51 @@ pub const LirFunction = struct {
     is_pub: u8,
     is_variadic: u8,
 };
+
+pub const ModuleGlobalDecl = struct {
+    name_id: u32,
+    module_id: u32,
+    type_id: u32,
+    has_runtime_init: u8,
+};
+
+pub const GlobalDeclArrayList = struct {
+    items: [*]ModuleGlobalDecl,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn globalDeclArrayListInit(allocator: *Sand) GlobalDeclArrayList {
+    return GlobalDeclArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn globalDeclArrayListEnsureCapacity(self: *GlobalDeclArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < @intCast(usize, 4)) new_cap = @intCast(usize, 4);
+    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(ModuleGlobalDecl) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]ModuleGlobalDecl, raw);
+    var i: usize = @intCast(usize, 0);
+    while (i < self.len) : (i += @intCast(usize, 1)) {
+        new_items[i] = self.items[i];
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn globalDeclArrayListAppend(self: *GlobalDeclArrayList, value: ModuleGlobalDecl) void {
+    globalDeclArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn globalDeclArrayListGetSlice(self: *GlobalDeclArrayList) []ModuleGlobalDecl {
+    return self.items[0..self.len];
+}
