@@ -452,3 +452,44 @@ count). `catch_block_value_producing` moved FAIL→OK. The remaining 3 real FAIL
 `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4 green-guards unchanged:
 `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
 No other repro flipped.
+
+---
+
+## P3-5 — switch-on-error exhaustiveness FIXED (2026-08-05) — +2 repros (197 → 199)
+
+`switch (err)` over a caught error value (named OR anonymous error set) now emits real
+`case <value>:` entries instead of an empty `switch (err) { default: ... }`.
+
+- **Root cause (P3-3 investigation finding #3):** switch-case collection in `lower.zig:2919-2934`
+  (and its statement-site twin `lower.zig:3644-3658`) handled only `int_literal` and `enum_literal`
+  case nodes; an `error_literal` case node fell to `continue` → zero SwitchCase entries → the
+  emitted C `switch (err) { default: ... }` always took `default`.
+- **Fix (lower.zig):** added an `error_literal` branch to both switch-case collection sites,
+  mirroring the `enum_literal` branch — value resolves via `enum_value_table` (ordinal) when an
+  entry is present, else falls back to the raw `node.payload` name_id (anonymous-set case,
+  matching the error_literal lowering at `lower.zig:1191-1206`).
+- **Companion fix (semantic_analyzer.zig, `semanticAnalyzerResolveSwitchExpr`):** when the switch
+  cond type is an `error_set_type` (or `error_union_type`), resolve `error_literal` case nodes
+  against the cond error set (pushExpectedType + resolveExpr) so `enum_value_table` gets the
+  ordinal — mirroring how `enum_literal` case nodes are resolved for tagged-union switches. Without
+  this, a NAMED-set case value would fall back to the raw name_id and never match the produced
+  ordinal-coded error.
+
+| Repro | RED (pre-fix) | GREEN (post-fix) | Notes |
+|-------|---------------|------------------|-------|
+| `switch_on_error_named` | prints `0` (default taken; emitted `switch (err) { default: }`, 0 case entries) | prints `1` (emitted `case 0:`/`case 1:`) | `const E = error{ Bad, Other }`; `E!i32` returns `error.Bad`; catch switch |
+| `switch_on_error_anon` | prints `0` (default taken) | prints `1` (emitted `case 23:`/`case 28:` = raw name_ids) | bare `!i32` returns `error.Bad`; catch switch |
+
+Both classify **OK** per the QUICK_REF gate (dump rc=0, 1 `.c`, gcc-clean) in BOTH states — the
+defect is runtime-wrong, not a compile failure — so these are new OK repros with a runtime-gap-now-
+fixed annotation, NOT FAIL→OK moves. The zig0 oracle emits `case ERROR_Bad:` / `case ERROR_Other:`
+and prints `1`; zig1 now matches that runtime behavior.
+
+**Post-P3-5 accounting: OK=192 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 199 repros**
+(192 + 3 + 4 = 199; corpus total grows 197 → 199 by 2 new OK repros). Raw classifier FAIL stays
+**7** (green-guards remain a sub-bucket of the raw count). The 3 real FAILs unchanged:
+2 std-lib-deferred import-gap (`field_store_drop`, `test_stub_0`, both `error[3048]`) +
+`self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4 green-guards unchanged:
+`eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
+4 MD5 gates byte-identical (mud `4644ad13…`, gol `d0d3051d…`, lisp `f84c8748…`, json
+`3492a935…`). No other repro flipped.

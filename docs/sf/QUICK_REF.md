@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (197 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-04]
+### Corpus gate (199 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-05]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -114,6 +114,15 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   (c89_emit whitelists). Post-P3-7 effective **`OK=190 / FAIL=3 / green-guards=4` over 197**
   (190+3+4=197; raw FAIL 8→7). Remaining 3 FAIL: 2 std-lib-deferred (`field_store_drop`,
   `test_stub_0`) + `self_embed_optional_cycle`. 4 MD5 gates byte-identical.
+- **P3-5 closeout (2026-08-05, switch-on-error exhaustiveness):** `lower.zig` switch-case
+  collection (expr site + stmt twin) now handles `error_literal` case nodes (mirrors the
+  `enum_literal` branch: `enum_value_table` ordinal when present, else raw name_id); companion
+  sema fix resolves error_literal case nodes against the switch cond error set so named sets get
+  ordinals. New repros `switch_on_error_named` + `switch_on_error_anon` print `1` (was `0`,
+  default-branch). Post-P3-5 effective **`OK=192 / FAIL=3 / green-guards=4` over 199**
+  (192+3+4=199; corpus grew 197→199 by 2 new OK repros; raw FAIL stays 7). Remaining 3 FAIL:
+  2 std-lib-deferred (`field_store_drop`, `test_stub_0`) + `self_embed_optional_cycle`.
+  4 MD5 gates byte-identical.
 - **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
   (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run

@@ -1032,11 +1032,21 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     if (node.payload == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
     self.current_switch_cond_tu = @intCast(u32, 0);
+    var cond_es: u32 = @intCast(u32, 0);
     if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
         var cond_ty = self.registry.types_items[@intCast(usize, cond_type)];
         if (cond_ty.kind == type_mod.TypeKind.tagged_union_type) {
             self.current_switch_cond_tu = cond_type;
             var rs: []const u8 = "Z"; pal_mod.markerWrite(rs);
+        } else if (cond_ty.kind == type_mod.TypeKind.error_set_type) {
+            cond_es = cond_type;
+            var swes_m: []const u8 = "SWES:e"; pal_mod.markerWriteInt(swes_m, cond_es);
+            var swes_nl: []const u8 = "\n"; pal_mod.markerWrite(swes_nl);
+        } else if (cond_ty.kind == type_mod.TypeKind.error_union_type) {
+            var cond_eu = self.registry.eu_items[@intCast(usize, cond_ty.payload_idx)];
+            cond_es = cond_eu.error_set;
+            var sweu_m: []const u8 = "SWEU:e"; pal_mod.markerWriteInt(sweu_m, cond_es);
+            var sweu_nl: []const u8 = "\n"; pal_mod.markerWrite(sweu_nl);
         }
     }
     var prongs = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
@@ -1093,6 +1103,18 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                 } else {
                     var sce_rm: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm, cap_name);
                     registerLocalDecl(self, cap_name, self.current_switch_cond_tu);
+                }
+            }
+        }
+        if (cond_es != @intCast(u32, 0) and prong.payload != @intCast(u32, 0)) {
+            var es_case_ec = ast_mod.astStoreGetExtraChildren(self.store, prong.payload);
+            var es_ci: usize = 0;
+            while (es_ci < es_case_ec.len) : (es_ci += 1) {
+                var es_case_node = self.store.nodes.items[@intCast(usize, es_case_ec[es_ci])];
+                if (es_case_node.kind == AstKind.error_literal) {
+                    pushExpectedType(self, cond_es);
+                    _ = semanticAnalyzerResolveExpr(self, @intCast(u32, es_case_ec[es_ci]));
+                    popExpectedType(self);
                 }
             }
         }

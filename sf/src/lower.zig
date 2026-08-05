@@ -2926,9 +2926,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
+                } else if (case_node.kind == AstKind.error_literal) {
+                    var cval3: u64 = @intCast(u64, case_node.payload);
+                    var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
+                    if (cev3) |v| { cval3 = @intCast(u64, v); }
+                    case_val = cval3;
                 } else {
                     continue;
                 }
+
                 lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
                     lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
             }
@@ -3650,6 +3656,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
+                } else if (case_node.kind == AstKind.error_literal) {
+                    var cval3: u64 = @intCast(u64, case_node.payload);
+                    var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
+                    if (cev3) |v| { cval3 = @intCast(u64, v); }
+                    case_val = cval3;
                 } else {
                     continue;
                 }
