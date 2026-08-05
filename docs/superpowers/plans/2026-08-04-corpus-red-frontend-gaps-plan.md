@@ -121,6 +121,13 @@ Recommend the option with blast radius analysis. If a fix is needed, STOP for op
 
 Write `.superpowers/sdd/P3-anonerr-report.md`. STOP for operator ruling on the recommended option if a fix is needed.
 
+- [ ] **Step 5: Closeout (post-ruling, docs-only)**
+
+Per the P3-3 operator ruling (2026-08-05): Option A adopted — the pure-anonymous `==`/`!=` is semantically correct (name_id is a unique-per-name, program-stable code; verified RED==GREEN==1, matches real-Zig subset→superset coercion semantics). Docs-only:
+- Reclassify `anon_errset_comparison` as **OK (semantically verified)** in EXPECTED_FAIL.md + QUICK_REF.md with the justification (name_id uniqueness; matches oracle).
+- Record the 2 adjacent defects as tracked follow-ups in EXPECTED_FAIL.md/QUICK_REF.md, pointing to P3-5 (switch-on-error upstream fix) and I3-5/P3-6 (error-code representation unification).
+- Commit: `docs(P3): reclassify anon_errset_comparison OK + record adjacent defects`
+
 ---
 
 ### Task P3-4: Investigate + Fix catch_block_value_producing (standalone I-task)
@@ -171,6 +178,45 @@ git commit -m "fix(P3): value-producing catch block fallback (catch_block_value_
 
 ---
 
+### Task P3-5: Fix switch-on-error exhaustiveness (upstream defect) [AMENDMENT P3-1]
+
+**Files:** `sf/src/lower.zig` (switch-case collection, ~:2919-2934), repro dirs + EXPECTED_FAIL.md
+
+**Root cause (P3-3 investigation, .superpowers/sdd/P3-anonerr-report.md):** switch-case collection in `lower.zig:2919-2934` handles only `int_literal` and `enum_literal` case nodes; an `error_literal` case node (`switch (err) { error.Bad => ..., else => ... }`) falls to `continue` → zero SwitchCase entries → `switch (err) { default: ... }` — always takes `default`. Affects named AND anonymous error sets. The oracle emits proper `case ERROR_Bad:`. Genuine upstream defect; clean small fix; no corpus repro or MD5 gate exercises it today.
+
+- [ ] **Step 1: Add repro(s)** — create `repro/mi_matrix/switch_on_error_named/` + `switch_on_error_anon/` (RED = wrong-today, GREEN = expected) with NOTES.md. Pattern: switch over a caught error value with `error.Bad => ..., error.Other => ..., else => ...`. Named variant uses `const E = error{ Bad, Other }`; anon variant uses bare-`!` fn. Expected today: both dump rc=0/gcc-clean but print the else/default branch (RED); expected post-fix: print the matching branch. Confirm the current wrong behavior first.
+- [ ] **Step 2: Fix** — add an `error_literal` branch to the switch-case collection in `lower.zig:2919-2934` mirroring the `enum_literal` branch: resolve the case value via `enum_value_table` (ordinal) when present, else fall back to the raw name_id (anonymous-set case — matching how error literals emit in the anon regime). Keep the `continue` as the final else. Verify the emitted C contains real `case <value>:` entries.
+- [ ] **Step 3: Build + gate** — build in /tmp; both repros dump rc=0, gcc-clean, run the correct branch; 4 MD5s byte-identical (mud `4644ad13...`, gol `d0d3051d...`, lisp `f84c8748...`, json `3492a935...`); corpus FAIL count must not increase (switch_on_error_* should be OK post-fix, or OK-per-gate with runtime-gap annotation per the comptime_neg_int/xmod precedent if they classify OK-but-wrong today).
+- [ ] **Step 4: Commit** — `fix(P3): switch-on-error case collection drops error_literal nodes (switch_on_error)` (only lower.zig + repro dirs + EXPECTED_FAIL.md).
+
+---
+
+### Task I3-5: Investigate error-code representation unification [AMENDMENT P3-1]
+
+**Files:** investigation → `.superpowers/sdd/I3-5-errorcodes-report.md`; no source changes.
+
+**Scope (P3-3 adjacent defect #1, operator-ruled):** zig1 accepts inferred→named error-set coercions that real Zig also accepts (verified — subset→superset is legal), but then MISCOMPARES: anonymous-set errors carry the raw **name_id** as the C error code, named-set errors carry the **ordinal**. `e1 == e2` across the two regimes compares different encodings → wrong results for programs real Zig accepts.
+
+- [ ] **Step 1: Characterize the current encodings** — confirm anon = raw name_id (lower.zig:1191-1206, semantic_analyzer.zig:1182) and named = ordinal (semantic_analyzer.zig:1184-1186, typeRegistryErrorSetMemberIndex). Map every error-literal/error-code emission site in lower.zig + semantic_analyzer.zig + c89_emit.zig.
+- [ ] **Step 2: Design the unification** — per-program error-code registry assigning a unique small int per distinct error NAME (keyed by name_id, zig0-style `#define ERROR_Name` program-global codes). Determine: registry placement (comptime/sema? type_registry?), assignment timing (which pass), how named-set ordinals and anon name_ids both route through it, and how `@errorFromInt`/`@intFromError`/switch case values stay consistent. Provide A/B/C options with file:line + blast radius (which repros/examples emit anon codes vs named ordinals; MD5-gate impact — the 4 baselines).
+- [ ] **Step 3: Report + STOP** — write `.superpowers/sdd/I3-5-errorcodes-report.md`, recommend an option with blast radius analysis. STOP for operator ruling before implementation.
+
+---
+
+### Task P3-6: Implement error-code representation unification [AMENDMENT P3-1]
+
+**Files:** per I3-5 ruling; repro(s) for cross-set `==` + EXPECTED_FAIL.md.
+
+**Pre-requisites:** I3-5 investigation + operator ruling.
+
+- [ ] **Step 1: Implement the approved option** per the I3-5 ruling.
+- [ ] **Step 2: Add cross-set comparison repro** — `repro/mi_matrix/errset_cross_set_compare/` (RED/GREEN): a program real Zig accepts (inferred→named subset coercion) that compares an anon error against a named-set error; must print the semantically-correct result post-fix.
+- [ ] **Step 3: Build + gate** — build in /tmp; repro dumps rc=0, gcc-clean, runs correct result; 4 MD5s byte-identical OR re-baselined per operator ruling (I3-5 will predict MD5 impact); corpus FAIL count must not increase.
+- [ ] **Step 4: Commit** — `fix(P3): unify anonymous/named error-code representation (errset_cross_set_compare)`.
+
+---
+
 ## Amendments Record
 
 - **AMENDMENT P3-0 (2026-08-05, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plans-1-2 `184/8/0/0 @192` (with a nonexistent "3 emission-defect FAIL" term) to the post-Plan-2 **raw `189/8/0/0 @197` / effective `OK=189/FAIL=6/green-guards=2`**. The 8 raw FAILs = 5 frontend gaps + `self_embed_optional_cycle` residual + 2 green-guards (`var_declared_void`, `euvoid_val_catch`). P3-1 Step 2 accounting rewritten: post-P3-1 effective `OK=189/FAIL=4/green-guards=4` (raw FAIL stays 8; green-guards are a sub-bucket). MD5 baselines unchanged and current.
+- **AMENDMENT P3-1 (2026-08-05, operator ruling on P3-3 adjacent defects):** P3-3 resolved as Option A (pure-anonymous `==` semantically correct; Step 5 closeout = docs-only reclassify anon_errset_comparison OK + record adjacent defects). Two new tasks added from the P3-3 investigation findings: **P3-5** (upstream switch-on-error defect at lower.zig:2919-2934 — error_literal case nodes dropped → empty switch; repros + fix) and **I3-5 + P3-6** (error-code representation unification — anon name_id vs named ordinal miscompare in accepted real-Zig programs; investigate then implement per ruling). Real-Zig semantics verified from the official Zig language reference: inferred→named subset coercion is legal (zig0/z98 is stricter), so zig1's acceptance is correct; the miscompare is the genuine defect. Execution order appended after P3-4.
