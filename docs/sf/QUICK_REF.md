@@ -88,6 +88,12 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     `field_access_optional` — are **correct rejections (green-guards, P3-1)**, not gaps; counted
     separately from FAIL (see the green-guard classifier note above / EXPECTED_FAIL.md "Green-guards"
     section).
+  - **std-lib-deferred (P3-2, 2026-08-05):** `field_store_drop` and `test_stub_0` are classified FAIL
+    but tracked as **std-lib-deferred, not compiler defects** — both fail `error[3048]` (a user
+    program cannot import compiler-internal modules / nonexistent std). **Will pass when zig1 gains a
+    real std lib.** Deferral changes no counts: effective `OK=189 / FAIL=4 / green-guards=4`
+    (189+4+4=197; raw FAIL stays 8) — the 4 FAILs = these 2 std-lib-deferred + `catch_block_value_producing`
+    + `self_embed_optional_cycle`.
 - **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
   (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run

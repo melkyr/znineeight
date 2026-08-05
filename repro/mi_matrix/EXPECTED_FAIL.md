@@ -354,3 +354,23 @@ The 4 green-guards: `eu_assign_incompat_payload`, `field_access_optional`, `var_
 `euvoid_val_catch`. The 4 real FAILs: 2 import-gap (`field_store_drop`, `test_stub_0`, both
 `error[3048]`) + `catch_block_value_producing` (`error[2000]`) + `self_embed_optional_cycle`
 (F-8 residual, gcc incomplete-type). No other repro flipped.
+
+---
+
+## P3-2 — defer 2 import-gap repros to the std-lib milestone (2026-08-05)
+
+`field_store_drop` and `test_stub_0` remain classified **FAIL** but are now tracked as
+**std-lib-deferred** — NOT compiler defects. Both fail via `error[3048]` because user programs
+cannot import compiler-internal modules; no std lib exists yet. **Will pass when zig1 gains a real
+std lib.** (Both already documented in QUICK_REF.md "3 frontend-gap repros" / known-issues.)
+
+| Repro | Class | Cause | Will pass |
+|-------|-------|-------|-----------|
+| `field_store_drop` | FAIL (std-lib-deferred) | `const pal = @import("pal")` → `error[3048]: could not resolve imported file 'pal'` — pre-existing import-resolver gap; a user program cannot import compiler-internal modules | when zig1 gains a real std lib |
+| `test_stub_0` | FAIL (std-lib-deferred) | imports nonexistent `"std"` → `error[3048]` | when zig1 gains a real std lib |
+
+**Deferral changes no counts.** Accounting stays **OK=189 / FAIL=4 / green-guards=4 / ICE=0 /
+CRASH=0 over 197 repros** (189 + 4 + 4 = 197; raw classifier FAIL stays **8**). The 4 real FAILs:
+2 std-lib-deferred import-gap (`field_store_drop`, `test_stub_0`, both `error[3048]`) +
+`catch_block_value_producing` (`error[2000]`) + `self_embed_optional_cycle` (F-8 residual, gcc
+incomplete-type). No other repro flipped.
