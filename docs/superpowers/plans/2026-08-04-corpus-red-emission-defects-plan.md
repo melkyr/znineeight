@@ -159,6 +159,12 @@ git commit -m "fix(P2): reject void-typed variable declarations in sema (var_dec
 
 **Scope:** Implement the operator-approved root fix for the `@ptrToInt`/`@intToPtr` arena arithmetic undeclared-temp defect.
 
+> **AMENDMENT P2-1 (operator ruling, 2026-08-04):** per `.superpowers/sdd/P2-ptroint-report.md`, implement **Option A + Option B** together:
+> - **A (sema, root cause):** `semanticAnalyzerResolveArithmetic` (semantic_analyzer.zig:495, :498) — treat `TYPE_INT_LIT` as a valid pointer-arithmetic offset (`rhs_uint = typeRegistryIsUnsigned(self.registry, rhs) or rhs == type_mod.TYPE_INT_LIT`, and the symmetric lhs check). Covers `ptr ± lit` and `lit + ptr`. Zero blast radius.
+> - **B (emission hardening):** `emitHoistedDecls` (c89_emit.zig:2727-2746) — use the `written_type` override whenever `written_flag == 1` (not only for TYPE_UNDEFINED), per Option B in the report. Defends the whole class of "VOID temp assigned in body".
+> - **Gate:** because Option B widens the emission footprint, run the FULL corpus classifier + all 4 MD5 gates to prove no drift (the FAIL set must only lose `ptroint_arena_offset`; no OK→FAIL flips; MD5s byte-identical).
+> - The 1-arg `@ptrToInt` wrong-type quirk (semantic_analyzer.zig:1253) is OUT of scope — documented follow-up.
+
 - [ ] **Step 1: Apply the approved fix**
 
 Per the P2-1 report's chosen option, make the file:line edits.
@@ -186,3 +192,4 @@ git commit -m "fix(P2): ptroint arena offset undeclared temp (P2-1 investigation
 ## Amendments Record
 
 - **AMENDMENT P2-0 (2026-08-04, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plan-1 `184/8/0/0 @192` to the post-Plan-1 **`188/9/0/0 @197`** (Plan 1 added 5 repros; xmod became OK). FAIL expectations in P2-2/P2-4 renumbered accordingly (9→8 / 9→8-or-8→7). MD5 baselines unchanged and current.
+- **AMENDMENT P2-1 (2026-08-04, operator ruling):** P2-4 implements **Option A + Option B** from the P2-1 report (sema ptr±literal fix + emission written_type override), with a full corpus + 4-MD5 re-gate. See P2-4 scope note.
