@@ -906,7 +906,17 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.question_mark) return parserParseOptionalType(self);
     if (tok.kind == TokenKind.bang) return parserParseErrorUnionType(self);
     if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self);
-    if (tok.kind == TokenKind.kw_error) return parserParseErrorSetDecl(self);
+    if (tok.kind == TokenKind.kw_error) {
+        var es = try parserParseErrorSetDecl(self);
+        if (parserPeek(self).kind == TokenKind.bang) {
+            _ = parserAdvance(self);
+            var payload = try parserParseType(self);
+            return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+                tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+                es, payload, 0, 0);
+        }
+        return es;
+    }
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);

@@ -83,7 +83,9 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     program cannot import compiler-internal modules. Will pass when zig1 gains a real std lib),
     `test_stub_0` (imports nonexistent `"std"` — FAIL via `error[3048]` today; will pass when zig1
     gains a real std lib — planned).
-  - error[2000] parse: `catch_block_value_producing`.
+  - error[2000] parse: `catch_block_value_producing` — **FIXED (P3-4 + P3-7, 2026-08-05): FAIL→OK**.
+    Value-block catch (P3-4, commit a50e2910) + inline error-set types in type positions (P3-7);
+    see EXPECTED_FAIL.md P3-4/P3-7 section.
   - The 2 former error[3000] frontend-gap repros — `eu_assign_incompat_payload`,
     `field_access_optional` — are **correct rejections (green-guards, P3-1)**, not gaps; counted
     separately from FAIL (see the green-guard classifier note above / EXPECTED_FAIL.md "Green-guards"
@@ -104,6 +106,14 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   `lower.zig:2919-2934` drops `error_literal` case nodes → empty switch always takes `default`) and
   I3-5/P3-6 (error-code representation unification: anon name_id vs named ordinal miscompare in
   oracle-accepted cross-set programs). See EXPECTED_FAIL.md P3-3 section + `.superpowers/sdd/P3-anonerr-report.md`.
+- **P3-7 closeout (2026-08-05, inline error-set types in type positions):** `catch_block_value_producing`
+  is now OK — `helper.zig` `pub fn try_compute() error{Bad}!i32` (an INLINE `error{...}` in a type
+  position) works end-to-end. Parser (parser.zig `kw_error` branch) now handles the postfix `!`
+  after `error_set_decl`; `resolveTypeExprFull` gained an `error_set_decl` case (registers the
+  members via `typeRegistryGetOrCreateErrorSet`); the anonymous error-set type is emitted
+  (c89_emit whitelists). Post-P3-7 effective **`OK=190 / FAIL=3 / green-guards=4` over 197**
+  (190+3+4=197; raw FAIL 8→7). Remaining 3 FAIL: 2 std-lib-deferred (`field_store_drop`,
+  `test_stub_0`) + `self_embed_optional_cycle`. 4 MD5 gates byte-identical.
 - **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
   (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run

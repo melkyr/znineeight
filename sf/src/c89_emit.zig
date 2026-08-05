@@ -985,6 +985,7 @@ pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) 
             if (ty.kind == TypeKind.slice_type or
                 ty.kind == TypeKind.optional_type or
                 ty.kind == TypeKind.error_union_type or
+                ty.kind == TypeKind.error_set_type or
                 ty.kind == TypeKind.tagged_union_type or
                 ty.kind == TypeKind.union_type or
                 ty.kind == TypeKind.array_type or
@@ -1095,6 +1096,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
             if (ty.kind != TypeKind.slice_type and
                 ty.kind != TypeKind.optional_type and
                 ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.error_set_type and
                 ty.kind != TypeKind.tagged_union_type and
                 ty.kind != TypeKind.union_type and
                 ty.kind != TypeKind.array_type and
@@ -1145,6 +1147,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
             if (ty.kind != TypeKind.slice_type and
                 ty.kind != TypeKind.optional_type and
                 ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.error_set_type and
                 ty.kind != TypeKind.tagged_union_type and
                 ty.kind != TypeKind.union_type and
                 ty.kind != TypeKind.array_type and
@@ -1223,6 +1226,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
             if (ty.kind != TypeKind.slice_type and
                 ty.kind != TypeKind.optional_type and
                 ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.error_set_type and
                 ty.kind != TypeKind.tagged_union_type and
                 ty.kind != TypeKind.union_type and
                 ty.kind != TypeKind.array_type and
@@ -1272,6 +1276,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
             if (ty.kind != TypeKind.slice_type and
                 ty.kind != TypeKind.optional_type and
                 ty.kind != TypeKind.error_union_type and
+                ty.kind != TypeKind.error_set_type and
                 ty.kind != TypeKind.tagged_union_type and
                 ty.kind != TypeKind.union_type and
                 ty.kind != TypeKind.array_type and

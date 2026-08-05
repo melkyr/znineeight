@@ -735,6 +735,19 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             var fnm: []const u8 = "FAH:N"; pal_mod.markerWriteInt(fnm, node_idx);
         }
     }
+    if (node.kind == AstKind.error_set_decl) {
+        var esd_start_box: [1]u16 = [1]u16{ @intCast(u16, env.typereg.xn_len) };
+        var esd_count_box: [1]u16 = [1]u16{ @intCast(u16, 0) };
+        if (node.payload != 0) {
+            var esd_children = ast_mod.astStoreGetExtraChildren(env.store, node.payload);
+            esd_count_box[0] = @intCast(u16, esd_children.len);
+            var esd_i: usize = 0;
+            while (esd_i < esd_children.len) : (esd_i += 1) {
+                type_mod.xnAppend(env.typereg, esd_children[esd_i]);
+            }
+        }
+        return type_mod.typeRegistryGetOrCreateErrorSet(env.typereg, esd_start_box[0], esd_count_box[0]);
+    }
     if (node.kind == AstKind.error_union_type) {
         var eu_payload_type = resolveTypeExprFull(env, node.child_1, depth + @intCast(u32, 1));
         if (eu_payload_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;

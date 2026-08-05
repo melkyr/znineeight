@@ -408,3 +408,47 @@ stays 8). No other repro flipped.
    MISCOMPARES: anonymous-set errors carry the raw name_id, named-set errors carry the ordinal.
    Only reachable through programs the zig0 oracle rejects, so it is not a corpus classification
    issue. Investigate (I3-5), then implement per ruling (P3-6).
+
+---
+
+## P3-4 + P3-7 — catch_block_value_producing FAIL → OK (2026-08-05)
+
+`catch_block_value_producing` is now **OK** — the last of the 5 frontend-gap repros. Two tasks
+flipped it:
+
+- **P3-4 (commit a50e2910, value-producing blocks):** the catch block's trailing bare `99` (no `;`)
+  no longer errors `error[2000]: expected ';' but found '}'` — the trailing `;` is now optional
+  before `}` in `parserParseExprStmt` (parser.zig:1256-1260) — and `lowerExprOrBlock`
+  (lower.zig:3223-3238) now returns the last child's temp, so the catch fallback materializes the
+  real `99` instead of an uninitialized local (was garbage `-366458289`).
+- **P3-7 (this commit, inline error-set types in type positions):** `helper.zig:1`
+  `pub fn try_compute() error{Bad}!i32` — an INLINE error-set declaration in a type position — is
+  now fully supported:
+  - **Parser (parser.zig:902-930):** the `kw_error` branch of `parserParseType` now checks for a
+    trailing postfix `!` after `parserParseErrorSetDecl` and, when present, parses the payload type
+    and builds an `error_union_type` node (mirroring the base+`!` path at :914-921). Before: the
+    `!` fell out of the type parser → `error[2000]: expected '{' but found token`.
+  - **Type-resolver (type_resolver.zig:738-755):** `resolveTypeExprFull` now has an
+    `error_set_decl` case — it appends the member name_ids to the registry `xn_items` table and
+    registers an anonymous `error_set_type` via `typeRegistryGetOrCreateErrorSet` (content-deduped
+    through the registry `es_cache`, mirroring `symbol_registrator.zig:195-210`/`:357-372` named-set
+    population). Before: `error{Bad}` (no `!`) fell through to `TYPE_UNDEFINED` (:901-903) and the
+    fn return type resolved void → ICE `error[3043]: internal: invalid temp index 0`.
+  - **C89 emission (c89_emit.zig):** the anonymous (`name_id==0`) `error_set_type` is now included
+    in the synthetic-type emission whitelists (`computeSharedSet`, `emitSharedHeader` sub-passes
+    2a/2b, `emitSpecialTypes` sub-passes 2a/2b), so its `typedef int <cname>;` + per-member
+    `#define <cname>_<member> <ordinal>` macros are emitted. Before: the whitelist excluded
+    `error_set_type`, so the error-code temp's type name was undefined → gcc error.
+
+**Measured (this build):** dump rc=0, 2 `.c` emitted (main + helper), gcc-clean, links, runs
+printing **`99`** rc=0. `error{Bad}!i32` parses; bare `error{Bad}` (no `!`) no longer ICEs (dumps
+clean, gcc-clean, prints `0`). 4 MD5 gates byte-identical (mud `4644ad13…`, gol `d0d3051d…`,
+lisp `f84c8748…`, json `3492a935…`).
+
+**Post-P3-7 accounting: OK=190 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 197 repros**
+(190 + 3 + 4 = 197). Raw classifier FAIL **8 → 7** (green-guards remain a sub-bucket of the raw
+count). `catch_block_value_producing` moved FAIL→OK. The remaining 3 real FAILs:
+2 std-lib-deferred import-gap (`field_store_drop`, `test_stub_0`, both `error[3048]`) +
+`self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4 green-guards unchanged:
+`eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
+No other repro flipped.
