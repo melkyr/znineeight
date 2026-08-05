@@ -67,25 +67,23 @@ Write the report to `.superpowers/sdd/P2-ptroint-report.md`. STOP for operator r
 
 **Pre-requisites:** None.
 
-**Scope:** `.undefined_const` array initialization for tagged-union elements writes only `[_i].tag = 0;` — the payload is never zeroed/copied. This leaves the array-of-TU with an uninitialized payload, so `switch(arr[i])` reads garbage. Fix: for tagged-union elements, also zero the payload union (or emit a per-element zero-init that covers the full union size).
+**Scope:** Root-cause fix of the comptime-fold integer typing so a tagged-union payload store compiles. The repro `array_tagged_union_read` fails because `@intCast(i32, N)` comptime-folded consts are typed **USIZE** (lower.zig:2451-2464 `fold_ty_box` default) instead of the `@intCast` target type (I32). The TU payload store emitter then finds no exact type-id match (`USIZE≠I32`) and emits invalid bare-`.payload` C. **The fix must make the folded const carry the correct target type — NOT add an emitter-side fallback.**
+
+> **AMENDMENT P2-2 (operator ruling, 2026-08-04):** the first P2-2 implementation (commit c4531c92) added an integer-compat fallback in the TU payload emitter (`emitFieldAssign`/`.store_field`) and was **REJECTED by the operator** ("reject that fallback chain of doom as it will rot on maintenance"). The root cause is upstream: the comptime fold at `lower.zig:2451-2464` types `@intCast(i32, N)` folded consts as USIZE (the `fold_ty_box` default) because `resolvedTypeTableGet` for the node does not yield the target type in this context. This task fixes the fold typing so the const carries the `@intCast` target type; the emitter's exact-match path then works unchanged. No fallback added.
 
 - [ ] **Step 1: Read the handler**
 
 Read `sf/src/c89_emit.zig:3719-3765` (`.undefined_const`). The tagged-union element case at :3740-3743 emits `result[_i].tag = 0; _i++;` — nothing touches the payload.
 
-- [ ] **Step 2: Verify root cause**
+- [ ] **Step 2: Confirm root cause (fold typing)**
 
-Confirm the repro (`array_tagged_union_read`, prints 6 not 7) is caused by this. Check whether the array is initialized via `.undefined_const` or via explicit array-literal copy. If the repro uses an explicit `[2]Command{ Command{.Go=3}, Command{.Go=4} }` literal, the path may be different (array-copy, not undefined_const). Investigate which path actually fires before editing.
+The repro `array_tagged_union_read` uses an explicit array literal: `var arr: [2]Command = [2]Command{ Command{ .Go = @intCast(i32, 3) }, Command{ .Go = @intCast(i32, 4) } };`. Confirmed (P2-2 v1 investigation, `.superpowers/sdd/task-P2-2-report.md`): `.undefined_const` does NOT fire (marker `UCT:r` count = 0), the array-copy loop is whole-struct and fine. The defect is the TU payload store: the folded const temp is typed **USIZE** (13) — `HT:zT_3(13->13)w1` — while the `Go` variant is **I32** (6), so the exact type-id match fails and the emitter falls back to bare `zT_2.payload = zT_3;` (invalid C89).
 
-**If `.undefined_const` fires:** the fix zeroes the whole element. For a tagged union, emit a byte-level zero-init loop, OR emit `.tag = 0;` plus zero the payload. Simplest correct C89: loop over bytes of the element:
-```c
-result[_i].tag = 0;
-```
-must become something that also covers the payload — since C89 can't `memset` a union member easily, consider emitting a nested zero for each non-void TU variant field, or falling back to `result[_i] = *result; /* self */` (invalid). **Investigate the actual emission path first; if the array is populated by per-element store_field (not undefined_const), the fix is in the array-copy path (`emitBaseIdxAccess` element copy) instead.** Do NOT edit until the firing path is confirmed.
+The fold is at `lower.zig:2451-2464`: `fold_ty_box` defaults to `TYPE_USIZE`; for `@intCast` nodes it is overridden from `resolvedTypeTableGet` only when the resolved type is a valid non-USIZE/UNDEFINED/INT_LIT type. Confirm WHY `resolvedTypeTableGet` does not yield I32 for the `@intCast` node here (markers/GDB): is the resolved-type entry absent, USIZE, UNDEFINED, or INT_LIT at lowering time? This is the root cause to fix — the folded const must be typed with the `@intCast` **target** type (I32). Note `@intCast(i32, N)` resolves to I32 in sema (`semantic_analyzer.zig:1241-1245`, result = `resolveTypeExprFull(ec[0])`), so the resolved-type table SHOULD carry it; determine why lowering sees otherwise.
 
-- [ ] **Step 3: Implement the confirmed fix**
+- [ ] **Step 3: Implement the root-cause fix (fold typing)**
 
-Implement per the confirmed root cause. Provide exact old→new code in the report.
+Fix at the fold site so `@intCast(<target>, const)` folded consts are typed with the target type (not USIZE). Exact approach per Step-2 findings — e.g. resolve the `@intCast` target type directly (the type expression is `node`'s first extra child via `astStoreGetExtraChildren`) when `resolvedTypeTableGet` is unavailable/unreliable, or fix the resolved-type lookup. Do NOT add an emitter fallback. Provide exact old→new code. If Step-2 reveals the true root cause is elsewhere (e.g. sema stores a wrong resolved type for the node), fix THAT — always address the root, never mask with an emitter fallback.
 
 - [ ] **Step 4: Build + gate**
 
@@ -101,8 +99,8 @@ Expected: gcc-clean, prints `7` (was 6). 4 MD5s byte-identical. Corpus FAIL 9→
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sf/src/c89_emit.zig
-git commit -m "fix(P2): array-of-tagged-union element zero-init copies payload (I-R4 Bug2)"
+git add sf/src/lower.zig [sf/src/semantic_analyzer.zig]
+git commit -m "fix(P2): comptime-folded intcast consts carry target type (array_tagged_union_read)"
 ```
 
 ---
@@ -193,3 +191,4 @@ git commit -m "fix(P2): ptroint arena offset undeclared temp (P2-1 investigation
 
 - **AMENDMENT P2-0 (2026-08-04, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plan-1 `184/8/0/0 @192` to the post-Plan-1 **`188/9/0/0 @197`** (Plan 1 added 5 repros; xmod became OK). FAIL expectations in P2-2/P2-4 renumbered accordingly (9→8 / 9→8-or-8→7). MD5 baselines unchanged and current.
 - **AMENDMENT P2-1 (2026-08-04, operator ruling):** P2-4 implements **Option A + Option B** from the P2-1 report (sema ptr±literal fix + emission written_type override), with a full corpus + 4-MD5 re-gate. See P2-4 scope note.
+- **AMENDMENT P2-2 (2026-08-04, operator ruling):** P2-2 rewritten from an emitter-fallback fix to the ROOT-CAUSE fix. The first implementation (c4531c92, TU-payload integer-compat fallback) was REJECTED ("reject that fallback chain of doom"). Root cause: comptime fold at lower.zig:2451-2464 types `@intCast(i32,N)` folded consts as USIZE instead of the target type. Fix the fold typing; NO emitter fallback.
