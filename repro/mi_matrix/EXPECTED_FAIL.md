@@ -493,3 +493,43 @@ and prints `1`; zig1 now matches that runtime behavior.
 `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
 4 MD5 gates byte-identical (mud `4644ad13…`, gol `d0d3051d…`, lisp `f84c8748…`, json
 `3492a935…`). No other repro flipped.
+
+---
+
+## P3-6 — error-code representation unification: per-name registry + `ERROR_<name>` prologue (2026-08-05) — +1 repro (199 → 200)
+
+Operator ruling 2026-08-05: **Option B (zig0-style)**, per `.superpowers/sdd/I3-5-errorcodes-report.md`.
+All error codes are now dense per-program **per-name** registry codes (name_id → small int,
+1-based, first-use order) instead of per-set ordinals / raw name_id. Fixes the cross-set `e1 == e2`
+miscompare for real-Zig-legal subset→superset coercions (both I3-5 probes now print `1`).
+
+- **Registry:** `error_code_registry: U32ToU32Map` (name_id → code) on `CompilerContext`
+  (main.zig, next to `enum_value_table`); `hash_mod.u32ToU32MapGetOrAddDense` (look up; miss ⇒
+  `count+1`, store). Sema/lower/emitter all route through it.
+- **Producers repointed** (ordinal / raw name_id → registry code):
+  - sema `semanticAnalyzerResolveExpr` error_literal-under-expected-set (membership check kept).
+  - sema `var x = error.Bad` set-scan inference (kept).
+  - sema switch-case companion (P3-5) stores the registry code via the error_literal path.
+  - lower `error_literal` fallback → `getOrAdd(name_id)` (bare-`!` anon path; same code as named).
+  - lower `E.Bad` field-access (type-site + value-site) → `enum_const` with registry code.
+  - lower switch-case error_literal fallbacks → `getOrAdd(name_id)`.
+  - c89_emit `emitErrorSetType` member `#define`s revalued to registry codes.
+- **Prologue macros:** program-global `#define ERROR_<name> <code>` emitted once into
+  `zig_special_types.h` (multi-module shared header — every module .h includes it) and inline in
+  the single-stream path; skipped when the registry is empty (keeps mud/gol byte-identical).
+  Assignment order = sema/lower traversal order (deterministic), finalized by registering all
+  error-set members in type order before emission.
+
+| Repro | RED (pre-P3-6) | GREEN (post-P3-6) | Notes |
+|-------|----------------|-------------------|-------|
+| `errset_cross_set_compare` (NEW) | prints `00` | prints `11` | anon→named + named→named subset→superset `err == error.Bad`; classifies **OK** |
+
+**Post-P3-6 accounting: OK=193 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 200 repros**
+(193 + 3 + 4 = 200; corpus total grows 199 → 200 by 1 new OK repro). Raw classifier FAIL stays
+**7**; the 3 real FAILs and 4 green-guards unchanged. 4 MD5 gates: **mud + gol byte-identical**
+(mud `4644ad13…`, gol `d0d3051d…`); **lisp + json RE-BASELINED** per F-5 AMENDMENT B precedent
+("runtime behavior is the gate, not byte-identity"): lisp `dd56cd23…`, json `900cb401…` — both
+compile, link, and run correctly (lisp `(+ 1 2)` → `3`, `(foo-bar-baz)` → `Eval error:
+UnboundSymbol`; json parses `test.json` identically). No other repro flipped. `@enumToInt(err)`
+values change to registry codes (accepted; re-verified at runtime — `error_literal_return` still
+prints `1`, all ~30 error repros unchanged).

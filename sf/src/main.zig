@@ -101,6 +101,7 @@ pub const CompilerContext = struct {
     dep_graph: *symbol_registrator.DepGraph,
     lir_fns: LirFunctionArrayList,
     enum_value_table: hash_mod.U32ToU32Map,
+    error_code_registry: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
     comptime_values: hash_mod.U32ToU64Map,
@@ -162,6 +163,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
+    var error_code_registry = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var comptime_values = hash_mod.u32ToU64MapInit(&compiler_alloc.module);
@@ -181,6 +183,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .dep_graph = &dep_graph,
         .lir_fns = lir_fns,
         .enum_value_table = enum_value_table,
+        .error_code_registry = error_code_registry,
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
         .comptime_values = comptime_values,
@@ -363,7 +366,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
-         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map);
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];
@@ -540,6 +543,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .diag = ctx.diag,
         .has_symbols = @intCast(u8, 1),
         .enum_value_table = &ctx.enum_value_table,
+        .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .comptime_values = &ctx.comptime_values,
     };
@@ -666,6 +670,21 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     }
 }
 
+fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
+    var ti: usize = 0;
+    while (ti < ctx.typereg.types_len) : (ti += 1) {
+        var ty = ctx.typereg.types_items[ti];
+        if (ty.kind != type_mod.TypeKind.error_set_type) continue;
+        if (@intCast(usize, ty.payload_idx) >= ctx.typereg.es_len) continue;
+        var esp = ctx.typereg.es_items[@intCast(usize, ty.payload_idx)];
+        var ei: usize = 0;
+        while (ei < @intCast(usize, esp.tags_count)) : (ei += 1) {
+            var mname_id = ctx.typereg.xn_items[@intCast(usize, esp.tags_start) + ei];
+            _ = hash_mod.u32ToU32MapGetOrAddDense(&ctx.error_code_registry, mname_id);
+        }
+    }
+}
+
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89) return;
@@ -680,8 +699,10 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         undefined,
         undefined,
         &ctx.alloc.scratch,
+        &ctx.error_code_registry,
     );
     emitter.module_reg = ctx.module_reg;
+    errorCodeRegistryFinalize(ctx);
     var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
     emitter.global_decls = gd_slice.ptr;
     emitter.global_decls_len = @intCast(u32, gd_slice.len);

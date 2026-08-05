@@ -83,6 +83,7 @@ pub const SemanticContext = struct {
     diag: *DiagnosticCollector,
     has_symbols: u8,
     enum_value_table: *hash_mod.U32ToU32Map,
+    error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     comptime_values: *hash_mod.U32ToU64Map,
 };
@@ -1189,7 +1190,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
         return tid;
     } else if (node.kind == AstKind.error_literal) {
-        var val = @intCast(u64, node.payload);
+        var name_id: u32 = node.payload;
+        var reg_code: u32 = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, name_id);
+        var val = @intCast(u64, reg_code);
         var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
         if (ev) |v| { val = @intCast(u64, v); }
         var rtype = literalTempType(self, node_idx);
@@ -1835,9 +1838,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          if (ty.kind == type_mod.TypeKind.error_set_type) {
                             var ordinal = type_mod.typeRegistryErrorSetMemberIndex(self.ctx.registry, type_id, field_name_id);
                             if (ordinal != @intCast(u32, 0xFFFFFFFF)) {
+                                var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, field_name_id);
                                 var eftid = nextTemp(self, type_id);
                                 emitInst(self, LirInst{ .enum_const = .{
-                                    .value = @intCast(u64, ordinal),
+                                    .value = @intCast(u64, reg_code),
                                     .result = eftid,
                                     .type_id = type_id,
                                     .member_name_id = field_name_id,
@@ -1893,9 +1897,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (bty.kind == type_mod.TypeKind.error_set_type) {
                 var es_ordinal = type_mod.typeRegistryErrorSetMemberIndex(self.ctx.registry, base_ty, field_name_id);
                 if (es_ordinal != @intCast(u32, 0xFFFFFFFF)) {
+                    var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, field_name_id);
                     var eftid2 = nextTemp(self, base_ty);
                     emitInst(self, LirInst{ .enum_const = .{
-                        .value = @intCast(u64, es_ordinal),
+                        .value = @intCast(u64, reg_code),
                         .result = eftid2,
                         .type_id = base_ty,
                         .member_name_id = field_name_id,
@@ -2927,7 +2932,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
                 } else if (case_node.kind == AstKind.error_literal) {
-                    var cval3: u64 = @intCast(u64, case_node.payload);
+                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, case_node.payload));
                     var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev3) |v| { cval3 = @intCast(u64, v); }
                     case_val = cval3;
@@ -3657,7 +3662,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
                 } else if (case_node.kind == AstKind.error_literal) {
-                    var cval3: u64 = @intCast(u64, case_node.payload);
+                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, case_node.payload));
                     var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev3) |v| { cval3 = @intCast(u64, v); }
                     case_val = cval3;

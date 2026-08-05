@@ -38,6 +38,7 @@ pub const SemanticAnalyzer = struct {
     current_fn_name: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
+    error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     call_param_map: *hash_mod.U32ToU32Map,
     current_switch_cond_tu: u32,
@@ -60,7 +61,7 @@ pub const SemanticAnalyzer = struct {
     align_of_name_id: u32,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
     var und_text: []const u8 = "_";
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     var pc_text: []const u8 = "@ptrCast";
@@ -100,6 +101,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_fn_name = @intCast(u32, 0),
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
+        .error_code_registry = error_code_reg,
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
         .local_decl_names = undefined,
@@ -1205,7 +1207,8 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     var name_id: u32 = node.payload;
                     var ord = type_mod.typeRegistryErrorSetMemberIndex(self.registry, es, name_id);
                     if (ord != @intCast(u32, 0xFFFFFFFF)) {
-                        hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, ord);
+                        var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.error_code_registry, name_id);
+                        hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, reg_code);
                         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, es);
                         result = es;
                     } else {
@@ -1649,7 +1652,8 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                             var ord = type_mod.typeRegistryErrorSetMemberIndex(self.registry, @intCast(u32, ei), name_id);
                             if (ord != @intCast(u32, 0xFFFFFFFF)) {
                                 var es_type_id: u32 = @intCast(u32, ei);
-                                hash_mod.u32ToU32MapPut(self.enum_value_table, node.child_1, ord);
+                                var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.error_code_registry, name_id);
+                                hash_mod.u32ToU32MapPut(self.enum_value_table, node.child_1, reg_code);
                                 rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, es_type_id);
                                 it = es_type_id;
                                 break;

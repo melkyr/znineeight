@@ -70,6 +70,14 @@ fn u32ToU32MapGrow(self: *U32ToU32Map) void {
     }
 }
 
+pub fn u32ToU32MapGetOrAddDense(self: *U32ToU32Map, key: u32) u32 {
+    var got = u32ToU32MapGet(self, key);
+    if (got) |v| return v;
+    var code = @intCast(u32, self.count) + @intCast(u32, 1);
+    u32ToU32MapPut(self, key, code);
+    return code;
+}
+
 pub fn u32ToU32MapPut(self: *U32ToU32Map, key: u32, value: u32) void {
     if (self.count * @intCast(usize, 4) >= self.capacity * @intCast(usize, 3)) { u32ToU32MapGrow(self); }
     if (self.capacity == @intCast(usize, 0)) { u32ToU32MapGrow(self); }

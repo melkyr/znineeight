@@ -123,6 +123,19 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   (192+3+4=199; corpus grew 197→199 by 2 new OK repros; raw FAIL stays 7). Remaining 3 FAIL:
   2 std-lib-deferred (`field_store_drop`, `test_stub_0`) + `self_embed_optional_cycle`.
   4 MD5 gates byte-identical.
+- **P3-6 closeout (2026-08-05, error-code representation unification):** all error codes are now
+  dense program-global **per-name** registry codes (`error_code_registry: U32ToU32Map` name_id →
+  code on CompilerContext; `getOrAddDense` first-use order) instead of per-set ordinals / raw
+  name_id. Prologue emits `#define ERROR_<name> <code>` (zig_special_types.h for multi-module,
+  inline for single-stream; skipped when empty). Fixes cross-set `e1 == e2` for real-Zig-legal
+  subset→superset coercions (both I3-5 probes → `1`). New repro `errset_cross_set_compare`
+  prints `11` (RED `00`). Post-P3-6 effective **`OK=193 / FAIL=3 / green-guards=4` over 200**
+  (193+3+4=200; corpus grew 199→200 by 1 new OK repro; raw FAIL stays 7). 4 MD5 gates:
+  **mud + gol byte-identical** (`4644ad13…`, `d0d3051d…`); **lisp + json RE-BASELINED** to
+  `dd56cd23…` / `900cb401…` (per-name codes replace named-set ordinals; F-5 AMENDMENT B precedent
+  — "runtime behavior is the gate, not byte-identity"; both compile, link, run correctly).
+  `@enumToInt(err)` prints registry codes (accepted; all ~30 error repros runtime re-verified
+  unchanged).
 - **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
   (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run
@@ -167,12 +180,12 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-04] |
+| Entry Path | Reference md5 | [updated: 2026-08-05] |
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `4644ad1349c55af80fa1a18fe0e17989` |
 | `examples/z98/game_of_life/main.zig` | `d0d3051d1cb1bd0db3ffd29495a2e18e` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `f84c8748e6d0580ffac811d75e34e0e7` |
-| `examples/z98/json_parser/main.zig` | `3492a935883ee91258feece576ba23d5` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `dd56cd23984d2533eebd244ffe593791` |
+| `examples/z98/json_parser/main.zig` | `900cb401779aab11bcf22ce35100323c` |
 
 - **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
   `5fb57e70…`, gol `f855c9f9…`, lisp `0ad02040…`, json `11a5db1d…`) are STALE — replaced. Two
@@ -184,6 +197,12 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 - **Re-baselined 2026-08-04 (F-5/F-7, AMENDMENT F-5-B).** mud + lisp re-baselined again because F-5/F-7
   now emit `load_global`/`store_global` stores and module-global init that were previously dropped —
   runtime behavior is the gate, not byte-identity. gol + json unchanged. [updated: 2026-08-04]
+
+- **Re-baselined 2026-08-05 (P3-6, error-code unification).** lisp + json re-baselined again because
+  P3-6 replaced named-set per-set ordinals with a program-global per-name error-code registry
+  (`#define ERROR_<name> <code>` in `zig_special_types.h` + revalued member defines) — runtime
+  behavior is the gate, not byte-identity (F-5 AMENDMENT B precedent). mud + gol byte-identical
+  (they emit no error-name codes). New values: lisp `dd56cd23…`, json `900cb401…`. [updated: 2026-08-05]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.

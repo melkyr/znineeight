@@ -478,9 +478,10 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
      emitted_type_set: U32ToU32Map,
      fwd_decl_set: U32ToU32Map,
      pointer_only_map: U32ToU32Map,
-     shared_set: U32ToU32Map,
-     module_reg: *mr_mod.ModuleRegistry,
-     dedup_names: [128]u32,
+      shared_set: U32ToU32Map,
+      module_reg: *mr_mod.ModuleRegistry,
+      error_code_registry: *hash_mod.U32ToU32Map,
+      dedup_names: [128]u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
       fl_temps: [128]u32,
@@ -490,7 +491,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
       global_decls_len: u32,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
@@ -511,6 +512,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .pointer_only_map = hash_mod.u32ToU32MapInit(alloc),
          .shared_set = hash_mod.u32ToU32MapInit(alloc),
          .module_reg = undefined,
+         .error_code_registry = error_code_reg,
           .dedup_names = undefined,
           .dedup_count = @intCast(u32, 0),
            .fl_name_ids = undefined,
@@ -1068,6 +1070,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
     bufferedWriterWrite(&emitter.writer, pg1);
     var pg2: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, pg2);
+    emitErrorCodePrologue(emitter);
     var lfwd: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInit(emitter.alloc);
     var lemit: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInit(emitter.alloc);
     var tsi: usize = @intCast(usize, 0);
@@ -1609,21 +1612,45 @@ fn emitErrorSetType(emitter: *C89Emitter, tid: u32) void {
     if (@intCast(usize, ty.payload_idx) < emitter.registry.es_len) {
         var esp = emitter.registry.es_items[@intCast(usize, ty.payload_idx)];
         var ei: usize = @intCast(usize, 0);
-        var value: u32 = @intCast(u32, 0);
         while (ei < @intCast(usize, esp.tags_count)) : (ei += @intCast(usize, 1)) {
             var mname_id = emitter.registry.xn_items[@intCast(usize, esp.tags_start) + ei];
             var mname = interner_mod.stringInternerGet(emitter.interner, mname_id);
+            var reg_code = hash_mod.u32ToU32MapGetOrAddDense(emitter.error_code_registry, mname_id);
             var def: []const u8 = "#define "; bufferedWriterWrite(&emitter.writer, def);
             bufferedWriterWrite(&emitter.writer, cname);
             var us: []const u8 = "_"; bufferedWriterWrite(&emitter.writer, us);
             bufferedWriterWrite(&emitter.writer, mname);
             var sp: []const u8 = " "; bufferedWriterWrite(&emitter.writer, sp);
             var val_itoa: [16]u8 = undefined;
-            var val_len = itoa_mod.itoa(value, val_itoa[0..]);
+            var val_len = itoa_mod.itoa(reg_code, val_itoa[0..]);
             var val_start: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, val_len);
             var val_end: usize = val_start + @intCast(usize, val_len);
             bufferedWriterWrite(&emitter.writer, val_itoa[val_start..val_end]);
-            value += @intCast(u32, 1);
+            var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
+        }
+    }
+    var nl2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl2);
+}
+
+fn emitErrorCodePrologue(emitter: *C89Emitter) void {
+    if (emitter.error_code_registry.count == @intCast(usize, 0)) return;
+    var tag_hdr: []const u8 = "/* Error tags */\n";
+    bufferedWriterWrite(&emitter.writer, tag_hdr);
+    var cap: usize = emitter.error_code_registry.capacity;
+    var i: usize = @intCast(usize, 0);
+    while (i < cap) : (i += @intCast(usize, 1)) {
+        if (emitter.error_code_registry.occupied[i] != @intCast(u8, 0)) {
+            var name_id = emitter.error_code_registry.keys[i];
+            var code = emitter.error_code_registry.values[i];
+            var name = interner_mod.stringInternerGet(emitter.interner, name_id);
+            var def: []const u8 = "#define ERROR_"; bufferedWriterWrite(&emitter.writer, def);
+            bufferedWriterWrite(&emitter.writer, name);
+            var sp: []const u8 = " "; bufferedWriterWrite(&emitter.writer, sp);
+            var val_itoa: [16]u8 = undefined;
+            var val_len = itoa_mod.itoa(code, val_itoa[0..]);
+            var val_start: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, val_len);
+            var val_end: usize = val_start + @intCast(usize, val_len);
+            bufferedWriterWrite(&emitter.writer, val_itoa[val_start..val_end]);
             var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
         }
     }
@@ -2116,6 +2143,7 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_
         hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ptr_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
     }
     var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
+    emitErrorCodePrologue(emitter);
     emitSpecialTypes(emitter, emitter.registry, sorted);
     emitModuleHeader(emitter, name, fns, c_includes);
     emitGlobalDecls(emitter, @intCast(u32, 0), @intCast(u8, 1));
