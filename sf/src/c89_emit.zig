@@ -702,6 +702,23 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         return interner_mod.stringInternerGet(mangler.interner, fp_mid);
     }
     if (ty.kind == TypeKind.error_set_type) {
+        if (ty.name_id == @intCast(u32, 0)) {
+            var buf: [64]u8 = undefined;
+            var p: usize = @intCast(usize, 0);
+            var pref: []const u8 = "ES_";
+            var pi: usize = @intCast(usize, 0);
+            while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
+            var pl = ty.payload_idx;
+            var di: usize = p;
+            while (pl > @intCast(u32, 0) or di == p) : (di += @intCast(usize, 1)) {
+                buf[di] = @intCast(u8, @intCast(u32, '0') + (pl % @intCast(u32, 10)));
+                pl = pl / @intCast(u32, 10);
+                if (di >= @intCast(usize, 63)) break;
+            }
+            p = di;
+            var es_nid = nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
+            return interner_mod.stringInternerGet(mangler.interner, es_nid);
+        }
         var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
