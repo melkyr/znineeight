@@ -51,17 +51,23 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   ```bash
   if [ -z "$(ls DIR/*.c 2>/dev/null)" ]; then result=FAIL; fi   # 0 .c emitted = frontend gap
   ```
+- **Green-guards are a distinct bucket**: a valid program CORRECTLY rejected by the frontend with the
+  documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
+  the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
+  (See EXPECTED_FAIL.md "Green-guards" section.)
 - **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
 - **Post-Plan-1 baseline (2026-08-04, 5 new repros): `OK=188 FAIL=9 ICE=0 CRASH=0` over 197 repros.**
 - **Post-Plan-2 baseline (2026-08-04, emission-defect fixes): raw `OK=189 FAIL=8 ICE=0 CRASH=0` over 197 repros; 2 green-guards (`var_declared_void`, `euvoid_val_catch`) counted separately → effective `OK=189 / FAIL=6 / green-guards=2`.**
+- **Post-P3-1 baseline (2026-08-05, reclassify 2 correct rejections): raw `OK=189 FAIL=8 ICE=0 CRASH=0` over 197 repros stays 8; 4 green-guards (`eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`) counted separately → effective `OK=189 / FAIL=4 / green-guards=4` (189+4+4=197).**
   - 184 fully OK (frontend + emission + gcc all clean).
-  - **8 FAIL** (non-ICE) = 5 frontend gaps + 2 emission defects + 1 residual, of which 2 emission
-    defects are now FIXED (P2-2/P2-4) and `var_declared_void` reclassified green-guard (P2-3) →
-    post-Plan-2 breakdown: **6 FAIL = 5 frontend gaps + 1 residual**; the 3 former emission defects
-    all resolved.
+  - **8 raw FAIL** (non-ICE) = 5 frontend gaps + 2 emission defects + 1 residual, of which 2 emission
+    defects are now FIXED (P2-2/P2-4), `var_declared_void` reclassified green-guard (P2-3), and
+    `eu_assign_incompat_payload`/`field_access_optional` reclassified green-guards (P3-1) →
+    post-P3-1 breakdown: **4 FAIL = 3 frontend gaps + 1 residual**; the 3 former emission defects all
+    resolved; 4 green-guards counted separately.
   - **0 ICE** — the F-1..F-8 fixes eliminated the `error[3043]` ("internal: unsupported field-store
     base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 184 + FAIL 8 + ICE 0 = 192`).
-  - Must stay `189/8/0/0` (raw) / effective `189/6/2` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
+  - Must stay `189/8/0/0` (raw) / effective `189/4/4` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression; a green-guard moving to OK/FAIL is a regression.
 - **Emission defects — ALL FIXED (Plan 2, 2026-08-04)** [updated: 2026-08-04]:
   - `array_tagged_union_read`: comptime-fold intcast target typing, lower.zig.
   - `var_declared_void`: sema `error[3000]` rejection + `euvoid_val_catch` — both green-guards
@@ -71,14 +77,17 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now OK — **fixed F-9
     2026-08-04** (Option B optional-of-EU unwrap + module `TEMP_NONE`) and restored to OK. See
     EXPECTED_FAIL.md.
-- **The 5 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
+- **The 3 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
   - error[3048] cannot-read/cannot-resolve file: `field_store_drop` (`const pal = @import("pal")` →
     `error[3048]: could not resolve imported file 'pal'` — pre-existing import-resolver gap; a user
     program cannot import compiler-internal modules. Will pass when zig1 gains a real std lib),
     `test_stub_0` (imports nonexistent `"std"` — FAIL via `error[3048]` today; will pass when zig1
     gains a real std lib — planned).
-  - error[3000] type-mismatch: `eu_assign_incompat_payload`, `field_access_optional`.
   - error[2000] parse: `catch_block_value_producing`.
+  - The 2 former error[3000] frontend-gap repros — `eu_assign_incompat_payload`,
+    `field_access_optional` — are **correct rejections (green-guards, P3-1)**, not gaps; counted
+    separately from FAIL (see the green-guard classifier note above / EXPECTED_FAIL.md "Green-guards"
+    section).
 - **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
   (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run

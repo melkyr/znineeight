@@ -114,12 +114,12 @@ Gated 13 ungated top-level repros into `repro/mi_matrix/` corpus. **As of 2026-0
 
 ## Repro added 2026-07-14
 
-- `field_access_optional` — **FIXED (ERR_3000)** — `?S.x` now produces `error[3000]: cannot access field on optional type` instead of lowerer ICE. Matches zig0 oracle (rejects `.` on optional). Green guard — no C emitted.
+- `field_access_optional` — **FIXED (ERR_3000)** — `?S.x` now produces `error[3000]: cannot access field on optional type` instead of lowerer ICE. Matches zig0 oracle (rejects `.` on optional). Green guard — no C emitted. → reclassified **green-guard (P3-1)**; see Green-guards section.
 - `lzw_error_set_typedef` — **GREEN at HEAD** — simple error-union case passes.
 
 ## Previously FIXED (2026-07-14)
 
-- `eu_assign_incompat_payload` — **FIXED** — `E!i64 → E!i32` now emits `error[3000]` at sema (EU payload mismatch severity check).
+- `eu_assign_incompat_payload` — **FIXED** — `E!i64 → E!i32` now emits `error[3000]` at sema (EU payload mismatch severity check). → reclassified **green-guard (P3-1)**; see Green-guards section.
 - `euoptptr_val_orelse` — **FIXED** — optional C typedef naming uses `getCTypeName` instead of `name_id=0`.
 - `optptr_val_orelse` — **FIXED** — same c89_emit fix.
 - `optptr_null_orelse` — **FIXED** — same c89_emit fix.
@@ -227,9 +227,10 @@ section below for the var_declared_void/euvoid_val_catch reclassification:
     baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now **OK — fixed F-9
     2026-08-04** (Option B optional-of-EU unwrap in the error-literal sema handler + module branch
     `TEMP_NONE`). Verified per-file gcc clean; see "Former FAIL/ICE repros now OK" above.
-- **Frontend gaps (5, 0 `.c` emitted):** `catch_block_value_producing` (error[2000]),
-  `eu_assign_incompat_payload` (error[3000]), `field_access_optional` (error[3000]),
-  `field_store_drop` (error[3048], pal-import — see QUICK_REF known-issues), `test_stub_0`
+- **Frontend gaps (5, 0 `.c` emitted; 2 now green-guards P3-1):** `catch_block_value_producing`
+  (error[2000]), `eu_assign_incompat_payload` (error[3000] — **now a green-guard, P3-1**),
+  `field_access_optional` (error[3000] — **now a green-guard, P3-1**), `field_store_drop`
+  (error[3048], pal-import — see QUICK_REF known-issues), `test_stub_0`
   (error[3048], imports nonexistent `"std"`).
 
 ---
@@ -289,19 +290,26 @@ CORRECTLY rejected by the frontend with a diagnostic — it guards the rejection
 gap. Green-guards are counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
 Classifier rule: dump emits 0 `.c` with the documented `error[NNNN]` diagnostic.
 
-| Repro | Classification | Correct rejection (measured with /tmp/p2v/zig1) |
+| Repro | Classification | Correct rejection (measured; P2 rows /tmp/p2v/zig1, P3-1 rows /tmp/p3/zig1) |
 |-------|----------------|--------------------------------------------------|
 | `var_declared_void` | **green-guard (was emission-defect FAIL)** | dump rc=2, `error[3000]: cannot declare variable of type void`, 0 `.c` emitted. `var x = noop();` (void init) — sema now rejects VOID-typed var decls (semantic_analyzer.zig:1674-1677) |
 | `euvoid_val_catch` | **green-guard (was OK)** | dump rc=2, `error[3000]: cannot declare variable of type void`, 0 `.c` emitted. `var r = h() catch {};` (void-typed init) — latent void-var acceptance bug; Zig forbids void variables |
+| `eu_assign_incompat_payload` | **green-guard (was frontend-gap FAIL)** | dump rc=2, `error[3000]: type mismatch in assignment — internal type representations differ`, 0 `.c` emitted. `E!i64 → E!i32` payload mismatch at sema; zig0 oracle rejects identically (`error: type mismatch`) |
+| `field_access_optional` | **green-guard (was frontend-gap FAIL)** | dump rc=2, `error[3000]: cannot access field on optional type; use .? to unwrap first`, 0 `.c` emitted. `.` on `?S`; zig0 oracle rejects identically (`error: type mismatch`) |
 
 Post-P2-3 accounting: **OK=188 / FAIL=7 / green-guards=2 / ICE=0 / CRASH=0 over 197 repros.**
 (var_declared_void: FAIL→green-guard; euvoid_val_catch: OK→green-guard; FAIL 9→7 counting
 green-guards separately; array_tagged_union_read moved FAIL→OK in P2-2.) No other repro flipped.
 
-**Updated totals (raw classifier, 197 repros): OK=188 / FAIL=9 / ICE=0 / CRASH=0.** Of the 9
-classifier-FAILs, 2 are green-guards (this section): `var_declared_void`, `euvoid_val_catch`.
-(`eu_assign_incompat_payload`, `field_access_optional` are P3-1 green-guards, not yet
-reclassified in this file.)
+**Post-P3-1 accounting (2026-08-05): OK=189 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 197
+repros** (189 + 4 + 4 = 197). `eu_assign_incompat_payload` and `field_access_optional` reclassified
+FAIL→green-guard (verified correct rejections matching the zig0 oracle — see table). No other repro
+flipped.
+
+**Updated totals (raw classifier, 197 repros): OK=189 / FAIL=8 / ICE=0 / CRASH=0.** Of the 8
+classifier-FAILs, 4 are green-guards (this section): `eu_assign_incompat_payload`,
+`field_access_optional`, `var_declared_void`, `euvoid_val_catch` (green-guards are a sub-bucket of
+the raw 8, counted separately from FAIL).
 
 ---
 
@@ -326,3 +334,23 @@ reclassified in this file.)
 count separately. Remaining 6 FAIL: 5 frontend gaps (`catch_block_value_producing`,
 `eu_assign_incompat_payload`, `field_access_optional`, `field_store_drop`, `test_stub_0`) and
 1 gcc-visible emission defect `self_embed_optional_cycle` (F-8 residual) — all documented above.
+
+---
+
+## P3-1 — reclassify 2 correct rejections as green-guards (2026-08-05)
+
+`eu_assign_incompat_payload` and `field_access_optional` are **CORRECT rejections** matching the
+zig0 oracle — green-guards, not defects (both documented as FIXED above; now formally reclassified
+out of the FAIL count into the "Green-guards" section). Verified with /tmp/p3/zig1:
+
+| Repro | zig1 (dump rc, error) | 0 `.c` | zig0 oracle |
+|-------|------------------------|--------|-------------|
+| `eu_assign_incompat_payload` | rc=2, `error[3000]: type mismatch in assignment — internal type representations differ` | yes | rejects: `error: type mismatch` (rc=1) |
+| `field_access_optional` | rc=2, `error[3000]: cannot access field on optional type; use .? to unwrap first` | yes | rejects: `error: type mismatch` (rc=1) |
+
+**Post-P3-1 accounting: OK=189 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 197 repros**
+(189 + 4 + 4 = 197). Raw classifier FAIL stays **8** (green-guards are a sub-bucket of the raw 8).
+The 4 green-guards: `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`,
+`euvoid_val_catch`. The 4 real FAILs: 2 import-gap (`field_store_drop`, `test_stub_0`, both
+`error[3048]`) + `catch_block_value_producing` (`error[2000]`) + `self_embed_optional_cycle`
+(F-8 residual, gcc incomplete-type). No other repro flipped.
