@@ -94,6 +94,16 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     real std lib.** Deferral changes no counts: effective `OK=189 / FAIL=4 / green-guards=4`
     (189+4+4=197; raw FAIL stays 8) — the 4 FAILs = these 2 std-lib-deferred + `catch_block_value_producing`
     + `self_embed_optional_cycle`.
+- **P3-3 closeout (2026-08-05, docs-only):** `anon_errset_comparison` reclassified **OK (semantically
+  verified)** — the bare-`!` `err == error.Bad` comparison is CORRECT. An anonymous error literal
+  stores the raw **name_id** as its C error code, and name_id is a unique-per-name, program-stable
+  interner code (string_interner.zig:88-122 dedups by content; one interner per program): same name
+  ⟹ same code, distinct names can never collide. Measured RED==GREEN==1 on zig1 and the zig0 oracle.
+  Counts unchanged (already OK since Plan 1 P1-1; effective `OK=189 / FAIL=4 / green-guards=4`
+  stays). **2 adjacent defects tracked as follow-ups, NOT fixed:** P3-5 (switch-on-error:
+  `lower.zig:2919-2934` drops `error_literal` case nodes → empty switch always takes `default`) and
+  I3-5/P3-6 (error-code representation unification: anon name_id vs named ordinal miscompare in
+  oracle-accepted cross-set programs). See EXPECTED_FAIL.md P3-3 section + `.superpowers/sdd/P3-anonerr-report.md`.
 - **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
   (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run

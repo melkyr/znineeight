@@ -247,7 +247,7 @@ error-set comparison). Classified with `/tmp/zb/zig1` per the QUICK_REF corpus c
 | `xmod_global_field_access` | runtime gap | OK (prints 2) | **FIXED (P1-2)** — dump rc=0, gcc-clean, prints `2` (two bumps → counter=2) | F-7 review I-1: cross-module global field-access — FIXED by Plan 1 Task P1-2 (lower.zig SymbolKind.global branch + header extern decls) |
 | `self_embed_optional_cycle` | FAIL | — | **FAIL** — dump rc=0, 1 `.c`, gcc `unknown type name 'zT_DD0C1E27_X'` (incomplete-type) | F-8 residual: `struct X { next: ?X }` → infinite-size C type; guards, not fixes |
 | `load_global_array_copy` | OK | — | **OK** — dump rc=0, 1 `.c`, gcc clean, runs: prints `3` and `15` (concatenated `315`, print_int adds no newline) | F-7 array `load_global` copy-loop correctness (dead copy-temps, correct but wasteful) |
-| `anon_errset_comparison` | OK (prints 1) | OK (prints 1) | **OK** — dump rc=0, 1 `.c`, gcc clean, RED prints `1`, GREEN prints `1` (no runtime gap observed today) | bare-`!` error-set member comparison (`err == error.Bad`) — investigation deferred to Plan 3 Task P3-3 |
+| `anon_errset_comparison` | OK (prints 1) | OK (prints 1) | **OK (semantically verified, P3-3)** — dump rc=0, 1 `.c`, gcc clean, RED prints `1`, GREEN prints `1`; RED==GREEN==1 on zig1 AND zig0 oracle (matches oracle) | bare-`!` error-set member comparison (`err == error.Bad`) — **semantically correct (P3-3)**: anon error literal carries the raw name_id (unique-per-name, program-stable interner code), so same name ⟹ same code, distinct names never collide |
 
 **Updated totals: OK=187 / FAIL=9 / ICE=0 / CRASH=0 over 196 repros.** The +1 FAIL is exactly
 `self_embed_optional_cycle`'s own documented status (F-8 residual). The other 3 new repros
@@ -259,8 +259,11 @@ regressions in the existing 192.
 - `self_embed_optional_cycle` FAIL is the documented F-8 residual. Naive C emission would produce
   `struct X { struct X next; int has_value; }`; today the struct typedef is dropped entirely
   (`unknown type name`), so the residual is guarded, not fixed.
-- `anon_errset_comparison`: RED and GREEN both print `1` today — the bare-`!` set comparison
-  currently works. Investigation of any name_id edge is still deferred to Plan 3 Task P3-3.
+- `anon_errset_comparison`: RED and GREEN both print `1` — the bare-`!` set comparison is
+  **semantically correct (P3-3, Option A)**. name_id is a unique-per-name, program-stable
+  interner code; same name ⟹ same code, distinct names can never collide within one program.
+  Verified RED==GREEN==1 on zig1 and the zig0 oracle. Investigation resolved — see the P3-3
+  section below.
 
 ---
 
@@ -374,3 +377,34 @@ CRASH=0 over 197 repros** (189 + 4 + 4 = 197; raw classifier FAIL stays **8**). 
 2 std-lib-deferred import-gap (`field_store_drop`, `test_stub_0`, both `error[3048]`) +
 `catch_block_value_producing` (`error[2000]`) + `self_embed_optional_cycle` (F-8 residual, gcc
 incomplete-type). No other repro flipped.
+
+---
+
+## P3-3 — anon_errset_comparison OK (semantically verified) + adjacent defects (2026-08-05)
+
+Per the P3-3 operator ruling (**Option A**, docs-only closeout): the bare-`!`
+`err == error.Bad` comparison is **semantically correct**. An anonymous error literal stores the
+raw **name_id** as its C error code (`lower.zig:1191-1206`, `semantic_analyzer.zig:1182`), and
+name_id is a **unique-per-name, program-stable interner code** — `string_interner.zig:88-122`
+dedups by exact content (`mem_eql` at `:101`), one interner per program (`main.zig:146`), so same
+name always yields the same name_id and distinct names can never collide within one program.
+Measured **RED==GREEN==1** on zig1 AND the zig0 oracle (matches oracle); all pure-anonymous probes
+(`==`/`!=`, cross-fn, distinct-name) match the oracle (`.superpowers/sdd/P3-anonerr-report.md`).
+
+`anon_errset_comparison` upgraded from `**OK**` to **OK (semantically verified)** — it was already
+OK since Plan 1 P1-1; this records the semantic justification. **Counts unchanged: OK=189 /
+FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 197 repros** (189+4+4=197; raw classifier FAIL
+stays 8). No other repro flipped.
+
+**2 adjacent defects found by P3-3 — tracked as follow-ups, NOT fixed (out of scope):**
+
+1. **Switch-on-error exhaustiveness → P3-5.** Switch-case collection in `lower.zig:2919-2934`
+   handles only `int_literal`/`enum_literal` case nodes; an `error_literal` case falls to
+   `continue` → zero SwitchCase entries → `switch (err) { default: ... }` always takes `default`.
+   Affects named AND anonymous error sets; the oracle emits proper `case ERROR_Bad:`. No corpus
+   repro or MD5 gate exercises it today. Clean upstream fix (mirror the enum_literal branch).
+2. **Error-code representation unification → I3-5 / P3-6.** zig1 accepts inferred→named error-set
+   coercions that real Zig also accepts (subset→superset is legal; zig0/z98 is stricter), but then
+   MISCOMPARES: anonymous-set errors carry the raw name_id, named-set errors carry the ordinal.
+   Only reachable through programs the zig0 oracle rejects, so it is not a corpus classification
+   issue. Investigate (I3-5), then implement per ruling (P3-6).
