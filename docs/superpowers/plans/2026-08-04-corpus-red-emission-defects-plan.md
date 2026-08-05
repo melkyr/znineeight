@@ -138,7 +138,9 @@ Use ERR_3000 (type mismatch) with a clear message. `ERR_3000_TYPE_MISMATCH` conf
 ```
 Expected: dump rc=2 with `error[3000]: cannot declare variable of type void`, 0 .c emitted. This converts a gcc-FAIL into a frontend-gap FAIL (correct rejection). Reclassify the repro accordingly.
 
-4 MD5s byte-identical. Corpus: var_declared_void moves from emission-defect to frontend-gap (still FAIL, but correct-rejection category — reclassify in EXPECTED_FAIL.md).
+4 MD5s byte-identical. Corpus: `var_declared_void` moves from emission-defect to frontend-gap correct-rejection.
+
+> **AMENDMENT P2-3 (operator ruling, 2026-08-04):** the unconditional void-var rejection ALSO flips `euvoid_val_catch` (`var r = h() catch {};` — void-typed init) from OK→FAIL — a latent void-var acceptance bug, semantically correct to reject (Zig forbids void variables). OPERATOR RULING: **accept + reclassify BOTH `var_declared_void` AND `euvoid_val_catch` as green-guards (correct rejections)** in EXPECTED_FAIL.md. Accounting after P2-3: **OK=188 / FAIL=7 / green-guards=2 / ICE=0 / CRASH=0 @197** (var_declared_void: FAIL→green-guard; euvoid_val_catch: OK→green-guard; FAIL 8→7). Add a "Green-guards (correct rejection)" section in EXPECTED_FAIL.md documenting both, mirroring the Plan 3 P3-1 convention. Note: use the file's existing `@intCast(u16, 3000)` diagnostic pattern (semantic_analyzer.zig:1664) — `@enumToInt(ERR_3000_TYPE_MISMATCH)` has implicit ordinal 19 and would emit `error[19]`, not `error[3000]`.
 
 - [ ] **Step 4: Commit**
 
@@ -192,3 +194,4 @@ git commit -m "fix(P2): ptroint arena offset undeclared temp (P2-1 investigation
 - **AMENDMENT P2-0 (2026-08-04, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plan-1 `184/8/0/0 @192` to the post-Plan-1 **`188/9/0/0 @197`** (Plan 1 added 5 repros; xmod became OK). FAIL expectations in P2-2/P2-4 renumbered accordingly (9→8 / 9→8-or-8→7). MD5 baselines unchanged and current.
 - **AMENDMENT P2-1 (2026-08-04, operator ruling):** P2-4 implements **Option A + Option B** from the P2-1 report (sema ptr±literal fix + emission written_type override), with a full corpus + 4-MD5 re-gate. See P2-4 scope note.
 - **AMENDMENT P2-2 (2026-08-04, operator ruling):** P2-2 rewritten from an emitter-fallback fix to the ROOT-CAUSE fix. The first implementation (c4531c92, TU-payload integer-compat fallback) was REJECTED ("reject that fallback chain of doom"). Root cause: comptime fold at lower.zig:2451-2464 types `@intCast(i32,N)` folded consts as USIZE instead of the target type. Fix the fold typing; NO emitter fallback.
+- **AMENDMENT P2-3 (2026-08-04, operator ruling):** P2-3 reclassifies BOTH `var_declared_void` and `euvoid_val_catch` as green-guards (correct rejections) — the unconditional void-var rejection also flips `euvoid_val_catch` OK→FAIL (latent void-var acceptance bug; Zig forbids void variables). Post-P2-3 accounting: OK=188 / FAIL=7 / green-guards=2 @197. Use `@intCast(u16, 3000)` not `@enumToInt` (ordinal-19 pitfall). See P2-3 note.
