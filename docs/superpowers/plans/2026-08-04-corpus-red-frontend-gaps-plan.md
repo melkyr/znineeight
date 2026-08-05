@@ -21,7 +21,7 @@
   ```
   Gate: 0 gcc errors (`error:` count == 0).
 - 4 MD5 baselines byte-identical throughout: mud `4644ad1349c55af80fa1a18fe0e17989`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `f84c8748e6d0580ffac811d75e34e0e7`, json `3492a935883ee91258feece576ba23d5`
-- Corpus: 184/8/0/0 baseline over 192 repros. FAIL count must not increase.
+- Corpus: **raw 189/8/0/0 over 197 repros; effective OK=189/FAIL=6/green-guards=2** (post-Plan-2, 2026-08-04; green-guards `var_declared_void`, `euvoid_val_catch` counted separately). FAIL count must not increase. The 8 raw FAILs = 5 frontend gaps (`catch_block_value_producing`, `eu_assign_incompat_payload`, `field_access_optional`, `field_store_drop`, `test_stub_0`) + 1 documented residual (`self_embed_optional_cycle`) + 2 green-guards. The 3 emission defects (P2-2/P2-3/P2-4) are FIXED — no emission-defect FAILs remain.
 - test_analyzer_bin PASS. build_test.sh identical to baseline (5/4). test_semantic_bin KNOWN pre-existing broken (operator ruling A).
 - fastedit/edit only for source edits. Read region before each edit. Bottom-to-top. NO scope creep.
 - Z98 idioms: `@intCast` everywhere, `var msg: []const u8 = "text";` before PAL, if/else-if chains.
@@ -51,7 +51,7 @@ Confirm both zig1 and zig0 reject with error[3000] and emit 0 .c.
 
 - [ ] **Step 2: Reclassify in EXPECTED_FAIL.md + QUICK_REF.md**
 
-Move both to a new "Green-guards (correct rejection, not a defect)" section. Update the corpus accounting: 184 emission/sema OK + 2 green-guards + 2 import-gap FAIL + 3 emission-defect FAIL + 1 catch-block FAIL = 192. Document the classifier rule: green-guards are counted separately from FAIL (a green-guard moving to OK/FAIL is a regression).
+Move both to the existing "Green-guards (correct rejection, not a defect)" section (which already holds `var_declared_void` + `euvoid_val_catch` from P2-3). Update the corpus accounting: post-P3-1 effective **OK=189/FAIL=4/green-guards=4** over 197 (the 4 FAILs = 2 import-gap `field_store_drop`/`test_stub_0` + `catch_block_value_producing` + `self_embed_optional_cycle`; the 4 green-guards = `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`; raw FAIL stays 8 since green-guards are a sub-bucket of the raw 8). Document the classifier rule: green-guards are counted separately from FAIL (a green-guard moving to OK/FAIL is a regression).
 
 - [ ] **Step 3: Verify + commit**
 
@@ -168,3 +168,9 @@ Expected: dump rc=0, gcc-clean, prints `99` on the error path (or correct per th
 git add sf/src/parser.zig [sf/src/semantic_analyzer.zig] [sf/src/lower.zig] repro/mi_matrix/EXPECTED_FAIL.md
 git commit -m "fix(P3): value-producing catch block fallback (catch_block_value_producing)"
 ```
+
+---
+
+## Amendments Record
+
+- **AMENDMENT P3-0 (2026-08-05, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plans-1-2 `184/8/0/0 @192` (with a nonexistent "3 emission-defect FAIL" term) to the post-Plan-2 **raw `189/8/0/0 @197` / effective `OK=189/FAIL=6/green-guards=2`**. The 8 raw FAILs = 5 frontend gaps + `self_embed_optional_cycle` residual + 2 green-guards (`var_declared_void`, `euvoid_val_catch`). P3-1 Step 2 accounting rewritten: post-P3-1 effective `OK=189/FAIL=4/green-guards=4` (raw FAIL stays 8; green-guards are a sub-bucket). MD5 baselines unchanged and current.
