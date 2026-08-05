@@ -130,50 +130,40 @@ Per the P3-3 operator ruling (2026-08-05): Option A adopted — the pure-anonymo
 
 ---
 
-### Task P3-4: Investigate + Fix catch_block_value_producing (standalone I-task)
+### Task P3-4: Fix catch_block_value_producing (value-producing block) [AMENDMENT P3-2]
 
-**Files:** investigation → `.superpowers/sdd/P3-catch-report.md`; fix in `sf/src/parser.zig` + verification in sema/lowerer.
+**Files:** investigation → `.superpowers/sdd/P3-catch-report.md`; fix in `sf/src/parser.zig` + `sf/src/lower.zig`. Sema: NO change (verified).
 
-**Pre-requisites:** None. Tech docs do NOT cover this gap (confirmed — parser/design docs imply blocks-as-catch-fallback works but never implement value-producing trailing expressions).
+**Investigation complete (P3-catch-report.md, 2026-08-05):** root cause CONFIRMED — `parserParseExprStmt` (parser.zig:1258) unconditionally requires `;`, so the bare `99` (block's final value expression, no `;` before `}`) fails `error[2000]`. AND a second root cause in the lowerer: `lowerExprOrBlock` (lower.zig:3223-3238) lowers every block child via `lowerStmt` and returns `0`, dropping the block value (empirically proven: the `99;` variant parses today but prints garbage `-366458289`; emitted C `zT_5 = 99; zT_3 = result;`). Sema already computes block value = last child (semantic_analyzer.zig:1341-1353).
 
-**Scope:** `catch |err| { _ = err; 99 }` fails error[2000] because `parserParseBlock` (parser.zig:1746) loops `parserParseStatement`, and `parserParseExprStmt` (:1256-1259) always requires a trailing `;`. The value-producing final expression `99` (no `;` before `}`) fails.
+**OPERATOR RULING (2026-08-05):** Option A adopted, WIDE — upstream gap-filling (verified NOT a fallback chain): parser fix = grammar-level (real-Zig `BlockExpr: { Statement* Expression? }`), lowerer fix = completing `lowerExprOrBlock`'s own single-caller contract (catch err-path lower.zig:2625), zero emitter/sema changes. Scope = BOTH `lowerExprOrBlock` AND `lowerExpr`'s block case (lower.zig:3214-3217).
 
-- [ ] **Step 1: Confirm root cause**
+- [ ] **Step 1: Parser fix** — `parserParseExprStmt` (parser.zig:1256-1259): make the trailing `;` optional when the next token is `}`:
+```zig
+fn parserParseExprStmt(self: *Parser) ParserError!u32 {
+    var result = try parserParseExprPrec(self, Prec.assignment);
+    if (parserPeek(self).kind != TokenKind.rbrace) {
+        _ = try parserExpect(self, TokenKind.semicolon);
+    }
+    return result;
+}
+```
+Non-final statements still require `;` (`{ 1 2 }` still errors). Module root unaffected (never inside `}`). No AST change — the last extra child IS the block value.
 
-Read `sf/src/parser.zig:1746-1770` (parserParseBlock), `:1256-1260` (parserParseExprStmt), `:432-436` (parserParseCatchRHS). Confirm the exact failure: `99` parsed as expr-stmt then `parserExpect(semicolon)` fails on `}`.
+- [ ] **Step 2: Lowerer fix** — `lowerExprOrBlock` (lower.zig:3223-3238): for a block, lower all-but-last children via `lowerStmt`; the LAST child goes through `lowerStmt` (return 0) if it is a statement/control-flow kind (return/break/continue/block/var_decl/expr_stmt/defer/if/while/for), else through `lowerExpr` (return its temp). Also fix `lowerExpr`'s block case (lower.zig:3214-3217) the same way — return the last child's temp instead of a VOID temp, so `if (c) {1} else {2}` block-branches produce values too (operator ruling: WIDE).
 
-- [ ] **Step 2: Design the value-producing block extension**
-
-Determine how to allow a block's final statement to be a bare expression (no trailing `;`) that becomes the block's value. Investigate:
-- How does `if`/`switch` handle value-producing blocks already (if any)?
-- Does the AST/lowerer have a concept of "block with trailing value" (like `lowerExprOrBlock`)?
-- What does the repro's expected semantics require (the block value `99` becomes the catch fallback)?
-
-Provide A/B/C options:
-- **A:** Parser-only — when the block is a catch-fallback (or any value context), allow the final expr-stmt to omit `;` and record it as the block value. Requires threading "value block" context.
-- **B:** Parser + AST — add a `block_value` field/flag to block nodes; sema reads it as the block's type.
-- **C:** Require explicit `return 99` (document as unsupported bare-value form) — matches the spec's divergent-only example.
-
-Recommend an option. STOP for operator ruling.
-
-- [ ] **Step 3: Implement the approved option**
-
-Implement per the ruling. Include exact old→new parser code.
-
-- [ ] **Step 4: Build + gate**
-
+- [ ] **Step 3: Build + gate** — build in /tmp. Verify with the `99;`-variant probe first (should print `99` not garbage), then the real repro:
 ```bash
-# Build /tmp compiler, then:
 "$OUT/zig1" --dump-c89 --output-dir /tmp/p3c repro/mi_matrix/catch_block_value_producing/main.zig
 gcc -m32 -std=c89 -I /workspace/znineeight/sf/src/include -c /tmp/p3c/*.c && gcc -m32 /tmp/p3c/*.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/p3c/prog && /tmp/p3c/prog
 ```
-Expected: dump rc=0, gcc-clean, prints `99` on the error path (or correct per the repro's expected output). 4 MD5s byte-identical. Corpus: catch_block_value_producing FAIL→OK (or correct-rejection if the form is documented unsupported).
+Expected: dump rc=0, gcc-clean, prints `99` on the error path. 4 MD5s byte-identical. NOTE: the repro's FAIL→OK classification gate requires BOTH this fix AND the P3-7 inline-error-set feature (helper.zig uses `error{Bad}!i32` which fails to parse / ICEs today) — joint gate verified after P3-7.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add sf/src/parser.zig [sf/src/semantic_analyzer.zig] [sf/src/lower.zig] repro/mi_matrix/EXPECTED_FAIL.md
-git commit -m "fix(P3): value-producing catch block fallback (catch_block_value_producing)"
+git add sf/src/parser.zig sf/src/lower.zig
+git commit -m "fix(P3): value-producing blocks lower last-expression value (catch_block_value_producing)"
 ```
 
 ---
@@ -216,7 +206,22 @@ git commit -m "fix(P3): value-producing catch block fallback (catch_block_value_
 
 ---
 
+### Task P3-7: Support inline error-set types in type positions (feature task) [AMENDMENT P3-2]
+
+**Files:** `sf/src/parser.zig` + `sf/src/type_resolver.zig` + downstream (per investigation); repro + EXPECTED_FAIL.md.
+
+**Origin:** P3-4 investigation gap #2 (operator ruling 5b, 2026-08-05). `helper.zig:1` — `pub fn try_compute() error{Bad}!i32` — fails two ways today: (a) parser.zig:909 `kw_error` branch never checks for a trailing postfix `!` (the `!payload` error-union suffix only exists after `parserParseTypeName` at :914-921), so `error{Bad}!i32` hits `expected '{' but found token` (error[2000]); (b) `error{Bad}` alone (no `!`) parses but ICEs `error[3043]: internal: invalid temp index 0` because `resolveTypeExprFull` (type_resolver.zig:609-904) has NO `error_set_decl` case (falls through to TYPE_UNDEFINED at :901-903). Corpus convention avoids this spelling (`const E = error{Bad}; fn h() E!i32`), but it is valid Zig.
+
+- [ ] **Step 1: Parser fix** — parser.zig:909: after `parserParseErrorSetDecl`, check for a trailing `!` and parse the payload type (mirror the base+`!` path at :914-921). Verify `error{Bad}!i32` now parses.
+- [ ] **Step 2: Type-resolver fix** — add an `error_set_decl` case to `resolveTypeExprFull` (type_resolver.zig, around :901-903) so inline `error{...}` in type position resolves to a real error-set type (register the members like a named set / anonymous set). Verify the ICE is gone for `error{Bad}` without `!`.
+- [ ] **Step 3: Downstream check** — run the P3-4 joint gate: catch_block_value_producing should now dump rc=0, 2 `.c`, gcc-clean, print `99`. Fix any downstream gaps (sema/lowerer handling of inline-set fn types) that surface.
+- [ ] **Step 4: Build + gate** — build in /tmp; P3-4 repro FAIL→OK; 4 MD5s byte-identical (the 4 baselines use no inline error sets — json uses named sets, verified zero `error{...}!` uses in repro/ or examples/); corpus FAIL count must not increase.
+- [ ] **Step 5: Commit** — `fix(P3): inline error-set types in type positions (catch_block_value_producing)` (parser.zig + type_resolver.zig + EXPECTED_FAIL.md).
+
+---
+
 ## Amendments Record
 
 - **AMENDMENT P3-0 (2026-08-05, operator ruling):** Global Constraints corpus baseline updated from the stale pre-Plans-1-2 `184/8/0/0 @192` (with a nonexistent "3 emission-defect FAIL" term) to the post-Plan-2 **raw `189/8/0/0 @197` / effective `OK=189/FAIL=6/green-guards=2`**. The 8 raw FAILs = 5 frontend gaps + `self_embed_optional_cycle` residual + 2 green-guards (`var_declared_void`, `euvoid_val_catch`). P3-1 Step 2 accounting rewritten: post-P3-1 effective `OK=189/FAIL=4/green-guards=4` (raw FAIL stays 8; green-guards are a sub-bucket). MD5 baselines unchanged and current.
 - **AMENDMENT P3-1 (2026-08-05, operator ruling on P3-3 adjacent defects):** P3-3 resolved as Option A (pure-anonymous `==` semantically correct; Step 5 closeout = docs-only reclassify anon_errset_comparison OK + record adjacent defects). Two new tasks added from the P3-3 investigation findings: **P3-5** (upstream switch-on-error defect at lower.zig:2919-2934 — error_literal case nodes dropped → empty switch; repros + fix) and **I3-5 + P3-6** (error-code representation unification — anon name_id vs named ordinal miscompare in accepted real-Zig programs; investigate then implement per ruling). Real-Zig semantics verified from the official Zig language reference: inferred→named subset coercion is legal (zig0/z98 is stricter), so zig1's acceptance is correct; the miscompare is the genuine defect. Execution order appended after P3-4.
+- **AMENDMENT P3-2 (2026-08-05, operator ruling on P3-4 investigation):** P3-4 rewritten from the investigation (P3-catch-report.md). Root cause = TWO gaps: (1) parser.zig:1258 unconditional `;` (grammar — real-Zig `BlockExpr: { Statement* Expression? }`), and (2) `lowerExprOrBlock` (lower.zig:3223-3238) + `lowerExpr` block case (lower.zig:3214-3217) drop block values (empirically proven: `99;` variant prints garbage). Operator ruling: Option A WIDE (both lowerer sites) — verified upstream gap-filling, NOT a fallback chain (parser=grammar, lowerer=completing its own single-caller contract, zero emitter/sema change). Second gap (inline `error{Bad}!i32`) → operator ruling **5b**: new feature task **P3-7** (parser.zig:909 postfix `!` + type_resolver error_set_decl case) instead of re-spelling the repro. The repro's FAIL→OK gate is JOINT (P3-4 + P3-7). Sema needs no change for the value-block fix.
