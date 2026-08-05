@@ -53,13 +53,20 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   ```
 - **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
 - **Post-Plan-1 baseline (2026-08-04, 5 new repros): `OK=188 FAIL=9 ICE=0 CRASH=0` over 197 repros.**
+- **Post-Plan-2 baseline (2026-08-04, emission-defect fixes): raw `OK=189 FAIL=8 ICE=0 CRASH=0` over 197 repros; 2 green-guards (`var_declared_void`, `euvoid_val_catch`) counted separately → effective `OK=189 / FAIL=6 / green-guards=2`.**
   - 184 fully OK (frontend + emission + gcc all clean).
-  - **8 FAIL** (non-ICE) = 3 emission defects (dump ok, gcc rejects C) + 5 frontend gaps (dump emits 0 `.c`).
+  - **8 FAIL** (non-ICE) = 5 frontend gaps + 2 emission defects + 1 residual, of which 2 emission
+    defects are now FIXED (P2-2/P2-4) and `var_declared_void` reclassified green-guard (P2-3) →
+    post-Plan-2 breakdown: **6 FAIL = 5 frontend gaps + 1 residual**; the 3 former emission defects
+    all resolved.
   - **0 ICE** — the F-1..F-8 fixes eliminated the `error[3043]` ("internal: unsupported field-store
     base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 184 + FAIL 8 + ICE 0 = 192`).
-  - Must stay `188/9/0/0` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
-- **The 3 emission-defect repros** (`dump_rc=0`, gcc fails): `array_tagged_union_read`,
-  `ptroint_arena_offset`, `var_declared_void`.
+  - Must stay `189/8/0/0` (raw) / effective `189/6/2` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression.
+- **Emission defects — ALL FIXED (Plan 2, 2026-08-04)** [updated: 2026-08-04]:
+  - `array_tagged_union_read`: comptime-fold intcast target typing, lower.zig.
+  - `var_declared_void`: sema `error[3000]` rejection + `euvoid_val_catch` — both green-guards
+    (correct rejections, counted separately).
+  - `ptroint_arena_offset`: ptr±literal resolution + scoped `written_type` override.
   - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
     baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now OK — **fixed F-9
     2026-08-04** (Option B optional-of-EU unwrap + module `TEMP_NONE`) and restored to OK. See

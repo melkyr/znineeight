@@ -2457,10 +2457,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             fold_ty_box[0] = t;
                         }
                     } else {
-                        var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner };
-                        var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
-                        if (ct != type_mod.TYPE_UNDEFINED) {
-                            fold_ty_box[0] = ct;
+                        if (ec.len >= @intCast(usize, 1)) {
+                            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner };
+                            var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                            if (ct != type_mod.TYPE_UNDEFINED) {
+                                fold_ty_box[0] = ct;
+                            }
                         }
                     }
                 }
