@@ -1255,7 +1255,9 @@ pub fn parserParseModuleRoot(self: *Parser) ParserError!u32 {
 
 fn parserParseExprStmt(self: *Parser) ParserError!u32 {
     var result = try parserParseExprPrec(self, Prec.assignment);
-    _ = try parserExpect(self, TokenKind.semicolon);
+    if (parserPeek(self).kind != TokenKind.rbrace) {
+        _ = try parserExpect(self, TokenKind.semicolon);
+    }
     return result;
 }
 

@@ -3212,6 +3212,24 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.block) {
+        var blk_ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
+        if (blk_ec.len > @intCast(usize, 0)) {
+            var blk_last = blk_ec[blk_ec.len - 1];
+            var blk_last_nd = self.ctx.store.nodes.items[@intCast(usize, blk_last)];
+            if (!lowerIsNoValueStmtKind(blk_last_nd.kind)) {
+                self.scope_depth += @intCast(u32, 1);
+                var blj: usize = 0;
+                while (blj < blk_ec.len - 1) : (blj += 1) {
+                    self.block_terminated = @intCast(u8, 0);
+                    lowerStmt(self, blk_ec[blj]);
+                }
+                self.block_terminated = @intCast(u8, 0);
+                var blk_val = lowerExpr(self, blk_last);
+                expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+                self.scope_depth -= @intCast(u32, 1);
+                return blk_val;
+            }
+        }
         var void_temp = nextTemp(self, type_mod.TYPE_VOID);
         lowerStmtBody(self, node_idx);
         return void_temp;
@@ -3220,10 +3238,35 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     }
 }
 
+fn lowerIsNoValueStmtKind(kind: AstKind) bool {
+    if (kind == AstKind.return_stmt) return true;
+    if (kind == AstKind.break_stmt) return true;
+    if (kind == AstKind.continue_stmt) return true;
+    if (kind == AstKind.block) return true;
+    if (kind == AstKind.var_decl) return true;
+    if (kind == AstKind.expr_stmt) return true;
+    if (kind == AstKind.defer_stmt) return true;
+    if (kind == AstKind.if_stmt) return true;
+    if (kind == AstKind.while_stmt) return true;
+    if (kind == AstKind.for_stmt) return true;
+    return false;
+}
+
 fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
     var body_node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (body_node.kind == AstKind.block) {
         var block_ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, body_node.payload);
+        if (block_ec.len > @intCast(usize, 0)) {
+            var blk_last = block_ec[block_ec.len - 1];
+            var blk_last_nd = self.ctx.store.nodes.items[@intCast(usize, blk_last)];
+            if (!lowerIsNoValueStmtKind(blk_last_nd.kind)) {
+                var bj: usize = 0;
+                while (bj < block_ec.len - 1) : (bj += 1) {
+                    lowerStmt(self, block_ec[bj]);
+                }
+                return lowerExpr(self, blk_last);
+            }
+        }
         var bj: usize = 0;
         while (bj < block_ec.len) : (bj += 1) {
             lowerStmt(self, block_ec[bj]);
