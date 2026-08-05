@@ -492,10 +492,10 @@ fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_
 
     if (op_kind == AstKind.add or op_kind == AstKind.sub) {
         var lhs_ptr = type_mod.typeRegistryIsPointer(self.registry, lhs) or type_mod.typeRegistryIsSlice(self.registry, lhs);
-        var rhs_uint = type_mod.typeRegistryIsUnsigned(self.registry, rhs);
+        var rhs_uint = type_mod.typeRegistryIsUnsigned(self.registry, rhs) or rhs == type_mod.TYPE_INT_LIT;
         var rhs_ptr = type_mod.typeRegistryIsPointer(self.registry, rhs) or type_mod.typeRegistryIsSlice(self.registry, rhs);
         if (lhs_ptr and rhs_uint) return lhs;
-        if (op_kind == AstKind.add and type_mod.typeRegistryIsUnsigned(self.registry, lhs) and rhs_ptr) return rhs;
+        if (op_kind == AstKind.add and (type_mod.typeRegistryIsUnsigned(self.registry, lhs) or lhs == type_mod.TYPE_INT_LIT) and rhs_ptr) return rhs;
         if (op_kind == AstKind.sub and lhs_ptr and rhs_ptr) return type_mod.TYPE_ISIZE;
     }
 

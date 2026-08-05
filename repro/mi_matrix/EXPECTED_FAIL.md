@@ -221,7 +221,7 @@ Former FAIL/ICE repros now OK (verified per-file gcc clean):
 Remaining 8 FAIL (0 ICE) — as measured with /tmp/zb/zig1 pre-P2; see the P2-3 green-guard
 section below for the var_declared_void/euvoid_val_catch reclassification:
 - **Emission defects (dump rc=0, gcc rejects):** `array_tagged_union_read` (**FIXED by P2-2**,
-  2026-08-04), `ptroint_arena_offset` (still FAIL, P2-4), `var_declared_void` (**now a
+  2026-08-04), `ptroint_arena_offset` (**FIXED by P2-4**, 2026-08-05), `var_declared_void` (**now a
   green-guard, P2-3**).
   - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
     baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now **OK — fixed F-9
@@ -302,3 +302,27 @@ green-guards separately; array_tagged_union_read moved FAIL→OK in P2-2.) No ot
 classifier-FAILs, 2 are green-guards (this section): `var_declared_void`, `euvoid_val_catch`.
 (`eu_assign_incompat_payload`, `field_access_optional` are P3-1 green-guards, not yet
 reclassified in this file.)
+
+---
+
+## P2-4 — ptroint_arena_offset FIXED (2026-08-05)
+
+`ptroint_arena_offset` moves emission-defect **FAIL → OK** via **Option A + SCOPED Option B**:
+
+- **Option A (root cause, semantic_analyzer.zig:495,498):** `semanticAnalyzerResolveArithmetic`
+  now treats `TYPE_INT_LIT` as a valid pointer-arithmetic offset (`&buf + 64` → pointer type
+  instead of TYPE_VOID), covering `ptr ± lit` and `lit + ptr`.
+- **SCOPED Option B (emission hardening, c89_emit.zig:2729,2732):** the `written_type` override in
+  `emitHoistedDecls` now applies only when the hoisted temp's `type_id ∈ {TYPE_VOID, TYPE_UNDEFINED}`
+  AND the derived `written_type` is valid (`!= 0xFFFFFFFF`) and `!= TYPE_VOID`. Zero-blast-radius
+  (verified in `.superpowers/sdd/P2-optB-report.md`); the unscoped variant regressed the corpus.
+- **Gates:** self-host build 0 gcc errors; repro dump rc=0, gcc-clean, links, runs rc=0
+  (`zT_8` declared as `Arr_unsigned_char_6*`); full corpus **OK=189 / FAIL=8 / ICE=0 / CRASH=0**
+  (raw classifier; FAIL −1 exactly, `ptroint_arena_offset` removed, no other flips); 4 MD5 gates
+  byte-identical (mud `4644ad13…`, gol `d0d3051d…`, lisp `f84c8748…`, json `3492a935…`).
+
+**Post-P2-4 accounting: OK=189 / FAIL=6 / green-guards=2 / ICE=0 / CRASH=0 over 197 repros**
+(189 + 6 + 2 = 197). FAIL 9→8 raw; the 2 green-guards (`var_declared_void`, `euvoid_val_catch`)
+count separately. Remaining 6 FAIL: 5 frontend gaps (`catch_block_value_producing`,
+`eu_assign_incompat_payload`, `field_access_optional`, `field_store_drop`, `test_stub_0`) and
+1 gcc-visible emission defect `self_embed_optional_cycle` (F-8 residual) — all documented above.
