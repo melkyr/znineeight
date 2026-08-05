@@ -218,9 +218,11 @@ Former FAIL/ICE repros now OK (verified per-file gcc clean):
 - Runtime gaps now FIXED (run-verified): `comptime_neg_int` → `-5`, `module_pub_var_int` → `43`,
   `module_pub_var_struct` → `7`, `module_const_fn_call` → `42`.
 
-Remaining 8 FAIL (0 ICE):
-- **Emission defects (3, dump rc=0, gcc rejects):** `array_tagged_union_read`,
-  `ptroint_arena_offset`, `var_declared_void`.
+Remaining 8 FAIL (0 ICE) — as measured with /tmp/zb/zig1 pre-P2; see the P2-3 green-guard
+section below for the var_declared_void/euvoid_val_catch reclassification:
+- **Emission defects (dump rc=0, gcc rejects):** `array_tagged_union_read` (**FIXED by P2-2**,
+  2026-08-04), `ptroint_arena_offset` (still FAIL, P2-4), `var_declared_void` (**now a
+  green-guard, P2-3**).
   - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
     baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now **OK — fixed F-9
     2026-08-04** (Option B optional-of-EU unwrap in the error-literal sema handler + module branch
@@ -277,3 +279,26 @@ stack overflow. Full analysis: `.superpowers/sdd/I-lzw-regression-report.md`.
 **Updated totals post-fix: OK=188 / FAIL=9 / ICE=0 / CRASH=0 over 197 repros.** The +1 total is
 the new repro, which counts OK post-fix. FAIL count unchanged (9) vs the P1-3 baseline; no existing
 repro flipped OK→FAIL; the lzw example itself now dumps, compiles, links, and runs.
+
+---
+
+## Green-guards (correct rejection, not a defect) — P2-3 (2026-08-04)
+
+Reclassified per operator ruling (AMENDMENT P2-3). A green-guard is a valid-Z98 program that is
+CORRECTLY rejected by the frontend with a diagnostic — it guards the rejection, it is not a compiler
+gap. Green-guards are counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
+Classifier rule: dump emits 0 `.c` with the documented `error[NNNN]` diagnostic.
+
+| Repro | Classification | Correct rejection (measured with /tmp/p2v/zig1) |
+|-------|----------------|--------------------------------------------------|
+| `var_declared_void` | **green-guard (was emission-defect FAIL)** | dump rc=2, `error[3000]: cannot declare variable of type void`, 0 `.c` emitted. `var x = noop();` (void init) — sema now rejects VOID-typed var decls (semantic_analyzer.zig:1674-1677) |
+| `euvoid_val_catch` | **green-guard (was OK)** | dump rc=2, `error[3000]: cannot declare variable of type void`, 0 `.c` emitted. `var r = h() catch {};` (void-typed init) — latent void-var acceptance bug; Zig forbids void variables |
+
+Post-P2-3 accounting: **OK=188 / FAIL=7 / green-guards=2 / ICE=0 / CRASH=0 over 197 repros.**
+(var_declared_void: FAIL→green-guard; euvoid_val_catch: OK→green-guard; FAIL 9→7 counting
+green-guards separately; array_tagged_union_read moved FAIL→OK in P2-2.) No other repro flipped.
+
+**Updated totals (raw classifier, 197 repros): OK=188 / FAIL=9 / ICE=0 / CRASH=0.** Of the 9
+classifier-FAILs, 2 are green-guards (this section): `var_declared_void`, `euvoid_val_catch`.
+(`eu_assign_incompat_payload`, `field_access_optional` are P3-1 green-guards, not yet
+reclassified in this file.)

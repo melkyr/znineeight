@@ -1671,6 +1671,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 if (decl_type == type_mod.TYPE_VOID) {
                     var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
                     var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);
+                    var vsp = node.span_start;
+                    var vep = vsp + @intCast(u32, node.span_len);
+                    var vv_msg: []const u8 = "cannot declare variable of type void";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, vsp, vep, vv_msg);
                 }
                 var ct_entry = coercion_mod.coercionTableGet(self.coercion_table, node.child_1);
                 if (ct_entry == null) {
