@@ -228,7 +228,7 @@ Write `.superpowers/sdd/I-varargs-parser-report.md`. STOP for operator ruling be
 
 ---
 
-### Task I3: Investigate varargs — sema + LIR design
+### Task I3: Investigate varargs — sema + LIR design ✅ COMPLETE (report .superpowers/sdd/I-varargs-lir-report.md; design FROZEN in AMENDMENT 2, operator ruling: Option B + C validation/repros folded in)
 
 **Files:** investigation → `.superpowers/sdd/I-varargs-lir-report.md`; no source changes.
 
@@ -268,8 +268,8 @@ Write `.superpowers/sdd/I-varargs-lir-report.md` with the LIR layout, switch-arm
 **Files:** investigation → `.superpowers/sdd/I-varargs-emit-report.md`; no source changes.
 
 **Interfaces:**
-- Consumes: I3 LIR layout + va_list type design.
-- Produces: exact lowerer mapping (builtins → va_* LIR) and c89_emit translation (va_* LIR → `va_start`/`va_arg`/`va_end`), A/B/C for F5.
+- Consumes: I3 frozen design (AMENDMENT 2) — LIR va_* layout, va_list type, flag contract already decided. F3/F4/F5 task splits are FROZEN (F3 parser+flag, F4 LIR+va_list+sema, F5 builtins+emitter+repros).
+- Produces: exact lowerer builtin-dispatch mapping (@cVaStart/@cVaArg/@cVaEnd → va_* LIR) and the concrete c89_emit translation (va_* LIR → C `va_start`/`va_arg`/`va_end`, `#include <stdarg.h>` gating, `...` in fn prototypes, extern prototype emission), A/B/C if any refinement is needed for F5. STOP for operator ruling.
 
 - [ ] **Step 1: Builtin wiring**
 
@@ -297,77 +297,112 @@ Write `.superpowers/sdd/I-varargs-emit-report.md`. STOP for operator ruling on t
 
 ---
 
-### Task F3: Varargs — parser `...` acceptance + AST flag
+### Task F3: Varargs — parser `...` acceptance + FnPayload flag threading
 
-**Files:** per I2 ruling (`sf/src/parser.zig`, possibly `sf/src/ast.zig`) + repro `fn_varargs_unsupported` already exists.
+**Files:** `sf/src/parser.zig` (+ `sf/src/type_resolver.zig`, `sf/src/type_registry.zig`, `sf/src/semantic_analyzer.zig` for FnPayload threading)
 
 **Interfaces:**
-- Consumes: I2 report (parser sites + oracle C form).
-- Produces: fn_decl AST records varargs; `extern fn printf(fmt: [*]const u8, ...) void;` parses clean.
+- Consumes: I3 frozen design (AMENDMENT 2) — Option F flag bit.
+- Produces: fn_decl records varargs via **flags bit0 (0x01)**; `FnPayload.flags_packed` written; `extern fn printf(fmt: [*]const u8, ...) void;` parses clean and the fn type carries `is_variadic`.
 
-- [ ] **Step 1: Implement parser `...`**
+- [ ] **Step 1: Implement parser `...` (flag bit, no marker param)**
 
-Apply the operator-approved parser change: accept `...` as a trailing pseudo-parameter in `parserParseFnDecl` param lists. Set the varargs flag on the fn_decl AST node (per I2/I3 AST contract). Applies to both `extern fn` and Z98 `fn`.
+In `parserParseFnDecl`'s param loop (`parser.zig:1371-1381`), branch on `parserPeek().kind == TokenKind.dot_dot_dot`: consume the token; set **bit0 (`0x01`) on the fn_decl node's `flags` byte**; `break` out of the loop (structural trailing-only — `fn(a, ..., b)` yields a `,` where `)` is expected → error[2000]); do NOT append a param node; `params_count` stays exact. Verify `FnProto` struct unchanged (ast_tests.zig:54 12-byte assertion preserved). bit0 = `is_const`, never set for fn_decl (parser uses only 0x02 pub / 0x04 extern / 0x20 test at parser.zig:1363-1365).
 
-- [ ] **Step 2: Verify `fn_varargs_unsupported` parses**
+Also reject `...` in `parserParseFnType` (fn-ptr types, `parser.zig:1006-1017`): targeted `error[2000]` "varargs not allowed in function pointer types".
 
-`zig1 --dump-c89` on `repro/mi_matrix/fn_varargs_unsupported/main.zig` → dump rc=0 (was error[2000]), emitted C has the extern fn declaration. (Emission of `...` in the C decl may still be pending F5 — check: if the decl lacks `...` the C is still valid, just not variadic. Document the intermediate state.)
+- [ ] **Step 2: Thread flag through fn-type creation**
 
-- [ ] **Step 3: Gate + commit**
+`resolveFnSignatures` (`type_resolver.zig:1098-1149`): read `decl.flags & 0x01` → pass new `is_variadic` arg to `typeRegistryGetOrCreateFn` (type_registry.zig:497-518) → writes `FnPayload.flags_packed` (currently hard-coded 0 at type_registry.zig:508). Add the same arg at all 6 `typeRegistryGetOrCreateFn` sema call sites (semantic_analyzer.zig:310/320/326/410/418/423), passing the flag (0 for non-fn-decl construction). Rework the pre-wired marker-param sites: `type_resolver.zig:1139-1140` (drop the `else { xtAppend(TYPE_VOID) }` phantom for a `child_0==0` param) and `lower.zig:4680` (marker-param detection becomes a defensive no-op; the flag now drives `is_variadic`).
 
-Build 0 err. 4 MD5s byte-identical (no baseline uses varargs). Corpus: `fn_varargs_unsupported` behavior recorded (may still be FAIL until F5 if gcc rejects; document). Commit:
+- [ ] **Step 3: Verify `fn_varargs_unsupported` parses**
+
+`zig1 --dump-c89` on `repro/mi_matrix/fn_varargs_unsupported/main.zig` → dump rc=0 (was error[2000]), emitted C has the extern fn declaration. (Emission of `...` in the C decl may still be pending F5 — if the decl lacks `...` the C is still valid, just not variadic; document the intermediate state.) Also correct `fn_varargs_unsupported/NOTES.md` — its claim "zig0 accepts varargs" is FALSE (zig0 rejects all varargs forms).
+
+- [ ] **Step 4: Gate + commit**
+
+Build 0 err. 4 MD5s byte-identical (no baseline has a variadic fn; flag threading is write-only for non-variadic). Corpus: `fn_varargs_unsupported` behavior recorded (may still be FAIL until F5; document). Commit:
 ```bash
-git add sf/src/parser.zig [sf/src/ast.zig]
-git commit -m "feat: parser accepts varargs ... in fn declarations"
+git add sf/src/parser.zig sf/src/type_resolver.zig sf/src/type_registry.zig sf/src/semantic_analyzer.zig sf/src/lower.zig
+git commit -m "feat: parser accepts varargs ... + FnPayload is_variadic flag (fn_varargs_unsupported)"
 ```
 
 ---
 
-### Task F4: Varargs — sema validation + LIR va_* instructions
+### Task F4: Varargs — sema call-site fix + LIR va_* instructions + va_list type
 
-**Files:** per I3 ruling (`sf/src/semantic_analyzer.zig`, `sf/src/lir.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`)
+**Files:** `sf/src/lir.zig`, `sf/src/c89_emit.zig`, `sf/src/type_registry.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/diagnostics.zig`
 
 **Interfaces:**
-- Consumes: I3 LIR layout + va_list type design; F3's AST varargs flag.
-- Produces: va_* LIR variants + their switch arms; sema validation of `...`; va_list type in registry.
+- Consumes: I3 frozen design (AMENDMENT 2); F3's FnPayload flag.
+- Produces: va_* LIR variants + switch arms; sema variadic-aware call typing; va_list builtin type; ERR_3012.
 
 - [ ] **Step 1: LIR union extension**
 
-Add `va_start`/`va_arg`/`va_end` to `lir.zig` union per I3 layout. Add the matching cases to every LirInst switch (decl_local dedup, written_type scan, emitInst dispatcher, hoisted decl_local emission — mirror the tail_call precedent). Empty/neutral arms where translation is deferred to F5.
+Add to `lir.zig` after `call_direct` (lir.zig:45), mirroring `tail_call`:
+```zig
+va_start: struct { va_list_temp: u32, last_param_temp: u32 },
+va_arg:   struct { va_list_temp: u32, type_id: u32, result: u32 },
+va_end:   struct { va_list_temp: u32 },
+```
+Add matching cases to the 4 LirInst switches (all in c89_emit.zig):
+- `:2362` decl_local dedup scan — explicit no-op arms `.va_start/.va_arg/.va_end => {}` (else covers; precedent)
+- `:2403` written_type scan — REQUIRED: `.va_arg => |va|` sets `written_type[va.result]=va.type_id`, `written_flag=1`; `.va_start => |vs|` sets `written_type[vs.va_list_temp]=TYPE_VA_LIST`, `written_flag=1`; `.va_end => {}`
+- `:2938` emitInst dispatcher — REQUIRED: 3 emitting arms (emission deferred to F5; empty bodies OK at F4 to keep build green)
+- `:4554` hoisted decl_local scan — explicit no-op arms (else covers; precedent)
 
-- [ ] **Step 2: Sema validation**
+- [ ] **Step 2: va_list builtin type**
 
-In `semantic_analyzer.zig`, validate `...` (trailing-only; fixed params typed normally; reject in fn_ptr types). Use the existing diagnostic pattern (error[2000] family or a specific code per I3).
+In `type_registry.zig`: append `TypeKind.va_list_type` at enum end (`:40-56`, after anon_union); add `TYPE_VA_LIST: TypeId = 21` (`:29`, after TYPE_TYPE=20); `registerPrimitive(self, TypeKind.va_list_type, 4, 4)` after type_type (`:600`) + `registerPrimitiveName(self, 21, "va_list")` (`:618`). NO keyword (resolves via nameCache). In `c89_emit.zig` `getCTypeName` (`:527+`): `if (ty.kind == TypeKind.va_list_type) { var s: []const u8 = "va_list"; return s; }` placed with the primitive arms (after c_char, `:557`).
 
-- [ ] **Step 3: va_list type**
+- [ ] **Step 3: Sema call-site + validation**
 
-Register the `va_list` type (per I3 design) in `type_registry.zig` + `c89_emit.zig` type emission (map to C `va_list`).
+Replace the hard `args.len != pcount` early-return (`semantic_analyzer.zig:759`) with:
+```zig
+var fixed = fnp.params_count;
+if (isVariadic(fnp)) {
+    if (args.len < fixed) return fnp.return_type;
+    // type args[0..fixed] against xt[params_start..+fixed] (existing loop body)
+    // resolve args[fixed..] with expected type 0 (generic) — new loop
+} else if (args.len != pcount) {
+    return fnp.return_type;
+}
+```
+Add `ERR_3012_VARARGS_INVALID = 3012` to `diagnostics.zig` (explicit `= 3012`, next free after 3011, before 3048). Use it for: variadic fn with zero fixed params, `@cVaStart` outside a variadic fn. (The lowerer has `self.func.is_variadic` for the body check.)
 
 - [ ] **Step 4: Gate + commit**
 
-Build 0 err. 4 MD5s byte-identical (neutral arms). Corpus unchanged. Commit:
+Build 0 err. 4 MD5s byte-identical (stdarg.h gated on is_variadic in F5; empty va_* arms emit nothing for non-variadic programs). Corpus unchanged. Commit:
 ```bash
-git add sf/src/lir.zig sf/src/semantic_analyzer.zig sf/src/type_registry.zig sf/src/c89_emit.zig
-git commit -m "feat: va_list type + LIR va_start/va_arg/va_end instructions"
+git add sf/src/lir.zig sf/src/c89_emit.zig sf/src/type_registry.zig sf/src/semantic_analyzer.zig sf/src/diagnostics.zig
+git commit -m "feat: va_list type + LIR va_start/va_arg/va_end + variadic call typing"
 ```
 
 ---
 
 ### Task F5: Varargs — builtins + lowerer + emitter translation
 
-**Files:** per I4 ruling (`sf/src/lower.zig`, `sf/src/c89_emit.zig`)
+**Files:** `sf/src/lower.zig`, `sf/src/c89_emit.zig` (+ I4 investigation may add more)
 
 **Interfaces:**
-- Consumes: I4 translation design; F4's va_* LIR + va_list type; F3's parser flag.
-- Produces: `@cVaStart/@cVaArg/@cVaEnd` builtins working end-to-end; `extern fn printf` callable with variadic args; Z98 varargs fn bodies access args.
+- Consumes: I3 frozen design (AMENDMENT 2); F3's flag; F4's va_* LIR + va_list type + ERR_3012.
+- Produces: `@cVaStart/@cVaArg/@cVaEnd` working end-to-end; `extern fn printf` callable; Z98 varargs fn bodies access args. **stdarg.h gated on is_variadic.**
 
-- [ ] **Step 1: Builtin dispatch**
+- [ ] **Step 1: Builtin dispatch (lowerer, builtin branch `lower.zig:2543`)**
 
-Wire `@cVaStart(&vl)` / `@cVaArg(&vl, T)` / `@cVaEnd(&vl)` in the lowerer builtin dispatch (mirror `@intCast` handling). Lower to va_* LIR instructions.
+- `@cVaStart(&vl)` → `va_start` inst. If arg is `AstKind.address_of`, unwrap one level to the base va_list temp (C `va_start` takes the object, not the pointer). `last_param_temp` = the last fixed param's temp (`func.params[func.params.len-1]`).
+- `@cVaArg(vl, T)` → `va_arg` inst with `result = nextTemp(resolveTypeExprFull(T))`.
+- `@cVaEnd(vl)` → `va_end` inst.
+- Guard `@cVaStart` inside non-variadic fn → ERR_3012 (lowerer has `self.func.is_variadic`).
 
-- [ ] **Step 2: Emitter translation**
+- [ ] **Step 2: Emitter translation (c89_emit emitInst, next to `.tail_call` `:4042`)**
 
-In c89_emit.zig, translate va_* LIR → `va_start(zT, last_param)` / `va_arg(zT, ctype)` / `va_end(zT)`. Add `#include <stdarg.h>` for varargs fns. Emit `...` in fn prototypes (forward decls + headers).
+```c
+va_start(zT_3, zL_fmt);   // .va_start arm  (va_list_temp name, last_param_temp name)
+zT_5 = va_arg(zT_3, int); // .va_arg arm    (result = va_arg(vl, CType from type_id))
+va_end(zT_3);             // .va_end arm
+```
+`va_list zT_3;` hoisted-decl comes from the TYPE_VA_LIST temp via existing hoisted-decl pass (c89_emit.zig:2774-2828) + the getCTypeName va_list arm from F4. Add `#include <stdarg.h>` **gated on any `fns[i].is_variadic` in the TU** in `emitModuleHeader` (c89_emit.zig:1933-1937, after zig_compat/special_types includes) and `emitModuleFile` (c89_emit.zig:2262-2267). Gating keeps all 4 MD5 gates byte-identical.
 
 - [ ] **Step 3: Z98 varargs fn repro**
 
@@ -389,11 +424,11 @@ pub fn main() void {
     printf("sum=%d\n" +% 0);
 }
 ```
-(Adjust to corpus print idiom.) Verify: dumps rc=0, gcc-clean, runs printing the computed sum with variadic args.
+(Adjust to corpus print idiom — fixed-arity `extern fn printf` with a literal format, per the `fn_varargs_unsupported` convention. To prove variadic CALLS: call `sum(3, 10, 20, 30)` with a fixed-arity wrapper or split the print.) Verify: dumps rc=0, gcc-clean, runs printing the computed sum with variadic args.
 
 - [ ] **Step 4: Gate sweep**
 
-Build 0 err. `fn_varargs_unsupported` FAIL→OK (dump rc=0, gcc-clean, callable). `fn_varargs_body` OK. 4 MD5s — assess blast radius (no baseline uses varargs; expect byte-identical). Corpus: 208→210, +2 OK, FAIL 4→3.
+Build 0 err. `fn_varargs_unsupported` FAIL→OK (dump rc=0, gcc-clean, callable). `fn_varargs_body` OK (variadic body reads args). 4 MD5s byte-identical (stdarg.h gated; no baseline has variadic fns). Corpus: 208→210, +2 OK, FAIL 4→3. Update `fn_varargs_unsupported/NOTES.md` (correct the FALSE "zig0 accepts varargs" claim), EXPECTED_FAIL.md rows.
 
 - [ ] **Step 5: Commit**
 
@@ -485,3 +520,9 @@ git commit -m "docs: gate sweep + tech docs for 4-item compiler gaps plan"
 
 - **AMENDMENT 0 (2026-08-06):** Plan structure finalized from brainstorm. I-tasks for @intCast (I1) and varargs (I2/I3/I4); F-only for ICE marker (F2) and lisp closures (F6, last). Varargs is full Tier-B support (multi-backend, not C89-delegated) per operator. zig0 is a black-box oracle only for varargs emission — never read zig0 internals.
 - **AMENDMENT 1 (2026-08-06, operator ruling on I1):** F1 fix site = **Option B** (c89_emit wrap via existing `int_cast.is_checked` + source-aware `__bootstrap_<DST>_from_<SRC>` naming), NOT the plan's original Option A (lowerer `call_direct`). Rationale: proper architecture — the LIR carries the backend-neutral "checked cast" semantic; lowerer marks narrowing/reinterpret casts; emitter implements for C89. `call_direct` would bake a C-specific runtime function name into the backend-neutral LIR. Scope = **(b) full oracle rule** (narrowing OR same-width-reinterpret; pure widening → raw cast). All 4 MD5 gates re-baseline, runtime-verified (F-5 AMENDMENT B precedent). F1 rewritten with 8 concrete steps (19 helpers to sf runtime, lower.zig is_checked wiring, c89_emit source-aware checked branch).
+- **AMENDMENT 2 (2026-08-06, operator ruling on I3):** Varargs design FROZEN per I3 report (`.superpowers/sdd/I-varargs-lir-report.md`). Operator confirmed **Option B (full support) + C validation/repros folded in**, and the design as upstream-correct. Binding decisions:
+  - **AST = Option F (fn_decl flag bit0/0x01)** on `dot_dot_dot`; NO marker param; `FnProto` unchanged (12B). `FnPayload.flags_packed` (type_registry.zig:77) written via new `typeRegistryGetOrCreateFn` is_variadic arg threaded through 6 sema sites (310/320/326/410/418/423) + type_resolver:1144. Reworks the pre-wired marker-param sites (type_resolver:1139-1140, lower.zig:4680) to read the flag.
+  - **LIR va_* layout** (after `call_direct`, lir.zig:45): `va_start {va_list_temp, last_param_temp}`, `va_arg {va_list_temp, type_id, result}`, `va_end {va_list_temp}`. Exactly 4 LirInst switches, all in c89_emit.zig (2362, 2403, 2938, 4554); lower.zig emitInst is a plain append (no switch). Required arms: written_type scan (va_arg/va_start set written_type, va_end no-op) + emitInst dispatcher (3 emitting arms).
+  - **va_list = builtin `TYPE_VA_LIST = 21`**, `TypeKind.va_list_type` appended at enum end, size/align 4, C name `va_list` via registerPrimitiveName/nameCache (NO keyword), `getCTypeName` arm in c89_emit. `stdarg.h` include gated on `fns[i].is_variadic` in emitModuleHeader + emitModuleFile → **4 MD5 gates unchanged, no re-baseline**.
+  - **Sema:** replace `args.len != pcount` early-return (semantic_analyzer.zig:759) with `args.len < fixed` guard + generic resolve of extras. New `ERR_3012_VARARGS_INVALID = 3012` for: zero-fixed-param variadic fn, `@cVaStart` outside variadic body. `...` in fn_ptr rejected at parser level (error[2000]).
+  - F3 = parser flag + FnPayload threading; F4 = LIR + va_list type + sema fix; F5 = builtins + emitter translation + repros. Task splits frozen as below.
