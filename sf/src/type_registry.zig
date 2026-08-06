@@ -494,7 +494,7 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems
     return tid;
 }
 
- pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, params_start: u16, params_count: u16, return_type: TypeId) u32 {
+ pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u16, params_count: u16, return_type: TypeId) u32 {
      var p2m: []const u8 = "P2:n"; pal.markerWrite(p2m);
      var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
      var i: usize = 0;
@@ -505,7 +505,7 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems
              return @intCast(u32, i);
          }
      }
-     fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .is_extern = is_extern, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = @intCast(u8, 0) });
+     fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .is_extern = is_extern, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = is_variadic });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.fn_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),

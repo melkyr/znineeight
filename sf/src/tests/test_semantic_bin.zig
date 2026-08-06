@@ -868,7 +868,7 @@ fn testFnCallArith() void {
     var fn_start: u16 = @intCast(u16, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
-    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), fn_start, @intCast(u16, 2), type_mod.TYPE_I32);
+    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), fn_start, @intCast(u16, 2), type_mod.TYPE_I32);
     var un: []const u8 = "add";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
@@ -912,7 +912,7 @@ fn testFnCallWrongArgCount() void {
     var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var fn_start: u16 = @intCast(u16, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
-    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_I32);
+    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_I32);
     var un: []const u8 = "add";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));
@@ -1039,7 +1039,7 @@ fn testFnCallCoercion() void {
     var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
     var fn_start: u16 = @intCast(u16, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_U32);
-    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_U32);
+    var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_U32);
     var un: []const u8 = "f";
     var unid = interner_mod.stringInternerIntern(&interner, un);
     var table = sym_mod.symbolRegistryGetTable(&symreg, @intCast(u32, 0));

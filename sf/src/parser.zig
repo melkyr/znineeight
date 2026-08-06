@@ -1004,6 +1004,12 @@ fn parserParseFnType(self: *Parser) ParserError!u32 {
     var param_buf: [64]u32 = undefined;
     var param_count: usize = 0;
     while (parserPeek(self).kind != TokenKind.rparen) {
+        if (parserPeek(self).kind == TokenKind.dot_dot_dot) {
+            var vtok = parserAdvance(self);
+            var v_msg: []const u8 = "varargs not allowed in function pointer types";
+            parserAddError(self, vtok, v_msg);
+            return error.UnexpectedToken;
+        }
         if (parserPeek(self).kind == TokenKind.identifier and parserPeekN(self, 1).kind == TokenKind.colon) {
             _ = parserAdvance(self);
             _ = try parserExpect(self, TokenKind.colon);
@@ -1369,6 +1375,11 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
 
     self.child_buf_len = 0;
     while (parserPeek(self).kind != TokenKind.rparen and parserPeek(self).kind != TokenKind.eof) {
+        if (parserPeek(self).kind == TokenKind.dot_dot_dot) {
+            _ = parserAdvance(self);
+            flags = flags | @intCast(u8, 0x01);
+            break;
+        }
         var param_tok = try parserExpect(self, TokenKind.identifier);
         _ = try parserExpect(self, TokenKind.colon);
         var param_type = try parserParseType(self);

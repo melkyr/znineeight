@@ -816,7 +816,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         while (fnt_a < fnt_pc) : (fnt_a += @intCast(usize, 1)) {
             type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
         }
-        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
+        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
         var opm3_m: []const u8 = "OPTVOID:fntT"; pal_mod.markerWriteInt(opm3_m, fnt_tid);
         type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
         return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
@@ -1123,6 +1123,8 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 }
                 var is_ext: u8 = @intCast(u8, 0);
                 if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
+                var is_variadic: u8 = @intCast(u8, 0);
+                if ((decl.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { is_variadic = @intCast(u8, 1); }
                 var fn_start: u16 = @intCast(u16, env.typereg.xt_len);
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
@@ -1136,12 +1138,10 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                             if (ptype != type_mod.TYPE_UNDEFINED) {
                                 rtt_mod.resolvedTypeTableSet(resolved_types, pnode.child_0, ptype);
                             }
-                        } else {
-                            type_mod.xtAppend(env.typereg, type_mod.TYPE_VOID);
                         }
                     }
                 }
-                var tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, proto.name_id, mods[mi].id, is_ext, fn_start, proto.params_count, rt_box[0]);
+                var tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, proto.name_id, mods[mi].id, is_ext, is_variadic, fn_start, proto.params_count, rt_box[0]);
                 rtt_mod.resolvedTypeTableSet(resolved_types, decls[di], tid);
                 var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
                 if (sym) |sp| {

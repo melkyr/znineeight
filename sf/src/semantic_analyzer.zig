@@ -307,7 +307,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                 var rtt_val: u32 = if (rtt) |rv| rv else @intCast(u32, 0);
                                 var bre2_m: []const u8 = "BR:rt"; pal_mod.markerWriteInt(bre2_m, rtt_val);
                                 if (rtt) |rtv| {
-                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
+                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                                     return fn_ty;
                                 }
@@ -317,13 +317,13 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                 var brr2_m: []const u8 = "BR:treT"; pal_mod.markerWriteInt(brr2_m, resolved_rt);
                                 if (resolved_rt != type_mod.TYPE_UNDEFINED) {
                                     rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt);
-                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt);
+                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt);
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                                     return fn_ty;
                                 }
                             }
                             var bre3_m: []const u8 = "BR:dv\n"; pal_mod.markerWrite(bre3_m);
-                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
                             var bre4_m: []const u8 = "BR:ft"; pal_mod.markerWriteInt(bre4_m, fn_ty);
                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                             return fn_ty;
@@ -407,7 +407,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rtt) |rtv| {
-                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
+                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
                              rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                               return fn_ty;
                 }
@@ -415,12 +415,12 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var resolved_rt_b = type_resolver.resolveTypeExprFull(&tre_env_b, proto.return_type_node, @intCast(u32, 0));
                 if (resolved_rt_b != type_mod.TYPE_UNDEFINED) {
                     rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt_b);
-                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt_b);
+                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt_b);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                     return fn_ty;
                 }
             }
-                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                     return fn_ty;
                 }
