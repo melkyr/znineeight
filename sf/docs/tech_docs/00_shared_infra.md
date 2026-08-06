@@ -276,7 +276,7 @@ undefined `isize` in the old macro was removed — any `_WIN32` compile was a pr
 | `markersEnabled` | 115 | pub | Set `g_markers_enabled` flag (0=off, nonzero=on). | `main.zig` CLI arg parsing (`--markers`) | (none) | `g_markers_enabled` | Enable/disable debug markers. | None [inference] |
 | `markerWrite` | 125 | pub | Conditional stderr write: if `g_markers_enabled != 0`, writes message. | `markerWriteInt`, phase debug code | `stderr_write` | stderr | Guarded by global flag — zero-cost when disabled (just one cmp). | None [inference] |
 | `markerWriteInt` | 131 | pub | Conditional stderr write with int suffix: writes prefix + decimal value + newline. Uses `itoa` for formatting. | `stringInternerIntern` (INT: markers), phase markers | `markerWrite`, `itoa_mod.itoa` | stderr, local buf | Fixed-width format. | `INT:tl`, `INT:t0`, `INT:dup`, `INT:new` [inference] |
-| `markerWriteInt64` | 143 | pub | Conditional stderr write with **u64** suffix (itoa64, `[24]u8` buffer). Added 2026-08-06 (F2) so the `int_literal` lowering marker (`ILR:i … v<value>`) can render literals ≥ 2^32 without a checked `u32` cast. | `int_literal` lowering marker (lower.zig), F2 u64-safe fix | `markerWrite`, `itoa_mod.itoa64` | stderr, local buf | Full u64 rendering. | `ILR:i39v5000000000` [inference] |
+| `markerWriteInt64` | 144 | pub | Conditional stderr write with **u64** suffix (itoa64, `[24]u8` buffer). Added 2026-08-06 (F2) so the `int_literal` lowering marker (`ILR:i … v<value>`) can render literals ≥ 2^32 without a checked `u32` cast. | `int_literal` lowering marker (lower.zig), F2 u64-safe fix | `markerWrite`, `itoa_mod.itoa64` | stderr, local buf | Full u64 rendering. | `ILR:i39v5000000000` [inference] |
 
 ---
 

@@ -48,7 +48,7 @@ All `type_registry.zig:11-37`:
 Synthetic field indices: `SLICE_FIELD_PTR=0`, `SLICE_FIELD_LEN=1`, `TU_FIELD_TAG=0`, `TU_FIELD_PAYLOAD=1`.
 
 `FIRST_USER_TYPE = 20` — **stale** (see below). `[updated: 2026-08-06]` Adding the
-`va_list` primitive (`TypeKind.va_list_type`, registered at type_registry.zig:600,
+`va_list` primitive (`TypeKind.va_list_type`, registered at type_registry.zig:603,
 primitive name `va_list` at :622) shifted every user type id by 1 — the F4
 "va_list user-type-id shift" (AMENDMENT 4) re-baselined the mud/lisp/json MD5
 gates for this (gol coincidentally unchanged). Since primitives now occupy 1-21, user types in practice start ≥22, but
@@ -67,7 +67,7 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | Type | Line | Description |
 |------|------|-------------|
 | `TypeId` | 9 | `u32` alias — index into `TypeRegistry.types_items` |
-| `TypeKind` (enum u8) | 40 | 37 variants: none_sentinel(0), void/bool/noreturn/i8/i16/i32/i64/u8/u16/u32/u64/isize/usize/c_char/f32/f64, ptr/many_ptr/array/slice/optional/error_union/error_set/fn/struct/enum/union/tagged_union/tuple/unresolved_name/type_type/va_list_type/module_type/null_type/undefined_type/integer_literal_type/anon_struct_init/anon_array/anon_tuple/anon_union |
+| `TypeKind` (enum u8) | 41 | 41 variants: none_sentinel(0), void/bool/noreturn/i8/i16/i32/i64/u8/u16/u32/u64/isize/usize/c_char/f32/f64, ptr/many_ptr/array/slice/optional/error_union/error_set/fn/struct/enum/union/tagged_union/tuple/unresolved_name/type_type/module_type/null_type/undefined_type/integer_literal_type/anon_struct_init/anon_array/anon_tuple/anon_union/va_list_type |
 | `Type` (struct) | 58 | `kind(TypeKind, 1B)`, `state(u8, 0=unresolved, 2=resolved)`, `flags(u8)`, `_pad(u8)`, `size(u32)`, `alignment(u32)`, `name_id(u32)`, `c_name_id(u32)`, `module_id(u32)`, `payload_idx(u32)` — 28 bytes total |
 | `PtrPayload` | 71 | `base: TypeId` — shared by ptr_type and many_ptr_type |
 | `ArrayPayload` | 72 | `elem: TypeId`, `length: u32` |
@@ -104,7 +104,7 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | `nameCachePut` | 313 | pub | `[inference: u64ToU32MapPut on name_cache, emit NP:k<key_lo_16bits>v<value> marker]` | Stores a (module<<32)\|name_id→TypeId mapping in name_cache. Emits NP:k<key_lo>v<type_id> debug marker. |
 | `typeRegistryAppend` | 153 | private | `[inference: ensure capacity, write Type at types_len, increment len, emit DC:k<n>t marker, emit X:id for struct_type]` | Core append to `types_items`. Returns the new `TypeId` (old `types_len`). Emits `DC:k<kind_enum>n<name_id>t<type_id>` debug marker. For struct_type, also emits `X:<id>`. |
 | `registerPrimitive` | 246 | private | `[inference: call typeRegistryAppend with state=2, given kind/size/alignment, zero name_id/c_name_id/module_id/payload_idx]` | Appends a resolved (state=2) primitive type. |
-| `typeRegistryRegisterPrimitives` | 579 | pub | `[inference: registerPrimitive for 20 primitives (1-20), then registerPrimitiveName for named ones]` | Populates sentinel TypeIds 1-20. Calls `registerPrimitiveName` for void, bool, i8-i64, u8-u64, isize, usize, c_char, f32, f64, null, undefined, type. |
+| `typeRegistryRegisterPrimitives` | 579 | pub | `[inference: registerPrimitive for 21 primitives (1-21), then registerPrimitiveName for named ones]` | Populates sentinel TypeIds 1-21. Calls `registerPrimitiveName` for void, bool, i8-i64, u8-u64, isize, usize, c_char, f32, f64, null, undefined, type. |
 | `registerPrimitiveName` | 621 | private | `[inference: interner.intern name, set Type.name_id, nameCachePut(key=name_id, value=tid)]` | Interns a primitive type name and registers it in `name_cache` (key=name_id only, module_id=0). |
 | `typeRegistryRegisterNamedType` | 629 | pub | `[inference: compute key = module_id*2^32 + name_id, nameCacheGet check, typeRegistryAppend with kind+name_id+module_id, nameCachePut, emit RN:m<n>k<t> marker]` | Registers a user-defined named type (struct, enum, union, etc.). Key is `(module_id << 32) | name_id`. State=0 (unresolved). |
 | `typeRegistryGetOrCreatePtr` | 326 | pub | `[inference: key = (base << 1) | is_const(0/1), ptr_cache check, ptrAppend, typeRegistryAppend(PtrPayload{base}), ptr_cache put, return tid]` | Creates or retrieves `*T` type. Size=4, align=4, flags=const. |

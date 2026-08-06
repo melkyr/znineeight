@@ -301,7 +301,7 @@ Field constants are `#define`d for integer matching. Tagged union payload access
 - Opens `{` and increments indent
 - **Variadic externs get forward declarations (Option B, F5 2026-08-06):** the
   extern-prototype guards (`emitModuleHeader` at `c89_emit.zig:1996` and the
-  `:2108`-era twin) are `is_extern==0 OR is_variadic!=0`, so a variadic `extern
+  `:2143`-era twin) are `is_extern==0 OR is_variadic!=0`, so a variadic `extern
   fn printf(fmt, ...)` emits its C prototype (`int printf(unsigned char*, ...);`,
   name-passthrough) while non-variadic externs still rely on `@cInclude`'d
   headers.
