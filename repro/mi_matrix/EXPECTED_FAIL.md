@@ -533,3 +533,47 @@ compile, link, and run correctly (lisp `(+ 1 2)` → `3`, `(foo-bar-baz)` → `E
 UnboundSymbol`; json parses `test.json` identically). No other repro flipped. `@enumToInt(err)`
 values change to registry codes (accepted; re-verified at runtime — `error_literal_return` still
 prints `1`, all ~30 error repros unchanged).
+
+---
+
+## Task P0 — 3 defensive repros for comptime arithmetic folding gaps (2026-08-06) — +3 repros (200 → 203)
+
+Three defensive repros proving the three comptime-arithmetic-folding pipeline gaps
+(plan `.superpowers/plans/2026-08-06-comptime-arithmetic-folding-plan.md`, AMENDMENT P0-A/P0-B):
+Gap 1 = `phase_ComptimeEvaluation` (main.zig:339-352) visits only `builtin_call` nodes; Gap 2 =
+lowerer binary/unary handlers (`lower.zig:1218-1306`, `:1426-1439`) emit `BIN_*`/`UN_*` LIR
+unconditionally while `builtin_call` (`:2456`) checks `comptime_values`; Gap 3 = type_resolver
+array-size handler (type_resolver.zig:869-911) misses `mul`/`div`/`mod_op`. Classified with
+`/tmp/z1/zig1` per the QUICK_REF corpus classifier.
+
+| Repro | RED (pre-fix) | Classification (measured) | Guards |
+|-------|---------------|---------------------------|--------|
+| `comptime_binop_not_folded` | emission gap | **OK with emission-gap annotation** — dump rc=0, 1 `.c`, gcc-clean, links, runs printing `40 20 300 3 0 -30 10 30 20 120 7 -31`; `grep -c '[\*\/\%]'` in emitted C = 11 (runtime `*`/`/`/`%` in `__module_init`, not `int_const`) | Gap 1: bare binary/unary nodes never reach `comptimeEvalEvaluate` |
+| `comptime_lower_ignores_fold` | emission gap | **OK with emission-gap annotation** — identical measured state to repro 1 (same source; isolates Gap 2) | Gap 2: lowerer binary/unary handlers never consult `comptime_values` |
+| `comptime_array_size_gap` | semantic gap | **FAIL** per AMENDMENT P0-B — dump rc=0, 1 `.c`; the arrays are **silently dropped** (consts degrade to uninitialized `int` globals, no `u8[N]`, no `[0]`) and gcc is **clean (rc=0)** — the predicted `error: ISO C forbids zero-size array` does NOT occur (see discrepancy note below) | Gap 3: type_resolver array-size handler misses `mul`/`div`/`mod_op` → `arr_len`=0 → `TYPE_UNDEFINED` |
+
+**Post-P0 accounting: OK=195 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 203 repros**
+(195 + 4 + 4 = 203; corpus total grows 200 → 203 by 3 new repros). OK 193→195 (+2 = repros 1+2,
+emission-gap annotations); FAIL 3→4 (+1 = `comptime_array_size_gap`). Raw classifier FAIL **7 → 8**
+(green-guards remain a sub-bucket of the raw count). The 4 real FAILs: 2 std-lib-deferred
+(`field_store_drop`, `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (F-8
+residual) + `comptime_array_size_gap` (this task). The 4 green-guards unchanged. **Post-fix F4
+reclassifies `comptime_array_size_gap` OK → final OK=196 / FAIL=3 / green-guards=4 @203 (raw
+FAIL=7).** No other repro flipped.
+
+**Source-note (deviation from the plan's verbatim draft source, see
+`.superpowers/sdd/task-P0-report.md`):** the plan's draft main.zig for repros 1+2 does not compile
+on the current compiler — (1) the parser requires `;` after `@cInclude(...)`; (2) varargs `...`
+in `extern fn` params is not parseable (`error[2000]`); (3) `const A`/`const B` referenced ONLY
+from other const initializers never receive C storage-global decls (`zG_..._A` undeclared in
+`__module_init` → gcc error). Corrections applied: `;` after `@cInclude`, fixed-arity `printf`,
+literal operands inlined. The tested gap is unchanged (12 bare binary/unary module-scope const
+ops that must fold to `int_const`).
+
+**Discrepancy note (repro 3, evidence over prediction):** the brief/ruling predicted
+`error: ISO C forbids zero-size array` for `comptime_array_size_gap`; the measured pre-fix state
+is instead a **silent semantic miscompile** (arrays dropped, consts → uninitialized `int` globals,
+gcc-clean). It is counted **FAIL** per AMENDMENT P0-B (real gap, `int`-drop is wrong output),
+NOT because gcc rejects it — flagged for operator re-adjudication if the classifier convention
+(gcc rc==0 ⇒ OK, per the `comptime_neg_int`/`load_global_array_copy` runtime-gap precedent)
+should apply instead.
