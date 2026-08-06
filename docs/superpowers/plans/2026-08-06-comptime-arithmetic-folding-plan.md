@@ -21,7 +21,7 @@
   ```
   Gate: 0 gcc errors (`error:` count == 0).
 - 4 MD5 baselines: mud `4644ad1349c55af80fa1a18fe0e17989`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `dd56cd23984d2533eebd244ffe593791`, json `900cb401779aab11bcf22ce35100323c`. Mud+gol byte-identical; lisp/json re-baselined from P3-6 error-code registry (F-5 AMENDMENT B precedent). Byte-identity for all 4 required.
-- Corpus: current 200 repros (OK=193/FAIL=3/green-guards=4, raw FAIL=7). 3 new repros → 203 pre-fix (OK 193→195, FAIL 3→4, green-guards 4; raw FAIL 7→8 — repro 3 counts FAIL, repros 1+2 count OK with emission-gap annotation). Post-fix F4 → 196/3/4 @203 (raw FAIL=7). FAIL count must not increase (only the new zero-size-array repro adds a FAIL, removed by F3).
+- Corpus: current 200 repros (OK=193/FAIL=3/green-guards=4, raw FAIL=7). 4 new repros → 204 pre-fix (OK 193→196, FAIL 3→4, green-guards 4; raw FAIL 7→8 — the 3 comptime repros count OK with emission/runtime-gap annotations per operator ruling, the varargs repro counts FAIL). Post-fix F4: repro 3's runtime-gap resolved by F3 (already OK) → 196/4/4 @204 (raw FAIL=8). FAIL count must not increase (only the new varargs repro adds a FAIL, out of scope).
 - test_analyzer_bin PASS. build_test.sh baseline-identical (5/4 or current state). test_semantic_bin pre-existing broken (operator ruling A).
 - fastedit/edit only for source edits. Read region before each edit. Bottom-to-top. NO scope creep. NO python/sed.
 - Z98 idioms: `@intCast` everywhere, `var msg: []const u8 = "text";` before PAL, if/else-if chains.
@@ -29,7 +29,7 @@
 
 ---
 
-### Task P0: Create 3 Defensive Repros
+### Task P0: Create 3 Defensive Repros + varargs tracking repro
 
 **Files:**
 - Create: `repro/mi_matrix/comptime_binop_not_folded/main.zig`
@@ -38,9 +38,11 @@
 - Create: `repro/mi_matrix/comptime_lower_ignores_fold/NOTES.md`
 - Create: `repro/mi_matrix/comptime_array_size_gap/main.zig`
 - Create: `repro/mi_matrix/comptime_array_size_gap/NOTES.md`
+- Create: `repro/mi_matrix/fn_varargs_unsupported/main.zig` (tracking repro, operator ruling P0-D)
+- Create: `repro/mi_matrix/fn_varargs_unsupported/NOTES.md`
 - Modify: `repro/mi_matrix/EXPECTED_FAIL.md`
 
-**Scope:** Create 3 repros proving each pipeline gap. Repro 1 and Repro 2 share the same source logic (12 ops) with different verification. Repro 3 tests array-size mul/div/mod. All expected to FAIL per current compiler.
+**Scope:** Create 3 repros proving each pipeline gap. Repro 1 and Repro 2 share the same source logic (12 ops) with different verification. Repro 3 tests array-size mul/div/mod. Plus 1 tracking repro for the varargs parse gap discovered during P0 (operator ruling P0-D). All 3 comptime repros classify OK-with-gap-annotation per operator rulings; the varargs repro classifies FAIL.
 
 - [ ] **Step 1: Create Repro 1 (`comptime_binop_not_folded`)**
 
@@ -48,25 +50,23 @@
 mkdir -p repro/mi_matrix/comptime_binop_not_folded
 ```
 
-`repro/mi_matrix/comptime_binop_not_folded/main.zig`:
+`repro/mi_matrix/comptime_binop_not_folded/main.zig` (CORRECTED source — plan's original varargs form does not compile; this is the operator-approved correction, ruling P0-C):
 ```zig
-@cInclude("<stdio.h>")
-extern fn printf(fmt: [*]const u8, ...) i32;
+@cInclude("<stdio.h>");
+extern fn printf(fmt: [*]const u8, a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32, j: i32, k: i32, l: i32) i32;
 
-const A: i32 = 30;
-const B: i32 = 10;
-const VADD: i32 = A + B;
-const VSUB: i32 = A - B;
-const VMUL: i32 = A * B;
-const VDIV: i32 = A / B;
-const VMOD: i32 = A % B;
-const VNEG: i32 = -A;
-const VAND: i32 = A & B;
-const VOR:  i32 = A | B;
-const VXOR: i32 = A ^ B;
-const VSHL: i32 = A << 2;
-const VSHR: i32 = A >> 2;
-const VNOT: i32 = ~A;
+const VADD: i32 = 30 + 10;
+const VSUB: i32 = 30 - 10;
+const VMUL: i32 = 30 * 10;
+const VDIV: i32 = 30 / 10;
+const VMOD: i32 = 30 % 10;
+const VNEG: i32 = -30;
+const VAND: i32 = 30 & 10;
+const VOR:  i32 = 30 | 10;
+const VXOR: i32 = 30 ^ 10;
+const VSHL: i32 = 30 << 2;
+const VSHR: i32 = 30 >> 2;
+const VNOT: i32 = ~30;
 
 pub fn main() void {
     var fmt_all: [*]const u8 = "%d %d %d %d %d %d %d %d %d %d %d %d\n";
@@ -77,7 +77,7 @@ pub fn main() void {
 
 Expected output: `40 20 300 3 0 -30 10 30 20 120 7 -31`
 
-NOTES.md documents: pre-fix gap (runtime arithmetic emitted, not int_const), post-fix expectation (int_const in __module_init), verification via `grep -c '[\*\/\%]'` in emitted C > 0.
+NOTES.md documents: pre-fix gap (runtime arithmetic emitted, not int_const), post-fix expectation (int_const in __module_init), verification via `grep -c '[\*\/\%]'` in emitted C > 0, and the P0-C source correction (inlined literals + fixed-arity printf).
 
 - [ ] **Step 2: Create Repro 2 (`comptime_lower_ignores_fold`)**
 
@@ -104,16 +104,32 @@ const REM:   [ROWS % 6]u8 = undefined;
 pub fn main() void {}
 ```
 
-NOTES.md documents: pre-fix gcc `error: ISO C forbids zero-size array` (type_resolver.zig misses mul/div/mod in array size eval), post-fix expected gcc-clean with correct array sizes (4000, 40, 2).
+NOTES.md documents: pre-fix **silent miscompile** — array types resolve `TYPE_UNDEFINED` (type_resolver.zig:869-911 misses mul/div/mod → arr_len=0), consts degrade to uninitialized `int` globals, gcc-clean. Operator ruling P0-E: counted **OK with runtime-gap annotation** (gcc-exit classifier says OK; real semantic gap). Post-fix F3 expected: correct array types `u8[4000]`/`u8[40]`/`u8[2]` (runtime gap resolved).
+
+- [ ] **Step 3b: Create tracking repro (`fn_varargs_unsupported`)**
+
+```bash
+mkdir -p repro/mi_matrix/fn_varargs_unsupported
+```
+
+`repro/mi_matrix/fn_varargs_unsupported/main.zig` (tracking repro for the varargs parse gap discovered in P0):
+```zig
+extern fn printf(fmt: [*]const u8, ...) i32;
+
+pub fn main() void {}
+```
+
+NOTES.md documents: `error[2000]: expected identifier but found token` at `...` — parser.zig has no varargs support. Counted **FAIL** (frontend parse gap, 0 `.c`). Out of comptime-arithmetic scope; tracked as known gap.
 
 - [ ] **Step 4: Update EXPECTED_FAIL.md**
 
-Add 3 new rows to the classification table with measured pre-fix state:
+Add 4 new rows to the classification table with measured pre-fix state:
 - `comptime_binop_not_folded` — **OK with emission-gap annotation** (gcc-clean, runtime output correct, but emitted C shows runtime arithmetic instead of int_const — gap proven by C89 inspection). Counted OK in totals, per the `load_global_array_copy`/`comptime_neg_int` precedent of counting runtime/emission-gap repros as OK.
 - `comptime_lower_ignores_fold` — **OK with emission-gap annotation** (same).
-- `comptime_array_size_gap` — **FAIL** (gcc `error: ISO C forbids zero-size array`). Counted FAIL until F3 fixes it.
+- `comptime_array_size_gap` — **OK with runtime-gap annotation** (gcc-clean silent miscompile — array types resolve TYPE_UNDEFINED, consts degrade to uninitialized int globals). Counted OK per operator ruling P0-E.
+- `fn_varargs_unsupported` — **FAIL** (error[2000], 0 `.c`, varargs unsupported). Counted FAIL, out of scope.
 
-Update totals: 200→203 (OK 193→195, FAIL 3→4, green-guards 4; raw FAIL 7→8). Document the new bucket. Post-fix F4 reclassifies repro 3 OK → final 196/3/4 @203 (raw FAIL 7).
+Update totals: 200→204 (OK 193→196, FAIL 3→4, green-guards 4; raw FAIL 7→8). Document the new bucket. Post-fix F3 resolves repro 3's runtime-gap (already OK) → 196/4/4 @204 (raw FAIL=8).
 
 - [ ] **Step 5: Verify + commit**
 
@@ -122,8 +138,8 @@ Update totals: 200→203 (OK 193→195, FAIL 3→4, green-guards 4; raw FAIL 7�
 # Confirm Repro 3 FAILs gcc (zero-size array)
 # Confirm Repros 1+2 gcc-clean (runtime output correct, gap is in C89 inspection)
 
-git add repro/mi_matrix/comptime_binop_not_folded/ repro/mi_matrix/comptime_lower_ignores_fold/ repro/mi_matrix/comptime_array_size_gap/ repro/mi_matrix/EXPECTED_FAIL.md
-git commit -m "repro(P0): 3 defensive repros for comptime arithmetic folding gaps"
+git add repro/mi_matrix/comptime_binop_not_folded/ repro/mi_matrix/comptime_lower_ignores_fold/ repro/mi_matrix/comptime_array_size_gap/ repro/mi_matrix/fn_varargs_unsupported/ repro/mi_matrix/EXPECTED_FAIL.md
+git commit -m "repro(P0): 3 comptime-arithmetic defensive repros + varargs tracking repro"
 ```
 
 ---
@@ -321,23 +337,25 @@ git commit -m "feat(F3): add mul/div/mod to array size comptime evaluation"
 
 **Files:** `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`, `sf/docs/tech_docs/*.md`
 
-**Scope:** Full gate battery: corpus re-classify 3 repros OK, 4 MD5s re-verify, QUICK_REF update, tech docs update (AGENTS.md §1.1.1).
+**Scope:** Full gate battery: clear the emission/runtime-gap annotations on the 3 comptime repros (already OK), verify varargs repro stays FAIL, 4 MD5s re-verify, QUICK_REF update, tech docs update (AGENTS.md §1.1.1).
 
-- [ ] **Step 1: Re-classify 3 repros as OK in EXPECTED_FAIL.md**
+- [ ] **Step 1: Update EXPECTED_FAIL.md repro rows**
 
-Update each repro row to OK. Update totals: OK=196/FAIL=3/green-guards=4 @203 (raw FAIL=7). Document fix commits.
+Update the 3 comptime repro rows: emission-gap/runtime-gap annotations cleared (gap resolved by F1/F2/F3). `fn_varargs_unsupported` stays FAIL (out of scope). Totals unchanged: OK=196/FAIL=4/green-guards=4 @204 (raw FAIL=8). Document fix commits.
 
 - [ ] **Step 2: Update QUICK_REF.md**
 
-Update corpus gate section to reflect 203 repros. Document comptime-arithmetic note.
+Update corpus gate section to reflect 204 repros. Document comptime-arithmetic note.
 
 - [ ] **Step 3: Full gate sweep**
 
 ```bash
 # Build /tmp compiler
-# Verify all 3 repros: dump rc=0, gcc-clean, runtime correct
+# Verify repros 1+2: emitted C now has int_const (no runtime arithmetic) — grep for '[\*\/\%]' == 0 in __module_init
+# Verify repro 3: arrays resolve u8[4000]/u8[40]/u8[2]
+# Verify repro 4 (varargs): stays FAIL error[2000]
 # Verify 4 MD5s byte-identical
-# Current corpus total 203: 196+3+4=203
+# Current corpus total 204: 196+4+4=204
 # test_analyzer_bin PASS
 ```
 
@@ -356,4 +374,8 @@ git commit -m "docs(F4): gate sweep + tech docs for comptime arithmetic folding"
 
 ## Amendments Record
 
-None yet.
+- **AMENDMENT P0-A (2026-08-06, operator ruling):** Repro 1+2 classify **OK with emission-gap annotation** (gcc-clean; gap is runtime arithmetic in emitted C, proven by C89 inspection). Not FAIL, per the gcc-exit classifier and the `load_global_array_copy`/`comptime_neg_int` precedent.
+- **AMENDMENT P0-B (2026-08-06, operator ruling):** Repro 1+2's plan-verbatim source does NOT compile on current zig1 (varargs `...` unsupported by parser, `@cInclude` requires `;`, const-only-refs lack storage-global decls). Operator ruled: **accept the corrected source** (inlined literals `30 + 10`, fixed-arity `printf(fmt, a..l)`, `@cInclude("<stdio.h>");`) — preserves the tested gap and turns GREEN post-F1/F2.
+- **AMENDMENT P0-D (2026-08-06, operator ruling):** Create a 4th tracking repro `fn_varargs_unsupported` for the varargs parse gap discovered during P0 (parser.zig has no `...` support → error[2000]). Counted FAIL, out of comptime scope.
+- **AMENDMENT P0-E (2026-08-06, operator ruling):** Repro 3 (`comptime_array_size_gap`) measured result is NOT `ISO C forbids zero-size array` — it's a **silent miscompile** (array types resolve TYPE_UNDEFINED → consts degrade to uninitialized `int` globals, gcc-clean). Operator ruled: classify **OK with runtime-gap annotation** (gcc-exit classifier says OK). F3 resolves the runtime-gap (already OK, no count change).
+- **Totals after P0:** 204 repros = OK 196 / FAIL 4 / green-guards 4 (raw FAIL 8). FAILs = field_store_drop, test_stub_0, self_embed_optional_cycle, fn_varargs_unsupported. Post-F3/F4: 196/4/4 @204 unchanged (only annotations cleared).
