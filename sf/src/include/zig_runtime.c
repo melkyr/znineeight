@@ -111,3 +111,100 @@ long long std_checked_cast_i64(unsigned long long val) {
 unsigned long long std_checked_cast_u64(unsigned long long val) {
     return val;
 }
+
+/* @intCast range-check helpers (F1, 2026-08-06).
+   Copied from the zig0-oracle header (src/include/zig_runtime.h:96-185),
+   standardized panic message: "integer cast overflow in @intCast".
+   c_char is char; not typedef'd in zig_compat.h, so typedef'd here. */
+typedef char c_char;
+
+usize __bootstrap_usize_from_i64(i64 x) {
+    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (usize)x;
+}
+
+i32 __bootstrap_i32_from_u32(u32 x) {
+    if (x > 2147483647U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (i32)x;
+}
+
+u32 __bootstrap_u32_from_u64(u64 x) {
+    if (x > (u64)4294967295U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u32)x;
+}
+
+u32 __bootstrap_u32_from_i32(i32 x) {
+    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u32)x;
+}
+
+usize __bootstrap_usize_from_i32(i32 x) {
+    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (usize)x;
+}
+
+i32 __bootstrap_i32_from_usize(usize x) {
+    if (x > 2147483647U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (i32)x;
+}
+
+u8 __bootstrap_u8_from_usize(usize x) {
+    if (x > 255) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}
+
+u8 __bootstrap_u8_from_bool(bool b) {
+    return (u8)b;
+}
+
+f32 __bootstrap_f32_from_f64(double x) {
+    return (f32)x;
+}
+
+i32 __bootstrap_i32_from_u8(u8 x) {
+    return (i32)x;
+}
+
+u8 __bootstrap_u8_from_i32(i32 x) {
+    if (x < 0 || x > 255) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}
+
+u8 __bootstrap_u8_from_u32(u32 x) {
+    if (x > 255) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}
+
+u16 __bootstrap_u16_from_i32(i32 x) {
+    if (x < 0 || x > 65535) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u16)x;
+}
+
+u32 __bootstrap_u32_from_i64(i64 x) {
+    if (x < 0 || x > (i64)4294967295U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u32)x;
+}
+
+u64 __bootstrap_u64_from_i64(i64 x) {
+    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (u64)x;
+}
+
+i8 __bootstrap_i8_from_i32(i32 x) {
+    if (x < -128 || x > 127) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (i8)x;
+}
+
+i16 __bootstrap_i16_from_i32(i32 x) {
+    if (x < -32768 || x > 32767) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (i16)x;
+}
+
+i32 __bootstrap_i32_from_i64(i64 x) {
+    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    return (i32)x;
+}
+
+c_char __bootstrap_c_char_from_u8(u8 x) {
+    return (c_char)x;
+}

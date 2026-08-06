@@ -2867,6 +2867,25 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     { var s: []const u8 = "std_checked_cast_u32"; return s; }
 }
 
+fn getCastTypeSuffix(reg: *TypeRegistry, tid: u32) []const u8 {
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "i8"; return s; }
+    if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "i16"; return s; }
+    if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "i32"; return s; }
+    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "i64"; return s; }
+    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "u8"; return s; }
+    if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "u16"; return s; }
+    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "u32"; return s; }
+    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "u64"; return s; }
+    if (ty.kind == TypeKind.isize_type) { var s: []const u8 = "isize"; return s; }
+    if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "usize"; return s; }
+    if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "c_char"; return s; }
+    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "bool"; return s; }
+    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "f32"; return s; }
+    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "f64"; return s; }
+    { var s: []const u8 = "u32"; return s; }
+}
+
 fn getPrintFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "std_print_u32"; return s; }
@@ -4146,17 +4165,41 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var icnl: []const u8 = "\n"; pal.markerWrite(icnl);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             if (c.is_checked != @intCast(u8, 0)) {
-                var fn_name = getCheckedCastFnName(emitter.registry, c.target);
-                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                bufferedWriterWrite(&emitter.writer, dst);
-                var s1: []const u8 = " = ";
-                bufferedWriterWrite(&emitter.writer, s1);
-                bufferedWriterWrite(&emitter.writer, fn_name);
-                var s2: []const u8 = "(";
-                bufferedWriterWrite(&emitter.writer, s2);
-                bufferedWriterWrite(&emitter.writer, src);
-                var s3: []const u8 = ");\n";
-                bufferedWriterWrite(&emitter.writer, s3);
+                var src_tid = getTempTypeByIndex(emitter, c.value);
+                if (src_tid != @intCast(u32, 0xFFFFFFFF)) {
+                    var dst_suffix = getCastTypeSuffix(emitter.registry, c.target);
+                    var src_suffix = getCastTypeSuffix(emitter.registry, src_tid);
+                    var fn_buf: [64]u8 = undefined;
+                    var fn_idx: usize = 0;
+                    var boot_s: []const u8 = "__bootstrap_";
+                    format_mod.copyStr(fn_buf[0..], &fn_idx, boot_s);
+                    format_mod.copyStr(fn_buf[0..], &fn_idx, dst_suffix);
+                    var from_s: []const u8 = "_from_";
+                    format_mod.copyStr(fn_buf[0..], &fn_idx, from_s);
+                    format_mod.copyStr(fn_buf[0..], &fn_idx, src_suffix);
+                    var fn_name = fn_buf[0..fn_idx];
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    bufferedWriterWrite(&emitter.writer, dst);
+                    var s1: []const u8 = " = ";
+                    bufferedWriterWrite(&emitter.writer, s1);
+                    bufferedWriterWrite(&emitter.writer, fn_name);
+                    var s2: []const u8 = "(";
+                    bufferedWriterWrite(&emitter.writer, s2);
+                    bufferedWriterWrite(&emitter.writer, src);
+                    var s3: []const u8 = ");\n";
+                    bufferedWriterWrite(&emitter.writer, s3);
+                } else {
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    bufferedWriterWrite(&emitter.writer, dst);
+                    var s1: []const u8 = " = (";
+                    bufferedWriterWrite(&emitter.writer, s1);
+                    bufferedWriterWrite(&emitter.writer, ctype);
+                    var s2: []const u8 = ")";
+                    bufferedWriterWrite(&emitter.writer, s2);
+                    bufferedWriterWrite(&emitter.writer, src);
+                    var s3: []const u8 = ";\n";
+                    bufferedWriterWrite(&emitter.writer, s3);
+                }
             } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, dst);

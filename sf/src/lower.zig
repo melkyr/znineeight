@@ -830,6 +830,22 @@ fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
 }
 
+fn intCastTypeBits(tid: u32) u32 {
+    if (tid == type_mod.TYPE_I8 or tid == type_mod.TYPE_U8 or tid == type_mod.TYPE_C_CHAR) { return @intCast(u32, 8); }
+    if (tid == type_mod.TYPE_I16 or tid == type_mod.TYPE_U16) { return @intCast(u32, 16); }
+    if (tid == type_mod.TYPE_I32 or tid == type_mod.TYPE_U32 or tid == type_mod.TYPE_USIZE or tid == type_mod.TYPE_ISIZE or tid == type_mod.TYPE_BOOL) { return @intCast(u32, 32); }
+    if (tid == type_mod.TYPE_I64 or tid == type_mod.TYPE_U64) { return @intCast(u32, 64); }
+    if (tid == type_mod.TYPE_F32) { return @intCast(u32, 32); }
+    if (tid == type_mod.TYPE_F64) { return @intCast(u32, 64); }
+    return @intCast(u32, 0);
+}
+
+fn intCastTypeIsSigned(tid: u32) u8 {
+    if (tid == type_mod.TYPE_I8 or tid == type_mod.TYPE_I16 or tid == type_mod.TYPE_I32 or tid == type_mod.TYPE_I64 or tid == type_mod.TYPE_ISIZE) { return @intCast(u8, 1); }
+    if (tid == type_mod.TYPE_C_CHAR) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
 fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
     if (@intCast(usize, tid) >= self.ctx.registry.types_len) {
         var ws: []const u8 = "type";
@@ -2601,9 +2617,22 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (t_target == type_mod.TYPE_U32) { var cdm: []const u8 = "CASTDFLT:n"; pal.markerWriteInt(cdm, node_idx); var cdk: []const u8 = "CASTDFLT:k"; pal.markerWriteInt(cdk, @intCast(u32, @enumToInt(ty_node.kind))); }
         var result = nextTemp(self, t_target);
         if (node.child_0 == self.intcast_name_id) {
+            var src_ty = getTempType(self, val_temp);
+            var src_bits = intCastTypeBits(src_ty);
+            var dst_bits = intCastTypeBits(t_target);
+            var chk: u8 = @intCast(u8, 0);
+            if (src_bits > @intCast(u32, 0) and dst_bits > @intCast(u32, 0)) {
+                if (src_bits > dst_bits) {
+                    chk = @intCast(u8, 1);
+                } else if (src_bits == dst_bits) {
+                    var src_s = intCastTypeIsSigned(src_ty);
+                    var dst_s = intCastTypeIsSigned(t_target);
+                    if (src_s != dst_s) { chk = @intCast(u8, 1); }
+                }
+            }
             emitInst(self, LirInst{ .int_cast = .{
                 .value = val_temp, .target = t_target, .result = result,
-                 .is_checked = @intCast(u8, 0),
+                 .is_checked = chk,
             } });
         } else if (node.child_0 == self.inttofloat_name_id) {
             emitInst(self, LirInst{ .int_to_float = .{

@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (206 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-06]
+### Corpus gate (207 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-06]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -154,9 +154,13 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   `const A`. Guarded by 5 repros (`comptime_binop_not_folded`, `comptime_lower_ignores_fold`,
   `comptime_array_size_gap`, `comptime_u64_fold_overflow`, `comptime_const_chain` — all now OK,
   emission/runtime-gap annotations cleared) + `fn_varargs_unsupported` (FAIL, varargs parse gap,
-  out of scope). **Final accounting (F9 gate sweep, 2026-08-06): effective
-  `OK=198 / FAIL=4 / green-guards=4` over 206 repros (198+4+4=206; raw classifier FAIL stays 8);
-  4 MD5 gates byte-identical; test_analyzer_bin PASS.** [updated: 2026-08-06]
+   out of scope). **Final accounting (F9 gate sweep, 2026-08-06): effective
+   `OK=198 / FAIL=4 / green-guards=4` over 206 repros (198+4+4=206; raw classifier FAIL stays 8);
+   4 MD5 gates byte-identical; test_analyzer_bin PASS.** [updated: 2026-08-06]
+   **Post-F1 (2026-08-06, @intCast range-check): effective `OK=199 / FAIL=4 / green-guards=4`
+   over 207 repros (199+4+4=207; raw classifier FAIL stays 8); corpus grows 206→207 by
+   `intcast_range_check` (OK, runtime-panic gate); all 4 MD5 gates RE-BASELINED (scope b) — see the
+   MD5 re-baseline note; test_analyzer_bin PASS.** [updated: 2026-08-06]
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
@@ -199,10 +203,10 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 | [updated: 2026-08-06] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `4644ad1349c55af80fa1a18fe0e17989` |
-| `examples/z98/game_of_life/main.zig` | `e2f4c62515b4ab5e5c5b1202f7c2e12e` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `dd56cd23984d2533eebd244ffe593791` |
-| `examples/z98/json_parser/main.zig` | `900cb401779aab11bcf22ce35100323c` |
+| `examples/z98/mud_server/main.zig` | `0064a08149b07aa591033210ffce68f5` |
+| `examples/z98/game_of_life/main.zig` | `51d6d078bdecad022318bded23182f72` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `e54be381967cab4a3f0886e106166771` |
+| `examples/z98/json_parser/main.zig` | `6528f26f396092976b46938482a4f0d4` |
 
 - **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
   `5fb57e70…`, gol `f855c9f9…`, lisp `0ad02040…`, json `11a5db1d…`) are STALE — replaced. Two
@@ -228,6 +232,19 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   output is byte-identical (verified by run diff of pristine vs F8 gol binaries); per the F-5
   AMENDMENT B precedent the gate is runtime behavior, not byte-identity. mud/lisp/json unchanged
   and byte-identical. New gol value: `e2f4c625…`. [updated: 2026-08-06]
+
+- **Re-baselined 2026-08-06 (F1, @intCast range-check — scope b).** ALL 4 re-baselined: mud/gol/
+  lisp/json each contain explicit runtime `@intCast` sites that now emit the range-checked
+  `__bootstrap_<DST>_from_<SRC>` helper (narrowing + same-width reinterpret) instead of a raw
+  `(int)` cast. Runtime-verified identical for mud (rc=124, "MUD server listening on port 4000"),
+  gol (glider, 100 generations, rc=0), json (parses test.json, rc=0); lisp is identical except
+  `(fact 13)` now PANICS with `integer cast overflow in @intCast` (rc=134) — the intended fix
+  (previously silently wrapped to garbage `1932053504`). Per the F-5 AMENDMENT B precedent the gate
+  is runtime behavior, not byte-identity. New values: mud `0064a081…`, gol `51d6d078…`, lisp
+  `e54be381…`, json `6528f26f…`. Note: the 19 `__bootstrap_*_from_*` helpers are `static` in
+  `sf/src/include/zig_runtime.h` (per-TU, oracle pattern) + extern in `sf/src/include/zig_runtime.c`
+  — the json multi-module link uses the legacy `src/runtime/zig_runtime.c` object and relies on the
+  header `static` copies for `__bootstrap_usize_from_i32`. [updated: 2026-08-06]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.

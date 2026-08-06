@@ -1,16 +1,15 @@
-# mi_matrix corpus — expected-fail manifest (v17 2026-08-06)
+# mi_matrix corpus — expected-fail manifest (v18 2026-08-06)
 
-## Totals (206 repros)
+## Totals (207 repros)
 
-- **CURRENT: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: F9 gate sweep —
-  comptime arithmetic folding closed out. 198 real OK + 4 green-guards + 4 FAIL = 206;
-  raw classifier FAIL = 8 (4 green-guards are a sub-bucket of the raw count). The 4 FAILs:
-  `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle`
-  (F-8 residual, gcc incomplete-type), `fn_varargs_unsupported` (varargs parse gap, `error[2000]`).
-  The 4 green-guards: `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`,
-  `euvoid_val_catch`. All 5 comptime-arithmetic emission/runtime gaps resolved by F1-F8 — see the
-  F9 section below.)
-- Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F8: comptime_const_chain FAIL→OK)
+- **CURRENT: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: F1 @intCast range-check.
+  199 real OK + 4 green-guards + 4 FAIL = 207; raw classifier FAIL = 8 (4 green-guards are a
+  sub-bucket of the raw count). The 4 FAILs: `field_store_drop` + `test_stub_0` (std-lib-deferred,
+  `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type),
+  `fn_varargs_unsupported` (varargs parse gap, `error[2000]`). The 4 green-guards:
+  `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
+  See the Task F1 section below.)
+- Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F9 gate sweep)
 - Prior: OK=197 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 205 (2026-08-06 F7: comptime_u64_fold_overflow)
 - Prior: OK=196 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 204 (2026-08-06 P0 fix wave 1)
 - **2026-08-01 ADD: `comptime_neg_int`** — RUNTIME GAP, not counted in the compile-only totals above. `const N = @intCast(i32, -5);` dumps rc=0, gcc clean, but emitted C never assigns `N` (comptime-folded negative dropped) → run prints garbage not `-5`. Tracks via runtime gate; the gcc-exit classifier reports it OK. Reproduces "comptime int cannot be negative". **FIXED post-F-1..F-8 (2026-08-04): prints `-5` correctly.**
@@ -723,3 +722,42 @@ gcc rc=0, 0 errors); evidence in `.superpowers/sdd/task-F9-report.md`.
 
 This is the final accounting for the plan: **206 repros, OK=198 / FAIL=4 / green-guards=4** —
 the comptime arithmetic folding feature is complete and gated.
+
+---
+
+## Task F1 — `@intCast` range-check (Option B + scope b) (2026-08-06) — +1 repro (206 → 207)
+
+Per I1 (`/workspace/znineeight/.superpowers/sdd/I-intcast-range-report.md`) + operator ruling
+(binding): the lowerer's explicit `@intCast` handler always set `is_checked=0`, so zig1 lowered
+`@intCast(i32, i64_expr)` to a raw C `(int)` cast — silently wrapping on overflow (lisp `(fact 13)`
+printed garbage `1932053504` instead of panicking). Fix site = **Option B** (c89_emit wraps via the
+existing `int_cast.is_checked` field + source-aware per-pair `__bootstrap_<DST>_from_<SRC>` naming);
+scope = **(b) full oracle rule** (check iff narrowing OR same-width reinterpret).
+
+| Repro | RED (pre-fix) | Classification (measured) | Guards |
+|-------|---------------|---------------------------|--------|
+| `intcast_range_check` | runtime-gap: dump rc=0, gcc clean, prints `-2147483648` (wrapped), rc=0 — **NO panic**; emitted `zT_6 = (int)i;` | **OK post-fix** — dump rc=0, 1 `.c`, gcc-clean; emitted `zT_6 = __bootstrap_i32_from_i64(i);`; run PANICS with `panic: integer cast overflow in @intCast`, nonzero exit (rc=134) — the intended fix, matching the zig0 oracle | guards: the in-range path must still pass (i32-from-i64 of a small value prints correctly); comptime-folded `@intCast` literals skip the runtime cast; pure widening stays a raw cast |
+
+**Implementation:** lower.zig computes src type via `getTempType` and sets `is_checked=1` when
+`src_bits > dst_bits` OR (`src_bits == dst_bits` AND signedness differs); c89_emit's `.int_cast`
+checked arm builds `__bootstrap_<DST>_from_<SRC>` from `c.target` + `getTempTypeByIndex`; the 19
+oracle helpers were added to `sf/src/include/zig_runtime.c` (definitions) + `sf/src/include/
+zig_runtime.h` (C89 `static` definitions, per-TU self-sufficient — the oracle's own header pattern
+is `ZIG_INLINE ZIG_UNUSED`), message standardized to `"integer cast overflow in @intCast"`.
+`std_checked_cast_*` (upper-bound-only, false-panics on negatives) is NOT used.
+
+**Post-F1 accounting: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 207 repros**
+(199 + 4 + 4 = 207; corpus grows 206 → 207 by `intcast_range_check`, counted OK — no FAIL
+increase). Raw classifier FAIL stays **8**. No other repro flipped.
+
+**MD5 gate — ALL 4 RE-BASELINED (scope b):** mud, gol, lisp, json each contain explicit runtime
+`@intCast` sites that are now checked. New values: mud `0064a08149b07aa591033210ffce68f5`,
+gol `51d6d078bdecad022318bded23182f72`, lisp `e54be381967cab4a3f0886e106166771`,
+json `6528f26f396092976b46938482a4f0d4`. Runtime-verified identical except lisp `(fact 13)` now
+PANICS (the intended fix); per the F-5 AMENDMENT B precedent ("runtime behavior is the gate, not
+byte-identity"). Per-gate helper counts: mud `i32_from_usize` x4 + `usize_from_i32` x1; gol
+`i32_from_usize` x2 + `usize_from_i32` x2; lisp `i32_from_i64`, `i32_from_u32`, `i32_from_usize`,
+`u32_from_i32`, `u8_from_i32`, `usize_from_i32`, `c_char_from_u8`; json `usize_from_i32` x1.
+(json's legacy-runtime link — `src/runtime/zig_runtime.c` — lacks the new helpers, so the header
+`static` definitions are what make the multi-module json gate link; mud/gol/lisp additionally link
+the extern defs in `sf/src/include/zig_runtime.c`.)
