@@ -425,8 +425,17 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                             var regtt_m: []const u8 = "REG:tt"; pal.markerWriteInt(regtt_m, init_type);
                         }
                     }
-                    if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED) {
+                    var vd_existing = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decls[di]);
+                    if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and vd_existing == null) {
                         resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], init_type);
+                    }
+                    if (init_type == type_mod.TYPE_INT_LIT and decl.child_0 != @intCast(u32, 0)) {
+                        var mdt2 = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl.child_0);
+                        if (mdt2) |mt2| {
+                            if (mt2 != type_mod.TYPE_UNDEFINED) {
+                                resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decl.child_1, mt2);
+                            }
+                        }
                     }
                 }
             }

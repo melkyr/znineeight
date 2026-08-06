@@ -607,3 +607,35 @@ classifier FAIL stays **8** (green-guards remain a sub-bucket of the raw count).
 `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type) + `fn_varargs_unsupported`
 (parser varargs gap, `error[2000]`). The 4 green-guards unchanged: `eu_assign_incompat_payload`,
 `field_access_optional`, `var_declared_void`, `euvoid_val_catch`. No other repro flipped.
+
+## Task F7 — `comptime_u64_fold_overflow` (u64 const fold >2^32 masking) (2026-08-06) — +1 repro (204 → 205)
+
+Operator ruling I1-A (serious bug): a u64-annotated const whose folded value exceeds 2^32
+(`const X: u64 = 3000000000 * 2;` = 6000000000) gets typed I32 by the F4/F5 guard (bare binop
+resolves TYPE_INT_LIT → remapped I32) and the `int_const` emitter masks the value to 32 bits →
+wrong value (1705032704 / 0). Reproduced + FIXED in `main.zig` (commit `fix(F7): …`):
+
+- **Root cause (2 defects, both in `main.zig` phase_SemanticAnalysis):**
+  1. The declared type is stored on the var_decl node (`resolved_types[var_decl]`, set at
+     main.zig:397), but is then **clobbered** to the init type (INT_LIT) by the unconditional
+     `resolvedTypeTableSet(decls[di], init_type)` at main.zig:428-430 → the storage global
+     (main.zig:639 reads `resolved_types[var_decl]`) is emitted `int` → truncates at the store.
+  2. The F4/F5 fold guard types the temp from `resolved_types[binop]` (INT_LIT → I32); the
+     declared u64 type is never threaded onto the init node for module-scope decls (fn-scope
+     var_decls already get this at sema:1705-1708).
+- **Fix (Option B, "B-lite"):** (a) gate the `resolved_types[var_decl] = init_type` write on
+  `existing == null` so a known declared type is never clobbered (storage globals now type
+  correctly); (b) mirror the fn-scope behavior — after resolving the module-scope init, set
+  `resolved_types[child_1] = declared type` when the decl is annotated. The F4/F5 guard then
+  reads the declared type (u64) with **no lower.zig change**. Verified: `1:1705032704
+  3000000000 1:0` (was `0:1705032704 3000000000 0:0`).
+
+| Repro | RED (pre-fix) | Classification (measured) | Guards |
+|-------|---------------|---------------------------|--------|
+| `comptime_u64_fold_overflow` | runtime-gap | **OK with runtime-gap annotation (pre-fix) → OK post-fix** — dump rc=0, 1 `.c`, gcc-clean, runs printing `0:1705032704 3000000000 0:0` (X=6000000000 and Z=4294967296 masked to 32 bits; Y=3000000000 control correct); post-fix prints `1:1705032704 3000000000 1:0`. Note: on -m32 `%lu` is 32-bit and `%llu` reads adjacent varargs slots pre-fix, so the repro prints each u64 as two i32 halves (`hi = @intCast(u64,X)>>32`, `lo = @intCast(u64,X) & @intCast(u64,4294967295)`) — see NOTES.md | F4/F5 guard types folded temps/storage globals from the binop's INT_LIT instead of the declared u64 |
+
+**Post-F7 accounting: OK=197 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 205 repros**
+(197 + 4 + 4 = 205; corpus grows 204 → 205 by `comptime_u64_fold_overflow`, counted OK).
+Raw classifier FAIL stays **8** (4 green-guards + `field_store_drop`, `test_stub_0`
+(std-lib-deferred), `self_embed_optional_cycle`, `fn_varargs_unsupported`). No other repro
+flipped; 4 MD5 gates byte-identical; test_analyzer_bin PASS; build_test.sh 5/4 (baseline-identical).

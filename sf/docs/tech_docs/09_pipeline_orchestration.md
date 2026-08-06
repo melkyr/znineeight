@@ -397,7 +397,7 @@ gate at `main.zig:207` → exit 2.
 
 **Arena:** Sand reset (scratch) at entry. Const alias prepass uses permanent. TypeResolver workspace in scratch.
 
-### `phase_ComptimeEvaluation` — `main.zig:336-352`
+### `phase_ComptimeEvaluation` — `main.zig:339-366` [updated: 2026-08-06]
 
 **Calls:**
 - `ce_mod.comptimeEvalInit` — init comptime evaluator
@@ -408,7 +408,7 @@ gate at `main.zig:207` → exit 2.
 
 **Arena:** No sand reset — operates on existing data. Store results in `ctx.comptime_values` (module arena).
 
-### `phase_SemanticAnalysis` — `main.zig:353-422`
+### `phase_SemanticAnalysis` — `main.zig:368-435` [updated: 2026-08-06]
 
 **Calls:**
 - `sa_mod.semanticAnalyzerInit` — init semantic analyzer per module
@@ -419,11 +419,23 @@ gate at `main.zig:207` → exit 2.
 - `sa_mod.semanticAnalyzerResolveExpr` — type-check initialization expression
 - `type_mod.nameCachePut` — cache resolved type for ident expressions
 
+**Module-scope var_decl type threading (F7, 2026-08-06):** the module-scope var_decl loop now
+mirrors the fn-scope behavior (semantic_analyzer.zig:1705-1708) in two ways:
+1. The `resolved_types[var_decl] = init_type` fallback write is gated on `existing == null`, so
+   a known declared type (set from `resolveTypeExpr(decl.child_0)`) is never clobbered by the
+   init's natural type (INT_LIT for bare binops) — this keeps storage globals (main.zig:639
+   reads `resolved_types[var_decl]`) correctly typed (e.g. `u64` not `int`).
+2. After the init resolves, when the init's natural type is INT_LIT (bare literal/binop/unary
+   inits), `resolved_types[decl.child_1] = declared type` is set when the decl is annotated, so
+   the lowerer's comptime_values fold guards (lower.zig) type folded temps at the DECLARED width
+   instead of the binop's INT_LIT→I32 remap. Fixes the F7 `comptime_u64_fold_overflow` repro
+   (u64 const fold >2^32 was masked to 32 bits).
+
 **Markers:** `RS`, `MZ`, `AD`, `DSE`, `DN`, `SA`, `sA`, `P0-P3`, `V2:`, `REG:tl`, `REG:tt`
 
 **Arena:** Sand reset (scratch) at entry. Analyzer workspace in scratch.
 
-### `resolveStmtTypes` — `main.zig:423-473`
+### `resolveStmtTypes` — `main.zig:447-496`
 
 Recursive helper called from `phase_SemanticAnalysis`. Walks statement nodes to pre-resolve type expressions before full semantic analysis.
 
@@ -436,7 +448,7 @@ Recursive helper called from `phase_SemanticAnalysis`. Walks statement nodes to 
 
 **Markers:** `P0-P3` (pointer alignment bits in var_decl child_0), `R0n` (node index), `R1t` (type id), `R2s` (set), `AI` (array init), `FI` (failed init)
 
-### `resolveTypeExpr` — `main.zig:474-479`
+### `resolveTypeExpr` — `main.zig:498-502`
 
 Thin wrapper around `type_resolver.resolveTypeExprFull`:
 ```zig
