@@ -1,14 +1,15 @@
-# mi_matrix corpus — expected-fail manifest (v19 2026-08-06)
+# mi_matrix corpus — expected-fail manifest (v20 2026-08-06)
 
-## Totals (208 repros)
+## Totals (209 repros)
 
-- **CURRENT: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: F2 u64-safe
-  int_literal marker. 200 real OK + 4 green-guards + 4 FAIL = 208; raw classifier FAIL = 8 (4
-  green-guards are a sub-bucket of the raw count). The 4 FAILs: `field_store_drop` + `test_stub_0`
-  (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type),
-  `fn_varargs_unsupported` (varargs parse gap, `error[2000]`). The 4 green-guards:
+- **CURRENT: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: Task F5 varargs
+  end-to-end. 202 real OK + 4 green-guards + 3 FAIL = 209; raw classifier FAIL = 7 (4
+  green-guards are a sub-bucket of the raw count). The 3 FAILs: `field_store_drop` + `test_stub_0`
+  (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type).
+  `fn_varargs_unsupported` FAIL→OK (F5) and new repro `fn_varargs_body` added OK. The 4 green-guards:
   `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
-  See the Task F2 section below.)
+  See the Task F5 section below.)
+- Prior: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 208 (2026-08-06 F2 u64-safe int_literal marker)
 - Prior: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 207 (2026-08-06 F1 @intCast range-check)
 - Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F9 gate sweep)
 - Prior: OK=197 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 205 (2026-08-06 F7: comptime_u64_fold_overflow)
@@ -795,3 +796,55 @@ parse gap). **4 MD5 gates byte-identical** (markers → stderr only; emitted C
 unchanged): mud `0064a08149b07aa591033210ffce68f5`, gol
 `51d6d078bdecad022318bded23182f72`, lisp `e54be381967cab4a3f0886e106166771`,
 json `6528f26f396092976b46938482a4f0d4`. test_analyzer_bin PASS.
+
+---
+
+## Task F5 — varargs end-to-end (`@cVaStart`/`@cVaArg`/`@cVaEnd` + `...` emission + extern prototypes) (2026-08-06) — +1 repro (208 → 209)
+
+4-item compiler-gaps plan Task F5 (`.superpowers/sdd/task-F5-brief.md`). Full
+varargs support: Z98 variadic fn bodies read their `...` args via `va_list` +
+`@cVaStart`/`@cVaArg`/`@cVaEnd`; `...` is emitted in C fn prototypes; variadic
+externs get C prototypes (Option B); `stdarg.h` is emitted gated on actual
+`va_*` usage.
+
+| Repro | RED (pre-fix) | Classification (measured, /tmp/zigf5b/zig1) | Guards |
+|-------|---------------|---------------------------|--------|
+| `fn_varargs_unsupported` | parse gap → F3 OK but no prototype emission | **OK post-F5** — dump rc=0; emitted header carries the Option B extern prototype `int printf(unsigned char*, ...);` (name-passthrough); no `stdarg.h` (no `va_*` use); gcc-clean, links + runs rc=0 | variadic extern must get a C prototype; no `@cInclude`'d header may conflict with it |
+| `fn_varargs_body` (NEW) | n/a (new repro) | **OK** — dump rc=0; emitted `#include <stdarg.h>`, `int zF_..._sum(unsigned int count, ...) {`, `va_start(zL_vl, zL_count);`, `zT_11 = va_arg(zL_vl, int);`, `va_end(zL_vl);`, `int printf(unsigned char*, ...);`; gcc-clean; runs printing `sum=60` (the KEY proof `sum(3, 10, 20, 30)` = 60 via `@cVaArg`), rc=0 | a Z98 variadic body must read args; no `@cInclude("<stdio.h>")` with a variadic printf (type conflict `unsigned char*` vs `const char*`) |
+
+**Implementation summary:**
+- lower.zig: `@cVaStart`/`@cVaArg`/`@cVaEnd` name_ids in `lowererInit`;
+  builtin dispatch inserted after `@ptrToInt`, before the `ec.len>=2` cast
+  block; `lowerFn` reads `FnPayload.flags_packed` (bit0) → `func_ptr.is_variadic`
+  (the `child_0==0` anytype-marker branch is **kept as a defensive OR**, NOT
+  removed — see deviations below).
+- c89_emit.zig: 3 emitting `.va_start`/`.va_arg`/`.va_end` arms; `stdarg.h`
+  gated on any `va_*` LirInst in the TU at 3 sites (emitModuleHeader,
+  emitModuleHeaderFile, emitModuleFile); `emitFunctionForwardDecl`
+  name-passthrough for externs; the two extern-prototype guards
+  (`:1962`/`:2108`-era) now `is_extern==0 OR is_variadic!=0`.
+
+**Deviations from the brief's literal text (both REQUIRED to keep the 4 MD5
+gates byte-identical — see Task F5 report):**
+1. **`lower.zig:4680` child_0==0 branch is kept as a defensive no-op-instead-of
+   removal.** The brief premised "no gate has a variadic fn"; in fact **mud and
+   gol both define `print(fmt, *const c_char, args: anytype)`** (anytype →
+   `child_0==0` param) whose C signature relies on the marker branch emitting
+   `...` (`void zF_..._print(char*, ...);` is in both baselines). Making it a
+   pure no-op deletes `...` from those signatures → mud/gol MD5 drift + gcc
+   break. Kept as an OR with the flags_packed read (true `...` still works).
+2. **`stdarg.h` gating is on actual `va_*` LIR insts, not on `is_variadic`.**
+   The brief's premise "no gate has a variadic fn" is also wrong for mud/gol
+   (their anytype-print has `is_variadic=1` but never uses `va_*`); gating on
+   `is_variadic` would inject `#include <stdarg.h>` into mud/gol → MD5 drift.
+   Gating on `va_*` insts keeps mud/gol/lisp/json byte-identical AND still
+   emits `stdarg.h` for real varargs bodies.
+
+**Post-F5 accounting: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over
+209 repros** (202 + 4 + 3 = 209; corpus grows 208 → 209 by `fn_varargs_body`;
+`fn_varargs_unsupported` FAIL→OK). Raw classifier FAIL stays **7** (4
+green-guards sub-bucket). The 3 real FAILs: `field_store_drop` + `test_stub_0`
+(std-lib-deferred, `error[3048]`) + `self_embed_optional_cycle` (F-8 residual).
+**4 MD5 gates byte-identical**: mud `e306b1874e51e06a23b708bcd79fec6d`, gol
+`51d6d078bdecad022318bded23182f72`, lisp `55044a1f64011bc644cddbcf73b5de93`,
+json `b5f56ebd51d2f0fcd379a1e083594462`. test_analyzer_bin PASS.

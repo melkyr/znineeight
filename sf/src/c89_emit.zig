@@ -1898,6 +1898,10 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, sp);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
+    if (lir_fn.is_extern == @intCast(u8, 1)) {
+        var orig_c = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
+        fn_name = orig_c;
+    }
     bufferedWriterWrite(&emitter.writer, fn_name);
     var op: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, op);
@@ -1931,12 +1935,41 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, rp);
 }
 
+fn moduleHasVaInsts(fns: []LirFunction) u8 {
+    var vi: usize = @intCast(usize, 0);
+    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
+        var vf = &fns[vi];
+        var vbi: usize = @intCast(usize, 0);
+        while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
+            var vbb = &vf.blocks.items[vbi];
+            var vii: usize = @intCast(usize, 0);
+            while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
+                switch (vbb.insts.items[vii]) {
+                    .va_start => return @intCast(u8, 1),
+                    .va_arg => return @intCast(u8, 1),
+                    .va_end => return @intCast(u8, 1),
+                    else => {},
+                }
+            }
+        }
+    }
+    return @intCast(u8, 0);
+}
+
+fn emitStdargInclude(emitter: *C89Emitter, fns: []LirFunction) void {
+    if (moduleHasVaInsts(fns) != @intCast(u8, 0)) {
+        var va_inc: []const u8 = "#include <stdarg.h>\n";
+        bufferedWriterWrite(&emitter.writer, va_inc);
+    }
+}
+
 fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32) void {
     var s1: []const u8 = "/* Module: ";
     bufferedWriterWrite(&emitter.writer, s1);
     bufferedWriterWrite(&emitter.writer, name);
     var s2: []const u8 = " */\n#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
     bufferedWriterWrite(&emitter.writer, s2);
+    emitStdargInclude(emitter, fns);
     var ci: usize = @intCast(usize, 0);
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
@@ -1960,7 +1993,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, 
     bufferedWriterWrite(&emitter.writer, s3);
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
-        if (fns[i].is_extern == @intCast(u8, 0)) {
+        if (fns[i].is_extern == @intCast(u8, 0) or fns[i].is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, fns[i]);
         }
     }
@@ -2038,6 +2071,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var m2: []const u8 = "_H\n\n"; bufferedWriterWrite(&emitter.writer, m2);
     var h0: []const u8 = "#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
     bufferedWriterWrite(&emitter.writer, h0);
+    emitStdargInclude(emitter, fns);
     var ci: usize = @intCast(usize, 0);
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
@@ -2106,7 +2140,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     bufferedWriterWrite(&emitter.writer, fwd0);
     var fi: usize = @intCast(usize, 0);
     while (fi < fns.len) : (fi += @intCast(usize, 1)) {
-        if (fns[fi].is_extern == @intCast(u8, 0)) {
+        if (fns[fi].is_extern == @intCast(u8, 0) or fns[fi].is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, fns[fi]);
         }
     }
@@ -2266,6 +2300,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
     bufferedWriterWrite(&emitter.writer, mod_name);
     var h1: []const u8 = ".h\"\n";
     bufferedWriterWrite(&emitter.writer, h1);
+    emitStdargInclude(emitter, fns);
     emitGlobalDecls(emitter, module_id, @intCast(u8, 0));
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
@@ -4551,9 +4586,43 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var fr_semi: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, fr_semi);
         },
-        .va_start => {},
-        .va_arg => {},
-        .va_end => {},
+        .va_start => |vs| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var vs0: []const u8 = "va_start(";
+            bufferedWriterWrite(&emitter.writer, vs0);
+            var vs_vl = resolveTempName(emitter, vs.va_list_temp);
+            bufferedWriterWrite(&emitter.writer, vs_vl);
+            var vs_c: []const u8 = ", ";
+            bufferedWriterWrite(&emitter.writer, vs_c);
+            var vs_lp = resolveTempName(emitter, vs.last_param_temp);
+            bufferedWriterWrite(&emitter.writer, vs_lp);
+            var vs_e: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, vs_e);
+        },
+        .va_arg => |va| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var va_res = resolveTempName(emitter, va.result);
+            bufferedWriterWrite(&emitter.writer, va_res);
+            var va_eq: []const u8 = " = va_arg(";
+            bufferedWriterWrite(&emitter.writer, va_eq);
+            var va_vl = resolveTempName(emitter, va.va_list_temp);
+            bufferedWriterWrite(&emitter.writer, va_vl);
+            var va_c: []const u8 = ", ";
+            bufferedWriterWrite(&emitter.writer, va_c);
+            var va_ct = getCTypeName(emitter.registry, emitter.mangler, va.type_id);
+            bufferedWriterWrite(&emitter.writer, va_ct);
+            var va_e: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, va_e);
+        },
+        .va_end => |ve| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var ve0: []const u8 = "va_end(";
+            bufferedWriterWrite(&emitter.writer, ve0);
+            var ve_vl = resolveTempName(emitter, ve.va_list_temp);
+            bufferedWriterWrite(&emitter.writer, ve_vl);
+            var ve_e: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, ve_e);
+        },
         else => {},
     }
 }

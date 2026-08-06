@@ -1,4 +1,4 @@
-# fn_varargs_unsupported — OK  [4-item compiler gaps plan, Task F3, 2026-08-06]
+# fn_varargs_unsupported — OK  [4-item compiler gaps plan, Task F3 (parse flag) + F5 (extern prototype emission), 2026-08-06]
 
 ## What it tests
 Varargs `...` in an `extern fn` parameter list. The parser previously had NO
@@ -29,10 +29,22 @@ to fixed-arity `printf` — see comptime_binop_not_folded/NOTES.md).
   fn's C forward declaration is also not emitted — pre-existing behavior for
   all extern fns (fixed-arity externs emit call sites only, no prototype).
 
+## Measured result — POST-F5 (2026-08-06, /tmp/zigf5b/zig1, Task F5)
+- dump rc=0; 1 `.c` + `.h` emitted.
+- The variadic extern now gets an **Option B extern prototype** in the
+  emitted header (name-passthrough, variadic-externs only):
+  `int printf(unsigned char*, ...);`. `...` is emitted in the C prototype.
+- No `#include <stdarg.h>` — this repro declares but never *uses* `va_list`
+  / `va_*` (stdarg.h is gated on actual `va_*` LIR insts, not on
+  `is_variadic`, so mud/gol's anytype-print fake-varargs don't pull it in).
+- `gcc -c` clean (0 errors); links + runs rc=0.
+- `...` is trailing-only — mid-list `fn(a, ..., b)` is still `error[2000]`.
+
 ## Classification
-- **OK** — parses and emits cleanly (dump rc=0, gcc rc=0).
+- **OK** — parses and emits cleanly (dump rc=0, gcc rc=0), prototype
+  emission works (F5).
 - **Correction (Task F3):** this NOTES.md previously claimed zig0 (the
   oracle) accepts varargs `extern fn` — **FALSE**. zig0 rejects ALL varargs
   forms: `zig0 -o out.c main.zig` → `error: syntax error ... hint: Expected
   parameter name` at the `...` (rc=134, 0 `.c`). So this repro was never a
-  green-guard; it was a real parser gap, now fixed by F3.
+  green-guard; it was a real parser gap, fixed by F3.

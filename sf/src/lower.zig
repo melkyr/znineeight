@@ -239,6 +239,9 @@ pub const LirLowerer = struct {
     enumtoint_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
+    cvastart_name_id: u32,
+    cvaarg_name_id: u32,
+    cvaend_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -273,6 +276,12 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var sizeof_id = si_mod.stringInternerIntern(ctx.registry.interner, sizeof_s);
     var alignof_s: []const u8 = "@alignOf";
     var alignof_id = si_mod.stringInternerIntern(ctx.registry.interner, alignof_s);
+    var cvastart_s: []const u8 = "@cVaStart";
+    var cvastart_id = si_mod.stringInternerIntern(ctx.registry.interner, cvastart_s);
+    var cvaarg_s: []const u8 = "@cVaArg";
+    var cvaarg_id = si_mod.stringInternerIntern(ctx.registry.interner, cvaarg_s);
+    var cvaend_s: []const u8 = "@cVaEnd";
+    var cvaend_id = si_mod.stringInternerIntern(ctx.registry.interner, cvaend_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -296,6 +305,9 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .enumtoint_name_id = eit_id,
          .size_of_name_id = sizeof_id,
          .align_of_name_id = alignof_id,
+         .cvastart_name_id = cvastart_id,
+         .cvaarg_name_id = cvaarg_id,
+         .cvaend_name_id = cvaend_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -987,6 +999,25 @@ fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
     return null;
 }
 
+fn vaListArgTemp(self: *LirLowerer, arg_node: u32) u32 {
+    if (arg_node == @intCast(u32, 0)) return TEMP_NONE;
+    var node = self.ctx.store.nodes.items[@intCast(usize, arg_node)];
+    if (node.kind == AstKind.address_of) {
+        var inner = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (inner.kind == AstKind.ident_expr) {
+            var nid = self.ctx.store.identifiers.items[@intCast(usize, inner.payload)];
+            var fnd = findLocalTemp(self, nid);
+            if (fnd) |t| return t;
+        }
+        return TEMP_NONE;
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var nid = self.ctx.store.identifiers.items[@intCast(usize, node.payload)];
+        var fnd = findLocalTemp(self, nid);
+        if (fnd) |t| return t;
+    }
+    return TEMP_NONE;
+}
 
 fn maybeExtractSlicePtr(self: *LirLowerer, base_node: u32, base_temp: u32) u32 {
     var resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node);
@@ -2585,6 +2616,43 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (ec.len >= 1) {
                     return lowerExpr(self, ec[@intCast(usize, 0)]);
                 } else { return nextTemp(self, type_mod.TYPE_VOID); }
+            }
+            if (node.child_0 == self.cvastart_name_id) {
+                if (self.func.is_variadic == @intCast(u8, 0)) {
+                    var va_msg: []const u8 = "@cVaStart used in a non-variadic function";
+                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3012_VARARGS_INVALID)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), va_msg);
+                    return nextTemp(self, type_mod.TYPE_VOID);
+                }
+                var vst: u32 = TEMP_NONE;
+                if (ec.len >= @intCast(usize, 1)) {
+                    vst = vaListArgTemp(self, ec[@intCast(usize, 0)]);
+                }
+                var vsp: u32 = TEMP_NONE;
+                if (self.func.params.len > @intCast(usize, 0)) {
+                    vsp = self.func.params.items[self.func.params.len - @intCast(usize, 1)].temp_id;
+                }
+                emitInst(self, LirInst{ .va_start = .{ .va_list_temp = vst, .last_param_temp = vsp } });
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.cvaarg_name_id) {
+                if (ec.len >= @intCast(usize, 2)) {
+                    var vat = vaListArgTemp(self, ec[@intCast(usize, 0)]);
+                    var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner };
+                    var vatid = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 1)], @intCast(u32, 0));
+                    var vares = nextTemp(self, vatid);
+                    emitInst(self, LirInst{ .va_arg = .{ .va_list_temp = vat, .type_id = vatid, .result = vares } });
+                    return vares;
+                } else {
+                    return nextTemp(self, type_mod.TYPE_VOID);
+                }
+            }
+            if (node.child_0 == self.cvaend_name_id) {
+                var vet: u32 = TEMP_NONE;
+                if (ec.len >= @intCast(usize, 1)) {
+                    vet = vaListArgTemp(self, ec[@intCast(usize, 0)]);
+                }
+                emitInst(self, LirInst{ .va_end = .{ .va_list_temp = vet } });
+                return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (ec.len >= 2) {
                 var elm: []const u8 = "B"; pal.markerWrite(elm);
@@ -4645,6 +4713,16 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);
+    var frt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fn_node);
+    if (frt) |frt_id| {
+        var fty = self.ctx.registry.types_items[@intCast(usize, frt_id)];
+        if (fty.kind == type_mod.TypeKind.fn_type) {
+            var ffp = self.ctx.registry.fn_items[@intCast(usize, fty.payload_idx)];
+            if ((ffp.flags_packed & @intCast(u8, 1)) != @intCast(u8, 0)) {
+                func_ptr.is_variadic = @intCast(u8, 1);
+            }
+        }
+    }
     var p_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
     if (proto.params_count > @intCast(u16, 0)) {
         var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
