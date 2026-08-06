@@ -302,8 +302,8 @@ Write `.superpowers/sdd/I-varargs-emit-report.md`. STOP for operator ruling on t
 **Files:** `sf/src/parser.zig` (+ `sf/src/type_resolver.zig`, `sf/src/type_registry.zig`, `sf/src/semantic_analyzer.zig` for FnPayload threading)
 
 **Interfaces:**
-- Consumes: I3 frozen design (AMENDMENT 2) — Option F flag bit.
-- Produces: fn_decl records varargs via **flags bit0 (0x01)**; `FnPayload.flags_packed` written; `extern fn printf(fmt: [*]const u8, ...) void;` parses clean and the fn type carries `is_variadic`.
+- Consumes: I3 frozen design (AMENDMENT 2) — Option F flag bit; I4 split refinement (AMENDMENT 3) — lowerFn flag-read is F5's job, not F3's.
+- Produces: fn_decl records varargs via **flags bit0 (0x01)**; `FnPayload.flags_packed` written; `extern fn printf(fmt: [*]const u8, ...) void;` parses clean and the fn type carries `is_variadic`. The lowerer's flag-read (lower.zig:4647) is explicitly DEFERRED to F5.
 
 - [ ] **Step 1: Implement parser `...` (flag bit, no marker param)**
 
@@ -313,7 +313,7 @@ Also reject `...` in `parserParseFnType` (fn-ptr types, `parser.zig:1006-1017`):
 
 - [ ] **Step 2: Thread flag through fn-type creation**
 
-`resolveFnSignatures` (`type_resolver.zig:1098-1149`): read `decl.flags & 0x01` → pass new `is_variadic` arg to `typeRegistryGetOrCreateFn` (type_registry.zig:497-518) → writes `FnPayload.flags_packed` (currently hard-coded 0 at type_registry.zig:508). Add the same arg at all 6 `typeRegistryGetOrCreateFn` sema call sites (semantic_analyzer.zig:310/320/326/410/418/423), passing the flag (0 for non-fn-decl construction). Rework the pre-wired marker-param sites: `type_resolver.zig:1139-1140` (drop the `else { xtAppend(TYPE_VOID) }` phantom for a `child_0==0` param) and `lower.zig:4680` (marker-param detection becomes a defensive no-op; the flag now drives `is_variadic`).
+`resolveFnSignatures` (`type_resolver.zig:1098-1149`): read `decl.flags & 0x01` → pass new `is_variadic` arg to `typeRegistryGetOrCreateFn` (type_registry.zig:497-518) → writes `FnPayload.flags_packed` (currently hard-coded 0 at type_registry.zig:508). Add the same arg at all 6 `typeRegistryGetOrCreateFn` sema call sites (semantic_analyzer.zig:310/320/326/410/418/423), passing the flag (0 for non-fn-decl construction). Rework the pre-wired marker-param site in the TYPE RESOLVER ONLY: drop the `else { xtAppend(TYPE_VOID) }` phantom for a `child_0==0` param at `type_resolver.zig:1139-1140`. (The lower.zig:4680 marker-param detection is left for F5 per AMENDMENT 3 — the lowerer flag-read belongs with the va_* producers.)
 
 - [ ] **Step 3: Verify `fn_varargs_unsupported` parses**
 
@@ -380,35 +380,48 @@ git commit -m "feat: va_list type + LIR va_start/va_arg/va_end + variadic call t
 
 ---
 
-### Task F5: Varargs — builtins + lowerer + emitter translation
+### Task F5: Varargs — builtins + lowerer + emitter translation + extern prototypes
 
-**Files:** `sf/src/lower.zig`, `sf/src/c89_emit.zig` (+ I4 investigation may add more)
+**Files:** `sf/src/lower.zig`, `sf/src/c89_emit.zig`
 
 **Interfaces:**
-- Consumes: I3 frozen design (AMENDMENT 2); F3's flag; F4's va_* LIR + va_list type + ERR_3012.
-- Produces: `@cVaStart/@cVaArg/@cVaEnd` working end-to-end; `extern fn printf` callable; Z98 varargs fn bodies access args. **stdarg.h gated on is_variadic.**
+- Consumes: I3+I4 frozen design (AMENDMENTS 2+3); F3's flag; F4's va_* LIR + va_list type + ERR_3012.
+- Produces: `@cVaStart/@cVaArg/@cVaEnd` working end-to-end; `extern fn printf` callable; Z98 varargs fn bodies access args. **stdarg.h gated on is_variadic** (3 sites). **Extern prototypes for variadic externs only (Option B)**. **lowerFn flag-read** (lower.zig:4647) wired.
 
-- [ ] **Step 1: Builtin dispatch (lowerer, builtin branch `lower.zig:2543`)**
+- [ ] **Step 1: lowerFn is_variadic flag read**
 
-- `@cVaStart(&vl)` → `va_start` inst. If arg is `AstKind.address_of`, unwrap one level to the base va_list temp (C `va_start` takes the object, not the pointer). `last_param_temp` = the last fixed param's temp (`func.params[func.params.len-1]`).
+In `lowerFn`, read the fn type's `FnPayload.flags_packed` (from `resolvedTypeTableGet(..., fn_node)` → fn_items[payload_idx].flags_packed, or the fn_decl node flag bit) and set `func_ptr.is_variadic` (lower.zig:4647). The existing `child_0==0` marker branch at lower.zig:4680 becomes a defensive no-op (per AMENDMENT 2).
+
+- [ ] **Step 2: Builtin dispatch (lowerer, builtin branch `lower.zig:2543`)**
+
+Insert after `@ptrToInt` check (:2545), BEFORE the `ec.len>=2` cast block (:2590) — else `@cVaArg`'s type arg mis-lowers:
+- `@cVaStart(&vl)` → `va_start` inst. If arg is `AstKind.address_of`, unwrap one level to the base va_list temp (`findLocalTemp` of the inner ident). `last_param_temp = self.func.params[self.func.params.len-1].temp_id`. Guard `self.func.is_variadic` else ERR_3012.
 - `@cVaArg(vl, T)` → `va_arg` inst with `result = nextTemp(resolveTypeExprFull(T))`.
 - `@cVaEnd(vl)` → `va_end` inst.
-- Guard `@cVaStart` inside non-variadic fn → ERR_3012 (lowerer has `self.func.is_variadic`).
+Name_ids interned in `lowererInit` (:257-298).
 
-- [ ] **Step 2: Emitter translation (c89_emit emitInst, next to `.tail_call` `:4042`)**
+- [ ] **Step 3: Emitter translation (c89_emit emitInst, next to `.tail_call` `:4042`)**
 
 ```c
 va_start(zT_3, zL_fmt);   // .va_start arm  (va_list_temp name, last_param_temp name)
 zT_5 = va_arg(zT_3, int); // .va_arg arm    (result = va_arg(vl, CType from type_id))
 va_end(zT_3);             // .va_end arm
 ```
-`va_list zT_3;` hoisted-decl comes from the TYPE_VA_LIST temp via existing hoisted-decl pass (c89_emit.zig:2774-2828) + the getCTypeName va_list arm from F4. Add `#include <stdarg.h>` **gated on any `fns[i].is_variadic` in the TU** in `emitModuleHeader` (c89_emit.zig:1933-1937, after zig_compat/special_types includes) and `emitModuleFile` (c89_emit.zig:2262-2267). Gating keeps all 4 MD5 gates byte-identical.
+Names resolve via `fl_temps` (params pre-registered c89_emit:2341-2352, locals :2380). va_arg result is a hoisted temp → auto-declared via the existing hoisted-decl pass + F4's getCTypeName va_list arm.
 
-- [ ] **Step 3: Z98 varargs fn repro**
+- [ ] **Step 4: stdarg.h gating**
 
-Create `repro/mi_matrix/fn_varargs_body/main.zig`:
+Add `#include <stdarg.h>` gated on **any `fns[i].is_variadic` in the TU** at THREE sites: `emitModuleHeader` (c89_emit:1937, after zig_compat/special_types includes), `emitModuleHeaderFile` (:2038), `emitModuleFile` (:2267). Gating keeps all 4 MD5 gates byte-identical.
+
+- [ ] **Step 5: Extern prototypes (Option B — variadic-only)**
+
+Add name-passthrough to `emitFunctionForwardDecl` (:1898-1900). Change the guards at :1962 and :2108 from `is_extern==0` to `is_extern==0 OR is_variadic!=0` — so ONLY variadic externs get C prototypes (all-externs Option A rejected: breaks json). Zero blast radius (no gate has a variadic extern).
+
+- [ ] **Step 6: Z98 varargs fn repro**
+
+Create `repro/mi_matrix/fn_varargs_body/main.zig` — a variadic fn with `@cVaArg` reading args. **CRITICAL: do NOT `@cInclude("<stdio.h>")` when declaring variadic `extern fn printf`** (type conflict: `unsigned char const*` vs stdio's `const char*`). Use the corpus fixed-arity print idiom for output:
 ```zig
-extern fn printf(fmt: [*]const u8) i32;
+extern fn printf(fmt: [*]const u8, ...) i32;
 fn sum(count: u32, ...) i32 {
     var vl: va_list = undefined;
     @cVaStart(&vl);
@@ -421,16 +434,17 @@ fn sum(count: u32, ...) i32 {
     return total;
 }
 pub fn main() void {
-    printf("sum=%d\n" +% 0);
+    var s: i32 = sum(3, 10, 20, 30);
+    // print s via a fixed-arity non-varargs extern (e.g. __bootstrap_print_int or a %d print)
 }
 ```
-(Adjust to corpus print idiom — fixed-arity `extern fn printf` with a literal format, per the `fn_varargs_unsupported` convention. To prove variadic CALLS: call `sum(3, 10, 20, 30)` with a fixed-arity wrapper or split the print.) Verify: dumps rc=0, gcc-clean, runs printing the computed sum with variadic args.
+(Adjust to corpus print idiom; the KEY proof is `sum(3, 10, 20, 30)` returning 60 via @cVaArg.) Verify: dumps rc=0, gcc-clean, runs printing 60.
 
-- [ ] **Step 4: Gate sweep**
+- [ ] **Step 7: Gate sweep**
 
 Build 0 err. `fn_varargs_unsupported` FAIL→OK (dump rc=0, gcc-clean, callable). `fn_varargs_body` OK (variadic body reads args). 4 MD5s byte-identical (stdarg.h gated; no baseline has variadic fns). Corpus: 208→210, +2 OK, FAIL 4→3. Update `fn_varargs_unsupported/NOTES.md` (correct the FALSE "zig0 accepts varargs" claim), EXPECTED_FAIL.md rows.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add sf/src/lower.zig sf/src/c89_emit.zig repro/mi_matrix/fn_varargs_body/ repro/mi_matrix/fn_varargs_unsupported/ repro/mi_matrix/EXPECTED_FAIL.md
@@ -526,3 +540,10 @@ git commit -m "docs: gate sweep + tech docs for 4-item compiler gaps plan"
   - **va_list = builtin `TYPE_VA_LIST = 21`**, `TypeKind.va_list_type` appended at enum end, size/align 4, C name `va_list` via registerPrimitiveName/nameCache (NO keyword), `getCTypeName` arm in c89_emit. `stdarg.h` include gated on `fns[i].is_variadic` in emitModuleHeader + emitModuleFile → **4 MD5 gates unchanged, no re-baseline**.
   - **Sema:** replace `args.len != pcount` early-return (semantic_analyzer.zig:759) with `args.len < fixed` guard + generic resolve of extras. New `ERR_3012_VARARGS_INVALID = 3012` for: zero-fixed-param variadic fn, `@cVaStart` outside variadic body. `...` in fn_ptr rejected at parser level (error[2000]).
   - F3 = parser flag + FnPayload threading; F4 = LIR + va_list type + sema fix; F5 = builtins + emitter translation + repros. Task splits frozen as below.
+- **AMENDMENT 3 (2026-08-06, operator ruling on I4):** Varargs lowerer/emitter design FROZEN per I4 report (`.superpowers/sdd/I-varargs-emit-report.md`). Binding decisions:
+  - **Builtin dispatch:** `@cVa*` at lower.zig:2543 builtin branch, inserted after `@ptrToInt` (:2545) and BEFORE the `ec.len>=2` cast block (:2590, else `@cVaArg`'s type arg mis-lowers). Name_ids interned in lowererInit (:257-298). `@cVaStart(&vl)` unwraps `address_of` → lower inner ident → `findLocalTemp`; `last_param_temp = self.func.params[len-1].temp_id`; guard on `self.func.is_variadic`.
+  - **Emitter arms:** 3 arms next to `.tail_call` (c89_emit:4042-4087): `va_start(<vl>, <last>);`, `<result> = va_arg(<vl>, <CType>);`, `va_end(<vl>);`. Names resolve via `fl_temps` (params pre-registered :2341-2352, locals :2380). va_arg result is a hoisted temp → auto-declared.
+  - **stdarg.h gating:** gate on `any fns[i].is_variadic` in emitModuleHeader (:1937), emitModuleHeaderFile (:2038), emitModuleFile (:2267). Zero byte change on 4 gates.
+  - **Extern prototypes = Option B (variadic-only):** add name-passthrough to `emitFunctionForwardDecl` (:1898-1900); change guards :1962/:2108 to `is_extern==0 OR is_variadic!=0`. Option A (all externs) REJECTED — breaks json hard (fopen `?*File`→`Opt_` struct vs stdio.h `FILE*` = gcc error, json `@cInclude`s stdio.h). Zero blast radius (no gate has a variadic extern).
+  - **Split refinement:** the `lowerFn` is_variadic-from-flag read (lower.zig:4647) is an **F5 lowerer change**, NOT F3 (the flag must be consumed by the lowerer alongside the va_* producers). F4's sema:759 fix is only for fn-ptr varargs (direct variadic calls already work) — non-blocking.
+  - **Repro constraint:** variadic extern + `@cInclude`'d same header conflicts (printf `unsigned char const*` vs `const char*`) — F5 repros must NOT `@cInclude stdio.h` for variadic printf.
