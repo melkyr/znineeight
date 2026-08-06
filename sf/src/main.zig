@@ -347,6 +347,18 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
             if (val) |v| {
                 hash_mod.u32ToU64MapPut(&ctx.comptime_values, @intCast(u32, ni), v.bits);
             }
+        } else if (node.kind == AstKind.var_decl and node.child_1 != 0) {
+            if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+                var init_n = ctx.store.nodes.items[@intCast(usize, node.child_1)];
+                var ik = @intCast(u32, @enumToInt(init_n.kind));
+                if ((ik >= @intCast(u32, 33) and ik <= @intCast(u32, 42)) or
+                    ik == @intCast(u32, 62) or ik == @intCast(u32, 64)) {
+                    var val2 = ce_mod.comptimeEvalEvaluate(&ce, node.child_1);
+                    if (val2) |v2| {
+                        hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_1, v2.bits);
+                    }
+                }
+            }
         }
     }
 }
