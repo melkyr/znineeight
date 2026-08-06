@@ -205,7 +205,7 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `50beb1bf5edc4cbb638f84aa027ffade` |
 | `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `55044a1f64011bc644cddbcf73b5de93` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `605b597e8b7cff60de0ce84a0593e743` |
 | `examples/z98/json_parser/main.zig` | `b5f56ebd51d2f0fcd379a1e083594462` |
 
 - **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
@@ -256,6 +256,17 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   byte-identical (no print migration). Per the F-5 AMENDMENT B precedent the gate is runtime
   behavior, not byte-identity. Pre-F5b values: mud `e306b187…`, gol `51d6d078…`. New values: mud
   `50beb1bf…`, gol `0d8f0092…`; lisp `55044a1f…`, json `b5f56ebd…` unchanged. [updated: 2026-08-06]
+
+- **Re-baselined 2026-08-06 (F6, lisp closures capture current env).** lisp re-baselined because
+  `eval.zig:124` `env_to_value(env.*,…)` → `curr_env.*` (lambda now captures the current dynamic
+  tail-call env, not the stale outer param env). Runtime-verified: `((make-adder 5) 3)` → `8`,
+  `((add 10) 1)` → `11`, `((make-func 42))` → `42` (all were `UnboundSymbol`). mud/gol/json
+  byte-identical. Per the F-5 AMENDMENT B precedent the gate is runtime behavior, not byte-identity.
+  New lisp value: `605b597e…`. NOTE: composition of a closure passed as an argument
+  (`((twice square) 3)`, `((compose square square) 3)`) now SEGFAULTS (was `UnboundSymbol`) — a
+  latent lisp-source env-capture cycle (`env_to_value` stores live `define`-slot pointers that are
+  back-patched after capture) exposed by the fix; tracked for a follow-up lisp-source fix, NOT a
+  compiler defect. Pre-F6 value: lisp `55044a1f…`. [updated: 2026-08-06]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.

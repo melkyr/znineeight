@@ -121,7 +121,7 @@ pub fn eval(expr_ptr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *san
 
                                             const closure_tag = try value_mod.alloc_symbol("closure", perm_sand);
                                             const params_body = try value_mod.alloc_cons(perm_params, perm_body, perm_sand);
-                                            const env_val = try env_to_value(env.*, temp_sand, perm_sand);
+                                            const env_val = try env_to_value(curr_env.*, temp_sand, perm_sand);
                                             const closure_data = try value_mod.alloc_cons(params_body, env_val, perm_sand);
                                             return try value_mod.alloc_cons(closure_tag, closure_data, perm_sand);
                                         },
