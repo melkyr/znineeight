@@ -28,6 +28,7 @@ pub const TYPE_NULL:      TypeId = 17;
 pub const TYPE_UNDEFINED: TypeId = 18;
 pub const TYPE_INT_LIT:   TypeId = 19;
 pub const TYPE_TYPE:      TypeId = 20;
+pub const TYPE_VA_LIST:   TypeId = 21;
 
 // Synthetic (compiler-defined) field indices — slice & tagged-union layout.
 // Consumed by load_field / store_field in lower.zig and c89_emit.zig.
@@ -53,6 +54,7 @@ pub const TypeKind = enum(u8) {
     null_type, undefined_type,
     integer_literal_type,
     anon_struct_init, anon_array, anon_tuple, anon_union,
+    va_list_type,
 };
 
 pub const Type = struct {
@@ -598,6 +600,7 @@ pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
     registerPrimitive(self, TypeKind.undefined_type, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.integer_literal_type, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.type_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.va_list_type, @intCast(u32, 4), @intCast(u32, 4));
     var pn: []const u8 = "void"; registerPrimitiveName(self, @intCast(u32, 1), pn);
     var pn_bool: []const u8 = "bool"; registerPrimitiveName(self, @intCast(u32, 2), pn_bool);
     var pn_i8: []const u8 = "i8"; registerPrimitiveName(self, @intCast(u32, 4), pn_i8);
@@ -616,6 +619,7 @@ pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
     var pn_null: []const u8 = "null"; registerPrimitiveName(self, @intCast(u32, 17), pn_null);
     var pn_undefined: []const u8 = "undefined"; registerPrimitiveName(self, @intCast(u32, 18), pn_undefined);
     var pn_type: []const u8 = "type"; registerPrimitiveName(self, @intCast(u32, 20), pn_type);
+    var pn_va_list: []const u8 = "va_list"; registerPrimitiveName(self, @intCast(u32, 21), pn_va_list);
 }
 
 fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {

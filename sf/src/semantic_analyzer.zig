@@ -756,13 +756,20 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fn4c: []const u8 = "FN4c\n"; pal_mod.markerWrite(fn4c);
     var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
     var fn4d: []const u8 = "FN4d\n"; pal_mod.markerWrite(fn4d);
-    if (args.len != pcount) {
+    var is_var: u8 = @intCast(u8, 0);
+    if ((fnp.flags_packed & @intCast(u8, 1)) != @intCast(u8, 0)) { is_var = @intCast(u8, 1); }
+    var fixed: usize = pcount;
+    if (is_var != @intCast(u8, 0)) {
+        if (args.len < fixed) {
+            return fnp.return_type;
+        }
+    } else if (args.len != pcount) {
         return fnp.return_type;
     }
     var ai: usize = 0;
     var fn4e: []const u8 = "FN4e\n"; pal_mod.markerWrite(fn4e);
     var fn4x_m: []const u8 = "FN4x:X"; pal_mod.markerWriteInt(fn4x_m, @intCast(u32, self.registry.xt_len));
-    var fn4y_m: []const u8 = "FN4y:P"; pal_mod.markerWriteInt(fn4y_m, @intCast(u32, pstart));    while (ai < args.len) : (ai += 1) {
+    var fn4y_m: []const u8 = "FN4y:P"; pal_mod.markerWriteInt(fn4y_m, @intCast(u32, pstart));    while (ai < fixed) : (ai += 1) {
         var fn4f: []const u8 = "FN4f\n"; pal_mod.markerWrite(fn4f);
         var param_type = self.registry.xt_items[pstart + ai];
         hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], param_type);
@@ -776,6 +783,17 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], param_type, arg_type), param_type);
+    }
+    if (is_var != @intCast(u8, 0)) {
+        var vi: usize = fixed;
+        while (vi < args.len) : (vi += 1) {
+            pushExpectedType(self, @intCast(u32, 0));
+            var varg_type = semanticAnalyzerResolveExpr(self, args[vi]);
+            popExpectedType(self);
+            if (varg_type != type_mod.TYPE_UNDEFINED) {
+                hash_mod.u32ToU32MapPut(self.call_arg_types, args[vi], varg_type);
+            }
+        }
     }
     var fn4_rm: []const u8 = "FN4:R"; pal_mod.markerWriteInt(fn4_rm, fnp.return_type);
     return fnp.return_type;

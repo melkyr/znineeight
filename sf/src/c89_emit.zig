@@ -555,6 +555,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
     if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
+    if (ty.kind == TypeKind.va_list_type) { var s: []const u8 = "va_list"; return s; }
     if (ty.kind == TypeKind.enum_type) {
         var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
@@ -2387,6 +2388,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     }
                 },
                 .tail_call => {},
+                .va_start => {},
+                .va_arg => {},
+                .va_end => {},
                 else => {},
             }
         }
@@ -2715,6 +2719,25 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
+                .va_arg => |va| {
+                    if (va.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, va.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = va.type_id;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .va_start => |vs| {
+                    if (vs.va_list_temp < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, vs.va_list_temp)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_VA_LIST;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .va_end => {},
                 else => {},
             }
         }
@@ -4528,6 +4551,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var fr_semi: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, fr_semi);
         },
+        .va_start => {},
+        .va_arg => {},
+        .va_end => {},
         else => {},
     }
 }
@@ -4590,6 +4616,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                         }
                     },
                     .tail_call => {},
+                    .va_start => {},
+                    .va_arg => {},
+                    .va_end => {},
                     else => {},
                 }
             }
