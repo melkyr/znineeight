@@ -179,9 +179,18 @@ pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
             return ComptimeVal{ .bits = nv, .width_bits = @intCast(u8, 0), .sig = true };
         }
         return null;
+    } else if (node.kind == AstKind.bit_not) {
+        var bnv = comptimeEvalEvaluate(self, node.child_0);
+        if (bnv) |bv| {
+            var bnb = ~bv.bits;
+            return ComptimeVal{ .bits = bnb, .width_bits = bv.width_bits, .sig = false };
+        }
+        return null;
     } else if (node.kind == AstKind.add or node.kind == AstKind.sub or
                node.kind == AstKind.mul or node.kind == AstKind.div or
-               node.kind == AstKind.mod_op) {
+               node.kind == AstKind.mod_op or node.kind == AstKind.bit_and or
+               node.kind == AstKind.bit_or or node.kind == AstKind.bit_xor or
+               node.kind == AstKind.shl or node.kind == AstKind.shr) {
         return comptimeEvalBinOp(self, node_idx, node.kind);
     } else if (node.kind == AstKind.builtin_call) {
         return comptimeEvalBuiltin(self, node);
