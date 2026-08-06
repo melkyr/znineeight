@@ -4,6 +4,7 @@ const AstKind = @import("ast.zig").AstKind;
 const AstNode = @import("ast.zig").AstNode;
 const StringInterner = @import("string_interner.zig").StringInterner;
 const SymbolRegistry = @import("symbol_table.zig").SymbolRegistry;
+const sym_mod = @import("symbol_table.zig");
 const type_mod = @import("type_registry.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
@@ -38,10 +39,10 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     };
 }
 
-fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind) ?ComptimeVal {
+fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    var lhs = comptimeEvalEvaluate(self, node.child_0);
-    var rhs = comptimeEvalEvaluate(self, node.child_1);
+    var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
+    var rhs = comptimeEvalEvaluateDepth(self, node.child_1, depth);
     if (lhs) |l| {
         if (rhs) |r| {
             var lv: u64 = l.bits;
@@ -104,7 +105,7 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     return tid;
 }
 
-fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?ComptimeVal {
+fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?ComptimeVal {
     if (node.child_0 == self.size_of_id) {
         var ec: []const u32 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
@@ -126,7 +127,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?ComptimeVal {
     if (node.child_0 == self.int_cast_id) {
         var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
-        var inner = comptimeEvalEvaluate(self, ec[@intCast(usize, 1)]);
+        var inner = comptimeEvalEvaluateDepth(self, ec[@intCast(usize, 1)], depth);
         if (tid) |t| {
             if (inner) |cv| {
                 var ty = self.registry.types_items[@intCast(usize, t)];
@@ -150,6 +151,10 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode) ?ComptimeVal {
 }
 
 pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
+    return comptimeEvalEvaluateDepth(self, node_idx, @intCast(u32, 0));
+}
+
+fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
     if (node_idx == @intCast(u32, 0)) return null;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.int_literal) {
@@ -160,7 +165,7 @@ pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
         if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u8, 1), .sig = false };
         return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u8, 1), .sig = false };
     } else if (node.kind == AstKind.negate) {
-        var inner = comptimeEvalEvaluate(self, node.child_0);
+        var inner = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (inner) |cv| {
             var nv: u64 = @intCast(u64, 0) - cv.bits;
             if (cv.width_bits != @intCast(u8, 0)) {
@@ -180,7 +185,7 @@ pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
         }
         return null;
     } else if (node.kind == AstKind.bit_not) {
-        var bnv = comptimeEvalEvaluate(self, node.child_0);
+        var bnv = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (bnv) |bv| {
             var bnb = ~bv.bits;
             return ComptimeVal{ .bits = bnb, .width_bits = bv.width_bits, .sig = false };
@@ -191,11 +196,27 @@ pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
                node.kind == AstKind.mod_op or node.kind == AstKind.bit_and or
                node.kind == AstKind.bit_or or node.kind == AstKind.bit_xor or
                node.kind == AstKind.shl or node.kind == AstKind.shr) {
-        return comptimeEvalBinOp(self, node_idx, node.kind);
+        return comptimeEvalBinOp(self, node_idx, node.kind, depth);
     } else if (node.kind == AstKind.builtin_call) {
-        return comptimeEvalBuiltin(self, node);
+        return comptimeEvalBuiltin(self, node, depth);
     } else if (node.kind == AstKind.paren_expr) {
-        return comptimeEvalEvaluate(self, node.child_0);
+        return comptimeEvalEvaluateDepth(self, node.child_0, depth);
+    } else if (node.kind == AstKind.ident_expr) {
+        if (depth >= @intCast(u32, 16)) return null;
+        var name_id = self.store.identifiers.items[@intCast(usize, node.payload)];
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var c_decl = self.store.nodes.items[@intCast(usize, cs.decl_node)];
+                    if (c_decl.child_1 != @intCast(u32, 0)) {
+                        return comptimeEvalEvaluateDepth(self, c_decl.child_1, depth + @intCast(u32, 1));
+                    }
+                }
+            }
+        }
+        return null;
     } else {
         return null;
     }

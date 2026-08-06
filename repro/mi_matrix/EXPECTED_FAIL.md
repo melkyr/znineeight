@@ -639,3 +639,28 @@ wrong value (1705032704 / 0). Reproduced + FIXED in `main.zig` (commit `fix(F7):
 Raw classifier FAIL stays **8** (4 green-guards + `field_store_drop`, `test_stub_0`
 (std-lib-deferred), `self_embed_optional_cycle`, `fn_varargs_unsupported`). No other repro
 flipped; 4 MD5 gates byte-identical; test_analyzer_bin PASS; build_test.sh 5/4 (baseline-identical).
+
+## Task F8 — `comptime_const_chain` (ident_expr const-chain folding) (2026-08-06) — +1 repro (205 → 206)
+
+Operator ruling I1-B ("include now"): `comptimeEvalEvaluate` must resolve `ident_expr` operands by
+following const chains, so `const B: i32 = A + 5;` (where `const A: i32 = 30;`) folds to 35 and
+`const C: i32 = B * 2;` folds to 70. Implemented in `comptime_eval.zig` as a depth-guarded
+`ident_expr` branch (mirrors the array-size const-chain path `evalConstU32Full`,
+type_resolver.zig:579-598: `symbolRegistryQualifiedLookup` across all module tables → const check
+`(flags & 0x01) == 0` → recurse into `decl.child_1`), with a depth-16 cap so const cycles
+(`const A = B + 1; const B = A + 1;`) cannot infinitely recurse.
+
+| Repro | RED (pre-fix) | Classification (measured) | Guards |
+|-------|---------------|---------------------------|--------|
+| `comptime_const_chain` | **FAIL** (gcc error, NOT merely a fold gap) | **OK post-fix** — dump rc=0, 1 `.c`, gcc-clean, runs printing `3570`; emitted `__module_init` stores `zT_0 = 35;` / `zT_1 = 70;` (int_const, no runtime `+`/`*`) | Pre-F8 the lowerer emits `load_global` for `A` in `A + 5`, but `A` (a non-storage const, literal init) gets **no C storage-global decl** → `zG_..._A` undeclared → **gcc FAIL**. F8 folds the ident away so the load is eliminated. Also guards: const-chain through two hops (`B * 2` from `A + 5`) |
+
+**Post-F8 accounting: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 repros**
+(198 + 4 + 4 = 206; corpus grows 205 → 206 by `comptime_const_chain`, counted OK; pre-F8 it
+classified **FAIL**, so this is a genuine FAIL→OK flip). Raw classifier FAIL stays **8** (4
+green-guards + `field_store_drop`, `test_stub_0` (std-lib-deferred), `self_embed_optional_cycle`,
+`fn_varargs_unsupported`). No other repro flipped. **MD5 gate: gol RE-BASELINED** — the emitted C
+for `examples/z98/game_of_life` changes because `@intCast(i32, WIDTH)` / `@intCast(i32, HEIGHT)`
+(WIDTH/HEIGHT are `const usize`) now fold at comptime (previously a runtime `(int)` load+cast);
+runtime output is byte-identical (verified by run diff), so per the F-5 AMENDMENT B precedent
+("runtime behavior is the gate, not byte-identity") the gol baseline is updated from
+`d0d3051d…` to `e2f4c625…`. mud/lisp/json gates unchanged and byte-identical.

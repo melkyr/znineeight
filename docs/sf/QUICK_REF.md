@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (199 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-05]
+### Corpus gate (206 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-06]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -180,10 +180,10 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-05] |
+| Entry Path | Reference md5 | [updated: 2026-08-06] |
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `4644ad1349c55af80fa1a18fe0e17989` |
-| `examples/z98/game_of_life/main.zig` | `d0d3051d1cb1bd0db3ffd29495a2e18e` |
+| `examples/z98/game_of_life/main.zig` | `e2f4c62515b4ab5e5c5b1202f7c2e12e` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `dd56cd23984d2533eebd244ffe593791` |
 | `examples/z98/json_parser/main.zig` | `900cb401779aab11bcf22ce35100323c` |
 
@@ -203,6 +203,14 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   (`#define ERROR_<name> <code>` in `zig_special_types.h` + revalued member defines) — runtime
   behavior is the gate, not byte-identity (F-5 AMENDMENT B precedent). mud + gol byte-identical
   (they emit no error-name codes). New values: lisp `dd56cd23…`, json `900cb401…`. [updated: 2026-08-05]
+
+- **Re-baselined 2026-08-06 (F8, ident_expr const-chain folding).** gol re-baselined because F8's
+  `ident_expr` comptime fold now resolves `@intCast(i32, WIDTH)`/`@intCast(i32, HEIGHT)`
+  (WIDTH/HEIGHT are `const usize` globals in game_of_life) at comptime — previously emitted as a
+  runtime `(int)` load+cast of the storage global, now emitted as a folded `int_const`. Runtime
+  output is byte-identical (verified by run diff of pristine vs F8 gol binaries); per the F-5
+  AMENDMENT B precedent the gate is runtime behavior, not byte-identity. mud/lisp/json unchanged
+  and byte-identical. New gol value: `e2f4c625…`. [updated: 2026-08-06]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
