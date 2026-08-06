@@ -134,9 +134,10 @@ Update totals: 200→204 (OK 193→196, FAIL 3→4, green-guards 4; raw FAIL 7�
 - [ ] **Step 5: Verify + commit**
 
 ```bash
-# Build /tmp compiler, classify all 3 repros
-# Confirm Repro 3 FAILs gcc (zero-size array)
-# Confirm Repros 1+2 gcc-clean (runtime output correct, gap is in C89 inspection)
+# Build /tmp compiler, classify all 4 repros
+# Confirm Repro 3 gcc-clean (silent miscompile: int-drop, OK+runtime-gap per P0-E)
+# Confirm Repros 1+2 gcc-clean (runtime output correct, emission gap in __module_init)
+# Confirm varargs repro FAILs (error[2000])
 
 git add repro/mi_matrix/comptime_binop_not_folded/ repro/mi_matrix/comptime_lower_ignores_fold/ repro/mi_matrix/comptime_array_size_gap/ repro/mi_matrix/fn_varargs_unsupported/ repro/mi_matrix/EXPECTED_FAIL.md
 git commit -m "repro(P0): 3 comptime-arithmetic defensive repros + varargs tracking repro"
