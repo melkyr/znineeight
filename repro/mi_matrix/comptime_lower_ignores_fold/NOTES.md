@@ -1,4 +1,4 @@
-# comptime_lower_ignores_fold — OK with emission-gap annotation  [comptime arithmetic folding plan, Task P0, 2026-08-06]
+# comptime_lower_ignores_fold — OK (emission gap RESOLVED by F4/F5)  [comptime arithmetic folding plan, Task P0, 2026-08-06; annotation cleared F9 2026-08-06]
 
 ## What it tests
 Identical source to `comptime_binop_not_folded` (12 bare binary/unary
@@ -41,9 +41,11 @@ any `comptime_values` lookup. Contrast the `builtin_call` handler
 
 ## Expected classification
 - **Pre-fix: OK with emission-gap annotation** — gcc-clean, runtime output
-  correct, but the GAP is visible in C89 inspection (runtime arithmetic
+  correct, but the GAP was visible in C89 inspection (runtime arithmetic
   emitted, not `int_const`). Counted OK per the
   `load_global_array_copy`/`comptime_neg_int` precedent.
-- **Post-fix (F2):** binary/unary handlers consult `comptime_values`
-  (like `builtin_call` at `lower.zig:2456`) and emit `int_const` — the
-  `__module_init`-scoped grep (see Measured result) → **0**.
+- **Post-fix (F4/F5, verified at F9):** binary/unary handlers consult
+  `comptime_values` (like `builtin_call` at `lower.zig:2456`) and emit
+  `int_const` — the `__module_init`-scoped grep (see Measured result) →
+  **0**. Measured 2026-08-06 (F9): `grep -c '[\*\/\%]'` = 0.
+  **Annotation cleared — plain OK.**

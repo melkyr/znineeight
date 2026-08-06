@@ -1,4 +1,4 @@
-# LIR Lowering Layer
+# LIR Lowering Layer [updated: 2026-08-06 — F4/F5 comptime_values guards + INT_LIT→I32 remap on binary/unary handlers]
 
 ## Summary
 
@@ -240,14 +240,26 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 
 ### Arithmetic & Logic
 
-All binary operations follow the same pattern:
+All binary operations follow the same pattern (with a comptime fold guard first):
 ```
+if comptime_values[node_idx] → nextTemp(ftype); emitInst(.int_const{ cv }); return ctid   ← F4/F5 guard
 lowerExpr(lhs) → tid_lhs
 lowerExpr(rhs) → tid_rhs
 nextTemp(resolved_type) → tid_result
 emitInst(.binary{ op, tid_lhs, tid_rhs, tid_result })
 return tid_result
 ```
+
+**[updated: 2026-08-06] Comptime fold guards (F4/F5, commits `ec71f9ad`/`5ed90251`):** the 10
+binary op handlers (add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr, lower.zig:1218-1306)
+and the 2 unary handlers (`negate`/`bit_not`, lower.zig:1426-1439) now consult
+`ctx.comptime_values` **before** lowering operands — mirroring the `builtin_call` handler
+(lower.zig:2456). When a folded value is present, the temp type is taken from
+`resolvedTypeTableGet(node_idx)` with an **INT_LIT→I32 remap** (`ft = TYPE_I32` when the resolved
+type is `TYPE_INT_LIT` or `TYPE_UNDEFINED`), and an `int_const` LIR inst is emitted instead of a
+`binary`/`unary` inst. The remap keeps bare const inits (which resolve TYPE_INT_LIT) typed `int`
+in C; annotated consts (e.g. `const X: u64 = …`, threaded by the F7 sema fix) keep their declared
+width so u64 folds >2^32 are not masked to 32 bits. `bool_not` has no guard (never folds).
 
 | AstKind | LIR Op |
 |---------|--------|
@@ -276,9 +288,9 @@ return tid_result
 
 | AstKind | Pattern |
 |---------|---------|
-| `negate` | `.unary{ UN_NEG }` |
+| `negate` | `.unary{ UN_NEG }` — **F5 guard**: folds to `int_const` when `comptime_values[node_idx]` present |
 | `bool_not` | `.unary{ UN_NOT }` |
-| `bit_not` | `.unary{ UN_BNOT }` |
+| `bit_not` | `.unary{ UN_BNOT }` — **F5 guard**: folds to `int_const` when `comptime_values[node_idx]` present |
 
 ### Variables
 

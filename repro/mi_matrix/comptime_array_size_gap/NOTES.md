@@ -1,4 +1,4 @@
-# comptime_array_size_gap — OK with runtime-gap annotation  [comptime arithmetic folding plan, Task P0, operator ruling P0-E, 2026-08-06]
+# comptime_array_size_gap — OK (runtime gap RESOLVED by F6)  [comptime arithmetic folding plan, Task P0, operator ruling P0-E, 2026-08-06; annotation cleared F9 2026-08-06]
 
 ## What it tests
 Array sizes computed with comptime arithmetic on module-scope `const`
@@ -37,6 +37,7 @@ to uninitialized scalar globals and the array storage is dropped entirely:
   P0-E operator ruling; the predicted `error: ISO C forbids zero-size
   array` does not materialize. See
   `.superpowers/sdd/task-P0-report.md` for the discrepancy + ruling.
-- **Post-fix (F3):** gcc-clean with correct array sizes 4000, 40, 2 (the
-  runtime gap closes — arrays resolve, `CELLS`/`HALF`/`REM` are real
-  `u8[N]` storage).
+- **Post-fix (F6, verified at F9):** gcc-clean with correct array sizes
+  4000, 40, 2 — the runtime gap closes. Measured 2026-08-06 (F9): emitted
+  `typedef unsigned char …[4000];` / `…[40];` / `…[2];` — `CELLS`/`HALF`/`REM`
+  are real `u8[N]` storage globals. **Annotation cleared — plain OK.**

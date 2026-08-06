@@ -4,9 +4,11 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `9d029c2e`
+**Working commit:** `bf5d3636`
 
-**MD5 (`--dump-c89`):** `11a5db1d3d43acf4880e2d157590abe3`
+**MD5 (`--dump-c89`):** `900cb401779aab11bcf22ce35100323c` [updated: 2026-08-06]
+(Re-baselined 2026-08-03/2026-08-05 per AMENDMENT 9-11 / P3-6 error-code registry; previous
+`11a5db1d…` stale.)
 
 ## Build Recipes
 

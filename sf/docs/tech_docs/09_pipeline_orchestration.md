@@ -1,4 +1,4 @@
-# Pipeline Orchestration — main.zig, main_dump.zig
+# Pipeline Orchestration — main.zig, main_dump.zig [updated: 2026-08-06 — F3 expanded phase_ComptimeEvaluation visitor; F7 module-scope var_decl type threading]
 
 > Source: `sf/src/main.zig` (957 lines), `sf/src/main_dump.zig` (326 lines)
 
@@ -401,8 +401,17 @@ gate at `main.zig:207` → exit 2.
 
 **Calls:**
 - `ce_mod.comptimeEvalInit` — init comptime evaluator
-- `ce_mod.comptimeEvalEvaluate` — evaluate each `builtin_call` node
+- `ce_mod.comptimeEvalEvaluate` — evaluate each `builtin_call` node **and** (F3) each module-scope
+  `const var_decl` whose init is a bare binary/unary arithmetic node
 - `hash_mod.u32ToU64MapPut` — store evaluated values
+
+**Expanded visitor (F3, commit `94853c65`, 2026-08-06):** the per-node loop now has two arms:
+1. `builtin_call` nodes (original behavior) — evaluate via `comptimeEvalEvaluate`.
+2. `var_decl` nodes whose `child_1` init kind is one of the 12 arithmetic ops (`add`..`shr`, i.e.
+   AstKind 33-42, plus `negate`=62/`bit_not`=64) AND whose `flags & 1 == 0` (`const`, not `var`) —
+   evaluate the **init expression** and store under `comptime_values[init_node]`. This is what
+   populates the folds that the F4/F5 lowerer guards consume. (F8 extended the evaluator itself
+   with an `ident_expr` const-chain arm so inits referencing other consts also fold.)
 
 **Markers:** `CE`
 

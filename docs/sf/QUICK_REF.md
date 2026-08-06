@@ -141,6 +141,23 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run
   correctly now; no longer runtime-gap tracked.
 
+- **Comptime arithmetic folding feature (plan `.superpowers/plans/2026-08-06-comptime-arithmetic-folding-plan.md`):** all 12 bare binary/unary const ops
+  (`+ - * / % & | ^ << >> ~` and `negate`) now fold to comptime `int_const` at module scope.
+  Tasks F1-F8 (commits `7dc119a6`..`bf5d3636`, 2026-08-06): F1/F2 add the bitwise/shift/bit_not
+  ops to `comptimeEvalBinOp`; F3 folds `const var_decl` binop/unary **inits** in
+  `phase_ComptimeEvaluation` (main.zig:347-360); F4/F5 add `comptime_values` guards to the 10
+  binary + 2 unary lowerer handlers (INT_LIT→I32 remap) so folded values emit `int_const`; F6 adds
+  `mul`/`div`/`mod_op` to the type_resolver array-size handler (type_resolver.zig:888-896); F7
+  types folded u64 consts >2^32 at their declared width (storage-global type no longer clobbered,
+  declared type threaded onto the init node); F8 adds a depth-16-guarded `ident_expr` const-chain
+  branch to `comptimeEvalEvaluateDepth` (comptime_eval.zig:199-218) so `const B = A + 5` folds from
+  `const A`. Guarded by 5 repros (`comptime_binop_not_folded`, `comptime_lower_ignores_fold`,
+  `comptime_array_size_gap`, `comptime_u64_fold_overflow`, `comptime_const_chain` — all now OK,
+  emission/runtime-gap annotations cleared) + `fn_varargs_unsupported` (FAIL, varargs parse gap,
+  out of scope). **Final accounting (F9 gate sweep, 2026-08-06): effective
+  `OK=198 / FAIL=4 / green-guards=4` over 206 repros (198+4+4=206; raw classifier FAIL stays 8);
+  4 MD5 gates byte-identical; test_analyzer_bin PASS.** [updated: 2026-08-06]
+
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
   field-access path (lower.zig:1869-1875) gained a `SymbolKind.global` branch emitting `load_global`,

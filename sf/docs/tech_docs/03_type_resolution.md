@@ -1,4 +1,4 @@
-# 03 — Type Resolution
+# 03 — Type Resolution [updated: 2026-08-06 — array-size mul/div/mod (F6)]
 
 ## Summary Table
 
@@ -314,7 +314,16 @@ Internal helpers:
 | `many_ptr_type` | 792-806 | Same as ptr but `typeRegistryGetOrCreateManyPtr`. |
 | `slice_type` | 814-827 | `is_const = (node.flags & 1) != 0`. Returns `typeRegistryGetOrCreateSlice(child, is_const)`. |
 | `optional_type` | 828-833 | Returns `typeRegistryGetOrCreateOptional(child)`. |
-| `array_type` | 834-877 | Resolves element type (child_0). Evaluates length from child_1: supports `int_literal`, `add/sub` (via `evalConstU32Full`), or `ident_expr` (via `evalConstU32Full`). Returns `typeRegistryGetOrCreateArray(elem, len)` or `TYPE_UNDEFINED` for zero-length. Emits `T0`, `T1`, `T2`, `T3` markers. |
+| `array_type` | 834-877 | Resolves element type (child_0). Evaluates length from child_1: supports `int_literal`, `add/sub`, `mul`/`div`/`mod_op` (F6, 2026-08-06), or `ident_expr` (via `evalConstU32Full`). Returns `typeRegistryGetOrCreateArray(elem, len)` or `TYPE_UNDEFINED` for zero-length. Emits `T0`, `T1`, `T2`, `T3` markers. |
+
+**[updated: 2026-08-06] Array-size mul/div/mod (F6, commit `6dd614e7`):** the `array_type` arm's
+size-node evaluation (type_resolver.zig:869-911) previously handled only `int_literal`,
+`add`/`sub`, and `ident_expr`; a `mul`/`div`/`mod_op` size node (e.g. `[ROWS * COLS]u8`) fell
+through all branches → `arr_len` stayed 0 → `if (arr_len != 0)` (line 899) was false →
+`TYPE_UNDEFINED` (line 911). F6 adds the mul/div/mod arm (type_resolver.zig:888-896): it evaluates
+both children via `evalConstU32Full`, and when neither is the `0xFFFFFFFF` unknown-sentinel AND
+the divisor is non-zero, computes `lhs * rhs` / `lhs / rhs` / `lhs % rhs`. The arrays now resolve
+(verified: `comptime_array_size_gap` emits `u8[4000]`/`u8[40]`/`u8[2]`).
 
 #### `evalConstU32Full`
 

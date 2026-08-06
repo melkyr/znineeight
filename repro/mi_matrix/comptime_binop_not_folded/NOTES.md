@@ -1,4 +1,4 @@
-# comptime_binop_not_folded — OK with emission-gap annotation  [comptime arithmetic folding plan, Task P0, 2026-08-06]
+# comptime_binop_not_folded — OK (emission gap RESOLVED by F1/F2/F4)  [comptime arithmetic folding plan, Task P0, 2026-08-06; annotation cleared F9 2026-08-06]
 
 ## What it tests
 12 bare binary/unary const-fold operations at module scope, one per op:
@@ -48,10 +48,12 @@ evaluated, so `comptime_values` never receives their folded values →
 
 ## Expected classification
 - **Pre-fix: OK with emission-gap annotation** — gcc-clean, runtime output
-  correct, but the GAP is visible in C89 inspection (runtime arithmetic
+  correct, but the GAP was visible in C89 inspection (runtime arithmetic
   emitted, not `int_const`). Counted OK per the
   `load_global_array_copy`/`comptime_neg_int` precedent of counting
   runtime/emission-gap repros as OK.
-- **Post-fix (F2):** `__module_init` should contain `int_const` values
-  (folded) — the `__module_init`-scoped grep above → **0** (all 12 const
+- **Post-fix (F1/F2/F4, verified at F9):** `__module_init` contains `int_const`
+  values (folded) — the `__module_init`-scoped grep → **0** (all 12 const
   assignments emit literals, no runtime `*`/`/`/`%`/`+`/`-`/`&`/`|`/`^`/`<<`/`>>`/`~`).
+  Measured 2026-08-06 (F9): `grep -c '[\*\/\%]'` = 0; only `(int)-30` / `(int)-31`
+  (int_const literals) remain. **Annotation cleared — plain OK.**

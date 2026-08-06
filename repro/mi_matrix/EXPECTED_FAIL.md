@@ -1,8 +1,18 @@
-# mi_matrix corpus — expected-fail manifest (v13 2026-07-30)
+# mi_matrix corpus — expected-fail manifest (v17 2026-08-06)
 
-## Totals (179 repros)
+## Totals (206 repros)
 
-- **CURRENT: OK=165 / FAIL=6 / ICE=7 / CRASH=0** (2026-07-30: syntax coverage — 13 new repros for categories A-E: hand-rolled tagged unions, bare error sets, catch blocks, ptr-to-int arena, module var, define-mutate-closure. 7 ICEs are hand-rolled tagged union field-stores (A1-A3) and inferred error set function pointers (B1-B2). All GREEN regression guards pass. 2 new FAILs from uninitialized union data (A2) and @intToPtr arena (D).)
+- **CURRENT: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: F9 gate sweep —
+  comptime arithmetic folding closed out. 198 real OK + 4 green-guards + 4 FAIL = 206;
+  raw classifier FAIL = 8 (4 green-guards are a sub-bucket of the raw count). The 4 FAILs:
+  `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle`
+  (F-8 residual, gcc incomplete-type), `fn_varargs_unsupported` (varargs parse gap, `error[2000]`).
+  The 4 green-guards: `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`,
+  `euvoid_val_catch`. All 5 comptime-arithmetic emission/runtime gaps resolved by F1-F8 — see the
+  F9 section below.)
+- Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F8: comptime_const_chain FAIL→OK)
+- Prior: OK=197 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 205 (2026-08-06 F7: comptime_u64_fold_overflow)
+- Prior: OK=196 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 204 (2026-08-06 P0 fix wave 1)
 - **2026-08-01 ADD: `comptime_neg_int`** — RUNTIME GAP, not counted in the compile-only totals above. `const N = @intCast(i32, -5);` dumps rc=0, gcc clean, but emitted C never assigns `N` (comptime-folded negative dropped) → run prints garbage not `-5`. Tracks via runtime gate; the gcc-exit classifier reports it OK. Reproduces "comptime int cannot be negative". **FIXED post-F-1..F-8 (2026-08-04): prints `-5` correctly.**
 - Prior: OK=162 / FAIL=4 / ICE=0 / CRASH=0 (2026-07-16: extern-fn ABI-wrap — c89_emit .call_direct wrapping for extern fn optional/EU returns; 5/5 extern-fn repros fixed; opt_extern_ptr_file FIXED; json_parser HARD gate 0 errors; EU representation (3) now FIXED by error-set pipeline)
 - Prior: OK=148 / FAIL=14 / ICE=0 / CRASH=0 (2026-07-16: folded 13 ungated RED repros from top-level `repro/` tree into gated corpus)
@@ -548,9 +558,9 @@ array-size handler (type_resolver.zig:869-911) misses `mul`/`div`/`mod_op`. Clas
 
 | Repro | RED (pre-fix) | Classification (measured) | Guards |
 |-------|---------------|---------------------------|--------|
-| `comptime_binop_not_folded` | emission gap | **OK with emission-gap annotation** — dump rc=0, 1 `.c`, gcc-clean, links, runs printing `40 20 300 3 0 -30 10 30 20 120 7 -31`; `__module_init`-scoped `grep -c '[\*\/\%]'` = **3** > 0 (mul/div/mod runtime ops in `__module_init`, not `int_const`; a whole-file grep is inflated by the `%d` format string, `[*]` pointer decls, and comments — see NOTES.md) | Gap 1: bare binary/unary nodes never reach `comptimeEvalEvaluate` |
-| `comptime_lower_ignores_fold` | emission gap | **OK with emission-gap annotation** — identical measured state to repro 1 (same source; isolates Gap 2) | Gap 2: lowerer binary/unary handlers never consult `comptime_values` |
-| `comptime_array_size_gap` | semantic gap | **OK with runtime-gap annotation** (ruling P0-E) — dump rc=0, 1 `.c`; the arrays are **silently dropped** (consts degrade to uninitialized `int` globals, no `u8[N]`, no `[0]`) and gcc is **clean (rc=0)** — a **silent semantic miscompile**, counted OK under the gcc-exit classifier per the `comptime_neg_int`/`load_global_array_copy` runtime-gap precedent (was FAIL per AMENDMENT P0-B; the predicted `error: ISO C forbids zero-size array` does NOT occur — see discrepancy note below) | Gap 3: type_resolver array-size handler misses `mul`/`div`/`mod_op` → `arr_len`=0 → `TYPE_UNDEFINED` |
+| `comptime_binop_not_folded` | emission gap | **OK (gap RESOLVED by F1+F2+F4)** — dump rc=0, 1 `.c`, gcc-clean, links, runs printing `40 20 300 3 0 -30 10 30 20 120 7 -31`; `__module_init`-scoped `grep -c '[\*\/\%]'` = **0** (all 12 consts emit `int_const`: 40/20/300/3/0/-30/10/30/20/120/7/-31 — see NOTES.md) | Gap 1: bare binary/unary nodes never reached `comptimeEvalEvaluate` — FIXED by F1 (bitwise/shift comptime ops) + F2 (var_decl binop/unary inits folded in phase_ComptimeEvaluation) + F4 (lowerer guard consumes the fold) |
+| `comptime_lower_ignores_fold` | emission gap | **OK (gap RESOLVED by F4+F5)** — identical measured state to repro 1 (same source; isolates Gap 2); `__module_init`-scoped `grep -c '[\*\/\%]'` = **0** | Gap 2: lowerer binary/unary handlers never consulted `comptime_values` — FIXED by F4 (comptime_values guards on 10 binary op handlers, INT_LIT→I32 remap) + F5 (negate/bit_not guards) |
+| `comptime_array_size_gap` | semantic gap | **OK (runtime gap RESOLVED by F6)** — dump rc=0, 1 `.c`; the arrays now resolve `u8[4000]`/`u8[40]`/`u8[2]` (emitted `typedef unsigned char …[4000];`/`[40];`/`[2];`), gcc-clean (rc=0) — no longer a silent type-drop (pre-fix the consts degraded to uninitialized `int` globals; counted OK+runtime-gap per ruling P0-E) | Gap 3: type_resolver array-size handler missed `mul`/`div`/`mod_op` → `arr_len`=0 → `TYPE_UNDEFINED` — FIXED by F6 (mul/div/mod arms, type_resolver.zig:888-896) |
 
 **Post-P0 accounting: OK=195 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 203 repros**
 (195 + 4 + 4 = 203; corpus total grows 200 → 203 by 3 new repros). OK 193→195 (+2 = repros 1+2,
@@ -664,3 +674,52 @@ for `examples/z98/game_of_life` changes because `@intCast(i32, WIDTH)` / `@intCa
 runtime output is byte-identical (verified by run diff), so per the F-5 AMENDMENT B precedent
 ("runtime behavior is the gate, not byte-identity") the gol baseline is updated from
 `d0d3051d…` to `e2f4c625…`. mud/lisp/json gates unchanged and byte-identical.
+
+---
+
+## F9 — gate sweep + comptime gap annotations cleared (2026-08-06)
+
+Final task of the comptime arithmetic folding plan. All 5 comptime-arithmetic repros are now fully
+OK with their emission/runtime-gap annotations **cleared** — the gaps were resolved by F1-F8.
+The full gate battery was re-run at HEAD with a fresh /tmp bootstrap (`/tmp/f9b/zig1`, zig0 rc=0,
+gcc rc=0, 0 errors); evidence in `.superpowers/sdd/task-F9-report.md`.
+
+**Fix commits (comptime arithmetic folding, all 2026-08-06):**
+
+| Commit | Task | Change |
+|--------|------|--------|
+| `7dc119a6` | F1 | comptime_eval.zig: add `bit_and`/`bit_or`/`bit_xor`/`shl`/`shr` to `comptimeEvalBinOp` (with shift-amount >=64 → null guard) |
+| `dacf8cf6` | F2 | comptime_eval.zig: add `bit_not` and route the 12 binary/unary ops to comptime binop evaluation (`comptimeEvalEvaluate` binop arm) |
+| `94853c65` | F3 | main.zig `phase_ComptimeEvaluation`: fold `const var_decl` binop/unary **inits** (not just `builtin_call`) into `comptime_values` |
+| `ec71f9ad` | F4 | lower.zig: `comptime_values` guards on the 10 binary op handlers (add/sub/mul/div/mod/bit_and/bit_or/bit_xor/shl/shr) with INT_LIT→I32 remap — emit `int_const` when folded |
+| `5ed90251` | F5 | lower.zig: `comptime_values` guards on `negate` + `bit_not` unary handlers (same INT_LIT→I32 remap) |
+| `6dd614e7` | F6 | type_resolver.zig array-size handler: add `mul`/`div`/`mod_op` arms to `evalConstU32Full` size eval (closes the `comptime_array_size_gap` silent type-drop) |
+| `827e0221` | F7 | main.zig `phase_SemanticAnalysis`: (a) gate the `resolved_types[var_decl] = init_type` write on `existing == null` so declared types aren't clobbered; (b) thread the declared type onto the init node for annotated module-scope consts — folded u64 consts >2^32 keep their declared width (fixes `comptime_u64_fold_overflow`) |
+| `bf5d3636` | F8 | comptime_eval.zig: `ident_expr` const-chain branch in `comptimeEvalEvaluateDepth` (depth-16 guarded), mirroring the array-size `evalConstU32Full` chain — folds `const B: i32 = A + 5` from `const A` (fixes `comptime_const_chain` gcc FAIL) |
+
+**Gate-sweep results (measured, /tmp/f9b/zig1):**
+
+- **Repros 1+2** (`comptime_binop_not_folded`, `comptime_lower_ignores_fold`): dump rc=0, gcc rc=0,
+  run rc=0, prints `40 20 300 3 0 -30 10 30 20 120 7 -31`; `__module_init`-scoped
+  `grep -c '[\*\/\%]'` = **0** (all 12 consts emit `int_const` — emission gap closed).
+- **Repro 3** (`comptime_array_size_gap`): dump rc=0, gcc rc=0; emitted `typedef unsigned char
+  …[4000];` / `…[40];` / `…[2];` — arrays resolve `u8[4000]`/`u8[40]`/`u8[2]` (runtime gap closed).
+- **Repro u64** (`comptime_u64_fold_overflow`): dump rc=0, gcc rc=0, run prints
+  `1:1705032704 3000000000 1:0` (X=6000000000, Z=4294967296 correct via hi:lo halves).
+- **Repro** `comptime_const_chain`: dump rc=0, gcc rc=0, run prints `3570`; `__module_init` stores
+  `zT_0 = 35;` / `zT_1 = 70;` (int_const, no runtime `+`/`*`).
+- **Varargs** (`fn_varargs_unsupported`): stays **FAIL** — dump rc=2, `error[2000]: expected
+  identifier but found token` at `...`, 0 `.c` emitted (out of comptime scope).
+- **Full corpus**: **206 repros, OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0**
+  (198 + 4 + 4 = 206; raw classifier FAIL = 8 — the 4 green-guards are a sub-bucket).
+  FAIL count unchanged vs the F8 baseline; no repro flipped; the 4 real FAILs are the 2
+  std-lib-deferred import gaps (`field_store_drop`, `test_stub_0` — `error[3048]`),
+  `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type), and `fn_varargs_unsupported`
+  (varargs parse gap).
+- **4 MD5 gates byte-identical** to the current baselines: mud `4644ad1349c55af80fa1a18fe0e17989`,
+  gol `e2f4c62515b4ab5e5c5b1202f7c2e12e`, lisp `dd56cd23984d2533eebd244ffe593791`,
+  json `900cb401779aab11bcf22ce35100323c`.
+- **test_analyzer_bin PASS** (43/43 tests ok, run rc=0).
+
+This is the final accounting for the plan: **206 repros, OK=198 / FAIL=4 / green-guards=4** —
+the comptime arithmetic folding feature is complete and gated.

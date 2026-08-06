@@ -4,9 +4,11 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `9d029c2e`
+**Working commit:** `bf5d3636`
 
-**MD5 (`--dump-c89`):** `f855c9f93c73422f56378f3f73231727`
+**MD5 (`--dump-c89`):** `e2f4c62515b4ab5e5c5b1202f7c2e12e` [updated: 2026-08-06]
+(Re-baselined 2026-08-06 — F8 ident_expr const-chain folding resolves `@intCast(i32, WIDTH/HEIGHT)`
+at comptime; runtime output byte-identical, per F-5 AMENDMENT B. Previous `f855c9f9…` stale.)
 
 ## Build Recipes
 

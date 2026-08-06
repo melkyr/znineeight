@@ -1,4 +1,4 @@
-# 04 — Compile-Time Evaluation
+# 04 — Compile-Time Evaluation [updated: 2026-08-06 — F1/F2 bitwise+shift ops, F8 ident_expr const-chain + depth guard]
 
 ## Summary Table
 
@@ -10,9 +10,11 @@
 | Builtin names interned by sema | 9 | @ptrCast, @ptrToInt, @intToPtr, @intCast, @floatCast, @intToFloat, @intToEnum, @sizeOf, @alignOf (+ `_` stub) — type assignment only |
 | Builtin names interned by lowerer | 9 | @intCast, @intToFloat, `print`, @ptrCast, @ptrToInt, @intToPtr, @enumToInt, @sizeOf, @alignOf — LIR dispatch only |
 | Non-foldable builtins | 6 | @ptrCast, @ptrToInt, @intToPtr, @floatCast, @intToFloat, @intToEnum — comptime eval returns `null`, handled by sema type rules + runtime LIR casts |
-| Binary ops evaluated | 5 | add, sub, mul, div, mod |
+| Binary ops evaluated | 10 | add, sub, mul, div, mod, bit_and, bit_or, bit_xor, shl, shr |
+| Unary ops evaluated | 3 | negate, bit_not (bool_not/others → null) |
+| Extra operands | 1 | ident_expr const-chain (depth-16 guarded, F8) |
 | Literal kinds | 3 | int_literal, char_literal, bool_literal |
-| Dispatch arms | 7 | int/char/bool/negate/binop/builtin/paren |
+| Dispatch arms | 9 | int/char/bool/negate/bit_not/binop/builtin/paren/ident_expr |
 
 ---
 
@@ -26,17 +28,19 @@
 | `comptimeEvalBuiltin` — `@sizeOf` | 97 | — | Extract first extra child as type arg, resolve, return `ty.size` as `ComptimeVal`. | (same as above) | same | `registry.types_items[t].size` | Always width_bits=0, sig=false (compile-time size is unsigned). | None [inference] |
 | `comptimeEvalBuiltin` — `@alignOf` | 106 | — | Same pattern as `@sizeOf` but returns `ty.alignment`. | (same as above) | same | `registry.types_items[t].alignment` | Width=0, sig=false. | None [inference] |
 | `comptimeEvalBuiltin` — `@intCast` | 115 | — | Resolve target type, evaluate inner expression, then truncate/sign-extend bits to target width. Computes mask, sign-extends if target is signed type. | (same as above) | `comptimeEvalEvaluate`, `comptimeEvalResolveTypeArg`, `ast_mod.astStoreGetExtraChildren` | `registry.types_items[t].size/kind` | Checks `ty.kind` for signed int kinds (i8/i16/i32/i64/isize). 64-bit full width passes through directly. | None [inference] |
-| `comptimeEvalBinOp` | 41 | private | Evaluate binary arithmetic at compile time. Handles add/sub/mul/div/mod_op. Signed division uses sign-magnitude algorithm. | `comptimeEvalEvaluate` | `comptimeEvalEvaluate` (recursive for lhs/rhs) | `store.nodes`, lhs/rhs `ComptimeVal` | Width = max(lhs.width_bits, rhs.width_bits). Signed if either operand signed. Division-by-zero returns null. | None [inference] |
+| `comptimeEvalBinOp` | 41 | private | Evaluate binary arithmetic at compile time. Handles add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr (the last 5 added by F1, 2026-08-06). Signed division uses sign-magnitude algorithm. | `comptimeEvalEvaluateDepth` | `comptimeEvalEvaluateDepth` (recursive for lhs/rhs) | `store.nodes`, lhs/rhs `ComptimeVal` | Width = max(lhs.width_bits, rhs.width_bits). Signed if either operand signed. Division-by-zero returns null. Shift amount >= 64 returns null. | None [inference] |
 | `comptimeEvalBinOp` — signed div | 56 | — | Extract sign bits, compute absolute values, divide, apply sign to quotient. | (same as above) | none | local variables | Two's complement negation: `0 - val`. XOR sign bits for result sign. | None [inference] |
 | `comptimeEvalBinOp` — signed mod | 69 | — | Same sign-magnitude approach as div, but returns remainder with dividend sign. | (same as above) | none | local variables | Divisor sign ignored; only dividend sign applied to remainder. | None [inference] |
-| `comptimeEvalEvaluate` | 141 | pub | Main comptime evaluation dispatch. Walks AST node kind and returns `ComptimeVal` or null. | `main.zig` phase_ComptimeEvaluation (main.zig:333); recursively by itself; unit tests (test_semantic_bin.zig) | `comptimeEvalBinOp`, `comptimeEvalBuiltin`, `comptimeEvalEvaluate` (recursive) | `store.nodes`, `store.int_values` | `node_idx==0` returns null (null check). Recursive for paren_expr and negate. | None [inference] |
+| `comptimeEvalEvaluate` | 141 | pub | Main comptime evaluation dispatch. Walks AST node kind and returns `ComptimeVal` or null. Thin wrapper delegating to `comptimeEvalEvaluateDepth(node_idx, 0)`. | `main.zig` phase_ComptimeEvaluation; recursively by itself; unit tests (test_semantic_bin.zig) | `comptimeEvalEvaluateDepth` | `store.nodes`, `store.int_values` | Entry point; all recursion flows through the depth-guarded variant. | None [inference] |
+| `comptimeEvalEvaluateDepth` | 158 | private | Depth-guarded evaluation core. Same dispatch as `comptimeEvalEvaluate` plus an `ident_expr` const-chain arm (F8). | `comptimeEvalEvaluate`, recursively by itself/binop/builtin | `comptimeEvalBinOp`, `comptimeEvalBuiltin`, `comptimeEvalEvaluateDepth` (recursive), `symbolRegistryQualifiedLookup` | `store.nodes`, `store.int_values`, `store.identifiers`, `symbol_reg` | `node_idx==0` returns null. `depth >= 16` returns null (const-cycle guard). Recursive for paren_expr, negate, bit_not, binop, builtin, and ident_expr chains. | None [inference] |
 | `comptimeEvalEvaluate` — int_literal | 144 | — | Returns bits from `store.int_values[node.payload]`, width=0, sig=true. | (same as above) | none | `store.int_values` | width=0 means arbitrary precision — caller applies truncation. | None [inference] |
 | `comptimeEvalEvaluate` — char_literal | 146 | — | Same bits as int_literal but width=8, sig=false. | (same as above) | none | `store.int_values` | Character treated as u8 value. | None [inference] |
 | `comptimeEvalEvaluate` — bool_literal | 148 | — | Returns 1 or 0, width=1, sig=false. Based on `node.flags & 1`. | (same as above) | none | `node.flags` | Flags bit 0 = value. | None [inference] |
-| `comptimeEvalEvaluate` — negate | 151 | — | Recursively evaluate inner, compute `0 - bits`, then mask/sign-extend to inner width. | (same as above) | `comptimeEvalEvaluate` | inner `ComptimeVal` | width=0 case returns sig=true (signed literal). Finite width applies mask + optional sign extension. | None [inference] |
-| `comptimeEvalEvaluate` — binop | 171 | — | Dispatches to `comptimeEvalBinOp` for add/sub/mul/div/mod_op kinds. | (same as above) | `comptimeEvalBinOp` | `node.kind` | Forward `node_idx` and `node.kind` to binop handler. | None [inference] |
-| `comptimeEvalEvaluate` — builtin_call | 175 | — | Dispatches to `comptimeEvalBuiltin` for builtin_call kind. | (same as above) | `comptimeEvalBuiltin` | `node.kind` | Only @sizeOf/@alignOf/@intCast are foldable. | None [inference] |
-| `comptimeEvalEvaluate` — paren_expr | 177 | — | Unwraps parentheses: recurses on `node.child_0`. | (same as above) | `comptimeEvalEvaluate` | `node.child_0` | Trivial pass-through. | None [inference] |
+| `comptimeEvalEvaluate` — negate/bit_not | 167/181 | — | Recursively evaluate inner, compute `0 - bits` (negate) or `~bits` (bit_not), then mask/sign-extend to inner width. | (same as above) | `comptimeEvalEvaluateDepth` | inner `ComptimeVal` | width=0 case returns sig=true (signed literal). Finite width applies mask + optional sign extension. | None [inference] |
+| `comptimeEvalEvaluate` — binop | 189 | — | Dispatches to `comptimeEvalBinOp` for add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr kinds (the bitwise/shift kinds added F1). | (same as above) | `comptimeEvalBinOp` | `node.kind` | Forward `node_idx`, `node.kind`, and current depth to binop handler. | None [inference] |
+| `comptimeEvalEvaluate` — builtin_call | 195 | — | Dispatches to `comptimeEvalBuiltin` for builtin_call kind. | (same as above) | `comptimeEvalBuiltin` | `node.kind` | Only @sizeOf/@alignOf/@intCast are foldable. | None [inference] |
+| `comptimeEvalEvaluate` — paren_expr | 197 | — | Unwraps parentheses: recurses on `node.child_0`. | (same as above) | `comptimeEvalEvaluateDepth` | `node.child_0` | Trivial pass-through. | None [inference] |
+| `comptimeEvalEvaluate` — ident_expr (F8) | 199 | — | Const-chain resolution: look up `name_id` via `symbolRegistryQualifiedLookup` across all module tables; if the symbol is a `const` (`flags & 0x01 == 0`) with a non-empty init (`decl.child_1 != 0`), recurse into that init at `depth+1`. Returns null on `depth >= 16` (const-cycle guard) or no matching const. Mirrors the array-size `evalConstU32Full` chain (type_resolver.zig:579-598). | (same as above) | `comptimeEvalEvaluateDepth` (recursive), `symbolRegistryQualifiedLookup` | `store.identifiers`, `symbol_reg`, `store.nodes` | Enables `const B: i32 = A + 5` to fold from `const A: i32 = 30` (comptime_const_chain repro, F8). | None [inference] |
 
 ---
 
@@ -44,20 +48,25 @@
 
 ```
 comptimeEvalEvaluate(node_idx)
-  │
-  ├─ int_literal ──→ store.int_values[node.payload] ──→ ComptimeVal{bits, width=0, sig=true}
-  ├─ char_literal ──→ store.int_values[node.payload] ──→ ComptimeVal{bits, width=8, sig=false}
-  ├─ bool_literal ──→ node.flags & 1 ──→ ComptimeVal{0|1, width=1, sig=false}
-  ├─ negate ──→ comptimeEvalEvaluate(child_0) ──→ 0 - bits ──→ mask/sign-extend
-  ├─ add/sub/mul/div/mod_op ──→ comptimeEvalBinOp(node_idx, kind)
-  │     └─ comptimeEvalEvaluate(child_0) + comptimeEvalEvaluate(child_1)
-  │           └─ width = max(l.width, r.width), sig = l.sig | r.sig
-  │           └─ div/mod: signed → sign-magnitude, zero → null
-  ├─ builtin_call ──→ comptimeEvalBuiltin(node)
-  │     ├─ @sizeOf: resolveTypeArg → ty.size
-  │     ├─ @alignOf: resolveTypeArg → ty.alignment
-  │     └─ @intCast: resolveTypeArg + evaluate(inner) → mask/truncate/sign-ext
-  └─ paren_expr ──→ comptimeEvalEvaluate(node.child_0)
+  └─ comptimeEvalEvaluateDepth(node_idx, depth=0)     ← every recursion carries depth (F8)
+       ├─ int_literal ──→ store.int_values[node.payload] ──→ ComptimeVal{bits, width=0, sig=true}
+       ├─ char_literal ──→ store.int_values[node.payload] ──→ ComptimeVal{bits, width=8, sig=false}
+       ├─ bool_literal ──→ node.flags & 1 ──→ ComptimeVal{0|1, width=1, sig=false}
+       ├─ negate ──→ EvaluateDepth(child_0) ──→ 0 - bits ──→ mask/sign-extend
+       ├─ bit_not ──→ EvaluateDepth(child_0) ──→ ~bits
+       ├─ add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr ──→ comptimeEvalBinOp(node_idx, kind, depth)
+       │     └─ EvaluateDepth(child_0) + EvaluateDepth(child_1)
+       │           └─ width = max(l.width, r.width), sig = l.sig | r.sig
+       │           └─ div/mod: signed → sign-magnitude, zero → null
+       │           └─ shl/shr: shift amount >= 64 → null
+       ├─ builtin_call ──→ comptimeEvalBuiltin(node, depth)
+       │     ├─ @sizeOf: resolveTypeArg → ty.size
+       │     ├─ @alignOf: resolveTypeArg → ty.alignment
+       │     └─ @intCast: resolveTypeArg + EvaluateDepth(inner) → mask/truncate/sign-ext
+       ├─ paren_expr ──→ EvaluateDepth(node.child_0)
+       └─ ident_expr (F8) ──→ symbolRegistryQualifiedLookup(name_id) across module tables
+             └─ if const (flags & 0x01 == 0) and init present → EvaluateDepth(decl.child_1, depth+1)
+             └─ depth >= 16 → null (const-cycle guard)
 ```
 
 **Init flow:**
@@ -270,12 +279,24 @@ never folded. `[inference]` + `[fprintf]` (all fold attempts for these names pri
 
 ---
 
-## Known limitation of the fold pass
+## Fold-pass coverage (F3/F8 expansion) — [updated: 2026-08-06]
 
-`phase_ComptimeEvaluation` iterates **every** `builtin_call` node in the whole store
-(main.zig:330-337) and calls `comptimeEvalEvaluate` on each — there is no name pre-filter, so
-the 3-arm `comptimeEvalBuiltin` is invoked even for `@ptrCast`/`@enumToInt` etc., and returns
-`null` after checking all three interned IDs (comptime_eval.zig:96-138). Fold results are stored
-keyed by AST node index in `ctx.comptime_values` (main.zig:104, 335) and consumed at
-lower.zig:2393; a `@sizeOf`/`@alignOf` that failed to fold (type unresolved at fold time) would
-ICE at lower.zig:2409-2412 (`iceUnresolvedComptime`) rather than degrade to a runtime call.
+`phase_ComptimeEvaluation` (main.zig:330-360) no longer folds only `builtin_call` nodes. Since F3
+(commit `94853c65`, 2026-08-06) it also folds **`const var_decl` init expressions** that are bare
+binary/unary nodes: for each module-scope `const` whose `child_1` init kind is one of the 12
+arithmetic ops (AstKind 33-42 or 62/64), it calls `comptimeEvalEvaluate(init_node)` and stores the
+result in `ctx.comptime_values[init_node]`. The lowerer's binary/unary `comptime_values` guards
+(F4/F5) then consume those folds as `int_const` LIR. Since F8 (commit `bf5d3636`) the evaluator
+itself resolves `ident_expr` operands through const chains (depth-16 guarded), so
+`const B = A + 5` folds even when `A` is a named const.
+
+**Coverage boundaries (unchanged):**
+- Only `builtin_call` nodes still go through the 3-arm `comptimeEvalBuiltin` — there is no name
+  pre-filter, so `@ptrCast`/`@enumToInt` etc. are invoked and return `null` after checking the
+  three interned IDs (comptime_eval.zig:96-152).
+- Fold results are stored keyed by AST node index in `ctx.comptime_values` (main.zig:104) and
+  consumed at lower.zig:2393 / the F4/F5 binary+unary guards; a `@sizeOf`/`@alignOf` that failed
+  to fold (type unresolved at fold time) would ICE at lower.zig:2409-2412 (`iceUnresolvedComptime`)
+  rather than degrade to a runtime call.
+- A const chain longer than the depth-16 guard silently falls back to runtime arithmetic
+  (guarded, not fixed) — no current repro or gate triggers it.

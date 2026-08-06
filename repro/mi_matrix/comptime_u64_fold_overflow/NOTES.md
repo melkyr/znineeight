@@ -1,4 +1,4 @@
-# comptime_u64_fold_overflow — u64 const fold >2^32 masking bug  [comptime arithmetic folding plan, Task F7, 2026-08-06]
+# comptime_u64_fold_overflow — u64 const fold >2^32 masking bug  [comptime arithmetic folding plan, Task F7, 2026-08-06; annotation cleared F9 2026-08-06]
 
 ## What it tests
 A u64-annotated const whose folded value exceeds 2^32 must be stored and
@@ -45,4 +45,6 @@ typed `int` → the value is masked to 32 bits at emission and at the store.
   output, counted OK per the `load_global_array_copy`/`comptime_neg_int`
   precedent (gcc-exit classifier).
 - **Post-fix (F7):** storage globals + folded temps typed u64; prints
-  `1:1705032704 3000000000 1:0` — now OK with fully correct runtime output.
+  `1:1705032704 3000000000 1:0` — OK with fully correct runtime output.
+- F9 note (2026-08-06): re-verified — prints `1:1705032704 3000000000 1:0`,
+  `zG_..._X`/`zG_..._Z` emitted `u64`. **Annotation cleared — plain OK.**

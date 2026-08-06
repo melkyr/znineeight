@@ -1,4 +1,4 @@
-# comptime_const_chain — ident_expr const-chain folding  [comptime arithmetic folding plan, Task F8, 2026-08-06]
+# comptime_const_chain — ident_expr const-chain folding  [comptime arithmetic folding plan, Task F8, 2026-08-06; classification confirmed OK F9 2026-08-06]
 
 ## What it tests
 `comptimeEvalEvaluate` resolves `ident_expr` operands by following const
@@ -18,8 +18,15 @@ that in `comptimeEvalEvaluateDepth` with a depth-16 guard so const cycles
 (`const A = B + 1; const B = A + 1;`) cannot infinitely recurse.
 
 ## Expected classification
-- **Pre-fix: OK with runtime-gap annotation** — gcc-clean, but emits runtime
-  `+`/`*` and still prints `3570` (values happen to be right at runtime, so
-  this is a fold-coverage gap, not a wrong-value bug).
+- **Pre-fix: FAIL (gcc error, NOT OK-with-runtime-gap).** The earlier draft
+  claim that this was "OK with a runtime-gap annotation" was WRONG — measured
+  pre-fix, the lowerer emits `load_global` for `A` in `A + 5`, and `A` (a
+  non-storage const with a literal init) gets **no C storage-global decl** →
+  `zG_..._A undeclared` → **gcc FAIL**. This is the same class of failure
+  documented in the P0 source-note (`const A`/`const B` referenced only from
+  other const initializers never receive storage-global decls). It is a real
+  compile FAIL, not merely a fold-coverage gap.
 - **Post-fix (F8):** emitted `__module_init` stores `int_const` 35 and 70;
-  prints `3570` with the arithmetic fully folded away.
+  prints `3570` with the arithmetic fully folded away — a genuine FAIL→OK flip.
+- F9 note (2026-08-06): classification **OK**, annotation cleared — see
+  EXPECTED_FAIL.md F9 section.
