@@ -3,7 +3,7 @@
 extern fn __bootstrap_print(s: *const c_char) void;
 extern fn __bootstrap_print_int(n: i32) void;
 
-pub fn print(fmt: *const c_char, args: anytype) void {
+pub fn print(fmt: *const c_char, ...) void {
     __bootstrap_print(fmt);
 }
 

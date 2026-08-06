@@ -203,10 +203,10 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 | [updated: 2026-08-06] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `0064a08149b07aa591033210ffce68f5` |
-| `examples/z98/game_of_life/main.zig` | `51d6d078bdecad022318bded23182f72` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `e54be381967cab4a3f0886e106166771` |
-| `examples/z98/json_parser/main.zig` | `6528f26f396092976b46938482a4f0d4` |
+| `examples/z98/mud_server/main.zig` | `50beb1bf5edc4cbb638f84aa027ffade` |
+| `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `55044a1f64011bc644cddbcf73b5de93` |
+| `examples/z98/json_parser/main.zig` | `b5f56ebd51d2f0fcd379a1e083594462` |
 
 - **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
   `5fb57e70…`, gol `f855c9f9…`, lisp `0ad02040…`, json `11a5db1d…`) are STALE — replaced. Two
@@ -245,6 +245,17 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   `sf/src/include/zig_runtime.h` (per-TU, oracle pattern) + extern in `sf/src/include/zig_runtime.c`
   — the json multi-module link uses the legacy `src/runtime/zig_runtime.c` object and relies on the
   header `static` copies for `__bootstrap_usize_from_i32`. [updated: 2026-08-06]
+
+- **Re-baselined 2026-08-06 (F5b, mud/gol anytype-print → true `...`).** mud + gol re-baselined
+  because `std_debug.zig` `print(fmt, args: anytype)` became `print(fmt, ...)` (true C variadic
+  via the F3 flag-bit path; the lower.zig marker-param `child_0==0 → is_variadic` branch is now
+  deactivated). Emitted C differs ONLY in the print body's temp numbering (`zT_2`→`zT_1` — the
+  anytype marker param is gone, so params_count drops 2→1; the signature `char* fmt, ...` is
+  unchanged and now comes from the flag bit). Runtime-verified byte-identical vs pristine: mud
+  (rc=124, "MUD server listening on port 4000"), gol (glider, 100 generations, rc=0). lisp + json
+  byte-identical (no print migration). Per the F-5 AMENDMENT B precedent the gate is runtime
+  behavior, not byte-identity. Pre-F5b values: mud `e306b187…`, gol `51d6d078…`. New values: mud
+  `50beb1bf…`, gol `0d8f0092…`; lisp `55044a1f…`, json `b5f56ebd…` unchanged. [updated: 2026-08-06]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.

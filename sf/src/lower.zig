@@ -4754,8 +4754,6 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                     var lpf_pb: [10]u8 = undefined; var lpf_pl = itoa_mod.itoa(p_temp, lpf_pb[0..]); var lpf_ps: usize = @intCast(usize, 9) - @intCast(usize, lpf_pl); pal.markerWrite(lpf_pb[lpf_ps..@intCast(usize, 9)]);
                     var lpf_nl2: []const u8 = "\n"; pal.markerWrite(lpf_nl2);
                 }
-            } else {
-                func_ptr.is_variadic = @intCast(u8, 1);
             }
         }
     }
