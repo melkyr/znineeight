@@ -25,10 +25,19 @@ any `comptime_values` lookup. Contrast the `builtin_call` handler
 ## Measured result (pre-fix, /tmp/z1/zig1)
 - dump rc=0, 1 `.c` emitted, gcc-clean (rc=0), links, runs — prints
   `40 20 300 3 0 -30 10 30 20 120 7 -31` (gcc folds the emitted runtime ops).
-- Emission gap proven by `grep -c '[\*\/\%]'` in the emitted C = **11 > 0**:
-  `__module_init` carries real operators, e.g. `zT_8 = zT_6 * zT_7;`,
-  `zT_11 = zT_9 / zT_10;`, `zT_14 = zT_12 % zT_13;` (plus `+`, `-`, `&`,
-  `|`, `^`, `<<`, `>>`, `~`) instead of `int_const` literals.
+- Emission gap proven by a `__module_init`-SCOPED grep. The emitted function is
+  mangled `zF_780653D2___module_init` (definition at the end of the single-stream
+  `.c`); extract its body and count `[\*\/\%]` lines:
+  `awk '/^void zF_.*__module_init\(void\) \{/{f=1} f{print} f&&/^\}/{exit}' <file>.c | grep -c '[\*\/\%]'`
+  = **3 > 0**: `zT_8 = zT_6 * zT_7;`, `zT_11 = zT_9 / zT_10;`, `zT_14 = zT_12 % zT_13;`
+  (mul/div/mod) plus `+`, `-`, `&`, `|`, `^`, `<<`, `>>`, `~` — 12 runtime
+  binary/unary ops instead of `int_const` literals.
+  NOTE: a WHOLE-FILE `grep -c '[\*\/\%]'` is NOT a valid gate — it is inflated by
+  the `%d` printf format-string line (`zT_1 = "%d %d ... %d\n";`), the `[*]const
+  u8` pointer temps (`unsigned char* zT_N;` / `char* zT_N;` / `unsigned char*
+  fmt_all;`), and `/* */` comment lines. Whole-file count measured 11 at P0, 13 on
+  the fresh HEAD build — layout-dependent, so only the `__module_init`-scoped count
+  (a stable 3) is meaningful.
 
 ## Expected classification
 - **Pre-fix: OK with emission-gap annotation** — gcc-clean, runtime output
@@ -36,5 +45,5 @@ any `comptime_values` lookup. Contrast the `builtin_call` handler
   emitted, not `int_const`). Counted OK per the
   `load_global_array_copy`/`comptime_neg_int` precedent.
 - **Post-fix (F2):** binary/unary handlers consult `comptime_values`
-  (like `builtin_call` at `lower.zig:2456`) and emit `int_const` —
-  `grep -c '[\*\/\%]'` in the emitted C → 0.
+  (like `builtin_call` at `lower.zig:2456`) and emit `int_const` — the
+  `__module_init`-scoped grep (see Measured result) → **0**.
