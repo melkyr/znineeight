@@ -1,4 +1,4 @@
-# comptime_array_size_gap — FAIL  [comptime arithmetic folding plan, Task P0, 2026-08-06]
+# comptime_array_size_gap — OK with runtime-gap annotation  [comptime arithmetic folding plan, Task P0, operator ruling P0-E, 2026-08-06]
 
 ## What it tests
 Array sizes computed with comptime arithmetic on module-scope `const`
@@ -24,11 +24,19 @@ to uninitialized scalar globals and the array storage is dropped entirely:
 - gcc-clean (rc=0). **A silent semantic miscompile**: real Zig yields
   4000/40/2-byte arrays; zig1 emits uninitialized `int`s.
 
-## Expected classification
-- **Pre-fix: FAIL** per AMENDMENT P0-B (real semantic gap — the array
-  declarations are silently dropped; counted FAIL until F3 fixes it). NOTE:
-  the classifier (gcc exit code) reports OK because the emission is
-  gcc-clean; the FAIL classification follows the operator ruling, not the
-  predicted zero-size-array gcc error, which does not materialize. See
-  `.superpowers/sdd/task-P0-report.md` for the discrepancy.
-- **Post-fix (F3):** OK — gcc-clean with correct array sizes 4000, 40, 2.
+## Expected classification (operator ruling P0-E, 2026-08-06)
+- **Class: OK with runtime-gap annotation** — under the QUICK_REF gcc-exit
+  classifier the emission is gcc-clean (rc=0), so this is **OK**, NOT FAIL.
+  The gap is a **silent semantic miscompile**: real Zig yields
+  4000/40/2-byte arrays; zig1 silently emits uninitialized `int` globals
+  with no diagnostic. Counted OK following the
+  `comptime_neg_int`/`load_global_array_copy` runtime-gap precedent (the
+  gcc-exit classifier reports OK; the miscompile is tracked as a runtime
+  gap, not as a compile FAIL).
+- The earlier FAIL classification (AMENDMENT P0-B) is superseded by the
+  P0-E operator ruling; the predicted `error: ISO C forbids zero-size
+  array` does not materialize. See
+  `.superpowers/sdd/task-P0-report.md` for the discrepancy + ruling.
+- **Post-fix (F3):** gcc-clean with correct array sizes 4000, 40, 2 (the
+  runtime gap closes — arrays resolve, `CELLS`/`HALF`/`REM` are real
+  `u8[N]` storage).

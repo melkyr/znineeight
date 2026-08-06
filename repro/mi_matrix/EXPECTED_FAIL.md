@@ -550,16 +550,15 @@ array-size handler (type_resolver.zig:869-911) misses `mul`/`div`/`mod_op`. Clas
 |-------|---------------|---------------------------|--------|
 | `comptime_binop_not_folded` | emission gap | **OK with emission-gap annotation** — dump rc=0, 1 `.c`, gcc-clean, links, runs printing `40 20 300 3 0 -30 10 30 20 120 7 -31`; `grep -c '[\*\/\%]'` in emitted C = 11 (runtime `*`/`/`/`%` in `__module_init`, not `int_const`) | Gap 1: bare binary/unary nodes never reach `comptimeEvalEvaluate` |
 | `comptime_lower_ignores_fold` | emission gap | **OK with emission-gap annotation** — identical measured state to repro 1 (same source; isolates Gap 2) | Gap 2: lowerer binary/unary handlers never consult `comptime_values` |
-| `comptime_array_size_gap` | semantic gap | **FAIL** per AMENDMENT P0-B — dump rc=0, 1 `.c`; the arrays are **silently dropped** (consts degrade to uninitialized `int` globals, no `u8[N]`, no `[0]`) and gcc is **clean (rc=0)** — the predicted `error: ISO C forbids zero-size array` does NOT occur (see discrepancy note below) | Gap 3: type_resolver array-size handler misses `mul`/`div`/`mod_op` → `arr_len`=0 → `TYPE_UNDEFINED` |
+| `comptime_array_size_gap` | semantic gap | **OK with runtime-gap annotation** (ruling P0-E) — dump rc=0, 1 `.c`; the arrays are **silently dropped** (consts degrade to uninitialized `int` globals, no `u8[N]`, no `[0]`) and gcc is **clean (rc=0)** — a **silent semantic miscompile**, counted OK under the gcc-exit classifier per the `comptime_neg_int`/`load_global_array_copy` runtime-gap precedent (was FAIL per AMENDMENT P0-B; the predicted `error: ISO C forbids zero-size array` does NOT occur — see discrepancy note below) | Gap 3: type_resolver array-size handler misses `mul`/`div`/`mod_op` → `arr_len`=0 → `TYPE_UNDEFINED` |
 
 **Post-P0 accounting: OK=195 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 203 repros**
 (195 + 4 + 4 = 203; corpus total grows 200 → 203 by 3 new repros). OK 193→195 (+2 = repros 1+2,
 emission-gap annotations); FAIL 3→4 (+1 = `comptime_array_size_gap`). Raw classifier FAIL **7 → 8**
-(green-guards remain a sub-bucket of the raw count). The 4 real FAILs: 2 std-lib-deferred
-(`field_store_drop`, `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (F-8
-residual) + `comptime_array_size_gap` (this task). The 4 green-guards unchanged. **Post-fix F4
-reclassifies `comptime_array_size_gap` OK → final OK=196 / FAIL=3 / green-guards=4 @203 (raw
-FAIL=7).** No other repro flipped.
+(green-guards remain a sub-bucket of the raw count). **UPDATED by "Fix wave 1" (operator rulings
+P0-D/P0-E) below: `comptime_array_size_gap` reclassified OK+runtime-gap (FAIL 4→3) and
+`fn_varargs_unsupported` added as FAIL (3→4) → final OK=196 / FAIL=4 / green-guards=4 @204 (raw
+FAIL=8).** No other repro flipped.
 
 **Source-note (deviation from the plan's verbatim draft source, see
 `.superpowers/sdd/task-P0-report.md`):** the plan's draft main.zig for repros 1+2 does not compile
@@ -570,10 +569,41 @@ from other const initializers never receive C storage-global decls (`zG_..._A` u
 literal operands inlined. The tested gap is unchanged (12 bare binary/unary module-scope const
 ops that must fold to `int_const`).
 
-**Discrepancy note (repro 3, evidence over prediction):** the brief/ruling predicted
-`error: ISO C forbids zero-size array` for `comptime_array_size_gap`; the measured pre-fix state
-is instead a **silent semantic miscompile** (arrays dropped, consts → uninitialized `int` globals,
-gcc-clean). It is counted **FAIL** per AMENDMENT P0-B (real gap, `int`-drop is wrong output),
-NOT because gcc rejects it — flagged for operator re-adjudication if the classifier convention
-(gcc rc==0 ⇒ OK, per the `comptime_neg_int`/`load_global_array_copy` runtime-gap precedent)
-should apply instead.
+**Discrepancy note (repro 3, evidence over prediction — RESOLVED by ruling P0-E):** the
+brief/ruling predicted `error: ISO C forbids zero-size array` for `comptime_array_size_gap`; the
+measured pre-fix state is instead a **silent semantic miscompile** (arrays dropped, consts →
+uninitialized `int` globals, gcc-clean). It was initially counted **FAIL** per AMENDMENT P0-B
+(real gap, `int`-drop is wrong output), NOT because gcc rejects it — flagged for operator
+re-adjudication under the classifier convention (gcc rc==0 ⇒ OK, per the
+`comptime_neg_int`/`load_global_array_copy` runtime-gap precedent). **Operator ruling P0-E
+(2026-08-06): classify it OK with runtime-gap annotation.** See "Fix wave 1" below.
+
+---
+
+## Fix wave 1 — operator rulings P0-D/P0-E (2026-08-06) — +1 repro (203 → 204)
+
+- **P0-E (reclassify):** `comptime_array_size_gap` **FAIL → OK with runtime-gap annotation**. Under
+  the QUICK_REF gcc-exit classifier the emission is gcc-clean (rc=0), so it is **OK**, not FAIL.
+  The gap is a **silent semantic miscompile**: array types resolve `TYPE_UNDEFINED`
+  (type_resolver.zig:869-911 misses `mul`/`div`/`mod_op` → `arr_len`=0), so
+  `CELLS`/`HALF`/`REM` degrade to uninitialized `int` globals (no `u8[N]`, no `[0]`, gcc-clean).
+  Counted OK following the `comptime_neg_int`/`load_global_array_copy` runtime-gap precedent; the
+  miscompile is tracked as a runtime gap until F3 fixes it (re-verified 2026-08-06: dump rc=0, 1
+  `.c`, gcc rc=0, emitted `int zG_..._CELLS;` / `int zG_..._HALF;` / `int zG_..._REM;`).
+- **P0-D (new tracking repro):** the plan's original `extern fn printf(fmt: [*]const u8, ...) i32;`
+  does not compile — parser.zig has NO varargs (`...`) support → `error[2000]: expected identifier
+  but found token`. Recorded as a standalone tracking repro:
+
+| Repro | RED (pre-fix) | Classification (measured) | Guards |
+|-------|---------------|---------------------------|--------|
+| `fn_varargs_unsupported` | parse gap | **FAIL** — dump rc=2, `error[2000]: expected identifier but found token` at the `...`, 0 `.c` emitted (frontend parse gap) | parser.zig has no varargs support; out of comptime-arithmetic scope — tracked as a known gap |
+
+**Post-P0-fix-wave-1 accounting: OK=196 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 204
+repros** (196 + 4 + 4 = 204; corpus total grows 200 → 204 by 3 comptime-arithmetic repros + 1
+varargs tracking repro). OK 193→196 (repros 1+2 with emission-gap annotations + repro 3
+reclassified OK+runtime-gap per P0-E); FAIL 3→4 (+1 = `fn_varargs_unsupported`, P0-D). Raw
+classifier FAIL stays **8** (green-guards remain a sub-bucket of the raw count). The 4 real FAILs:
+2 std-lib-deferred (`field_store_drop`, `test_stub_0`, both `error[3048]`) +
+`self_embed_optional_cycle` (F-8 residual, gcc incomplete-type) + `fn_varargs_unsupported`
+(parser varargs gap, `error[2000]`). The 4 green-guards unchanged: `eu_assign_incompat_payload`,
+`field_access_optional`, `var_declared_void`, `euvoid_val_catch`. No other repro flipped.
