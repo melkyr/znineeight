@@ -1488,10 +1488,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.block_terminated = @intCast(u8, 0);
         return result;
     } else if (node.kind == AstKind.negate) {
-        var val = lowerExpr(self, node.child_0);
         var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ng_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } } else { var rtm_ng: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ng); var rtmb_ng: [10]u8 = undefined; var rtml_ng = itoa_mod.itoa(node_idx, rtmb_ng[0..]); var rtms_ng: usize = @intCast(usize, 9) - @intCast(usize, rtml_ng); pal.markerWrite(rtmb_ng[rtms_ng..@intCast(usize, 9)]); var rtmnl_ng: []const u8 = "\n"; pal.markerWrite(rtmnl_ng); }
+        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
+            var ft: u32 = ng_box[0];
+            if (ft == type_mod.TYPE_INT_LIT or ft == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
+            var ctid = nextTemp(self, ft);
+            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
+            return ctid;
+        }
+        var val = lowerExpr(self, node.child_0);
         var tid = nextTemp(self, ng_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_NEG, .operand = val, .result = tid } });
         return tid;
@@ -1501,10 +1508,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .unary = .{ .op = UN_NOT, .operand = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bit_not) {
-        var val = lowerExpr(self, node.child_0);
         var rt_bn = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var bn_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_bn) |t| { if (t != type_mod.TYPE_UNDEFINED) { bn_box[0] = t; } }
+        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
+            var ft: u32 = bn_box[0];
+            if (ft == type_mod.TYPE_INT_LIT or ft == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
+            var ctid = nextTemp(self, ft);
+            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
+            return ctid;
+        }
+        var val = lowerExpr(self, node.child_0);
         var tid = nextTemp(self, bn_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_BNOT, .operand = val, .result = tid } });
         return tid;
