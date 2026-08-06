@@ -1,14 +1,15 @@
-# mi_matrix corpus — expected-fail manifest (v18 2026-08-06)
+# mi_matrix corpus — expected-fail manifest (v19 2026-08-06)
 
-## Totals (207 repros)
+## Totals (208 repros)
 
-- **CURRENT: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: F1 @intCast range-check.
-  199 real OK + 4 green-guards + 4 FAIL = 207; raw classifier FAIL = 8 (4 green-guards are a
-  sub-bucket of the raw count). The 4 FAILs: `field_store_drop` + `test_stub_0` (std-lib-deferred,
-  `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type),
+- **CURRENT: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: F2 u64-safe
+  int_literal marker. 200 real OK + 4 green-guards + 4 FAIL = 208; raw classifier FAIL = 8 (4
+  green-guards are a sub-bucket of the raw count). The 4 FAILs: `field_store_drop` + `test_stub_0`
+  (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type),
   `fn_varargs_unsupported` (varargs parse gap, `error[2000]`). The 4 green-guards:
   `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
-  See the Task F1 section below.)
+  See the Task F2 section below.)
+- Prior: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 207 (2026-08-06 F1 @intCast range-check)
 - Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F9 gate sweep)
 - Prior: OK=197 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 205 (2026-08-06 F7: comptime_u64_fold_overflow)
 - Prior: OK=196 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 204 (2026-08-06 P0 fix wave 1)
@@ -761,3 +762,36 @@ byte-identity"). Per-gate helper counts: mud `i32_from_usize` x4 + `usize_from_i
 (json's legacy-runtime link — `src/runtime/zig_runtime.c` — lacks the new helpers, so the header
 `static` definitions are what make the multi-module json gate link; mud/gol/lisp additionally link
 the extern defs in `sf/src/include/zig_runtime.c`.)
+
+## Task F2 — `ice_literal_overflow` (u64-safe int_literal marker) (2026-08-06) — +1 repro (207 → 208)
+
+The `int_literal` lowering marker (`ILR:i … v<value>`) called
+`itoa_mod.itoa(@intCast(u32, val), …)` with `val` the u64 literal value. Since
+F1's `@intCast` range-check, that cast lowers to the checked
+`__bootstrap_u32_from_u64`, so any program that runtime-lowers a literal >= 2^32
+aborted the compiler itself (`PANIC: integer overflow in @intCast`), dump rc=134.
+The lowering pipeline is correct — only the marker was broken. Fixed by adding
+`pal.markerWriteInt64` (itoa64, `[24]u8` buffer) and using it for the value marker.
+
+| Repro | RED (pre-fix) | Classification (measured) | Guards |
+|-------|---------------|---------------------------|--------|
+| `ice_literal_overflow` | **ICE** (dump rc=134, SIGABRT) | **OK post-fix** — dump rc=0, 1 `.c`, gcc-clean, runs printing `1:705032704 1:0` (correct hi/lo halves of X=5000000000 and Y=4294967296) | guards: any literal >= 2^32 that reaches runtime lowering must not crash the compiler; the `--markers` ILR trace renders the full u64 value (`ILR:i39v5000000000`) |
+
+**Note on repro form:** the brief's exact const-only source (`pub const X: u64 =
+5000000000;` + `print_u64(X)`) does NOT reproduce the ICE on the current tree —
+F8's ident_expr const-chain fold resolves `X` at comptime, so the literal never
+reaches the `int_literal` runtime-lowering marker. The repro keeps the brief's
+consts (the program still contains literals >= 2^32) AND adds a runtime-lowered
+literal (`var sink: u64 = 5000000000;`) that exercises the marker path. Pre-fix
+the repro dumps rc=134; post-fix rc=0. See `ice_literal_overflow/NOTES.md`.
+
+**Post-F2 accounting: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over
+208 repros** (200 + 4 + 4 = 208; corpus grows 207 → 208 by `ice_literal_overflow`,
+counted OK — the pre-fix ICE becomes a clean post-fix OK, so no FAIL increase).
+Raw classifier FAIL stays **8**. The 4 real FAILs unchanged:
+`field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`),
+`self_embed_optional_cycle` (F-8 residual), `fn_varargs_unsupported` (varargs
+parse gap). **4 MD5 gates byte-identical** (markers → stderr only; emitted C
+unchanged): mud `0064a08149b07aa591033210ffce68f5`, gol
+`51d6d078bdecad022318bded23182f72`, lisp `e54be381967cab4a3f0886e106166771`,
+json `6528f26f396092976b46938482a4f0d4`. test_analyzer_bin PASS.

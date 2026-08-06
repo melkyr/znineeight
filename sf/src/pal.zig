@@ -140,3 +140,16 @@ pub fn markerWriteInt(prefix: []const u8, value: u32) void {
         markerWrite(s_nl);
     }
 }
+
+pub fn markerWriteInt64(prefix: []const u8, value: u64) void {
+    if (g_markers_enabled != @intCast(u32, 0)) {
+        var s_p: []const u8 = prefix;
+        markerWrite(s_p);
+        var buf: [24]u8 = undefined;
+        var vlen = itoa_mod.itoa64(value, buf[0..]);
+        var start: usize = @intCast(usize, 24) - @intCast(usize, vlen) - @intCast(usize, 1);
+        markerWrite(buf[start..@intCast(usize, 23)]);
+        var s_nl: []const u8 = "\n";
+        markerWrite(s_nl);
+    }
+}

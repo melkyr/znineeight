@@ -1117,8 +1117,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var _rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var il_m: []const u8 = "ILR:i"; pal.markerWrite(il_m);
         var il_ib: [10]u8 = undefined; var il_il = itoa_mod.itoa(node_idx, il_ib[0..]); var il_is: usize = @intCast(usize, 9) - @intCast(usize, il_il); pal.markerWrite(il_ib[il_is..@intCast(usize, 9)]);
-        var il_vm: []const u8 = "v"; pal.markerWrite(il_vm);
-        var il_vb: [10]u8 = undefined; var il_vl = itoa_mod.itoa(@intCast(u32, val), il_vb[0..]); var il_vs: usize = @intCast(usize, 9) - @intCast(usize, il_vl); pal.markerWrite(il_vb[il_vs..@intCast(usize, 9)]);
+        var il_vm: []const u8 = "v"; pal.markerWriteInt64(il_vm, val);
         if (_rt) |trt| {
             var il_rm: []const u8 = "R"; pal.markerWrite(il_rm);
             var il_rb: [10]u8 = undefined; var il_rl = itoa_mod.itoa(trt, il_rb[0..]); var il_rs: usize = @intCast(usize, 9) - @intCast(usize, il_rl); pal.markerWrite(il_rb[il_rs..@intCast(usize, 9)]);
