@@ -844,6 +844,18 @@ gates byte-identical — see Task F5 report):**
    Gating on `va_*` insts keeps mud/gol/lisp/json byte-identical AND still
    emits `stdarg.h` for real varargs bodies.
 
+> **F5b RESOLUTION (Task F5b, AMENDMENT 5, 2026-08-06, commit `ef529f42`):**
+> deviation 1 is now MOOT. F5b migrated mud/gol `print(fmt, args: anytype)` to a
+> true trailing `...` (`print(fmt, ...)`) and **deactivated** the `child_0==0`
+> anytype-marker branch (its `else { is_variadic = 1 }` was removed from
+> `lowerFn`) — `is_variadic` now comes solely from the F3 flag-bit path
+> (`FnPayload.flags_packed` bit0, set by parser flag 0x01 via
+> type_resolver.zig:1126-1127). mud/gol re-baselined to `50beb1bf…` /
+> `0d8f0092…` (runtime byte-identical, AMENDMENT B precedent); lisp/json
+> unchanged. Deviation 2 (stdarg.h gating on actual `va_*` insts) remains in
+> force. A variadic fn with ZERO fixed params (`fn f(...)`) is now rejected
+> `error[3012]` (final-review fix, 2026-08-06).
+
 **Post-F5 accounting: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over
 209 repros** (202 + 4 + 3 = 209; corpus grows 208 → 209 by `fn_varargs_body`;
 `fn_varargs_unsupported` FAIL→OK). Raw classifier FAIL stays **7** (4

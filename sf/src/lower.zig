@@ -4723,6 +4723,10 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
             }
         }
     }
+    if (func_ptr.is_variadic != @intCast(u8, 0) and proto.params_count == @intCast(u16, 0)) {
+        var va_msg: []const u8 = "variadic function must have at least one fixed parameter";
+        _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3012_VARARGS_INVALID)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), va_msg);
+    }
     var p_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
     if (proto.params_count > @intCast(u16, 0)) {
         var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);

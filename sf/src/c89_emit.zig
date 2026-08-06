@@ -19,6 +19,7 @@ const mr_mod = @import("module_registry.zig");
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
 const format_mod = @import("util/format.zig");
+const mem_mod = @import("util/mem.zig");
 const TypeResolver = type_resolver.TypeResolver;
 const sym_reg = @import("symbol_registrator.zig");
 const lir_mod = @import("lir.zig");
@@ -554,6 +555,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
+    if (ty.kind == TypeKind.isize_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
     if (ty.kind == TypeKind.va_list_type) { var s: []const u8 = "va_list"; return s; }
     if (ty.kind == TypeKind.enum_type) {
@@ -2944,6 +2946,48 @@ fn getCastTypeSuffix(reg: *TypeRegistry, tid: u32) []const u8 {
     { var s: []const u8 = "u32"; return s; }
 }
 
+fn isBootstrapHelperDefined(fn_name: []const u8) bool {
+    var h1: []const u8 = "__bootstrap_usize_from_i64";
+    if (mem_mod.mem_eql(fn_name, h1)) { return true; }
+    var h2: []const u8 = "__bootstrap_i32_from_u32";
+    if (mem_mod.mem_eql(fn_name, h2)) { return true; }
+    var h3: []const u8 = "__bootstrap_u32_from_u64";
+    if (mem_mod.mem_eql(fn_name, h3)) { return true; }
+    var h4: []const u8 = "__bootstrap_u32_from_i32";
+    if (mem_mod.mem_eql(fn_name, h4)) { return true; }
+    var h5: []const u8 = "__bootstrap_usize_from_i32";
+    if (mem_mod.mem_eql(fn_name, h5)) { return true; }
+    var h6: []const u8 = "__bootstrap_i32_from_usize";
+    if (mem_mod.mem_eql(fn_name, h6)) { return true; }
+    var h7: []const u8 = "__bootstrap_u8_from_usize";
+    if (mem_mod.mem_eql(fn_name, h7)) { return true; }
+    var h8: []const u8 = "__bootstrap_u8_from_bool";
+    if (mem_mod.mem_eql(fn_name, h8)) { return true; }
+    var h9: []const u8 = "__bootstrap_f32_from_f64";
+    if (mem_mod.mem_eql(fn_name, h9)) { return true; }
+    var h10: []const u8 = "__bootstrap_i32_from_u8";
+    if (mem_mod.mem_eql(fn_name, h10)) { return true; }
+    var h11: []const u8 = "__bootstrap_u8_from_i32";
+    if (mem_mod.mem_eql(fn_name, h11)) { return true; }
+    var h12: []const u8 = "__bootstrap_u8_from_u32";
+    if (mem_mod.mem_eql(fn_name, h12)) { return true; }
+    var h13: []const u8 = "__bootstrap_u16_from_i32";
+    if (mem_mod.mem_eql(fn_name, h13)) { return true; }
+    var h14: []const u8 = "__bootstrap_u32_from_i64";
+    if (mem_mod.mem_eql(fn_name, h14)) { return true; }
+    var h15: []const u8 = "__bootstrap_u64_from_i64";
+    if (mem_mod.mem_eql(fn_name, h15)) { return true; }
+    var h16: []const u8 = "__bootstrap_i8_from_i32";
+    if (mem_mod.mem_eql(fn_name, h16)) { return true; }
+    var h17: []const u8 = "__bootstrap_i16_from_i32";
+    if (mem_mod.mem_eql(fn_name, h17)) { return true; }
+    var h18: []const u8 = "__bootstrap_i32_from_i64";
+    if (mem_mod.mem_eql(fn_name, h18)) { return true; }
+    var h19: []const u8 = "__bootstrap_c_char_from_u8";
+    if (mem_mod.mem_eql(fn_name, h19)) { return true; }
+    return false;
+}
+
 fn getPrintFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "std_print_u32"; return s; }
@@ -4236,16 +4280,29 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     format_mod.copyStr(fn_buf[0..], &fn_idx, from_s);
                     format_mod.copyStr(fn_buf[0..], &fn_idx, src_suffix);
                     var fn_name = fn_buf[0..fn_idx];
-                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                    bufferedWriterWrite(&emitter.writer, dst);
-                    var s1: []const u8 = " = ";
-                    bufferedWriterWrite(&emitter.writer, s1);
-                    bufferedWriterWrite(&emitter.writer, fn_name);
-                    var s2: []const u8 = "(";
-                    bufferedWriterWrite(&emitter.writer, s2);
-                    bufferedWriterWrite(&emitter.writer, src);
-                    var s3: []const u8 = ");\n";
-                    bufferedWriterWrite(&emitter.writer, s3);
+                    if (isBootstrapHelperDefined(fn_name)) {
+                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                        bufferedWriterWrite(&emitter.writer, dst);
+                        var s1: []const u8 = " = ";
+                        bufferedWriterWrite(&emitter.writer, s1);
+                        bufferedWriterWrite(&emitter.writer, fn_name);
+                        var s2: []const u8 = "(";
+                        bufferedWriterWrite(&emitter.writer, s2);
+                        bufferedWriterWrite(&emitter.writer, src);
+                        var s3: []const u8 = ");\n";
+                        bufferedWriterWrite(&emitter.writer, s3);
+                    } else {
+                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                        bufferedWriterWrite(&emitter.writer, dst);
+                        var s1: []const u8 = " = (";
+                        bufferedWriterWrite(&emitter.writer, s1);
+                        bufferedWriterWrite(&emitter.writer, ctype);
+                        var s2: []const u8 = ")";
+                        bufferedWriterWrite(&emitter.writer, s2);
+                        bufferedWriterWrite(&emitter.writer, src);
+                        var s3: []const u8 = ";\n";
+                        bufferedWriterWrite(&emitter.writer, s3);
+                    }
                 } else {
                     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                     bufferedWriterWrite(&emitter.writer, dst);

@@ -118,10 +118,13 @@ These are emitted by the `@cVaStart`/`@cVaArg`/`@cVaEnd` builtin handler
 (`lower.zig:2620-2656`, dispatched before the `ec.len>=2` cast block); the
 `va_list_temp` operand is resolved via `vaListArgTemp` (`lower.zig:1002`, unwraps
 `&ident`/`ident` to a local temp). `@cVaStart` in a non-variadic function emits
-`error[3012]` (`ERR_3012_VARARGS_INVALID`). `LirFunction.is_variadic`
-(`lir.zig:341`) is set by `lowerFn` from `FnPayload.flags_packed` bit0
-(`lower.zig:4715-4724`); the legacy `child_0==0` anytype-marker branch is **kept
-as a defensive OR**, so mud/gol `print(fmt, ...)` signatures are unchanged.
+`error[3012]` (`ERR_3012_VARARGS_INVALID`); the same error is emitted for a
+variadic fn with ZERO fixed params (`fn f(...)`, `lower.zig:4726-4730`).
+`LirFunction.is_variadic` (`lir.zig:341`) is set by `lowerFn` from
+`FnPayload.flags_packed` bit0 (`lower.zig:4715-4725`); the legacy `child_0==0`
+anytype-marker branch was **deactivated in F5b (AMENDMENT 5)** — `is_variadic`
+now comes solely from the flag-bit path (mud/gol `print(fmt, ...)` signatures
+are unchanged because they migrated to true `...`).
 
 #### Optional Handling
 | Variant | Fields | Purpose |
