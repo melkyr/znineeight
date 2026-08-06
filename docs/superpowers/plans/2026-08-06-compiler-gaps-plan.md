@@ -372,7 +372,7 @@ Add `ERR_3012_VARARGS_INVALID = 3012` to `diagnostics.zig` (explicit `= 3012`, n
 
 - [ ] **Step 4: Gate + commit**
 
-Build 0 err. 4 MD5s byte-identical (stdarg.h gated on is_variadic in F5; empty va_* arms emit nothing for non-variadic programs). Corpus unchanged. Commit:
+Build 0 err. **4 MD5s: re-baseline per AMENDMENT 4** — mud `e306b187…`, lisp `55044a1f…`, json `b5f56ebd…` (drift from the va_list primitive user-type-id shift, runtime byte-identical — controller-verified), gol stays `51d6d078…`. Corpus unchanged. Commit:
 ```bash
 git add sf/src/lir.zig sf/src/c89_emit.zig sf/src/type_registry.zig sf/src/semantic_analyzer.zig sf/src/diagnostics.zig
 git commit -m "feat: va_list type + LIR va_start/va_arg/va_end + variadic call typing"
@@ -547,3 +547,4 @@ git commit -m "docs: gate sweep + tech docs for 4-item compiler gaps plan"
   - **Extern prototypes = Option B (variadic-only):** add name-passthrough to `emitFunctionForwardDecl` (:1898-1900); change guards :1962/:2108 to `is_extern==0 OR is_variadic!=0`. Option A (all externs) REJECTED — breaks json hard (fopen `?*File`→`Opt_` struct vs stdio.h `FILE*` = gcc error, json `@cInclude`s stdio.h). Zero blast radius (no gate has a variadic extern).
   - **Split refinement:** the `lowerFn` is_variadic-from-flag read (lower.zig:4647) is an **F5 lowerer change**, NOT F3 (the flag must be consumed by the lowerer alongside the va_* producers). F4's sema:759 fix is only for fn-ptr varargs (direct variadic calls already work) — non-blocking.
   - **Repro constraint:** variadic extern + `@cInclude`'d same header conflicts (printf `unsigned char const*` vs `const char*`) — F5 repros must NOT `@cInclude stdio.h` for variadic printf.
+- **AMENDMENT 4 (2026-08-06, operator ruling on F4):** The F4-mandated eager `registerPrimitive(va_list_type)` shifts every user type id +1 (sequential ids at type_registry.zig:157), leaking into mangled C type names → 3 of 4 MD5 gates drift (mud `0064a081`→`e306b187`, lisp `e54be381`→`55044a1f`, json `6528f26f`→`b5f56ebd`; gol `51d6d078` coincidentally unchanged). Operator ruling: **"only rebase if runtime behavior is the same."** Controller independently verified ALL 4 gate runtimes are byte-identical F4 vs pristine (mud rc=124 listening, gol rc=0 glider gen-99, lisp `(+ 1 2)`→3, json parses test.json — md5s of captured outputs identical per pair). **Re-baseline authorized**: new MD5 gates mud `e306b18749b07aa591033210ffce68f5`-family, lisp `55044a1f…`, json `b5f56ebd…`, gol stays `51d6d078…` (re-baseline recorded at F4 commit; QUICK_REF table updated in F7). I3's claim "Primitive TypeIds 1-20 stable" was technically true (ids 1-20 unchanged) but the user-type START shifted — corrected understanding recorded here.
