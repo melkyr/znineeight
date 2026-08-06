@@ -110,6 +110,7 @@ fn testLower() void {
     var enum_value_table = hash_mod.u32ToU32MapInit(&scratch);
     var call_arg_types = hash_mod.u32ToU32MapInit(&scratch);
     var comptime_values = hash_mod.u32ToU64MapInit(&scratch);
+    var error_code_registry = hash_mod.u32ToU32MapInit(&scratch);
     var ctx = SemanticContext{
         .store = &store,
         .registry = &typereg,
@@ -121,6 +122,7 @@ fn testLower() void {
         .enum_value_table = &enum_value_table,
         .call_arg_types = &call_arg_types,
         .comptime_values = &comptime_values,
+        .error_code_registry = &error_code_registry,
     };
 
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);
