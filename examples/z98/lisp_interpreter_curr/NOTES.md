@@ -4,13 +4,15 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `bf5d3636`
+**Working commit:** `0cb7891c` (F6 lisp closures)
 
-**MD5 (`--dump-c89`):** `dd56cd23984d2533eebd244ffe593791` [updated: 2026-08-06]
+**MD5 (`--dump-c89`):** `605b597e8b7cff60de0ce84a0593e743` [updated: 2026-08-06]
 
 > MD5 history: re-baselined 2026-08-03 (TCO/AMENDMENT 9-11), 2026-08-04 (F-5/F-7 stores+globals),
-> and 2026-08-05 (P3-6 error-code registry) per the F-5 AMENDMENT B precedent ("runtime behavior is
-> the gate, not byte-identity"). Previous baseline `0ad02040…` is stale.
+> 2026-08-05 (P3-6 error-code registry), 2026-08-06 (F1 @intCast range-check scope b, F6 closures)
+> per the F-5 AMENDMENT B precedent ("runtime behavior is the gate, not byte-identity"). Previous
+> baselines `0ad02040…` / `dd56cd23…` / `e54be381…` are stale. **F7 gate sweep (2026-08-06):
+> byte-identical, no further re-baseline.**
 
 ## Build Recipes
 
@@ -39,35 +41,36 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 >  (REPL prompt, reads stdin until EOF)
 ```
 Core language works: all arithmetic, define, recursion, conditionals, list ops, mutual
-recursion + TCO, single-level closures.
+recursion + TCO, and first-class closures (F6 fix — closures now capture the current env).
 
-## Runtime status (operator verification 2026-08-06) — corrections to earlier claims
+## Runtime status (operator verification 2026-08-06 — updated post-F6)
 
-The report `.superpowers/sdd/lisp-curr-runtime-test.md` verified the gated build at runtime.
-Three documented claims were found to be **false / stale**:
+The report `.superpowers/sdd/lisp-curr-runtime-test.md` documented the pre-F6 state. **F6
+(commit `0cb7891c`) FIXED first-class closures** — `eval.zig:124` now captures the current
+tail-call env (`curr_env.*`) instead of the stale param env (`env.*`). Runtime-verified at F7:
 
-1. **First-class closures are BROKEN** (NOT "closures work"). A closure returned as a value that
-   captures **caller parameters** fails: `((make-adder 5) 3)` → `Eval error: UnboundSymbol`
-   (same for `((add 10) 1)`, `((make-func 42))`, `((twice square) 3)`, `((compose square square) 3)`).
-   Interpreter-source bug: `eval.zig:124` captures the `lambda`'s parameter `env.*` instead of the
-   reassigned tail-call environment `curr_env.*` — call-site parameters are lost. **Oracle-identical**
-   (the zig0 oracle build reproduces every failure), so this is faithful compilation of buggy
-   interpreter logic, NOT a zig1 miscompile. Closures capturing **globals** and single-level
-   function application DO work (`(square 5)` → 25, `((lambda (x) (* x x)) 7)` → 49, `(getz)` → 100).
-2. **Countdown OOM threshold is ~3000, not 5000.** `(countdown 2000)` OK, `(countdown 3000)` →
-   `Eval error: OutOfMemory`. `stress_expressions.md` says 5000-OK / 10000-OOM — stale. The
-   tail-recursive eval loop never resets the 1 MB `temp_sand` until the REPL line completes.
-3. **The REPL does NOT recover after OOM** (stress_expressions.md says it does). After
-   `OutOfMemory`, every subsequent line → `Parse error` (parse allocates in `temp_sand`, which stays
-   full). Cause: `main.zig`'s eval-error catch (`main.zig:146-161`) `continue`s **without**
-   `sand_mod.sand_reset(&temp_sand)`; `sand_reset` only runs on the success path (`main.zig:167`).
-   Oracle-identical. Also: `(fact 13)` does NOT panic (docs say it does) — the zig1 build silently
-   wraps to `1932053504` (a zig1 `@intCast` range-check lowering gap; the oracle does panic).
+- **Closures now WORK:** `((make-adder 5) 3)` → `8`, `((add 10) 1)` → `11`, `((make-func 42))` →
+  `42` (all were `Eval error: UnboundSymbol` pre-F6). `(square 5)` → `25` unchanged.
+- **New limitation (F6-exposed, lisp-source, NOT a compiler defect):** composition of a closure
+  passed as an argument — `((twice square) 3)`, `((compose square square) 3)` — now **SEGFAULTS**
+  (rc=139; was `UnboundSymbol`). Root cause is a latent env-capture cycle in the interpreter
+  source: `env_to_value` stores live `define`-slot pointers that are back-patched after capture.
+  Tracked for a follow-up lisp-source fix; operator-accepted as "the lisp interpreter is just an
+  example that's a limitation".
+- **`(fact 13)` now PANICS** (`panic: integer cast overflow in @intCast`, rc=134) — the **intended**
+  F1 `@intCast` range-check fix. Pre-F1 it silently wrapped to garbage `1932053504`; the zig0
+  oracle panics too. This is correct behavior, not a regression.
+- **Countdown OOM threshold ~3000** (unchanged): `(countdown 2000)` OK, `(countdown 3000)` →
+  `Eval error: OutOfMemory`. The tail-recursive eval loop never resets the 1 MB `temp_sand` until
+  the REPL line completes.
+- **The REPL does NOT recover after OOM** (unchanged): after `OutOfMemory`, every subsequent line
+  → `Parse error` (parse allocates in `temp_sand`, which stays full). `sand_reset` only runs on the
+  success path (`main.zig:167`). Oracle-identical.
 
-**Compiler gate status:** the md5 gate (`dd56cd23…`) pins byte-identical emission; the gate is
-satisfied. The runtime defects above are interpreter-source bugs (items 1, 3) or docs staleness
-(items 2, 3), with item-4's fact-13 panic being a separate zig1 `@intCast` gap tracked outside the
-lisp example.
+**Compiler gate status:** the md5 gate (`605b597e…`) pins byte-identical emission at HEAD; the F7
+gate sweep re-verified it byte-identical. The runtime limitations above are interpreter-source
+behaviors (composition SEGFAULT, OOM / no-recovery) or intended fix behavior (`(fact 13)` panic),
+not zig1 miscompiles.
 
 ## Notes
 Multi-file: 10 modules — sand, value, token, parser, env, eval, builtins, util, deep_copy.

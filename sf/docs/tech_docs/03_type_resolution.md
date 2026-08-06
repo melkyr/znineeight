@@ -1,10 +1,10 @@
-# 03 — Type Resolution [updated: 2026-08-06 — array-size mul/div/mod (F6)]
+# 03 — Type Resolution [updated: 2026-08-06 — va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; prior array-size mul/div/mod (F6)]
 
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `TypeId` sentinels | 20 | TYPE_VOID(1) through TYPE_TYPE(20) |
+| `TypeId` sentinels | 21 | TYPE_VOID(1) through TYPE_TYPE(20), TYPE_VA_LIST(21) |
 | `TypeKind` variants | 40 | none_sentinel(0) through anon_union(39) |
 | `Type` fields | 10 | kind, state, flags, _pad, size, alignment, name_id, c_name_id, module_id, payload_idx |
 | Payload structs | 13 | PtrPayload, ArrayPayload, SlicePayload, OptionalPayload, EUPayload, ErrorSetPayload, FnPayload, StructPayload, EnumPayload, UnionPayload, TaggedUnionPayload, TuplePayload, UnresolvedPayload |
@@ -43,10 +43,18 @@ All `type_registry.zig:11-37`:
 | `TYPE_UNDEFINED` | 18 | 0 | 0 |
 | `TYPE_INT_LIT` | 19 | 0 | 0 |
 | `TYPE_TYPE` | 20 | 0 | 0 |
+| `TYPE_VA_LIST` | 21 | 4 | 4 |
 
 Synthetic field indices: `SLICE_FIELD_PTR=0`, `SLICE_FIELD_LEN=1`, `TU_FIELD_TAG=0`, `TU_FIELD_PAYLOAD=1`.
 
-`FIRST_USER_TYPE = 20` — first non-sentinel TypeId allocated by the compiler.
+`FIRST_USER_TYPE = 20` — **stale** (see below). `[updated: 2026-08-06]` Adding the
+`va_list` primitive (`TypeKind.va_list_type`, registered at type_registry.zig:600,
+primitive name `va_list` at :622) shifted every user type id by 1 — the F4
+"va_list user-type-id shift" (AMENDMENT 4) re-baselined the mud/lisp/json MD5
+gates for this (gol coincidentally unchanged). Since primitives now occupy 1-21, user types in practice start ≥22, but
+the `FIRST_USER_TYPE` constant in type_registry.zig:39 still reads `20`
+(pre-existing drift: TYPE_TYPE was already a primitive while FIRST_USER_TYPE was
+never bumped). Docs-only task — source constant left unchanged.
 
 ---
 
@@ -59,7 +67,7 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | Type | Line | Description |
 |------|------|-------------|
 | `TypeId` | 9 | `u32` alias — index into `TypeRegistry.types_items` |
-| `TypeKind` (enum u8) | 40 | 36 variants: none_sentinel(0), void/bool/noreturn/i8/i16/i32/i64/u8/u16/u32/u64/isize/usize/c_char/f32/f64, ptr/many_ptr/array/slice/optional/error_union/error_set/fn/struct/enum/union/tagged_union/tuple/unresolved_name/type_type/module_type/null_type/undefined_type/integer_literal_type/anon_struct_init/anon_array/anon_tuple/anon_union |
+| `TypeKind` (enum u8) | 40 | 37 variants: none_sentinel(0), void/bool/noreturn/i8/i16/i32/i64/u8/u16/u32/u64/isize/usize/c_char/f32/f64, ptr/many_ptr/array/slice/optional/error_union/error_set/fn/struct/enum/union/tagged_union/tuple/unresolved_name/type_type/va_list_type/module_type/null_type/undefined_type/integer_literal_type/anon_struct_init/anon_array/anon_tuple/anon_union |
 | `Type` (struct) | 58 | `kind(TypeKind, 1B)`, `state(u8, 0=unresolved, 2=resolved)`, `flags(u8)`, `_pad(u8)`, `size(u32)`, `alignment(u32)`, `name_id(u32)`, `c_name_id(u32)`, `module_id(u32)`, `payload_idx(u32)` — 28 bytes total |
 | `PtrPayload` | 71 | `base: TypeId` — shared by ptr_type and many_ptr_type |
 | `ArrayPayload` | 72 | `elem: TypeId`, `length: u32` |
@@ -67,7 +75,7 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | `OptionalPayload` | 74 | `payload: TypeId` |
 | `EUPayload` | 75 | `payload: TypeId`, `error_set: TypeId` |
 | `ErrorSetPayload` | 76 | `tags_start: u16`, `tags_count: u16` |
-| `FnPayload` | 77 | `name_id, module_id, return_type: TypeId`, `params_start/count: u16`, `is_extern: u8`, `flags_packed: u8` |
+| `FnPayload` | 77 | `name_id, module_id, return_type: TypeId`, `params_start/count: u16`, `is_extern: u8`, `flags_packed: u8` — `flags_packed` bit0 = `is_variadic` (2026-08-06) |
 | `StructPayload` | 78 | `fields_start: u16`, `fields_count: u16` |
 | `EnumPayload` | 79 | `members_start/count: u16`, `backing_type: TypeId` |
 | `UnionPayload` | 80 | `fields_start/count: u16`, `tag_type: TypeId` |
@@ -106,7 +114,7 @@ Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per
 | `typeRegistryGetOrCreateErrorUnion` | 412 | pub | `[inference: eu_key = (payload<<32) | error_set, eu_cache check, compute union_size=max(payload.size,4), total = alignUp(alignUp(union_size, union_align),4)+4, euAppend, typeRegistryAppend, cache put]` | Creates `E!T` error union type. |
 | `typeRegistryGetOrCreateArray` | 441 | pub | `[inference: key = (elem<<32) | length, array_cache check, emit O0/O1 markers, arrayAppend, compute size=elem.size*length, typeRegistryAppend, cache put only if elem resolved, emit O2 marker]` | Creates `[N]T` array type. |
 | `typeRegistryGetOrCreateTuple` | 486 | pub | `[inference: tupAppend(TuplePayload), typeRegistryAppend(state=2,size=0,align=1), no caching]` | Creates tuple type. Size computed later by layout resolver. |
-| `typeRegistryGetOrCreateFn` | 497 | pub | `[inference: linear scan for matching fn_type+name_id+module_id, fnAppend(FnPayload), typeRegistryAppend(size=4,align=4, name_id=name_id), emit P2 marker]` | Creates or retrieves function type. Linear scan dedup by `kind==fn_type && name_id==name_id && module_id==module_id`. |
+| `typeRegistryGetOrCreateFn` | 497 | pub | `[inference: linear scan for matching fn_type+name_id+module_id, fnAppend(FnPayload), typeRegistryAppend(size=4,align=4, name_id=name_id), emit P2 marker]` | Creates or retrieves function type. Linear scan dedup by `kind==fn_type && name_id==name_id && module_id==module_id`. `is_variadic` param stored in `FnPayload.flags_packed` bit0 (2026-08-06). |
 | `typeRegistryMarkFnPtrUsed` | 520 | pub | `[inference: types_items[tid].flags |= 1]` | Sets bit 0 of flags — marks that this fn type is referenced as a pointer (enables C89 fn ptr emission). |
 | `typeRegistryGetOrCreateErrorSet` | 524 | pub | `[inference: hash key = fold(^) of tag names with FNV offset, es_cache check, esAppend, typeRegistryAppend(size=4,align=4), cache put]` | Creates error set type. Tags are `xn_items[tags_start..tags_start+tags_count]`. Hash = XOR-fold of all tag name_ids with FNV prime multiplier. |
 | `typeRegistryErrorSetMemberIndex` | 543 | pub | `[inference: bounds check, linear scan of xn_items for matching name_id]` | Returns member index within an error set, or `0xFFFFFFFF` if not found. |
@@ -350,7 +358,7 @@ Helper `symbolLookupAllModules` (line 578): linear scan of all symbol tables for
 #### `resolveFnSignatures`
 
 `type_resolver.zig:993-1058` — `[inference: iterate modules/decls, resolve fn return/param types via resolveTypeExprFull, create fn via typeRegistryGetOrCreateFn, resolve var_decl type annotations, update symbol.type_id and ResolvedTypeTable]` iterates all modules:
-- **fn_decl**: resolves return type and param types via `resolveTypeExprFull`, creates fn type via `typeRegistryGetOrCreateFn`, records in `ResolvedTypeTable`, sets `symbol.type_id`.
+- **fn_decl**: resolves return type and param types via `resolveTypeExprFull`, creates fn type via `typeRegistryGetOrCreateFn`, records in `ResolvedTypeTable`, sets `symbol.type_id`. Reads `decl.flags & 0x01` → `is_variadic` and passes it through (2026-08-06); the fn-pointer path (`resolveTypeExprFull`, type_resolver.zig:816) always passes `is_variadic=0`.
 - **var_decl with explicit type annotation** (child_0 != 0): resolves type expression, records in `ResolvedTypeTable`, sets `symbol.type_id`.
 
 #### `typeResolverResolveNames` (entry point)
@@ -623,7 +631,7 @@ Examples:
   "NP:k3a5v22\n"      → name_cache put key_low=0x3a5→type_id=22
 ```
 
-Type ID values are dense monotonically increasing u32s starting at 0. Sentinels occupy 0-20 (index 0 is `none_sentinel` sentinel at type_id=0, though TYPE_VOID=1 is the first meaningful type). `FIRST_USER_TYPE = 20` means user types start at TypeId ≥ 21.
+Type ID values are dense monotonically increasing u32s starting at 0. Sentinels occupy 0-21 (index 0 is `none_sentinel` sentinel at type_id=0, though TYPE_VOID=1 is the first meaningful type; TYPE_VA_LIST=21 added 2026-08-06). The stale `FIRST_USER_TYPE = 20` constant means user types in practice start at TypeId ≥ 22.
 
 To trace a specific TypeId through the pipeline:
 - Search `DC:k*` for creation

@@ -1,4 +1,4 @@
-# 08 — C89 Emission
+# 08 — C89 Emission [updated: 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -299,6 +299,12 @@ Field constants are `#define`d for integer matching. Tagged union payload access
 - Comment with original name above signature for readability
 - Empty params → `(void)`, variadic → `(...)`
 - Opens `{` and increments indent
+- **Variadic externs get forward declarations (Option B, F5 2026-08-06):** the
+  extern-prototype guards (`emitModuleHeader` at `c89_emit.zig:1996` and the
+  `:2108`-era twin) are `is_extern==0 OR is_variadic!=0`, so a variadic `extern
+  fn printf(fmt, ...)` emits its C prototype (`int printf(unsigned char*, ...);`,
+  name-passthrough) while non-variadic externs still rely on `@cInclude`'d
+  headers.
 
 #### emitHoistedDecls (`c89_emit.zig:1684`)
 
@@ -398,7 +404,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 3954 |
 | `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 3262 |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 3304 |
-| `.int_cast` | `result = (type)src;` (checked: `result = std_checked_cast_<N>(src);`) | 3330 |
+| `.int_cast` | `result = (type)src;` (checked: `result = __bootstrap_<DST>_from_<SRC>(src);`) | 4214 |
 | `.int_to_float` | `result = (type)src;` | 3366 |
 | `.float_cast` | `result = (type)src;` | 3381 |
 | `.make_slice` | `result.ptr = ptr;\n result.len = len;` | 3396 |
@@ -416,8 +422,25 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.int_to_ptr` | `result = (type)(unsigned int)src;` | 3639 |
 | `.ptr_to_int` | `result = (usize)src;` | 3654 |
 | `.func_ref` | `result = fn_name;` (function pointer) | 3669 |
+| `.va_start` | `va_start(vl, last_param);` | 4589 |
+| `.va_arg` | `res = va_arg(vl, TYPE);` (TYPE = `getCTypeName(type_id)`) | 4602 |
+| `.va_end` | `va_end(vl);` | 4617 |
 
 Any unhandled variant falls through the `else => {}` at line 3681 (no-op).
+
+**`@intCast` range-check emission (F1, 2026-08-06):** the `.int_cast` checked arm
+(`c89_emit.zig:4214-4260`) builds `__bootstrap_<DST>_from_<SRC>` from the target's
+`getCastTypeSuffix` and the source temp's `getTempTypeByIndex`, falling back to a
+raw `(type)` cast when the source type is unknown. The 19 helpers are `static` in
+`sf/src/include/zig_runtime.h` (per-TU, oracle pattern) + `extern` in
+`sf/src/include/zig_runtime.c`; the message is `"integer cast overflow in
+@intCast"` and the unchecked `(type)` path is unchanged. **`stdarg.h` gating
+(F5, 2026-08-06):** `emitStdargInclude` (`c89_emit.zig:1959`) emits `#include
+<stdarg.h>` only when `moduleHasVaInsts` (`:1938`) finds a `va_start`/`va_arg`/
+`va_end` LirInst in the TU — gated on actual `va_*` usage (not `is_variadic`), so
+mud/gol's anytype-print (`is_variadic=1`, no `va_*`) stays byte-identical. The
+include is emitted at all 3 sites (`emitModuleHeader` `:1972`,
+`emitModuleHeaderFile`, `emitModuleFile`).
 
 **C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:3954) is
 emitted as a **call followed by a `return`** (`zT = fn(args); return zT;`), i.e. it preserves a C

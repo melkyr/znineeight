@@ -1,14 +1,18 @@
-# mi_matrix corpus — expected-fail manifest (v20 2026-08-06)
+# mi_matrix corpus — expected-fail manifest (v21 2026-08-06)
 
 ## Totals (209 repros)
 
-- **CURRENT: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** (2026-08-06: Task F5 varargs
-  end-to-end. 202 real OK + 4 green-guards + 3 FAIL = 209; raw classifier FAIL = 7 (4
-  green-guards are a sub-bucket of the raw count). The 3 FAILs: `field_store_drop` + `test_stub_0`
-  (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type).
-  `fn_varargs_unsupported` FAIL→OK (F5) and new repro `fn_varargs_body` added OK. The 4 green-guards:
-  `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
-  See the Task F5 section below.)
+- **CURRENT — FINAL for the 4-item plan (2026-08-06 Task F7 gate sweep): OK=202 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **209 repros** (202 + 4 + 3 = 209; raw classifier FAIL = 7
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with a fresh HEAD bootstrap
+  (`/tmp/f7build/zig1`, zig0 rc=0, gcc rc=0, 0 errors). The 3 FAILs: `field_store_drop` +
+  `test_stub_0` (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc
+  incomplete-type). The 4 green-guards: `eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`. All 4 plan items complete — see the Task F7 section
+  below. **The plan's F5 Step-1 prediction ("210 repros, OK=200/FAIL=3/gg=4") double-counted
+  `fn_varargs_unsupported` (already in the 208 baseline); actual = 209 repros.** No repro flipped
+  during the final sweep.
+- Prior: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 209 (2026-08-06 Task F5 varargs)
 - Prior: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 208 (2026-08-06 F2 u64-safe int_literal marker)
 - Prior: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 207 (2026-08-06 F1 @intCast range-check)
 - Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F9 gate sweep)
@@ -848,3 +852,45 @@ green-guards sub-bucket). The 3 real FAILs: `field_store_drop` + `test_stub_0`
 **4 MD5 gates byte-identical**: mud `e306b1874e51e06a23b708bcd79fec6d`, gol
 `51d6d078bdecad022318bded23182f72`, lisp `55044a1f64011bc644cddbcf73b5de93`,
 json `b5f56ebd51d2f0fcd379a1e083594462`. test_analyzer_bin PASS.
+
+---
+
+## Task F7 — gate sweep + docs + final review prep (2026-08-06) — 4-item plan CLOSEOUT
+
+Final task of the 4-item compiler-gaps plan (brief `.superpowers/sdd/task-F7-brief.md`). Full
+corpus + MD5 gate sweep at HEAD with a fresh /tmp bootstrap (`/tmp/f7build/zig1`, zig0 rc=0, gcc
+rc=0, 0 errors); evidence in `.superpowers/sdd/task-F7-report.md`. **Docs-only — no sf/src
+changes.**
+
+**Final accounting (measured): 209 repros, OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0**
+(202 + 4 + 3 = 209; raw classifier FAIL = 7). Identical to the v20 totals — **no repro flipped**
+during the final sweep. The plan's Step-1 prediction ("210 repros, OK=200/FAIL=3/gg=4") was
+**STALE**: it double-counted `fn_varargs_unsupported`, which was already in the 208 baseline
+(209 = 208 baseline + `fn_varargs_body`). The corrected accounting is recorded in the Totals
+section at the top of this file.
+
+**4-item fixes — all complete (fix refs):**
+
+| # | Item | Fix | Key commit(s) | Gate evidence |
+|---|------|-----|---------------|---------------|
+| 1 | `@intCast` narrowing + reinterpret range-check | c89_emit emits `__bootstrap_<DST>_from_<SRC>` (checked) — see Task F1 section | `14f31511` | `intcast_range_check` OK; run PANICS (`integer cast overflow in @intCast`) rc=134, matching oracle |
+| 2 | ICE on literals ≥ 2^32 | u64-safe `int_literal` marker via `pal.markerWriteInt64` — see Task F2 section | `5d280a6d` | `ice_literal_overflow` OK; prints `1:705032704 1:0` rc=0 |
+| 3 | Full varargs (`@cVaStart`/`@cVaArg`/`@cVaEnd` + `va_list` + `...` emission + extern variadic prototypes) — see Task F5 section | `4448d187` (parser bit0 flag), `b8deb732` (va_list TYPE_VA_LIST=21 + LIR), `c420a277` (emission), `ef529f42` (F5b) | `fn_varargs_unsupported` FAIL→OK (runs `printf`); `fn_varargs_body` OK — **`sum=60`** rc=0 |
+| 4 | Lisp closures capture current env | `eval.zig:124` `env_to_value(env.*,…)` → `curr_env.*` — see `examples/z98/lisp_interpreter_curr/NOTES.md` | `0cb7891c` | `((make-adder 5) 3)`→8, `((add 10) 1)`→11, `((make-func 42))`→42 (were `UnboundSymbol`) |
+
+**MD5 gates (byte-identical to the current baselines — no re-baseline needed):**
+mud `50beb1bf5edc4cbb638f84aa027ffade`, gol `0d8f0092c22c04375482a198691a3957`,
+lisp `605b597e8b7cff60de0ce84a0593e743`, json `b5f56ebd51d2f0fcd379a1e083594462`.
+
+**Runtime spot-checks (this sweep):** `fn_varargs_body` → `sum=60` rc=0; `intcast_range_check` →
+rc=134 `panic: integer cast overflow in @intCast` (the intended fix); `ice_literal_overflow` →
+`1:705032704 1:0` rc=0; lisp closures `8`/`11`/`42`; `((twice square) 3)` → SEGFAULT (rc=139);
+`(fact 13)` → rc=134 (F1 range-check, intended).
+
+**Known lisp limitations (documented in lisp NOTES.md — NOT compiler defects, operator-accepted):**
+`((twice square) 3)` / `((compose square square) 3)` SEGFAULT (env-capture cycle in lisp source,
+exposed by the F6 fix — was `UnboundSymbol`); `(countdown 3000)` OOM (~3000 threshold); post-OOM
+REPL dead (no `sand_reset` on the error path); `(fact 13)` PANICS (correct — F1 range check).
+
+No other repro flipped; `fn_varargs_unsupported` stays OK; 4 MD5 gates byte-identical;
+`test_analyzer_bin` PASS (from prior F-tasks). This is the **final accounting for the plan**.

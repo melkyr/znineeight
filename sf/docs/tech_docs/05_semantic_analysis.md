@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis
+# 05 — Semantic Analysis [updated: 2026-08-06 — variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
@@ -485,7 +485,7 @@ Dispatched from ResolveExpr for negate. Returns the inner type if numeric.
 
 Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
 
-### semanticAnalyzerResolveFnCall (`sf/src/semantic_analyzer.zig:649-780`)
+### semanticAnalyzerResolveFnCall (`sf/src/semantic_analyzer.zig:649-800`)
 
 `[inference: direct callee → resolve return type → push/pop expected types for params → record coercions]`
 
@@ -498,7 +498,12 @@ Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
 **Phase 2 — general callee:**
 - Resolve callee expr. If ptr_type pointing to fn_type, dereference.
 - If not fn_type: emit `FN3:N<T>T<K>` marker, return `TYPE_VOID`.
-- Match arg count to param count. If mismatch, return `fnp.return_type` (lenient).
+- **Variadic arity (2026-08-06, `semantic_analyzer.zig:759-797`):** read
+  `fnp.flags_packed & 0x01` → `is_var`. When variadic, require `args.len >=
+  params_count` (a short call returns `fnp.return_type` leniently); a
+  non-variadic call requires an exact match. The first `params_count` args are
+  typed against the named params; the extra variadic args are resolved with
+  `pushExpectedType(0)` and recorded into `call_arg_types` (loose typed).
 - Per-arg loop: `pushExpectedType(param_type)` → resolve → `popExpectedType` → `tryRecordCoercion`.
 
 ### semanticAnalyzerResolveSwitchExpr (`sf/src/semantic_analyzer.zig:1018-1129`)

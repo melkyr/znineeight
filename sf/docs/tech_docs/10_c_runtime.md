@@ -1,4 +1,4 @@
-# 10 — C Runtime Layer
+# 10 — C Runtime Layer [updated: 2026-08-06 — 19 `__bootstrap_<DST>_from_<SRC>` checked-cast helpers (F1)]
 
 ## Summary Table
 
@@ -8,7 +8,8 @@
 | C source files | 2 | `zig_runtime.c`, `zig_pal.c` |
 | PAL functions | 9 | print_stderr/stdout, abort, i64/u64/f64_to_str, strlen, memcpy, reverse |
 | Runtime print helpers | 11 | std_panic, std_print, std_print_len, std_print_i32, std_print_u32, std_print_i64, std_print_u64, std_print_f64, std_print_bool, std_print_char, std_print_str |
-| Checked cast functions | 8 | i8/u8/i16/u16/i32/u32/i64/u64 |
+| Checked cast functions | 8 | `std_checked_cast_i8..u64` — **legacy, NOT used by zig1 emission** (upper-bound-only) [updated: 2026-08-06] |
+| `__bootstrap_<DST>_from_<SRC>` helpers | 19 | Range-checked int-cast helpers for `@intCast` (F1, 2026-08-06): `static` defs in `zig_runtime.h` + `extern` defs in `zig_runtime.c`; emit `panic("integer cast overflow in @intCast")` on out-of-range (narrowing or same-width signedness reinterpret) |
 | Backward compat aliases | 6 | __bootstrap_print/print_int/print_char/panic/write/sleep_ms |
 | Legacy arena functions | 6 | arena_create, arena_alloc, arena_free, arena_reset, arena_destroy, arena_alloc_default |
 | Type tables | 3 | Slice, Optional, ErrorUnion — emitted by zig1 codegen, not in runtime headers |
@@ -75,14 +76,14 @@ All declarations at `sf/src/include/zig_runtime.h`.
 | `__bootstrap_panic` | 70 | extern | Legacy alias, discards file/line | Legacy C output | `std_panic` | none | `(void)` cast on unused params. [inference] |
 | `__bootstrap_write` | 71 | extern | Legacy alias for `std_print_len` | Legacy C output | `std_print_len` | none | [inference] |
 | `__bootstrap_sleep_ms` | 72 | extern | Busy-wait sleep | Legacy C output | none | none | Non-Windows busy-loop. [inference] |
-| `std_checked_cast_i8` | 76 | extern | Bounds-check u64→i8 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 127. [inference] |
-| `std_checked_cast_u8` | 81 | extern | Bounds-check u64→u8 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 255. [inference] |
-| `std_checked_cast_i16` | 86 | extern | Bounds-check u64→i16 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 32767. [inference] |
-| `std_checked_cast_u16` | 91 | extern | Bounds-check u64→u16 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 65535. [inference] |
-| `std_checked_cast_i32` | 96 | extern | Bounds-check u64→i32 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 2147483647. [inference] |
-| `std_checked_cast_u32` | 101 | extern | Bounds-check u64→u32 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 4294967295. [inference] |
-| `std_checked_cast_i64` | 106 | extern | Bounds-check u64→i64 | zig1 emitted checked casts | `std_panic` | none | Panics if val > 9223372036854775807. [inference] |
-| `std_checked_cast_u64` | 111 | extern | Identity pass-through | zig1 emitted checked casts | none | none | No-op — u64 fits in u64. [inference] |
+| `std_checked_cast_i8` | 76 | extern | Bounds-check u64→i8 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 127. [inference] |
+| `std_checked_cast_u8` | 81 | extern | Bounds-check u64→u8 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 255. [inference] |
+| `std_checked_cast_i16` | 86 | extern | Bounds-check u64→i16 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 32767. [inference] |
+| `std_checked_cast_u16` | 91 | extern | Bounds-check u64→u16 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 65535. [inference] |
+| `std_checked_cast_i32` | 96 | extern | Bounds-check u64→i32 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 2147483647. [inference] |
+| `std_checked_cast_u32` | 101 | extern | Bounds-check u64→u32 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 4294967295. [inference] |
+| `std_checked_cast_i64` | 106 | extern | Bounds-check u64→i64 | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | `std_panic` | none | Panics if val > 9223372036854775807. [inference] |
+| `std_checked_cast_u64` | 111 | extern | Identity pass-through | legacy — NOT emitted by zig1 (see F1 `__bootstrap_*_from_*`) | none | none | No-op — u64 fits in u64. [inference] |
 
 ### `zig_pal.c` — Platform Abstraction Layer (`sf/src/include/zig_pal.c:1-224`)
 
@@ -152,7 +153,8 @@ zig1 emitted C89 code
   │
   ├─ std.debug.print(...) → std_print*(...) → pal_print_stdout → write(1,...)
   ├─ @panic(...) → std_panic(msg) → pal_print_stderr("panic: ...") → pal_abort → abort()
-  ├─ @intCast(T, val) → std_checked_cast_T(val) → range check → return/panic
+  ├─ @intCast(T, val) [checked] → __bootstrap_<DST>_from_<SRC>(val) → range check → return/panic (F1; raw `(T)val` for widening)
+  ├─ legacy `std_checked_cast_*` (upper-bound-only) — no longer emitted by zig1
   ├─ arena alloc → arena_alloc_default(n) → arena_alloc(NULL, n) → platform_alloc → malloc/VirtualAlloc
   │                  └─ if NULL: lazy init zig_default_arena → arena_create(1MB)
   ├─ Slice type → struct { ptr; len; } (emitted by zig1 codegen)
@@ -183,7 +185,7 @@ gcc line, else the link fails with `undefined reference to 'pal_file_open'` /
 ## Debugging
 
 - **Link errors `undefined reference`** — missing `sf/src/include/zig_runtime.c` or `sf/src/include/zig_pal.c` in gcc link step. Both must be linked explicitly. This includes zig1's own build: `build_release.sh` links `zig_pal.c` (F-S1); manual zig1 rebuilds must too.
-- **Assert/panic at runtime** — `std_panic` / `std_checked_cast_*` reachable. Check overflow values or add `pal_print_stderr` markers before the panic site.
+- **Assert/panic at runtime** — `std_panic` / `__bootstrap_<DST>_from_<SRC>` reachable (checked `@intCast`). Check overflow values or add `pal_print_stderr` markers before the panic site.
 - **`arena_alloc_default` not found** — this symbol is in the legacy `src/runtime/zig_runtime.c`, NOT in `sf/src/include/`. For sf-linked binaries, zig1 emits its own arena allocator; the legacy symbol is only for zig0-output programs.
 - **Slice/Optional/ErrorUnion struct layout** — these are NOT in any header; zig1's C89 emission generates type-specific structs per module. Layout is: Slice = `{ ptr; len }`, Optional = `{ payload; has_value }`, ErrorUnion = `{ payload; error_code }`.
 - **`__bootstrap_print_int` / `__bootstrap_sleep_ms`** — backward compat stubs. New code should use `std_print_*` / platform `sleep()`.

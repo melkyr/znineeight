@@ -1,4 +1,4 @@
-# 00 — Lexer & Parser
+# 00 — Lexer & Parser [updated: 2026-08-06 — varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
 
 ## Summary Table
 
@@ -161,7 +161,7 @@ Recursive-descent parser with **Pratt-style precedence climbing** for expression
 | `parserParseBracketType` | 943 | private | `[inference: [*c]T, []T, [N]T]` | Bracket type: many-pointer `[*c]T`, slice `[]T`, array `[N]T`. |
 | `parserParseOptionalType` | 978 | private | `[inference: ?T]` | Optional type. |
 | `parserParseErrorUnionType` | 986 | private | `[inference: !T]` | Error union type (payload side). |
-| `parserParseFnType` | 994 | private | `[inference: fn(params) ret_type]` | Function type. |
+| `parserParseFnType` | 994 | private | `[inference: fn(params) ret_type]` | Function type. `...` (varargs) in fn-pointer params → error `"varargs not allowed in function pointer types"` (`parser.zig:1004-1012`). |
 | `parserParseErrorSetDecl` | 1027 | private | `[inference: error{ Tag1, Tag2 }]` | Error set declaration (no params). |
 | `parserParseErrorSetDeclBody` | 1032 | private | `[inference: { identifier, ... } payload]` | Error set body parsing. |
 | `parserParseStructType` | 1056 | private | `[inference: struct { name: type, ... }]` | Struct type (anonymous). |
@@ -177,7 +177,7 @@ Recursive-descent parser with **Pratt-style precedence climbing** for expression
 | `parserParseVarDecl` | 1284 | private | `[inference: [pub] [extern] const/var name [:type] [=init] ;]` | Variable declaration. Flags: bit0=mutable, bit1=pub, bit2=extern. Handles `c_include` inline (returns the include node directly). Debug: `V`, `v`, `PDVx` markers. |
 | `parserParsePubDecl` | 1321 | private | `[inference: pub fn|const|var|test|extern]` | Public declaration dispatcher. |
 | `parserParseExternDecl` | 1333 | private | `[inference: extern ["lib"] fn|const|var]` | Extern declaration dispatcher. |
-| `parserParseFnDecl` | 1346 | private | `[inference: [pub] [extern] fn name(params) [:ret_type] {body} or ;]` | Function declaration. Parses params, return type, body or forward decl `;`. Creates `FnProto` in store. Flags: bit1=pub, bit2=extern, bit5=test. Debug: `Fv`, `P:<param_count>`, `Fk` markers. |
+| `parserParseFnDecl` | 1346 | private | `[inference: [pub] [extern] fn name(params) [:ret_type] {body} or ;]` | Function declaration. Parses params, return type, body or forward decl `;`. Creates `FnProto` in store. Flags: bit1=pub, bit2=extern, bit5=test, **bit0=variadic** (`...` in the param list sets `flags |= 0x01` and stops param parsing — `parser.zig:1375-1382`). Debug: `Fv`, `P:<param_count>`, `Fk` markers. |
 | `parserParseIfStmt` | 1420 | private | `[inference: if(cond) [|capture|] then [else if/else/block/expr] ;]` | If statement (statement-context, with capture syntax). Debug: extensive `PIF:c/k/c1/k1/c2/k2` markers. |
 | `parserParseWhileStmt` | 1486 | private | `[inference: while(cond) [|capture|] [:(expr)] body ;]` | While loop. Supports error capture, continue expression. Debug: `zzz_*` markers. |
 | `parserParseForStmt` | 1537 | private | `[inference: for(range) [|elem,index|] body ;]` | For loop. Range supports `..` syntax. Element/index capture via `|elem, idx|`. |

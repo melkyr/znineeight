@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-06 — F4/F5 comptime_values guards + INT_LIT→I32 remap on binary/unary handlers]
+# LIR Lowering Layer [updated: 2026-08-06 — varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap]
 
 ## Summary
 
@@ -46,7 +46,7 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `is_pub` | `u8` | Public visibility flag |
 | `is_variadic` | `u8` | Variadic parameter flag |
 
-### All 54 LirInst Variants `sf/src/lir.zig:22`
+### All 57 LirInst Variants `sf/src/lir.zig:22`
 
 #### Declarations
 | Variant | Fields | Purpose |
@@ -106,6 +106,22 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `call` | `callee, args_start, args_count, result` | Indirect function call |
 | `call_direct` | `name_id, module_id, args_start, args_count, result, return_type, is_extern` | Direct named function call |
 | `func_ref` | `name_id, module_id, result` | Function pointer reference |
+
+#### Variadic (va_*) — `sf/src/lir.zig:46-48` [added: 2026-08-06]
+| Variant | Fields | Purpose |
+|---------|--------|---------|
+| `va_start` | `va_list_temp, last_param_temp` | `va_start(vl, last_param)` — init a `va_list` after the last named param |
+| `va_arg` | `va_list_temp, type_id, result` | `result = va_arg(vl, TYPE)` — read the next variadic argument |
+| `va_end` | `va_list_temp` | `va_end(vl)` — cleanup |
+
+These are emitted by the `@cVaStart`/`@cVaArg`/`@cVaEnd` builtin handler
+(`lower.zig:2620-2656`, dispatched before the `ec.len>=2` cast block); the
+`va_list_temp` operand is resolved via `vaListArgTemp` (`lower.zig:1002`, unwraps
+`&ident`/`ident` to a local temp). `@cVaStart` in a non-variadic function emits
+`error[3012]` (`ERR_3012_VARARGS_INVALID`). `LirFunction.is_variadic`
+(`lir.zig:341`) is set by `lowerFn` from `FnPayload.flags_packed` bit0
+(`lower.zig:4715-4724`); the legacy `child_0==0` anytype-marker branch is **kept
+as a defensive OR**, so mud/gol `print(fmt, ...)` signatures are unchanged.
 
 #### Optional Handling
 | Variant | Fields | Purpose |
@@ -393,7 +409,16 @@ emitInst(.call{ callee_temp, args_start, args_count, result })
 
 **print() builtin** (`sf/src/lower.zig:375`): Special-cased. Emits `print_str` for the format string, `print_val` per argument.
 
-**Builtin calls** (`sf/src/lower.zig:2381`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is.
+**Builtin calls** (`sf/src/lower.zig:2381`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2620-2656`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above).
+
+**`@intCast` range-check (F1, 2026-08-06):** the explicit `@intCast` builtin handler
+(`lower.zig:2686-2703`) now computes `is_checked` from the source/target widths
+(`intCastTypeBits`) and signedness (`intCastTypeIsSigned`): `chk=1` when
+`src_bits > dst_bits` (narrowing) OR `src_bits == dst_bits` with differing
+signedness (same-width reinterpret); widening and same-signedness same-width are
+left unchecked. The checked arm emits `int_cast{ is_checked=1 }`, which c89_emit
+renders as the range-checked `__bootstrap_<DST>_from_<SRC>` helper call. Coercion
+sites (`lower.zig:955`, `:4379`, `:4387`) keep `is_checked=0`.
 
 ### Control Flow
 
@@ -703,7 +728,7 @@ Top variants per example `[fprintf]`:
 | lisp_interpreter_curr | assign 703, jump 318, load_field 304, int_const 263, decl_local 219, ret 203, branch 199 |
 | json_parser | assign 254, int_const 144, jump 143, call_direct 127, load_field 124, binary 123, branch 102 |
 
-Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every example** — a straight-line, alloca-based, jump-heavy IR. json_parser is the most call-heavy (127 `call_direct`, its parser is deeply recursive), lisp the most branch/switch-heavy (21 `switch_br` in `eval` alone). Per-function detail `[fprintf]` (top function per example): mud `main` 427 insts (assign 84, int_const 43, binary 41, jump 40); gol `main` 496 (int_const 133, assign 99, assign_field 54); lisp `eval` 826 (assign 182, load_field 75, jump 74); json `parseObject` 214 (assign 46, call_direct 24, jump 19). 44 of the 54 variants fire via `emitInst`; the 10 that never fire in these examples are `decl_temp` (only via `hoistTemps`, `lower.zig:3953`), `loop_header`, `label`, `float_cast`, `int_to_float`, `int_to_ptr`, `float_const`, `enum_const`, `load_global`, `store_global` — and `unary` is rare (13 total across all 4). `[updated: 2026-08-03]` Since the TCO feature (F-S2, `lowerFn` at `lower.zig:4350`) the `loop_header` variant now fires **once per function** (first entry-block inst) in every example; it was 0 in the 2026-07-31 P7 capture. The `tail_call` variant fires for every cross-function same-type tail (eval.zig:169 `return try apply(...)`, json extern `file.strtod`, etc.).
+Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every example** — a straight-line, alloca-based, jump-heavy IR. json_parser is the most call-heavy (127 `call_direct`, its parser is deeply recursive), lisp the most branch/switch-heavy (21 `switch_br` in `eval` alone). Per-function detail `[fprintf]` (top function per example): mud `main` 427 insts (assign 84, int_const 43, binary 41, jump 40); gol `main` 496 (int_const 133, assign 99, assign_field 54); lisp `eval` 826 (assign 182, load_field 75, jump 74); json `parseObject` 214 (assign 46, call_direct 24, jump 19). 44 of the 57 variants fire via `emitInst`; the 13 that never fire in these examples are `decl_temp` (only via `hoistTemps`, `lower.zig:3953`), `loop_header`, `label`, `float_cast`, `int_to_float`, `int_to_ptr`, `float_const`, `enum_const`, `load_global`, `store_global`, `va_start`, `va_arg`, `va_end` — and `unary` is rare (13 total across all 4). The `va_start`/`va_arg`/`va_end` variants (added 2026-08-06) do not fire in these 4 examples (none use `@cVa*`). `[updated: 2026-08-03]` Since the TCO feature (F-S2, `lowerFn` at `lower.zig:4350`) the `loop_header` variant now fires **once per function** (first entry-block inst) in every example; it was 0 in the 2026-07-31 P7 capture. The `tail_call` variant fires for every cross-function same-type tail (eval.zig:169 `return try apply(...)`, json extern `file.strtod`, etc.).
 
 ### 2. Temp counts per function / hoisting
 

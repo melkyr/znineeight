@@ -1,4 +1,4 @@
-# 04 — Compile-Time Evaluation [updated: 2026-08-06 — F1/F2 bitwise+shift ops, F8 ident_expr const-chain + depth guard]
+# 04 — Compile-Time Evaluation [updated: 2026-08-06 — F1/F2 bitwise+shift ops, F8 ident_expr const-chain + depth guard; lowerer intern-count cross-ref 9→12 (varargs builtins)]
 
 ## Summary Table
 
@@ -8,7 +8,7 @@
 | `ComptimeEval` fields | 7 | registry, store, interner, symbol_reg, size_of_id, align_of_id, int_cast_id |
 | Builtin intrinsics (comptime-foldable) | 3 | @sizeOf, @alignOf, @intCast — the ONLY names interned by `comptimeEvalInit` |
 | Builtin names interned by sema | 9 | @ptrCast, @ptrToInt, @intToPtr, @intCast, @floatCast, @intToFloat, @intToEnum, @sizeOf, @alignOf (+ `_` stub) — type assignment only |
-| Builtin names interned by lowerer | 9 | @intCast, @intToFloat, `print`, @ptrCast, @ptrToInt, @intToPtr, @enumToInt, @sizeOf, @alignOf — LIR dispatch only |
+| Builtin names interned by lowerer | 12 | @intCast, @intToFloat, `print`, @ptrCast, @ptrToInt, @intToPtr, @enumToInt, @sizeOf, @alignOf + **@cVaStart, @cVaArg, @cVaEnd** (2026-08-06 varargs) — LIR dispatch only |
 | Non-foldable builtins | 6 | @ptrCast, @ptrToInt, @intToPtr, @floatCast, @intToFloat, @intToEnum — comptime eval returns `null`, handled by sema type rules + runtime LIR casts |
 | Binary ops evaluated | 10 | add, sub, mul, div, mod, bit_and, bit_or, bit_xor, shl, shr |
 | Unary ops evaluated | 3 | negate, bit_not (bool_not/others → null) |

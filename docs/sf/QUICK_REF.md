@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (207 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-06]
+### Corpus gate (209 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-06]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -161,6 +161,27 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
    over 207 repros (199+4+4=207; raw classifier FAIL stays 8); corpus grows 206→207 by
    `intcast_range_check` (OK, runtime-panic gate); all 4 MD5 gates RE-BASELINED (scope b) — see the
    MD5 re-baseline note; test_analyzer_bin PASS.** [updated: 2026-08-06]
+   **Varargs feature (4-item plan F3-F5/F5b, 2026-08-06):** `...` in fn params (parser.zig:1375-1382
+   sets `flags` bit0 → `FnPayload.flags_packed`; `...` in fn-pointer types rejected), `va_list`
+   primitive (`TYPE_VA_LIST`=21, type_registry.zig:600), LIR `va_start`/`va_arg`/`va_end`
+   (lir.zig:46-48) + C emission (`va_start(vl, last);` / `res = va_arg(vl, T);` / `va_end(vl);`),
+   `#include <stdarg.h>` gated on actual `va_*` insts (moduleHasVaInsts, c89_emit.zig:1938),
+   variadic externs get C prototypes (Option B, `is_extern==0 OR is_variadic!=0`), `@cVaStart` in a
+   non-variadic fn → `error[3012]`. `fn_varargs_unsupported` **FAIL→OK** (runs `printf`),
+   `fn_varargs_body` new OK — `sum(3,10,20,30)` → **`sum=60`**. Commits `4448d187`..`ef529f42`; see
+   EXPECTED_FAIL.md Task F5 section. [updated: 2026-08-06]
+   **Lisp closures (F6, commit `0cb7891c`):** `eval.zig:124` `env_to_value(env.*,…)` →
+   `curr_env.*`; `((make-adder 5) 3)`→8, `((add 10) 1)`→11, `((make-func 42))`→42 (were
+   `UnboundSymbol`). Composition (`((twice square) 3)`, `((compose square square) 3)`) now
+   **SEGFAULTS** — lisp-source env-capture cycle (live `define`-slot pointers back-patched after
+   capture), NOT a compiler defect. `(fact 13)` PANICS (`integer cast overflow in @intCast`, rc=134)
+   — the intended F1 range-check. [updated: 2026-08-06]
+   **Final accounting (F7 gate sweep, 2026-08-06): effective `OK=202 / FAIL=3 / green-guards=4`
+   over 209 repros** (202+3+4=209; raw classifier FAIL = 7 — the 4 green-guards are a sub-bucket);
+   the 3 FAILs = `field_store_drop` + `test_stub_0` (std-lib-deferred) +
+   `self_embed_optional_cycle` (F-8 residual); **4 MD5 gates byte-identical** to the baselines
+   below (no re-baseline); the plan's "210 repros / OK=200" prediction double-counted
+   `fn_varargs_unsupported`. [updated: 2026-08-06]
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
@@ -267,6 +288,10 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   latent lisp-source env-capture cycle (`env_to_value` stores live `define`-slot pointers that are
   back-patched after capture) exposed by the fix; tracked for a follow-up lisp-source fix, NOT a
   compiler defect. Pre-F6 value: lisp `55044a1f…`. [updated: 2026-08-06]
+
+- **F7 gate sweep (2026-08-06, docs-only):** all 4 MD5s re-verified **byte-identical** to the
+  values above (mud `50beb1bf…`, gol `0d8f0092…`, lisp `605b597e…`, json `b5f56ebd…`) with a
+  fresh HEAD /tmp bootstrap — no re-baseline needed. [updated: 2026-08-06]
 
 - **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
