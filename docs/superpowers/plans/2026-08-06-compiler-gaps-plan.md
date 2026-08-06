@@ -453,6 +453,52 @@ git commit -m "feat: full varargs support (@cVaStart/@cVaArg/@cVaEnd + va_list e
 
 ---
 
+### Task F5b: Migrate mud/gol `anytype` print to `...` + deactivate marker-param branch
+
+**Files:** Modify `examples/z98/mud_server/std_debug.zig`, `examples/z98/game_of_life/std_debug.zig`, `sf/src/lower.zig:4680`; verify mud + gol gates + MD5s.
+
+**Interfaces:**
+- Consumes: F5 (full varargs support landed); F3/F4 (flag-bit path + va_* LIR).
+- Produces: mud/gol `print` uses true `...` syntax; the `child_0==0` marker branch at lower.zig:4680 becomes a dead no-op; `is_variadic` is set ONLY via the flag-bit path (no `anytype`/variadic conflation).
+
+- [ ] **Step 1: Read mud/gol print sources**
+
+Read `examples/z98/mud_server/std_debug.zig` and `examples/z98/game_of_life/std_debug.zig`. Find the `print` fn declarations + all call sites (grep `print(`). The signature is `pub fn print(fmt: *const c_char, args: anytype) void`.
+
+- [ ] **Step 2: Migrate signatures to `...`**
+
+Change the print signature in BOTH files from `args: anytype` to `args: ...`:
+```zig
+// before
+pub fn print(fmt: *const c_char, args: anytype) void { ... }
+// after
+pub fn print(fmt: *const c_char, args: ...) void { ... }
+```
+CRITICAL: the function BODY currently accesses `args` via the `anytype`-shaped path (probably forwarding to an extern variadic fn like `vfprintf`/`__bootstrap_print`). With `...`, the body must use `@cVaStart`/`@cVaArg`/`@cVaEnd` to forward (or the body may already just forward the whole arg set to an extern — preserve the existing forwarding semantics exactly, using the new va_* builtins if the body inspects args). Read the body carefully and adapt minimally — if it only forwards, keep it forwarding; if it iterates, convert to @cVaArg.
+Call sites (`print("...", x, y)`) are UNCHANGED — the fixed-arity + variadic tail syntax already matches.
+
+- [ ] **Step 3: Deactivate the marker-param branch**
+
+In `lower.zig:4680`, the `child_0 == 0` marker-param branch that sets `is_variadic = 1` becomes a NO-OP (delete the body / make the branch fall through). is_variadic must now come ONLY from the F3 flag-bit path. Keep the branch present but empty (or remove it if the surrounding structure permits) — the KEY is that a param with no type expr no longer makes the fn variadic.
+
+- [ ] **Step 4: Gate sweep**
+
+Build 0 err. Rebuild mud + gol. Verify:
+- mud: compiles, links, runs — listens on :4000 (rc=124 timeout expected), print output correct (the runtime "MUD server listening" + any print calls work).
+- gol: compiles, links, runs — glider generations render, rc=0.
+- Both now use the true `...` path (emitted C has `...` in print's signature from the flag-bit path, NOT the marker branch).
+- 4 MD5s: mud/gol likely change (print signature changed from anytype-shaped to ...-shaped) → re-baseline per F-5 AMENDMENT B after verifying runtime identity. lisp/json unchanged (no print migration).
+- Corpus: unchanged counts (no repro uses mud/gol print).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add examples/z98/mud_server/std_debug.zig examples/z98/game_of_life/std_debug.zig sf/src/lower.zig docs/sf/QUICK_REF.md
+git commit -m "fix: migrate mud/gol anytype-print to true varargs ... + deactivate marker-param branch"
+```
+
+---
+
 ### Task F6: Fix lisp first-class closures (last)
 
 **Files:** Modify `examples/z98/lisp_interpreter_curr/eval.zig:124`
@@ -547,4 +593,9 @@ git commit -m "docs: gate sweep + tech docs for 4-item compiler gaps plan"
   - **Extern prototypes = Option B (variadic-only):** add name-passthrough to `emitFunctionForwardDecl` (:1898-1900); change guards :1962/:2108 to `is_extern==0 OR is_variadic!=0`. Option A (all externs) REJECTED — breaks json hard (fopen `?*File`→`Opt_` struct vs stdio.h `FILE*` = gcc error, json `@cInclude`s stdio.h). Zero blast radius (no gate has a variadic extern).
   - **Split refinement:** the `lowerFn` is_variadic-from-flag read (lower.zig:4647) is an **F5 lowerer change**, NOT F3 (the flag must be consumed by the lowerer alongside the va_* producers). F4's sema:759 fix is only for fn-ptr varargs (direct variadic calls already work) — non-blocking.
   - **Repro constraint:** variadic extern + `@cInclude`'d same header conflicts (printf `unsigned char const*` vs `const char*`) — F5 repros must NOT `@cInclude stdio.h` for variadic printf.
-- **AMENDMENT 4 (2026-08-06, operator ruling on F4):** The F4-mandated eager `registerPrimitive(va_list_type)` shifts every user type id +1 (sequential ids at type_registry.zig:157), leaking into mangled C type names → 3 of 4 MD5 gates drift (mud `0064a081`→`e306b1874e51e06a23b708bcd79fec6d`, lisp `e54be381`→`55044a1f64011bc644cddbcf73b5de93`, json `6528f26f`→`b5f56ebd51d2f0fcd379a1e083594462`; gol `51d6d078bdecad022318bded23182f72` coincidentally unchanged). Operator ruling: **"only rebase if runtime behavior is the same."** Controller independently verified ALL 4 gate runtimes are byte-identical F4 vs pristine (mud rc=124 listening, gol rc=0 glider gen-99, lisp `(+ 1 2)`→3, json parses test.json — md5s of captured outputs identical per pair). **Re-baseline authorized**: new MD5 gates mud `e306b1874e51e06a23b708bcd79fec6d`, lisp `55044a1f64011bc644cddbcf73b5de93`, json `b5f56ebd51d2f0fcd379a1e083594462`, gol stays `51d6d078bdecad022318bded23182f72`. (Re-baseline recorded at F4 commit b8deb732; QUICK_REF table updated in F7.) I3's claim "Primitive TypeIds 1-20 stable" was technically true (ids 1-20 unchanged) but the user-type START shifted — corrected understanding recorded here.
+- **AMENDMENT 4 (2026-08-06, operator ruling on F4):** The F4-mandated eager `registerPrimitive(va_list_type)` shifts every user type id +1 (sequential ids at type_registry.zig:157), leaking into mangled C type names → 3 of 4 MD5 gates drift (mud `0064a081`→`e306b1874e51e06a23b708bcd79fec6d`, lisp `e54be381`→`55044a1f64011bc644cddbcf73b5de93`, json `6528f26f`→`b5f56ebd51d2f0fcd379a1e083594462`; gol `51d6d078bdecad022318bded23182f72` coincidentally unchanged). Operator ruling: **"only rebase if runtime behavior is the same."** Controller independently verified ALL 4 gate runtimes are byte-identical F4 vs pristine (mud rc=124 listening, gol rc=0 glider gen-99, lisp `(+ 1 2)`→3, json parses test.json — md5s of captured outputs identical per pair). **   Re-baseline authorized**: new MD5 gates mud `e306b1874e51e06a23b708bcd79fec6d`, lisp `55044a1f64011bc644cddbcf73b5de93`, json `b5f56ebd51d2f0fcd379a1e083594462`, gol stays `51d6d078bdecad022318bded23182f72`. (Re-baseline recorded at F4 commit b8deb732; QUICK_REF table updated in F7.) I3's claim "Primitive TypeIds 1-20 stable" was technically true (ids 1-20 unchanged) but the user-type START shifted — corrected understanding recorded here.
+- **AMENDMENT 5 (2026-08-06, operator ruling on F5 review):** The F5 implementer deviated from AMENDMENT 2's "marker branch becomes a no-op" — they kept `lower.zig:4680` (`child_0==0` marker-param → `is_variadic=1`) FUNCTIONAL because mud_server + game_of_life both define `print(fmt, args: anytype)` whose `anytype` param has `child_0==0`. Verdict from operator on real Zig semantics: `anytype` (comptime-generic, monomorphized per call site) and `...` (C variadic via @cVaStart/@cVaArg/@cVaEnd) are DISTINCT features. zig1's conflation was a historical shortcut; it must be REMOVED, not preserved. **Binding decisions:**
+  - **Migrate** mud/gol `print` to true `...` syntax (Task F5b, new, between F5 and F6). Then `is_variadic` is set ONLY via the F3 flag-bit path.
+  - **Deactivate** the `lower.zig:4680` marker-param branch (no-op). The F5 code that made it a defensive OR is amended by F5b.
+  - mud/gol MD5s re-baseline expected (signature shape changes) — F-5 AMENDMENT B precedent, runtime is the gate.
+  - `anytype` (comptime-generic) support remains a separate future feature — NOT in this plan. This plan only removes the anytype→variadic conflation.
