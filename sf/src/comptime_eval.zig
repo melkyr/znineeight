@@ -80,6 +80,17 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind) ?Comp
                 }
                 return ComptimeVal{ .bits = lv % rv, .width_bits = maxw, .sig = false };
             }
+            if (op_kind == AstKind.bit_and) return ComptimeVal{ .bits = lv & rv, .width_bits = maxw, .sig = use_signed };
+            if (op_kind == AstKind.bit_or) return ComptimeVal{ .bits = lv | rv, .width_bits = maxw, .sig = use_signed };
+            if (op_kind == AstKind.bit_xor) return ComptimeVal{ .bits = lv ^ rv, .width_bits = maxw, .sig = use_signed };
+            if (op_kind == AstKind.shl) {
+                if (rv >= @intCast(u64, 64)) return null;
+                return ComptimeVal{ .bits = lv << rv, .width_bits = maxw, .sig = use_signed };
+            }
+            if (op_kind == AstKind.shr) {
+                if (rv >= @intCast(u64, 64)) return null;
+                return ComptimeVal{ .bits = lv >> rv, .width_bits = maxw, .sig = use_signed };
+            }
         }
     }
     return null;
