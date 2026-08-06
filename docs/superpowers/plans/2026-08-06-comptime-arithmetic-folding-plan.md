@@ -21,7 +21,7 @@
   ```
   Gate: 0 gcc errors (`error:` count == 0).
 - 4 MD5 baselines: mud `4644ad1349c55af80fa1a18fe0e17989`, gol `d0d3051d1cb1bd0db3ffd29495a2e18e`, lisp `dd56cd23984d2533eebd244ffe593791`, json `900cb401779aab11bcf22ce35100323c`. Mud+gol byte-identical; lisp/json re-baselined from P3-6 error-code registry (F-5 AMENDMENT B precedent). Byte-identity for all 4 required.
-- Corpus: current 200 repros (OK=193/FAIL=3/green-guards=4, raw FAIL=7). 3 new repros → 203. FAIL count must not increase.
+- Corpus: current 200 repros (OK=193/FAIL=3/green-guards=4, raw FAIL=7). 3 new repros → 203 pre-fix (OK 193→195, FAIL 3→4, green-guards 4; raw FAIL 7→8 — repro 3 counts FAIL, repros 1+2 count OK with emission-gap annotation). Post-fix F4 → 196/3/4 @203 (raw FAIL=7). FAIL count must not increase (only the new zero-size-array repro adds a FAIL, removed by F3).
 - test_analyzer_bin PASS. build_test.sh baseline-identical (5/4 or current state). test_semantic_bin pre-existing broken (operator ruling A).
 - fastedit/edit only for source edits. Read region before each edit. Bottom-to-top. NO scope creep. NO python/sed.
 - Z98 idioms: `@intCast` everywhere, `var msg: []const u8 = "text";` before PAL, if/else-if chains.
@@ -69,8 +69,7 @@ const VSHR: i32 = A >> 2;
 const VNOT: i32 = ~A;
 
 pub fn main() void {
-    var fmt_val: [*]const u8 = "%d";
-    var fmt_all: [*]const u8 = "%d %d %d %d %d %d %d %d %d %d %d %d %d\n";
+    var fmt_all: [*]const u8 = "%d %d %d %d %d %d %d %d %d %d %d %d\n";
     _ = printf(fmt_all, VADD, VSUB, VMUL, VDIV, VMOD,
                VNEG, VAND, VOR, VXOR, VSHL, VSHR, VNOT);
 }
@@ -110,11 +109,11 @@ NOTES.md documents: pre-fix gcc `error: ISO C forbids zero-size array` (type_res
 - [ ] **Step 4: Update EXPECTED_FAIL.md**
 
 Add 3 new rows to the classification table with measured pre-fix state:
-- `comptime_binop_not_folded` — expected FAIL (gcc-clean but runtime arithmetic emitted, gap proven by C89 inspection)
-- `comptime_lower_ignores_fold` — expected FAIL (same)
-- `comptime_array_size_gap` — expected FAIL (gcc `error: ISO C forbids zero-size array`)
+- `comptime_binop_not_folded` — **OK with emission-gap annotation** (gcc-clean, runtime output correct, but emitted C shows runtime arithmetic instead of int_const — gap proven by C89 inspection). Counted OK in totals, per the `load_global_array_copy`/`comptime_neg_int` precedent of counting runtime/emission-gap repros as OK.
+- `comptime_lower_ignores_fold` — **OK with emission-gap annotation** (same).
+- `comptime_array_size_gap` — **FAIL** (gcc `error: ISO C forbids zero-size array`). Counted FAIL until F3 fixes it.
 
-Update totals: 200→203. Document the new bucket.
+Update totals: 200→203 (OK 193→195, FAIL 3→4, green-guards 4; raw FAIL 7→8). Document the new bucket. Post-fix F4 reclassifies repro 3 OK → final 196/3/4 @203 (raw FAIL 7).
 
 - [ ] **Step 5: Verify + commit**
 
