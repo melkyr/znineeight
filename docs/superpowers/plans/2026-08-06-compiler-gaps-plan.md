@@ -70,51 +70,58 @@ Write `.superpowers/sdd/I-intcast-range-report.md` with the confirmed gap, trace
 
 ---
 
-### Task F1: Implement @intCast range-check
+### Task F1: Implement @intCast range-check (Option B + scope b)
 
-**Files:** per I1 ruling (`sf/src/lower.zig` and/or `sf/src/c89_emit.zig`) + create `repro/mi_matrix/intcast_range_check/` + `repro/mi_matrix/EXPECTED_FAIL.md`
+**Files:** `sf/src/lower.zig`, `sf/src/c89_emit.zig`, `sf/src/include/zig_runtime.h`, `sf/src/include/zig_runtime.c` + create `repro/mi_matrix/intcast_range_check/` + `repro/mi_matrix/EXPECTED_FAIL.md`
 
 **Interfaces:**
-- Consumes: I1 report recommendation + operator ruling.
-- Produces: `@intCast` narrowing emits range-checked helper call. Repro `intcast_range_check` classified OK.
+- Consumes: I1 report (`.superpowers/sdd/I-intcast-range-report.md`) + operator ruling.
+- Produces: `@intCast` narrowing AND same-width-reinterpret casts emit range-checked `__bootstrap_*_from_*` helper calls (scope b, full oracle semantics). Repro `intcast_range_check` classified OK + runtime panic.
+
+**Operator ruling (I1, 2026-08-06):** Fix site = **Option B** (c89_emit wrap via the existing `int_cast.is_checked` field + source-aware per-pair `__bootstrap_<DST>_from_<SRC>` naming — proper architecture: LIR carries the backend-neutral "checked cast" semantic, lowerer marks narrowing/reinterpret casts, emitter implements for C89). Scope = **(b) full oracle rule**: check iff target_bits < source_bits (narrowing) OR target_bits == source_bits with signedness difference (reinterpret); pure widening → raw cast. All 4 MD5 gates re-baseline, runtime-verified (F-5 AMENDMENT B precedent).
 
 - [ ] **Step 1: Write the failing repro**
 
 `repro/mi_matrix/intcast_range_check/main.zig`:
 ```zig
-const print = @cInclude("<stdio.h>");
-extern fn printf(fmt: [*]const u8) i32;
+extern fn __bootstrap_print_int(v: i32) void;
 pub fn main() void {
     var i: i64 = 2147483647;
     i = i + 1;
-    var x: i32 = @intCast(i32, i);
-    printf("x=%d\n" +% 0);
-    _ = x;
+    __bootstrap_print_int(@intCast(i32, i));
 }
 ```
-Note: adjust to the actual print idiom the corpus uses (`__bootstrap_print_int` or `@cInclude`+`extern fn printf` fixed-arity). The KEY property: a runtime i64 value that overflows i32 range narrows via @intCast.
+Verify the print idiom matches the corpus (I1 confirmed `extern fn __bootstrap_print_int(v: i32) void;` is the working idiom). The KEY property: a runtime i64 value that overflows i32 range narrows via @intCast.
 
 - [ ] **Step 2: Run repro — verify it does NOT panic today**
 
-Pre-fix: dump rc=0, gcc-clean, run prints garbage (no panic), rc=0. Document in NOTES.md as the bug.
+Pre-fix: dump rc=0, gcc-clean, run prints `-2147483648` (wrapped), rc=0. Document in NOTES.md as the bug.
 
-- [ ] **Step 3: Implement the fix per I1 ruling**
+- [ ] **Step 3: Add the 19 `__bootstrap_*_from_*` helpers to the sf runtime**
 
-Apply the operator-approved option (expected: lowerer @intCast handler emits `call_direct` to `__bootstrap_i32_from_i64` for narrowing casts on non-folded values; comptime-folded consts unchanged). Follow the file's existing `call_direct` emission pattern.
+In `sf/src/include/zig_runtime.c` (linkable) add all 19 per-pair signed-aware helpers from the oracle header (I1 report §3 table, lines 96-185 of `src/include/zig_runtime.h`): `usize_from_i64`, `i32_from_u32`, `u32_from_u64`, `u32_from_i32`, `usize_from_i32`, `i32_from_usize`, `u8_from_usize`, `u8_from_bool`, `f32_from_f64`, `i32_from_u8`, `u8_from_i32`, `u8_from_u32`, `u16_from_i32`, `u32_from_i64`, `u64_from_i64`, `i8_from_i32`, `i16_from_i32`, `i32_from_i64`, `c_char_from_u8`. Declare them in `sf/src/include/zig_runtime.h` (the emitted C `#include`s this — confirmed at mud emitted C line 52). Use `__bootstrap_panic(msg, __FILE__, __LINE__)`. Standardize the panic message to `"integer cast overflow in @intCast"` (message text is not gated). NOTE: the existing `std_checked_cast_*` family is NOT to be used — it is upper-bound-only and false-panics on in-range negatives (verified I1 §3).
 
-- [ ] **Step 4: Verify the repro panics**
+- [ ] **Step 4: Wire `is_checked` in the lowerer**
 
-Post-fix: repro links with `zig_runtime.c` (which provides `__bootstrap_*`), runs and PANICS with `integer cast overflow in @intCast` → nonzero exit. Dump rc=0, gcc-clean.
+In `sf/src/lower.zig:2603-2607` (the explicit `@intCast` handler): compute the source type via `getTempType(self, val_temp)` (lower.zig:824-831); set `is_checked = 1` when (src_bits > dst_bits) OR (src_bits == dst_bits AND signedness differs), else 0. The comptime branch (lower.zig:2540-2562) is untouched — comptime-folded consts are value-checked at fold time and skip the runtime cast. Pure-widening casts keep `is_checked = 0`.
 
-- [ ] **Step 5: Gate sweep**
+- [ ] **Step 5: Emit source-aware helper in c89_emit**
 
-Build 0 gcc errors. 4 MD5s — measure; re-baseline lisp if it changed (runtime is the gate, verify lisp `(+ 1 2)` still returns 3 and full runtime battery unaffected). Corpus: 206→207, `intcast_range_check` OK, no FAIL increase. Add EXPECTED_FAIL.md row.
+In `sf/src/c89_emit.zig:4137-4171` (the `.int_cast` arm checked branch): replace target-only `getCheckedCastFnName(reg, c.target)` (c89_emit.zig:2856-2868 → the `std_checked_cast_*` family) with a source-aware `__bootstrap_<DST>_from_<SRC>` name built from `c.target` + `getTempTypeByIndex(emitter, c.value)` (c89_emit.zig:731-738). Reuse the existing `dst = fn(src);` emission shape verbatim. The checked branch becomes live; the raw `dst = (ctype)src;` path stays for `is_checked == 0`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Verify the repro panics**
+
+Post-fix: repro links with `zig_runtime.c` (which now provides the helpers), runs and PANICS with `integer cast overflow in @intCast` → nonzero exit. Dump rc=0, gcc-clean.
+
+- [ ] **Step 7: Gate sweep + re-baseline (scope b)**
+
+Build 0 gcc errors. 4 MD5s — ALL 4 re-baseline (scope b: mud 5 sites, gol 4, lisp 5, json 1). Verify each runtime-identical EXCEPT lisp `(fact 13)` which now PANICS (the intended fix): mud (rc=124, listens :4000), gol (glider, 100 gen), lisp `(+ 1 2)` → 3 + full runtime battery, json (parses test.json). Update QUICK_REF.md MD5 table with new values + re-baseline note (F-5 AMENDMENT B). Corpus: 206→207, `intcast_range_check` OK, no FAIL increase. Add EXPECTED_FAIL.md row.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add sf/src/<fixed>.zig repro/mi_matrix/intcast_range_check/ repro/mi_matrix/EXPECTED_FAIL.md
-git commit -m "fix: @intCast narrowing emits range-checked helper (intcast_range_check)"
+git add sf/src/lower.zig sf/src/c89_emit.zig sf/src/include/zig_runtime.h sf/src/include/zig_runtime.c repro/mi_matrix/intcast_range_check/ repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
+git commit -m "fix: @intCast narrowing + reinterpret emits range-checked helper (intcast_range_check)"
 ```
 
 ---
@@ -477,3 +484,4 @@ git commit -m "docs: gate sweep + tech docs for 4-item compiler gaps plan"
 ## Amendments Record
 
 - **AMENDMENT 0 (2026-08-06):** Plan structure finalized from brainstorm. I-tasks for @intCast (I1) and varargs (I2/I3/I4); F-only for ICE marker (F2) and lisp closures (F6, last). Varargs is full Tier-B support (multi-backend, not C89-delegated) per operator. zig0 is a black-box oracle only for varargs emission — never read zig0 internals.
+- **AMENDMENT 1 (2026-08-06, operator ruling on I1):** F1 fix site = **Option B** (c89_emit wrap via existing `int_cast.is_checked` + source-aware `__bootstrap_<DST>_from_<SRC>` naming), NOT the plan's original Option A (lowerer `call_direct`). Rationale: proper architecture — the LIR carries the backend-neutral "checked cast" semantic; lowerer marks narrowing/reinterpret casts; emitter implements for C89. `call_direct` would bake a C-specific runtime function name into the backend-neutral LIR. Scope = **(b) full oracle rule** (narrowing OR same-width-reinterpret; pure widening → raw cast). All 4 MD5 gates re-baseline, runtime-verified (F-5 AMENDMENT B precedent). F1 rewritten with 8 concrete steps (19 helpers to sf runtime, lower.zig is_checked wiring, c89_emit source-aware checked branch).
