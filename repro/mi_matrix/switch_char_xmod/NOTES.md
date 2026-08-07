@@ -24,7 +24,7 @@ unreachable. So `classify('a')` returns `0` instead of `1`.
 - `timeout 5 ./prog` rc=0 (no hang), output `000`.
 - Emitted C: `grep "case " *.c` = 0 matches in both modules; the lib `.c`
   contains `switch (c) { default: goto ... }` with no `case` labels.
-- Classification: **FAIL** (runtime gap — lowerer emits switch without cases).
+- Classification: **FAIL** (runtime gap — lowerer emits switch without cases), NOT counted as a corpus FAIL (OK-by-compile / runtime-gap-tracked).
 
 ## Oracle verification (zig0)
 `./sf/build/zig0 -o /tmp/t3r/switch_char_xmod repro/mi_matrix/switch_char_xmod/main.zig`

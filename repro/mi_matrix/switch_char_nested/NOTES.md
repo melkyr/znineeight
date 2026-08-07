@@ -21,7 +21,7 @@ a `default:` target, so `nested('a', ...)` always takes the outer else
   (pre-fix symptom).
 - Runtime output: `999` (expected pre-fix: outer switch 'a' case dropped →
   else r=9; inner never reached).
-- Classification: **FAIL** (runtime gap; compiles and runs, wrong value).
+- Classification: **FAIL** (runtime gap; compiles and runs, wrong value), NOT counted as a corpus FAIL (OK-by-compile / runtime-gap-tracked).
 
 ## Oracle verification (zig0)
 `sf/build/zig0` on a copy in /tmp rc=0, emits `main.c` with 2 `case`

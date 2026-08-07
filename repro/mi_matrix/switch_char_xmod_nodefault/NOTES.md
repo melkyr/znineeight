@@ -25,7 +25,7 @@ no user `else`, the pre-initialized `r` (`9`) is returned for every input.
 - `timeout 5 ./prog` rc=0 (no hang), output `99`.
 - Emitted C: `grep "case " *.c` = 0 matches in both modules; the lib `.c`
   contains `switch (c) { default: goto ... }` with no `case` labels.
-- Classification: **FAIL** (runtime gap — switch without default emits switch without cases).
+- Classification: **FAIL** (runtime gap — switch without default emits switch without cases), NOT counted as a corpus FAIL (OK-by-compile / runtime-gap-tracked).
 
 ## Oracle verification (zig0)
 `./sf/build/zig0 -o /tmp/t3r/switch_char_xmod_nodefault repro/mi_matrix/switch_char_xmod_nodefault/main.zig`

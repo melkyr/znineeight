@@ -198,7 +198,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle` (C89 fundamental). **4 MD5
     gates byte-identical** (no re-baseline in F5; mud was re-baselined in F2 to
     `906fa59c…` — see the MD5 table). Out-of-scope follow-up: char_literal switch `case` labels
-    dropped (lower.zig:3858-3860/:3121-3123). [updated: 2026-08-07]
+    dropped (lower.zig:3858-3860/:3121-3123) (refs superseded — actual sites lower.zig:3183 expr / :3920 stmt). [updated: 2026-08-07]
     **char_literal switch + opt_slice null repro battery (gate sweep, 2026-08-07): effective
     `OK=223 / FAIL=3 / green-guards=4` over 230 repros** (223+3+4=230; the classifier counts 231
     dirs because `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately).

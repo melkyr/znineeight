@@ -27,7 +27,7 @@ fires.
   labels (pre-fix symptom).
 - Runtime output: `0` (expected pre-fix: labeled break on 'q' never fires;
   guard-break at 100 terminates; count never increments → prints 0).
-- Classification: **FAIL** (runtime gap; compiles and runs, wrong value).
+- Classification: **FAIL** (runtime gap; compiles and runs, wrong value), NOT counted as a corpus FAIL (OK-by-compile / runtime-gap-tracked).
 
 ## Oracle verification (zig0)
 `sf/build/zig0` on a copy in /tmp rc=0 (oracle output `1`), emits `main.c`

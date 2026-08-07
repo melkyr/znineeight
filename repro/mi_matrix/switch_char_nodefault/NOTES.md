@@ -20,7 +20,7 @@ ever taken; `r` retains its init value 9. (Expr-switch twin: `lower.zig:3183`.)
   pre-fix symptom.
 - Runtime output: `99` (expected pre-fix: no else; char cases dropped → r
   stays 9; no crash on unmatched `'q'`).
-- Classification: **FAIL** (runtime gap; compiles and runs, wrong value).
+- Classification: **FAIL** (runtime gap; compiles and runs, wrong value), NOT counted as a corpus FAIL (OK-by-compile / runtime-gap-tracked).
 
 ## Oracle verification (zig0)
 `sf/build/zig0` on a copy in /tmp rc=0, emits `main.c` with 2 `case` labels

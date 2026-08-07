@@ -20,7 +20,7 @@
   Note: `opt_slice_null_return` remains OK-by-gate (type-incorrect, tracked separately, see the
   F5 section). 4 MD5 gates byte-identical (mud `906fa59c…`, gol `0d8f0092…`, lisp
   `605b597e…`, json `b5f56ebd…`).
-- Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout). `switch_mixed_case_argtype`
+- Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout; Verified with `/tmp/zf5/zig1` — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors). `switch_mixed_case_argtype`
   **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
   `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
   type_mod.TYPE_VOID;` aborted the whole switch when two prong bodies had non-coercible types
@@ -35,7 +35,7 @@
   green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
   `var_declared_void`, `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return`
   is OK-by-gate (type-incorrect, tracked separately). Known adjacent bug (out of scope, tracked
-  as follow-up): char-literal switch `case` labels dropped at lower.zig:3858-3860/:3121-3123, so
+  as follow-up): char-literal switch `case` labels dropped at lower.zig:3858-3860/:3121-3123 (refs superseded — actual sites lower.zig:3183 expr / :3920 stmt), so
   this repro's switch still takes `default` at runtime (see the F4 section below).
 - Prior: OK=207 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 214 (2026-08-07 F3: cross-module pub const resolves)
 - Prior: OK=206 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 213 (2026-08-07 F2: undefined struct-array field init emits valid C)
@@ -1217,7 +1217,7 @@ The `switch_mixed_case_argtype` repro (added 2026-08-07 by the rogue_mud I-task,
 - **Files:** `sf/src/semantic_analyzer.zig` (commit `fix: switch mixed-case call-arg typing
   (switch_mixed_case_argtype)`).
 - **Known adjacent bug (out of scope, documented follow-up):** char-literal switch `case` labels
-  are still dropped at `lower.zig:3858-3860` (stmt switch) / `:3121-3123` (expr switch), so this
+  are still dropped at `lower.zig:3858-3860` (stmt switch) / `:3121-3123` (expr switch; refs superseded — actual sites lower.zig:3183 expr / :3920 stmt), so this
   repro's emitted `switch (c)` has no `case` labels and its body is **unreachable at runtime**
   (always takes `default`). The F4 runtime gate passes only because the repro prints nothing and
   `c != -1` is false. This affects `rogue_mud`'s input switch too (`examples/z98/rogue_mud/
@@ -1247,7 +1247,7 @@ ba89a6e0, F3 317f3a82, F4 b1b3f7e9 are all on the branch). Compiler under test: 
 - **`opt_slice_null_return` latent guard** — OK-by-gate (gcc rc=0), but type-incorrect (emits an
   `undefined_const` for a slice return); tracked separately, NOT a gate failure.
 - **Out-of-scope follow-up (unchanged from F4):** char_literal switch `case` labels dropped at
-  `lower.zig:3858-3860` (stmt switch) / `:3121-3123` (expr switch) — `rogue_mud`'s input switch
+  `lower.zig:3858-3860` (stmt switch) / `:3121-3123` (expr switch; refs superseded — actual sites lower.zig:3183 expr / :3920 stmt) — `rogue_mud`'s input switch
   (`examples/z98/rogue_mud/main.zig:236-256`) would be runtime-dead. A `switch_char_case_labels`
   repro + F-task is recommended.
 - **Tech docs updated (AGENTS §1.1.1, `[updated: 2026-08-07]`):**

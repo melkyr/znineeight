@@ -23,7 +23,7 @@ twin: `lower.zig:3183`.)
   `'a'` is absent. Pre-fix symptom.
 - Runtime output: `020` (expected pre-fix, VERIFIED: INT case `98` works —
   `'b'`→2; CHAR case `'a'` dropped — `'a'`→else→0; `'q'`→0).
-- Classification: **FAIL** (runtime gap; compiles and runs, wrong value).
+- Classification: **FAIL** (runtime gap; compiles and runs, wrong value), NOT counted as a corpus FAIL (OK-by-compile / runtime-gap-tracked).
 
 ## Oracle verification (zig0)
 `sf/build/zig0` on a copy in /tmp rc=0, emits `main.c` with 2 `case` labels
