@@ -2005,6 +2005,24 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         } else if (ts.kind == sym_mod.SymbolKind.global) {
                             var gbl_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ts.decl_node);
                             var gbl_tid = if (gbl_type) |gt| gt else type_mod.TYPE_UNDEFINED;
+                            if ((@intCast(u16, ts.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                                var gd_node = store.nodes.items[@intCast(usize, ts.decl_node)];
+                                if (gd_node.child_1 != 0) {
+                                    var gi_node = store.nodes.items[@intCast(usize, gd_node.child_1)];
+                                    if (gi_node.kind == AstKind.int_literal or gi_node.kind == AstKind.char_literal) {
+                                        var gval = store.int_values.items[@intCast(usize, gi_node.payload)];
+                                        var gtid = nextTemp(self, gbl_tid);
+                                        emitInst(self, LirInst{ .int_const = .{ .value = gval, .result = gtid } });
+                                        return gtid;
+                                    }
+                                    if (gi_node.kind == AstKind.float_literal) {
+                                        var gval = store.float_values.items[@intCast(usize, gi_node.payload)];
+                                        var gtid = nextTemp(self, gbl_tid);
+                                        emitInst(self, LirInst{ .float_const = .{ .value = gval, .result = gtid } });
+                                        return gtid;
+                                    }
+                                }
+                            }
                             var gtemp = nextTemp(self, gbl_tid);
                             emitInst(self, LirInst{ .load_global = .{ .name_id = ts.name_id, .module_id = target_mod, .result = gtemp } });
                             return gtemp;

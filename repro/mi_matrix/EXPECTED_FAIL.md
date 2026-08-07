@@ -1,22 +1,25 @@
 # mi_matrix corpus — expected-fail manifest (v24 2026-08-07)
 
-## Totals (213 repros)
+## Totals (214 repros)
 
-- **CURRENT (2026-08-07 F2: undefined struct-array field init emits valid C): OK=206 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **213 repros** (206 + 3 + 4 = 213; raw classifier FAIL = 7
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf2/zig1` (fresh
-  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `undef_arr_struct_literal`
-  **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the lowerer now skips the
-  `assign_field` entirely for struct-literal fields that are `undefined` AND array-typed (Option
-  A, operator ruling) — the emitted C no longer contains the ill-typed `clients[_j] = 0;`
-  zero-fill on a struct-array element, matching the zig0 oracle which emits no init for
-  `undefined` array fields. dump rc=0, gcc-clean, link rc=0, run rc=0. The 3 remaining FAILs: 2
-  std-lib-deferred (`field_store_drop` + `test_stub_0`, both `error[3048]`) +
-  `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4 green-guards unchanged:
-  `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`,
-  `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return` is OK-by-gate
-  (type-incorrect, tracked separately); the I-task repros for the other 2 gaps
-  (`xmod_pub_const_global`, `switch_mixed_case_argtype`) stay FAIL until their F3/F4 fix tasks.
+- **CURRENT (2026-08-07 F3: cross-module pub const resolves): OK=207 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **214 repros** (207 + 3 + 4 = 214; raw classifier FAIL = 7
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf3/zig1` (fresh
+  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `xmod_pub_const_global`
+  **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the cross-module
+  `SymbolKind.global` module-field-access branch now folds literal-init `pub const` values
+  (int/float/char literal init) to an `int_const`/`float_const` typed at the DECLARED type —
+  mirroring the same-module literal fold — instead of unconditionally emitting `load_global`
+  for a `zG_` name that has no storage slot (main.zig:616-660 skips literal-init consts) and
+  therefore no definition or extern anywhere (Option C, operator ruling). `load_global`
+  fallback retained for non-literal consts. dump rc=0, gcc-clean, link rc=0, run rc=0. The 3
+  remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
+  `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
+  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return`
+  is OK-by-gate (type-incorrect, tracked separately); the I-task repro `switch_mixed_case_argtype`
+  stays FAIL until its F4 fix task.
+- Prior: OK=206 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 213 (2026-08-07 F2: undefined struct-array field init emits valid C)
 - Prior: OK=205 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 212 (2026-08-07 F1: duplicate-typed struct fields emit correctly)
 - Prior: OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 F1: labeled statement support in parser, sema, lowerer)
 - Prior: OK=202 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 I-task: rogue_mud build attempt — labeled_stmt_unhandled added as FAIL)
@@ -1100,6 +1103,53 @@ expanded the `undefined` initializer of the `[5]Client` field into a zero-fill l
 - **F2 accounting: 212 → 213 repros, OK=206 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0**
   (206 + 3 + 4 = 213; raw classifier FAIL stays **7**). Only flip:
   `undef_arr_struct_literal` FAIL→OK. The 3 remaining FAILs: 2 std-lib-deferred
+  (`field_store_drop`, `test_stub_0`, `error[3048]`) + `self_embed_optional_cycle` (F-8
+  residual, gcc incomplete-type). 4 green-guards unchanged. No existing repro flipped. See the
+  Totals section at the top.
+
+---
+
+## Task F3 — cross-module pub const resolves (xmod_pub_const_global) (2026-08-07) — +1 (213 → 214)
+
+The `xmod_pub_const_global` repro (added 2026-08-07 by the rogue_mud I-task, per
+`.superpowers/sdd/I-rogue-xmodconst-report.md`) is now **OK**. It previously failed gcc with
+`'zG_..._COLOR_WHITE' undeclared`: the cross-module `pub const` literal-init
+(`pub const COLOR_WHITE: u8 = 7`) registers as `SymbolKind.global` but gets NO F-7 storage slot
+(main.zig:616-660 skips literal-init consts, bit0=mutable only), so there is no definition in the
+owner `.c` and no extern in the module header, and the consumer's `load_global` read referenced an
+undeclared `zG_` name.
+
+- **Root cause:** lower.zig:2005-2011 (the cross-module `SymbolKind.global` module-field-access
+  branch) unconditionally lowered every module-qualified global reference to `load_global`,
+  never consulting the const bit or the decl init.
+- **Fix (Option C, operator ruling):** `sf/src/lower.zig` — the cross-module
+  `SymbolKind.global` branch now, when `(ts.flags & 0x01) == 0` (const) and the target's
+  `decl_node.child_1` init is an int/float/char literal, emits the corresponding
+  `int_const`/`float_const` typed at the DECLARED type (`gbl_tid` from
+  `resolvedTypeTableGet(resolved_types, ts.decl_node)`, i.e. `u8` not `TYPE_U32` — avoids the F-7
+  u64-width regression class), mirroring the same-module literal fold at lower.zig:1681-1710. The
+  `load_global` fallback is retained for non-literal consts (already storage-classified via
+  main.zig:627). No bare `zG_` definition emitted (zero-init trap avoided).
+- **Gate consequence:** none — **4 MD5 gates byte-identical** (mud `906fa59c…`, gol `0d8f0092…`,
+  lisp `605b597e…`, json `b5f56ebd…`; no gate program has a cross-module scalar `pub const`).
+- **Files:** `sf/src/lower.zig` (commit `fix: cross-module pub const resolves (xmod_pub_const_global)`).
+
+**Gate evidence (measured, /tmp/zf3/zig1 — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors):**
+
+- `xmod_pub_const_global`: dump rc=0, 2 `.c`, per-file gcc-clean, link rc=0, run rc=0. Emitted C
+  folds both refs: `zT_3 = 7;` (`fg`), `zT_5 = 7;` (`cell.fg`), `zT_4 = 0;` (`bg`), typed
+  `unsigned char`; colors.c stays `/* EOF */`.
+- 4 MD5 gates: mud `906fa59c8676bb1054d3fcc13704fce5`, gol
+  `0d8f0092c22c04375482a198691a3957`, lisp `605b597e8b7cff60de0ce84a0593e743`, json
+  `b5f56ebd51d2f0fcd379a1e083594462` — all four byte-identical, no re-baseline.
+- Full corpus sweep (216 dirs, /tmp/zf3/zig1): **OK=208 / FAIL=8 (raw) / ICE=0 / CRASH=0**. Of
+  the raw FAIL=8: 4 green-guards (`eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`) + 3 real baseline FAILs (`field_store_drop`,
+  `test_stub_0`, `self_embed_optional_cycle`) + 1 I-task repro (`switch_mixed_case_argtype` —
+  stays FAIL until F4).
+- **F3 accounting: 213 → 214 repros, OK=207 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0**
+  (207 + 3 + 4 = 214; raw classifier FAIL stays **7**). Only flip:
+  `xmod_pub_const_global` FAIL→OK. The 3 remaining FAILs: 2 std-lib-deferred
   (`field_store_drop`, `test_stub_0`, `error[3048]`) + `self_embed_optional_cycle` (F-8
   residual, gcc incomplete-type). 4 green-guards unchanged. No existing repro flipped. See the
   Totals section at the top.
