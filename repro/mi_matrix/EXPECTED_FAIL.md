@@ -1,21 +1,26 @@
-# mi_matrix corpus — expected-fail manifest (v25 2026-08-07)
+# mi_matrix corpus — expected-fail manifest (v26 2026-08-07)
 
-## Totals (215 repros)
+## Totals (230 repros)
 
-- **CURRENT (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout): OK=208 /
-  FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** over **215 repros** (208 + 3 + 4 = 215; raw
-  classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Verified with
-  `/tmp/zf5/zig1` (fresh HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). The 5
-  rogue_mud emission-defect gap repros (`dup_optptr_field_emit`, `dup_val_field_emit`,
-  `undef_arr_struct_literal`, `xmod_pub_const_global`, `switch_mixed_case_argtype`) are ALL OK.
-  The 3 remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
-  `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
-  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
-  `var_declared_void`, `euvoid_val_catch`. No other repro flipped vs F4. Note:
-  `opt_slice_null_return` remains OK-by-gate (type-incorrect, tracked separately, see the F5
-  section). Out-of-scope follow-up: char-literal switch `case` labels dropped at
-  lower.zig:3858-3860/:3121-3123 (see the F5 section).
-- Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F4: switch mixed-case call-arg typing). `switch_mixed_case_argtype`
+- **CURRENT (2026-08-07 gate sweep — char_literal switch + opt_slice null repro battery): OK=223 /
+  FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** over **230 repros** (223 + 3 + 4 = 230; raw
+  classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
+  `sf/build/out_release/zig1` (HEAD 965a830b; compiler source unchanged since F4 `b1b3f7e9` — the
+  battery commits are repro-only). Corpus grew 216 → 231 dirs by **15 repros** (12 Battery A
+  char_literal switch-case + 3 Battery B opt_slice null-payload), ALL of which classify **OK**
+  under the gcc-exit gate: the 12 Battery A are **OK-by-compile / runtime-gap-tracked** (compile
+  clean but wrong runtime output — char switch `case` labels dropped at
+  lower.zig:3183/:3920 — NOT added to FAIL, mirroring the `comptime_neg_int` /
+  `opt_slice_null_return` precedent; see the char_literal battery section below); the 3 Battery B
+  are **OK-by-gate / latent** (gcc-clean, `int`-typed null-payload temp; see the opt_slice
+  battery section below). The 3 FAILs unchanged: 2 std-lib-deferred (`field_store_drop` +
+  `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc
+  incomplete-type). The 4 green-guards unchanged: `eu_assign_incompat_payload`,
+  `field_access_optional`, `var_declared_void`, `euvoid_val_catch`. No other repro flipped.
+  Note: `opt_slice_null_return` remains OK-by-gate (type-incorrect, tracked separately, see the
+  F5 section). 4 MD5 gates byte-identical (mud `906fa59c…`, gol `0d8f0092…`, lisp
+  `605b597e…`, json `b5f56ebd…`).
+- Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout). `switch_mixed_case_argtype`
   **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
   `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
   type_mod.TYPE_VOID;` aborted the whole switch when two prong bodies had non-coercible types
@@ -1262,4 +1267,92 @@ ba89a6e0, F3 317f3a82, F4 b1b3f7e9 are all on the branch). Compiler under test: 
 - **Files:** `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`, `sf/docs/tech_docs/`
   (08, 07, 05, 02, INDEX.md), `examples/z98/rogue_mud/NOTES.md`. Commit
   `docs: gate sweep + tech docs for rogue_mud emission defects plan`.
+
+---
+
+## char_literal switch-case repro battery (Battery A, 2026-08-07) — 12 repros, ALL OK-by-compile / runtime-gap-tracked
+
+Repros from the repro battery plan (`95b3c828` spec, `f0077d50` plan; commits `0dc4f594`,
+`1e592430`, `c2864086`). They probe the **char_literal switch `case`-label drop**: both
+switch-case-collection loops in `lower.zig` handle `int_literal`/`enum_literal`/`error_literal`
+case nodes then `else { continue; }`, so a `char_literal` (kind 13) case node is silently dropped
+from the case table — the emitted C `switch (c)` has NO `case` labels, only `default:`, and every
+input takes the `else` body.
+
+- **Defect sites (both):**
+  - `sf/src/lower.zig:3170-3184` — **expr-switch** case collection, `else { continue; }` at
+    `:3183`.
+  - `sf/src/lower.zig:3907-3921` — **stmt-switch** case collection, `else { continue; }` at
+    `:3920`.
+- **Follow-up fix (NOT this plan):** add an `AstKind.char_literal` branch to both loops reading
+  `store.int_values` (like `int_literal` does) so char cases emit real `case 'a':` labels. Verify
+  all 12 repros flip to their expected post-fix output.
+
+**Classification under the corpus gate:** every repro dumps rc=0, is gcc-clean (per-file
+`gcc -c` rc=0), links, and runs rc=0 — so the gcc-exit classifier reports **OK**. But each prints
+**wrong runtime output** (the char cases are dead; the switch always takes `else`), so they are
+**runtime-gap-tracked** — recorded as OK-by-compile, NOT added to the FAIL count, mirroring the
+`comptime_neg_int` / `opt_slice_null_return` precedent (a repro that compiles but miscompiles at
+runtime is not a gate FAIL; the gate is gcc exit code).
+
+**Measured (sf/build/out_release/zig1, 2026-08-07):**
+
+| Repro | defect site | pre-fix run output | expected post-fix output |
+|-------|-------------|--------------------|--------------------------|
+| `switch_char_single` | stmt `:3920` | `000` | `120` |
+| `switch_char_multi` | stmt `:3920` | `0000` | `1120` |
+| `switch_char_nodefault` | stmt `:3920` | `99` | `19` |
+| `switch_char_mixed_kinds` | stmt `:3920` | `020` | `120` (INT case 98 works; char case drops — proves char-specific) |
+| `switch_char_expr` | expr `:3183` | `000` | `120` |
+| `switch_char_while` | stmt `:3920` | `0` | `1` |
+| `switch_char_labeled` | stmt `:3920` | `0` | `1` |
+| `switch_char_nested` | stmt `:3920` | `999` | `109` |
+| `switch_char_xmod` | stmt `:3920` (cross-module) | `000` | `120` |
+| `switch_char_xmod_expr` | expr `:3183` (cross-module) | `000` | `120` |
+| `switch_char_xmod_while` | stmt `:3920` (cross-module, in loop) | `0` | `1` |
+| `switch_char_xmod_nodefault` | stmt `:3920` (cross-module, no else) | `99` | `19` |
+
+Each dir's `NOTES.md` documents the defect, oracle (zig0) verification, measured pre-fix output,
+and expected post-fix output. `switch_char_mixed_kinds` is the key discriminator — its INT case
+prong (`98`) fires while the char prong (`'a'`) is dropped, proving the bug is char-specific, not
+a general switch miscompile.
+
+**Accounting:** 12 repros, all **OK-by-compile / runtime-gap-tracked**. FAIL=3 and green-guards=4
+**UNCHANGED** (these are tracked separately, not added to either bucket).
+
+---
+
+## opt_slice null-payload repro battery (Battery B, 2026-08-07) — 3 repros, ALL OK-by-gate / latent
+
+Repros from the same repro battery plan (commit `965a830b`). They probe the **opt_slice
+null-payload temp typing**: `catch return null` (and `return null`) in a function returning an
+OPTIONAL SLICE (`?[]T`) emits the null payload as a scalar `int` temp assigned `NULL`
+(`int zT_3; zT_3 = NULL; zT_4.has_value = 0;`) even though the optional struct's payload field is
+really a slice `typedef struct { zT_..._Slice... value; int has_value; } Opt;`. For an optional
+POINTER (`?*T`) the payload IS a pointer and `int`/`NULL` is acceptable; for an optional slice the
+temp type is wrong.
+
+- **Defect:** the null-construction path picks a scalar `int` temp for the payload regardless of
+  the payload's real type (the optional's payload type is not threaded onto the null temp).
+- **Latent, not a gate failure:** the emitted C compiles (gcc rc=0, `-Wint-conversion` warning
+  only) and the payload is never READ when `has_value=0` — real breakage only if a future fix
+  makes the payload temp strictly type-checked (e.g. `-Werror`).
+- **Follow-up fix (NOT this plan):** emit the null-payload temp at the optional's payload type,
+  not `int`. Verify gcc warnings disappear for Battery B; assess mud/gol/lisp/json re-baseline
+  blast radius.
+
+**Measured (sf/build/out_release/zig1, 2026-08-07):** all 3 repros dump rc=0, gcc-clean
+(warning only), link, run rc=0 printing `1`:
+
+| Repro | path | emitted-C symptom |
+|-------|------|--------------------|
+| `opt_slice_null` (B1) | same-module `?[]Point` | `int zT_3; ... zT_3 = NULL; zT_4.has_value = 0;` |
+| `opt_slice_null_xmod` (B2) | cross-module `?[]Path` (lib.zig) | same symptom in `lib_*.c` |
+| `opt_slice_null_multi` (B3) | 3 null sites (2× `catch return null` + final `return null`) | `int zT_6; ... zT_6 = NULL; zT_7.has_value = 0;` |
+
+`opt_slice_null_return` (from the rogue_mud F5 I-task, 2026-08-07) is the same defect and remains
+**OK-by-gate, tracked separately** (see the F5 section). Each dir's `NOTES.md` documents the gap
+and the latent-failure analysis.
+
+**Accounting:** 3 repros, all **OK-by-gate / latent**. FAIL=3 and green-guards=4 **UNCHANGED**.
 

@@ -188,17 +188,34 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
    parser/sema/lowerer; the labeled `break :game_loop` no longer hangs). The 3 FAILs unchanged =
    `field_store_drop` + `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle`
    (C89 fundamental). **4 MD5 gates byte-identical** (no re-baseline). [updated: 2026-08-07]
-   **rogue_mud emission-defects plan closeout (F5 gate sweep, 2026-08-07): effective
-   `OK=208 / FAIL=3 / green-guards=4` over 215 repros** (208+3+4=215; raw classifier FAIL stays
-   7 — the 4 green-guards are a sub-bucket; the classifier counts 216 dirs because
-   `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 5 gap repros
-   (`dup_optptr_field_emit`, `dup_val_field_emit`, `undef_arr_struct_literal`,
-   `xmod_pub_const_global`, `switch_mixed_case_argtype`) all **FAIL→OK** via F1-F4 (commits
-   a5ac4598, ba89a6e0, 317f3a82, b1b3f7e9). The 3 FAILs unchanged = `field_store_drop` +
-   `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle` (C89 fundamental). **4 MD5
-   gates byte-identical** (no re-baseline in F5; mud was re-baselined in F2 to
-   `906fa59c…` — see the MD5 table). Out-of-scope follow-up: char_literal switch `case` labels
-   dropped (lower.zig:3858-3860/:3121-3123). [updated: 2026-08-07]
+    **rogue_mud emission-defects plan closeout (F5 gate sweep, 2026-08-07): effective
+    `OK=208 / FAIL=3 / green-guards=4` over 215 repros** (208+3+4=215; raw classifier FAIL stays
+    7 — the 4 green-guards are a sub-bucket; the classifier counts 216 dirs because
+    `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 5 gap repros
+    (`dup_optptr_field_emit`, `dup_val_field_emit`, `undef_arr_struct_literal`,
+    `xmod_pub_const_global`, `switch_mixed_case_argtype`) all **FAIL→OK** via F1-F4 (commits
+    a5ac4598, ba89a6e0, 317f3a82, b1b3f7e9). The 3 FAILs unchanged = `field_store_drop` +
+    `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle` (C89 fundamental). **4 MD5
+    gates byte-identical** (no re-baseline in F5; mud was re-baselined in F2 to
+    `906fa59c…` — see the MD5 table). Out-of-scope follow-up: char_literal switch `case` labels
+    dropped (lower.zig:3858-3860/:3121-3123). [updated: 2026-08-07]
+    **char_literal switch + opt_slice null repro battery (gate sweep, 2026-08-07): effective
+    `OK=223 / FAIL=3 / green-guards=4` over 230 repros** (223+3+4=230; the classifier counts 231
+    dirs because `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately).
+    Corpus grew 216 → 231 dirs by **15 new repros**, ALL classifying **OK** under the gcc-exit
+    gate: **12 char_literal switch-case repros are OK-by-compile / RUNTIME-GAP-TRACKED** — they
+    compile clean but print wrong runtime output (char switch `case` labels dropped at
+    lower.zig:3183 expr / :3920 stmt — every input takes `else`), tracked separately, NOT added
+    to FAIL (mirrors `comptime_neg_int` / `opt_slice_null_return`); **3 opt_slice null-payload
+    repros are OK-by-gate / LATENT** (`catch return null` in a `?[]T` fn emits an `int`-typed
+    null-payload temp — gcc-clean warning-only, breaks only under strict typing). The 3 FAILs and
+    4 green-guards UNCHANGED: `field_store_drop` + `test_stub_0` (std-lib-deferred) +
+    `self_embed_optional_cycle` (C89 fundamental); `eu_assign_incompat_payload`,
+    `field_access_optional`, `var_declared_void`, `euvoid_val_catch`. **4 MD5 gates byte-identical**
+    (mud `906fa59c…`, gol `0d8f0092…`, lisp `605b597e…`, json `b5f56ebd…`). See EXPECTED_FAIL.md
+    "char_literal switch-case repro battery" + "opt_slice null-payload repro battery" sections.
+    Out-of-scope follow-up (updated): the 12 `switch_char_*` repro dirs + the 3 `opt_slice_null_*`
+    dirs gate the two post-plan fixes. [updated: 2026-08-07]
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
