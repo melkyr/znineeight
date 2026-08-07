@@ -1,11 +1,21 @@
-# mi_matrix corpus — expected-fail manifest (v24 2026-08-07)
+# mi_matrix corpus — expected-fail manifest (v25 2026-08-07)
 
 ## Totals (215 repros)
 
-- **CURRENT (2026-08-07 F4: switch mixed-case call-arg typing): OK=208 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **215 repros** (208 + 3 + 4 = 215; raw classifier FAIL = 7
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf4/zig1` (fresh
-  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `switch_mixed_case_argtype`
+- **CURRENT (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout): OK=208 /
+  FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** over **215 repros** (208 + 3 + 4 = 215; raw
+  classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Verified with
+  `/tmp/zf5/zig1` (fresh HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). The 5
+  rogue_mud emission-defect gap repros (`dup_optptr_field_emit`, `dup_val_field_emit`,
+  `undef_arr_struct_literal`, `xmod_pub_const_global`, `switch_mixed_case_argtype`) are ALL OK.
+  The 3 remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
+  `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
+  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`. No other repro flipped vs F4. Note:
+  `opt_slice_null_return` remains OK-by-gate (type-incorrect, tracked separately, see the F5
+  section). Out-of-scope follow-up: char-literal switch `case` labels dropped at
+  lower.zig:3858-3860/:3121-3123 (see the F5 section).
+- Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F4: switch mixed-case call-arg typing). `switch_mixed_case_argtype`
   **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
   `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
   type_mod.TYPE_VOID;` aborted the whole switch when two prong bodies had non-coercible types
@@ -1208,4 +1218,48 @@ The `switch_mixed_case_argtype` repro (added 2026-08-07 by the rogue_mud I-task,
   `c != -1` is false. This affects `rogue_mud`'s input switch too (`examples/z98/rogue_mud/
   main.zig:236-256`); a follow-up `switch_char_case_labels` repro + F-task is recommended. NOT
   fixed here.
+
+## Task F5 — gate sweep + tech docs, rogue_mud emission-defects plan closeout (2026-08-07)
+
+Docs-only + verification task (no compiler code changed — the 4 F-fixes F1 a5ac4598, F2
+ba89a6e0, F3 317f3a82, F4 b1b3f7e9 are all on the branch). Compiler under test: `/tmp/zf5/zig1`
+(fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors).
+
+- **Full corpus sweep (216 dirs, QUICK_REF classifier): `OK=209 / FAIL=3 / ICE=0 / CRASH=0 /
+  GREEN=4 / TOTAL=216`.** Reconciliation vs the 215-repro manifest total: 216 dirs = 215 manifest
+  repros + `opt_slice_null_return` (OK-by-gate, type-incorrect, tracked separately — its OK is
+  the 209th, so effective OK=208). Raw classifier FAIL = 7 = 4 green-guards (sub-bucket) + 3 real
+  FAILs (`field_store_drop`, `self_embed_optional_cycle`, `test_stub_0`). The 5 gap repros all
+  OK: `dup_optptr_field_emit`, `dup_val_field_emit`, `undef_arr_struct_literal`,
+  `xmod_pub_const_global`, `switch_mixed_case_argtype` — each runtime-verified (dump rc=0, gcc
+  rc=0, run rc=0). No repro flipped vs F4; no regressions.
+- **4 MD5 gates verified byte-identical** (no re-baseline this task; the mud re-baseline was
+  recorded in F2): mud `906fa59c8676bb1054d3fcc13704fce5`, gol
+  `0d8f0092c22c04375482a198691a3957`, lisp `605b597e8b7cff60de0ce84a0593e743`, json
+  `b5f56ebd51d2f0fcd379a1e083594462`.
+- **5 gap rows cleared → OK** in this manifest; the 3 remaining FAILs stay enumerated (2
+  std-lib-deferred `error[3048]` + `self_embed_optional_cycle` gcc incomplete-type).
+- **`opt_slice_null_return` latent guard** — OK-by-gate (gcc rc=0), but type-incorrect (emits an
+  `undefined_const` for a slice return); tracked separately, NOT a gate failure.
+- **Out-of-scope follow-up (unchanged from F4):** char_literal switch `case` labels dropped at
+  `lower.zig:3858-3860` (stmt switch) / `:3121-3123` (expr switch) — `rogue_mud`'s input switch
+  (`examples/z98/rogue_mud/main.zig:236-256`) would be runtime-dead. A `switch_char_case_labels`
+  repro + F-task is recommended.
+- **Tech docs updated (AGENTS §1.1.1, `[updated: 2026-08-07]`):**
+  - `08_c89_emission.md` — F1: `tstEdgesCount`/`tstEdgesFill` dedupe same-typed field edges
+    (distinct dep type counted once) via new `tstSeenInRange` (c89_emit.zig:799); fixed stale
+    line refs (`tstTopologicalSort` :959, `tstEdgesCount` :807, `tstEdgesFill` :857, `tstIsDep`
+    :922, sub-pass 2a/2b :1256/:1297, fwd-decls :1233-1255, Q1 refs).
+  - `07_lir_lowering.md` — F2: lowerer skips `assign_field` for `undefined` array-typed fields
+    (oracle parity); F3: cross-module `pub const` literal fold at the ref site.
+  - `05_semantic_analysis.md` — F4: switch MIX branch `continue` (resolves remaining prongs
+    instead of aborting; `call_arg_types` populated for later prongs); fixed stale :1018-1129
+    function range → :1046-1179 and the abort-behavior doc.
+  - `02_symbol_registration.md` — F3: `pub const` literal-init has no storage slot (bit0=mutable);
+    cross-module refs fold literals at the ref site.
+  - `03_type_resolution.md` — NOT updated (F1/F3 touch c89_emit/lower, not the type-resolution
+    path; verified by `git show --stat`).
+- **Files:** `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`, `sf/docs/tech_docs/`
+  (08, 07, 05, 02, INDEX.md), `examples/z98/rogue_mud/NOTES.md`. Commit
+  `docs: gate sweep + tech docs for rogue_mud emission defects plan`.
 

@@ -633,7 +633,7 @@ Full alphabetical index of all documented functions across all phases and module
 | `trackingPeak` | allocator.zig | 152 |
 | `trackingReset` | allocator.zig | 147 |
 | `tryRecordCoercion` | semantic_analyzer.zig | 597 |
-| `tstTopologicalSort` | c89_emit.zig | 846 |
+| `tstTopologicalSort` | c89_emit.zig | 959 |
 | `tuAppend` | type_registry.zig | 217 |
 | `tupAppend` | type_registry.zig | 221 |
 | `typeKindSrcStr` | diagnostics.zig | 492 |

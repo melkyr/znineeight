@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (210 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-07 — labeled_stmt support (F1)]
+### Corpus gate (216 dirs in `repro/mi_matrix/*/`, 215 manifest repros)  — classify by gcc EXIT CODE  [updated: 2026-08-07 — rogue_mud plan closeout (F5)]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -188,6 +188,17 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
    parser/sema/lowerer; the labeled `break :game_loop` no longer hangs). The 3 FAILs unchanged =
    `field_store_drop` + `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle`
    (C89 fundamental). **4 MD5 gates byte-identical** (no re-baseline). [updated: 2026-08-07]
+   **rogue_mud emission-defects plan closeout (F5 gate sweep, 2026-08-07): effective
+   `OK=208 / FAIL=3 / green-guards=4` over 215 repros** (208+3+4=215; raw classifier FAIL stays
+   7 — the 4 green-guards are a sub-bucket; the classifier counts 216 dirs because
+   `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 5 gap repros
+   (`dup_optptr_field_emit`, `dup_val_field_emit`, `undef_arr_struct_literal`,
+   `xmod_pub_const_global`, `switch_mixed_case_argtype`) all **FAIL→OK** via F1-F4 (commits
+   a5ac4598, ba89a6e0, 317f3a82, b1b3f7e9). The 3 FAILs unchanged = `field_store_drop` +
+   `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle` (C89 fundamental). **4 MD5
+   gates byte-identical** (no re-baseline in F5; mud was re-baselined in F2 to
+   `906fa59c…` — see the MD5 table). Out-of-scope follow-up: char_literal switch `case` labels
+   dropped (lower.zig:3858-3860/:3121-3123). [updated: 2026-08-07]
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
@@ -230,7 +241,7 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 | [updated: 2026-08-06] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `50beb1bf5edc4cbb638f84aa027ffade` |
+| `examples/z98/mud_server/main.zig` | `906fa59c8676bb1054d3fcc13704fce5` |
 | `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `605b597e8b7cff60de0ce84a0593e743` |
 | `examples/z98/json_parser/main.zig` | `b5f56ebd51d2f0fcd379a1e083594462` |
@@ -283,6 +294,14 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   byte-identical (no print migration). Per the F-5 AMENDMENT B precedent the gate is runtime
   behavior, not byte-identity. Pre-F5b values: mud `e306b187…`, gol `51d6d078…`. New values: mud
   `50beb1bf…`, gol `0d8f0092…`; lisp `55044a1f…`, json `b5f56ebd…` unchanged. [updated: 2026-08-06]
+
+- **Re-baselined 2026-08-07 (F2, undefined-array-field init drop).** mud re-baselined because F2
+  (Option A, commit ba89a6e0) skips the `assign_field` for `undefined` array-typed struct-literal
+  fields in the lowerer — dropping the dead `[256]u8` zero-fill at mud main.zig:159 and the
+  `undefined_const` temp (remaining diffs are pure temp renumbering). Runtime-verified identical:
+  new + pristine mud both print "MUD server listening on port 4000" (rc=124 timeout). Per the F-5
+  AMENDMENT B precedent the gate is runtime behavior, not byte-identity. gol/lisp/json
+  byte-identical. Pre-F2 value: mud `50beb1bf…`. New mud value: `906fa59c…`. [updated: 2026-08-07]
 
 - **Re-baselined 2026-08-06 (F6, lisp closures capture current env).** lisp re-baselined because
   `eval.zig:124` `env_to_value(env.*,…)` → `curr_env.*` (lambda now captures the current dynamic

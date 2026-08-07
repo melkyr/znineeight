@@ -507,7 +507,7 @@ Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
   `pushExpectedType(0)` and recorded into `call_arg_types` (loose typed).
 - Per-arg loop: `pushExpectedType(param_type)` → resolve → `popExpectedType` → `tryRecordCoercion`.
 
-### semanticAnalyzerResolveSwitchExpr (`sf/src/semantic_analyzer.zig:1018-1129`)
+### semanticAnalyzerResolveSwitchExpr (`sf/src/semantic_analyzer.zig:1046-1179`)
 
 `[inference: resolve condition → set current_switch_cond_tu → resolve prongs → unify types → return unified]`
 
@@ -519,7 +519,16 @@ Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
      - For each case: if enum_literal or undefined_literal → resolve via `semanticAnalyzerResolveEnumLiteral`.
      - If capture (flag 0x10): register local decl with field type from TU fields.
    - Resolve prong body expr.
-   - **Type unification**: track `unified` type. Coercion-aware: if bt can coerce to unified, record coercion. If unified can coerce to bt, swap. If both numeric and one is int_lit → use concrete. Else → error `MIX:*` markers.
+   - **Type unification**: track `unified` type. Coercion-aware: if bt can coerce to unified, record coercion. If unified can coerce to bt, swap. If both numeric and one is int_lit → use concrete.
+   - **MIX else-branch (non-coercible prong types, `semantic_analyzer.zig:1167`):**
+     [updated: 2026-08-07] records `resolvedTypeTableSet(..., TYPE_VOID)` for the switch node and
+     **`continue`s to the next prong** (F4, commit b1b3f7e9) — the conflicting prong is skipped from
+     the `unified`-type contribution but ALL remaining prongs still resolve. Previously this branch
+     `return type_mod.TYPE_VOID;` — aborting `resolveSwitchExpr` mid-loop, so any later prong (e.g.
+     a function-call prong) was never sema'd and `call_arg_types` was never populated
+     (`semantic_analyzer.zig:775`), leaving the lowerer's fallback to type call-arg slots as raw
+     lowered types (wrong `&arena`→`unsigned int`, `"save.dat"`→`char*`). Fixes
+     `switch_mixed_case_argtype`.
 4. Return unified type. Marker `SWU:n<t>U:t<unified>`.
 
 ### semanticAnalyzerResolveEnumLiteral (`sf/src/semantic_analyzer.zig:838-901`)

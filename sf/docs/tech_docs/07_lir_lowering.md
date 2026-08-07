@@ -388,6 +388,17 @@ for each field init:
   if struct: emit `.assign_field(field_index, val)`
 ```
 
+[updated: 2026-08-07] **`undefined` array-typed fields are skipped (F2, commit ba89a6e0):** a
+pre-scan (`lower.zig:3006-3038`) computes `is_undef_arr_field` — true iff the field init is
+`undefined_literal` AND the matching field (by `name_id`) in the struct-init type has a declared
+type of kind `array_type` (scans `struct_type` `st_items`/`fe_items` and `tagged_union_type`
+`tu_items`/`fe_items`). When true, the field's `lowerExpr` is skipped (`lower.zig:3041`, no dead
+`undefined_const` temp) and the `assign_field` is NOT emitted (`lower.zig:3082` TU payload branch,
+`lower.zig:3097` struct branch; the TU tag assign is still emitted). Matches the zig0 oracle, which
+emits nothing for `undefined` array fields. Fixes `undef_arr_struct_literal` (previously the
+emitter's `emitFieldAssign` zero-fill hardcoded `base.fld[_j] = 0;` for the whole array regardless
+of element type, emitting `int` assigns on struct elements → gcc `incompatible types`).
+
 ### Tuple Literal `sf/src/lower.zig:2793`
 Single-element tuples forward to `lowerExpr(ec[0])`. Empty tuples return `TYPE_VOID`.
 
@@ -410,6 +421,17 @@ emitInst(.call{ callee_temp, args_start, args_count, result })
 ```
 
 **Cross-module call** (field access on module): Resolves symbol, emits `call_direct` with target `module_id`.
+
+[updated: 2026-08-07] **Cross-module `pub const` literal fold (F3, commit 317f3a82):** in the
+cross-module `SymbolKind.global` module-field-access branch (`lower.zig:2005-2024`), when the
+target's `ts.flags` bit0 is 0 (const) and its `decl_node.child_1` init is an `int_literal` /
+`char_literal` / `float_literal`, the lowerer emits the folded `int_const` / `float_const` directly
+at the ref site, typed at the DECLARED type (`gbl_tid` from `resolvedTypeTableGet(ts.decl_node)`,
+`lower.zig:2007`) — mirroring the same-module literal fold (`lower.zig:1681-1704`). The
+`load_global` fallback is kept for non-literal consts. Previously a cross-module `pub const` with a
+literal init registered as `SymbolKind.global` but got NO F-7 storage slot (main.zig:623-630 skips
+int/float/char-literal-init consts; bit0=mutable only), so the consumer's `load_global` referenced
+an undeclared `zG_...` name (gcc `'zG_...' undeclared`). Fixes `xmod_pub_const_global`.
 
 **print() builtin** (`sf/src/lower.zig:375`): Special-cased. Emits `print_str` for the format string, `print_val` per argument.
 

@@ -40,7 +40,7 @@ Phase 1 runs once via `emitSpecialTypes` BEFORE any function body. Phase 2 itera
 
 #### Type Topological Sort
 
-Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:913`):
+Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:959`):
 
 ```
 Input: TypeRegistry (all types 0..types_len-1)
@@ -55,17 +55,30 @@ Input: TypeRegistry (all types 0..types_len-1)
 [updated: 2026-08-01] `enum_type`/`error_set_type` were added in F-S8 — both are embeddable by value
 (inline integer typedef aliases), so a target enum/error_set **must** have an emit edge or the fixpoint
 (`computeSharedSet` §1.17) never promotes it into `zig_special_types.h`, leaving shared struct bodies
-referencing an unknown `typedef`. `tstIsDep` (`c89_emit.zig:876`), `tstEdgesCount` (`c89_emit.zig:777`),
-and `tstEdgesFill` (`c89_emit.zig:819`) all gate their source-kind branches on this helper, so the
+referencing an unknown `typedef`. `tstIsDep` (`c89_emit.zig:922`), `tstEdgesCount` (`c89_emit.zig:807`),
+and `tstEdgesFill` (`c89_emit.zig:857`) all gate their source-kind branches on this helper, so the
 enum/error_set target support flows through every source branch automatically; no enum/error_set
 *source* branch is needed (backing_type/tags are plain integers).
+
+[updated: 2026-08-07] `tstEdgesCount`/`tstEdgesFill` now count each distinct dependent type ONCE
+per source (dedupe same-typed field edges) via the new `tstSeenInRange` helper
+(`c89_emit.zig:799`): the struct/tagged_union/union field loops and the tagged_union `tag_type`
+all skip a target type already seen in the fields scanned so far. This makes the indegree
+(`tstEdgesCount`, `c89_emit.zig:807`) exactly equal to the number of `tstIsDep`-true decrements in
+the Kahn dequeue (`c89_emit.zig:985-987`, inside `tstTopologicalSort` :959), so count and dequeue
+can never drift: a struct with two
+fields of the same edge-forming type (e.g. two `Point` fields) previously got indegree 2 but only
+1 dequeue decrement, was never dequeued, and was silently dropped from `sorted` (no fwd-decl/body →
+gcc `unknown type name`). F1 (commit a5ac4598) fixes `dup_optptr_field_emit`/`dup_val_field_emit`.
+`tstEdgesFill` is dead code (0 callers) — the dedupe there is mirrored for consistency, zero
+runtime effect.
 
 #### Pointer-only vs Value-embedding Split
 
 `emitModule` receives a `ptr_only_ids` array from the caller (calculated in `phase_C89Emission` in `main.zig`). Types in this set have all their field dependencies reachable through pointers — only a forward declaration is needed for C89 correctness. The split prevents redundant full type definitions:
 
-- **Sub-pass 2a** (`c89_emit.zig:913`): Iterates types in topo order, skips if NOT in `pointer_only_map`. Emits full definition.
-- **Sub-pass 2b** (`c89_emit.zig:951`): Iterates types in topo order, skips if IS in `pointer_only_map`. Emits full definition.
+- **Sub-pass 2a** (`c89_emit.zig:1256`): Iterates types in topo order, skips if NOT in `pointer_only_map`. Emits full definition.
+- **Sub-pass 2b** (`c89_emit.zig:1297`): Iterates types in topo order, skips if IS in `pointer_only_map`. Emits full definition.
 
 Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string) — same type only emitted once.
 
@@ -633,7 +646,7 @@ branched on the CLI, never mixed.
   (`name_id==0` in slice/optional/error_union/tagged_union/union/array/fn_type) ∪ value-embedding
   named types (CLS:v, `pointer_only_map` miss) ∪ i64/u64 ∪ named fn_type, then closes over
   pointer-only named types referenced by shared members (fixpoint over `reg.types_len`, via
-  `tstIsDep` `c89_emit.zig:876`).
+  `tstIsDep` `c89_emit.zig:922`).
 - **Closure-edge model (F-S8)** — the closure criterion is: a type joins `shared_set` when it is
   referenced **by value OR in a way that requires the C type name in scope** (typedef'd kinds —
   enum/error_set — need the name in scope even behind a pointer/slice, since a typedef cannot be
@@ -817,9 +830,9 @@ Markers `P0:`-`P3:`, `D4:`, `D7:`, `D9:`, `HTT:` show the type resolution for ea
 ### 6.1 Type Header Emission Order (Q1)
 
 The emitted typedef sequence IS the Kahn sort order: both sub-passes iterate the same
-`sorted = tstTopologicalSort(reg)` array (`[source]` `c89_emit.zig:885`; pass 2a `:911-914`,
-pass 2b `:951-953`), deduped via `emitted_type_set`. Forward declarations for every named
-struct/tagged_union/union are emitted first (`[source]` `c89_emit.zig:887-908`; `[c89]`
+`sorted = tstTopologicalSort(reg)` array (`[source]` `c89_emit.zig:959`, called at `:2206`;
+pass 2a `:1256`, pass 2b `:1297`), deduped via `emitted_type_set`. Forward declarations for every named
+struct/tagged_union/union are emitted first (`[source]` `c89_emit.zig:1233-1255`; `[c89]`
 mud_server.c:3-6, game_of_life.c:3-4, json_parser.c:3-5, lisp_interpreter_curr.c:3-8).
 
 Observed definition order per example (first→last) `[c89]` + `[markers]` (E2A/E2B type-id

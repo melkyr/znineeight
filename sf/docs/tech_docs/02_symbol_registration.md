@@ -97,6 +97,16 @@ Two sub-cases based on `child_1` (the init expression):
 
 Default case (no special init): creates `SymbolKind.global`.
 
+[updated: 2026-08-07] **`pub const` literal-init globals have NO storage slot (F3, commit 317f3a82):**
+a top-level `pub const X: T = <literal>;` registers as `SymbolKind.global` (bit0 flag = mutable;
+const has bit0 clear) but the storage-global collection (main.zig:623-630) only promotes a global to
+a `ModuleGlobalDecl` (F-7 storage slot, `load_global`/`store_global` emission) when `decl.flags`
+bit0 is set OR the init is NOT an `int_literal`/`float_literal`/`char_literal`. A literal-init const
+gets NO storage slot — it is a compile-time value, not a runtime object. Cross-module refs to it are
+folded at the ref site (lower.zig:2005-2024); same-module refs fold too (lower.zig:1681-1704). The
+`ts.flags & 0x01` bit0 is checked in the cross-module field-access branch to distinguish const
+(bit0 clear → fold) from mutable `pub var` (bit0 set → storage slot, `load_global`).
+
 All var_decl symbols emit `Ra` (register alias), `D12:n<name_id>` (debug name dump), then `VD:<name_id>:<kind_enum>` and `Vi`; `VR` is written additionally only when the insert is rejected as a duplicate (`symbolTableInsert` returned `false` — happens on the pass-2 re-registration, see Evidence).
 
 ### `fn_decl` (line 305)
