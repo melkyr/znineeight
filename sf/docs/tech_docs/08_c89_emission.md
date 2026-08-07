@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper]
+# 08 — C89 Emission [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348)]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -268,7 +268,7 @@ emitSpecialTypes(emitter, reg):
 
 #### Tagged Union Emission
 
-`emitTaggedUnionType` (`c89_emit.zig:999`) handles two cases:
+`emitTaggedUnionType` (`c89_emit.zig:1348`) handles two cases:
 
 **Enum-tagged** (tag type is enum):
 ```

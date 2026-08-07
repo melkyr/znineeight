@@ -216,6 +216,18 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     "char_literal switch-case repro battery" + "opt_slice null-payload repro battery" sections.
     Out-of-scope follow-up (updated): the 12 `switch_char_*` repro dirs + the 3 `opt_slice_null_*`
     dirs gate the two post-plan fixes. [updated: 2026-08-07]
+    **[updated: 2026-08-07 — char_literal switch + opt_slice null fixes]: effective `OK=223 /
+    FAIL=3 / green-guards=4` over 230 repros** (223+3+4=230; classifier counts 231 dirs because
+    `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 15 battery
+    repros are now **fully OK** (F4 gate sweep, F1 `e0a4d6d6` + F2 `5c515a7d` landed): the 12
+    `switch_char_*` repros are **no longer runtime-gap-tracked** — F1 emits real `case 'a':`
+    labels (lower.zig:3202 expr / :3941 stmt), all 12 print their expected post-fix output
+    (`120`, `1120`, `19`, `1`, `109`, …; run-verified); the 3 `opt_slice_null*` repros are **no
+    longer latent** — F2 (Option B) drops the dead `int zT_N; zT_N = NULL;` payload temp, 0
+    `-Wint-conversion` warnings (was 2/2/3), 0 `= NULL;` sites, still print `1`. FAIL=3 and
+    green-guards=4 UNCHANGED. **4 MD5 gates: gol byte-identical `0d8f0092…`; mud/lisp/json
+    RE-BASELINED by F2** (mud `6c0a83f1…`, lisp `fad41183…`, json `c403f079…` — full hashes in
+    the MD5 table). test_analyzer_bin PASS.
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
@@ -256,12 +268,24 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-06] |
+| Entry Path | Reference md5 | [updated: 2026-08-07] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `906fa59c8676bb1054d3fcc13704fce5` |
+| `examples/z98/mud_server/main.zig` | `6c0a83f117f176f6875ce2c18c761890` |
 | `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `605b597e8b7cff60de0ce84a0593e743` |
-| `examples/z98/json_parser/main.zig` | `b5f56ebd51d2f0fcd379a1e083594462` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `fad411835b9e0aaea165260fbdc6857c` |
+| `examples/z98/json_parser/main.zig` | `c403f0799dbc5c56d548eee07bb9eebd` |
+
+- **Re-baselined 2026-08-07 (F2, opt_slice null-payload Option B).** mud + lisp + json re-baselined
+  because F2 (commit `5c515a7d`) drops the dead `int zT_N; zT_N = NULL;` payload temp in
+  optional-null construction — the `null_literal` branch (lower.zig:1183-1214, Option B) emits
+  `set_optional_null` directly on an `Opt_`-typed temp for null_src coercions instead of a
+  `TYPE_NULL`→`int` temp. `= NULL;` sites: mud 2→0, lisp 3→0, json 1→0; `has_value = 0;` counts
+  unchanged (mud 2, lisp 5, json 1) — only dead stores removed. Runtime-verified identical (F2
+  report §5: mud rc=124 "MUD server listening on port 4000", gol glider rc=0, lisp rc=0, json
+  parses test.json rc=0; output diffs empty). Per the F-5 AMENDMENT B precedent the gate is runtime
+  behavior, not byte-identity. gol byte-identical. Pre-F2 values: mud `906fa59c…`, lisp
+  `605b597e…`, json `b5f56ebd…`. New values: mud `6c0a83f1…`, lisp `fad41183…`, json
+  `c403f079…`. [updated: 2026-08-07]
 
 - **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
   `5fb57e70…`, gol `f855c9f9…`, lisp `0ad02040…`, json `11a5db1d…`) are STALE — replaced. Two

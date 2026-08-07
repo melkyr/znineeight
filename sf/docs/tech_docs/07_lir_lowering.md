@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap]
+# LIR Lowering Layer [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
 
 ## Summary
 
@@ -96,7 +96,7 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `string_const` | `string_id, result` | String literal pointer |
 | `bool_const` | `value, result` | Boolean literal |
 | `null_const` | `result` | Null literal — result temp is typed `null_type` (lower.zig:1184), whose C name is `"int"` (`getCTypeName`, c89_emit.zig:605). **Option B [updated: 2026-08-07]:** when a null literal feeds a `?T` coercion (null_src), the null_literal branch (lower.zig:1183) now emits `set_optional_null` directly on an `Opt_`-typed temp instead of `null_const` — no dead `int zT_N; zT_N = NULL;` store. `null_const` remains only for uncoerced null / non-optional (pointer/fn) targets. See the `materializeInto` null-construction note below. |
-| `set_optional_null` | `result, type_id` | Set optional to null (typed null) — emitted by the null_literal branch (lower.zig:1183, Option B) for null_src coercions, by `materializeInto` (lower.zig:977-978) for other null_src paths, and directly by the var-decl path (lower.zig:4180) and `applyNoneCoercion` (lower.zig:4422) for `var x: ?T = null`. Only `.has_value = 0;` is set; the payload field is left untouched. |
+| `set_optional_null` | `result, type_id` | Set optional to null (typed null) — emitted by the null_literal branch (lower.zig:1183, Option B) for null_src coercions, by `materializeInto` (lower.zig:977-978) for other null_src paths, and directly by the var-decl path (lower.zig:4214) and `applyNoneCoercion` (lower.zig:4456) for `var x: ?T = null`. Only `.has_value = 0;` is set; the payload field is left untouched. |
 | `undefined_const` | `result, type_id` | Undefined literal |
 | `enum_const` | `value, result, type_id, member_name_id` | Enum literal with member name |
 
@@ -228,12 +228,12 @@ are unchanged because they migrated to true `...`).
 | `createBlock` | `(self) → u32` `sf/src/lower.zig:379` | Creates new BasicBlock, appends to func.blocks |
 | `lowerExpr` | `(self, node_idx) → u32` `sf/src/lower.zig:461` | Lower AST expression to LIR temp; applies coercion wrapper |
 | `lowerExprImpl` | `(self, node_idx) → u32` `sf/src/lower.zig:1122` | Core expression lowering dispatch |
-| `lowerStmt` | `(self, node_idx)` `sf/src/lower.zig:3560` | Lower AST statement to LIR |
-| `lowerFn` | `(self, fn_node) → LirFunction` `sf/src/lower.zig:4754` | Lower entire function to LIR |
-| `applyCoercion` | `(self, src_temp, coercion) → u32` `sf/src/lower.zig:4435` | Apply type coercion (widen, wrap, cast) |
-| `expandDefers` | `(self, target_depth, is_error_path)` `sf/src/lower.zig:4358` | Emit deferred statements at scope exit |
-| `pushDefer` | `(self, kind, ast_node)` `sf/src/lower.zig:4350` | Push a defer/errdefer action onto stack |
-| `hoistTemps` | `(self)` `sf/src/lower.zig:4386` | Prepend decl_temp instrs to entry block |
+| `lowerStmt` | `(self, node_idx)` `sf/src/lower.zig:3592` | Lower AST statement to LIR |
+| `lowerFn` | `(self, fn_node) → LirFunction` `sf/src/lower.zig:4788` | Lower entire function to LIR |
+| `applyCoercion` | `(self, src_temp, coercion) → u32` `sf/src/lower.zig:4469` | Apply type coercion (widen, wrap, cast) |
+| `expandDefers` | `(self, target_depth, is_error_path)` `sf/src/lower.zig:4392` | Emit deferred statements at scope exit |
+| `pushDefer` | `(self, kind, ast_node)` `sf/src/lower.zig:4384` | Push a defer/errdefer action onto stack |
+| `hoistTemps` | `(self)` `sf/src/lower.zig:4420` | Prepend decl_temp instrs to entry block |
 | `materializeInto` | `(self, src_temp, expected, intent) → u32` `sf/src/lower.zig:906` | Layer type wrappers (optional/error-union) to match expected type |
 | `addLocalDecl` | `(self, name_id, type_id, temp, depth)` `sf/src/lower.zig:485` | Register a local variable |
 | `findLocalTemp` | `(self, name_id) → ?u32` `sf/src/lower.zig:994` | Look up local temp by name |
@@ -353,7 +353,7 @@ lowerExpr(index) → idx_temp
 nextTemp(elem_type) → tid
 emitInst(.load_index{ ptr_temp, idx_temp, tid })
 ```
-Coercion context: `applyCoercion` after expression (`sf/src/lower.zig:454`).
+Coercion context: `applyCoercion` after expression (`sf/src/lower.zig:476`).
 
 ### Dereference `sf/src/lower.zig:1416`
 ```
@@ -724,13 +724,13 @@ This guard is **purely defensive** — no valid Z98 pattern triggers it today. I
 
 ---
 
-## Type Coercions `sf/src/lower.zig:3991`
+## Type Coercions `sf/src/lower.zig:4469`
 
 `applyCoercion` dispatches to `materializeInto` and specific cast instructions:
 
 | CoercionKind | LIR Pattern |
 |-------------|-------------|
-| `none` | `applyNoneCoercion` (lower.zig:4411) — handles null→optional null ptr via `set_optional_null`/`int_const(0)` |
+| `none` | `applyNoneCoercion` (lower.zig:4456) — handles null→optional null ptr via `set_optional_null`/`int_const(0)` |
 | `wrap_optional_null` | `materializeInto(src, target, null_src)` → `set_optional_null` — src is the `?T`-typed temp already produced by the null_literal branch (Option B, 2026-08-07); `materializeInto` short-circuits on `src_ty == expected` (lower.zig:911) or wraps into outer EU layers. No dead `int zT_N; zT_N = NULL;` in the stream |
 | `wrap_optional` | `materializeInto(src, target, intent)` → `wrap_optional` |
 | `wrap_error_success` | `materializeInto(src, target, intent)` → `wrap_error_ok` |
@@ -883,7 +883,7 @@ was re-baselined from `0ad02040…` to `10d09c99f77c68e680f6ccce33eb81ed` (see Q
 
 ### 6. Coercion application: `applyCoercion` vs `materializeInto`
 
-`applyCoercion` (lower.zig:4435) dispatches exactly as the §Type Coercions table describes: the 5 wrapper kinds (`wrap_optional_null`, `wrap_optional`, `wrap_error_success`, `wrap_error_err`, `ptr_to_optional_ptr`) and `none`-with-null delegate to `materializeInto` (lower.zig:906), which walks up to 8 optional/error-union layers (lower.zig:913-949) and emits `set_optional_null`/`wrap_optional`/`wrap_error_ok`/`wrap_error_err`, optionally preceded by an inner `int_cast`/`float_cast` (lower.zig:952-964). `[fprintf]` call counts:
+`applyCoercion` (lower.zig:4469) dispatches exactly as the §Type Coercions table describes: the 5 wrapper kinds (`wrap_optional_null`, `wrap_optional`, `wrap_error_success`, `wrap_error_err`, `ptr_to_optional_ptr`) and `none`-with-null delegate to `materializeInto` (lower.zig:906), which walks up to 8 optional/error-union layers (lower.zig:913-949) and emits `set_optional_null`/`wrap_optional`/`wrap_error_ok`/`wrap_error_err`, optionally preceded by an inner `int_cast`/`float_cast` (lower.zig:952-964). `[fprintf]` call counts:
 
 | Example | applyCoercion calls | materializeInto calls | dominant kinds |
 |---------|---------------------|------------------------|----------------|
@@ -892,7 +892,7 @@ was re-baselined from `0ad02040…` to `10d09c99f77c68e680f6ccce33eb81ed` (see Q
 | lisp_interpreter_curr | 595 | 135 | none 329, wrap_error_success 60, string_to_slice 53, wrap_error_err 53, int_literal_coerce 48 |
 | json_parser | 159 | 34 | none 95, int_literal_coerce 27, wrap_error_success 15, wrap_error_err 14 |
 
-Cross-check `[markers]`: the `CEM`/`CEP` markers are emitted **per `lowerExpr`** call (lower.zig:446-468) — `CEP:n…k<kind>` when a coercion entry exists (→ `applyCoercion`), `CEM:n…` when missing. `[markers]` CEP counts (mud 36, gol 43, lisp 261, json 63) and the CEP-kind distribution (int_literal_coerce / string_to_slice / wrap_error_* / unwrap_optional / wrap_optional_null, exactly the table's kinds) agree with the `[fprintf]` `applyCoercion` kinds. The `[fprintf]` totals are higher because `applyCoercion` also fires at non-`lowerExpr` sites (call args `lower.zig:2022, :2092, :2176, :2269`, return values, compound-assign sites `lower.zig:1391`); the `none` kind (52 in gol) comes from `applyNoneCoercion` (lower.zig:4411), which rewrites `null` → optional-null / `int_const(0)` pointer.
+Cross-check `[markers]`: the `CEM`/`CEP` markers are emitted **per `lowerExpr`** call (lower.zig:446-468) — `CEP:n…k<kind>` when a coercion entry exists (→ `applyCoercion`), `CEM:n…` when missing. `[markers]` CEP counts (mud 36, gol 43, lisp 261, json 63) and the CEP-kind distribution (int_literal_coerce / string_to_slice / wrap_error_* / unwrap_optional / wrap_optional_null, exactly the table's kinds) agree with the `[fprintf]` `applyCoercion` kinds. The `[fprintf]` totals are higher because `applyCoercion` also fires at non-`lowerExpr` sites (call args `lower.zig:2022, :2092, :2176, :2269`, return values, compound-assign sites `lower.zig:1391`); the `none` kind (52 in gol) comes from `applyNoneCoercion` (lower.zig:4456), which rewrites `null` → optional-null / `int_const(0)` pointer.
 
 ---
 
