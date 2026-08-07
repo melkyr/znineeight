@@ -152,9 +152,11 @@ Write `.superpowers/sdd/I-rogue-switcharg-report.md`. STOP (batched).
 - Consumes: I1 report + operator ruling.
 - Produces: `dup_optptr_field_emit` + `dup_val_field_emit` FAIL→OK, both runtime-correct.
 
-- [ ] **Step 1: Implement the ruling**
+- [ ] **Step 1: Implement the ruling — OPTION B (operator ruling 2026-08-07, per I1)**
 
-Apply the operator-approved option (expected: edges/indegree accounting fix in `tstTopologicalSort`/`tstEdgesCount`/`tstEdgesFill`). Follow the file's existing patterns.
+I1 confirmed: `tstEdgesCount` (c89_emit.zig:799-839) counts one edge per field occurrence; the Kahn dequeue (c89_emit.zig:960-968) decrements once per dependent type via boolean `tstIsDep` (:898-933) — two same-typed edge-forming fields → indegree=2, decrement=1 → struct never dequeued → dropped from `sorted` → no fwd-decl/body → gcc `unknown type name`.
+
+**Fix:** in `tstEdgesCount`, count each distinct dependent type ONCE (dedupe same-typed field edges per type; including dedupe of tag_type vs fields in the tagged_union branch). Mirror the same dedupe in `tstEdgesFill` (c89_emit.zig:841-896) for consistency — NOTE it is dead code (0 callers), change has zero runtime effect. Indegree then equals "number of distinct dep types" == exactly the count of `tstIsDep`-true decrements in :961, so count and dequeue can never drift. Kahn drains fully (all nodes emitted), which also eliminates the uninitialized-`sorted`-tail hazard (sandAlloc does not zero).
 
 - [ ] **Step 2: Verify both repros**
 
@@ -162,7 +164,7 @@ Apply the operator-approved option (expected: edges/indegree accounting fix in `
 
 - [ ] **Step 3: Gate sweep**
 
-Build 0 err. 4 MD5s byte-identical. Corpus: 210→212, +2 OK (dup_optptr, dup_val), FAIL 3 stays. EXPECTED_FAIL.md rows updated.
+Build 0 err. 4 MD5s byte-identical (mud `50beb1bf...`/gol `0d8f0092...`/lisp `605b597e...`/json `b5f56ebd...` — verified no duplicate edge-forming field types in any gate program). Corpus: 210→212, +2 OK (dup_optptr, dup_val), FAIL 3 stays. EXPECTED_FAIL.md rows updated.
 
 - [ ] **Step 4: Commit**
 
@@ -181,9 +183,18 @@ git commit -m "fix: duplicate-typed struct fields emit correctly (dup field topo
 - Consumes: I2 report + operator ruling.
 - Produces: `undef_arr_struct_literal` FAIL→OK, runtime-correct.
 
-- [ ] **Step 1: Implement the ruling**
+- [ ] **Step 1: Implement the ruling — OPTION A (operator ruling 2026-08-07, per I2)**
 
-Apply the operator-approved option (expected: no zero-fill for struct-typed array elements with `undefined` init).
+I2 confirmed: `undefined` array-typed struct-literal field init is emitted as a zero-fill loop by `emitFieldAssign` (c89_emit.zig:276-287) that hardcodes `base.fld[_j] = 0;` — never checking element type or `src`; only valid for scalar elements. The zig0 oracle emits NOTHING for `undefined` array fields (both struct and primitive elements — verified). 
+
+**Fix — lowerer, upstream (matches oracle exactly):** in `sf/src/lower.zig`, skip the `assign_field` for the field entirely when `child_0.kind == undefined_literal` AND the field's declared type is `array_type`:
+- `lower.zig:2988` — skip `lowerExpr` for the field (avoid the dead `undefined_const` temp).
+- `lower.zig:3031-3042` struct_type branch — if `fe_items[fs+fj].type_id` is `array_type` AND `child_0.kind == undefined_literal`, skip the `emitInst(assign_field)`.
+- Mirror in the tagged-union branch (`:3024-3027`).
+
+**Gate consequence (operator-approved, F-5 AMENDMENT B precedent):** mud re-baseline REQUIRED — mud `main.zig:159` `.buffer = undefined` (`[256]u8` primitive array) currently emits the zero-fill (gate output `/tmp/mud_gate.c:800-802`); Option A drops it. Runtime identical (buffer written by `plat_recv` before any read; mud gate = listen rc=124, no client connects). gol/lisp/json byte-identical. Record the new mud MD5.
+
+**Known-affected output:** `emitFieldAssign` ignores `src` for ALL array fields (real array-of-struct values fail with undeclared temps) — a SEPARATE latent bug, OUT of this fix's scope (tracked as follow-up, do NOT fix here).
 
 - [ ] **Step 2: Verify the repro**
 
@@ -191,7 +202,7 @@ Apply the operator-approved option (expected: no zero-fill for struct-typed arra
 
 - [ ] **Step 3: Gate sweep**
 
-Build 0 err. 4 MD5s byte-identical. Corpus: 212→213, +1 OK, FAIL 3 stays. EXPECTED_FAIL.md row updated.
+Build 0 err. **mud RE-BASELINED** (Option A drops the `[256]u8` dead zero-fill at mud main.zig:159; runtime-identical — buffer written by `plat_recv` before read, F-5 AMENDMENT B precedent; record the new mud MD5). gol/lisp/json byte-identical (no struct-literal `undefined` array fields). Corpus: 212→213, +1 OK, FAIL 3 stays. EXPECTED_FAIL.md row updated.
 
 - [ ] **Step 4: Commit**
 
@@ -210,9 +221,11 @@ git commit -m "fix: undefined struct-array field init emits valid C (undef_arr_s
 - Consumes: I3 report + operator ruling.
 - Produces: `xmod_pub_const_global` FAIL→OK, runtime-correct.
 
-- [ ] **Step 1: Implement the ruling**
+- [ ] **Step 1: Implement the ruling — OPTION C (operator ruling 2026-08-07, per I3)**
 
-Apply the operator-approved option (expected: cross-module `pub const` gets a definition or extern decl, or folds through the module boundary).
+I3 confirmed: cross-module `pub const` literal-init (e.g. `pub const COLOR_WHITE: u8 = 7`) registers as `SymbolKind.global` but gets NO F-7 storage slot (main.zig:616-660 skips literal-init consts, bit0=mutable only) → no definition in owner `.c`, no extern in headers → consumer `load_global` reads an undeclared `zG_...` name.
+
+**Fix:** in the cross-module `SymbolKind.global` module-field-access branch at `lower.zig:2005-2011`, when `(ts.flags & 0x01) == 0` (const) and the target's `decl_node.child_1` init is an int/float/char literal, emit the corresponding `int_const`/`float_const` with the type from `resolvedTypeTableGet(resolved_types, ts.decl_node)` (the branch already computes `gbl_tid` at `lower.zig:2006`) — mirroring the same-module literal fold at `lower.zig:1681-1710`. Type the folded temp at the DECLARED type (u8, not TYPE_U32 — avoids the F-7 u64-width regression class). Keep the `load_global` fallback for non-literal consts (already storage-classified via main.zig:627, works today). Do NOT emit a bare definition without an initializer (zero-init trap: `unsigned char zG_...;` would silently hold 0 not 7).
 
 - [ ] **Step 2: Verify the repro**
 
@@ -239,9 +252,11 @@ git commit -m "fix: cross-module pub const resolves (xmod_pub_const_global)"
 - Consumes: I4 report + operator ruling.
 - Produces: `switch_mixed_case_argtype` FAIL→OK, runtime-correct.
 
-- [ ] **Step 1: Implement the ruling**
+- [ ] **Step 1: Implement the ruling — OPTION A (operator ruling 2026-08-07, per I4)**
 
-Apply the operator-approved option (expected: `call_arg_types` correct under mixed switch cases).
+I4 confirmed the mechanism is NOT `call_arg_types` corruption — it is a sema mid-switch abort: the MIX else-branch at `semantic_analyzer.zig:1167` `return type_mod.TYPE_VOID;` aborts `resolveSwitchExpr` when two prong bodies have non-coercible types (assignment→i32 vs empty-block→void), skipping all later prongs — the call prong is never sema'd, so `call_arg_types` is never populated at `:775`, and the lowerer fallback (`lower.zig:2388`) types arg slots as raw lowered types.
+
+**Fix (validated by I4 on a patched /tmp build):** replace `return type_mod.TYPE_VOID;` at `semantic_analyzer.zig:1167` with `continue;` (skip this prong's contribution to `unified` but keep resolving remaining prongs). Keep the `resolvedTypeTableSet(..., TYPE_VOID)` on :1167 (stmt-switch resolved type is unused; drop is acceptable but keep-minimal preferred). Read the region first, follow existing patterns.
 
 - [ ] **Step 2: Verify the repro**
 
@@ -296,3 +311,12 @@ git commit -m "docs: gate sweep + tech docs for rogue_mud emission defects plan"
 ## Amendments Record
 
 - **AMENDMENT 0 (2026-08-07):** Plan structure finalized from brainstorm. 4 batched I-tasks (I1 covers gaps #1+#2 shared topo-sort root; I2/I3/I4 cover #3/#4/#5) → ONE combined STOP for operator ruling → 4 F-tasks (each runtime-gated) → F5 sweep. User confirmed: formal I-tasks required; gaps #1+#2 merged; I-tasks batched; runtime gate mandatory per F-task ("gate functionality because those changes usually can have benign impact but it needs to be runtime").
+
+- **AMENDMENT 1 (2026-08-07, operator ruling after I1-I4 + deep-dive):** I-tasks I1-I4 COMPLETE (reports in `.superpowers/sdd/I-rogue-{dupfld,undefarr,xmodconst,switcharg}-report.md`). Operator approved fix options and amended each F-task:
+  - **F1 = Option B** (dedupe `tstEdgesCount` by distinct dep type; mirror in dead `tstEdgesFill`). Root-cause invariant fix (count vs dequeue consistency). All 4 MD5s byte-identical.
+  - **F2 = Option A** (lowerer skip `assign_field` for `undefined` array-typed fields; upstream, matches zig0 oracle which emits NOTHING). **mud re-baseline required** (drops dead `[256]u8` zero-fill; runtime-identical, F-5 AMENDMENT B precedent). gol/lisp/json byte-identical.
+  - **F3 = Option C** (fold literal at cross-module ref site lower.zig:2005-2011, mirroring same-module fold :1681-1710). Zero MD5 impact.
+  - **F4 = Option A** (`semantic_analyzer.zig:1167` `return TYPE_VOID` → `continue`; validated on patched build — repro FAIL→OK, 4 MD5s byte-identical, corpus exactly 1 flip).
+  - Corpus accounting corrected: 210 → 212 (F1) → 213 (F2) → 214 (F3) → 215 (F4). F5 final: 215 repros, OK=208/FAIL=3/gg=4.
+  - **Out-of-scope finding (documented, follow-up):** `char_literal` switch `case` labels dropped at lower.zig:3858-3860/:3121-3123 — rogue_mud's input switch (`main.zig:236-256`) would be runtime-dead even after all 5 fixes. Orthogonal to gap #5; NOT fixed in this plan.
+  - **Stale refs corrected:** P1-2 header extern pattern is c89_emit.zig:2149-2167 (not 2063-2079); lower.zig module-field-access is :2005-2011 (not :1869-1875); doc filenames are `AST_LIR_Lowering_p2.md`/`LIR_C89_Emission_p2.md`/`Import_Symbol_reg.md` (not 07/08/02).
