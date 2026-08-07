@@ -51,7 +51,7 @@ Input: TypeRegistry (all types 0..types_len-1)
 4. Result order: types with no deps first, then their dependents
 ```
 
-`c89NeedsEmitEdge` (`c89_emit.zig:759`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, **enum, error_set**, tuple, unresolved_name.
+`c89NeedsEmitEdge` (`c89_emit.zig:781`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, **enum, error_set**, tuple, unresolved_name.
 [updated: 2026-08-01] `enum_type`/`error_set_type` were added in F-S8 — both are embeddable by value
 (inline integer typedef aliases), so a target enum/error_set **must** have an emit edge or the fixpoint
 (`computeSharedSet` §1.17) never promotes it into `zig_special_types.h`, leaving shared struct bodies
@@ -225,7 +225,7 @@ When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by 
 
 `emitSpecialTypes` (`c89_emit.zig:1182`) drives type header output for the stdout single-file
 path. For the multi-module path (`--output-dir`), the shared-header writer
-`emitSharedHeader` (`c89_emit.zig:1039`) performs the equivalent partition into
+`emitSharedHeader` (`c89_emit.zig:1086`) performs the equivalent partition into
 `zig_special_types.h` (see §1.17):
 
 ```
@@ -638,8 +638,8 @@ branched on the CLI, never mixed.
   constructing each path; if exceeded, `error: output filename too long` + `pal.exit(1)`. This
   replaces the old silent truncation at `main.zig:685`/`:712` (bytes were dropped past 510/511
   with no diagnostic, and the truncated filename mismatched the include chain).
-- **Shared header** — `emitSharedHeader` (`c89_emit.zig:1039`): calls `computeSharedSet`
-  (`c89_emit.zig:979`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
+- **Shared header** — `emitSharedHeader` (`c89_emit.zig:1086`): calls `computeSharedSet`
+  (`c89_emit.zig:1025`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
   preamble `#include "zig_compat.h"` + `#include "zig_runtime.h"`, an unfiltered fwd-decl pass
   (`typedef struct X X;` for every named struct/tagged_union/union), sub-pass 2a restricted to
   `shared_set` (guarded), and all of sub-pass 2b. `computeSharedSet` seeds synthetics
