@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (209 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-06]
+### Corpus gate (210 repros in `repro/mi_matrix/*/`)  — classify by gcc EXIT CODE  [updated: 2026-08-07 — labeled_stmt support (F1)]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -182,6 +182,12 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
    `self_embed_optional_cycle` (F-8 residual); **4 MD5 gates byte-identical** to the baselines
    below (no re-baseline); the plan's "210 repros / OK=200" prediction double-counted
    `fn_varargs_unsupported`. [updated: 2026-08-06]
+   **Labeled statement support (F1, 2026-08-07): effective `OK=203 / FAIL=3 / green-guards=4`
+   over 210 repros** (203+3+4=210; raw classifier FAIL stays 7 — the 4 green-guards are a
+   sub-bucket). `labeled_stmt_unhandled` **FAIL→OK** (labeled statements now supported in
+   parser/sema/lowerer; the labeled `break :game_loop` no longer hangs). The 3 FAILs unchanged =
+   `field_store_drop` + `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle`
+   (C89 fundamental). **4 MD5 gates byte-identical** (no re-baseline). [updated: 2026-08-07]
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module

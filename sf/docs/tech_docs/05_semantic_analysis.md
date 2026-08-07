@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-08-06 — variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
@@ -284,7 +284,7 @@ fi from 0..fields_count:
 | 23 | `catch_expr` | `[inference: unwrap error union + capture]` | payload type |
 | 24 | `orelse_expr` | → `semanticAnalyzerResolveOrelseExpr` | optional payload |
 | 25 | `break_stmt` / `continue_stmt` | `[inference: return TYPE_VOID]` | `TYPE_VOID` |
-| 26 | `var_decl` / `defer_stmt` / `errdefer_stmt` | → `semanticAnalyzerResolveStmtIter` | `TYPE_VOID` |
+| 26 | `var_decl` / `defer_stmt` / `errdefer_stmt` / `labeled_stmt` | → `semanticAnalyzerResolveStmtIter` | `TYPE_VOID` |
 | 27 | `if_expr` | → `semanticAnalyzerResolveIfExpr` | unified then/else type |
 | 28 | `if_stmt` | `[inference: resolve header, push children to worklist]` | `TYPE_VOID` |
 | 29 | `for_stmt` | → `semanticAnalyzerResolveForHeader` | `TYPE_VOID` |
@@ -370,9 +370,10 @@ omitted; the table is hit-frequency only.
 
 **Never-hit arms** across all 4 examples:
 - Arm 2 `float_literal` — no float literals in any example.
-- Arm 26 `var_decl`/`defer_stmt`/`errdefer_stmt` — statement kinds are handled directly in
-  `semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1564/1702); the resolveExpr fallback
-  arm (semantic_analyzer.zig:1281-1283) is never exercised.
+- Arm 26 `var_decl`/`defer_stmt`/`errdefer_stmt`/`labeled_stmt` — statement kinds are handled directly in
+  `semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1564/1702; labeled_stmt unwrap at
+  semantic_analyzer.zig:1767-1770); the resolveExpr fallback arm (semantic_analyzer.zig:1341-1343,
+  incl. `labeled_stmt`) is never exercised.
 - Arm 29 `for_stmt` and arm 30 `while_stmt` — resolved only via `ResolveFor/WhileHeader` in
   StmtIter (semantic_analyzer.zig:1683-1692). lisp/json DO contain `for` loops
   (builtins.zig:28/61, json main.zig:49/63) but those nodes go through StmtIter (`SP:K73`),
@@ -553,7 +554,7 @@ Special case: if lhs is ident_expr with name `_`, resolve rhs but discard (expli
 4. Set `current_fn_return` from `resolvedTypeTableGet(proto.return_type_node)`.
 5. Resolve body via `semanticAnalyzerResolveStmt(body_node)`.
 
-### semanticAnalyzerResolveStmtIter (`sf/src/semantic_analyzer.zig:1539-1723`)
+### semanticAnalyzerResolveStmtIter (`sf/src/semantic_analyzer.zig:1599-1918`)
 
 `[inference: worklist-based iteration over statement tree]`
 
@@ -566,6 +567,11 @@ Worklist (stack-based) traversal. Pushes stmt children in reverse order for pre-
 - `return_stmt` → `resolveReturnStmt`.
 - Assignments → `semanticAnalyzerResolveExpr`.
 - `defer_stmt`/`errdefer_stmt` → push body.
+- **`labeled_stmt` → transparent unwrap (F1, 2026-08-07, semantic_analyzer.zig:1767-1770):** if
+  `child_0 != 0`, push it onto the stmt work queue — the label is a pure wrapper, the inner
+  statement resolves as if unlabeled. (Defensive expr-redirect twin at
+  semantic_analyzer.zig:1341: a `labeled_stmt` reaching `resolveExpr` re-enters the stmt iter and
+  returns `TYPE_VOID`, preventing the `error[3020]` unhandled-else.)
 - Other → `semanticAnalyzerResolveExpr`.
 
 Skips `fn_decl` children (inner functions handled by outer phase).

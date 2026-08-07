@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-06 — varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap]
+# LIR Lowering Layer [updated: 2026-08-07 — labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap]
 
 ## Summary
 
@@ -207,13 +207,14 @@ are unchanged because they migrated to true `...`).
 | `_ctx_node_kind` | `u32` | Context node kind (for diagnostics) |
 | `capture_shadow` | `U32ToU32Map` | Maps captured names to disambiguated synthetic names |
 | `synth_name_counter` | `u32` | Counter for synthetic name generation |
+| `current_label` | `u32` | **[F1, 2026-08-07] Currently active label name ID** (0=unlabeled). Set from a `labeled_stmt` node's payload around its `child_0` recursion (lower.zig:257, init 0 at lower.zig:324); read by all 3 loop-push sites to stamp `LoopInfo.label_id`. |
 
 ### Supporting Types
 
 | Type | Fields | Purpose |
 |------|--------|---------|
 | `DeferAction` | `kind, ast_node, scope_depth` | Descriptor for deferred statement execution (`kind`: 0=defer, 1=errdefer) |
-| `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id` | Loop context for break/continue resolution |
+| `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id` | Loop context for break/continue resolution. `label_id` is the active label name ID from `current_label` at push time (0=unlabeled). |
 | `SwitchInfo` | `exit_bb, scope_depth` | Switch context |
 | `SrcIntent` | enum `value`, `null_src`, `error_src` | Classifies source expression for coercion |
 
@@ -496,15 +497,26 @@ expandDefers(0, 0)  // emit all pending defers
 lowerExpr(value) → .ret(val) or .ret_void
 ```
 
-#### Break Statement `sf/src/lower.zig:3635`
+#### Break Statement `sf/src/lower.zig:4010`
 ```
 expandDefers(exit_scope, 0) → .jump(exit_target)
 ```
 
-#### Continue Statement `sf/src/lower.zig:3661`
+#### Continue Statement `sf/src/lower.zig:4036`
 ```
 expandDefers(cont_scope, 0) → .jump(header_target)
 ```
+
+**Labeled break/continue — ACTIVE (F1, 2026-08-07, lower.zig:4012-4053):** `break :label` /
+`continue :label` read `node.payload` as `label_id` (0=unlabeled). The unlabeled path keeps the
+top-of-stack jump; the labeled path scans `loop_stack` top-down for `LoopInfo.label_id ==
+label_id` and jumps to that loop's exit/header. `LoopInfo.label_id` is now stamped from
+`self.current_label` at all 3 loop-push sites (lower.zig:3630 while, :3729 for-range, :3783
+for-slice), and `current_label` is set from a `labeled_stmt` node's payload in `lowerStmt`
+(lower.zig:3518-3524) with save/restore around the `child_0` recursion. Before F1, `label_id`
+was hardcoded 0 so `break :label` never matched → the labeled loop HUNG. Scope limit (matches
+plan): `break :label` out of a labeled **non-loop** block remains unsupported — the break
+handler searches only `loop_stack`.
 
 ### Optional Unwrapping `sf/src/lower.zig:998`
 

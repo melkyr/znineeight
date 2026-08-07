@@ -1,4 +1,4 @@
-# 00 — Lexer & Parser [updated: 2026-08-06 — varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
+# 00 — Lexer & Parser [updated: 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
 
 ## Summary Table
 
@@ -172,8 +172,8 @@ Recursive-descent parser with **Pratt-style precedence climbing** for expression
 | `parserEmitErrorNode` | 1225 | pub | `[inference: diagnostic + err AstNode]` | Emits error node for error recovery. |
 | `parserParseModuleRoot` | 1232 | pub | `[inference: top-level decl loop, error recovery with parserSynchronize]` | Top-level module parser. Collects decls into `decl_buf`, wraps in `module_root` node. On parse error, emits error node + synchronize. |
 | `parserParseExprStmt` | 1255 | private | `[inference: expr ;]` | Expression statement. |
-| `parserParseLabeledStmt` | 1261 | private | `[inference: label : stmt]` | Labeled statement. |
-| `parserParseLabeledBlockExpr` | 1271 | private | `[inference: ident : { ... }]` | Labeled block (expression context). |
+| `parserParseLabeledStmt` | 1261 | private | `[inference: label : stmt]` | Labeled statement. **[F1, 2026-08-07] Stores the label name in the node payload:** `astStoreAddNode(..., labeled_stmt, inner, 0, 0, label_tok.value.string_id)` at parser.zig:1285-1287 (was hardcoded `0`). `child_0` = the wrapped statement. |
+| `parserParseLabeledBlockExpr` | 1271 | private | `[inference: ident : { ... }]` | Labeled block (expression context). **[F1, 2026-08-07] Same payload fix:** `label_tok.value.string_id` stored at parser.zig:1299-1300 (was hardcoded `0`). `child_0` = the block body. |
 | `parserParseVarDecl` | 1284 | private | `[inference: [pub] [extern] const/var name [:type] [=init] ;]` | Variable declaration. Flags: bit0=mutable, bit1=pub, bit2=extern. Handles `c_include` inline (returns the include node directly). Debug: `V`, `v`, `PDVx` markers. |
 | `parserParsePubDecl` | 1321 | private | `[inference: pub fn|const|var|test|extern]` | Public declaration dispatcher. |
 | `parserParseExternDecl` | 1333 | private | `[inference: extern ["lib"] fn|const|var]` | Extern declaration dispatcher. |
