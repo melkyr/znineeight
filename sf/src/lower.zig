@@ -3169,6 +3169,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var case_val: u64 = @intCast(u64, 0);
                 if (case_node.kind == AstKind.int_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
+                } else if (case_node.kind == AstKind.char_literal) {
+                    case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
                     var cval2: u64 = @intCast(u64, case_node.payload);
                     var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
@@ -3905,6 +3907,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var case_node = store.nodes.items[@intCast(usize, case_ec[ci])];
                 var case_val: u64 = @intCast(u64, 0);
                 if (case_node.kind == AstKind.int_literal) {
+                    case_val = store.int_values.items[@intCast(usize, case_node.payload)];
+                } else if (case_node.kind == AstKind.char_literal) {
                     case_val = store.int_values.items[@intCast(usize, case_node.payload)];
                 } else if (case_node.kind == AstKind.enum_literal) {
                     var cval2: u64 = @intCast(u64, case_node.payload);
