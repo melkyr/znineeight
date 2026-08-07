@@ -1181,6 +1181,36 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .bool_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.null_literal) {
+        var nul_ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
+        if (nul_ce) |nce| {
+            var nul_routes_null: u8 = @intCast(u8, 0);
+            if (nce.kind == CoercionKind.wrap_optional_null or nce.kind == CoercionKind.wrap_optional or nce.kind == CoercionKind.wrap_error_success) {
+                nul_routes_null = @intCast(u8, 1);
+            }
+            if (nul_routes_null != @intCast(u8, 0) and nce.target_type != @intCast(u32, 0) and nce.target_type != type_mod.TYPE_UNDEFINED) {
+                var opt_layer: u32 = @intCast(u32, 0);
+                var cur_ty: u32 = nce.target_type;
+                var walk_guard: usize = @intCast(usize, 0);
+                while (walk_guard < @intCast(usize, 8)) : (walk_guard += @intCast(usize, 1)) {
+                    if (@intCast(usize, cur_ty) >= self.ctx.registry.types_len) break;
+                    var ck = self.ctx.registry.types_items[@intCast(usize, cur_ty)];
+                    if (ck.kind == type_mod.TypeKind.optional_type) { opt_layer = cur_ty; break; }
+                    if (ck.kind == type_mod.TypeKind.error_union_type) {
+                        if (@intCast(usize, ck.payload_idx) >= self.ctx.registry.eu_len) break;
+                        cur_ty = self.ctx.registry.eu_items[@intCast(usize, ck.payload_idx)].payload;
+                        continue;
+                    }
+                    break;
+                }
+                if (opt_layer != @intCast(u32, 0)) {
+                    var otid = nextTemp(self, opt_layer);
+                    var nco_om: []const u8 = "NCO:opt"; pal.markerWriteInt(nco_om, otid);
+                    var nco_ol: []const u8 = "\n"; pal.markerWrite(nco_ol);
+                    emitInst(self, LirInst{ .set_optional_null = .{ .result = otid, .type_id = opt_layer } });
+                    return otid;
+                }
+            }
+        }
         var tid = nextTemp(self, type_mod.TYPE_NULL);
         var nco_m: []const u8 = "NCO:ti"; pal.markerWriteInt(nco_m, tid);
         var nco_nl: []const u8 = "\n"; pal.markerWrite(nco_nl);

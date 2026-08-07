@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-07 — null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap]
+# LIR Lowering Layer [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap]
 
 ## Summary
 
@@ -95,8 +95,8 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `float_const` | `value, result` | Float literal |
 | `string_const` | `string_id, result` | String literal pointer |
 | `bool_const` | `value, result` | Boolean literal |
-| `null_const` | `result` | Null literal — result temp is typed `null_type` (lower.zig:1184), whose C name is `"int"` (`getCTypeName`, c89_emit.zig:605). When a null literal feeds a `?T` coercion, `materializeInto` emits a **separate** `set_optional_null` and the `null_const` temp becomes a **dead store** (`zT_N = NULL;`). Correct-for-`?*T` (payload IS a pointer, `int`/`NULL` pointer-compatible), wrong-for-`?[]T` (payload is a slice struct). See `materializeInto` null-construction note below. |
-| `set_optional_null` | `result, type_id` | Set optional to null (typed null) — emitted by `materializeInto` (lower.zig:977-978) when a `null_src` value targets an optional layer, and directly by the var-decl path (lower.zig:4180) and `applyNoneCoercion` (lower.zig:4422) for `var x: ?T = null`. Only `.has_value = 0;` is set; the payload field is left untouched. |
+| `null_const` | `result` | Null literal — result temp is typed `null_type` (lower.zig:1184), whose C name is `"int"` (`getCTypeName`, c89_emit.zig:605). **Option B [updated: 2026-08-07]:** when a null literal feeds a `?T` coercion (null_src), the null_literal branch (lower.zig:1183) now emits `set_optional_null` directly on an `Opt_`-typed temp instead of `null_const` — no dead `int zT_N; zT_N = NULL;` store. `null_const` remains only for uncoerced null / non-optional (pointer/fn) targets. See the `materializeInto` null-construction note below. |
+| `set_optional_null` | `result, type_id` | Set optional to null (typed null) — emitted by the null_literal branch (lower.zig:1183, Option B) for null_src coercions, by `materializeInto` (lower.zig:977-978) for other null_src paths, and directly by the var-decl path (lower.zig:4180) and `applyNoneCoercion` (lower.zig:4422) for `var x: ?T = null`. Only `.has_value = 0;` is set; the payload field is left untouched. |
 | `undefined_const` | `result, type_id` | Undefined literal |
 | `enum_const` | `value, result, type_id, member_name_id` | Enum literal with member name |
 
@@ -216,7 +216,7 @@ are unchanged because they migrated to true `...`).
 | `DeferAction` | `kind, ast_node, scope_depth` | Descriptor for deferred statement execution (`kind`: 0=defer, 1=errdefer) |
 | `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id` | Loop context for break/continue resolution. `label_id` is the active label name ID from `current_label` at push time (0=unlabeled). |
 | `SwitchInfo` | `exit_bb, scope_depth` | Switch context |
-| `SrcIntent` | enum `value`, `null_src`, `error_src` | Classifies source expression for coercion. `null_src` (from a `null_literal` or `wrap_optional_null` coercion) makes `materializeInto` emit `set_optional_null` for the optional layer, discarding the source `null_const` temp [updated: 2026-08-07] |
+| `SrcIntent` | enum `value`, `null_src`, `error_src` | Classifies source expression for coercion. `null_src` (from a `null_literal` or `wrap_optional_null` coercion) makes the null_literal branch emit `set_optional_null` directly on an `Opt_`-typed temp (Option B, 2026-08-07); `materializeInto` then short-circuits or wraps outer EU layers. No dead `null_const` temp [updated: 2026-08-07] |
 
 ### Key Functions
 
@@ -253,7 +253,7 @@ are unchanged because they migrated to true `...`).
 | `string_literal` | `string_const` → temp(ptr) | String pointer constant |
 | `char_literal` | `int_const` → temp(TYPE_U8) | Character as u8 |
 | `bool_literal` | `bool_const` → temp(TYPE_BOOL) | Boolean 0/1 |
-| `null_literal` | `null_const` → temp(TYPE_NULL) | Untyped null. **Known gap [2026-08-07]:** the temp is typed `TYPE_NULL` (→ C `"int"`). In `?T` return/catch contexts the value is discarded by `set_optional_null` — the emitted `int zT_N; zT_N = NULL;` is a dead store producing gcc `-Wint-conversion`. Correct for `?*T` (payload IS a pointer), wrong for `?[]T` (payload is a slice struct). The optional payload type lookup that SHOULD be used is `opt_items[payload_idx].payload` (as in `materializeInto`, lower.zig:932). |
+| `null_literal` | `null_const` → temp(TYPE_NULL) | Untyped null. **FIXED [2026-08-07, Option B]:** when the node's coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) AND the coercion target chain contains an optional layer, the null_literal branch (lower.zig:1183) instead emits `set_optional_null` directly on a temp typed as the optional layer — the dead `int zT_N; zT_N = NULL;` (gcc `-Wint-conversion`) is eliminated. The generic `null_const` path remains for uncoerced null / non-optional targets (pointer/fn). |
 | `undefined_literal` | `undefined_const` → temp(TYPE_UNDEFINED) | Undefined value |
 | `enum_literal` | `enum_const` or `int_const` or tagged-union init | Enum member; for TU emits `int_const` tag + `assign_field` tag |
 | `error_literal` | `int_const` → temp(TYPE_I32) | Error value as integer |
@@ -731,7 +731,7 @@ This guard is **purely defensive** — no valid Z98 pattern triggers it today. I
 | CoercionKind | LIR Pattern |
 |-------------|-------------|
 | `none` | `applyNoneCoercion` (lower.zig:4411) — handles null→optional null ptr via `set_optional_null`/`int_const(0)` |
-| `wrap_optional_null` | `materializeInto(src, target, null_src)` → `set_optional_null` — src `null_const` temp (typed `null_type`→`int`) is DISCARDED, leaving a dead `int zT_N; zT_N = NULL;` in the stream [updated: 2026-08-07] |
+| `wrap_optional_null` | `materializeInto(src, target, null_src)` → `set_optional_null` — src is the `?T`-typed temp already produced by the null_literal branch (Option B, 2026-08-07); `materializeInto` short-circuits on `src_ty == expected` (lower.zig:911) or wraps into outer EU layers. No dead `int zT_N; zT_N = NULL;` in the stream |
 | `wrap_optional` | `materializeInto(src, target, intent)` → `wrap_optional` |
 | `wrap_error_success` | `materializeInto(src, target, intent)` → `wrap_error_ok` |
 | `wrap_error_err` | `materializeInto(src, target, error_src)` → `wrap_error_err` |
@@ -750,7 +750,7 @@ This guard is **purely defensive** — no valid Z98 pattern triggers it today. I
 
 `materializeInto` (`sf/src/lower.zig:906`) is the general mechanism: given a source temp and an expected type, it walks the type hierarchy (optional layers, error union layers) and emits wrapping instructions (`wrap_optional`, `wrap_error_ok`, `wrap_error_err`, `set_optional_null`) to match the expected type shape.
 
-**Null-construction path (known gap, [updated: 2026-08-07]):** for `SrcIntent.null_src` targeting an optional layer, `materializeInto` emits `set_optional_null` (lower.zig:977-978) on a NEW temp typed as the optional type, **discarding the source `null_const` temp**. The discarded temp is still emitted: `int zT_N; ... zT_N = NULL; zT_M.has_value = 0; return zT_M;`. The `int` type comes from `nextTemp(TYPE_NULL)` (lower.zig:1184) → `getCTypeName(null_type)` = `"int"` (c89_emit.zig:605). Correct for `?*T` (payload IS a pointer), wrong for `?[]T` (payload is a slice struct). gcc-clean-only (warning `-Wint-conversion`, rc=0) — latent, OK-by-gate. The optional payload type is available here as `opt_items[payload_idx].payload` (lower.zig:932).
+**Null-construction path (FIXED, Option B, [updated: 2026-08-07]):** for a `null_literal` whose coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) with an optional layer in the target chain, the null_literal branch (lower.zig:1183) walks the coercion target chain (`optional_type` → layer; `error_union_type` → payload, max 8) to find the optional layer and emits `set_optional_null` directly on a temp typed as that optional layer — instead of emitting the old dead `null_const` temp (`int zT_N; zT_N = NULL;`, typed `null_type`→`int` via `nextTemp(TYPE_NULL)` lower.zig:1184 → `getCTypeName(null_type)` = `"int"` c89_emit.zig:605). `materializeInto` then short-circuits on `src_ty == expected` (lower.zig:911) for a plain `?T`, or wraps the `?T` temp into outer error-union layers (`eul == src_ty` match at lower.zig:945 → `wrap_error_ok`) for `E!?T`. Result: no `int zT_N;`, no `zT_N = NULL;` — fixes the gcc `-Wint-conversion` warning for both `?*T` and `?[]T` null construction. Emitted C is now `Opt_... zT; zT.has_value = 0;` (or `EU`-wrapped). Non-optional-target null (pointer/fn, no optional layer) still uses the `null_const` path unchanged.
 
 ---
 

@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper]
+# 08 — C89 Emission [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -211,12 +211,12 @@ Defined `c89_emit.zig:457-480`. Holds all emission context:
 | `array_type` | `Arr_<elem-cname>_<len>` | Typedef'd — `typedef <elem> Arr_<elem>_<len>[<len>];` |
 | `ptr_type` / `many_ptr_type` | `<base>*` | Direct pointer syntax; fn ptr → use fn name |
 | `slice_type` | `Slice_<elem>` | Typedef'd struct: `typedef struct { <elem>* ptr; unsigned int len; } ...;` |
-| `optional_type` | `Opt_<payload>` | Typedef'd struct with `{ <type> value; int has_value; }` |
+| `optional_type` | `Opt_<payload>` | Typedef'd struct with `{ <type> value; int has_value; }`. **Payload-temp note [updated: 2026-08-07]:** null construction (`catch return null` / `return null` on a `?T` fn) no longer emits a scalar payload temp — the null_literal lowerer branch emits `set_optional_null` directly on an `Opt_`-typed temp (`zT_M.has_value = 0;`), so the old `int zT_N; zT_N = NULL;` dead store (gcc `-Wint-conversion`) is gone. |
 | `error_union_type` | `EU_<payload>` | Typedef'd struct with `{ union { <type> payload; int err; } data; int is_error; }` |
 | `fn_type` | `F_<N|P>_<ret>_<p1>_<p2>...` | `F_N_` for non-ptr, `F_P_` for ptr (FN_PTR flag) |
 | `error_set_type` | mangled type | `typedef int <mangled>;` + `#define` for each error tag |
 | `undefined_type` | `"int"` | Fallback |
-| `null_type` | `"int"` | Fallback |
+| `null_type` | `"int"` | Fallback. **FIXED [updated: 2026-08-07, Option B]:** the dead `null_const` temp (`int zT_N; zT_N = NULL;` at c89_emit.zig:3908-3911, previously emitted when a null literal was coerced to an optional) is no longer produced — the lowerer emits `set_optional_null` directly on an `Opt_`-typed temp for null_src coercions. A `null_type`→`"int"` temp now only appears in the remaining `null_const` cases (uncoerced null / non-optional pointer/fn targets), which are pointer-compatible and gcc-clean. |
 | `integer_literal_type` | `"int"` | Fallback |
 
 When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by `emitErrorUnionType` for error union types).
@@ -253,18 +253,18 @@ emitSpecialTypes(emitter, reg):
 
 | TypeKind | Emitter Function | Output |
 |----------|-----------------|--------|
-| `slice_type` | `emitSliceType` (1334) | `typedef struct { <elem>* ptr; unsigned int len; } Slice_<elem>;` |
-| `optional_type` | `emitOptionalType` (1366) | `typedef struct { <type> value; int has_value; } Opt_<payload>;` (void payload: omit value) |
-| `error_union_type` | `emitErrorUnionType` (1410) | `typedef struct { union { <type> payload; int err; } data; int is_error; } EU_<payload>;` |
-| `error_set_type` | `emitErrorSetType` (1255) | `typedef int <cname>;` + `#define <cname>_<tag> <N>` per tag |
-| `tagged_union_type` | `emitTaggedUnionType` (999) | Complex struct + union + tag constants |
-| `enum_type` | `emitEnumType` (1286) | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member |
-| `struct_type` | `emitStructType` (1132) | `struct <cname> { <type> <field>; ... };` |
-| `union_type` | `emitStructType` (1132) | Same struct format |
-| `array_type` | `emitArrayType` (1163) | `typedef <elem> Arr_<elem>_<len>[<len>];` |
-| `i64_type` | `emitInt64Type` (1316) | `typedef long long <cname>;` |
-| `u64_type` | `emitUint64Type` (1325) | `typedef unsigned long long <cname>;` |
-| `fn_type` | `emitFnPtrType` (1224) | `typedef <ret> (*<cname>)(<params>);` |
+| `slice_type` | `emitSliceType` (1736) | `typedef struct { <elem>* ptr; unsigned int len; } Slice_<elem>;` |
+| `optional_type` | `emitOptionalType` (1768) | `typedef struct { <type> value; int has_value; } Opt_<payload>;` (void payload: omit value). Null-payload temps for this type are emitted as `Opt_` (set_optional_null writes `has_value = 0;`) — see §1.4 [updated: 2026-08-07] |
+| `error_union_type` | `emitErrorUnionType` (1812) | `typedef struct { union { <type> payload; int err; } data; int is_error; } EU_<payload>;` |
+| `error_set_type` | `emitErrorSetType` (1633) | `typedef int <cname>;` + `#define <cname>_<tag> <N>` per tag |
+| `tagged_union_type` | `emitTaggedUnionType` (1348) | Complex struct + union + tag constants |
+| `enum_type` | `emitEnumType` (1688) | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member |
+| `struct_type` | `emitStructType` (1481) | `struct <cname> { <type> <field>; ... };` |
+| `union_type` | `emitStructType` (1481) | Same struct format |
+| `array_type` | `emitArrayType` (1541) | `typedef <elem> Arr_<elem>_<len>[<len>];` |
+| `i64_type` | `emitInt64Type` (1718) | `typedef long long <cname>;` |
+| `u64_type` | `emitUint64Type` (1727) | `typedef unsigned long long <cname>;` |
+| `fn_type` | `emitFnPtrType` (1602) | `typedef <ret> (*<cname>)(<params>);` |
 
 #### Tagged Union Emission
 
@@ -408,15 +408,15 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
 | `.enum_const` | `result = <type>_<member>;` | 2928 |
 | `.float_const` | `result = <d.ddd>;` (via `formatF64`) | 2945 |
 | `.string_const` | `result = "<escaped>";` (escape: `\n`, `\t`, `\r`, `\\`, `\"`) | 2962 |
-| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) | 2996 |
-| `.set_optional_null` | `result.has_value = 0;` | 3010 |
+| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) | 3900 — note: null_src null construction (return/catch null → optional) no longer emits `.null_const`; the lowerer emits `.set_optional_null` directly (Option B, 2026-08-07) |
+| `.set_optional_null` | `result.has_value = 0;` | 3914 |
 | `.bool_const` | `result = 1;` or `result = 0;` | 3017 |
 | `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 3029 |
 | `.call` | `result = callee(args...);` (indirect call through function pointer) | 3103 |
 | `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 3129 |
 | `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 3954 |
 | `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 3262 |
-| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 3304 |
+| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 4256 |
 | `.int_cast` | `result = (type)src;` (checked: `result = __bootstrap_<DST>_from_<SRC>(src);`) | 4214 |
 | `.int_to_float` | `result = (type)src;` | 3366 |
 | `.float_cast` | `result = (type)src;` | 3381 |
