@@ -796,6 +796,14 @@ fn c89NeedsEmitEdge(kind: TypeKind) bool {
 
 
 
+fn tstSeenInRange(reg: *TypeRegistry, start: u32, count: u32, tid: u32) bool {
+    var j: usize = @intCast(usize, 0);
+    while (j < @intCast(usize, count)) : (j += 1) {
+        if (reg.fe_items[@intCast(usize, start) + j].type_id == tid) return true;
+    }
+    return false;
+}
+
 fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
     var ty = reg.types_items[@intCast(usize, ti)];
     var c: u32 = @intCast(u32, 0);
@@ -804,16 +812,22 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+                if (!tstSeenInRange(reg, sp.fields_start, @intCast(u32, i), ft)) c += 1;
+            }
         }
     } else if (ty.kind == TypeKind.tagged_union_type) {
         var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+                if (!tstSeenInRange(reg, tp.fields_start, @intCast(u32, i), ft)) c += 1;
+            }
         }
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) c += 1;
+        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
+            if (!tstSeenInRange(reg, tp.fields_start, tp.fields_count, tp.tag_type)) c += 1;
+        }
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
@@ -832,7 +846,9 @@ fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, up.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) c += 1;
+            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
+                if (!tstSeenInRange(reg, up.fields_start, @intCast(u32, i), ft)) c += 1;
+            }
         }
     }
     return c;
@@ -847,7 +863,9 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                tgt[@intCast(usize, off)] = ft; off += 1;
+                if (!tstSeenInRange(reg, sp.fields_start, @intCast(u32, i), ft)) {
+                    tgt[@intCast(usize, off)] = ft; off += 1;
+                }
             }
         }
     } else if (ty.kind == TypeKind.tagged_union_type) {
@@ -856,11 +874,15 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                tgt[@intCast(usize, off)] = ft; off += 1;
+                if (!tstSeenInRange(reg, tp.fields_start, @intCast(u32, i), ft)) {
+                    tgt[@intCast(usize, off)] = ft; off += 1;
+                }
             }
         }
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
-            tgt[@intCast(usize, off)] = tp.tag_type; off += 1;
+            if (!tstSeenInRange(reg, tp.fields_start, tp.fields_count, tp.tag_type)) {
+                tgt[@intCast(usize, off)] = tp.tag_type; off += 1;
+            }
         }
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
@@ -889,7 +911,9 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         while (i < @intCast(usize, up.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                tgt[@intCast(usize, off)] = ft; off += 1;
+                if (!tstSeenInRange(reg, up.fields_start, @intCast(u32, i), ft)) {
+                    tgt[@intCast(usize, off)] = ft; off += 1;
+                }
             }
         }
     }

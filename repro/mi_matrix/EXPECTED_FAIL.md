@@ -1,20 +1,24 @@
-# mi_matrix corpus — expected-fail manifest (v22 2026-08-07)
+# mi_matrix corpus — expected-fail manifest (v23 2026-08-07)
 
-## Totals (210 repros)
+## Totals (212 repros)
 
-- **CURRENT (2026-08-07 F1: labeled statement support in parser, sema, lowerer): OK=203 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **210 repros** (203 + 3 + 4 = 210; raw classifier FAIL = 7
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zlbl/zig1` (fresh
-  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `labeled_stmt_unhandled` **FAIL→OK**:
-  the `labeled_stmt` AST node is now handled in all three pipeline stages — the parser stores the
-  label name string_id in the node payload; sema unwraps it transparently in
-  `semanticAnalyzerResolveStmtIter` (and defensively in the resolveExpr redirect); the lowerer
-  recurses through `LirLowerer.current_label` and threads it into `LoopInfo.label_id` at all 3
-  loop-push sites so `break :label` / `continue :label` resolve (AMENDMENT 1, commit `50723411`).
-  The 3 remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
+- **CURRENT (2026-08-07 F1: duplicate-typed struct fields emit correctly): OK=205 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **212 repros** (205 + 3 + 4 = 212; raw classifier FAIL = 7
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf1/zig1` (fresh
+  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `dup_optptr_field_emit` +
+  `dup_val_field_emit` **FAIL→OK** (both added 2026-08-07 by the rogue_mud I-task): the
+  `tstTopologicalSort` duplicate-field bug is fixed (Option B) — `tstEdgesCount` now counts each
+  distinct dependent type ONCE (dedupe same-typed field edges; also dedupes tag_type vs fields in
+  the tagged_union branch), mirroring the `tstIsDep`-boolean Kahn dequeue, so count and dequeue can
+  never drift. Both repros dump rc=0, gcc-clean, link rc=0, run rc=0 with their struct bodies now
+  emitted. The 3 remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
   `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
   green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
-  `var_declared_void`, `euvoid_val_catch`. No other repro flipped.
+  `var_declared_void`, `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return`
+  is OK-by-gate (type-incorrect, tracked separately); the I-task repros for the other 3 gaps
+  (`undef_arr_struct_literal`, `xmod_pub_const_global`, `switch_mixed_case_argtype`) stay FAIL
+  until their F2/F3/F4 fix tasks.
+- Prior: OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 F1: labeled statement support in parser, sema, lowerer)
 - Prior: OK=202 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 I-task: rogue_mud build attempt — labeled_stmt_unhandled added as FAIL)
 - Prior: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 209 (2026-08-06 Task F7 gate sweep, 4-item plan closeout)
 - Prior: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 208 (2026-08-06 F2 u64-safe int_literal marker)
@@ -999,4 +1003,53 @@ search only `loop_stack`, and a labeled block never pushes a `LoopInfo`. Loop la
 
 **Accounting: OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 210 repros** — see the
 Totals section at the top.
+
+---
+
+## Task F1 — duplicate-typed struct fields emit correctly (dup field topo-sort) (2026-08-07) — +2 repros (210 → 212)
+
+The `dup_optptr_field_emit` + `dup_val_field_emit` repros (added 2026-08-07 by the rogue_mud
+I-task, per `.superpowers/sdd/I-rogue-dupfld-report.md`) are now **OK**. Both previously failed
+gcc with `unknown type name 'zT_...'`: the `tstTopologicalSort` Kahn algorithm dropped the struct
+from the `sorted` array, so its forward-decl and body were never emitted while the lowerer still
+referenced the type by name.
+
+- **Root cause:** `tstEdgesCount` (`sf/src/c89_emit.zig:799-839`) counted **one edge per field
+  occurrence**, so a struct with two same-typed edge-forming fields (`a: Point, b: Point`;
+  `left: ?*Node, right: ?*Node`) got `indegree = 2`. The Kahn dequeue loop (`:960-968`)
+  decremented **once per dependent type** (`tstIsDep` boolean, `:961`), leaving indegree 1 → the
+  struct was never dequeued → dropped from `sorted` → no fwd-decl/body → gcc `unknown type name`.
+- **Fix (Option B, operator ruling):** `tstEdgesCount` now counts each distinct dependent type
+  **once** — deduped same-typed field edges in the struct/tagged_union/union branches, including
+  dedupe of `tag_type` vs fields in the tagged_union branch. New helper `tstSeenInRange`
+  (c89_emit.zig:799-805) scans the field range for an already-counted type id. Mirrored in
+  `tstEdgesFill` (dead code, 0 callers — zero runtime effect) for consistency. Indegree now equals
+  "number of distinct dep types" == the count of `tstIsDep`-true decrements, so count and dequeue
+  can never drift; Kahn drains fully, which also eliminates the uninitialized-`sorted`-tail hazard
+  (`sandAlloc` does not zero) for this pattern.
+- **Files:** `sf/src/c89_emit.zig` (commit `fix: duplicate-typed struct fields emit correctly
+  (dup field topo-sort)`).
+
+**Gate evidence (measured, /tmp/zf1/zig1 — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors):**
+
+- `dup_val_field_emit`: dump rc=0, 1 `.c`, gcc-clean, link rc=0, run rc=0;
+  `zig_special_types.h` now carries the `zT_9808F547_Line` fwd-decl + body (`zT_EAA8EF31_Point a;`
+  / `b;`).
+- `dup_optptr_field_emit`: dump rc=0, 1 `.c`, gcc-clean, link rc=0, run rc=0;
+  `zT_3468032D_Node` fwd-decl + body now emitted.
+- 4 MD5 gates **byte-identical**: mud `50beb1bf5edc4cbb638f84aa027ffade`, gol
+  `0d8f0092c22c04375482a198691a3957`, lisp `605b597e8b7cff60de0ce84a0593e743`, json
+  `b5f56ebd51d2f0fcd379a1e083594462` (no gate program has duplicate edge-forming field types).
+- Full corpus sweep (216 dirs, /tmp/zf1/zig1): **OK=206 / FAIL=10 (raw) / ICE=0 / CRASH=0**. Of the
+  raw FAIL=10: 4 green-guards (`eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`) + 3 real baseline FAILs (`field_store_drop`,
+  `test_stub_0`, `self_embed_optional_cycle`) + 3 I-task repros for the other gaps
+  (`undef_arr_struct_literal`, `xmod_pub_const_global`, `switch_mixed_case_argtype` — stay FAIL
+  until F2/F3/F4).
+- **F1 accounting: 210 → 212 repros, OK=205 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0**
+  (205 + 3 + 4 = 212; raw classifier FAIL stays **7**). Only flip:
+  `dup_optptr_field_emit` + `dup_val_field_emit` FAIL→OK. The 3 remaining FAILs: 2
+  std-lib-deferred (`field_store_drop`, `test_stub_0`, `error[3048]`) +
+  `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). 4 green-guards unchanged. No
+  existing repro flipped. See the Totals section at the top.
 
