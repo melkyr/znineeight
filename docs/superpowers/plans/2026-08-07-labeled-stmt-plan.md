@@ -4,7 +4,7 @@
 
 **Goal:** Add zig1 support for labeled statements (`label: stmt`) in parser, sema, and lowerer so `labeled_stmt_unhandled` flips FAIL→OK — the first step toward rogue_mud compilation.
 
-**Architecture:** The `labeled_stmt` AST node is a transparent wrapper: `child_0` = inner statement, `payload` = label name string_id. Four edits: parser stores the label name; sema stmt dispatcher transparently unwraps `child_0` onto the work queue; sema expr redirect delegates labeled_stmt back to the stmt resolver (defensive); lowerer unwraps `child_0` in `lowerStmt`. No new LIR, no AST shape change.
+**Architecture:** The `labeled_stmt` AST node is a transparent wrapper: `child_0` = inner statement, `payload` = label name string_id. Five edits: parser stores the label name; sema stmt dispatcher transparently unwraps `child_0` onto the work queue; sema expr redirect delegates labeled_stmt back to the stmt resolver (defensive); lowerer unwraps `child_0` in `lowerStmt` and threads the label through a `current_label` field into each loop's `LoopInfo.label_id`. No new LIR, no AST shape change.
 
 **Tech Stack:** Z98 (zig0 → zig1 → gcc -m32 -std=c89)
 
@@ -27,7 +27,7 @@
 
 ---
 
-### Task F1: Implement labeled_stmt support (4 edits, 3 files)
+### Task F1: Implement labeled_stmt support (5 edits, 3 files)
 
 **Files:**
 - Modify: `sf/src/parser.zig:1285` (parserParseLabeledStmt) + `:1299` (parserParseLabeledBlockExpr)
@@ -37,7 +37,7 @@
 
 **Interfaces:**
 - Consumes: nothing (self-contained fix).
-- Produces: `labeled_stmt` handled in all three pipeline stages; `label: while`/`label: for`/`label: block`/`label: if` compile. `break :label` / `continue :label` match via `node.payload` (now populated).
+- Produces: `labeled_stmt` handled in all three pipeline stages; `label: while`/`label: for`/`label: block`/`label: if` compile. `break :label` / `continue :label` match via `node.payload` (now populated) threaded into `LoopInfo.label_id` via `LirLowerer.current_label`.
 
 - [ ] **Step 1: Read the 4 edit regions**
 
@@ -86,12 +86,32 @@ Defensive: if labeled_stmt ever reaches resolveExpr, it delegates back to the st
 In `lowerStmt`, add a `labeled_stmt` case that recurses into `child_0`. Insert after the `block` case (`:3507-3515`) or alongside the defer/errdefer cases — the KEY is it unwraps and recurses:
 ```zig
     } else if (node.kind == AstKind.labeled_stmt) {
+        var saved_label = self.current_label;
+        self.current_label = node.payload;
         if (node.child_0 != @intCast(u32, 0)) {
             lowerStmt(self, node.child_0);
         }
+        self.current_label = saved_label;
     } else if (node.kind == AstKind.defer_stmt) {
 ```
-The inner statement lowers normally (existing while/for/block handlers). `break :label`/`continue :label` inside resolve via their existing handlers (lower.zig:4002-4052) which read `node.payload` — now populated by Edit 1.
+The inner statement lowers normally (existing while/for/block handlers).
+
+- [ ] **Step 5b: Edit 4b — label propagation into loop_stack (AMENDMENT — operator ruling 2026-08-07)**
+
+**Required.** The plan's original Step-5 assumption that `break :label`/`continue :label` resolve via existing handlers was empirically FALSE: `LoopInfo.label_id` is hardcoded `0` at all 3 loop-push sites (lower.zig:3625 while, :3724 for-range, :3778 for-slice), so a labeled break (`payload` = label name_id) never matches any loop and becomes a no-op — the repro `while(true){ break :game_loop; }` HANGS at runtime. Without this edit the F1 gate (run rc=0) is unsatisfiable. This was prototyped, built, and verified by the F1 implementer (run rc=0, nested labels OK, 4 MD5s + corpus unchanged), then reverted pending ruling. Operator ruling: amend plan to include it.
+
+Three sub-edits, all in `sf/src/lower.zig`:
+
+**(a) Add `current_label: u32` field to `LirLowerer`**, initialized to 0 (find the struct definition and the init site — the field records the label name_id of the innermost enclosing `labeled_stmt`).
+
+**(b) `labeled_stmt` case in `lowerStmt`** (from Step 5) sets/restores it around the recurse (as written in Step 5's code block).
+
+**(c) At the 3 loop-push sites**, change `.label_id = @intCast(u32, 0)` to `.label_id = self.current_label`:
+- while_stmt: lower.zig:3625
+- for_stmt range form: lower.zig:3724
+- for_stmt slice form: lower.zig:3778
+
+Note (documented, accepted scope limit): `break :label` out of a labeled NON-LOOP block (`lbl: { break :lbl; }`) remains unsupported — the break handler searches only `loop_stack`. Out of this repro's scope (loop case only).
 
 - [ ] **Step 6: Build + verify repro**
 
@@ -156,3 +176,9 @@ Per AGENTS §1.1.1, add `[updated: 2026-08-07]` annotations + describe labeled_s
 git add docs/sf/QUICK_REF.md sf/docs/tech_docs/00_lexer_parser.md sf/docs/tech_docs/05_semantic_analysis.md sf/docs/tech_docs/07_lir_lowering.md
 git commit -m "docs: labeled statement support (QUICK_REF baseline + tech docs)"
 ```
+
+---
+
+## Amendments Record
+
+- **AMENDMENT 1 (2026-08-07, operator ruling):** F1 gains a 5th edit (Edit 4b) — label propagation into `loop_stack`. The plan's original Step-5 claim that "break :label resolves via existing handlers" was empirically false: `LoopInfo.label_id` is hardcoded `0` at all 3 loop-push sites (lower.zig:3625 while, :3724 for-range, :3778 for-slice), so a labeled break never matches → `while(true){break :game_loop;}` HANGS, making the F1 gate (run rc=0) unsatisfiable. Edit 4b: add `current_label: u32` field to `LirLowerer` (init 0); `labeled_stmt` lowerStmt case saves/sets/restores `current_label = node.payload` around the `child_0` recurse; the 3 loop-push sites use `.label_id = self.current_label`. Prototyped + verified by the F1 implementer (run rc=0, nested `outer: while{inner: while{break :outer; continue :inner;}}` works, labeled block/if compile, 4 MD5s + corpus unchanged) before the ruling. Documented scope limit: `break :label` out of a labeled NON-LOOP block remains unsupported (break handler searches only `loop_stack`); loop case only.
