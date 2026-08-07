@@ -2,15 +2,20 @@
 
 ## Totals (210 repros)
 
-- **CURRENT (2026-08-07 I-task: rogue_mud build attempt): OK=202 / FAIL=4 /
-  green-guards=4 / ICE=0 / CRASH=0** over **210 repros** (202 + 4 + 4 = 210; raw classifier FAIL = 8
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zigaps/zig1` (fresh
-  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). The 4 FAILs: the 3 prior
-  (`field_store_drop` + `test_stub_0` std-lib-deferred `error[3048]`, `self_embed_optional_cycle`
-  F-8 residual gcc incomplete-type) + **`labeled_stmt_unhandled` (NEW — error[3020], labeled
-  statement unhandled in sema type resolution; the blocker that failed the rogue_mud dump)**. The 4
+- **CURRENT (2026-08-07 F1: labeled statement support in parser, sema, lowerer): OK=203 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **210 repros** (203 + 3 + 4 = 210; raw classifier FAIL = 7
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zlbl/zig1` (fresh
+  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `labeled_stmt_unhandled` **FAIL→OK**:
+  the `labeled_stmt` AST node is now handled in all three pipeline stages — the parser stores the
+  label name string_id in the node payload; sema unwraps it transparently in
+  `semanticAnalyzerResolveStmtIter` (and defensively in the resolveExpr redirect); the lowerer
+  recurses through `LirLowerer.current_label` and threads it into `LoopInfo.label_id` at all 3
+  loop-push sites so `break :label` / `continue :label` resolve (AMENDMENT 1, commit `50723411`).
+  The 3 remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
+  `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
   green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
-  `var_declared_void`, `euvoid_val_catch`. No existing repro flipped.
+  `var_declared_void`, `euvoid_val_catch`. No other repro flipped.
+- Prior: OK=202 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 I-task: rogue_mud build attempt — labeled_stmt_unhandled added as FAIL)
 - Prior: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 209 (2026-08-06 Task F7 gate sweep, 4-item plan closeout)
 - Prior: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 208 (2026-08-06 F2 u64-safe int_literal marker)
 - Prior: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 207 (2026-08-06 F1 @intCast range-check)
@@ -917,7 +922,7 @@ the actual dump FAILS at type resolution.
 
 | Repro | RED (measured) | Classification | Guards |
 |-------|----------------|----------------|--------|
-| `labeled_stmt_unhandled` | dump rc=2, `error[3020]: internal error: unhandled node kind in type resolution`, 0 `.c` emitted | **FAIL** (real frontend gap; rc=2 + `error[3020]` is outside the ICE regex — not an ICE, not a green-guard) | `semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1599-1778) has no `labeled_stmt` (AstKind 82) case → generic `else` (:1773) forwards to `resolveExpr` → unhandled-else (:1424-1429) emits error[3020]. Correct behavior: unwrap the label and push the wrapped child onto the stmt work stack |
+| `labeled_stmt_unhandled` | dump rc=2, `error[3020]: internal error: unhandled node kind in type resolution`, 0 `.c` emitted | **FAIL** (real frontend gap; rc=2 + `error[3020]` is outside the ICE regex — not an ICE, not a green-guard) → **OK post-F1 (2026-08-07)** — dump rc=0, 1 `.c`, gcc-clean, links, runs rc=0 and TERMINATES (the labeled `break :game_loop` now matches the loop via `current_label` propagation; pre-fix it was a no-op and `while(true)` HUNG) | `semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1599-1778) has no `labeled_stmt` (AstKind 82) case → generic `else` (:1773) forwards to `resolveExpr` → unhandled-else (:1424-1429) emits error[3020]. Correct behavior: unwrap the label and push the wrapped child onto the stmt work stack — now implemented (parser.zig + semantic_analyzer.zig + lower.zig; see Task F1 section below) |
 
 **Dump diagnostics (rogue_mud):** 2× `error[3020]`, one per labeled statement in the program —
 `main.zig:92` `game_loop: while (true)`, `lib/scenario.zig:59` `bsp_loop: while (stack.len > 0)`.
@@ -939,3 +944,59 @@ classifier FAIL **7 → 8** (green-guards remain a sub-bucket of the raw count).
 (error[3020], sema labeled_stmt gap). The 4 green-guards unchanged:
 `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
 No existing repro flipped. Investigation complete — no compiler fixes made.
+
+---
+
+## Task F1 — labeled statement support in parser, sema, lowerer (2026-08-07) — FAIL→OK
+
+The `labeled_stmt_unhandled` repro (added 2026-08-07 by the rogue_mud I-task) is now **OK**:
+`game_loop: while (true) { break :game_loop; }` dumps, compiles, links, and **runs rc=0 and
+TERMINATES** (pre-fix the labeled `break :game_loop` matched no loop and was a no-op, so the
+`while(true)` HUNG at runtime). 5 edits in 3 files (plan `labeled statement support implementation
+plan` `37e1892a`, AMENDMENT 1 `50723411`):
+
+1. **Parser (parser.zig:1285 + :1299):** `parserParseLabeledStmt` + `parserParseLabeledBlockExpr`
+   now store `label_tok.value.string_id` in the `labeled_stmt` node payload (was hardcoded `0`),
+   so `break :label` / `continue :label` can match it.
+2. **Sema stmt dispatcher (semantic_analyzer.zig:1767):** `labeled_stmt` case added to
+   `semanticAnalyzerResolveStmtIter` before `defer_stmt` — transparent unwrap: pushes
+   `node.child_0` onto the stmt work queue (mirrors the defer_stmt unwrapper); one case covers
+   while/for/block/if/switch inner kinds.
+3. **Sema expr redirect (semantic_analyzer.zig:1341):** `labeled_stmt` added to the
+   var_decl/defer/errdefer branch → delegates back to `semanticAnalyzerResolveStmtIter`
+   (defensive; prevents the `error[3020]` unhandled-else crash if a labeled_stmt ever reaches
+   resolveExpr).
+4. **Lowerer unwrap (lower.zig:3516):** `labeled_stmt` case in `lowerStmt` recurses into
+   `node.child_0`, saving/setting/restoring `self.current_label = node.payload` around the
+   recurse.
+5. **Edit 4b — label propagation (AMENDMENT 1, required):** `LirLowerer` gains `current_label:
+   u32` (init 0); all 3 loop-push sites (while :3627, for-range :3726, for-slice :3780) now use
+   `.label_id = self.current_label` instead of hardcoded `0`. The original 4-edit version was
+   verified unsatisfiable (labeled break matched no `LoopInfo` → runtime no-op → hang); the
+   operator ruling amended the plan to add edit 4b, which the F1 implementer prototyped + verified,
+   then reverted pending ruling. Re-applied here.
+
+**Gate evidence (measured, /tmp/zlbl/zig1):**
+
+- Repro `labeled_stmt_unhandled`: dump rc=0, 1 `.c` emitted, gcc rc=0, link rc=0, **run rc=0 and
+  TERMINATES** (the hang was the bug).
+- Nested-labels probe `outer: while (true) { inner: while (true) { i += 1; if (i < 3) { continue
+  :inner; } break :outer; } }` + `if (i != 3) @panic("FAIL")`: dump rc=0, gcc rc=0, link rc=0,
+  run rc=0 (assertion passes — `continue :inner` re-loops, `break :outer` exits the outer loop).
+- 4 MD5 gates **byte-identical**: mud `50beb1bf5edc4cbb638f84aa027ffade`, gol
+  `0d8f0092c22c04375482a198691a3957`, lisp `605b597e8b7cff60de0ce84a0593e743`, json
+  `b5f56ebd51d2f0fcd379a1e083594462`.
+- test_analyzer_bin **PASS** (`Analyzer tests passed`); build_test.sh 5/4 (baseline-identical).
+- Corpus: 210 repros, **OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** (203+3+4=210; raw
+  classifier FAIL **8 → 7**). Only flip: `labeled_stmt_unhandled` FAIL→OK. The 3 remaining FAILs:
+  2 std-lib-deferred (`field_store_drop`, `test_stub_0`, `error[3048]`) +
+  `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). 4 green-guards unchanged.
+
+**Documented scope limit (accepted, not fixed):** `break :label` out of a labeled NON-LOOP block
+(`lbl: { break :lbl; }`) remains unsupported — the break/continue handlers (`lower.zig:4005-4044`)
+search only `loop_stack`, and a labeled block never pushes a `LoopInfo`. Loop labels
+(`label: while` / `label: for`) are fully supported; out of this repro's scope (loop case only).
+
+**Accounting: OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 210 repros** — see the
+Totals section at the top.
+

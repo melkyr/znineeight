@@ -1338,7 +1338,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveOrelseExpr(self, node_idx);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
          result = type_mod.TYPE_VOID;
-     } else if (node.kind == AstKind.var_decl or node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
+     } else if (node.kind == AstKind.var_decl or node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt or node.kind == AstKind.labeled_stmt) {
          semanticAnalyzerResolveStmtIter(self, node_idx);
          result = type_mod.TYPE_VOID;
       } else if (node.kind == AstKind.if_expr) {
@@ -1764,6 +1764,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                    node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
                    node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign) {
             _ = semanticAnalyzerResolveExpr(self, node_idx);
+        } else if (node.kind == AstKind.labeled_stmt) {
+            if (node.child_0 != @intCast(u32, 0)) {
+                semanticAnalyzerStmtWorkPush(self, node.child_0);
+            }
         } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
                 semanticAnalyzerStmtWorkPush(self, node.child_0);

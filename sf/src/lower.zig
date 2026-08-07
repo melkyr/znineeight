@@ -254,6 +254,7 @@ pub const LirLowerer = struct {
     _ctx_node_kind: u32,
     capture_shadow: hash_mod.U32ToU32Map,
     synth_name_counter: u32,
+    current_label: u32,
 
 };
 
@@ -320,6 +321,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         ._ctx_node_kind = @intCast(u32, 0),
         .capture_shadow = hash_mod.u32ToU32MapInit(alloc),
         .synth_name_counter = @intCast(u32, 1),
+        .current_label = @intCast(u32, 0),
 
     };
 }
@@ -3513,6 +3515,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         self.scope_depth -= @intCast(u32, 1);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        var saved_label = self.current_label;
+        self.current_label = node.payload;
+        if (node.child_0 != @intCast(u32, 0)) {
+            lowerStmt(self, node.child_0);
+        }
+        self.current_label = saved_label;
     } else if (node.kind == AstKind.defer_stmt) {
         pushDefer(self, @intCast(u8, 0), node.child_0);
     } else if (node.kind == AstKind.errdefer_stmt) {
@@ -3618,7 +3627,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             .header_bb = cont_bb,
             .exit_bb = exit_bb,
             .scope_depth = self.scope_depth,
-            .label_id = @intCast(u32, 0),
+            .label_id = self.current_label,
         };
         loopInfoArrayListAppend(&self.loop_stack, loop_info);
         emitInst(self, LirInst{ .jump = cond_bb });
@@ -3717,7 +3726,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = @intCast(u32, 0) };
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label };
             loopInfoArrayListAppend(&self.loop_stack, loop_info);
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = cond_bb;
@@ -3771,7 +3780,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = @intCast(u32, 0) };
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label };
             loopInfoArrayListAppend(&self.loop_stack, loop_info);
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = cond_bb;

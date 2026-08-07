@@ -1284,7 +1284,7 @@ fn parserParseLabeledStmt(self: *Parser) ParserError!u32 {
     var end = inner; _ = end;
     return ast_mod.astStoreAddNode(self.store, AstKind.labeled_stmt, 0,
         label_tok.span_start, label_tok.span_start + @intCast(u32, label_tok.span_len),
-        inner, 0, 0, 0);
+        inner, 0, 0, label_tok.value.string_id);
 }
 
 fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
@@ -1297,7 +1297,7 @@ fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
         end_pos = last.span_start + @intCast(u32, last.span_len);
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.labeled_stmt, 0,
-        label_tok.span_start, end_pos, body, 0, 0, 0);
+        label_tok.span_start, end_pos, body, 0, 0, label_tok.value.string_id);
 }
 
 fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool) ParserError!u32 {
