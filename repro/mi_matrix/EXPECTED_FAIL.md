@@ -1,24 +1,28 @@
 # mi_matrix corpus — expected-fail manifest (v24 2026-08-07)
 
-## Totals (214 repros)
+## Totals (215 repros)
 
-- **CURRENT (2026-08-07 F3: cross-module pub const resolves): OK=207 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **214 repros** (207 + 3 + 4 = 214; raw classifier FAIL = 7
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf3/zig1` (fresh
-  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `xmod_pub_const_global`
-  **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the cross-module
-  `SymbolKind.global` module-field-access branch now folds literal-init `pub const` values
-  (int/float/char literal init) to an `int_const`/`float_const` typed at the DECLARED type —
-  mirroring the same-module literal fold — instead of unconditionally emitting `load_global`
-  for a `zG_` name that has no storage slot (main.zig:616-660 skips literal-init consts) and
-  therefore no definition or extern anywhere (Option C, operator ruling). `load_global`
-  fallback retained for non-literal consts. dump rc=0, gcc-clean, link rc=0, run rc=0. The 3
+- **CURRENT (2026-08-07 F4: switch mixed-case call-arg typing): OK=208 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **215 repros** (208 + 3 + 4 = 215; raw classifier FAIL = 7
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf4/zig1` (fresh
+  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `switch_mixed_case_argtype`
+  **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
+  `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
+  type_mod.TYPE_VOID;` aborted the whole switch when two prong bodies had non-coercible types
+  (assignment→i32 vs empty-block→void), skipping all later prongs — so the call prong was never
+  sema'd and `call_arg_types` was never populated, making the lowerer fallback type arg slots as
+  raw lowered types (`unsigned int` for `&arena`, `char*` for the string literal). Now the
+  MIX else-branch `continue`s (keeps resolving remaining prongs) while keeping the
+  `resolvedTypeTableSet(..., TYPE_VOID)` (Option A, operator ruling; I4-validated). dump rc=0,
+  gcc-clean, link rc=0, run rc=0; emitted arg temps correctly typed `Sand*` / `Slice_u8`. The 3
   remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
   `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
   green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
   `var_declared_void`, `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return`
-  is OK-by-gate (type-incorrect, tracked separately); the I-task repro `switch_mixed_case_argtype`
-  stays FAIL until its F4 fix task.
+  is OK-by-gate (type-incorrect, tracked separately). Known adjacent bug (out of scope, tracked
+  as follow-up): char-literal switch `case` labels dropped at lower.zig:3858-3860/:3121-3123, so
+  this repro's switch still takes `default` at runtime (see the F4 section below).
+- Prior: OK=207 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 214 (2026-08-07 F3: cross-module pub const resolves)
 - Prior: OK=206 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 213 (2026-08-07 F2: undefined struct-array field init emits valid C)
 - Prior: OK=205 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 212 (2026-08-07 F1: duplicate-typed struct fields emit correctly)
 - Prior: OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 F1: labeled statement support in parser, sema, lowerer)
@@ -1153,4 +1157,55 @@ undeclared `zG_` name.
   (`field_store_drop`, `test_stub_0`, `error[3048]`) + `self_embed_optional_cycle` (F-8
   residual, gcc incomplete-type). 4 green-guards unchanged. No existing repro flipped. See the
   Totals section at the top.
+
+---
+
+## Task F4 — switch mixed-case call-arg typing (switch_mixed_case_argtype) (2026-08-07) — +1 (214 → 215)
+
+The `switch_mixed_case_argtype` repro (added 2026-08-07 by the rogue_mud I-task, per
+`.superpowers/sdd/I-rogue-switcharg-report.md`) is now **OK**. It previously failed gcc with
+`error: incompatible type for argument 1/3 of 'zF_..._saveDungeon'`: the `&arena` arg temp was
+`unsigned int` and the string-literal temp `char*` instead of `Sand*` / `Slice_u8`.
+
+- **Root cause (I4, confirmed):** NOT `call_arg_types` corruption — a **sema mid-switch abort**.
+  The MIX else-branch at `semantic_analyzer.zig:1167` did `return type_mod.TYPE_VOID;` when two
+  prong bodies had non-coercible types (assignment `dx = 0` → i32 vs empty block `{}` → void),
+  aborting `semanticAnalyzerResolveSwitchExpr` and skipping all prongs *after* the conflict. The
+  call prong (`'v','V'`) was therefore never sema'd, so the fixed-param loop at
+  `semantic_analyzer.zig:775` never populated `call_arg_types`, and the lowerer fallback
+  (`lower.zig:2388`) typed the arg slots as raw lowered types (`unsigned int` for `&arena`,
+  `char*` for the string literal).
+- **Fix (Option A, operator ruling):** `semantic_analyzer.zig:1167` — replaced `return
+  type_mod.TYPE_VOID;` with `continue;` (skip this prong's contribution to the switch's `unified`
+  type but keep resolving the remaining prongs, so the call prong IS sema'd and `call_arg_types`
+  is populated normally). Kept the `resolvedTypeTableSet(..., TYPE_VOID)` on the same line
+  (stmt-switch resolved type is unused). Lowerer untouched (the 4 call-arg paths were NOT the bug).
+- **Gate evidence (measured, /tmp/zf4/zig1 — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors):**
+  - `switch_mixed_case_argtype`: dump rc=0, 2 `.c` emitted, per-file gcc-clean, link rc=0, run
+    rc=0. Emitted arg temps now correctly typed: `zT_3E40CD83_Sand* zT_24;`,
+    `zT_8F083A69_Slice_zT_0B42B2F8_u zT_26;`, string literal built into a `Slice`.
+  - 4 MD5 gates **byte-identical**: mud `906fa59c8676bb1054d3fcc13704fce5`, gol
+    `0d8f0092c22c04375482a198691a3957`, lisp `605b597e8b7cff60de0ce84a0593e743`, json
+    `b5f56ebd51d2f0fcd379a1e083594462` (I4 measured the same; gol/lisp MIX aborts are
+    pre-existing and emit no coercion-needing skipped call).
+  - Full corpus sweep (216 dirs, /tmp/zf4/zig1): **OK=209 / FAIL=7 (raw) / ICE=0 / CRASH=0**. Of
+    the raw FAIL=7: 4 green-guards (`eu_assign_incompat_payload`, `field_access_optional`,
+    `var_declared_void`, `euvoid_val_catch`) + 3 real baseline FAILs (`field_store_drop`,
+    `test_stub_0`, `self_embed_optional_cycle`). Only flip: `switch_mixed_case_argtype` FAIL→OK.
+  - test_analyzer_bin **PASS** (`Analyzer tests passed`, run rc=0).
+- **F4 accounting: 214 → 215 repros, OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0**
+  (208 + 3 + 4 = 215; raw classifier FAIL stays **7**). Only flip:
+  `switch_mixed_case_argtype` FAIL→OK. The 3 remaining FAILs: 2 std-lib-deferred
+  (`field_store_drop`, `test_stub_0`, `error[3048]`) + `self_embed_optional_cycle` (F-8
+  residual, gcc incomplete-type). 4 green-guards unchanged. No existing repro flipped. See the
+  Totals section at the top.
+- **Files:** `sf/src/semantic_analyzer.zig` (commit `fix: switch mixed-case call-arg typing
+  (switch_mixed_case_argtype)`).
+- **Known adjacent bug (out of scope, documented follow-up):** char-literal switch `case` labels
+  are still dropped at `lower.zig:3858-3860` (stmt switch) / `:3121-3123` (expr switch), so this
+  repro's emitted `switch (c)` has no `case` labels and its body is **unreachable at runtime**
+  (always takes `default`). The F4 runtime gate passes only because the repro prints nothing and
+  `c != -1` is false. This affects `rogue_mud`'s input switch too (`examples/z98/rogue_mud/
+  main.zig:236-256`); a follow-up `switch_char_case_labels` repro + F-task is recommended. NOT
+  fixed here.
 
