@@ -1,18 +1,17 @@
-# mi_matrix corpus — expected-fail manifest (v21 2026-08-06)
+# mi_matrix corpus — expected-fail manifest (v22 2026-08-07)
 
-## Totals (209 repros)
+## Totals (210 repros)
 
-- **CURRENT — FINAL for the 4-item plan (2026-08-06 Task F7 gate sweep): OK=202 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **209 repros** (202 + 4 + 3 = 209; raw classifier FAIL = 7
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with a fresh HEAD bootstrap
-  (`/tmp/f7build/zig1`, zig0 rc=0, gcc rc=0, 0 errors). The 3 FAILs: `field_store_drop` +
-  `test_stub_0` (std-lib-deferred, `error[3048]`), `self_embed_optional_cycle` (F-8 residual, gcc
-  incomplete-type). The 4 green-guards: `eu_assign_incompat_payload`, `field_access_optional`,
-  `var_declared_void`, `euvoid_val_catch`. All 4 plan items complete — see the Task F7 section
-  below. **The plan's F5 Step-1 prediction ("210 repros, OK=200/FAIL=3/gg=4") double-counted
-  `fn_varargs_unsupported` (already in the 208 baseline); actual = 209 repros.** No repro flipped
-  during the final sweep.
-- Prior: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 209 (2026-08-06 Task F5 varargs)
+- **CURRENT (2026-08-07 I-task: rogue_mud build attempt): OK=202 / FAIL=4 /
+  green-guards=4 / ICE=0 / CRASH=0** over **210 repros** (202 + 4 + 4 = 210; raw classifier FAIL = 8
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zigaps/zig1` (fresh
+  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). The 4 FAILs: the 3 prior
+  (`field_store_drop` + `test_stub_0` std-lib-deferred `error[3048]`, `self_embed_optional_cycle`
+  F-8 residual gcc incomplete-type) + **`labeled_stmt_unhandled` (NEW — error[3020], labeled
+  statement unhandled in sema type resolution; the blocker that failed the rogue_mud dump)**. The 4
+  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`. No existing repro flipped.
+- Prior: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 209 (2026-08-06 Task F7 gate sweep, 4-item plan closeout)
 - Prior: OK=200 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 208 (2026-08-06 F2 u64-safe int_literal marker)
 - Prior: OK=199 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 207 (2026-08-06 F1 @intCast range-check)
 - Prior: OK=198 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 206 (2026-08-06 F9 gate sweep)
@@ -906,3 +905,37 @@ REPL dead (no `sand_reset` on the error path); `(fact 13)` PANICS (correct — F
 
 No other repro flipped; `fn_varargs_unsupported` stays OK; 4 MD5 gates byte-identical;
 `test_analyzer_bin` PASS (from prior F-tasks). This is the **final accounting for the plan**.
+
+---
+
+## I-task: rogue_mud build attempt — labeled_stmt frontend gap (2026-08-07) — +1 repro (209 → 210)
+
+Investigation task: attempt to build `examples/z98/rogue_mud/` with the current zig1
+(`/tmp/zigaps/zig1`, fresh HEAD bootstrap 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). The
+pre-analysis predicted SUCCESS (all patterns well-tested + the catch-block-expression fix P3-4/P3-7);
+the actual dump FAILS at type resolution.
+
+| Repro | RED (measured) | Classification | Guards |
+|-------|----------------|----------------|--------|
+| `labeled_stmt_unhandled` | dump rc=2, `error[3020]: internal error: unhandled node kind in type resolution`, 0 `.c` emitted | **FAIL** (real frontend gap; rc=2 + `error[3020]` is outside the ICE regex — not an ICE, not a green-guard) | `semanticAnalyzerResolveStmtIter` (semantic_analyzer.zig:1599-1778) has no `labeled_stmt` (AstKind 82) case → generic `else` (:1773) forwards to `resolveExpr` → unhandled-else (:1424-1429) emits error[3020]. Correct behavior: unwrap the label and push the wrapped child onto the stmt work stack |
+
+**Dump diagnostics (rogue_mud):** 2× `error[3020]`, one per labeled statement in the program —
+`main.zig:92` `game_loop: while (true)`, `lib/scenario.zig:59` `bsp_loop: while (stack.len > 0)`.
+Both are the SAME distinct failure (kind 82). The reported locations (`main.zig:32:2`,
+`scenario.zig:159:8`) are BOGUS — the 3020 diagnostic passes `node_idx` as both span ends
+(semantic_analyzer.zig:1428), so the reported file:line never matches the labeled statement.
+Note: other latent rogue_mud gaps may hide behind this blocker (unverifiable without a fix); the
+labeled_stmt gap is the only DISTINCT failure actually observed.
+
+**Oracle verification:** `./sf/build/zig0 -o out.c repro` accepts the labeled loop (rc=0, emits C)
+— labeled statements are valid Z98, so this is a genuine compiler gap, not a correct rejection.
+zig1 dump for the repro: rc=2, `error[3020]`, 0 `.c` (markers `ST:N<node> ST:K82`).
+
+**Post-repro accounting: OK=202 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 210 repros**
+(202 + 4 + 4 = 210; corpus grows 209 → 210 by `labeled_stmt_unhandled`, counted FAIL). Raw
+classifier FAIL **7 → 8** (green-guards remain a sub-bucket of the raw count). The 4 real FAILs:
+2 std-lib-deferred (`field_store_drop`, `test_stub_0`, both `error[3048]`) +
+`self_embed_optional_cycle` (F-8 residual, gcc incomplete-type) + `labeled_stmt_unhandled`
+(error[3020], sema labeled_stmt gap). The 4 green-guards unchanged:
+`eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
+No existing repro flipped. Investigation complete — no compiler fixes made.
