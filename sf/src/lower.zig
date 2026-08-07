@@ -2985,7 +2985,46 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var sti_nm: []const u8 = "n"; pal.markerWrite(sti_nm);
             var sti_nb: [10]u8 = undefined; var sti_nl = itoa_mod.itoa(node_idx, sti_nb[0..]); var sti_ns: usize = @intCast(usize, 9) - @intCast(usize, sti_nl); pal.markerWrite(sti_nb[sti_ns..@intCast(usize, 9)]);
             var sti_nl2: []const u8 = "\n"; pal.markerWrite(sti_nl2);
-            var val_temp = if (fi_node.child_0 != @intCast(u32, 0)) lowerExpr(self, fi_node.child_0) else @intCast(u32, 0);
+            var is_undef_arr_field: bool = false;
+            if (fi_node.child_0 != @intCast(u32, 0)) {
+                var ua_c0 = store.nodes.items[@intCast(usize, fi_node.child_0)];
+                if (ua_c0.kind == AstKind.undefined_literal) {
+                    if (init_type) |ua_it| {
+                        var ua_ts = self.ctx.registry.types_items[@intCast(usize, ua_it)];
+                        if (ua_ts.kind == type_mod.TypeKind.struct_type) {
+                            var ua_sp = self.ctx.registry.st_items[@intCast(usize, ua_ts.payload_idx)];
+                            var ua_fs: usize = @intCast(usize, ua_sp.fields_start);
+                            var ua_fc: usize = @intCast(usize, ua_sp.fields_count);
+                            var ua_fj: usize = @intCast(usize, 0);
+                            while (ua_fj < ua_fc) : (ua_fj += @intCast(usize, 1)) {
+                                if (self.ctx.registry.fe_items[ua_fs + ua_fj].name_id == fi_name_id) {
+                                    var ua_ft = self.ctx.registry.types_items[@intCast(usize, self.ctx.registry.fe_items[ua_fs + ua_fj].type_id)];
+                                    if (ua_ft.kind == type_mod.TypeKind.array_type) is_undef_arr_field = true;
+                                    break;
+                                }
+                            }
+                        } else if (ua_ts.kind == type_mod.TypeKind.tagged_union_type) {
+                            var ua_tp = self.ctx.registry.tu_items[@intCast(usize, ua_ts.payload_idx)];
+                            var ua_fs2: usize = @intCast(usize, ua_tp.fields_start);
+                            var ua_fc2: usize = @intCast(usize, ua_tp.fields_count);
+                            var ua_fj2: usize = @intCast(usize, 0);
+                            while (ua_fj2 < ua_fc2) : (ua_fj2 += @intCast(usize, 1)) {
+                                if (self.ctx.registry.fe_items[ua_fs2 + ua_fj2].name_id == fi_name_id) {
+                                    var ua_ft2 = self.ctx.registry.types_items[@intCast(usize, self.ctx.registry.fe_items[ua_fs2 + ua_fj2].type_id)];
+                                    if (ua_ft2.kind == type_mod.TypeKind.array_type) is_undef_arr_field = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            var val_temp: u32 = @intCast(u32, 0);
+            if (!is_undef_arr_field) {
+                if (fi_node.child_0 != @intCast(u32, 0)) {
+                    val_temp = lowerExpr(self, fi_node.child_0);
+                }
+            }
             if (init_type) |it| {
                 var ts = self.ctx.registry.types_items[@intCast(usize, it)];
                 var sik_m: []const u8 = "SIK:n"; pal.markerWrite(sik_m);
@@ -3022,8 +3061,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var sin_sb: [10]u8 = undefined; var sin_sl = itoa_mod.itoa(val_temp, sin_sb[0..]); var sin_ss: usize = @intCast(usize, 9) - @intCast(usize, sin_sl); pal.markerWrite(sin_sb[sin_ss..@intCast(usize, 9)]);
                             var sin_nl2: []const u8 = "\n"; pal.markerWrite(sin_nl2);
                             if (self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
+                                if (!is_undef_arr_field) {
 
-                                emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .src = val_temp } });
+                                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .src = val_temp } });
+                                }
                             }
                             break;
                         }
@@ -3035,7 +3076,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var fj: usize = @intCast(usize, 0);
                     while (fj < fc) : (fj += @intCast(usize, 1)) {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
-                            emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                            if (!is_undef_arr_field) {
+                                emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                            }
                             break;
                         }
                     }

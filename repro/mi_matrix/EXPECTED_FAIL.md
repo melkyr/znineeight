@@ -1,23 +1,23 @@
-# mi_matrix corpus — expected-fail manifest (v23 2026-08-07)
+# mi_matrix corpus — expected-fail manifest (v24 2026-08-07)
 
-## Totals (212 repros)
+## Totals (213 repros)
 
-- **CURRENT (2026-08-07 F1: duplicate-typed struct fields emit correctly): OK=205 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **212 repros** (205 + 3 + 4 = 212; raw classifier FAIL = 7
-  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf1/zig1` (fresh
-  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `dup_optptr_field_emit` +
-  `dup_val_field_emit` **FAIL→OK** (both added 2026-08-07 by the rogue_mud I-task): the
-  `tstTopologicalSort` duplicate-field bug is fixed (Option B) — `tstEdgesCount` now counts each
-  distinct dependent type ONCE (dedupe same-typed field edges; also dedupes tag_type vs fields in
-  the tagged_union branch), mirroring the `tstIsDep`-boolean Kahn dequeue, so count and dequeue can
-  never drift. Both repros dump rc=0, gcc-clean, link rc=0, run rc=0 with their struct bodies now
-  emitted. The 3 remaining FAILs: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both
-  `error[3048]`) + `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4
-  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
-  `var_declared_void`, `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return`
-  is OK-by-gate (type-incorrect, tracked separately); the I-task repros for the other 3 gaps
-  (`undef_arr_struct_literal`, `xmod_pub_const_global`, `switch_mixed_case_argtype`) stay FAIL
-  until their F2/F3/F4 fix tasks.
+- **CURRENT (2026-08-07 F2: undefined struct-array field init emits valid C): OK=206 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **213 repros** (206 + 3 + 4 = 213; raw classifier FAIL = 7
+  — the 4 green-guards are a sub-bucket of the raw count). Verified with `/tmp/zf2/zig1` (fresh
+  HEAD bootstrap, 2026-08-07, zig0 rc=0, gcc rc=0, 0 errors). `undef_arr_struct_literal`
+  **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the lowerer now skips the
+  `assign_field` entirely for struct-literal fields that are `undefined` AND array-typed (Option
+  A, operator ruling) — the emitted C no longer contains the ill-typed `clients[_j] = 0;`
+  zero-fill on a struct-array element, matching the zig0 oracle which emits no init for
+  `undefined` array fields. dump rc=0, gcc-clean, link rc=0, run rc=0. The 3 remaining FAILs: 2
+  std-lib-deferred (`field_store_drop` + `test_stub_0`, both `error[3048]`) +
+  `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). The 4 green-guards unchanged:
+  `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`,
+  `euvoid_val_catch`. No other repro flipped. Note: `opt_slice_null_return` is OK-by-gate
+  (type-incorrect, tracked separately); the I-task repros for the other 2 gaps
+  (`xmod_pub_const_global`, `switch_mixed_case_argtype`) stay FAIL until their F3/F4 fix tasks.
+- Prior: OK=205 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 212 (2026-08-07 F1: duplicate-typed struct fields emit correctly)
 - Prior: OK=203 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 F1: labeled statement support in parser, sema, lowerer)
 - Prior: OK=202 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 210 (2026-08-07 I-task: rogue_mud build attempt — labeled_stmt_unhandled added as FAIL)
 - Prior: OK=202 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 209 (2026-08-06 Task F7 gate sweep, 4-item plan closeout)
@@ -1052,4 +1052,55 @@ referenced the type by name.
   std-lib-deferred (`field_store_drop`, `test_stub_0`, `error[3048]`) +
   `self_embed_optional_cycle` (F-8 residual, gcc incomplete-type). 4 green-guards unchanged. No
   existing repro flipped. See the Totals section at the top.
+
+---
+
+## Task F2 — undefined struct-array field init emits valid C (undef_arr_struct_literal) (2026-08-07) — +1 (212 → 213)
+
+The `undef_arr_struct_literal` repro (added 2026-08-07 by the rogue_mud I-task, per
+`.superpowers/sdd/I-rogue-undefarr-report.md`) is now **OK**. It previously failed gcc with
+`incompatible types when assigning to type 'zT_..._Client' from type 'int'`: the emitted C
+expanded the `undefined` initializer of the `[5]Client` field into a zero-fill loop
+`clients[_j] = 0;` — ill-typed for struct elements.
+
+- **Root cause:** `emitFieldAssign` (`sf/src/c89_emit.zig:276-287`) hardcodes
+  `base.fld[_j] = 0;` for ALL array-valued fields, never checking the element type or the `src`
+  temp — only valid for scalar elements. The zig0 oracle emits NOTHING for `undefined` array
+  fields (struct and primitive elements, verified).
+- **Fix (Option A, operator ruling):** in the LOWERER (upstream, matches the oracle exactly),
+  `sf/src/lower.zig` now skips the `assign_field` for a struct-literal field entirely when the
+  field value is `undefined_literal` AND the field's declared type is `array_type`. A pre-scan at
+  `lower.zig:2988-3027` sets `is_undef_arr_field` (struct + tagged-union kinds); the tagged-union
+  payload branch (`:3063-3068`) and the struct branch (`:3072-3081`) both skip the
+  `emitInst(assign_field)`. Skipping the field value's `lowerExpr` also drops the dead
+  `undefined_const` temp (`zT_4 = 0;`). Emitter untouched.
+- **Gate consequence (operator-approved re-baseline, F-5 AMENDMENT B precedent):** **mud
+  RE-BASELINED** — `examples/z98/mud_server/main.zig:159` `.buffer = undefined` (`[256]u8`
+  primitive array) drops its dead zero-fill (was `/tmp/mud_gate.c:800-802`). Runtime verified
+  IDENTICAL: new mud prints "MUD server listening on port 4000" and exits rc=124 (timeout),
+  matching the pristine build. New mud MD5 `906fa59c8676bb1054d3fcc13704fce5` (was
+  `50beb1bf...`). gol/lisp/json byte-identical (no struct-literal `undefined` array fields).
+- **Files:** `sf/src/lower.zig` (commit `fix: undefined struct-array field init emits valid C
+  (undef_arr_struct_literal)`).
+
+**Gate evidence (measured, /tmp/zf2/zig1 — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors):**
+
+- `undef_arr_struct_literal`: dump rc=0, 1 `.c`, gcc-clean, link rc=0, run rc=0. Emitted C is
+  just `zT_1.listen_socket = zT_3;` — no `clients[_j] = 0` zero-fill, no dead `undefined_const`
+  temp.
+- 4 MD5 gates: mud `906fa59c8676bb1054d3fcc13704fce5` (RE-BASELINED, runtime-verified
+  identical — "MUD server listening on port 4000", rc=124), gol
+  `0d8f0092c22c04375482a198691a3957`, lisp `605b597e8b7cff60de0ce84a0593e743`, json
+  `b5f56ebd51d2f0fcd379a1e083594462` — the latter three byte-identical.
+- Full corpus sweep (216 dirs, /tmp/zf2/zig1): **OK=207 / FAIL=9 (raw) / ICE=0 / CRASH=0**. Of
+  the raw FAIL=9: 4 green-guards (`eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`) + 3 real baseline FAILs (`field_store_drop`,
+  `test_stub_0`, `self_embed_optional_cycle`) + 2 I-task repros for the other gaps
+  (`xmod_pub_const_global`, `switch_mixed_case_argtype` — stay FAIL until F3/F4).
+- **F2 accounting: 212 → 213 repros, OK=206 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0**
+  (206 + 3 + 4 = 213; raw classifier FAIL stays **7**). Only flip:
+  `undef_arr_struct_literal` FAIL→OK. The 3 remaining FAILs: 2 std-lib-deferred
+  (`field_store_drop`, `test_stub_0`, `error[3048]`) + `self_embed_optional_cycle` (F-8
+  residual, gcc incomplete-type). 4 green-guards unchanged. No existing repro flipped. See the
+  Totals section at the top.
 
