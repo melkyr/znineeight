@@ -41,3 +41,20 @@ Object fields missing comma separator (e.g. `"status": "alpha"\n    "bugs": null
 
 ## Notes
 Multi-file: `main.zig` imports `file.zig` and `json.zig`. **STANDARD RECIPE DOES NOT LINK** — `arena_alloc_default` is in legacy `src/runtime/zig_runtime.c`, not `sf/src/include/zig_runtime.c`. Must compile legacy runtime separately as shown above. Needs `test.json` in CWD to run. Quirk: missing commas between object fields in output.
+
+## Deferred to std-lib [added 2026-08-08 — F2, per operator ruling]
+`arena_alloc_default` is an `extern` (`json.zig:253`, `file.zig:25`) declared in
+`sf/src/include/zig_runtime.h:21-22` but defined ONLY in the legacy
+`src/runtime/zig_runtime.c:31/:154-156` — the sf runtime (`sf/src/include/zig_runtime.c`)
+provides no arena symbols. This is a **class-(b) runtime-library gap**, NOT a compiler
+defect (I2 report `.superpowers/sdd/I-orphan-module-report.md`; `mod_silent_drop_xmod`
+proves all modules emit; the compiler never emits extern definitions). It is a
+**documented runtime API** (`docs/reference/runtime_api.md:38-48`, "provided primarily for
+backward compatibility with earlier bootstrap milestones"). **Operator ruling: deferred to
+the std-zig1 library — NOT fixed here.** The standard recipe (sf runtime) fails on **5
+`undefined reference to arena_alloc_default`** (4 in json + 1 in file); the recipe above
+(compiling the legacy `src/runtime/zig_runtime.c` to `/tmp/rt.o`) makes it link+run.
+The `repro/mi_matrix/extern_runtime_symbol_xmod` repro is the std-lib plan's spec for this
+gap (flips to PASS when the std-lib runtime provides the symbol). The workaround note
+above (legacy-runtime link) becomes obsolete once the sf runtime gains the definition —
+the two runtimes must not both be linked (duplicate-symbol risk).

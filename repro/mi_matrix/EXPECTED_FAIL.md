@@ -21,7 +21,9 @@
   No other repro flipped. Note: `opt_slice_null_return` remains OK-by-gate (type-incorrect,
   tracked separately, see the F5 section). 4 MD5 gates: gol byte-identical; mud/lisp/json
   RE-BASELINED by F2 (mud `6c0a83f1…`, gol `0d8f0092…`, lisp `fad41183…`, json
-  `c403f079…` — full hashes in QUICK_REF).
+  `c403f079…` — full hashes in QUICK_REF). [F2 2026-08-08: `extern_runtime_symbol_xmod` added
+  as a 232nd dir — OK-by-gate/latent, std-lib-deferred, tracked separately like
+  `opt_slice_null_return`; manifest count and all totals UNCHANGED. See the F2 section below.]
 - Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout; Verified with `/tmp/zf5/zig1` — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors). `switch_mixed_case_argtype`
   **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
   `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
@@ -1383,4 +1385,55 @@ classify **OK=224 / FAIL=3 / ICE=0 / CRASH=0 / green-guards=4** (224 OK dirs = 2
 manifest OK + `opt_slice_null_return` tracked separately; raw classifier FAIL = 7 = 4 green-guards
 sub-bucket + 3 real FAILs). FAIL=3 and green-guards=4 UNCHANGED. 4 MD5 gates: gol byte-identical;
 mud/lisp/json re-baselined by F2 (full hashes in QUICK_REF). test_analyzer_bin PASS.
+
+---
+
+## F2 — D2 deferred to std-lib + `extern_runtime_symbol_xmod` repro (2026-08-08, docs + repro only)
+
+Per the I2 report (`.superpowers/sdd/I-orphan-module-report.md`) and the operator ruling,
+the D2 "json_parser orphan module" investigation found **NO compiler defect**: `arena.zig`
+is never `@import`ed (orphan file), all modules emit, and the link failure is
+`undefined reference to arena_alloc_default` — an extern (declared
+`sf/src/include/zig_runtime.h:21-22`) defined ONLY in the legacy
+`src/runtime/zig_runtime.c:31/:154-156`, **absent from `sf/src/include/zig_runtime.c`**.
+Class **(b) runtime-library gap**; a documented runtime API
+(`docs/reference/runtime_api.md:38-48`). **Deferred to the std-zig1 library — NOT fixed
+here** (no `sf/src/*.zig` changes, no runtime-file changes).
+
+**json_parser + json_parser_workaround — officially documented as std-lib-deferred** (their
+NOTES.md gained a "Deferred to std-lib" section): both call `arena_alloc_default`; the
+standard sf-runtime recipe fails on 5 undefined refs; linking the legacy
+`src/runtime/zig_runtime.c` object makes json_parser link+run. `json_parser_workaround`
+remains ADDITIONALLY blocked by the I3 6× zT_xx forward-decl COMPILE gap (unaffected by
+any runtime fix). These are **example-level link gaps, not corpus repros** — they do not
+change the corpus counts.
+
+**New repro `extern_runtime_symbol_xmod` (class-(b) extern-link spec for the std-lib plan):**
+
+| Repro | RED (measured) | Classification (measured, sf/build/out_release/zig1) | Guards |
+|-------|----------------|---------------------------|--------|
+| `extern_runtime_symbol_xmod` | standard-recipe link rc=1: `undefined reference to 'arena_alloc_default'` (lib_*.c) | **OK-by-gate / LATENT, std-lib-deferred** — dump rc=0, all modules emit (lib + main), per-file gcc -c rc=0, standard sf-runtime link rc=1 on the ONE missing extern; legacy-runtime link (`gcc -c src/runtime/zig_runtime.c -o /tmp/rt.o`) rc=0, run rc=0 (prints `0`; arena NULL pre-`arena_create`, value incidental) | `mod_silent_drop_xmod` does NOT cover the extern pattern (all its modules link clean); this repro guards the extern-link gap and is the std-lib plan's spec (flips to PASS when the std-lib runtime provides the symbol) |
+
+**zig0 oracle verification:** dump rc=0, emits lib.c/main.c (same module set). Honest
+nuance vs the brief's "SAME link failure": zig0 re-emits the extern as `extern unsigned
+char* arena_alloc_default(unsigned int n);` (from the `[*]u8` return), which CONFLICTS
+with `zig_runtime.h:21` `void*` → the oracle's standard-recipe output fails at **compile**
+(conflicting types), whereas zig1 (header-decl-only, no re-emitted extern) fails at
+**link**. Both confirm the same runtime gap. zig0 also emits
+`__bootstrap_i32_from_bool(...)` for `@intCast(i32, bool)` — a checked-cast helper in NO
+runtime (legacy zig0 emission; zig1 post-F1 emits a raw `(int)` cast for the widening).
+
+**Source corrections vs the brief's verbatim blocks (both documented in the repro
+NOTES.md):** (1) the in-body `extern fn __bootstrap_print_int` was moved to module scope —
+BOTH zig1 (`error[3020]`) and the zig0 oracle (syntax error) reject in-function `extern fn`
+decls (pre-existing Z98 subset limitation, not a zig1 defect; corpus pattern is top-level);
+(2) the `@ptrToInt(p) == @intCast(usize, 0)` line **works post-F1** as predicted
+(`@ptrToInt` → `usize` for single-arg calls, commit `51bfdb3c`) — no error.
+
+**Accounting:** **UNCHANGED — OK=223 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 230
+manifest repros** (raw classifier FAIL stays 7). `extern_runtime_symbol_xmod` is tracked
+separately as OK-by-gate/latent (mirrors the `opt_slice_null_return` precedent), NOT added
+to FAIL; the two examples are example-level link gaps, not corpus repros. No repro
+flipped; no compiler changes; 4 MD5 gates untouched (compiler unchanged). test_analyzer_bin
+PASS. Full evidence: `.superpowers/sdd/task-F2-rogue-report.md`.
 
