@@ -2173,6 +2173,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return tid;
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
                 var gape_fkb: []const u8 = "GAPE:fkb\n"; pal.markerWrite(gape_fkb);
+                if (kind == type_mod.TypeKind.tagged_union_type) {
+                    var tp2 = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
+                    var tstart: usize = @intCast(usize, tp2.fields_start);
+                    var tcount: usize = @intCast(usize, tp2.fields_count);
+                    var tfi: usize = 0;
+                    while (tfi < tcount) : (tfi += 1) {
+                        if (self.ctx.registry.fe_items[tstart + tfi].name_id == field_name_id) {
+                            var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, tfi));
+                            return emitTaggedUnionInit(self, fa_box[0], @intCast(u32, tfi));
+                        }
+                    }
+                    var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
+                } else {
                 var fields: []FieldEntry = undefined;
                 if (kind == type_mod.TypeKind.union_type) {
                     type_mod.typeRegistryGetUnionFields(self.ctx.registry, type_box[0], &fields);
@@ -2190,6 +2203,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
             var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
             }
+                }
             } else if (kind == type_mod.TypeKind.enum_type) {
                 var ep2 = self.ctx.registry.en_items[@intCast(usize, ty.payload_idx)];
                 var estart2: usize = @intCast(usize, ep2.members_start);
