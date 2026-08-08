@@ -1,182 +1,87 @@
 # Multi-Module Emission Defects + Arena Self-Compile Fixes Design Spec
 
 **Date:** 2026-08-08
-**Status:** Approved by operator. Ready for plan.
+**Status:** Approved by operator. Amended after R1 + I1-I5 findings + operator rulings (m0368, m0379, m0381). Ready for plan.
 
 ## 1. Goal
 
-Fix all known multi-module C89 emission defects so every z98 example compiles end-to-end (dump → gcc → run) via `--dump-c89 --output-dir DIR`. Then resize the static arenas to enable zig1 self-compile within the 16 MB hardware limit.
+Fix the confirmed compiler defects so all 21 z98 examples compile end-to-end (dump → gcc → run) via `--dump-c89 --output-dir DIR`: D1 @ptrToInt void, D3 cross-module enum-member resolution, D6 cross-module tagged-union `==` SEGV. Resize the static arenas to enable zig1 self-compile within the 16 MB hardware limit. Document D2 (extern arena symbols) and D4 (plat_ console stubs) as deferred to the std-lib plan.
 
 ## 2. Problem Statement
 
-A full 21-example compilation matrix (MEM4, `.superpowers/sdd/MEM4-full-example-matrix.md`) found:
+A full 21-example compilation matrix (MEM4, `.superpowers/sdd/MEM4-full-example-matrix.md`) found 16/21 work end-to-end; 5 don't pass the full cycle. R1 repros + I1-I5 investigations (reports in `.superpowers/sdd/`) corrected and confirmed the defect list:
 
-- **16/21 examples work end-to-end** (12 FULL OK + 4 WARN OK)
-- **5 examples don't pass the full cycle** — 1 dump fail, 3 gcc fail, 1 server (already functional with timeout)
+| # | Defect | Confirmed status | Examples affected | Symptom |
+|---|---|---|---|---|
+| D1 | `@ptrToInt` returns void | **CONFIRMED** — sema `:1289-1292` dead code under `ec.len >= 2`; single-arg falls through returning arg type | lisp_interpreter (dump rc=2) | `error[3000]: cannot declare variable of type void` |
+| D2 | Modules silently dropped | **FALSE — does NOT reproduce.** All modules emit in all probed graph shapes. Real gap: extern `arena_alloc_default` (class (b) runtime-library) | json_parser | gcc link: undefined reference to arena_alloc_default |
+| D3 | Missing type forward-decls | **CONFIRMED, different trigger** — sema/lowering gap: cross-module plain-enum member → TYPE_VOID. NOT header fwd-decl | json_parser_workaround (6× zT_xx undeclared) | gcc compile: `'zT_NN' undeclared` |
+| D4 | Missing platform stubs | **CONFIRMED** — 12 socket symbols exist; 5 console/platform missing; zig0 fails identically (runtime gap) | rogue_mud | gcc link: plat_is_windows, plat_console_* |
+| D6 | Cross-module tagged-union `==` | **CONFIRMED (I3 separate finding)** — SEGVs the compiler | (repro R2) | compiler crash |
 
-The 5 gaps fall into 3 compiler defect areas + 1 platform-stub gap:
+The single-file emission path is solid (14/14 single-file examples pass). The gaps are in the multi-module path.
 
-| # | Defect | Examples affected | Symptom |
-|---|---|---|---|
-| D1 | `@ptrToInt` returns void | lisp_interpreter (dump rc=2) | `error[3000]: cannot declare variable of type void` |
-| D2 | Modules silently dropped from emission | json_parser (no arena.c), rogue_mud (scenario.c emitted but symbols unresolved) | gcc link: undefined references to module functions |
-| D3 | Missing type forward-decls in headers | json_parser_workaround (6× zT_xx undeclared) | gcc compile: `'zT_NN' undeclared` |
-| D4 | Missing platform stubs | rogue_mud (plat_is_windows, plat_console_*) | Link failure — `net_runtime.c` doesn't have console stubs |
-
-The single-file emission path is solid (14/14 single-file examples pass). The gaps are all in the multi-module path.
-
-Additionally, zig1 self-compile is blocked by the 1.5 MB static module arena (allocator.zig:75) which OOMs during `phase_ImportResolution` on any file >~1,500 lines. The module arena holds all modules' ASTs simultaneously and is never reset. The compiler source (35,316 lines across 37 modules) needs ~16–30 MB of module-arena capacity (MEM1/MEM3 reports).
+Additionally, zig1 self-compile is blocked by the static module arena (allocator.zig:75) which OOMs during `phase_ImportResolution`. MEM3 verdict: the earlier "zig1 3× zig0 memory" was an **ASan artifact** — ASan-free zig1 beats zig0 on all 12 examples. The true blocker is architectural: static arena caps. I5: per-module reset infeasible (module arena is a program-lifetime cross-module store; OOM fires in phase-1 import before emission); resize to perm 4MB / module 8MB / scratch 2MB → projected self-compile RSS ~12-14MB within 16MB.
 
 ## 3. Architecture
 
-**Phase 1 — R (repros):** One task creates 4 multi-module repros exercising each defect + writes rogue_mud NOTES.md with the full build recipe.
+**Phase 1 — R (repros):** R1 (4 repros + rogue_mud NOTES.md, **DONE** commit ba9e6a93). R2 (1 new repro: cross-module tagged-union `==` SEGV).
 
-**Phase 2 — I (investigation):** 5 batched I-tasks investigate each defect + arena sizing. Each updates the relevant tech doc. Combined STOP for operator ruling before any fix.
+**Phase 2 — I (investigation):** I1-I5 (**DONE**, reports in `.superpowers/sdd/`). I6 (tagged-union SEGV investigation). Each updates the relevant tech doc. Combined STOP (R2 + I6) for operator ruling before any fix.
 
-**Phase 3 — F (fixes):** F-tasks implement fixes per operator ruling. Arena resize (F5) at the end. F6 gate sweep reconciles the full matrix.
+**Phase 3 — F (fixes):** F1 (@ptrToInt), F2 (document D2 deferred + extern-link repro), F3 (enum-member), F4 (document D4 deferred), F5 (arena resize), F6 (tagged-union SEGV), F7 (gate sweep + full matrix).
 
 ## 4. Tasks
 
-### 4.1 R1 — Multi-module repros + rogue_mud NOTES.md
+### 4.1 R (repros)
 
-Create 4 multi-module repros and the rogue_mud status document. All repros use `--dump-c89 --output-dir DIR` (multi-module path). Pre-validated against zig0 oracle where applicable.
+**R1 — DONE** (commit ba9e6a93): 4 repros + rogue_mud NOTES.md. Findings reshaped the plan (see §2).
 
-#### R1a: @ptrToInt void — `ptr_to_int_void_xmod/`
+**R2 — `tagged_union_cmp_xmod/`:** `lib.zig` defines `pub const Shape = union(enum) { Circle: i32, Square: i32, Triangle: i32 };`; `main.zig` compares `s == lib_mod.Shape.Circle` cross-module. Expected: **SEGV** (compiler crash, rc 139). zig0 oracle clean (post-fix reference). Classification: DUMP FAIL / compiler crash.
 
-- `lib.zig`: function `fn getPtrAddr(ptr: [*]u8) usize { return @ptrToInt(ptr); }`
-- `main.zig`: imports lib, calls `getPtrAddr`, prints result
-- Expected: dump rc≠0 with `error[3000]: cannot declare variable of type void` — or dump rc=0 but gcc fails on void-typed temp
-- Oracle: zig0 compiles clean, `@ptrToInt` → `usize`
+### 4.2 I (investigation)
 
-#### R1b: Silent module drop — `mod_silent_drop_xmod/`
+**I1-I5 — DONE** (reports: `I-ptrtoint-void-report.md`, `I-orphan-module-report.md`, `I-missing-fwd-report.md`, `I-platstub-gap-report.md`, `I-arena-sizing-report.md`). Findings summarized in §2.
 
-- `lib_a.zig`: `pub fn helper() i32 { return 42; }`
-- `lib_b.zig`: imports lib_a, `pub fn wrapper() i32 { return lib_a.helper(); }`
-- `main.zig`: imports lib_b, calls `wrapper`, prints result
-- Expected: `lib_a.c` NOT emitted (or emitted but function not visible) → gcc link: `undefined reference to zF_*_helper`
-- Minimal version of json_parser arena.c and rogue_mud generateDungeon patterns
+**I6 — cross-module tagged-union `==` SEGV:** reproduce + isolate (gdb or narrowing: same-module control, cross-module without `==`, cross-module with `==`); locate the crash locus in sema/lower (likely the same `:459` else branch that resolves PLAIN enums to VOID, dereferencing something absent cross-module for tagged-union members); determine whether the fix is the same Option-A dispatch as F3 (shared code) or distinct; assess blast radius; update `08_c89_emission.md`. Report: `.superpowers/sdd/I-taggedunion-cmp-report.md`.
 
-#### R1c: Missing type forward-decl — `zT_missing_fwd_xmod/`
+### 4.3 F (fixes)
 
-- `types.zig`: `pub const Point = struct { x: i32, y: i32 };`
-- `main.zig`: imports types, `fn printPoint(p: types_mod.Point) void { ... }`
-- Expected: `zT_NN` typedef for Point missing from `main_*.h` → gcc compile: `'zT_NN' undeclared`
-- Minimal version of json_parser_workaround zT_xx pattern
+**F1: Fix @ptrToInt.** Prerequisite: REBUILD zig1 (current binary stale vs parser.zig VARCVINT markers). Hoist the ptrtoint check above the `ec.len >= 2` dispatch in `semantic_analyzer.zig`, return TYPE_USIZE. Mirror lowerer (lower.zig:2626-2634, already correct). Gate: `ptr_to_int_void_xmod` green; lisp_interpreter dump rc=0; **lisp MD5 re-baselines** (lisp_interpreter_curr uses @ptrToInt) — runtime proof required (AMENDMENT B); gol/mud/json byte-identical. Tech doc: `03_type_resolution.md`.
 
-#### R1d: Platform stub gap — `plat_stubs_missing_xmod/`
+**F2: Document D2 deferred to std-lib.** Create `extern_runtime_symbol_xmod/` repro (module uses `extern "c" fn arena_alloc_default`, link fails unless legacy runtime linked) — classified OK-by-gate/latent, serves as std-lib spec. Update json_parser + json_parser_workaround NOTES.md (deferred section) + EXPECTED_FAIL.md. **No compiler changes.** This is NOT the runtime port — operator ruled D2 deferred to the std zig1 library.
 
-- `console.zig`: `extern "c" fn plat_is_windows() bool; extern "c" fn plat_console_putchar(c: i32) void;`
-- `main.zig`: imports console, calls `plat_is_windows` and `plat_console_putchar('X')`
-- Expected: dump rc=0, gcc link: `undefined reference to plat_is_windows`, `plat_console_putchar`
-- NOTES.md documents which plat_ symbols are in `net_runtime.c` (socket family — present) vs missing (console family)
-- This repro feeds a future std-lib plan; NOT fixed in F-tasks
+**F3: Fix cross-module enum-member resolution.** Option A: add `enum_type` member case to the generic base-type dispatch in sema (`:281` module branch or `:459` else) + lower (`:2016`), mirroring the same-module ident_expr path emitting `.enum_const`. Gate: `zT_missing_fwd_xmod` green; json_parser_workaround 6× zT_xx resolved; 4 MD5s byte-identical. Tech doc: `08_c89_emission.md`.
 
-#### R1e: `examples/z98/rogue_mud/NOTES.md`
+**F4: Document D4 plat-stub gap deferred to std-lib.** Update plat_stubs_missing_xmod NOTES.md + EXPECTED_FAIL.md + rogue_mud NOTES.md + QUICK_REF.md. **No compiler changes.**
 
-Write the build recipe and current status:
-- Single-module recipe (`--dump-c89 > file` — merges all modules; gcc cc + link)
-- Multi-module recipe (`--dump-c89 --output-dir DIR` — per-module .c; gcc compile + link)
-- Current expected failure mode (link: plat_is_windows, plat_console_*, plus some module symbols unresolved)
-- Error pattern description (which symbols, which modules affected)
-- Classification: the plat_ symbols are platform-stub gap (tracked by D4); the module-symbol gaps are D2 (tracked by `mod_silent_drop_xmod` repro)
+**F5: Arena resize.** Resize allocator.zig buffers: perm 4MB / module 8MB / scratch 2MB. Update main.zig memory limits (DEV_MAX_MEM/RELEASE_MAX_MEM → 16MB, `--max-mem 16M`). **No per-module reset** (I5 rejected as infeasible). Gate: self-compile dump passes import phase (no `OOM: used=...`); 4 MD5s byte-identical (arena size doesn't change codegen); test_analyzer_bin PASS. Tech doc: `00_shared_infra.md`.
 
-### 4.2 I1-I5 — Investigation tasks (batched, combined STOP)
+**F6: Fix cross-module tagged-union `==` SEGV.** Per I6 ruling. Mirror the same-module tagged-union member path for cross-module (if I6 determines it's the same Option-A dispatch as F3, handle the tagged-union member case F3's enum_type case doesn't). Gate: `tagged_union_cmp_xmod` green (dump/gcc/run rc=0, prints 1); F3 repros no regression; 4 MD5s OK. Tech doc: `08_c89_emission.md`.
 
-Each I-task reads the compiler source, identifies the exact mechanism, writes a report to `.superpowers/sdd/`, and updates the relevant tech doc with `[updated: 2026-08-08]`. No compiler code changes.
-
-#### I1: @ptrToInt void type resolution
-
-- **Locus:** `sf/src/type_resolver.zig` or `sf/src/semantic_analyzer.zig` — intrinsic return type mapping
-- **Tech doc:** `sf/docs/tech_docs/03_type_resolution.md`
-- **Report:** `.superpowers/sdd/I-ptrtoint-void-report.md`
-
-#### I2: Module silent drop in multi-module emission
-
-- **Locus:** `sf/src/c89_emit.zig` — per-module .c file emission ordering/dependency tracking
-- **Tech doc:** `sf/docs/tech_docs/08_c89_emission.md`
-- **Report:** `.superpowers/sdd/I-silent-drop-report.md`
-
-#### I3: Missing type forward-decls in multi-module headers
-
-- **Locus:** `sf/src/c89_emit.zig` — header generation for modules that import types
-- **Tech doc:** `sf/docs/tech_docs/08_c89_emission.md`
-- **Report:** `.superpowers/sdd/I-missing-fwd-report.md`
-
-#### I4: Platform stub gap catalog
-
-- **Locus:** `sf/src/include/net_runtime.c`, `sf/src/include/zig_runtime.c`, `sf/src/include/zig_pal.c`
-- **Tech doc:** none (runtime, not compiler). Report documents for future std-lib plan.
-- **Report:** `.superpowers/sdd/I-platstub-gap-report.md`
-- **Output:** table of existing plat_ symbols in each runtime file vs missing symbols needed by examples
-
-#### I5: Arena sizing analysis for self-compile
-
-- **Locus:** `sf/src/allocator.zig:74-76` (static arena buffers) + main.zig phase orchestration
-- **Input:** MEM1/MEM2/MEM3 arena data, single-module OOM measurements, `sf/src/*.zig` file line counts
-- **Tech doc:** `sf/docs/tech_docs/02_memory_budget.md` (if it exists) or `sf/docs/tech_docs/INDEX.md`
-- **Report:** `.superpowers/sdd/I-arena-sizing-report.md`
-- **Analysis:** compute minimum module-arena size to hold the single largest file's AST; compute the effect of adding `sandReset(&alloc.module)` after per-module emission (key architectural change: module arena becomes per-module, not cumulative); propose new arena sizes that fit within 16 MB; estimate self-compile RSS after resize
-
-### 4.3 F1-F6 — Fix tasks (per operator ruling, after combined STOP)
-
-Implemented after the operator rules on I1-I5 findings. Each fix is gated by the R1 repros + the 4 MD5 gate examples.
-
-#### F1: Fix @ptrToInt type resolution
-
-- **Per I1 ruling.** Expected: add `@ptrToInt` → `usize` mapping to intrinsic return-type table
-- **Gate:** `ptr_to_int_void_xmod` dump rc=0, gcc rc=0, run rc=0. lisp_interpreter dump rc=0
-- **Tech doc:** `03_type_resolution.md` updated to FIXED
-
-#### F2: Fix module silent drop in emission
-
-- **Per I2 ruling.** Expected: fix module-to-C-file dependency tracking so all referenced modules emit .c files
-- **Gate:** `mod_silent_drop_xmod` all modules emit .c files, link rc=0. json_parser arena.c emitted. rogue_mud module symbols resolve (D2 part)
-- **Tech doc:** `08_c89_emission.md` updated to FIXED
-
-#### F3: Fix missing type forward-decls in headers
-
-- **Per I3 ruling.** Expected: emit struct typedef forward-decls in importing module's header
-- **Gate:** `zT_missing_fwd_xmod` zT_xx present in header, gcc compile rc=0. json_parser_workaround types resolve
-- **Tech doc:** `08_c89_emission.md` updated to FIXED
-
-#### F4: Platform stub gap documentation
-
-- **NOT a compiler fix.** Document I4 findings in the repro NOTES.md + EXPECTED_FAIL.md. The `plat_stubs_missing_xmod` repro is OK-by-gate/latent (parallel to `opt_slice_null_return` precedent). Feeds a future std-lib plan.
-- **Gate:** repro stays as known-gap, NOT counted as FAIL. rogue_mud NOTES.md updated with platform-stub gap note.
-
-#### F5: Arena resize for self-compile
-
-- **Per I5 analysis.** Resize static arenas in allocator.zig; add `sandReset(&alloc.module)` after per-module C89 emission in main.zig
-- **Gate:** `sf/src/main.zig` dump-c89 no longer OOMs on module arena (import phase completes). The 4 MD5 gate examples byte-identical or re-baselined with runtime proof
-- **Tech doc:** `02_memory_budget.md` (or index) updated with new arena sizes
-
-#### F6: Gate sweep + full matrix reconciliation
-
-- Re-run full 21-example matrix (MEM4). Verify F1–F5 fixes bring all compiler-defect examples to OK.
-- Update EXPECTED_FAIL.md v28 + QUICK_REF.md baseline + all tech docs.
-- rogue_mud NOTES.md final status: D2 resolved (module symbols), D4 remains (platform stubs out-of-scope).
+**F7: Gate sweep + full matrix reconciliation.** Full 21-example matrix; verify F1/F3/F6 bring lisp_interpreter, json_parser_workaround, tagged_union_cmp_xmod to OK (json_parser + rogue_mud remain deferred at link); 4 MD5 gates (post-F1 lisp re-baseline); test_analyzer_bin PASS; EXPECTED_FAIL.md v28 + QUICK_REF.md + tech docs + rogue_mud NOTES.md consistent.
 
 ## 5. Global Constraints
 
 - **Read `docs/sf/QUICK_REF.md` first** — ⭐ SUBAGENT CHEAT-SHEET (lines 1-60). Copy exact commands; do not improvise flags.
-- **Compiler under test:** `sf/build/out_release/zig1` (already built). Multi-module recipe: `mkdir -p DIR && zig1 --dump-c89 --output-dir DIR main.zig`
+- **Compiler under test:** `sf/build/out_release/zig1`. F1 prerequisite: REBUILD first (stale vs parser.zig). Multi-module recipe: `mkdir -p DIR && zig1 --dump-c89 --output-dir DIR main.zig`.
 - **gcc compile recipe:** `-m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c *.c` then link with `zig_runtime.c zig_pal.c`. mud_server/rogue_mud also link `net_runtime.c`.
 - **RUNTIME gates mandatory** (AGENTS §2.5.3): every fixed repro must run rc=0 and print expected output. Compile-only gates FORBIDDEN.
-- **4 MD5 gates** byte-identical UNLESS operator-approved re-baseline with runtime proof (F-5 AMENDMENT B): mud `6c0a83f117f176f6875ce2c18c761890`, gol `0d8f0092c22c04375482a198691a3957`, lisp `fad411835b9e0aaea165260fbdc6857c`, json `c403f0799dbc5c56d548eee07bb9eebd`.
-- **Corpus:** 230 repros, OK=223/FAIL=3/gg=4 (231 dirs). FAIL must not increase.
+- **4 MD5 gates** byte-identical UNLESS operator-approved re-baseline with runtime proof (F-5 AMENDMENT B): mud `6c0a83f117f176f6875ce2c18c761890`, gol `0d8f0092c22c04375482a198691a3957`, lisp `fad411835b9e0aaea165260fbdc6857c`, json `c403f0799dbc5c56d548eee07bb9eebd`. F1 re-baselines lisp (approved).
+- **Corpus:** 230 repros, OK=223/FAIL=3/gg=4 (231 dirs). FAIL must not increase. New repros are OK-by-compile/runtime-gap-tracked (NOT added to FAIL).
 - **Tech-doc maintenance (AGENTS §1.1.1):** every I-task and source-changing F-task updates the corresponding `sf/docs/tech_docs/*.md` — corrected line refs, `[updated: 2026-08-08]`.
 - **Editing:** `edit` (exact strings) or `fastedit` (line ranges; re-read region immediately before each edit; bottom-to-top). NO sed/python/bulk transforms.
 - **The plan is the ONLY authority.** Plan says A → do A. If you believe X/Y is better, STOP and present.
 - **I-tasks report then STOP for combined operator ruling.** F-tasks do NOT start until the ruling.
-- **D4 platform-stub gap is NOT a compiler bug** — documented as out-of-scope, feeds future std-lib plan. The `plat_stubs_missing_xmod` repro is OK-by-gate/latent.
-- **Proven corpus precedent:** `comptime_neg_int` and `opt_slice_null_return` are OK-by-gate/type-incorrect, tracked separately in classification. The `plat_stubs_missing_xmod` repro follows this pattern.
-- **rogue_mud NOTES.md** has the full single-module + multi-module build recipe, plus current expected failure mode. This is the long-lived status document.
+- **D2 + D4 are NOT compiler bugs** — runtime-library gaps, deferred to the std zig1 library plan (operator ruling m0379). Documented via F2/F4. The `extern_runtime_symbol_xmod` + `plat_stubs_missing_xmod` repros are OK-by-gate/latent.
+- **D6 MUST arrive fixed** at the end of this plan (operator ruling m0381).
+- **rogue_mud NOTES.md** has the full single-module + multi-module build recipe, plus current expected failure mode. Long-lived status document.
 
 ## 6. Out of Scope
 
-- **Windows console platform layer** — `plat_console_*` stubs are for a future std-lib plan, not this spec
+- **std-lib implementation** (arena_alloc_default + plat_ console stubs) — deferred (operator ruling m0379), fed by the I2 + I4 catalogs + `extern_runtime_symbol_xmod` + `plat_stubs_missing_xmod` repros
 - **Single-module emission fixes** — the single-file path is solid at 14/14
-- **@ptrToInt sema/MIX coverage** — only the type-resolution void bug is in scope; the char_literal switch-case fix was done in the previous plan
-- **rogue_mud full end-to-end gameplay** — only compile-to-link is in scope; the plat_ gap blocks linking, which is documented
+- **Per-module arena reset** — rejected by I5 (module arena is program-lifetime cross-module store)
+- **rogue_mud full end-to-end gameplay** — only compile-to-link is in scope; plat_ gap blocks linking, documented
 - **0-FAIL corpus goal** — blocked by 2 std-lib-deferred FAILs + 1 C89 fundamental
-- **std-lib implementation** — the platform-stub catalog feeds that plan, but isn't part of this one
+- **Self-compile full cycle** (zig1 → zig1.c → gcc → zig2) — F5 only targets passing the import phase
