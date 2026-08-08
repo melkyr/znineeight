@@ -24,6 +24,11 @@
   `c403f079…` — full hashes in QUICK_REF). [F2 2026-08-08: `extern_runtime_symbol_xmod` added
   as a 232nd dir — OK-by-gate/latent, std-lib-deferred, tracked separately like
   `opt_slice_null_return`; manifest count and all totals UNCHANGED. See the F2 section below.]
+  [F4 2026-08-08: `plat_stubs_missing_xmod` documented as OK-by-gate/latent,
+  std-lib-deferred (the D4 platform-stub gap — 5 console/platform-detect stubs,
+  `plat_is_windows` + `plat_console_*`, all rogue_mud-only); tracked separately
+  like `opt_slice_null_return` / `extern_runtime_symbol_xmod`; manifest count
+  and all totals UNCHANGED. See the F4 section below.]
 - Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout; Verified with `/tmp/zf5/zig1` — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors). `switch_mixed_case_argtype`
   **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
   `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
@@ -1436,4 +1441,32 @@ separately as OK-by-gate/latent (mirrors the `opt_slice_null_return` precedent),
 to FAIL; the two examples are example-level link gaps, not corpus repros. No repro
 flipped; no compiler changes; 4 MD5 gates untouched (compiler unchanged). test_analyzer_bin
 PASS. Full evidence: `.superpowers/sdd/task-F2-rogue-report.md`.
+
+## F4 — D4 plat-stub gap deferred to std-lib (2026-08-08, docs only)
+
+Per the I4 report (`.superpowers/sdd/I-platstub-gap-report.md`) and the operator ruling,
+the D4 "platform-stub gap" investigation found **NO compiler defect**: 12 `plat_*` symbols
+exist in `sf/src/include/net_runtime.c` (all socket-family), but the **5
+console/platform-detect stubs** requested by `rogue_mud`
+(`examples/z98/rogue_mud/ui.zig:11-15`) are **MISSING from ALL runtime files**
+(`zig_runtime.c` / `zig_pal.c` / `net_runtime.c`): `plat_is_windows`,
+`plat_console_gotoxy`, `plat_console_setcolor`, `plat_console_putchar`,
+`plat_console_clear`. Class **(b) runtime-library gap**; `sf/build/zig0` fails
+IDENTICALLY (same undefined-reference link rc=1) → NOT a compiler bug. **Deferred to the
+std-zig1 library — NOT fixed here** (no compiler changes, no runtime-file changes).
+
+`plat_stubs_missing_xmod` is the existing guard repro (dump rc=0, all modules emit, gcc
+`-c` rc=0, link rc=1 on the missing stubs):
+
+| Repro | RED (measured) | Classification (measured, sf/build/out_release/zig1) | Guards |
+|-------|----------------|---------------------------|--------|
+| `plat_stubs_missing_xmod` | link rc=1: `undefined reference to plat_is_windows` / `plat_console_putchar` (console_*.c) | **OK-by-gate / LATENT, std-lib-deferred** — dump rc=0, all modules emit, per-file gcc -c rc=0, standard-recipe link rc=1 on the missing console/platform-detect stubs (all 5 rogue_mud-only) | guards the rogue_mud link gap; flips to PASS when the std-lib runtime adds the 5 stubs (a console/platform-detect layer, e.g. `console_runtime.c` mirroring `net_runtime.c`) |
+
+**Accounting:** **UNCHANGED — OK=223 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 230
+manifest repros** (raw classifier FAIL stays 7). `plat_stubs_missing_xmod` is tracked
+separately as OK-by-gate/latent (mirrors the `opt_slice_null_return` /
+`extern_runtime_symbol_xmod` precedents), NOT added to FAIL. `rogue_mud` (20 modules) is
+BROKEN at link ONLY on these 5 stubs (both single- and multi-module recipes: all modules
+emit, gcc compile rc=0). No repro flipped; no compiler changes; 4 MD5 gates untouched.
+Full evidence: `.superpowers/sdd/task-F4-rogue-report.md`.
 

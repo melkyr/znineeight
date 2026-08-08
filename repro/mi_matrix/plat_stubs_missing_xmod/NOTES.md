@@ -46,6 +46,19 @@ link failure (`undefined reference to plat_is_windows`,
 `plat_console_putchar`). This confirms the gap is in the runtime library,
 NOT the compiler — zig0 emits equivalent C that also fails to link.
 
+## Deferred to std-lib (D4, operator ruling)
+The **5 missing stubs** — `plat_is_windows`, `plat_console_gotoxy`,
+`plat_console_setcolor`, `plat_console_putchar`, `plat_console_clear` —
+are **ALL rogue_mud-only** (declared in `examples/z98/rogue_mud/ui.zig`);
+no other example requests the console/platform-detect family. zig0 fails
+IDENTICALLY (same undefined-reference link rc=1) → this is a
+**runtime-library gap, NOT a compiler defect**. **Deferred to the
+std-zig1 library — NOT fixed here** (no compiler changes, no runtime-file
+changes). Feeds the future std-lib plan: add a console/platform-detect
+layer (5 stubs) to the runtime — `plat_is_windows` + `plat_console_*`,
+target signatures from `rogue_mud/ui.zig` (mirroring `net_runtime.c`).
+This repro is the guard (flips to link-ok when the stubs land).
+
 ## Expected classification
 OK-by-gate/latent (D4, out-of-scope). NOT counted as a corpus FAIL. Will
 link when the future std-lib plan adds the console/platform-detect stubs.

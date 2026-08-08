@@ -228,6 +228,17 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     green-guards=4 UNCHANGED. **4 MD5 gates: gol byte-identical `0d8f0092…`; mud/lisp/json
     RE-BASELINED by F2** (mud `6c0a83f1…`, lisp `fad41183…`, json `c403f079…` — full hashes in
     the MD5 table). test_analyzer_bin PASS.
+- **F4 std-lib deferral (2026-08-08, docs-only):** the D4 platform-stub gap — the **5 `plat_`
+  console/platform-detect stubs** (`plat_is_windows`, `plat_console_gotoxy`,
+  `plat_console_setcolor`, `plat_console_putchar`, `plat_console_clear`, all rogue_mud-only;
+  declared in `examples/z98/rogue_mud/ui.zig`) missing from ALL runtime files — is a
+  **runtime-library gap, NOT a compiler defect** (zig0 fails identically, same undefined-ref
+  link rc=1). **Deferred to the std-zig1 library plan — NOT fixed here.** Counts UNCHANGED:
+  effective `OK=223 / FAIL=3 / green-guards=4` over 230 (raw classifier FAIL stays 7);
+  `plat_stubs_missing_xmod` tracked OK-by-gate/latent like `opt_slice_null_return` /
+  `extern_runtime_symbol_xmod`. **rogue_mud remains blocked at link** on exactly these 5
+  stubs (20 modules emit, gcc compile rc=0, both single- and multi-module recipes). See
+  EXPECTED_FAIL.md F4 section.
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module

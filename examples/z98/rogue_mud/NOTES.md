@@ -10,7 +10,7 @@ networking, UI). 20 modules total (`main.zig` + 14 `lib/*.zig` +
 
 **Status as of 2026-08-08:** BROKEN at LINK only — compiler emission is
 clean; the gap is the missing platform/console runtime layer (D4,
-out-of-scope).
+out-of-scope, **deferred to the std-zig1 library**).
 
 ## Build Recipes
 
@@ -54,7 +54,19 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c \
   "~15 undefined references / module symbol gaps" — NOT reproduced on the
   current compiler; only the 5 plat_* stubs fail.)
 
+## Deferred to std-lib (D4, operator ruling)
+Final status: **all 20 modules emit, gcc compile rc=0, link fails on exactly
+the 5 `plat_*` stubs** — `plat_is_windows`, `plat_console_gotoxy`,
+`plat_console_setcolor`, `plat_console_putchar`, `plat_console_clear` (BOTH
+single-module and multi-module recipes). All 5 are missing from ALL runtime
+files (`zig_runtime.c`/`zig_pal.c`/`net_runtime.c`) and are rogue_mud-only;
+zig0 fails identically → this is the **D4 runtime-library gap, NOT a compiler
+defect**. **Deferred to the std-zig1 library — NOT fixed here** (feeds the
+future std-lib plan's console/platform-detect layer; guarded by
+`repro/mi_matrix/plat_stubs_missing_xmod/`). When the std-lib plan provides
+the 5 stubs, rogue_mud links and runs.
+
 ## Classification
-BROKEN-at-link (runtime-library gap, D4). Compiler emission correct.
-Run with timeout (`timeout 10 /tmp/rm_dir/rm` — server-style application).
-Once the platform-stub std-lib plan lands, links and runs.
+BROKEN-at-link (runtime-library gap, D4, std-lib-deferred). Compiler
+emission correct. Run with timeout (`timeout 10 /tmp/rm_dir/rm` —
+server-style application).
