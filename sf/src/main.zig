@@ -845,7 +845,7 @@ fn parseArgs() CompilerCli {
         .dump_types = false,
         .dump_lir = false,
         .dump_c89 = false,
-        .max_mem = @intCast(u32, alloc_mod.DEV_MAX_MEM),
+        .max_mem = @intCast(u32, alloc_mod.RELEASE_MAX_MEM),
         .max_errors = @intCast(u32, 256),
         .color = ColorMode.auto,
         .error_format = ErrorFormat.human,

@@ -1,4 +1,4 @@
-# 00 — Shared Infrastructure [updated: 2026-08-06 — `markerWriteInt64` (u64 marker, F2)]
+# 00 — Shared Infrastructure [updated: 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget)]
 
 > Covers: allocator, string interner, diagnostics, source manager, PAL, growable arrays, panic handler, utility modules
 > Cross-ref: [INDEX.md](INDEX.md) §G (arena tier table)
@@ -29,11 +29,11 @@
 
 ### Static Buffers
 
-`perm_arena_buf[1048576]` (1 MB), `mod_arena_buf[1572864]` (1.5 MB), `scr_arena_buf[1572864]` (1.5 MB) — `allocator.zig:74-76`. Statically allocated, three fixed-size regions backing the three tiers. [inference]
+`perm_arena_buf[4194304]` (4 MB), `mod_arena_buf[8388608]` (8 MB), `scr_arena_buf[2097152]` (2 MB) — `allocator.zig:74-76`. Statically allocated, three fixed-size regions backing the three tiers. Resized 2026-08-08 (F5, self-compile): perm 1 MB→4 MB, module 1.5 MB→8 MB, scratch 1.5 MB→2 MB (static 14 MB BSS). [inference] [updated: 2026-08-08]
 
 ### Constants
 
-**`DEV_MAX_MEM`** = 8 MB (`allocator.zig:78`). **`RELEASE_MAX_MEM`** = 16 MB (`allocator.zig:79`). Combined peak limit across all three arenas. `initCompilerAlloc` uses `DEV_MAX_MEM` by default. [inference]
+**`DEV_MAX_MEM`** = **16 MB** (`allocator.zig:78`, raised 8 MB→16 MB on 2026-08-08 F5). **`RELEASE_MAX_MEM`** = 16 MB (`allocator.zig:79`). Combined peak limit across all three arenas. `initCompilerAlloc` and the `--max-mem` CLI default use `DEV_MAX_MEM`/`RELEASE_MAX_MEM` (main.zig:848 switched to `RELEASE_MAX_MEM`). [inference] [updated: 2026-08-08]
 
 ### Function Walkthrough
 
@@ -58,9 +58,9 @@
 ```
 initCompilerAlloc()
   │
-  ├─ permanent: sandInit(perm_arena_buf[1048576])  ← never reset
-  ├─ module:    sandInit(mod_arena_buf[1572864])    ← never reset
-  └─ scratch:   sandInit(scr_arena_buf[1572864])    ← reset per phase
+  ├─ permanent: sandInit(perm_arena_buf[4194304])  ← never reset
+  ├─ module:    sandInit(mod_arena_buf[8388608])    ← never reset
+  └─ scratch:   sandInit(scr_arena_buf[2097152])    ← reset per phase
 
 sandAlloc(sand, size, alignment):
   1. mask = alignment - 1
@@ -452,13 +452,13 @@ Three hash map types sharing the same design: open addressing (linear probing), 
 ### Arena Sizing
 
 ```
-perm_arena_buf[1048576]   = 1 MB
-mod_arena_buf[1572864]    = 1.5 MB
-scr_arena_buf[1572864]    = 1.5 MB
-Combined: 4 MB (DEV_MAX_MEM=8 MB allows 2x headroom)
+perm_arena_buf[4194304]   = 4 MB
+mod_arena_buf[8388608]    = 8 MB
+scr_arena_buf[2097152]    = 2 MB
+Combined: 14 MB static BSS (DEV_MAX_MEM=RELEASE_MAX_MEM=16 MB)
 ```
 
-> **Self-compile sizing note (I5, `[updated: 2026-08-08]`):** zig1 self-compile
+> **Self-compile sizing note (I5 + F5, `[updated: 2026-08-08]`):** zig1 self-compile
 > (`--dump-c89 sf/src/main.zig`, 37-module / 24,790-line closure) OOMs the 1.5 MB
 > module arena in phase_ImportResolution (`OOM: used=938560 new=1724992
 > total=1572864`). The module arena is a **program-lifetime cross-module store**
@@ -467,11 +467,18 @@ Combined: 4 MB (DEV_MAX_MEM=8 MB allows 2x headroom)
 > phase iterates all modules, so per-module reset is infeasible. Measured zig1
 > import-AST density ≈ 170 B/line (c89_emit closure 11,090 lines needs ≥1.88 MB);
 > cumulative module-arena need ≈ 4.2 MB (import) to ~7.3 MB (full pipeline).
-> **Perm arena must grow** — `sourceManagerAddFile` (source_manager.zig:75-100)
-> copies all module source text into perm (main.zig:148); the closure is 1.3 MB
-> of source alone, so the 1 MB perm arena overflows. Proposed: perm 4 MB /
-> module 8 MB / scratch 2 MB (static 14 MB BSS; RSS ≈ 7.7 MB import, ≈12-14 MB
-> full self-compile). See `.superpowers/sdd/I-arena-sizing-report.md`.
+> Perm arena copies all module source text (1.3 MB closure) + interner/symbols,
+> so 1 MB overflowed. **F5 (2026-08-08) resized: perm 4 MB / module 8 MB /
+> scratch 2 MB** (static 14 MB BSS; RSS ≈ 7.7 MB import, ≈12-14 MB full
+> self-compile) and raised DEV_MAX_MEM to 16 MB.
+> **F5 result:** module + perm OOMs are fixed, but the import phase still OOMs
+> **scratch** (2 MB) while lexing a large module — `OOM: used=1899216
+> new=3472080 total=2097152` — the token array doubles to 65536×24 B in the
+> scratch bump arena and old arrays are not freed (scratch reset is per-module,
+> import_resolver.zig:90, but not mid-module). Scratch needs ≥3.5 MB for the
+> largest single file; per the plan-mandated 4/8/2 the fix stops here pending
+> operator ruling. See `.superpowers/sdd/I-arena-sizing-report.md` +
+> `.superpowers/sdd/task-F5-rogue-report.md`.
 
 ### Who Allocates Where
 

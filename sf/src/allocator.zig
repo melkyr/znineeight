@@ -71,11 +71,11 @@ pub const CompilerAlloc = struct {
     max_mem: u32,
 };
 
-var perm_arena_buf: [1048576]u8 = undefined;
-var mod_arena_buf: [1572864]u8 = undefined;
-var scr_arena_buf: [1572864]u8 = undefined;
+var perm_arena_buf: [4194304]u8 = undefined;
+var mod_arena_buf: [8388608]u8 = undefined;
+var scr_arena_buf: [2097152]u8 = undefined;
 
-pub const DEV_MAX_MEM: usize = 8 * 1024 * 1024;
+pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
 pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
 
 pub fn initCompilerAlloc() CompilerAlloc {
