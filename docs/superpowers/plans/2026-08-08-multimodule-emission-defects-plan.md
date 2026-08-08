@@ -207,40 +207,40 @@ Write `.superpowers/sdd/I-ptrtoint-void-report.md`: mechanism (file:line), sympt
 
 ---
 
-### Task I2: Module silent drop in multi-module emission investigation
+### Task I2: json_parser orphan-module runtime-path gap investigation (RESCOPED per R1 + operator ruling)
 
 **Files:**
-- Investigate: `sf/src/c89_emit.zig` — per-module .c file emission ordering, module dependency graph, `emitModule` or equivalent
+- Investigate: `examples/z98/json_parser/` module graph + `sf/src/c89_emit.zig` (how orphan modules are treated)
 - Modify (docs): `sf/docs/tech_docs/08_c89_emission.md`
-- Report: `.superpowers/sdd/I-silent-drop-report.md`
+- Report: `.superpowers/sdd/I-silent-drop-report.md` (rename: `.superpowers/sdd/I-orphan-module-report.md`)
 
 **Interfaces:**
-- Consumes: R1 repro `mod_silent_drop_xmod/`, json_parser arena.c gap, rogue_mud scenario/room function visibility gap.
-- Produces: mechanism confirmation, tech-doc update, blast radius, fix recommendation.
+- Consumes: R1 repro `mod_silent_drop_xmod/` (kept as regression guard), json_parser arena.c gap, R1 report findings.
+- Produces: mechanism confirmation (why arena.c never emitted + how orphan modules are handled), tech-doc update, blast radius, fix recommendation.
 
-**Context:** In `mod_silent_drop_xmod`, lib_a.c is not emitted. In json_parser, arena.c is not emitted. In rogue_mud, scenario.c and room.c ARE emitted but their function symbols are unreachable from main.c — probably the same root cause: the per-module C89 emission dependency graph is incomplete (modules imported by a module that also imported something else may be skipped).
+**Context (R1 findings — the plan's original D2 premise was FALSE):** `mod_silent_drop_xmod` does NOT reproduce any silent-drop — all 3 modules emit, links clean (verified independently). All 6 probed module-graph shapes emit all modules. `json_parser`'s `arena.zig` is a **never-`@import`ed orphan file** — its `arena_alloc_default` link failure is a legacy-runtime-path gap (json.zig/file.zig reference symbols that were presumably intended to come from arena.zig via some runtime mechanism, not via the module graph). `rogue_mud` emits all 20 modules and fails ONLY on the 5 `plat_*` stubs (D4, separate). This task re-scopes to investigate the json_parser orphan-module gap properly.
 
-- [ ] **Step 1: Trace the module-to-C-file emission**
+- [ ] **Step 1: Map json_parser's module graph + trace the arena_alloc_default references**
 
-Read `sf/src/c89_emit.zig` for the emission loop (search for "foreach", "modules", emitModule, or the iteration that produces per-module .c files). Trace: how does zig1 decide which modules get a .c file? Is it driven by the import graph? By the resolved module list? By the symbol table? Find the exact iteration that determines which modules are emitted, and the condition that would skip a module (e.g. an early-exit, a missing entry in a map, an ordering constraint).
+Read `examples/z98/json_parser/main.zig`, `json.zig`, `file.zig`, `arena.zig`. Confirm `arena.zig` is never `@import`ed. Find which symbols `json.zig`/`file.zig` reference (`arena_alloc_default`, others) and where those symbols are EXPECTED to come from (a legacy runtime file? a removed import? a std-lib symbol the examples assume exists?). Grep `sf/src/include/*.c` for `arena_alloc_default` — is it provided anywhere? Grep examples/zig0/json_parser (the zig0 version) — does IT reference the same symbol, and how did zig0 handle it (does zig0 emit arena.c, or does the zig0 example import arena.zig differently)?
 
-- [ ] **Step 2: Verify on the repros**
+- [ ] **Step 2: Determine the actual defect class**
 
-Run `mod_silent_drop_xmod` with `--dump-c89 --output-dir DIR` — confirm lib_a.c is missing. Run json_parser — confirm arena.c is missing. Run rogue_mud — confirm scenario.c IS present but generateDungeon unresolved. Analyze whether these are one defect or two (missing file vs missing symbol visibility). Check the emitted per-module .h files for the "missing symbol" case — is the function declared in the header but the definition missing from the .c? Or not declared at all?
+Is this: (a) a compiler gap — zig1 should emit orphan/loose module files that are referenced by name (a module-path resolution gap), (b) a runtime-library gap — `arena_alloc_default` should live in zig_runtime.c/zig_pal.c but is missing, or (c) an example-source bug — json_parser references a symbol that was never defined for the current pipeline? Report which with evidence. Check how `mod_silent_drop_xmod` (the regression-guard repro) relates — does the repro's shape actually cover the json_parser pattern, or does a NEW repro need to be created in the F-phase to cover the real json_parser case?
 
 - [ ] **Step 3: Assess blast radius**
 
-Grep for multi-module examples that exercise the same pattern (module A imported by B, used transitively by main). Which examples exercise this correctly? gol (no multi-module), lisp (8+ modules), rogue_mud (20 modules), json_parser (4 modules). Which of these currently work — and why? This is a clue to the mechanism.
+Which other examples reference symbols not provided by any runtime file or imported module? Grep all `examples/z98/` for `extern "c"` declarations and cross-check against `sf/src/include/*.c` symbol tables (extend the I4 catalog as needed). Report which examples would be affected by a fix.
 
 - [ ] **Step 4: Update tech doc `08_c89_emission.md`**
 
-Find the multi-module emission section. Document: (a) the current module-to-file emission loop and its gap (modules can be skipped under certain import-graph configurations); (b) cite the exact file:line of the loop and the skip condition; (c) add `[updated: 2026-08-08]`.
+Document: (a) the module-to-file emission loop (confirmed: all imported modules emit — the "silent drop" premise is FALSE, document the verification); (b) the orphan-module handling gap (if it is a compiler gap) OR the runtime-symbol gap (if that is the class); (c) cite exact file:line; (d) add `[updated: 2026-08-08]`.
 
 - [ ] **Step 5: Write I-report**
 
-Write `.superpowers/sdd/I-silent-drop-report.md`: mechanism (file:line), repro verification, blast radius, recommended fix option(s), concerns.
+Write `.superpowers/sdd/I-orphan-module-report.md`: mechanism (file:line), the defect class determination (a/b/c), blast radius, recommended fix option(s), concerns. Note the `mod_silent_drop_xmod` repro is kept as a regression guard.
 
-**Gate:** mechanism confirmed with file:line; 3 repros verified; tech doc updated; blast radius assessed. No compiler code changes.
+**Gate:** json_parser module graph mapped; arena_alloc_default origin traced; defect class determined with evidence; tech doc updated with `[updated: 2026-08-08]`; blast radius assessed. No compiler code changes.
 
 ---
 
@@ -382,26 +382,25 @@ Write `.superpowers/sdd/I-arena-sizing-report.md`: per-file AST estimates, per-m
 
 ---
 
-### Task F2: Fix module silent drop (per ruling)
+### Task F2: Fix json_parser orphan-module gap (per ruling — rescoped from D2)
 
 **Files:**
-- Modify: `sf/src/c89_emit.zig` (per I2 locus)
+- Modify: locus per I2 ruling (either `sf/src/c89_emit.zig` orphan-module emission OR a runtime file if the gap is runtime)
 - Modify (docs): `sf/docs/tech_docs/08_c89_emission.md`
-- Test: `mod_silent_drop_xmod/`, `examples/z98/json_parser/`, `examples/z98/rogue_mud/`
+- Test: `mod_silent_drop_xmod/` (regression guard), `examples/z98/json_parser/`
 
 **Interfaces:**
 - Consumes: I2 ruling, R1 repro `mod_silent_drop_xmod/`.
-- Produces: all imported modules emit .c files; json_parser arena.c emitted; rogue_mud module symbols resolve.
+- Produces: json_parser compiles + links; mod_silent_drop_xmod still passes (no regression).
 
 - [ ] **Step 1: Implement per I2 ruling**
-- [ ] **Step 2: Build + verify repro: all modules emit .c files, gcc link rc=0**
-- [ ] **Step 3: Verify json_parser: arena.c emitted, link rc=0**
-- [ ] **Step 4: Verify rogue_mud: module-function symbols resolve (partially — plat_ stub gap remains)**
-- [ ] **Step 5: Verify 4 MD5 gates**
-- [ ] **Step 6: Update tech doc `08_c89_emission.md` to FIXED**
-- [ ] **Step 7: Commit**
+- [ ] **Step 2: Build + verify json_parser: all modules emit + link rc=0**
+- [ ] **Step 3: Verify mod_silent_drop_xmod still dumps/links rc=0 (regression guard)**
+- [ ] **Step 4: Verify 4 MD5 gates**
+- [ ] **Step 5: Update tech doc `08_c89_emission.md` to FIXED**
+- [ ] **Step 6: Commit**
 
-**Gate:** repro + json_parser + rogue_mud module symbols resolve; 4 MD5 gates OK; tech doc updated.
+**Gate:** json_parser compiles + links rc=0; mod_silent_drop_xmod no regression; 4 MD5 gates OK; tech doc updated.
 
 ---
 
