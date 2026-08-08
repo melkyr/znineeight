@@ -1,4 +1,4 @@
-# 03 — Type Resolution [updated: 2026-08-06 — va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; prior array-size mul/div/mod (F6)]
+# 03 — Type Resolution [updated: 2026-08-08 — F1 fix: @ptrToInt resolves to usize for single-arg calls; prior 2026-08-08 @ptrToInt-returns-argument-type (I1); 2026-08-06 va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; array-size mul/div/mod (F6)]
 
 ## Summary Table
 
@@ -651,6 +651,10 @@ To trace a specific TypeId through the pipeline:
 4. **Depth limit in resolveTypeExprFull** (type_resolver.zig:588): Hardcoded max depth of 16. Deeply nested type expressions will silently return `TYPE_UNDEFINED`.
 
 5. **evalConstU32Full fallback ambiguity** (type_resolver.zig:575): `0xFFFFFFFF` return value is both a valid u32 and the sentinel for uncomputable. Cannot distinguish "zero-sized array length 0xFFFFFFFF" from "failed to evaluate".
+
+6. **FIXED (2026-08-08, F1): `@ptrToInt` now resolves to `usize` for single-arg calls.** The `builtin_call` resolver (semantic_analyzer.zig:1276-1300) had the `@ptrToInt → TYPE_USIZE` branch nested *inside* the `ec.len >= 2` guard, making it dead code for the single-arg `@ptrToInt(x)` form — the call fell through to the `ec.len >= 1` branch and returned the *argument's* type (a pointer). An untyped `const current_pos = @ptrToInt(ptr);` was typed as the pointer, and a following `(current_pos + mask) & ~mask` chain failed `semanticAnalyzerResolveBitwise` (both operands must be equal integer types; semantic_analyzer.zig:522) → const init resolved to `TYPE_VOID` → `error[3000]` (semantic_analyzer.zig:1715-1721). Fix: the `ptrtoint_name_id` check is now hoisted above the `ec.len` dispatch (semantic_analyzer.zig:1284-1287), mirroring the lowerer's already-correct handling (lower.zig:2626-2634):
+   - `if (node.child_0 == self.ptrtoint_name_id) { if (ec.len >= 1) _ = semanticAnalyzerResolveExpr(self, ec[0]); result = type_mod.TYPE_USIZE; }`
+   - Result: `@ptrToInt` resolves to `TYPE_USIZE` regardless of arg count; multi-arg path semantics unchanged. Verified: `repro/mi_matrix/ptr_to_int_void_xmod` dump rc=0/gcc rc=0/run prints 1; `examples/z98/lisp_interpreter` + `lisp_interpreter_curr` dump rc=0; mud/gol/json MD5 gates byte-identical; lisp_interpreter_curr MD5 re-baselined `fad41183…` → `a12f2fcebc30f2d8c2a148facb9d1174` with byte-identical runtime output.
 
 ---
 

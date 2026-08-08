@@ -1281,15 +1281,14 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 _ = type_resolver.resolveTypeExprFull(&so_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             }
             result = type_mod.TYPE_INT_LIT;
+        } else if (node.child_0 == self.ptrtoint_name_id) {
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            result = type_mod.TYPE_USIZE;
         } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
                 var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner };
                 result = type_resolver.resolveTypeExprFull(&tre_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
-            } else if (node.child_0 == self.ptrtoint_name_id) {
-                var ec2 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-                if (ec2.len >= 1) { _ = semanticAnalyzerResolveExpr(self, ec2[0]); }
-                result = type_mod.TYPE_USIZE;
             } else {
                 result = semanticAnalyzerResolveExpr(self, ec[0]);
             }
