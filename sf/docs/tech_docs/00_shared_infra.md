@@ -458,6 +458,21 @@ scr_arena_buf[1572864]    = 1.5 MB
 Combined: 4 MB (DEV_MAX_MEM=8 MB allows 2x headroom)
 ```
 
+> **Self-compile sizing note (I5, `[updated: 2026-08-08]`):** zig1 self-compile
+> (`--dump-c89 sf/src/main.zig`, 37-module / 24,790-line closure) OOMs the 1.5 MB
+> module arena in phase_ImportResolution (`OOM: used=938560 new=1724992
+> total=1572864`). The module arena is a **program-lifetime cross-module store**
+> (single shared `AstStore` main.zig:159 + `resolved_types`/`coercion_table`/
+> `lir_fns`/`global_decls`/maps main.zig:161-192); it is never reset and every
+> phase iterates all modules, so per-module reset is infeasible. Measured zig1
+> import-AST density ≈ 170 B/line (c89_emit closure 11,090 lines needs ≥1.88 MB);
+> cumulative module-arena need ≈ 4.2 MB (import) to ~7.3 MB (full pipeline).
+> **Perm arena must grow** — `sourceManagerAddFile` (source_manager.zig:75-100)
+> copies all module source text into perm (main.zig:148); the closure is 1.3 MB
+> of source alone, so the 1 MB perm arena overflows. Proposed: perm 4 MB /
+> module 8 MB / scratch 2 MB (static 14 MB BSS; RSS ≈ 7.7 MB import, ≈12-14 MB
+> full self-compile). See `.superpowers/sdd/I-arena-sizing-report.md`.
+
 ### Who Allocates Where
 
 | Arena | Contents | Reset Behavior |

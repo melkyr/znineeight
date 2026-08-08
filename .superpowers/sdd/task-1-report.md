@@ -1,74 +1,69 @@
-# Task 1 Report: visitStatement plumbing (signature + recursive calls + test callers)
+# Task 1 Report — Battery A1-A4: Basic stmt-switch char_literal repros
 
-**Status:** DONE_WITH_CONCERNS
-**Commit:** `7bc6e4d122a1cf33aecf549d16b57b3821530ffe`
+**Status:** DONE
+**Commit:** `0dc4f594` — repro: char_literal stmt-switch case labels dropped (single/multi/nodefault/mixed)
+**Date:** 2026-08-07
 **Branch:** `zig1_start`
-**Date:** 2026-08-03
-
----
 
 ## What I implemented
 
-All edits applied exactly per the brief (`/.superpowers/sdd/task-1-brief.md`), verbatim oldString→newString.
+Created 4 repro dirs under `repro/mi_matrix/`, each with `main.zig` (source
+verbatim from the task brief — no changes) + `NOTES.md`:
 
-### `sf/src/analyzer.zig` — 6 edits
-1. Line 643: added 5th param `visit_fn` to `visitStatement` signature.
-2. Line 657: if_stmt/if_capture then-branch `walkBlock(..., on_stmt)` → `visit_fn`.
-3. Line 658: if_stmt/if_capture else-branch `walkBlock(..., on_stmt)` → `visit_fn`.
-4. Line 666: while_stmt/while_capture body `walkBlock(..., on_stmt)` → `visit_fn`.
-5. Line 674: switch prong body `walkBlock(..., on_stmt)` → `visit_fn`.
-6. Line 679: for_stmt body `walkBlock(..., on_stmt)` → `visit_fn`.
+- `switch_char_single` — two single-value char prongs + else. Expect `000` pre-fix / `120` post-fix.
+- `switch_char_multi` — multi-value prong `'a','b'` + `'c'` + else. Expect `0000` pre-fix / `1120` post-fix.
+- `switch_char_nodefault` — two char prongs, NO else, r init 9. Expect `99` pre-fix / `19` post-fix.
+- `switch_char_mixed_kinds` — char prong `'a'` + INT prong `98` + else. Expect `020` pre-fix / `120` post-fix. Key discriminator: proves the bug is char-specific (int case works, char case drops).
 
-`walkBlock` stays 4 params (confirmed at analyzer.zig:624). The `on_stmt` direct-call sites inside `visitStatement` (return_stmt, var_decl, plain_assign, else branch) remain unchanged, and the other `walkBlock` entry points at 749/768/773 (onNullStmt/onLifetimeStmt/onDoubleFreeStmt) are untouched — plumbing only.
+All `NOTES.md` follow the `repro/mi_matrix/xmod_pub_const_global/NOTES.md`
+format: what it tests, defect site (`lower.zig:3920` stmt-switch
+`else { continue; }` drops char_literal), pre-fix emitted-C symptom, pre-fix
+runtime output, expected post-fix output, oracle verification, classification
+(FAIL — runtime gap).
 
-### `sf/src/tests/test_semantic_bin.zig` — 4 edits
-- 1612, 1649: `branchVisitSet, branchVisitSet`
-- 1758: `countVisitCb, countVisitCb`
-- 1798: `deferVisitCb, deferVisitCb`
+## Defect site (verified against source)
 
-No other callers of `visitStatement` exist (grep verified).
+`sf/src/lower.zig` stmt-switch case-collection loop `:3907-3921`: checks
+`int_literal` / `enum_literal` / `error_literal`, then `else { continue; }`
+at `:3920` — `char_literal` (kind 13) hits the `else` and is dropped.
+Expr-switch twin at `:3183`. Both confirmed by direct read.
 
-## What I tested
+## Gate evidence
 
-### build_release.sh
-```
-=== [release] Done: sf/build/out_release/zig1 ===
-```
-Gate line present, script exited 0, 0 gcc errors (only harmless -Wall warnings).
+Compiled + run with the QUICK_REF recipe (zig1 = `sf/build/out_release/zig1`,
+gcc links `zig_runtime.c` + `zig_pal.c` with `-I sf/src/include`; work dir
+`/tmp/t1r`).
 
-### build_test.sh
-```
-  PASS: test_analyzer_bin
-  PASS: test_memory_budget_bin
-  PASS: test_lower_bin
-  PASS: test_name_mangle_bin
-  PASS: dump_ir_bin
-  FAIL: could not read file: examples/hello/main.zig
-=== [test] Results: 5 passed, 4 failed ===
-```
+| repro | dump rc | gcc rc | run rc | runtime output | `case ` count in emitted C | `switch (` count | zig0 oracle rc |
+|---|---|---|---|---|---|---|---|
+| switch_char_single | 0 | 0 | 0 | `000` | 0 | 1 | 0 |
+| switch_char_multi | 0 | 0 | 0 | `0000` | 0 | 1 | 0 |
+| switch_char_nodefault | 0 | 0 | 0 | `99` | 0 | 1 | 0 |
+| switch_char_mixed_kinds | 0 | 0 | 0 | `020` | **1** (`case 98:`) | 1 | 0 |
 
-**CONCERN — test_semantic_bin does not compile, PRE-EXISTING at HEAD, unrelated to Task 1:**
-`sf/src/tests/test_semantic_bin.zig:61` calls `sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct)` (8 args) but `semanticAnalyzerInit` now has a **13-parameter** signature (semantic_analyzer.zig:63). The type-mismatch errors repeat for every test fn (line 61/84/107/…), so the whole test binary fails to compile. These errors are at line ~61, far from my 4 call-site edits (1612/1649/1758/1798).
+Emitted-C structure per repro:
+- single/multi/nodefault: `switch (c) { default: goto z_bb_3; }` — NO case labels (pre-fix symptom).
+- mixed_kinds: `switch (c) { case 98: goto z_bb_2; default: goto z_bb_3; }` — the INT case `98` IS emitted (it works); the char case `'a'` is absent. This matches the brief's note "the INT case 98 DOES work" — so the strict "0 case labels" assertion does NOT hold for mixed_kinds by design; the discriminating symptom is that the char case is dropped while the int case survives. Runtime `020` confirms.
 
-**Evidence it is pre-existing:** I `git stash`ed my two files, re-ran `build_test.sh`, and got the identical result (5 passed, 4 failed, test_semantic_bin compile errors). Restored my changes afterward (diff verified intact).
-
-The `semanticAnalyzerInit` signature grew (13 params incl. `source_file_id`, `enum_val_tab`, `interner`, `cal_typs`, `cp_map`) without the test file being updated. Fixing that is out of scope for Task 1 (not in the brief, would touch dozens of test call sites). The brief's Step 6 expectation that "test_semantic_bin passes" is not met — the gate cannot be satisfied from this commit alone.
+Oracle (zig0) — copies in /tmp (zig0 writes output alongside source, ignores `-o`): all 4 rc=0, and each oracle `main.c` contains the char `case` labels that zig1 drops (2/3/2/2 respectively), confirming valid Z98 + genuine compiler gap.
 
 ## Files changed
 
-```
- sf/src/analyzer.zig                | 12 ++++++------
- sf/src/tests/test_semantic_bin.zig |  8 ++++----
- 2 files changed, 10 insertions(+), 10 deletions(-)
-```
+- `repro/mi_matrix/switch_char_single/main.zig`, `.../NOTES.md` (new)
+- `repro/mi_matrix/switch_char_multi/main.zig`, `.../NOTES.md` (new)
+- `repro/mi_matrix/switch_char_nodefault/main.zig`, `.../NOTES.md` (new)
+- `repro/mi_matrix/switch_char_mixed_kinds/main.zig`, `.../NOTES.md` (new)
+
+No compiler source changes (repros-only plan). 8 files, 203 insertions, commit `0dc4f594`.
 
 ## Self-review
 
-- **Completeness:** All 6 analyzer.zig edits + 4 test_semantic_bin.zig edits applied exactly per brief. ✓
-- **Discipline:** Only the two specified source files committed. No out-of-plan changes. `.superpowers/sdd/task-1-report.md` (this file) had pre-existing uncommitted edits from a prior task; I did not stage it. ✓
-- **Testing:** build_release DONE, 0 errors. test_analyzer_bin PASS. test_semantic_bin compile gate NOT met — pre-existing `semanticAnalyzerInit` signature mismatch at HEAD, unrelated to and unfixable within Task 1 scope.
+- Source in all 4 `main.zig` is byte-verbatim from the task brief.
+- All runtime outputs match the brief's expected pre-fix table exactly: `000`, `0000`, `99`, `020`.
+- `NOTES.md` files reference the correct defect site (`lower.zig:3920`), verified against current source (line numbers still valid).
+- Only the 4 target dirs were staged/committed (5 other untracked dirs are prior-task artifacts and were left alone).
 
-## Issues / concerns
+## Concerns
 
-1. **test_semantic_bin gate unmet (pre-existing).** The controller should either (a) dispatch a separate task to update the ~dozens of `semanticAnalyzerInit` call sites in test_semantic_bin.zig to the 13-param signature, or (b) rule that the test_semantic_bin gate is deferred. Task 1's own 4 call-site edits are correct and complete.
-2. No runtime corpus / byte-identical gates run — not required by the Task 1 brief (plumbing only, no emission-path change).
+1. **mixed_kinds `case ` count is 1, not 0.** The brief's Step 5 blanket assertion "emitted C has NO case labels" does not strictly apply to mixed_kinds — the INT case `98` is correctly emitted. The pre-fix symptom there is that the CHAR case is dropped while the INT case survives (and runtime `020` confirms). I documented this nuance in `NOTES.md`. Not a defect in the repro — expected behavior per the brief's own "VERIFIED" note.
+2. **nodefault emits a `default:` target** even though the source has no else prong — a synthesized default with no prong body (r stays 9). Harmless and expected; the no-else fall-through is what the repro gates (no crash, r=9).
