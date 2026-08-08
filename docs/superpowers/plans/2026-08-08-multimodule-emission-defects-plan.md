@@ -22,7 +22,7 @@
 - **The plan is the ONLY authority.** Plan says A → do A. If you believe X/Y is better, STOP and present. On any issue, STOP.
 - **I-tasks report then STOP for combined operator ruling** (R2 + I6, one combined STOP). F-tasks do NOT start until the ruling.
 - **D2 (extern arena symbols) and D4 (plat_ console stubs) are DEFERRED to the std-lib plan** — NOT fixed in this plan. Documented via F2/F4. Neither is a compiler defect (I2: runtime-library gap class (b); I4: runtime-library gap, zig0 fails identically).
-- **D6 (cross-module tagged-union `==` SEGV) MUST arrive fixed** at the end of this plan (operator ruling m0381) — F6 is a real compiler fix, not documentation.
+- **D6 (cross-module tagged-union member-access SEGV) MUST arrive fixed** at the end of this plan (operator ruling m0381 + m0406) — F6 implements Option (a) ONLY (lower.zig dispatch fix); the sema reject-`==` diagnostic (Option b) is out of scope.
 - **I5 ruling:** per-module arena reset REJECTED (module arena is a program-lifetime cross-module store; OOM fires in phase-1 import). F5 is resize-only: perm 4MB / module 8MB / scratch 2MB + `--max-mem 16M`.
 
 ---
@@ -367,25 +367,41 @@ git commit -m "feat: resize arenas for self-compile (perm 4M/mod 8M/scr 2M, 16M 
 
 ---
 
-### Task F6: Fix cross-module tagged-union `==` SEGV (per ruling)
+### Task F6: Fix cross-module tagged-union member access SEGV (per ruling — Option (a) only)
 
 **Files:**
-- Modify: `sf/src/semantic_analyzer.zig` and/or `sf/src/lower.zig` (per I6 locus + ruling)
+- Modify: `sf/src/lower.zig` (generic field-access dispatch at `:2174-2180` — add `tagged_union_type` case)
 - Modify (docs): `sf/docs/tech_docs/08_c89_emission.md`
 - Test: `repro/mi_matrix/tagged_union_cmp_xmod/`
 
 **Interfaces:**
-- Consumes: I6 ruling, R2 repro `tagged_union_cmp_xmod/`.
-- Produces: cross-module tagged-union `==` compiles and runs (no SEGV).
+- Consumes: I6 ruling (operator: Option (a) ONLY — NO sema reject-`==` diagnostic), R2 repro `tagged_union_cmp_xmod/`.
+- Produces: cross-module tagged-union member access (and the `==` comparison built on it) no longer SEGVs.
 
-- [ ] **Step 1: Implement per I6 ruling** (mirror the same-module tagged-union member path for cross-module; if I6 determined it's the same Option-A dispatch as F3, ensure F6 handles the tagged-union member case F3's enum_type case doesn't)
+**Context (I6):** Crash at `lower.zig:2180` — the generic field-access branch (`:2174-2180`) routes `tagged_union_type` to `typeRegistryGetStructFields` (type_registry.zig:782), which indexes `st_items` with a tagged-union `payload_idx` → garbage slice → SEGV in `phase_LIRLowering`. The crash is NOT `==`-specific and NOT cross-module-only (`var x = lib_mod.Shape.Circle;` and same-module `s.Circle` crash identically). **Operator ruling m0406: implement Option (a) ONLY** — the lower.zig dispatch fix. The sema reject-`==` diagnostic (Option b) is OUT OF SCOPE. The `==` in the repro is built on member access; once member access resolves, the repro should compile. Note: same-module union `==` emission may still produce gcc-invalid C (`binary ==` on structs) — that is a separate latent issue NOT fixed here.
+
+- [ ] **Step 1: Implement Option (a) at `sf/src/lower.zig:2174-2180`**
+
+Add a `tagged_union_type` case to the generic field-access dispatch, mirroring the same-module tagged-union member path (search how same-module `Shape.Circle` is lowered — `emitTaggedUnionInit` or the ident_expr member path at lower.zig:1981-1999). The cross-module member access must produce the union's tag value (enum_const of the tag ordinal) instead of crashing. Read the surrounding branch first (re-read region immediately before each edit; bottom-to-top). Do NOT implement the sema reject diagnostic.
+
 - [ ] **Step 2: Build + verify repro: dump rc=0, gcc rc=0, run rc=0 printing `1`**
+
+Rebuild zig1. Run `tagged_union_cmp_xmod/`: dump rc=0 (no SEGV), gcc compile rc=0, run rc=0 printing `1`. Also test the isolated member-access form (`var x = lib_mod.Shape.Circle;`) — dump rc=0.
+
 - [ ] **Step 3: Verify no regression on F3's repros (zT_missing_fwd_xmod, json_parser_workaround still green)**
-- [ ] **Step 4: Verify 4 MD5 gates**
+
+- [ ] **Step 4: Verify 4 MD5 gates** (byte-identical — no gate uses union `==` or cross-module TU member access)
+
 - [ ] **Step 5: Update tech doc `08_c89_emission.md` to FIXED**
+
 - [ ] **Step 6: Commit**
 
-**Gate:** repro green (dump/gcc/run rc=0, prints `1`); F3 repros still green; 4 MD5 gates OK; tech doc updated.
+```bash
+git add sf/src/lower.zig sf/docs/tech_docs/08_c89_emission.md
+git commit -m "fix: cross-module tagged-union member access no longer SEGVs (tagged_union_cmp_xmod)"
+```
+
+**Gate:** repro green (dump/gcc/run rc=0, prints `1`); isolated member-access form green; F3 repros still green; 4 MD5 gates OK; tech doc updated. The sema reject-`==` diagnostic is NOT implemented (Option b out of scope per ruling).
 
 ---
 
