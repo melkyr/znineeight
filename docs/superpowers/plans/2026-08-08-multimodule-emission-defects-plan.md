@@ -363,7 +363,7 @@ git add sf/src/allocator.zig sf/src/main.zig sf/docs/tech_docs/00_shared_infra.m
 git commit -m "feat: resize arenas for self-compile (perm 4M/mod 8M/scr 2M, 16M budget)"
 ```
 
-**Gate:** self-compile dump passes import phase (no OOM); 4 MD5 gates byte-identical; test_analyzer_bin PASS; tech doc updated.
+**Gate:** 4/8/2 resize landed (commit 462ddee4) + 16M budget; 4 MD5 gates byte-identical; test_analyzer_bin PASS; tech doc updated. **Self-compile import-phase gate PARTIALLY met (operator ruling m0442):** the module+perm OOMs are fixed, but the scratch arena (2MB) still OOMs lexing the largest single file (~5k lines — token array doubles 32K→64K×24B per file, old arrays never freed in the bump arena; needs ≥3.5MB). Per the operator ruling, the residual scratch-arena optimization is documented as a FUTURE INVESTIGATION (see Post-Plan), NOT further resized here. The committed 4/8/2 resize is accepted as-is.
 
 ---
 
@@ -434,6 +434,6 @@ git commit -m "fix: cross-module tagged-union member access no longer SEGVs (tag
 
 - **std-lib plan** (next): implement arena_alloc_default + plat_ console stubs in the std zig1 library — fed by the I2 + I4 catalogs, the `extern_runtime_symbol_xmod` repro, and the `plat_stubs_missing_xmod` repro. Unblocks json_parser + rogue_mud.
 - **rogue_mud full end-to-end run** after the std-lib plan provides plat_ stubs.
-- **Self-compile full cycle** (zig1 → zig1.c → gcc → zig2) — F5 only targets passing the import phase; full emission + gcc-compilation of the 37-module output is the next milestone.
+- **Self-compile full cycle** (zig1 → zig1.c → gcc → zig2) — F5 (commit 462ddee4) landed the perm 4M/mod 8M/scr 2M resize + 16M budget and fixed the module/perm OOMs; full emission + gcc-compilation of the 37-module output is the next milestone.
+- **FUTURE INVESTIGATION — scratch-arena resource optimization (operator ruling m0442):** self-compile still OOMs in the scratch arena (2MB) while lexing the largest single file (~5k lines): the token array doubles 32K→64K×24B per file, and old arrays are never freed in the bump arena (needs ≥3.5MB). Candidate approaches to investigate: (1) reset scratch per-file at `moduleRegistryParseModule` (import_resolver.zig:34) after each module's parse; (2) grow scratch to 4MB (static total 16MB); (3) move the token array to the module arena (token lifetime matches module AST lifetime). The committed 4/8/2 resize is accepted as-is; this optimization is out of scope for the current plan.
 - **0-FAIL corpus goal** remains blocked by 2 std-lib-deferred FAILs (field_store_drop, test_stub_0) + 1 C89 fundamental (self_embed_optional_cycle).
-- **Cross-module tagged-union `==`** must be fixed (F6) — operator ruling m0381.
