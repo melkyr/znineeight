@@ -34,7 +34,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (216 dirs in `repro/mi_matrix/*/`, 215 manifest repros)  — classify by gcc EXIT CODE  [updated: 2026-08-07 — rogue_mud plan closeout (F5)]
+### Corpus gate (237 dirs in `repro/mi_matrix/*/`, 230 manifest repros)  — classify by gcc EXIT CODE  [updated: 2026-08-08 — multi-module fixes plan closeout (F7)]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -221,7 +221,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
     `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 15 battery
     repros are now **fully OK** (F4 gate sweep, F1 `e0a4d6d6` + F2 `5c515a7d` landed): the 12
     `switch_char_*` repros are **no longer runtime-gap-tracked** — F1 emits real `case 'a':`
-    labels (lower.zig:3202 expr / :3941 stmt), all 12 print their expected post-fix output
+    labels (lower.zig:3229 expr / :3968 stmt), all 12 print their expected post-fix output
     (`120`, `1120`, `19`, `1`, `109`, …; run-verified); the 3 `opt_slice_null*` repros are **no
     longer latent** — F2 (Option B) drops the dead `int zT_N; zT_N = NULL;` payload temp, 0
     `-Wint-conversion` warnings (was 2/2/3), 0 `= NULL;` sites, still print `1`. FAIL=3 and
@@ -239,6 +239,25 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   `extern_runtime_symbol_xmod`. **rogue_mud remains blocked at link** on exactly these 5
   stubs (20 modules emit, gcc compile rc=0, both single- and multi-module recipes). See
   EXPECTED_FAIL.md F4 section.
+- **Multi-module fixes plan closeout (F7 gate sweep, 2026-08-08): effective `OK=223 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0` over 230 manifest repros** (223+3+4=230). Full sweep of
+  **all 237 dirs** (230 manifest + 7 tracked-separately: `opt_slice_null_return` + the 6
+  plan-added repros) classifies **OK=229 / FAIL=8 / ICE=0 / CRASH=0** (229+8=237) — the 4
+  green-guards are the difference vs the manifest count, plus `tagged_union_cmp_xmod` counts
+  FAIL on the latent union-`==` emission (was the F3 sweep's ICE=1; F6 SEGV fix → CRASH=0).
+  **No new corpus FAIL introduced by this plan.** Fixes landed: F1 `51bfdb3c` @ptrToInt
+  (`ptr_to_int_void_xmod` OK, lisp_interpreter unblocked at dump), F3 `021ffcfd` cross-module
+  enum member (`zT_missing_fwd_xmod` OK, json_parser_workaround **gcc-clean** — was 6× zT_xx
+  compile FAIL), F5 `462ddee4` arena resize (perm 4M/mod 8M/scr 2M; self-compile scratch OOM
+  documented as future investigation, NOT a corpus regression), F6 `efbf4807` tagged-union
+  member access (SEGV gone, CRASH→0). Deferred (NOT fixed): D2 `arena_alloc_default`
+  (json_parser + json_parser_workaround link blocked, std-lib-deferred), D4 `plat_*` stubs
+  (rogue_mud link blocked, std-lib-deferred). Follow-ups: union `==` emission, TU payload-read
+  lowering, lisp builtins `zT_N` (lisp_interpreter gcc FAIL, pre-existing lowerer defect
+  surfaced post-F1), scratch-arena optimization. **4 MD5 gates byte-identical** to the
+  post-F1 baselines (mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`, json `c403f079…`);
+  test_analyzer_bin PASS. Full 21-example matrix: **16/21 end-to-end working** (unchanged vs
+  MEM4) — see EXPECTED_FAIL.md F7 section.
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
@@ -279,13 +298,21 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-07] |
+| Entry Path | Reference md5 | [updated: 2026-08-08] |
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `6c0a83f117f176f6875ce2c18c761890` |
 | `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `fad411835b9e0aaea165260fbdc6857c` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `a12f2fcebc30f2d8c2a148facb9d1174` |
 | `examples/z98/json_parser/main.zig` | `c403f0799dbc5c56d548eee07bb9eebd` |
 
+- **Re-baselined 2026-08-08 (F1, @ptrToInt single-arg → usize).** lisp re-baselined because F1
+  (commit `51bfdb3c`) makes single-arg `@ptrToInt(x)` resolve to `TYPE_USIZE` — lisp's
+  sandbox addr/start/end consts are now `unsigned int`. Runtime output byte-identical to
+  pre-fix (verified by stash-revert rebuild; both run rc=0, output md5
+  `1c1f0a417d5e943433755a8ce593542f`). Per the F-5 AMENDMENT B precedent the gate is runtime
+  behavior, not byte-identity. mud/gol/json byte-identical (F1 verified byte-identical for
+  all three). Pre-F1 lisp value: `fad41183…`. New lisp value: `a12f2fce…`. Re-verified
+  byte-identical by the F7 gate sweep (2026-08-08). [updated: 2026-08-08]
 - **Re-baselined 2026-08-07 (F2, opt_slice null-payload Option B).** mud + lisp + json re-baselined
   because F2 (commit `5c515a7d`) drops the dead `int zT_N; zT_N = NULL;` payload temp in
   optional-null construction — the `null_literal` branch (lower.zig:1183-1214, Option B) emits

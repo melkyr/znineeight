@@ -1,8 +1,33 @@
-# mi_matrix corpus — expected-fail manifest (v27 2026-08-07)
+# mi_matrix corpus — expected-fail manifest (v28 2026-08-08)
 
 ## Totals (230 repros)
 
-- **CURRENT (2026-08-07 F4 gate sweep — char_literal switch + opt_slice null fixes CLOSEOUT): OK=223 /
+- **CURRENT (2026-08-08 F7 gate sweep — multi-module fixes plan CLOSEOUT): OK=223 / FAIL=3 /
+  green-guards=4 / ICE=0 / CRASH=0** over **230 manifest repros** (223 + 3 + 4 = 230; raw
+  classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
+  `sf/build/out_release/zig1` at HEAD (post-F6 `efbf4807`; fixes landed this plan: F1 `51bfdb3c`
+  @ptrToInt, F3 `021ffcfd` cross-module enum member, F5 `462ddee4` arena resize, F6 `efbf4807`
+  tagged-union member access). The 3 FAILs unchanged: 2 std-lib-deferred (`field_store_drop` +
+  `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4
+  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`. **No new corpus FAIL introduced by this plan's
+  fixes.** Corpus = **237 dirs** = 230 manifest repros + **7 separately-tracked dirs**
+  (`opt_slice_null_return` + the 6 plan-added repros `ptr_to_int_void_xmod`,
+  `mod_silent_drop_xmod`, `zT_missing_fwd_xmod`, `plat_stubs_missing_xmod`,
+  `tagged_union_cmp_xmod`, `extern_runtime_symbol_xmod`).
+  **CONVENTION RECONCILIATION (F3/F6 vs plan):** the F3/F6 raw sweep counts ALL 237 dirs and
+  lumps the 4 green-guards into FAIL → **OK=229 / FAIL=8 / ICE=0 / CRASH=0** (229+8=237); the
+  manifest convention (230 repros) counts green-guards separately and excludes the 7 tracked-
+  separately dirs → **effective OK=223 / FAIL=3 / green-guards=4**. Both agree on the
+  underlying state: 229 sweep-OK = 223 manifest-OK + 6 tracked-separately OK
+  (`opt_slice_null_return` + 5 of the plan repros; `tagged_union_cmp_xmod` is the 7th
+  tracked-separately dir and classifies FAIL on the known latent union-`==` emission); raw
+  FAIL=8 = the 4 green-guards + 2 std-lib-deferred + `self_embed_optional_cycle` +
+  `tagged_union_cmp_xmod`. F6's CRASH=0 (was F3's ICE=1) = `tagged_union_cmp_xmod` no longer
+  SEGVs. **4 MD5 gates byte-identical** to the post-F1 baselines (mud `6c0a83f1…`, gol
+  `0d8f0092…`, lisp `a12f2fce…` post-F1 RE-BASELINE, json `c403f079…` — full hashes in
+  QUICK_REF). test_analyzer_bin PASS. See the F7 gate-sweep section below.
+- Prior: OK=223 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 230 (2026-08-07 F4 gate sweep — char_literal switch + opt_slice null fixes CLOSEOUT). Measured with
   FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** over **230 repros** (223 + 3 + 4 = 230; raw
   classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
   `sf/build/out_release/zig1` at HEAD (compiler source = F1 `e0a4d6d6` char_literal switch +
@@ -1469,4 +1494,142 @@ separately as OK-by-gate/latent (mirrors the `opt_slice_null_return` /
 BROKEN at link ONLY on these 5 stubs (both single- and multi-module recipes: all modules
 emit, gcc compile rc=0). No repro flipped; no compiler changes; 4 MD5 gates untouched.
 Full evidence: `.superpowers/sdd/task-F4-rogue-report.md`.
+
+---
+
+## F1 — @ptrToInt resolves to usize for single-arg calls (2026-08-08) — `ptr_to_int_void_xmod`
+
+**Commit `51bfdb3c`** (semantic_analyzer.zig, 03_type_resolution.md). Hoisted the
+`ptrtoint_name_id` check above the `ec.len` dispatch in `semanticAnalyzerResolveExpr`
+(semantic_analyzer.zig:1298-1301), mirroring lower.zig:2653-2657; dead nested
+`@ptrToInt → TYPE_USIZE` branch (was under `ec.len >= 2`) removed. Single-arg
+`@ptrToInt(x)` now resolves to `TYPE_USIZE` instead of `void`.
+
+| Repro | RED (pre-fix) | GREEN (post-fix, measured) |
+|-------|---------------|----------------------------|
+| `ptr_to_int_void_xmod` | dump rc=2, `error[3000] cannot declare variable of type void`, 0 `.c` | dump rc=0; emitted `unsigned int current_pos; current_pos = (unsigned int)ptr;`; gcc -c rc=0; link rc=0; **run rc=0, prints `1`**. Classifies **OK**. |
+
+**Gates:** lisp_interpreter (the headline consumer) unblocked from the sema frontend block —
+dump rc=0 (was error[3000]) — but its emitted C now surfaces a **separate pre-existing
+lowerer defect** in `builtins.zig`: gcc FAIL, 6 errors (5× `zT_N` undeclared in token_*.c +
+1× `zG_..._global_symbol_list = zT_0` Opt_45-null-payload mismatch in parser_*.c). This is
+NOT a new regression from F1 (builtins.zig has no `@ptrToInt`; the defect was previously
+masked by the sema block); tracked as a follow-up (see below). **lisp MD5 RE-BASELINED**
+`fad41183…` → `a12f2fcebc30f2d8c2a148facb9d1174` (addr/start/end consts now `unsigned int`;
+runtime output byte-identical to pre-fix, both run rc=0, output md5 `1c1f0a417d5e943433755a8ce593542f`
+— verified by stash-revert rebuild, F1 report §Gates). test_analyzer_bin PASS.
+
+## F3 — cross-module plain-enum member access resolves (2026-08-08) — `zT_missing_fwd_xmod`
+
+**Commit `021ffcfd`** (semantic_analyzer.zig, lower.zig, 08_c89_emission.md). `x ==
+mod.Type.Member` cross-module plain-enum access resolved to `TYPE_VOID` in sema + lowering
+→ emitted C omitted the enum-literal temp → gcc `'zT_XX' undeclared`. Fix: sema
+(semantic_analyzer.zig:459) + lower (lower.zig:2207) generic base-type dispatch gained an
+`enum_type` case mirroring the same-module ident_expr path (`:260-271` / `:1981-1999`).
+
+| Repro | RED (pre-fix) | GREEN (post-fix, measured) |
+|-------|---------------|----------------------------|
+| `zT_missing_fwd_xmod` | dump rc=0; gcc `-c` main_A05BD8BB.c rc=1 (`'zT_2' undeclared` at `zT_3 = tag == zT_2;`) | dump rc=0; gcc -c rc=0; link rc=0; **run rc=0** (emits `zT_3 = zT_..._Tag_Null; zT_4 = tag == zT_3;`). Classifies **OK**. |
+
+**json_parser_workaround — gcc-clean (was 6× zT_xx COMPILE FAIL):** all 6 missing temps
+resolved (`zT_11 = zT_6BE94440_JsonValueTag_Null;` … `zT_97 = zT_6BE94440_JsonValueTag_Object;`),
+0 compile errors (only the pre-existing strtod `-Wincompatible-pointer-types` warning).
+Link/run STILL blocked by the std-lib-deferred `arena_alloc_default` extern (F2). **4 MD5
+gates byte-identical** (lisp already at post-F1 `a12f2fce…`). test_analyzer_bin PASS.
+
+## F5 — arena resize for self-compile (2026-08-08) — PARTIAL
+
+**Commit `462ddee4`** (allocator.zig:74-79, main.zig:848, 00_shared_infra.md). perm 1 MB→4 MB,
+mod 1.5 MB→8 MB, scratch 1.5 MB→2 MB; `DEV_MAX_MEM` 8 MB→16 MB (== `RELEASE_MAX_MEM`).
+Resize landed (plan-mandated 4/8/2, 16 MB budget). **Self-compile import-phase gate NOT
+met:** `zig1 --dump-c89 --output-dir /tmp/z5 sf/src/main.zig` → `dump rc=3`,
+`OOM: used=1899216 new=3472080 total=2097152` — the **scratch** arena (2 MB) OOMs during
+import lexing of a 5k-line module (the lexer token array, 24 B/Token, doubling 32K→64K,
+never freed within a module, needs ≥3.5 MB). **Documented as future investigation (operator
+ruling m0442), NOT a corpus regression** — the resize fixes phase-1 module/perm OOMs and no
+repro regressed. Scratch-arena optimization listed as a follow-up (see below). **4 MD5 gates
+byte-identical** (arena size does not change codegen). test_analyzer_bin PASS.
+
+## F6 — cross-module tagged-union member access no longer SEGVs (2026-08-08) — `tagged_union_cmp_xmod`
+
+**Commit `efbf4807`** (lower.zig:2174-2206, 08_c89_emission.md). Option (a) ONLY per operator
+ruling m0406: the generic base-type field-access branch previously called
+`typeRegistryGetStructFields` for `tagged_union_type` (WRONG → SEGV at lower.zig:2180). Added
+a dedicated `tagged_union_type` case mirroring the same-module member path (lower.zig:1966-1979):
+look up the member in `tu_items[ty.payload_idx]`, on match return
+`emitTaggedUnionInit(...)` — a TU-typed `int_const` emitting `.tag = <ordinal>;`. Option (b)
+(reject-in-sema) NOT implemented.
+
+| Repro | RED (pre-fix) | GREEN (post-fix, measured) |
+|-------|---------------|----------------------------|
+| `tagged_union_cmp_xmod` | dump rc=1, 0 `.c`; stderr `AddressSanitizer:DEADLYSIGNAL` → `SEGV on unknown address 0x00000000`, frame 0 = `typeRegistryGetStructFields` ← `lowerExprImpl` ← `phase_LIRLowering` | dump rc=0 (SEGV **gone**, CRASH→0); isolated `var x = lib_mod.Shape.Circle;` gcc-clean, link rc=0, **run rc=0**. The `==` form still emits gcc-invalid C (`error: invalid operands to binary ==` — the known separate latent union-`==` emission issue; NOT fixed, see follow-ups). Classifies gcc-FAIL → sweep FAIL 7→8, ICE 1→0. |
+
+**F3 repros no-regression:** `zT_missing_fwd_xmod` run rc=0; json_parser_workaround gcc-clean.
+**4 MD5 gates byte-identical. test_analyzer_bin PASS.**
+
+## F7 gate sweep + full example matrix reconciliation (2026-08-08)
+
+**Corpus sweep (all 237 dirs, gcc-exit classifier, `sf/build/out_release/zig1`):**
+`OK=229 / FAIL=8 / ICE=0 / CRASH=0`. FAIL=8 = the 4 green-guards (`eu_assign_incompat_payload`,
+`euvoid_val_catch`, `field_access_optional`, `var_declared_void`) + 2 std-lib-deferred
+(`field_store_drop`, `test_stub_0`) + `self_embed_optional_cycle` (C89 fundamental) +
+`tagged_union_cmp_xmod` (latent union-`==` emission). **No manifest OK repro regressed; the
+only count moves vs the F3 sweep (OK=229/FAIL=7/ICE=1) are tagged_union_cmp_xmod ICE→FAIL
+(F6 SEGV fix).** Convention reconciliation vs the plan's 230/231 figures is documented in
+the Totals block above.
+
+**Full 21-example matrix (MEM4 recipe, multi-module `--dump-c89 --output-dir`; measured):**
+
+| # | Example | dump | gcc | link | run | Post-fix status vs MEM4 |
+|---|---------|------|-----|------|-----|--------------------------|
+| 1 | hello | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 2 | fibonacci | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 3 | prime | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 4 | heapsort | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 5 | quicksort | 0 | 0 | 0 | 0 | unchanged WARN OK (10w) |
+| 6 | mandelbrot | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 7 | game_of_life | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 8 | lzw | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 9 | func_ptr_return | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 10 | sort_strings | 0 | 0 | 0 | 0 | unchanged WARN OK (8w) |
+| 11 | days_in_month | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 12 | tco_factorial | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 13 | tco_defer | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 14 | tco_return_try | 0 | 0 | 0 | 0 | unchanged FULL OK |
+| 15 | json_parser | 0 | 0 (1w) | **1** | — | **unchanged LINK FAIL** — `arena_alloc_default` (std-lib-deferred, F2) |
+| 16 | json_parser_workaround | 0 | **0 (was 6× zT_xx COMPILE FAIL → now gcc-clean, 1w)** | **1** | — | **compiler defect CLEARED (F3)**; still LINK FAIL on `arena_alloc_default` (std-lib-deferred) |
+| 17 | lisp_interpreter | **0 (was error[3000] DUMP FAIL → now dumps, F1)** | **1** | — | — | **frontend block CLEARED (F1)**; GCC FAIL 6 errors = 5× `zT_N` undeclared + 1 Opt_45 null-payload (pre-existing builtins.zig lowerer defect, follow-up) |
+| 18 | lisp_interpreter_adv | 0 | 0 | 0 | 0 | unchanged WARN OK (1w) |
+| 19 | lisp_interpreter_curr | 0 | 0 | 0 | 0 | unchanged WARN OK (1w; MEM4 recorded 9w — gcc-version/toolchain diff, benign) |
+| 20 | mud_server | 0 | 0 | 0 | 124 | unchanged CANNOT RUN — server, "MUD server listening on port 4000" (timeout) |
+| 21 | rogue_mud | 0 (20 modules) | 0 (5w) | **1** | — | **unchanged LINK FAIL** — 5 `plat_*` stubs (std-lib-deferred, F4) |
+
+**End-to-end working binaries: 16/21** (12 FULL OK + 4 WARN OK), same as MEM4 — but two
+compiler-defect classes were CLEARED (json_parser_workaround's 6× zT_xx compile gap via F3;
+lisp_interpreter's @ptrToInt frontend block via F1, exposing a separate pre-existing lowerer
+defect). No NEW regression vs MEM4.
+
+## Follow-ups (multi-module fixes plan) — NOT fixed here
+
+1. **Union `==` emission** — `tagged_union_cmp_xmod` and same-module union `==` emit
+   `lhs == rhs` as `binary ==` on the C struct union (`error: invalid operands to binary ==`).
+   Needs either a union-equality emission path (compare `.tag` + payload) or the reject-in-sema
+   diagnostic (F6 Option b, ruled out of scope by m0406). The repro's run gate cannot pass
+   until then.
+2. **TU payload-read lowering** — same-module TU VALUE payload access `s.Circle` now lowers to
+   the tag value (`.tag = 0;`), not the payload read (`s.data.Circle`). Semantically-incorrect-
+   but-crash-free after F6; a payload-read emission path is a follow-up.
+3. **lisp_interpreter builtins.zig `zT_N`** — post-F1, lisp_interpreter dumps but gcc FAILs on
+   5× `zT_N` undeclared (union/optional `==` comparison temp-drop class; P3-5 adjacent) + 1×
+   Opt_45 null-payload global assign. Pre-existing lowerer defect, previously masked by the
+   @ptrToInt sema block. F1 report concern-2.
+4. **Scratch-arena optimization** — self-compile import-phase scratch OOM (F5; token array
+   doubling 32K→64K in the 2 MB scratch). Candidate options (all require operator ruling,
+   plan mandates 4/8/2): scratch 2→4 MB; reset scratch per-file after the parser consumes the
+   token array; or move the token array to the module arena.
+5. **Cross-module enum-literal switch-case dropping** — observed in F6's isolated-form switch
+   test; separate pre-existing switch-path gap.
+6. **json_parser / json_parser_workaround / rogue_mud / extern_runtime_symbol_xmod /
+   plat_stubs_missing_xmod** — all std-lib-deferred (see the F2/F4 sections); flips to PASS
+   when the std-zig1 runtime provides `arena_alloc_default` and the 5 `plat_*` stubs.
 

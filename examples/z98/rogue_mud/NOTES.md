@@ -8,8 +8,8 @@ networking, UI). 20 modules total (`main.zig` + 14 `lib/*.zig` +
 
 **Entry file:** `main.zig`
 
-**Status as of 2026-08-08:** BROKEN at LINK only — compiler emission is
-clean; the gap is the missing platform/console runtime layer (D4,
+**Status as of 2026-08-08 (F7 plan closeout — re-verified):** BROKEN at LINK only — compiler
+emission is clean; the gap is the missing platform/console runtime layer (D4,
 out-of-scope, **deferred to the std-zig1 library**).
 
 ## Build Recipes
@@ -69,4 +69,6 @@ the 5 stubs, rogue_mud links and runs.
 ## Classification
 BROKEN-at-link (runtime-library gap, D4, std-lib-deferred). Compiler
 emission correct. Run with timeout (`timeout 10 /tmp/rm_dir/rm` —
-server-style application).
+server-style application). Re-verified 2026-08-08 at the F7 gate sweep:
+dump rc=0 (20 modules), gcc compile rc=0 (5 warnings), link rc=1 on exactly
+the 5 `plat_*` stubs — unchanged from F4.

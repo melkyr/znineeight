@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-08-08 — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form still emits gcc-invalid C (`binary ==` on structs) — separate latent union-`==` emission issue NOT fixed (Option (b) sema reject out of scope per ruling m0406); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348)]
+# 08 — C89 Emission [updated: 2026-08-08 — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form still emits gcc-invalid C (`binary ==` on structs) — separate latent union-`==` emission issue NOT fixed (Option (b) sema reject out of scope per ruling m0406); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348); F7 line-ref re-verification (2026-08-08): all `c89_emit.zig`/`main.zig` refs corrected against source — emitInst :3062, emitModule :2201, emitModuleHeaderFile :2078, emitModuleFile :2323, emitMainWrapper :2237, emitFunctionSignature :1854, emitFunctionForwardDecl :1920, emitStdargInclude :1985, moduleHasVaInsts :1964, moduleQualifiedName :2035, ctypeGuardWrite :997, mangleLocalName :1838, mangleTempName :2349, c_incs list :1996-2013, dep-.h include :2121-2128, extern-name call site :4048, extern-no-fwd :1927, extern-no-body :2333, .loop_header :3071-3073, preamble :744 / main.zig:827-830, length guard :769, cincludeUnionAll call :832, LIR fn-list :543-615, C marker :710, FINAL_FLUSH :834, module name :731, sema comparison :540, lower enum_const :2207]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -19,7 +19,7 @@
 
 ### 1.1 2-Phase Output Architecture
 
-Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:2072`):
+Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:2201`):
 
 ```
 Phase 1: Type Headers (emitSpecialTypes)
@@ -152,11 +152,11 @@ Format: z<K>_<8-hex-digits>_<original-name>
 
 #### Temp Name Mangling
 
-`mangleTempName` (`c89_emit.zig:1667`): Format `zT_<temp_id>`. Used for hoisted temporaries in function bodies. No collision check needed — temp_ids are unique per function.
+`mangleTempName` (`c89_emit.zig:2349`): Format `zT_<temp_id>`. Used for hoisted temporaries in function bodies. No collision check needed — temp_ids are unique per function.
 
 #### Local Name Mangling
 
-`mangleLocalName` (`c89_emit.zig:1436`): If the name_id is a C89 keyword, prefix with `z_`. Otherwise return original name. Used for function parameters and local variables.
+`mangleLocalName` (`c89_emit.zig:1838`): If the name_id is a C89 keyword, prefix with `z_`. Otherwise return original name. Used for function parameters and local variables.
 
 ### 1.4 C89Emitter — Central Emitter State
 
@@ -223,7 +223,7 @@ When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by 
 
 ### 1.6 Type Emission — emitSpecialTypes
 
-`emitSpecialTypes` (`c89_emit.zig:1182`) drives type header output for the stdout single-file
+`emitSpecialTypes` (`c89_emit.zig:1232`) drives type header output for the stdout single-file
 path. For the multi-module path (`--output-dir`), the shared-header writer
 `emitSharedHeader` (`c89_emit.zig:1086`) performs the equivalent partition into
 `zig_special_types.h` (see §1.17):
@@ -249,7 +249,7 @@ emitSpecialTypes(emitter, reg):
 
 ### 1.7 Type Definition Emission
 
-`emitTypeDefinition` (`c89_emit.zig:1195`) dispatches by `TypeKind`:
+`emitTypeDefinition` (`c89_emit.zig:1573`) dispatches by `TypeKind`:
 
 | TypeKind | Emitter Function | Output |
 |----------|-----------------|--------|
@@ -300,7 +300,7 @@ Field constants are `#define`d for integer matching. Tagged union payload access
 
 ### 1.8 Function Emission
 
-#### emitFunctionSignature (`c89_emit.zig:1452`)
+#### emitFunctionSignature (`c89_emit.zig:1854`)
 
 ```
 /* <original-name> */
@@ -313,13 +313,13 @@ Field constants are `#define`d for integer matching. Tagged union payload access
 - Empty params → `(void)`, variadic → `(...)`
 - Opens `{` and increments indent
 - **Variadic externs get forward declarations (Option B, F5 2026-08-06):** the
-  extern-prototype guards (`emitModuleHeader` at `c89_emit.zig:1996` and the
+  extern-prototype guards (`emitModuleHeader` at `c89_emit.zig:1992` and the
   `:2143`-era twin) are `is_extern==0 OR is_variadic!=0`, so a variadic `extern
   fn printf(fmt, ...)` emits its C prototype (`int printf(unsigned char*, ...);`,
   name-passthrough) while non-variadic externs still rely on `@cInclude`'d
   headers.
 
-#### emitHoistedDecls (`c89_emit.zig:1684`)
+#### emitHoistedDecls (`c89_emit.zig:2366`)
 
 Emitted immediately after function signature, before body. Two passes:
 
@@ -355,14 +355,14 @@ emitFunctionBody:
 
 Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Since the TCO feature (F-S2 injects
 `loop_header(0)` as the first entry-block inst, lower.zig:4350; F-S3 activates the `.loop_header`
-arm, c89_emit.zig:2857), **every function** also gets a `z_bb_0:` label for its entry block,
+arm, c89_emit.zig:3071-3073), **every function** also gets a `z_bb_0:` label for its entry block,
 emitted after the hoisted temp decls and local decls and before the first entry-block statement:
 
 ```
 ret_zF_fn(params) {
     <hoisted temp decls zT_N;>      (emitHoistedDecls)
     <local decls name;>             (emitFunctionBody decl_local hoist)
-    z_bb_0:                         ← .loop_header arm (c89_emit.zig:2857)
+    z_bb_0:                         ← .loop_header arm (c89_emit.zig:3071-3073)
     <bb0 entry-block insts>
 z_bb_1:
     <bb1 insts>
@@ -377,7 +377,7 @@ unused-`z_bb_0:` label in functions with no tail call produces a `-Wunused-label
 
 ### 1.9 LirInst → C89 Emission Table
 
-Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:2272`):
+Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3062`):
 
 | LirInst | C89 Output | Line |
 |---------|-----------|------|
@@ -448,8 +448,8 @@ raw `(type)` cast when the source type is unknown. The 19 helpers are `static` i
 `sf/src/include/zig_runtime.h` (per-TU, oracle pattern) + `extern` in
 `sf/src/include/zig_runtime.c`; the message is `"integer cast overflow in
 @intCast"` and the unchecked `(type)` path is unchanged. **`stdarg.h` gating
-(F5, 2026-08-06):** `emitStdargInclude` (`c89_emit.zig:1959`) emits `#include
-<stdarg.h>` only when `moduleHasVaInsts` (`:1938`) finds a `va_start`/`va_arg`/
+(F5, 2026-08-06):** `emitStdargInclude` (`c89_emit.zig:1985`) emits `#include
+<stdarg.h>` only when `moduleHasVaInsts` (`:1964`) finds a `va_start`/`va_arg`/
 `va_end` LirInst in the TU — gated on actual `va_*` usage (not `is_variadic`), so
 mud/gol's anytype-print (`is_variadic=1`, no `va_*`) stays byte-identical. The
 include is emitted at all 3 sites (`emitModuleHeader` `:1972`,
@@ -461,19 +461,19 @@ stack frame — it is semantically a tail call but not a jump. Only **self-recur
 O(1) stack (rebind assigns + `goto z_bb_0;` back-edge to the entry label). Real frame-reusing
 cross-function tail calls (jump to the callee without a new frame) require a backend that can emit a
 proper tail-jump; until such an asm backend exists, cross-function TCO is call+ret. The `.tail_call`
-written-type-scan case (`c89_emit.zig:2376`) marks the result temp as a call-result (written_flag=2)
+written-type-scan case (`c89_emit.zig:2584`) marks the result temp as a call-result (written_flag=2)
 so it is not flagged UNWRITTEN by the decl pass.
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule` (`c89_emit.zig:2072`) drives one module's output for the **stdout single-file
+`emitModule` (`c89_emit.zig:2201`) drives one module's output for the **stdout single-file
 path only** (bare `--dump-c89`). [updated: 2026-08-01] When `--dump-c89 --output-dir DIR` is
 set, `phase_C89Emission` instead emits `zig_special_types.h` once via `emitSharedHeader` and
 loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
 (see §1.17); `emitModule` is unchanged for the stdout path. Note that `phase_C89Emission`
-(`main.zig:610`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
+(`main.zig:709`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
 fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
-`c89_emit.zig:722-727`), flushes it (`main.zig:723-726`), then calls `emitModule` with the
+`c89_emit.zig:744`), flushes it (`main.zig:829-830`), then calls `emitModule` with the
 hardcoded module name `"output"` (`main.zig:627`) — hence `/* Module: output */` in every dump.
 
 ```
@@ -503,7 +503,7 @@ When a public function named `main` is found, an additional `int main(void)` wra
 | `error_union` (non-void payload) | `int main(void) { ... return result.is_error ? result.data.err : (int)result.data.payload; }` |
 | normal | `int main(void) { return (int)zF_<hash>_main(); }` |
 
-#### emitModuleHeader (`c89_emit.zig:1558`)
+#### emitModuleHeader (`c89_emit.zig:1992`)
 
 ```
 /* Module: <name> */
@@ -517,13 +517,13 @@ When a public function named `main` is found, an additional `int main(void)` wra
 
 C-includes: if starts with `<`, emit raw (`#include <foo.h>`). Otherwise wrap in quotes (`#include "foo.h"`).
 
-### 1.11 emitModuleFooter (`c89_emit.zig:1595`)
+### 1.11 emitModuleFooter (`c89_emit.zig:2030`)
 
 ```
 /* EOF */
 ```
 
-### 1.12 emitFunctionForwardDecl (`c89_emit.zig:1518`)
+### 1.12 emitFunctionForwardDecl (`c89_emit.zig:1920`)
 
 Emits `return-type fn-name(param-types...);` — same mangling as signature but without param names.
 
@@ -619,14 +619,14 @@ Resolves field access for `.assign_field`:
 
 ### 1.17 Multi-Module Emission (`--output-dir`) — [updated: 2026-08-01]
 
-With `--dump-c89 --output-dir DIR`, `phase_C89Emission` (`main.zig:610`) switches from the single
+With `--dump-c89 --output-dir DIR`, `phase_C89Emission` (`main.zig:709`) switches from the single
 stdout stream to **per-module file emission**. Output set: `DIR/<qualified>.c` (one per module) +
 `DIR/<qualified>.h` (one per module) + `DIR/zig_special_types.h`. Bare `--dump-c89` (no
 `--output-dir`) keeps the stdout single-file path (§1.10) byte-identical — the two paths are
 branched on the CLI, never mixed.
 
 - **Qualified filename scheme (F-S7)** — output stems come from `moduleQualifiedName`
-  (`c89_emit.zig:1926`): `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the
+  (`c89_emit.zig:2035`): `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the
   module path's last `/` component with `.zig`/`.z98` stripped (clamped to 64 chars) and
   `<FNV1a8>` is the 8-uppercase-hex FNV-1a hash of the **full module path**
   (`hash_mod.fnv1a` + `writeHex`, the same pair the mangler uses). **NO module_id** in the
@@ -634,7 +634,7 @@ branched on the CLI, never mixed.
   dirs silently overwrote each other in `DIR/`); every filename is unique per path, so a module
   importing two same-basename deps now gets two distinct `.h` files and two distinct `#include`
   lines (previously the same `#include "util.h"` was emitted twice).
-- **Length guard (F-S7)** — `main.zig:665` checks `od.len + 1 + base.len + 3 > 511` before
+- **Length guard (F-S7)** — `main.zig:769` checks `od.len + 1 + base.len + 3 > 511` before
   constructing each path; if exceeded, `error: output filename too long` + `pal.exit(1)`. This
   replaces the old silent truncation at `main.zig:685`/`:712` (bytes were dropped past 510/511
   with no diagnostic, and the truncated filename mismatched the include chain).
@@ -665,23 +665,23 @@ branched on the CLI, never mixed.
   target support.
 - **Guard scheme** — every type definition is wrapped
   `#ifndef ZIG_<TAG>_<cname> / #define ZIG_<TAG>_<cname> / <def> / #endif`. Tag from
-  `ctypeGuardWrite` (`c89_emit.zig:951`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
+  `ctypeGuardWrite` (`c89_emit.zig:997`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
   `ZIG_ERROR_SET_`, `ZIG_SLICE_`, `ZIG_OPTIONAL_`, `ZIG_ERRORUNION_`, `ZIG_ARRAY_`,
   `ZIG_FNPTR_`, `ZIG_I64_`, `ZIG_U64_`, fallback `ZIG_TYPE_`.
-- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:1969`): module guard
+- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:2078`): module guard
   `ZIG_MODULE_<UPPER(qualified)>_H` (the **qualified** stem uppercased, non-alnum → `_`; since
   F-S7 the stem already embeds the unique path hash, so guards auto-unique even for two
   same-basename modules — e.g. `ZIG_MODULE_UTIL_7F9D0FD1_H`); includes `zig_compat.h`
   + `zig_special_types.h`; the module's own `@cInclude` directives (`entry.c_includes`,
   per-module — NOT the global `cincludeUnionAll` union); each direct-import dep's `.h` by its
   **qualified** name (`#include "<moduleQualifiedName(emitter,d)>.h"`, skipping self —
-  `c89_emit.zig:1983`); owned CLS:p
+  `c89_emit.zig:2121-2128`); owned CLS:p
   type full-definitions (name_id≠0, `module_id==M.id`, struct/TU/union/enum/error_set,
   `pointer_only_map`, not in `shared_set` — each guarded); fn fwd-decls (non-extern).
-- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2193`): `#include "<qualified>.h"`, then the
+- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2323`): `#include "<qualified>.h"`, then the
   module's own fn bodies (externs skipped; `switch_cases`/`dl_hoisted` reset per fn). The
   `int main(void)` wrapper is emitted only for `module_id==0`'s public `main`
-  (`emitMainWrapper`, `c89_emit.zig:2107`).
+  (`emitMainWrapper`, `c89_emit.zig:2237`).
 - **Embedded build-script templates are DEAD CODE** — `emitBuildTargetSh` (`c89_emit.zig:4482`) /
   `emitBuildTargetBat` (`c89_emit.zig:4495`) / `emitBuildTargetOwcBat` are never called by any
   pipeline path (explicit `// Reference-only:` comment at `c89_emit.zig:4478`). They exist as
@@ -691,8 +691,8 @@ branched on the CLI, never mixed.
 - **Module→file emission loop — NO silent module drop (verified 2026-08-08).** The multi-module
   branch of `phase_C89Emission` loops `mods = moduleRegistryGetModules(ctx.module_reg)`
   (`main.zig:760`) and, for each registered module, emits one `.h`
-  (`emitModuleHeaderFile`, `main.zig:796` / `c89_emit.zig:1969`) and one `.c`
-  (`emitModuleFile`, `main.zig:819` / `c89_emit.zig:2193`). The loop is over the module registry,
+  (`emitModuleHeaderFile`, `main.zig:796` / `c89_emit.zig:2078`) and one `.c`
+  (`emitModuleFile`, `main.zig:819` / `c89_emit.zig:2323`). The loop is over the module registry,
   so **every registered module is emitted — there is no drop path**. Verified on
   `sf/build/out_release/zig1` (2026-08-08): 8 module-graph shapes probed (linear chain, diamond,
   import-only chain, type-only, import cycle, const re-export, 4-deep chain, and json_parser's
@@ -726,7 +726,7 @@ branched on the CLI, never mixed.
     *nested* `field_access` (base = `field_access(json, JsonValueTag)`), so the ident branch is
     skipped and the generic dispatch (lines 374-463) handles struct/union/tagged_union/module/
     slice/error_set — **no `enum_type` case** → falls to the `else` at line 459 → returns
-    `TYPE_VOID`. Comparison (`semanticAnalyzerResolveComparison`, line 526) therefore sees
+    `TYPE_VOID`. Comparison (`semanticAnalyzerResolveComparison`, line 540) therefore sees
     `lhs=Tag, rhs=VOID` (marker `CPVl23r1`).
   - **Lowering root** (`lower.zig:1953` field_access): the enum-member path (lines 1960-2015,
     which emits `.enum_const`) also fires only for an `ident_expr` base. For `json.JsonValueTag`,
@@ -753,7 +753,7 @@ branched on the CLI, never mixed.
     member-literal case was added to the generic base-type dispatch in `semanticAnalyzerResolveFieldAccess`
     (semantic_analyzer.zig:459 — before the `else`; resolves `mod.Type.Member` to the member value
     via `en_items`/`em_items`, mirroring the same-module ident_expr path at :260-271) and to
-    `lower.zig`'s field-access generic base-type path (lower.zig:2193 — after the struct/union/TU
+    `lower.zig`'s field-access generic base-type path (lower.zig:2207 — after the struct/union/TU
     branch; emits `.enum_const` with the member ordinal, mirroring :1981-1999). The defining
     module's enum is already in the shared type registry, so the member lookup works cross-module.
     Post-fix: `zT_missing_fwd_xmod/` dump rc=0, gcc compile rc=0, run rc=0 (`zT_3 =
@@ -895,7 +895,7 @@ pub fn nameManglerInit() NameMangler { return .{ .counter = 0 }; }
 LirFunction list (per module)
     │
     ▼
-emitModule(c89_emit.zig:2072)
+emitModule(c89_emit.zig:2201)
     │
     ├─ pointer_only_map populated from caller-provided ids
     │
@@ -1054,10 +1054,10 @@ sub-pass split matches the `pointer_only` classification from P3.
 
 ### 6.3 @cInclude Lists & Dedup (Q3)
 
-`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:728`) dedups by interned name_id
+`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:832`) dedups by interned name_id
 across ALL modules; `emitModuleHeader` emits `zig_compat.h` + `zig_special_types.h` then the
-deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"..."` quoted
-(`:1570-1578`).
+deduped list (`[source]` `c89_emit.zig:1996-2013`). `<...>` form emitted raw, `"..."` quoted
+(`:2006-2013`).
 
 | Example | @cInclude directives (by module) | Emitted module-header includes | Dedup |
 |---------|----------------------------------|-------------------------------|-------|
@@ -1067,7 +1067,7 @@ deduped list (`[source]` `c89_emit.zig:1562-1581`). `<...>` form emitted raw, `"
 | lisp_interpreter_curr | main.zig:11-12 zig_runtime.h, `<stdio.h>` | `zig_runtime.h` + `<stdio.h>` (lisp:100-101) | no dups |
 
 **Observation**: `zig_compat.h` and `zig_runtime.h` appear TWICE in every output — once in the
-fixed `emitIncludes` preamble (`c89_emit.zig:722-727`, flushed from `main.zig:723-726`) and
+fixed `emitIncludes` preamble (`c89_emit.zig:744`, flushed from `main.zig:829-830`) and
 once in the module header (`[c89]` mud_server.c:1-2 vs :45-48). Dedup applies only WITHIN the
 collected `@cInclude` list, not against the preamble — benign (include guards), undocumented
 elsewhere.
@@ -1075,7 +1075,7 @@ elsewhere.
 ### 6.4 Function Body Emission Order (Q4)
 
 Emission iterates `fns` in list order, skipping externs (`[source]` `c89_emit.zig:1607-1611`).
-The list is built in module-registration order × source decl order (`[source]` `main.zig:513-608`:
+The list is built in module-registration order × source decl order (`[source]` `main.zig:543-615`:
 per module, per top-level `fn_decl`, `lowerFn` appended to `ctx.lir_fns`). Therefore
 **emission order == LIR function order == source declaration order**.
 
@@ -1110,10 +1110,10 @@ before the fn loop, `[source]` `c89_emit.zig:1605-1611`) and observed in all 4 o
 | json_parser | :60 | :89 |
 | lisp_interpreter_curr | :96 | :150 |
 
-Marker sequence `[markers]`: `C` (main.zig:611) → `FL:p49`/`FE:p0` (preamble flush, main.zig:726)
-→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:730; exactly 1
-per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:723-726) flushed
-before `emitModule`; the module name is hardcoded `"output"` (main.zig:627) — hence
+Marker sequence `[markers]`: `C` (main.zig:710) → `FL:p49`/`FE:p0` (preamble flush, main.zig:829-830)
+→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:834; exactly 1
+per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:827-830) flushed
+before `emitModule`; the module name is hardcoded `"output"` (main.zig:731) — hence
 `/* Module: output */` in every file.
 
 ### 6.6 extern "c" Functions (Q6, mud_server)
@@ -1125,9 +1125,9 @@ the output** (grep `extern` → 0 hits in mud_server.c `[c89]`). Prototypes come
 `zT_97 = plat_accept(zT_96);` (:798), `zT_159 = plat_socket_fd_isset(zT_153, zT_154);` (:954),
 `plat_close_socket(zT_145);` (:926).
 
-Mechanism `[source]`: signature uses original name if `is_extern` (`c89_emit.zig:1462`); externs
-get no fwd decl (`:1587`) and no body (`:1611`); call sites use the original name
-(`:3142`). Discarded extern results: `_ = plat_send(...)` → `zT_126 = plat_send(...);
+Mechanism `[source]`: signature uses original name if `is_extern` (`c89_emit.zig:1864`); externs
+get no fwd decl (`:1927`) and no body (`:2333`); call sites use the original name
+(`:4048`). Discarded extern results: `_ = plat_send(...)` → `zT_126 = plat_send(...);
 (void)zT_126;` (mud_server.c:883-884, matches `.store_local` `_`→`(void)val;`).
 
 **Extern-return wrapping unexercised**: every extern in the 4 examples returns plain i32/void,

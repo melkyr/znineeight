@@ -1,4 +1,4 @@
-# 00 — Shared Infrastructure [updated: 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget)]
+# 00 — Shared Infrastructure [updated: 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget); F7 line-ref re-verification (main.zig:147 interner, :155-157 type_db, :506-507 StaticAnalyzers sandResetPeak, :158 AstStore)]
 
 > Covers: allocator, string interner, diagnostics, source manager, PAL, growable arrays, panic handler, utility modules
 > Cross-ref: [INDEX.md](INDEX.md) §G (arena tier table)
@@ -92,7 +92,7 @@ Arena layout is strictly linear — no free, no coalesce, no reuse of freed spac
 | `ensureCapacityEntries` | 38 | private | Same pattern but for `InternEntry` arrays. Element size = 16 bytes (text ptr + hash u32 + next u32 + padding). | `appendEntry` | `alloc_mod.sandAlloc` | `items`, `len`, `capacity`, arena | Same 2x growth, min 8. | None [inference] |
 | `appendBucket` | 52 | private | Ensure capacity for +1, then append `value` at `[*][len]`. | `stringInternerInit`, `stringInternerIntern` | `ensureCapacityBuckets` | bucket array, len | Wraps ensure+store+increment pattern. | None [inference] |
 | `appendEntry` | 58 | private | Same pattern for InternEntry. | `stringInternerIntern` | `ensureCapacityEntries` | entry array, len | Same wrapper pattern. | None [inference] |
-| `stringInternerInit` | 64 | pub | Create interner with `bucket_count` initial buckets (all set to 0 = empty). Entry 0 is the sentinel (empty string, hash 0, next 0). | `main.zig` setup (`main.zig:137`) | `appendBucket`, `appendEntry` | interner fields, bucket/entry arrays | Entry 0 reserved as null/sentinel. All buckets initially empty. | None [inference] |
+| `stringInternerInit` | 64 | pub | Create interner with `bucket_count` initial buckets (all set to 0 = empty). Entry 0 is the sentinel (empty string, hash 0, next 0). | `main.zig` setup (`main.zig:147`) | `appendBucket`, `appendEntry` | interner fields, bucket/entry arrays | Entry 0 reserved as null/sentinel. All buckets initially empty. | None [inference] |
 | `stringInternerIntern` | 88 | pub | Intern a string. Hash via `fnv1a`, find bucket, walk chain for match. If found, return existing ID. Otherwise: copy to arena, append entry (head-insert into bucket chain), grow buckets if load factor > 0.5. Emits markers for trace. | All phases needing string dedup. Called by `diagnosticCollectorAdd`, `diagnosticBuilderMakeMsg`, lexer/parser. | `hash_mod.fnv1a`, `mem_mod.mem_eql`, `stringInternerCopyToArena`, `appendEntry`, `stringInternerGrowBuckets`, `pal.markerWriteInt` | bucket/entry arrays, hash chain | FNV-1a hash. Open chaining. Bucket doubling at 50% load. String copied to arena (no original ref kept). | `INT:tl` (text len), `INT:t0` (first char), `INT:dup` (existing ID), `INT:new` (new ID) [inference] |
 | `stringInternerGet` | 124 | pub | Lookup interned string by ID. Indexes into entries array, returns `entry.text`. ID 0 returns empty string (sentinel). | `diagnosticCollectorPrintAll`, `diagnosticBuilderMakeMsg` | (none) | entries array | O(1) lookup. | None [inference] |
 | `stringInternerCopyToArena` | 128 | private | Copy string bytes into arena (byte-level alignment=1). Returns raw ptr. | `stringInternerIntern` | `alloc_mod.sandAlloc` | arena | Byte copy, no null terminator. | None [inference] |
@@ -462,8 +462,8 @@ Combined: 14 MB static BSS (DEV_MAX_MEM=RELEASE_MAX_MEM=16 MB)
 > (`--dump-c89 sf/src/main.zig`, 37-module / 24,790-line closure) OOMs the 1.5 MB
 > module arena in phase_ImportResolution (`OOM: used=938560 new=1724992
 > total=1572864`). The module arena is a **program-lifetime cross-module store**
-> (single shared `AstStore` main.zig:159 + `resolved_types`/`coercion_table`/
-> `lir_fns`/`global_decls`/maps main.zig:161-192); it is never reset and every
+> (single shared `AstStore` main.zig:158 + `resolved_types`/`coercion_table`/
+> `lir_fns`/`global_decls`/maps main.zig:162-192); it is never reset and every
 > phase iterates all modules, so per-module reset is infeasible. Measured zig1
 > import-AST density ≈ 170 B/line (c89_emit closure 11,090 lines needs ≥1.88 MB);
 > cumulative module-arena need ≈ 4.2 MB (import) to ~7.3 MB (full pipeline).
@@ -549,7 +549,7 @@ the tier sizing is ample:
 debug build — identical to release `--track-memory` final values):
 
 1. **`sandResetPeak` (allocator.zig:51) masks earlier scratch usage.** `phase_StaticAnalyzers`
-   calls `sandReset` + `sandResetPeak` at entry (`main.zig:472-473`), zeroing the scratch
+   calls `sandReset` + `sandResetPeak` at entry (`main.zig:506-507`), zeroing the scratch
    `peak`. The final `track-memory` `scr=` therefore reports only the max of LIR lowering /
    C89 emission scratch (phases 6-8), **not** the pipeline-wide high-water mark. Pre-reset
    scratch peaks (phases 1-5) were ~100K (mud/gol/json) and ~208K (lisp) — all below the
@@ -565,7 +565,7 @@ debug build — identical to release `--track-memory` final values):
    `sandAlloc`; `trackingAlloc*`/`trackingReset` exist in `allocator.zig:121-164` but no phase
    wires one in. Per-phase peaks were obtained in P10 by reading `peak` directly, not via
    `TrackingAllocatorReport`.
-6. The **`TypeRegistry` type_db sand** is a separate 128KB **stack** buffer (`main.zig:145-146`),
+6. The **`TypeRegistry` type_db sand** is a separate 128KB **stack** buffer (`main.zig:155-157`),
    not part of `CompilerAlloc`; `track-memory` does not include it.
 
 ---
