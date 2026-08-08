@@ -456,6 +456,20 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
+    } else if (base_ty.kind == type_mod.TypeKind.enum_type) {
+        var ep3 = self.registry.en_items[@intCast(usize, base_ty.payload_idx)];
+        var estart3: usize = @intCast(usize, ep3.members_start);
+        var ecount3: usize = @intCast(usize, ep3.members_count);
+        var ei3: usize = 0;
+        while (ei3 < ecount3) : (ei3 += 1) {
+            if (self.registry.em_items[estart3 + ei3].name_id == field_name_id) {
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, base_type_id);
+                return base_type_id;
+            }
+        }
+        var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
     } else {
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);

@@ -2190,6 +2190,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
             var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
             }
+            } else if (kind == type_mod.TypeKind.enum_type) {
+                var ep2 = self.ctx.registry.en_items[@intCast(usize, ty.payload_idx)];
+                var estart2: usize = @intCast(usize, ep2.members_start);
+                var ecount2: usize = @intCast(usize, ep2.members_count);
+                var ei2: usize = 0;
+                while (ei2 < ecount2) : (ei2 += 1) {
+                    var member2 = self.ctx.registry.em_items[estart2 + ei2];
+                    if (member2.name_id == field_name_id) {
+                        var eftid2 = nextTemp(self, type_id);
+                        emitInst(self, LirInst{ .enum_const = .{ .value = @intCast(u64, member2.value), .result = eftid2, .type_id = type_id, .member_name_id = member2.name_id } });
+                        return eftid2;
+                    }
+                }
             }
         }
         if (fa_box[0] == type_mod.TYPE_VOID) { var gape_frt: []const u8 = "GAPE:frt\n"; pal.markerWrite(gape_frt); }

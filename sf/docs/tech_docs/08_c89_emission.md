@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348)]
+# 08 — C89 Emission [updated: 2026-08-08 — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; 4 MD5 gates byte-identical; test_analyzer_bin PASS; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348)]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -687,6 +687,150 @@ branched on the CLI, never mixed.
   pipeline path (explicit `// Reference-only:` comment at `c89_emit.zig:4478`). They exist as
   frozen templates only; the real multi-module build flow is the glob-based gcc recipe in
   QUICK_REF/NOTES.md.
+
+- **Module→file emission loop — NO silent module drop (verified 2026-08-08).** The multi-module
+  branch of `phase_C89Emission` loops `mods = moduleRegistryGetModules(ctx.module_reg)`
+  (`main.zig:760`) and, for each registered module, emits one `.h`
+  (`emitModuleHeaderFile`, `main.zig:796` / `c89_emit.zig:1969`) and one `.c`
+  (`emitModuleFile`, `main.zig:819` / `c89_emit.zig:2193`). The loop is over the module registry,
+  so **every registered module is emitted — there is no drop path**. Verified on
+  `sf/build/out_release/zig1` (2026-08-08): 8 module-graph shapes probed (linear chain, diamond,
+  import-only chain, type-only, import cycle, const re-export, 4-deep chain, and json_parser's
+  star) — ALL registered modules emit `.c`, gcc compile+link+run rc=0. The
+  `mod_silent_drop_xmod` repro (3-module transitive chain) emits `main`/`lib_b`/`lib_a` and links
+  clean; it is kept as a **regression guard** for the (false) D2 "silent module drop" theory.
+  **The original D2 premise is FALSE**: no registered module is ever silently dropped.
+- **Orphan-module handling — un-imported files are never emitted (correct, matches oracle).** A
+  `.zig` file with NO incoming `@import` edge is never added to the module registry:
+  `phase_ImportResolution` (`main.zig:262-270`) registers only the CLI entry module
+  (`moduleRegistryAddModule`, `main.zig:266`), then `moduleRegistryResolveImports`
+  (`import_resolver.zig:83-144`) enqueues modules **only** via import edges
+  (`import_resolver.zig:134-140`). Orphan files are silently skipped by the emission loop.
+  Example: `examples/z98/json_parser/arena.zig` is never `@import`ed (grep confirms) → no
+  `arena_*.c` is emitted. The zig0 oracle behaves identically (emits `main.c`/`json.c`/`file.c`,
+  NOT `arena.c`). This is correct behavior, not a compiler defect.
+- **Cross-module enum-literal comparison gap — I3 (2026-08-08): FIXED (F3). `'zT_XX' undeclared`
+  in the importing module's `.c` was the symptom.** Repro `repro/mi_matrix/zT_missing_fwd_xmod/`
+  (types.zig declares
+  `pub const Tag = enum { Null, Boolean, Number }`; main.zig does `tag == t.Tag.Null`) and
+  `examples/z98/json_parser_workaround` (6 sites: `val.tag == json.JsonValueTag.Null` etc.)
+  fail gcc with `'zT_2' undeclared` / `'zT_10'/'zT_16'/'zT_28'/'zT_34'/'zT_46'/'zT_91'
+  undeclared`. **NOT a header forward-decl gap**: the importing `.h` already `#include`s the
+  defining module's `.h` and the enum typedef (`zT_F8835433_Tag` etc.) IS in scope. The defect
+  is a **sema/lowering gap** that makes the enum-literal RHS resolve to `TYPE_VOID`, so the
+  emitted body references a VOID-typed temp that is never declared (c89_emit skips VOID temps,
+  `c89_emit.zig:2897`) and never assigned.
+  - **Semantic root** (`semantic_analyzer.zig:232`, `semanticAnalyzerResolveFieldAccess`): the
+    `enum_type` member lookup (lines 260-271) fires ONLY when `base_node.kind == ident_expr`
+    (same-module `Tag.Null`). A cross-module qualified literal `json.JsonValueTag.Null` is a
+    *nested* `field_access` (base = `field_access(json, JsonValueTag)`), so the ident branch is
+    skipped and the generic dispatch (lines 374-463) handles struct/union/tagged_union/module/
+    slice/error_set — **no `enum_type` case** → falls to the `else` at line 459 → returns
+    `TYPE_VOID`. Comparison (`semanticAnalyzerResolveComparison`, line 526) therefore sees
+    `lhs=Tag, rhs=VOID` (marker `CPVl23r1`).
+  - **Lowering root** (`lower.zig:1953` field_access): the enum-member path (lines 1960-2015,
+    which emits `.enum_const`) also fires only for an `ident_expr` base. For `json.JsonValueTag`,
+    the module branch (lines 2016-2061) returns `gtemp = nextTemp(res_type_id)` — an enum-typed
+    temp with **no init inst** (this is the phantom declared-but-never-assigned `zT_1`). The
+    outer `.Null` then hits the generic base-type path (lines 2064-2196, pre-fix refs), which has no
+    enum_type/tagged_union member-literal case → `tid = nextTemp(TYPE_VOID)` (line 2143, from
+    `fa_box[0]`==VOID) → VOID temp returned, never written. Emission of `tag == zT_void` then
+    references an undeclared temp.
+  - **Type category of the gap:** **plain `enum` (`enum_type`) literals accessed through a
+    qualified cross-module path in a VALUE/comparison position.** Struct-by-value params work
+    (the typedef is forwarded via the fn-signature fwd-decl path — verified `dist(p: t.Point)`
+    emits `zT_EAA8EF31_Point` cleanly); `union(enum)` tagged-union literals in `switch` cases
+    work (they go through the switch enum-literal path, e.g. lisp_curr + working json_parser).
+    A cross-module tagged-union literal in a `==` (`.Null` on `t.Val`) additionally SEGVs the
+    compiler (separate crash: `typeRegistryGetStructFields` via `lower.zig:2174`-ish path) — a
+    related but distinct defect.
+  - **Blast radius:** only modules that compare a plain cross-module enum member against a value
+    (`== t.Tag.X`) break. lisp_curr (10 modules), mud_server, game_of_life, working
+    `json_parser` all compile with 0 gcc errors — they never form this pattern (lisp/json use
+    `switch` over `union(enum)`; mud/gol have no cross-module plain-enum compares).
+    `json_parser_workaround` is the only gated example affected; the `zT_missing_fwd_xmod`
+    repro is the minimal guard. **Fix (F3, 2026-08-08 — Option A implemented):** an `enum_type`
+    member-literal case was added to the generic base-type dispatch in `semanticAnalyzerResolveFieldAccess`
+    (semantic_analyzer.zig:459 — before the `else`; resolves `mod.Type.Member` to the member value
+    via `en_items`/`em_items`, mirroring the same-module ident_expr path at :260-271) and to
+    `lower.zig`'s field-access generic base-type path (lower.zig:2193 — after the struct/union/TU
+    branch; emits `.enum_const` with the member ordinal, mirroring :1981-1999). The defining
+    module's enum is already in the shared type registry, so the member lookup works cross-module.
+    Post-fix: `zT_missing_fwd_xmod/` dump rc=0, gcc compile rc=0, run rc=0 (`zT_3 =
+    zT_F8835433_Tag_Null;` is now emitted); `json_parser_workaround/` gcc compile rc=0 (all 6
+    `zT_10/16/28/34/46/91` resolved); mud/gol/lisp/json 4 MD5 gates byte-identical;
+    test_analyzer_bin PASS. Option B (whitelist fwd-decl of enum typedefs in importing headers)
+    was rejected — it does NOT fix the real defect (the typedef is already in scope).
+- **Cross-module tagged-union `==` / member-literal SEGV — I6 (2026-08-08).** Repro
+  `repro/mi_matrix/tagged_union_cmp_xmod/` (`lib.zig`: `pub const Shape = union(enum){ Circle: i32,
+  Square: i32, Triangle: i32 }`; `main.zig`: `if (s == lib_mod.Shape.Circle)` in a fn param of type
+  `lib_mod.Shape`) **SEGVs zig1 in `phase_LIRLowering`** (ASan DEADLYSIGNAL rc=1, 0 `.c` emitted).
+  `[gdb]`/`[asan]` backtrace: `#0 typeRegistryGetStructFields` ← `#1 lowerExprImpl` ← `lowerExpr`
+  ← `lowerStmt` ← `lowerFn` ← `phase_LIRLowering`.
+  - **Crash locus:** `lower.zig:2180` — the generic base-type field-access branch (lines 2174-2180)
+    routes `tagged_union_type` into the struct/union/TU bucket but calls
+    `typeRegistryGetStructFields` (`type_registry.zig:782-787`) for anything that is NOT plain
+    `union_type`. `typeRegistryGetStructFields` does `self.st_items[ty.payload_idx]` — a tagged
+    union's `payload_idx` indexes `tu_items`, NOT `st_items`, so this reads a garbage
+    StructPayload → garbage `fields_start`/`fields_count` → `fe_items[fstart..fstart+fcount]` is an
+    out-of-range slice → SEGV (zero-page read).
+  - **Mechanism (cross-module member literal):** `lib_mod.Shape.Circle` parses as *nested*
+    `field_access(field_access(lib_mod, Shape), Circle)`. The outer `.Circle` has base = a
+    `field_access` (NOT `ident_expr`), so the same-module member path is skipped in BOTH sema and
+    lower (sema `semantic_analyzer.zig:240` ident branch; lower `lower.zig:1956`). The generic
+    base-type dispatch (`lower.zig:2064-2196`) then sees a base whose resolved type is the
+    tagged_union type and enters the struct/union/TU branch at line 2174 → line 2180 →
+    `typeRegistryGetStructFields(TU_tid)` → SEGV. The same-module `Shape.Circle` control works
+    ONLY because its base is an `ident_expr` resolving to a `type_alias` (`lower.zig:1960-1979`
+    tagged_union branch → `emitTaggedUnionInit`), never reaching line 2180.
+  - **Variant matrix (all measured on `sf/build/out_release/zig1`):**
+    | variant | program | zig1 | zig0 oracle |
+    |---|---|---|---|
+    | same-module `s == Shape.Circle` | union declared in-file | rc=0, emits `zT_2 = s == zT_1;` — **gcc-invalid** (`binary ==` on two `Shape` structs) | **REJECTS** cleanly (`error: type mismatch`, rc=1) |
+    | cross-module `var x = lib_mod.Shape.Circle;` | member literal, no `==` | **SEGV** rc=1 | accepts (emits tag-enum value `enum Shape_Tag x = Shape_Tag_Circle;`, gcc-clean) |
+    | cross-module `s == lib_mod.Shape.Circle` | the repro | **SEGV** rc=1 | **REJECTS** cleanly (rc=1) |
+    | same-module TU VALUE payload access `s.Circle` | `var v = s.Circle;` | **SEGV** rc=1 | accepts (emits `v = s.data.Circle;`, gcc-clean) |
+  - **Findings:** (1) the crash is NOT `==`-specific and NOT even cross-module-specific — ANY
+    field access whose resolved base type is a tagged_union and which is NOT the same-module
+    `ident_expr`→`type_alias` member path hits lower.zig:2180 and SEGVs (includes same-module TU
+    VALUE payload access `s.Circle`). (2) The `==` form is a SEPARATE defect: even same-module,
+    union `==` emits gcc-invalid C (the emitter has NO union-equality path — `BIN_EQ` just emits
+    `lhs == rhs` in C; `c89_emit.zig:3708`). (3) sema silently resolves `union == union` to
+    `TYPE_VOID` with NO diagnostic (`semanticAnalyzerResolveComparison`, `semantic_analyzer.zig:563-568`
+    returns VOID for same-type non-bool/non-pointer) — so the compiler neither rejects nor emits
+    valid C; it just falls through to lowering and crashes.
+  - **Oracle reference (fix-target adjudication):** zig0 REJECTS `union == member` with a clean
+    type mismatch (`invalid operands for comparison operator '==': 'union Shape' and
+    'comptime_int'`) — same-module AND cross-module (verified). It does NOT support union `==` at
+    all. Post-fix zig1 must therefore NOT SEGV; the (a)-vs-(b) ruling: **(b) reject `==` on union
+    types gracefully in sema (green-guard, matching zig0)** is the oracle-matching target; (a)
+    "emit valid C for union `==`" is NOT supported by the oracle and the emitter has no
+    union-equality path (even the same-module form emits invalid C today). The lower.zig:2180
+    SEGV fix (add a `tagged_union_type` case to the generic field-access dispatch so member
+    literals/payload access lower correctly) is REQUIRED REGARDLESS, because valid programs
+    (`var x = lib.Shape.Circle;`, `s.Circle`) crash today and the oracle accepts them. Same-module
+    `==` invalid-C emission is part of the same defect and should be rejected by the (b) fix too.
+  - **Blast radius:** gates mud/gol/lisp/json use tagged-union `switch` (works, lower's
+    switch-case path), never `==` on union values (`builtins.zig:124` `res = a == b` compares
+    `*Value` POINTERS, not union payloads — unaffected). No gated example flips with either the
+    crash fix or the `==` rejection. Corpus: only `tagged_union_cmp_xmod` (CRASH) + hypothetical
+    same-module `s == Shape.Circle` (currently gcc-invalid, would become a green-guard). No OK
+    repro uses cross-module TU member `==` today.
+- **Runtime-symbol gap (json_parser case) — defect class (b), NOT an emission defect.** `json.zig`
+  / `file.zig` call `extern fn arena_alloc_default(size: usize) *void`
+  (`json.zig:253`, `file.zig:25`; `examples/zig0/json_parser` identical). Externs are
+  link-time-provided — the compiler never emits their definitions. The symbol IS declared in
+  `sf/src/include/zig_runtime.h:21` (and `extern void* zig_default_arena` at `:22`), IS defined in
+  the legacy `src/runtime/zig_runtime.c` (`zig_default_arena` at `:31`; `arena_alloc_default` at
+  `:154-156`; documented runtime API — `docs/reference/runtime_api.md:38-48`), but is **MISSING
+  from `sf/src/include/zig_runtime.c`** (0 arena matches in 210 lines vs 365 legacy). Standard
+  QUICK_REF-recipe link fails `undefined reference to arena_alloc_default` (5 refs: `json.c` ×4 +
+  `file.c` ×1); substituting the legacy `src/runtime/zig_runtime.c` object links and RUNS correctly
+  (rc=0, parses test.json) — this is the workaround json_parser/NOTES.md already documents. The
+  fix belongs in `sf/src/include/zig_runtime.c` (port the arena functions), after which the
+  standard recipe links json_parser clean and the NOTES.md legacy-runtime workaround is no longer
+  needed. Affects exactly 2 examples: `json_parser` and `json_parser_workaround` (the latter also
+  blocked by the I3 6× zT_xx forward-decl compile gap).
 
 ---
 
