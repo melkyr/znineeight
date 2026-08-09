@@ -379,6 +379,21 @@ git commit -m "feat: networking builtins (socket fd bind listen accept connect s
 
 ---
 
+## Arch Independence (AMENDMENT 2026-08-08 — operator ruling)
+
+**Design principle:** Z98 types abstract the architecture. The std lib source and the builtin signatures use Z98 types (`usize`, `u8`, `u32`, `i32`); the C89 emitter maps them to target C types per-arch. Arch width decisions live in the EMITTER, never in Z98 source.
+
+| Layer | Arch-independent? | Where arch mapping happens |
+|---|---|---|
+| Std lib Z98 code (`std_io.zig`, `std_arena.zig`) | ✅ — uses `usize`/`u8`/`[]u8` | Compiler type mapper |
+| Builtin Z98 signatures (catalog) | ✅ — use Z98 types (`u32`, `i32`, `usize`) | Compiler type mapper |
+| C89 emission for each builtin | Per-arch — format strings, `int`/`long`/`size_t` mapping | The `.builtin_*` emit function in `c89_emit.zig` |
+| Socket fd type (`i32`) | **Correct as `i32`** (operator ruling) | C89 emission maps `i32`→`int`; 16-bit fd truncation is a 16-bit-emission concern |
+
+**16-bit compatibility is explicitly FUTURE work.** The operator's ruling: `i32` is correct for the builtin catalog. 16-bit targets are a problem for 16-bit *emission*, which is far in the future (likely after the zig0 bootstrap chain is long gone). The current architecture (Z98 types → C89 emitter per-arch mapping) is 16-bit-compatible in structure — no size assumptions in std lib source — but no 16-bit emission work is done here. The `#ifdef` catalog covers msvc6/openwatcom/posix only.
+
+---
+
 ## Post-Plan
 
 - **Self-hosted evolution (zig1.5 → zig2):** migrate zig1's own source to `@import("std")` — gated on zig1 self-compile (arena F5 scratch-arena OOM is the blocker). zig0 retires.

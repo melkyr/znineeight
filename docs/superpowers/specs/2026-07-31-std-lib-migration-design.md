@@ -151,4 +151,8 @@ Per-platform ops (e.g. `@sleepMs`) emit `#ifdef _WIN32 / #elif defined(__WATCOMC
 - **zig1 self-compile full cycle** — gated on the F5 scratch-arena OOM (future investigation)
 - **`#ifdef` for future targets beyond msvc6/openwatcom/posix** — catalog covers these 3; new targets add emission branches later
 - **Removing `zig_pal.c`** — kept for zig0 bootstrap reference; Phase 2 evolution may shrink it
-- **16-bit target support** — the architecture is 16-bit-compatible (no size assumptions in std lib), but actual 16-bit emission is future work
+- **16-bit target support** — the architecture is 16-bit-compatible (no size assumptions in std lib source), but actual 16-bit emission is future work, likely after the zig0 bootstrap chain is gone (operator ruling 2026-08-08).
+
+## 8b. Arch Independence (AMENDMENT 2026-08-08 — operator ruling)
+
+Z98 types abstract the architecture. The std lib source and builtin signatures use Z98 types (`usize`, `u8`, `u32`, `i32`); the C89 emitter maps them to target C types per-arch. Width decisions live in the EMITTER, never in Z98 source. Socket fd is `i32` (operator ruling — correct for the catalog; 16-bit fd truncation is a 16-bit-emission concern). 16-bit compatibility is structural only (no size assumptions in std lib); actual 16-bit emission is deferred far beyond this plan.
