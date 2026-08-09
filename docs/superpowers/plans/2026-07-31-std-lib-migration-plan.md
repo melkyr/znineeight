@@ -4,7 +4,7 @@
 
 **Goal:** Implement 20 compiler builtins (I/O, console, networking), create a pure-Z98 std lib (`std.zig`, `std_io.zig`, `std_arena.zig`) built on them, migrate all 21 examples off `__bootstrap_*` externs, and solve the deferred arena + plat-console gaps. Zero `extern "c"` in the std lib.
 
-**Architecture:** 3 batched I-tasks (investigate zig_runtime.c, net_runtime.c, zig0 C++ PAL — each fills a questionnaire + updates tech docs) → combined STOP for operator ruling on the builtin catalog → Phase 1 F-tasks (core I/O + console builtins, arena, std lib + example migration, rogue_mud) → Phase 2 F-task (networking builtins) → F7 gate sweep.
+**Architecture:** 3 batched I-tasks (investigate zig_runtime.c, net_runtime.c, zig0 C++ PAL — each fills a questionnaire + updates tech docs) → combined STOP for operator ruling on the builtin catalog → Phase 1 F-tasks (core I/O + console builtins, arena, std lib + example migration, rogue_mud) → Phase 2 F-task (networking builtins + `std_net.zig`, porting net_runtime.c into the emitter and migrating mud_server + rogue_mud) → F7 gate sweep.
 
 **Tech Stack:** Z98 compiler (`sf/src/*.zig`), zig1 (`sf/build/out_release/zig1`), zig0 oracle (`sf/build/zig0`), gcc -m32 C89, 21 examples, tech docs.
 
@@ -323,33 +323,35 @@ git commit -m "feat: rogue_mud console builtins migration (deferred gap closed)"
 
 ## Phase 2 — Networking
 
-### Task F6: Networking builtins (11)
+### Task F6: Networking builtins (11) + std_net.zig + net_runtime.c port
 
 **Files:**
 - Modify: `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig` (11 builtins: socketCreate, socketBindListen, socketAccept, socketConnect, socketSend, socketRecv, socketSelect, socketFdZero, socketFdSet, socketFdIsset, socketClose)
+- Create: `sf/src/std_net.zig` (Z98 wrappers over the 11 builtins — pure Z98, zero `extern "c"`)
+- Modify: `examples/z98/mud_server/main.zig`, `examples/z98/rogue_mud/lib/net.zig` (+ any callers) — migrate off `plat_*` externs to `std_net`
 - Create: `repro/mi_matrix/net_builtin_test/main.zig` + `NOTES.md` (or verify mud_server directly)
 - Modify (docs): `08_c89_emission.md`
 - Report: `.superpowers/sdd/task-F6-net-report.md`
 
 **Interfaces:**
-- Consumes: I-NET + I-PAL reports (exact socket `#ifdef` patterns), F1 (the builtin mechanism).
-- Produces: 11 networking builtins; mud_server usable via std.net.
+- Consumes: I-NET + I-PAL reports (exact socket `#ifdef` patterns + net_runtime.c function bodies), F1 (the builtin mechanism), operator ruling m0572 (std_net.zig required — net_runtime.c must be PORTED, not just wrapped).
+- Produces: 11 networking builtins whose C89 emitter output REPLACES net_runtime.c (the emitter embeds the socket C bodies inline, `#ifdef`-guarded); `std_net.zig` library; mud_server + rogue_mud migrated off `plat_*` externs.
 
-**Emission:** per I-NET/I-PAL exact per-platform bodies (`#ifdef _WIN32` ws2_32 / `__WATCOMC__` / POSIX sockets).
+**Emission:** per I-NET/I-PAL exact per-platform bodies — the builtin C89 emission PORTs the 12 `plat_*` function bodies from `sf/src/include/net_runtime.c` into the emitter's `#ifdef _WIN32` / `#elif defined(__WATCOMC__)` / `#else` (POSIX) blocks. `socketConnect` is NEW C code (no source exists — both examples are servers; add the Win32/POSIX `connect()` body per the operator ruling, needed for future clients/telnet). The `fd` type is `i32` (arch-independence ruling m0544).
 
-- [ ] **Step 1: Implement the 11 builtins.** sema entries + 11 LIR insts + C89 emission per I-NET/I-PAL patterns.
-- [ ] **Step 2: Create `std_net.zig`.** Z98 wrappers: `listen(port)`, `accept`, `connect`, `send`, `recv`, `select` using the builtins.
-- [ ] **Step 3: Migrate mud_server** to `std.net` (or verify it keeps working via externs — per I-NET's recommendation).
-- [ ] **Step 4: Build + verify.** `net_builtin_test/` (or mud_server): dump/gcc/link/run rc=0. For mud_server: `timeout 5` server boot + socket client interaction.
+- [ ] **Step 1: Implement the 11 builtins.** sema entries + 11 LIR insts + C89 emission. The emitted C bodies are PORTED from `sf/src/include/net_runtime.c:18-153` (the 12 existing `plat_*` functions) into the `#ifdef`-guarded emitter blocks, plus the NEW `socketConnect` body (Win32: `connect(sock, (struct sockaddr*)&addr, sizeof(addr))`; POSIX: same libc call) — thin wrapper matching the existing pattern. Verify against the I-NET table.
+- [ ] **Step 2: Create `std_net.zig`.** Z98 wrappers: `init`, `cleanup`, `createTcpServer(port)`, `bindListen(fd, backlog)`, `accept(fd)`, `connect(fd, port)`, `send(fd, buf, len)`, `recv(fd, buf, len)`, `close(fd)`, `select(...)`, `fdZero(s)`, `fdSet(fd, s)`, `fdIsset(fd, s)` — using the 11 builtins. Zero `extern "c"`.
+- [ ] **Step 3: Migrate mud_server + rogue_mud** to `std_net`. Replace the `extern "c" fn plat_*` declarations in `examples/z98/mud_server/main.zig` and `examples/z98/rogue_mud/lib/net.zig` with `const std_net = @import("std_net.zig");` calls. **net_runtime.c link is REMOVED for migrated examples** — the builtin-emitted C replaces it.
+- [ ] **Step 4: Build + verify.** `net_builtin_test/` (or mud_server): dump/gcc/link/run rc=0 WITHOUT linking net_runtime.c. For mud_server: `timeout 5` server boot + socket client interaction (use `sf/build/out_release/zig1` to compile; client via bash `/dev/tcp` or a small test client). For rogue_mud: dump/gcc/link rc=0 (5 `plat_*` undefined refs GONE).
 - [ ] **Step 5: Update tech docs + NOTES.md.**
 - [ ] **Step 6: Verify 4 MD5 gates.**
 - [ ] **Step 7: Commit.**
 ```bash
-git add sf/src/semantic_analyzer.zig sf/src/lower.zig sf/src/c89_emit.zig sf/src/std_net.zig repro/mi_matrix/net_builtin_test/ examples/z98/mud_server/ sf/docs/tech_docs/08_c89_emission.md
-git commit -m "feat: networking builtins (socket fd bind listen accept connect send recv select close)"
+git add sf/src/semantic_analyzer.zig sf/src/lower.zig sf/src/c89_emit.zig sf/src/std_net.zig repro/mi_matrix/net_builtin_test/ examples/z98/mud_server/ examples/z98/rogue_mud/lib/net.zig sf/docs/tech_docs/08_c89_emission.md
+git commit -m "feat: networking builtins + std_net.zig (port net_runtime.c into emitter, migrate mud_server+rogue_mud)"
 ```
 
-**Gate:** networking builtins dump→gcc→run rc=0; mud_server compiles + links + runs (timeout-gated); 4 MD5s verified.
+**Gate:** networking builtins dump→gcc→run rc=0 WITHOUT net_runtime.c in the link; mud_server compiles + links + runs (timeout-gated socket interaction); rogue_mud compiles + links rc=0 with the 5 `plat_*` undefined refs GONE; `std_net.zig` has zero `extern "c"`; 4 MD5s verified.
 
 ---
 
