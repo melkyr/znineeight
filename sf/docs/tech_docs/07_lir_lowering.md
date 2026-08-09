@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
+# LIR Lowering Layer [updated: 2026-08-08 — I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
 
 ## Summary
 
@@ -445,6 +445,48 @@ signedness (same-width reinterpret); widening and same-signedness same-width are
 left unchecked. The checked arm emits `int_cast{ is_checked=1 }`, which c89_emit
 renders as the range-checked `__bootstrap_<DST>_from_<SRC>` helper call. Coercion
 sites (`lower.zig:955`, `:4379`, `:4387`) keep `is_checked=0`.
+
+### Bootstrap-to-Builtin Mapping — I-RT inventory [updated: 2026-08-08]
+
+Per the std-lib migration plan (`.superpowers/plans/2026-07-31-std-lib-migration-plan.md`, I-RT
+task), the example-facing `__bootstrap_*` I/O wrappers in `sf/src/include/zig_runtime.c` become
+compiler builtins; the compiler-internal cast helpers and the `std_print*`/`std_panic` general
+runtime STAY. Full inventory: `.superpowers/sdd/I-RT-report.md`.
+
+**The lowerer's two print paths.** The Z98 `print()` builtin (`lower.zig:375`) lowers to
+`print_str`/`print_val` LIR, which c89_emit renders as direct `std_print(...)` /
+`std_print_<type>(...)` calls (`getPrintFnName`, c89_emit.zig:3015) — NOT the `__bootstrap_*`
+wrappers. The `__bootstrap_print*` aliases are resolved only at LINK time for example-facing
+`extern fn` declarations. So builtin migration removes the *example extern → zig_runtime.c alias*
+path; the `print_str`/`print_val` → `std_print*` path is untouched.
+
+| `__bootstrap_*` (zig_runtime.c:line) | Signature (C) | Consumers | Disposition |
+|---|---|---|---|
+| `__bootstrap_print` :67 | `void (const char* s)` | 20+ z98 examples (hello, quicksort, sort_strings, json_parser, mud/gol/lisp std_debug.zig, rogue_mud…) | → builtin/std_io wrapper (stdout) |
+| `__bootstrap_print_int` :68 | `void (int n)` | 15+ z98 examples (printInt wrappers, lisp `.Int`, rogue_mud HP/pos) | → builtin/std_io wrapper |
+| `__bootstrap_print_char` :69 | `void (int c)` | rogue_mud ui.zig:161 | → `@putChar(@intCast(u8, c))` |
+| `__bootstrap_panic` :70 | `void (const char*, const char*, int)` | cast helpers (this file + zig_runtime.h static copies) | **STAYS** (compiler-internal @intCast panic path; see concern) |
+| `__bootstrap_write` :71 | `void (const char*, unsigned int)` | json_parser, rogue_mud `__bootstrap_print_bytes` | → builtin/std_io wrapper (stdout write) |
+| `__bootstrap_sleep_ms` :72 | `void (unsigned int)` | game_of_life (sleep 100), oracle examples | → `@sleepMs` |
+| 19× `__bootstrap_<DST>_from_<SRC>` :121-208 | per-pair `DST (SRC)` (see below) | zig1's c89_emit checked `int_cast` arm (isBootstrapHelperDefined, c89_emit.zig:2973-3013); also zig0-emitted compiler binary | **STAY** (compiler `@intCast` runtime) |
+
+**Proposed builtin signatures (plan catalog, Option B):** `@putChar(c: u8) void`,
+`@stderrWrite(buf: [*]const u8, len: usize) void`, `@getChar() u8`, `@exit(code: u8) noreturn`,
+`@sleepMs(ms: u32) void`, `@isWindows() bool` (comptime), `@consoleClear() void`,
+`@consoleGotoxy(x: i32, y: i32) void`, `@consoleSetColor(fg: i32, bg: i32) void`, then 11
+`@socket*` in Phase 2. `@putChar`/`@stderrWrite`/`@getChar`/`@exit` are portable (stdio/libc);
+`@sleepMs` + console builtins need `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else`
+(preprocessor-guarded C emission, never comptime), matching the zig0-oracle runtime bodies.
+
+**`@intCast` cast-helper table (all STAY):** `usize_from_i64` :121, `i32_from_u32` :126,
+`u32_from_u64` :131, `u32_from_i32` :136, `usize_from_i32` :141, `i32_from_usize` :146,
+`u8_from_usize` :151, `u8_from_bool` :156, `f32_from_f64` :160, `i32_from_u8` :164,
+`u8_from_i32` :168, `u8_from_u32` :173, `u16_from_i32` :178, `u32_from_i64` :183,
+`u64_from_i64` :188, `i8_from_i32` :193, `i16_from_i32` :198, `i32_from_i64` :203,
+`c_char_from_u8` :208. Also defined `static` in `zig_runtime.h` (per-TU; message
+`"integer cast overflow in @intCast"`). `getCheckedCastFnName` (c89_emit.zig:2940) and the 8
+`std_checked_cast_*` (upper-bound-only, `zig_runtime.c:76-113`) are **dead** in the current
+emitter — F1 (2026-08-06) switched checked casts to the per-pair helpers.
 
 ### Control Flow
 
