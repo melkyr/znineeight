@@ -2049,6 +2049,27 @@ fn moduleHasSleepBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
+fn moduleHasConsoleBuiltin(fns: []LirFunction) u8 {
+    var vi: usize = @intCast(usize, 0);
+    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
+        var vf = &fns[vi];
+        var vbi: usize = @intCast(usize, 0);
+        while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
+            var vbb = &vf.blocks.items[vbi];
+            var vii: usize = @intCast(usize, 0);
+            while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
+                switch (vbb.insts.items[vii]) {
+                    .builtin_console_clear => return @intCast(u8, 1),
+                    .builtin_console_gotoxy => return @intCast(u8, 1),
+                    .builtin_console_set_color => return @intCast(u8, 1),
+                    else => {},
+                }
+            }
+        }
+    }
+    return @intCast(u8, 0);
+}
+
 fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
     if (moduleHasStdioBuiltin(fns) != @intCast(u8, 0)) {
         var stdio_inc: []const u8 = "#include <stdio.h>\n";
@@ -2061,6 +2082,10 @@ fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
     if (moduleHasSleepBuiltin(fns) != @intCast(u8, 0)) {
         var swin: []const u8 = "#ifdef _WIN32\n#include <windows.h>\n#else\n#include <unistd.h>\n#endif\n";
         bufferedWriterWrite(&emitter.writer, swin);
+    }
+    if (moduleHasConsoleBuiltin(fns) != @intCast(u8, 0)) {
+        var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void __bootstrap_write(const char* s, unsigned int len);\n";
+        bufferedWriterWrite(&emitter.writer, cwin);
     }
 }
 
@@ -3156,6 +3181,159 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     bufferedWriterWrite(&emitter.writer, fs);
     var f3: []const u8 = ");\n";
     bufferedWriterWrite(&emitter.writer, f3);
+ }
+
+ fn emitConsoleClear(emitter: *C89Emitter) void {
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl0: []const u8 = "#ifdef _WIN32\n";
+    bufferedWriterWrite(&emitter.writer, ccl0);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl1: []const u8 = "{ HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);\n";
+    bufferedWriterWrite(&emitter.writer, ccl1);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl2: []const u8 = "CONSOLE_SCREEN_BUFFER_INFO csbi;\n";
+    bufferedWriterWrite(&emitter.writer, ccl2);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl3: []const u8 = "DWORD count;\n";
+    bufferedWriterWrite(&emitter.writer, ccl3);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl4: []const u8 = "DWORD cellCount;\n";
+    bufferedWriterWrite(&emitter.writer, ccl4);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl5: []const u8 = "COORD homeCoords = { 0, 0 };\n";
+    bufferedWriterWrite(&emitter.writer, ccl5);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl6: []const u8 = "if (hOut != INVALID_HANDLE_VALUE && GetConsoleScreenBufferInfo(hOut, &csbi)) {\n";
+    bufferedWriterWrite(&emitter.writer, ccl6);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl7: []const u8 = "cellCount = csbi.dwSize.X * csbi.dwSize.Y;\n";
+    bufferedWriterWrite(&emitter.writer, ccl7);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl8: []const u8 = "FillConsoleOutputCharacter(hOut, (TCHAR)' ', cellCount, homeCoords, &count);\n";
+    bufferedWriterWrite(&emitter.writer, ccl8);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl9: []const u8 = "FillConsoleOutputAttribute(hOut, csbi.wAttributes, cellCount, homeCoords, &count);\n";
+    bufferedWriterWrite(&emitter.writer, ccl9);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl10: []const u8 = "SetConsoleCursorPosition(hOut, homeCoords);\n";
+    bufferedWriterWrite(&emitter.writer, ccl10);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl11: []const u8 = "} }\n";
+    bufferedWriterWrite(&emitter.writer, ccl11);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl12: []const u8 = "#elif defined(__WATCOMC__)\n";
+    bufferedWriterWrite(&emitter.writer, ccl12);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl13: []const u8 = "__bootstrap_write(\"\\x1b[2J\\x1b[H\", 7);\n";
+    bufferedWriterWrite(&emitter.writer, ccl13);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl14: []const u8 = "#else\n";
+    bufferedWriterWrite(&emitter.writer, ccl14);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, ccl13);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var ccl15: []const u8 = "#endif\n";
+    bufferedWriterWrite(&emitter.writer, ccl15);
+ }
+
+ fn emitConsoleGotoxy(emitter: *C89Emitter, x: u32, y: u32) void {
+    var cx = resolveTempName(emitter, x);
+    var cy = resolveTempName(emitter, y);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg0: []const u8 = "#ifdef _WIN32\n";
+    bufferedWriterWrite(&emitter.writer, cg0);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg1: []const u8 = "{ COORD c;\n";
+    bufferedWriterWrite(&emitter.writer, cg1);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg2: []const u8 = "c.X = (SHORT)(int)(";
+    bufferedWriterWrite(&emitter.writer, cg2);
+    bufferedWriterWrite(&emitter.writer, cx);
+    var cg3: []const u8 = "); c.Y = (SHORT)(int)(";
+    bufferedWriterWrite(&emitter.writer, cg3);
+    bufferedWriterWrite(&emitter.writer, cy);
+    var cg4: []const u8 = "); SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c); }\n";
+    bufferedWriterWrite(&emitter.writer, cg4);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg5: []const u8 = "#elif defined(__WATCOMC__)\n";
+    bufferedWriterWrite(&emitter.writer, cg5);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg6: []const u8 = "{ char buf[32]; int len = sprintf(buf, \"\\x1b[%d;%dH\", (int)(";
+    bufferedWriterWrite(&emitter.writer, cg6);
+    bufferedWriterWrite(&emitter.writer, cy);
+    var cg7: []const u8 = ") + 1, (int)(";
+    bufferedWriterWrite(&emitter.writer, cg7);
+    bufferedWriterWrite(&emitter.writer, cx);
+    var cg8: []const u8 = ") + 1); __bootstrap_write(buf, (unsigned int)len); }\n";
+    bufferedWriterWrite(&emitter.writer, cg8);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg9: []const u8 = "#else\n";
+    bufferedWriterWrite(&emitter.writer, cg9);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, cg6);
+    bufferedWriterWrite(&emitter.writer, cy);
+    bufferedWriterWrite(&emitter.writer, cg7);
+    bufferedWriterWrite(&emitter.writer, cx);
+    bufferedWriterWrite(&emitter.writer, cg8);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cg10: []const u8 = "#endif\n";
+    bufferedWriterWrite(&emitter.writer, cg10);
+ }
+
+ fn emitConsoleSetColor(emitter: *C89Emitter, fg: u32, bg: u32) void {
+    var cf = resolveTempName(emitter, fg);
+    var cb = resolveTempName(emitter, bg);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc0: []const u8 = "#ifdef _WIN32\n";
+    bufferedWriterWrite(&emitter.writer, cc0);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc1: []const u8 = "SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), (WORD)(((int)(";
+    bufferedWriterWrite(&emitter.writer, cc1);
+    bufferedWriterWrite(&emitter.writer, cf);
+    var cc2: []const u8 = ") & 0x0F) | (((int)(";
+    bufferedWriterWrite(&emitter.writer, cc2);
+    bufferedWriterWrite(&emitter.writer, cb);
+    var cc3: []const u8 = ") & 0x0F) << 4)));\n";
+    bufferedWriterWrite(&emitter.writer, cc3);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc4: []const u8 = "#elif defined(__WATCOMC__)\n";
+    bufferedWriterWrite(&emitter.writer, cc4);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc5: []const u8 = "{ static const char* fg_ansi[] = {\"30\",\"34\",\"32\",\"36\",\"31\",\"35\",\"33\",\"37\",\"90\",\"94\",\"92\",\"96\",\"91\",\"95\",\"93\",\"97\"};\n";
+    bufferedWriterWrite(&emitter.writer, cc5);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc6: []const u8 = "static const char* bg_ansi[] = {\"40\",\"44\",\"42\",\"46\",\"41\",\"45\",\"43\",\"47\",\"100\",\"104\",\"102\",\"106\",\"101\",\"105\",\"103\",\"107\"};\n";
+    bufferedWriterWrite(&emitter.writer, cc6);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc7: []const u8 = "char buf[64];\n";
+    bufferedWriterWrite(&emitter.writer, cc7);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc8: []const u8 = "int len = sprintf(buf, \"\\x1b[%s;%sm\", fg_ansi[(int)(";
+    bufferedWriterWrite(&emitter.writer, cc8);
+    bufferedWriterWrite(&emitter.writer, cf);
+    var cc9: []const u8 = ") & 0x0F], bg_ansi[(int)(";
+    bufferedWriterWrite(&emitter.writer, cc9);
+    bufferedWriterWrite(&emitter.writer, cb);
+    var cc10: []const u8 = ") & 0x0F]); __bootstrap_write(buf, (unsigned int)len); }\n";
+    bufferedWriterWrite(&emitter.writer, cc10);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc11: []const u8 = "#else\n";
+    bufferedWriterWrite(&emitter.writer, cc11);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, cc5);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, cc6);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, cc7);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, cc8);
+    bufferedWriterWrite(&emitter.writer, cf);
+    bufferedWriterWrite(&emitter.writer, cc9);
+    bufferedWriterWrite(&emitter.writer, cb);
+    bufferedWriterWrite(&emitter.writer, cc10);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var cc12: []const u8 = "#endif\n";
+    bufferedWriterWrite(&emitter.writer, cc12);
  }
 
  fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
@@ -4607,6 +4785,15 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var bsm6: []const u8 = "#endif\n";
             bufferedWriterWrite(&emitter.writer, bsm6);
+        },
+        .builtin_console_clear => {
+            emitConsoleClear(emitter);
+        },
+        .builtin_console_gotoxy => |bcg| {
+            emitConsoleGotoxy(emitter, bcg.x, bcg.y);
+        },
+        .builtin_console_set_color => |bcc| {
+            emitConsoleSetColor(emitter, bcc.fg, bcc.bg);
         },
         .ptr_cast => |pc| {
             var dst = resolveTempName(emitter, pc.result);

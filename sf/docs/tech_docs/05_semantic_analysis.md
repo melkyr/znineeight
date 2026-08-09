@@ -1,10 +1,10 @@
-# 05 — Semantic Analysis [updated: 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs) added to the builtin_call resolver; prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 44 | 29 non-builtin + 15 builtin name IDs |
+| `SemanticAnalyzer` fields | 48 | 29 non-builtin + 19 builtin name IDs |
 | Expression kind dispatch arms | 46+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` (coercion.zig:1-19) |
 | Coercion checks in `classifyCoercion` | ~18 | Null, optional, error union, ptr, slice, array, widening |
@@ -52,22 +52,24 @@ pub const SemanticAnalyzer = struct {
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
-    // 15 builtin name IDs:
+    // 19 builtin name IDs:
     ptrcast_name_id, ptrtoint_name_id, inttoptr_name_id,
     intcast_name_id, floatcast_name_id, inttofloat_name_id,
     inttoenum_name_id, size_of_name_id, align_of_name_id,
     putchar_name_id, stdout_write_name_id, stderr_write_name_id,
     getchar_name_id, exit_name_id, sleep_ms_name_id,
+    is_windows_name_id, console_clear_name_id, console_gotoxy_name_id,
+    console_set_color_name_id,
 };
 ```
 
 Key state: expected-type stack for contextual type inference (enum literals, error literals, null), statement worklist for iterative traversal, switch context for enum literal resolution, and local declaration shadow stack.
 
-### semanticAnalyzerInit (`sf/src/semantic_analyzer.zig:70-147`)
+### semanticAnalyzerInit (`sf/src/semantic_analyzer.zig:74-153`)
 
 `[inference: sandAlloc-builtin name interning, zero-init stacks/lists, return SemanticAnalyzer]`
 
-Allocates no heap memory in the struct itself. Interns 14 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
+Allocates no heap memory in the struct itself. Interns 19 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`, `@isWindows`, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
 
 ### semanticAnalyzerIsTypeValueCast (`sf/src/semantic_analyzer.zig:152-160`)
 
@@ -429,7 +431,7 @@ dereferences a ptr callee to its fn type (semantic_analyzer.zig:735-742).
 
 #### Builtin I/O dispatch (F1, 2026-08-08) — `[updated: 2026-08-08]`
 
-The `builtin_call` resolver (semantic_analyzer.zig:1314-1343) now dispatches 6 core I/O
+The `builtin_call` resolver (semantic_analyzer.zig:1314-1348) now dispatches 6 core I/O
 builtins by `child_0` name ID (fields `putchar_name_id` … `sleep_ms_name_id`, interned in
 `semanticAnalyzerInit`). Each resolves its value args via `semanticAnalyzerResolveExpr` and
 returns the signature type:
@@ -444,6 +446,25 @@ returns the signature type:
 | `@sleepMs(ms: u32)` | `ec[0]` | `TYPE_VOID` |
 
 The `@getChar` zero-arg form depends on the parser zero-arg builtin fix (parser.zig:581).
+
+#### Console builtin dispatch (F2, 2026-08-08) — `[updated: 2026-08-08]`
+
+The same resolver (semantic_analyzer.zig:1357-1372) adds the 4 console builtins by `child_0`
+name ID (fields `is_windows_name_id`, `console_clear_name_id`, `console_gotoxy_name_id`,
+`console_set_color_name_id`):
+
+| Builtin | Args resolved | Returns |
+|---------|---------------|---------|
+| `@isWindows()` | none | `TYPE_BOOL` (comptime-folded — never reaches runtime) |
+| `@consoleClear()` | none | `TYPE_VOID` |
+| `@consoleGotoxy(x: i32, y: i32)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
+| `@consoleSetColor(fg: i32, bg: i32)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
+
+`@isWindows()` is the sema-half of a comptime intrinsic: `comptime_eval.zig` folds it to a
+`ComptimeVal` 0/1 (module const `host_is_windows`, currently `false`), so `phase_ComptimeEvaluation`
+populates `comptime_values[node]` and the lowerer emits an `int_const` (`TYPE_BOOL` — set in the
+comptime-fold path, lower.zig:2721-2724). `if (@isWindows())` then folds to only the active branch
+(see 07 §Builtin console + comptime branch folding).
 
 ### semanticAnalyzerResolveArithmetic (`sf/src/semantic_analyzer.zig:487-511`)
 

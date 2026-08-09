@@ -83,6 +83,9 @@ pub const LirInst = union(enum) {
     builtin_get_char: struct { result: u32 },
     builtin_exit: struct { value: u32 },
     builtin_sleep_ms: struct { value: u32 },
+    builtin_console_clear: void,
+    builtin_console_gotoxy: struct { x: u32, y: u32 },
+    builtin_console_set_color: struct { fg: u32, bg: u32 },
     nop: void,
 };
 

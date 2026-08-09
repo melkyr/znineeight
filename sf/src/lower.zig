@@ -248,6 +248,10 @@ pub const LirLowerer = struct {
     getchar_name_id: u32,
     exit_name_id: u32,
     sleep_ms_name_id: u32,
+    is_windows_name_id: u32,
+    console_clear_name_id: u32,
+    console_gotoxy_name_id: u32,
+    console_set_color_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -301,6 +305,14 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var exit_id = si_mod.stringInternerIntern(ctx.registry.interner, exit_s);
     var sleep_ms_s: []const u8 = "@sleepMs";
     var sleep_ms_id = si_mod.stringInternerIntern(ctx.registry.interner, sleep_ms_s);
+    var is_windows_s: []const u8 = "@isWindows";
+    var is_windows_id = si_mod.stringInternerIntern(ctx.registry.interner, is_windows_s);
+    var console_clear_s: []const u8 = "@consoleClear";
+    var console_clear_id = si_mod.stringInternerIntern(ctx.registry.interner, console_clear_s);
+    var console_gotoxy_s: []const u8 = "@consoleGotoxy";
+    var console_gotoxy_id = si_mod.stringInternerIntern(ctx.registry.interner, console_gotoxy_s);
+    var console_set_color_s: []const u8 = "@consoleSetColor";
+    var console_set_color_id = si_mod.stringInternerIntern(ctx.registry.interner, console_set_color_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -333,6 +345,10 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .getchar_name_id = getchar_id,
          .exit_name_id = exit_id,
          .sleep_ms_name_id = sleep_ms_id,
+         .is_windows_name_id = is_windows_id,
+         .console_clear_name_id = console_clear_id,
+         .console_gotoxy_name_id = console_gotoxy_id,
+         .console_set_color_name_id = console_set_color_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -2702,6 +2718,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                     }
                 }
+                if (node.child_0 == self.is_windows_name_id) {
+                    fold_ty_box[0] = type_mod.TYPE_BOOL;
+                }
                 var cres = nextTemp(self, fold_ty_box[0]);
                 emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = cres } });
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
@@ -2791,6 +2810,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (ec.len >= @intCast(usize, 1)) {
                     var sm_val = lowerExpr(self, ec[@intCast(usize, 0)]);
                     emitInst(self, LirInst{ .builtin_sleep_ms = .{ .value = sm_val } });
+                }
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.console_clear_name_id) {
+                emitInst(self, LirInst{ .builtin_console_clear = .{} });
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.console_gotoxy_name_id) {
+                if (ec.len >= @intCast(usize, 2)) {
+                    var cgx = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    var cgy = lowerExpr(self, ec[@intCast(usize, 1)]);
+                    emitInst(self, LirInst{ .builtin_console_gotoxy = .{ .x = cgx, .y = cgy } });
+                }
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.console_set_color_name_id) {
+                if (ec.len >= @intCast(usize, 2)) {
+                    var csf = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    var csb = lowerExpr(self, ec[@intCast(usize, 1)]);
+                    emitInst(self, LirInst{ .builtin_console_set_color = .{ .fg = csf, .bg = csb } });
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
@@ -3025,6 +3064,22 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = join_bb;
         return join_temp;
     } else if (node.kind == AstKind.if_expr) {
+        var ie_rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var ie_rtype3: u32 = if (ie_rt3) |t| t else type_mod.TYPE_UNDEFINED;
+        var ie_fold = hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node.child_0);
+        if (ie_fold) |ie_fv| {
+            var ie_res = nextTemp(self, ie_rtype3);
+            if (ie_fv != @intCast(u64, 0)) {
+                var ie_then = lowerExpr(self, node.child_1);
+                ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1));
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
+            } else {
+                var ie_else = lowerExpr(self, node.child_2);
+                ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2));
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
+            }
+            return ie_res;
+        }
         var cond_temp = lowerExpr(self, node.child_0);
         var rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype: u32 = if (rt3) |t| t else type_mod.TYPE_UNDEFINED;
@@ -3710,6 +3765,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     } else if (node.kind == AstKind.errdefer_stmt) {
         pushDefer(self, @intCast(u8, 1), node.child_0);
     } else if (node.kind == AstKind.if_stmt) {
+        var if_fold = hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node.child_0);
+        if (if_fold) |ifv| {
+            if (node.payload == @intCast(u32, 0)) {
+                if (ifv != @intCast(u64, 0)) {
+                    self.block_terminated = @intCast(u8, 0);
+                    lowerStmtBody(self, node.child_1);
+                } else {
+                    self.block_terminated = @intCast(u8, 0);
+                    if (node.child_2 != @intCast(u32, 0)) {
+                        lowerStmtBody(self, node.child_2);
+                    }
+                }
+                self.block_terminated = @intCast(u8, 0);
+                return;
+            }
+        }
         var if_c0: []const u8 = "IF:c0="; pal.markerWrite(if_c0);
         var if_c0b: [10]u8 = undefined; var if_c0l = itoa_mod.itoa(node.child_0, if_c0b[0..]); var if_c0s: usize = @intCast(usize, 9) - @intCast(usize, if_c0l); pal.markerWrite(if_c0b[if_c0s..@intCast(usize, 9)]);
         var if_kh: []const u8 = " k="; pal.markerWrite(if_kh);

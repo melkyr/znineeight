@@ -65,6 +65,10 @@ pub const SemanticAnalyzer = struct {
     getchar_name_id: u32,
     exit_name_id: u32,
     sleep_ms_name_id: u32,
+    is_windows_name_id: u32,
+    console_clear_name_id: u32,
+    console_gotoxy_name_id: u32,
+    console_set_color_name_id: u32,
 };
 
 pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
@@ -100,6 +104,14 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var ex_id = interner_mod.stringInternerIntern(interner, ex_s);
     var sm_s: []const u8 = "@sleepMs";
     var sm_id = interner_mod.stringInternerIntern(interner, sm_s);
+    var iw_s: []const u8 = "@isWindows";
+    var iw_id = interner_mod.stringInternerIntern(interner, iw_s);
+    var cc_s: []const u8 = "@consoleClear";
+    var cc_id = interner_mod.stringInternerIntern(interner, cc_s);
+    var cg_s: []const u8 = "@consoleGotoxy";
+    var cg_id = interner_mod.stringInternerIntern(interner, cg_s);
+    var csc_s: []const u8 = "@consoleSetColor";
+    var csc_id = interner_mod.stringInternerIntern(interner, csc_s);
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -146,6 +158,10 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .getchar_name_id = gc_id,
         .exit_name_id = ex_id,
         .sleep_ms_name_id = sm_id,
+        .is_windows_name_id = iw_id,
+        .console_clear_name_id = cc_id,
+        .console_gotoxy_name_id = cg_id,
+        .console_set_color_name_id = csc_id,
     };
 }
 
@@ -1331,6 +1347,18 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
             result = type_mod.TYPE_VOID;
         } else if (node.child_0 == self.stdout_write_name_id or node.child_0 == self.stderr_write_name_id) {
+            if (ec.len >= @intCast(usize, 2)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
+            } else if (ec.len >= @intCast(usize, 1)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+            }
+            result = type_mod.TYPE_VOID;
+        } else if (node.child_0 == self.is_windows_name_id) {
+            result = type_mod.TYPE_BOOL;
+        } else if (node.child_0 == self.console_clear_name_id) {
+            result = type_mod.TYPE_VOID;
+        } else if (node.child_0 == self.console_gotoxy_name_id or node.child_0 == self.console_set_color_name_id) {
             if (ec.len >= @intCast(usize, 2)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);

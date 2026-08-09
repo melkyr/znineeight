@@ -16,6 +16,8 @@ pub const ComptimeVal = struct {
     sig: bool,
 };
 
+const host_is_windows: bool = false;
+
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
     store: *AstStore,
@@ -24,18 +26,22 @@ pub const ComptimeEval = struct {
     size_of_id: u32,
     align_of_id: u32,
     int_cast_id: u32,
+    is_windows_id: u32,
 };
 
 pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *StringInterner, symbol_reg: *SymbolRegistry) ComptimeEval {
     var s_size: []const u8 = "@sizeOf";
     var s_align: []const u8 = "@alignOf";
     var s_intc: []const u8 = "@intCast";
+    var intc_id = interner_mod.stringInternerIntern(interner, s_intc);
     var size_id = interner_mod.stringInternerIntern(interner, s_size);
     var align_id = interner_mod.stringInternerIntern(interner, s_align);
-    var intc_id = interner_mod.stringInternerIntern(interner, s_intc);
+    var s_iw: []const u8 = "@isWindows";
+    var iw_id = interner_mod.stringInternerIntern(interner, s_iw);
     return ComptimeEval{
         .registry = registry, .store = store, .interner = interner, .symbol_reg = symbol_reg,
         .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id,
+        .is_windows_id = iw_id,
     };
 }
 
@@ -146,6 +152,13 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
             }
         }
         return null;
+    }
+    if (node.child_0 == self.is_windows_id) {
+        var wb2: u64 = @intCast(u64, 0);
+        if (host_is_windows) {
+            wb2 = @intCast(u64, 1);
+        }
+        return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u8, 1), .sig = false };
     }
     return null;
 }
