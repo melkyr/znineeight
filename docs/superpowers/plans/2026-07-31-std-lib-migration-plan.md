@@ -135,6 +135,8 @@
 **Files:**
 - Modify: `sf/src/semantic_analyzer.zig` (intrinsic table: `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`)
 - Modify: `sf/src/lower.zig` (6 LIR instructions: `.builtin_put_char`, `.builtin_stdout_write`, `.builtin_stderr_write`, `.builtin_get_char`, `.builtin_exit`, `.builtin_sleep_ms`)
+- Modify: `sf/src/lir.zig` (LirInst union — new builtin variants live here)
+- Modify: `sf/src/parser.zig` (zero-arg builtin call parse fix — F1 found `@getChar()` was a pre-existing error[2000] gap)
 - Modify: `sf/src/c89_emit.zig` (C emission per builtin; `#ifdef` for `@sleepMs`)
 - Create: `repro/mi_matrix/io_builtin_test/main.zig` + `NOTES.md`
 - Modify (docs): `sf/docs/tech_docs/05_semantic_analysis.md`, `07_lir_lowering.md`, `08_c89_emission.md`
