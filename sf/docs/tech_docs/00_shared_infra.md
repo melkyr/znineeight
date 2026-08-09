@@ -278,6 +278,42 @@ undefined `isize` in the old macro was removed — any `_WIN32` compile was a pr
 | `markerWriteInt` | 131 | pub | Conditional stderr write with int suffix: writes prefix + decimal value + newline. Uses `itoa` for formatting. | `stringInternerIntern` (INT: markers), phase markers | `markerWrite`, `itoa_mod.itoa` | stderr, local buf | Fixed-width format. | `INT:tl`, `INT:t0`, `INT:dup`, `INT:new` [inference] |
 | `markerWriteInt64` | 144 | pub | Conditional stderr write with **u64** suffix (itoa64, `[24]u8` buffer). Added 2026-08-06 (F2) so the `int_literal` lowering marker (`ILR:i … v<value>`) can render literals ≥ 2^32 without a checked `u32` cast. | `int_literal` lowering marker (lower.zig), F2 u64-safe fix | `markerWrite`, `itoa_mod.itoa64` | stderr, local buf | Full u64 rendering. | `ILR:i39v5000000000` [inference] |
 
+### C-side PAL architecture & platform branching (I-PAL study) [updated: 2026-08-08]
+
+`pal.zig` is the Z98-side view of a 3-part C-side PAL. All C-side code keys OS-level
+branching off **`#ifdef _WIN32`** (covers MSVC 6 AND OpenWatcom — Watcom builds define
+`_WIN32` via `wcc386 /bt=nt /d_WIN32`) with an `#else` POSIX arm. Compiler-dialect
+differences (int64 typedef, `_vsnprintf`, `__inline`) use a **separate** 3-way chain
+`#ifdef _MSC_VER` / `#elif defined(__WATCOMC__)` / `#else` (see emitted
+`zig_compat.h`). This 2-level guard discipline (OS vs compiler) is the pattern the
+C89 emitter must mirror for the planned std-lib builtins.
+
+| C file | Role | Origin |
+|--------|------|--------|
+| `zig_pal.c` | `pal_print_stdout/stderr`, `pal_abort`, i64/u64/f64→str, `pal_file_open/write/close`. fd = `usize` (F-S9), `PlatFile` = `void*` Win / `int` POSIX, `PLAT_INVALID_FILE=((void*)-1)`. | NEW in sf |
+| `zig_runtime.c` | `std_print_*`/`std_panic` (forward to `pal_*`), checked-cast helpers, `__bootstrap_*` aliases. Platform-independent. | REWRITTEN from zig0 |
+| `net_runtime.c` | 12 `plat_socket_*` (WSAStartup/winsock.h vs sys/socket.h; `SOCKET` casts guarded). | inherited byte-identical from zig0 |
+
+Builtin → guard-chain map (zig0 proven patterns):
+- **print/write:** `_WIN32` `GetStdHandle(STD_OUTPUT_HANDLE)` → `WriteConsoleA`, fallback
+  `WriteFile` (console + redirected output); POSIX looped `write(1,…)`. (zig_pal.c:77,92)
+- **read/file:** `CreateFileA`/`ReadFile` vs `open`/`read` loop. (zig_pal.c:181-213)
+- **console gotoxy/setcolor/putchar/clear:** `_WIN32` console API vs ANSI escapes
+  `\x1b[%d;%dH`, `\x1b[%s;%sm`, `\x1b[2J\x1b[H`; `putchar` needs no guard. (zig0
+  `src/runtime/zig_runtime.c:301-356`)
+- **sleep:** `_WIN32` `Sleep(ms)` vs POSIX `usleep(ms*1000)` (requires `_XOPEN_SOURCE 500`).
+- **sockets:** per-function `_WIN32`/`#else` arms; `fd_set` kept opaque (Zig caller uses a
+  `[128]u32` blob + `u8*`-based fd helpers, mud_server pattern).
+
+Watcom/MSVC6 workarounds to preserve: `platform_win98.h` preamble (`WINVER=0x0410`,
+`WIN32_LEAN_AND_MEAN`, `_MBCS`); explicit `struct _MEMORY_BASIC_INFORMATION`; `_vsnprintf`
+vs `vsnprintf`; `#pragma comment(lib, "wsock32.lib")`; `SOCKET` is unsigned — compare to
+`INVALID_SOCKET`. Builtins improve on zig0 by emitting each guarded body once (zig0
+duplicates sockets in both `platform.cpp` and `net_runtime.c`), using libc on the POSIX
+arm (hand-roll only `_WIN32`), and folding `plat_is_windows()` to a comptime constant.
+**Open issue:** sf-generated `build_owc.bat` (c89_emit.zig:5087) defines `ZIG_WIN32` but
+the C checks `_WIN32` — fix when the builtin emitter lands.
+
 ---
 
 ## 6. `growable_array.zig` — Typed Dynamic Arrays (260 lines)
