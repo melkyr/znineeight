@@ -242,6 +242,12 @@ pub const LirLowerer = struct {
     cvastart_name_id: u32,
     cvaarg_name_id: u32,
     cvaend_name_id: u32,
+    putchar_name_id: u32,
+    stdout_write_name_id: u32,
+    stderr_write_name_id: u32,
+    getchar_name_id: u32,
+    exit_name_id: u32,
+    sleep_ms_name_id: u32,
     local_decl_names: [64]u32,
     local_decl_types: [64]u32,
     local_decl_temps: [64]u32,
@@ -283,6 +289,18 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var cvaarg_id = si_mod.stringInternerIntern(ctx.registry.interner, cvaarg_s);
     var cvaend_s: []const u8 = "@cVaEnd";
     var cvaend_id = si_mod.stringInternerIntern(ctx.registry.interner, cvaend_s);
+    var putchar_s: []const u8 = "@putChar";
+    var putchar_id = si_mod.stringInternerIntern(ctx.registry.interner, putchar_s);
+    var stdout_write_s: []const u8 = "@stdoutWrite";
+    var stdout_write_id = si_mod.stringInternerIntern(ctx.registry.interner, stdout_write_s);
+    var stderr_write_s: []const u8 = "@stderrWrite";
+    var stderr_write_id = si_mod.stringInternerIntern(ctx.registry.interner, stderr_write_s);
+    var getchar_s: []const u8 = "@getChar";
+    var getchar_id = si_mod.stringInternerIntern(ctx.registry.interner, getchar_s);
+    var exit_s: []const u8 = "@exit";
+    var exit_id = si_mod.stringInternerIntern(ctx.registry.interner, exit_s);
+    var sleep_ms_s: []const u8 = "@sleepMs";
+    var sleep_ms_id = si_mod.stringInternerIntern(ctx.registry.interner, sleep_ms_s);
     return LirLowerer{
         .ctx = ctx,
         .func = undefined,
@@ -309,6 +327,12 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .cvastart_name_id = cvastart_id,
          .cvaarg_name_id = cvaarg_id,
          .cvaend_name_id = cvaend_id,
+         .putchar_name_id = putchar_id,
+         .stdout_write_name_id = stdout_write_id,
+         .stderr_write_name_id = stderr_write_id,
+         .getchar_name_id = getchar_id,
+         .exit_name_id = exit_id,
+         .sleep_ms_name_id = sleep_ms_id,
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_temps = undefined,
@@ -2729,6 +2753,45 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     vet = vaListArgTemp(self, ec[@intCast(usize, 0)]);
                 }
                 emitInst(self, LirInst{ .va_end = .{ .va_list_temp = vet } });
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.putchar_name_id) {
+                if (ec.len >= @intCast(usize, 1)) {
+                    var pc_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    emitInst(self, LirInst{ .builtin_put_char = .{ .value = pc_val } });
+                }
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.stdout_write_name_id or node.child_0 == self.stderr_write_name_id) {
+                if (ec.len >= @intCast(usize, 2)) {
+                    var so_ptr = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    var so_len = lowerExpr(self, ec[@intCast(usize, 1)]);
+                    if (node.child_0 == self.stdout_write_name_id) {
+                        emitInst(self, LirInst{ .builtin_stdout_write = .{ .ptr = so_ptr, .len = so_len } });
+                    } else {
+                        emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = so_ptr, .len = so_len } });
+                    }
+                }
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.getchar_name_id) {
+                var gc_res = nextTemp(self, type_mod.TYPE_U8);
+                emitInst(self, LirInst{ .builtin_get_char = .{ .result = gc_res } });
+                return gc_res;
+            }
+            if (node.child_0 == self.exit_name_id) {
+                if (ec.len >= @intCast(usize, 1)) {
+                    var ex_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    emitInst(self, LirInst{ .builtin_exit = .{ .value = ex_val } });
+                }
+                self.block_terminated = @intCast(u8, 1);
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.sleep_ms_name_id) {
+                if (ec.len >= @intCast(usize, 1)) {
+                    var sm_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    emitInst(self, LirInst{ .builtin_sleep_ms = .{ .value = sm_val } });
+                }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (ec.len >= 2) {

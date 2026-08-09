@@ -1989,6 +1989,81 @@ fn emitStdargInclude(emitter: *C89Emitter, fns: []LirFunction) void {
     }
 }
 
+fn moduleHasStdioBuiltin(fns: []LirFunction) u8 {
+    var vi: usize = @intCast(usize, 0);
+    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
+        var vf = &fns[vi];
+        var vbi: usize = @intCast(usize, 0);
+        while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
+            var vbb = &vf.blocks.items[vbi];
+            var vii: usize = @intCast(usize, 0);
+            while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
+                switch (vbb.insts.items[vii]) {
+                    .builtin_put_char => return @intCast(u8, 1),
+                    .builtin_stdout_write => return @intCast(u8, 1),
+                    .builtin_stderr_write => return @intCast(u8, 1),
+                    .builtin_get_char => return @intCast(u8, 1),
+                    else => {},
+                }
+            }
+        }
+    }
+    return @intCast(u8, 0);
+}
+
+fn moduleHasExitBuiltin(fns: []LirFunction) u8 {
+    var vi: usize = @intCast(usize, 0);
+    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
+        var vf = &fns[vi];
+        var vbi: usize = @intCast(usize, 0);
+        while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
+            var vbb = &vf.blocks.items[vbi];
+            var vii: usize = @intCast(usize, 0);
+            while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
+                switch (vbb.insts.items[vii]) {
+                    .builtin_exit => return @intCast(u8, 1),
+                    else => {},
+                }
+            }
+        }
+    }
+    return @intCast(u8, 0);
+}
+
+fn moduleHasSleepBuiltin(fns: []LirFunction) u8 {
+    var vi: usize = @intCast(usize, 0);
+    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
+        var vf = &fns[vi];
+        var vbi: usize = @intCast(usize, 0);
+        while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
+            var vbb = &vf.blocks.items[vbi];
+            var vii: usize = @intCast(usize, 0);
+            while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
+                switch (vbb.insts.items[vii]) {
+                    .builtin_sleep_ms => return @intCast(u8, 1),
+                    else => {},
+                }
+            }
+        }
+    }
+    return @intCast(u8, 0);
+}
+
+fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
+    if (moduleHasStdioBuiltin(fns) != @intCast(u8, 0)) {
+        var stdio_inc: []const u8 = "#include <stdio.h>\n";
+        bufferedWriterWrite(&emitter.writer, stdio_inc);
+    }
+    if (moduleHasExitBuiltin(fns) != @intCast(u8, 0)) {
+        var stdlib_inc: []const u8 = "#include <stdlib.h>\n";
+        bufferedWriterWrite(&emitter.writer, stdlib_inc);
+    }
+    if (moduleHasSleepBuiltin(fns) != @intCast(u8, 0)) {
+        var swin: []const u8 = "#ifdef _WIN32\n#include <windows.h>\n#else\n#include <unistd.h>\n#endif\n";
+        bufferedWriterWrite(&emitter.writer, swin);
+    }
+}
+
 fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32) void {
     var s1: []const u8 = "/* Module: ";
     bufferedWriterWrite(&emitter.writer, s1);
@@ -1996,6 +2071,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, 
     var s2: []const u8 = " */\n#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
     bufferedWriterWrite(&emitter.writer, s2);
     emitStdargInclude(emitter, fns);
+    emitBuiltinIncludes(emitter, fns);
     var ci: usize = @intCast(usize, 0);
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
@@ -2327,6 +2403,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
     var h1: []const u8 = ".h\"\n";
     bufferedWriterWrite(&emitter.writer, h1);
     emitStdargInclude(emitter, fns);
+    emitBuiltinIncludes(emitter, fns);
     emitGlobalDecls(emitter, module_id, @intCast(u8, 0));
     var i: usize = @intCast(usize, 0);
     while (i < fns.len) : (i += @intCast(usize, 1)) {
@@ -3057,6 +3134,28 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
      }
      var vflow_rnt: []const u8 = "VFLOW:rnt"; pal.markerWriteInt(vflow_rnt, temp_id);
      return mangleTempName(emitter.interner, temp_id);
+ }
+
+ fn emitFwriteCall(emitter: *C89Emitter, ptr: u32, len: u32, is_stdout: u8) void {
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    var f0: []const u8 = "fwrite(";
+    bufferedWriterWrite(&emitter.writer, f0);
+    var fp = resolveTempName(emitter, ptr);
+    bufferedWriterWrite(&emitter.writer, fp);
+    var f1: []const u8 = ", 1, ";
+    bufferedWriterWrite(&emitter.writer, f1);
+    var fl = resolveTempName(emitter, len);
+    bufferedWriterWrite(&emitter.writer, fl);
+    var f2: []const u8 = ", ";
+    bufferedWriterWrite(&emitter.writer, f2);
+    var fs: []const u8 = "stdout";
+    if (is_stdout == @intCast(u8, 0)) {
+        var fserr: []const u8 = "stderr";
+        fs = fserr;
+    }
+    bufferedWriterWrite(&emitter.writer, fs);
+    var f3: []const u8 = ");\n";
+    bufferedWriterWrite(&emitter.writer, f3);
  }
 
  fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
@@ -4453,6 +4552,61 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
             var rp: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, rp);
+        },
+        .builtin_put_char => |bpc| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bpc1: []const u8 = "putchar(";
+            bufferedWriterWrite(&emitter.writer, bpc1);
+            var bpc_v = resolveTempName(emitter, bpc.value);
+            bufferedWriterWrite(&emitter.writer, bpc_v);
+            var bpc2: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, bpc2);
+        },
+        .builtin_stdout_write => |bsow| {
+            emitFwriteCall(emitter, bsow.ptr, bsow.len, @intCast(u8, 1));
+        },
+        .builtin_stderr_write => |bsew| {
+            emitFwriteCall(emitter, bsew.ptr, bsew.len, @intCast(u8, 0));
+        },
+        .builtin_get_char => |bgc| {
+            var bgc_res = resolveTempName(emitter, bgc.result);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, bgc_res);
+            var bgc1: []const u8 = " = getchar();\n";
+            bufferedWriterWrite(&emitter.writer, bgc1);
+        },
+        .builtin_exit => |bex| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bex1: []const u8 = "exit(";
+            bufferedWriterWrite(&emitter.writer, bex1);
+            var bex_v = resolveTempName(emitter, bex.value);
+            bufferedWriterWrite(&emitter.writer, bex_v);
+            var bex2: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, bex2);
+        },
+        .builtin_sleep_ms => |bsm| {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bsm0: []const u8 = "#ifdef _WIN32\n";
+            bufferedWriterWrite(&emitter.writer, bsm0);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bsm1: []const u8 = "Sleep(";
+            bufferedWriterWrite(&emitter.writer, bsm1);
+            var bsm_v = resolveTempName(emitter, bsm.value);
+            bufferedWriterWrite(&emitter.writer, bsm_v);
+            var bsm2: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, bsm2);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bsm3: []const u8 = "#else\n";
+            bufferedWriterWrite(&emitter.writer, bsm3);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bsm4: []const u8 = "usleep(";
+            bufferedWriterWrite(&emitter.writer, bsm4);
+            bufferedWriterWrite(&emitter.writer, bsm_v);
+            var bsm5: []const u8 = " * 1000);\n";
+            bufferedWriterWrite(&emitter.writer, bsm5);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var bsm6: []const u8 = "#endif\n";
+            bufferedWriterWrite(&emitter.writer, bsm6);
         },
         .ptr_cast => |pc| {
             var dst = resolveTempName(emitter, pc.result);

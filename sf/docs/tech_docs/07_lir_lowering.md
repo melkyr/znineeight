@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-08 — I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
+# LIR Lowering Layer [updated: 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
 
 ## Summary
 
@@ -46,7 +46,7 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `is_pub` | `u8` | Public visibility flag |
 | `is_variadic` | `u8` | Variadic parameter flag |
 
-### All 57 LirInst Variants `sf/src/lir.zig:22`
+### All 63 LirInst Variants `sf/src/lir.zig:22`
 
 #### Declarations
 | Variant | Fields | Purpose |
@@ -115,7 +115,7 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `va_end` | `va_list_temp` | `va_end(vl)` — cleanup |
 
 These are emitted by the `@cVaStart`/`@cVaArg`/`@cVaEnd` builtin handler
-(`lower.zig:2620-2656`, dispatched before the `ec.len>=2` cast block); the
+(`lower.zig:2721-2772`, dispatched before the `ec.len>=2` cast block); the
 `va_list_temp` operand is resolved via `vaListArgTemp` (`lower.zig:1002`, unwraps
 `&ident`/`ident` to a local temp). `@cVaStart` in a non-variadic function emits
 `error[3012]` (`ERR_3012_VARARGS_INVALID`); the same error is emitted for a
@@ -125,6 +125,22 @@ variadic fn with ZERO fixed params (`fn f(...)`, `lower.zig:4726-4730`).
 anytype-marker branch was **deactivated in F5b (AMENDMENT 5)** — `is_variadic`
 now comes solely from the flag-bit path (mud/gol `print(fmt, ...)` signatures
 are unchanged because they migrated to true `...`).
+
+#### Builtin I/O — `sf/src/lir.zig:80-85` [added: 2026-08-08]
+| Variant | Fields | Purpose |
+|---------|--------|---------|
+| `builtin_put_char` | `value` | Emit `putchar(value)` to stdout (libc stdio) |
+| `builtin_stdout_write` | `ptr, len` | Emit `fwrite(ptr, 1, len, stdout)` |
+| `builtin_stderr_write` | `ptr, len` | Emit `fwrite(ptr, 1, len, stderr)` |
+| `builtin_get_char` | `result` | `result = getchar()` (result temp typed `TYPE_U8`) |
+| `builtin_exit` | `value` | Emit `exit(value)`; sets `block_terminated = 1` (noreturn) |
+| `builtin_sleep_ms` | `value` | Emit `#ifdef _WIN32` `Sleep(value)` `#else` `usleep(value * 1000)` `#endif` |
+
+Emitted by the core-I/O builtin handler (`lower.zig:2758-2795`, dispatched before
+the `ec.len>=2` cast block, mirroring the `va_*` handlers). Each value arg is
+lowered via `lowerExpr`; `@exit` marks the current block terminated so the
+function's trailing `emitValuelessReturn` (lower.zig:4906) is skipped. See §Builtin
+I/O lowering below.
 
 #### Optional Handling
 | Variant | Fields | Purpose |
@@ -222,7 +238,7 @@ are unchanged because they migrated to true `...`).
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `lowererInit` | `(ctx, alloc) → LirLowerer` `sf/src/lower.zig:261` | Creates LirLowerer with empty stacks, pre-caches builtin name IDs |
+| `lowererInit` | `(ctx, alloc) → LirLowerer` `sf/src/lower.zig:267` | Creates LirLowerer with empty stacks, pre-caches builtin name IDs (incl. the 6 core I/O builtins, F1) |
 | `emitInst` | `(self, LirInst)` `sf/src/lower.zig:336` | Appends instruction into current basic block |
 | `nextTemp` | `(self, type_id) → u32` `sf/src/lower.zig:340` | Allocates temp ID, records in hoisted_temps |
 | `createBlock` | `(self) → u32` `sf/src/lower.zig:379` | Creates new BasicBlock, appends to func.blocks |
@@ -435,7 +451,7 @@ an undeclared `zG_...` name (gcc `'zG_...' undeclared`). Fixes `xmod_pub_const_g
 
 **print() builtin** (`sf/src/lower.zig:375`): Special-cased. Emits `print_str` for the format string, `print_val` per argument.
 
-**Builtin calls** (`sf/src/lower.zig:2381`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2620-2656`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above).
+**Builtin calls** (`sf/src/lower.zig:2395`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2721-2772`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above). **[updated: 2026-08-08] Core I/O builtins** (`lower.zig:2758-2797`, F1): `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the 6 `builtin_*` LIR (see the Builtin I/O table above). `@exit` sets `block_terminated=1` (noreturn).
 
 **`@intCast` range-check (F1, 2026-08-06):** the explicit `@intCast` builtin handler
 (`lower.zig:2686-2703`) now computes `is_checked` from the source/target widths
@@ -470,13 +486,18 @@ path; the `print_str`/`print_val` → `std_print*` path is untouched.
 | `__bootstrap_sleep_ms` :72 | `void (unsigned int)` | game_of_life (sleep 100), oracle examples | → `@sleepMs` |
 | 19× `__bootstrap_<DST>_from_<SRC>` :121-208 | per-pair `DST (SRC)` (see below) | zig1's c89_emit checked `int_cast` arm (isBootstrapHelperDefined, c89_emit.zig:2973-3013); also zig0-emitted compiler binary | **STAY** (compiler `@intCast` runtime) |
 
-**Proposed builtin signatures (plan catalog, Option B):** `@putChar(c: u8) void`,
+**Builtin signatures (plan catalog, Option B):** `@putChar(c: u8) void`,
 `@stderrWrite(buf: [*]const u8, len: usize) void`, `@getChar() u8`, `@exit(code: u8) noreturn`,
-`@sleepMs(ms: u32) void`, `@isWindows() bool` (comptime), `@consoleClear() void`,
+`@sleepMs(ms: u32) void`, `@stdoutWrite(buf: [*]const u8, len: usize) void` (added by operator
+ruling m0564 — the I-RT concern-3 flag), `@isWindows() bool` (comptime), `@consoleClear() void`,
 `@consoleGotoxy(x: i32, y: i32) void`, `@consoleSetColor(fg: i32, bg: i32) void`, then 11
-`@socket*` in Phase 2. `@putChar`/`@stderrWrite`/`@getChar`/`@exit` are portable (stdio/libc);
-`@sleepMs` + console builtins need `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else`
-(preprocessor-guarded C emission, never comptime), matching the zig0-oracle runtime bodies.
+`@socket*` in Phase 2. **F1 (2026-08-08) IMPLEMENTED the first 6:** `@putChar`/`@stdoutWrite`/
+`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` are live in sema (`semantic_analyzer.zig:1314-1343`),
+lower (`lower.zig:2758-2795`, the 6 `builtin_*` LIR), and c89_emit (`emitBuiltinIncludes` +
+`emitFwriteCall` + the 6 emission arms). `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/
+`@exit` are portable (stdio/libc); `@sleepMs` uses `#ifdef _WIN32` `Sleep(ms)` / `#else`
+`usleep(ms*1000)` (preprocessor-guarded C emission, never comptime), matching the zig0-oracle
+runtime body. Guarded repro: `repro/mi_matrix/io_builtin_test`.
 
 **`@intCast` cast-helper table (all STAY):** `usize_from_i64` :121, `i32_from_u32` :126,
 `u32_from_u64` :131, `u32_from_i32` :136, `usize_from_i32` :141, `i32_from_usize` :146,

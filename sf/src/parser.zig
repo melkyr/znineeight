@@ -579,6 +579,7 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     _ = parserAdvance(self);
      var saved_builtin: usize = self.child_buf_len;
      while (true) {
+         if (parserPeek(self).kind == TokenKind.rparen) break;
          var tok = parserPeek(self);
          var is_type: u8 = @intCast(u8, 0);
          if (tok.kind == TokenKind.star) { is_type = @intCast(u8, 1); }

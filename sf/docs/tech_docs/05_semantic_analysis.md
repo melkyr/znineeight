@@ -1,10 +1,10 @@
-# 05 — Semantic Analysis [updated: 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs) added to the builtin_call resolver; prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 38 | 29 non-builtin + 9 builtin name IDs |
+| `SemanticAnalyzer` fields | 44 | 29 non-builtin + 15 builtin name IDs |
 | Expression kind dispatch arms | 46+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` (coercion.zig:1-19) |
 | Coercion checks in `classifyCoercion` | ~18 | Null, optional, error union, ptr, slice, array, widening |
@@ -52,22 +52,24 @@ pub const SemanticAnalyzer = struct {
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
-    // 8 builtin name IDs:
+    // 15 builtin name IDs:
     ptrcast_name_id, ptrtoint_name_id, inttoptr_name_id,
     intcast_name_id, floatcast_name_id, inttofloat_name_id,
     inttoenum_name_id, size_of_name_id, align_of_name_id,
+    putchar_name_id, stdout_write_name_id, stderr_write_name_id,
+    getchar_name_id, exit_name_id, sleep_ms_name_id,
 };
 ```
 
 Key state: expected-type stack for contextual type inference (enum literals, error literals, null), statement worklist for iterative traversal, switch context for enum literal resolution, and local declaration shadow stack.
 
-### semanticAnalyzerInit (`sf/src/semantic_analyzer.zig:63-124`)
+### semanticAnalyzerInit (`sf/src/semantic_analyzer.zig:70-147`)
 
 `[inference: sandAlloc-builtin name interning, zero-init stacks/lists, return SemanticAnalyzer]`
 
-Allocates no heap memory in the struct itself. Interns 8 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
+Allocates no heap memory in the struct itself. Interns 14 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
 
-### semanticAnalyzerIsTypeValueCast (`sf/src/semantic_analyzer.zig:126-134`)
+### semanticAnalyzerIsTypeValueCast (`sf/src/semantic_analyzer.zig:152-160`)
 
 `[inference: match name_id vs 6 cast builtins → return bool]`
 
@@ -255,7 +257,7 @@ fi from 0..fields_count:
 
 ### Expression Resolution Dispatch — semanticAnalyzerResolveExpr
 
-`sf/src/semantic_analyzer.zig:1131-1382` — master `switch` on `node.kind`:
+`sf/src/semantic_analyzer.zig:1131-1396` — master `switch` on `node.kind`:
 
 | Arm | AstKind | `[inference]` | Returns |
 |-----|---------|---------------|---------|
@@ -276,7 +278,7 @@ fi from 0..fields_count:
 | 15 | `deref` | `[inference: ptr/many_ptr → base type]` | `pp.base` or base type |
 | 16 | `address_of` | `[inference: return *T for expr of type T]` | `typeRegistryGetOrCreatePtr(base, false)` |
 | 17 | `fn_call` | → `semanticAnalyzerResolveFnCall` | return type |
-| 18 | `builtin_call` | → dispatch by child_0 | TYPE_INT_LIT / resolved type / arg type |
+| 18 | `builtin_call` | → dispatch by child_0 | TYPE_INT_LIT / resolved type / arg type / TYPE_VOID / TYPE_U8 / TYPE_NORETURN |
 | 19 | `bool_not` | `[inference: resolve child, return TYPE_BOOL]` | `TYPE_BOOL` |
 | 20 | `negate` | → `semanticAnalyzerResolveNegate` | numeric type or VOID |
 | 21 | `bit_not` | → `semanticAnalyzerResolveBitNot` | integer type or VOID |
@@ -424,6 +426,24 @@ name `fnt_<ret>_<p1>_...` (type_resolver.zig:749-778), marks it fn-ptr-used
 `typeRegistryGetOrCreatePtr(fn_type, false)` — a pointer to it (type_resolver.zig:787). The local
 `f` gets this ptr-to-fn type, and `f(args, temp_sand)` works because `semanticAnalyzerResolveFnCall`
 dereferences a ptr callee to its fn type (semantic_analyzer.zig:735-742).
+
+#### Builtin I/O dispatch (F1, 2026-08-08) — `[updated: 2026-08-08]`
+
+The `builtin_call` resolver (semantic_analyzer.zig:1314-1343) now dispatches 6 core I/O
+builtins by `child_0` name ID (fields `putchar_name_id` … `sleep_ms_name_id`, interned in
+`semanticAnalyzerInit`). Each resolves its value args via `semanticAnalyzerResolveExpr` and
+returns the signature type:
+
+| Builtin | Args resolved | Returns |
+|---------|---------------|---------|
+| `@putChar(c: u8)` | `ec[0]` | `TYPE_VOID` |
+| `@stdoutWrite(buf: [*]const u8, len: usize)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
+| `@stderrWrite(buf: [*]const u8, len: usize)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
+| `@getChar()` | none | `TYPE_U8` |
+| `@exit(code: u8)` | `ec[0]` | `TYPE_NORETURN` |
+| `@sleepMs(ms: u32)` | `ec[0]` | `TYPE_VOID` |
+
+The `@getChar` zero-arg form depends on the parser zero-arg builtin fix (parser.zig:581).
 
 ### semanticAnalyzerResolveArithmetic (`sf/src/semantic_analyzer.zig:487-511`)
 

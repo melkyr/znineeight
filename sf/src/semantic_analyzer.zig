@@ -59,6 +59,12 @@ pub const SemanticAnalyzer = struct {
     inttoenum_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
+    putchar_name_id: u32,
+    stdout_write_name_id: u32,
+    stderr_write_name_id: u32,
+    getchar_name_id: u32,
+    exit_name_id: u32,
+    sleep_ms_name_id: u32,
 };
 
 pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map) SemanticAnalyzer {
@@ -82,6 +88,18 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var so_id = interner_mod.stringInternerIntern(interner, so_s);
     var ao_s: []const u8 = "@alignOf";
     var ao_id = interner_mod.stringInternerIntern(interner, ao_s);
+    var pc2_s: []const u8 = "@putChar";
+    var pc2_id = interner_mod.stringInternerIntern(interner, pc2_s);
+    var sow_s: []const u8 = "@stdoutWrite";
+    var sow_id = interner_mod.stringInternerIntern(interner, sow_s);
+    var sew_s: []const u8 = "@stderrWrite";
+    var sew_id = interner_mod.stringInternerIntern(interner, sew_s);
+    var gc_s: []const u8 = "@getChar";
+    var gc_id = interner_mod.stringInternerIntern(interner, gc_s);
+    var ex_s: []const u8 = "@exit";
+    var ex_id = interner_mod.stringInternerIntern(interner, ex_s);
+    var sm_s: []const u8 = "@sleepMs";
+    var sm_id = interner_mod.stringInternerIntern(interner, sm_s);
     return SemanticAnalyzer{
         .type_table = type_table,
         .diag = diag,
@@ -122,6 +140,12 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .inttoenum_name_id = ie_id,
         .size_of_name_id = so_id,
         .align_of_name_id = ao_id,
+        .putchar_name_id = pc2_id,
+        .stdout_write_name_id = sow_id,
+        .stderr_write_name_id = sew_id,
+        .getchar_name_id = gc_id,
+        .exit_name_id = ex_id,
+        .sleep_ms_name_id = sm_id,
     };
 }
 
@@ -1298,6 +1322,22 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (node.child_0 == self.ptrtoint_name_id) {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
             result = type_mod.TYPE_USIZE;
+        } else if (node.child_0 == self.getchar_name_id) {
+            result = type_mod.TYPE_U8;
+        } else if (node.child_0 == self.exit_name_id) {
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            result = type_mod.TYPE_NORETURN;
+        } else if (node.child_0 == self.putchar_name_id or node.child_0 == self.sleep_ms_name_id) {
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            result = type_mod.TYPE_VOID;
+        } else if (node.child_0 == self.stdout_write_name_id or node.child_0 == self.stderr_write_name_id) {
+            if (ec.len >= @intCast(usize, 2)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
+            } else if (ec.len >= @intCast(usize, 1)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+            }
+            result = type_mod.TYPE_VOID;
         } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
