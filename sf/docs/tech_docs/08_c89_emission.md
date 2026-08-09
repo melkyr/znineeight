@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-08-08 — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form still emits gcc-invalid C (`binary ==` on structs) — separate latent union-`==` emission issue NOT fixed (Option (b) sema reject out of scope per ruling m0406); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348); F7 line-ref re-verification (2026-08-08): all `c89_emit.zig`/`main.zig` refs corrected against source — emitInst :3062, emitModule :2201, emitModuleHeaderFile :2078, emitModuleFile :2323, emitMainWrapper :2237, emitFunctionSignature :1854, emitFunctionForwardDecl :1920, emitStdargInclude :1985, moduleHasVaInsts :1964, moduleQualifiedName :2035, ctypeGuardWrite :997, mangleLocalName :1838, mangleTempName :2349, c_incs list :1996-2013, dep-.h include :2121-2128, extern-name call site :4048, extern-no-fwd :1927, extern-no-body :2333, .loop_header :3071-3073, preamble :744 / main.zig:827-830, length guard :769, cincludeUnionAll call :832, LIR fn-list :543-615, C marker :710, FINAL_FLUSH :834, module name :731, sema comparison :540, lower enum_const :2207]
+# 08 — C89 Emission [updated: 2026-08-08 — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form now emits valid C — tagged-union `==`/`!=` emission FIXED (Task F, Option A, operator ruling m0471 SUPERSEDES the zig0 oracle which rejects union `==`): the `.binary` handler (c89_emit.zig:3724-3739) type-resolves each BIN_EQ/BIN_NE operand in `hoisted_temps` and appends `.tag` for `tagged_union_type` operands (mirrors the int_const `.tag =` path c89_emit.zig:3762-3789) — valid Zig semantics (union `==` compares the active tags); `s == lib_mod.Shape.Circle` emits `s.tag == zT_rhs.tag` (gcc-valid); `tagged_union_cmp_xmod` compiles+links+runs printing `1`; same-module union `==` also emits `.tag` (verified); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348); F7 line-ref re-verification (2026-08-08): all `c89_emit.zig`/`main.zig` refs corrected against source — emitInst :3062, emitModule :2201, emitModuleHeaderFile :2078, emitModuleFile :2323, emitMainWrapper :2237, emitFunctionSignature :1854, emitFunctionForwardDecl :1920, emitStdargInclude :1985, moduleHasVaInsts :1964, moduleQualifiedName :2035, ctypeGuardWrite :997, mangleLocalName :1838, mangleTempName :2349, c_incs list :1996-2013, dep-.h include :2121-2128, extern-name call site :4048, extern-no-fwd :1927, extern-no-body :2333, .loop_header :3071-3073, preamble :744 / main.zig:827-830, length guard :769, cincludeUnionAll call :832, LIR fn-list :543-615, C marker :710, FINAL_FLUSH :834, module name :731, sema comparison :540, lower enum_const :2207]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -402,7 +402,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3062`):
 | `.load` | `result = *ptr;` | 2768 |
 | `.store` | `*ptr = val;` | 2780 |
 | `.addr_of` | `result = &operand;` | 2793 |
-| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`) | 2804 |
+| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`; **BIN_EQ/BIN_NE with `tagged_union_type` operands append `.tag` to each operand name** → `s.tag == t.tag`, valid C, active-tag comparison — Task F, 2026-08-08, ruling m0471) | 3708 |
 | `.unary` | `result = op operand;` (op: `-` `!` `~`) | 2841 |
 | `.int_const` | `result = <value>;` (signed: cast + neg magnitude to avoid warnings; tagged_union: `.tag = <value>;`) | 2854 |
 | `.enum_const` | `result = <type>_<member>;` | 2928 |
@@ -774,10 +774,12 @@ branched on the CLI, never mixed.
   diagnostic (Option (b)) was NOT implemented — out of scope per the operator ruling m0406.
   Post-fix: `tagged_union_cmp_xmod` dumps rc=0 (SEGV gone); the isolated member-literal form
   `var x = lib_mod.Shape.Circle;` is gcc-clean and RUNS (tag value emitted). The repro's `==`
-  form now emits `zT_3.tag = 0; zT_4 = s == zT_3;` — still **gcc-invalid** (`binary ==` on two
-  `zT_4380DDC6_Shape` structs): the separate latent union-`==` emission issue (BIN_EQ emits
-  `lhs == rhs` in C, no union-equality path) is NOT fixed here. 4 MD5 gates byte-identical;
-  corpus CRASH=0 (was 1); test_analyzer_bin PASS.
+  form now emits `zT_3.tag = 0; zT_4 = s.tag == zT_3.tag;` — **gcc-valid** (the separate latent
+  union-`==` emission issue — BIN_EQ emitted `lhs == rhs` in C, no union-equality path — is now
+  FIXED by Task F, Option A, 2026-08-08: the `.binary` handler appends `.tag` to
+  `tagged_union_type` operands for BIN_EQ/BIN_NE, per operator ruling m0471 which supersedes the
+  zig0 oracle's rejection of union `==`). The repro compiles, links, and RUNS printing `1`. 4 MD5
+  gates byte-identical; corpus CRASH=0 (was 1); test_analyzer_bin PASS.
   `[gdb]`/`[asan]` backtrace: `#0 typeRegistryGetStructFields` ← `#1 lowerExprImpl` ← `lowerExpr`
   ← `lowerStmt` ← `lowerFn` ← `phase_LIRLowering`.
   - **Crash locus:** `lower.zig:2180` — the generic base-type field-access branch (lines 2174-2180)
@@ -799,16 +801,17 @@ branched on the CLI, never mixed.
   - **Variant matrix (all measured on `sf/build/out_release/zig1`):**
     | variant | program | zig1 | zig0 oracle |
     |---|---|---|---|
-    | same-module `s == Shape.Circle` | union declared in-file | rc=0, emits `zT_2 = s == zT_1;` — **gcc-invalid** (`binary ==` on two `Shape` structs) | **REJECTS** cleanly (`error: type mismatch`, rc=1) |
+    | same-module `s == Shape.Circle` | union declared in-file | **Task F: rc=0, emits `zT_2 = s.tag == zT_1.tag;` — gcc-valid, runs printing `1`** (was gcc-invalid `zT_2 = s == zT_1;`) | **REJECTS** cleanly (`error: type mismatch`, rc=1) — superseded by ruling m0471 (Option A emits valid C) |
     | cross-module `var x = lib_mod.Shape.Circle;` | member literal, no `==` | **pre-fix SEGV rc=1 → F6: rc=0, gcc-clean, runs** (emits `zT_3.tag = 0; x = zT_3;`) | accepts (emits tag-enum value `enum Shape_Tag x = Shape_Tag_Circle;`, gcc-clean) |
-    | cross-module `s == lib_mod.Shape.Circle` | the repro | **pre-fix SEGV rc=1 → F6: rc=0** (emits `zT_3.tag = 0; zT_4 = s == zT_3;` — still gcc-invalid, latent union-`==` emission) | **REJECTS** cleanly (rc=1) |
+    | cross-module `s == lib_mod.Shape.Circle` | the repro | **pre-fix SEGV rc=1 → F6: rc=0 → Task F: rc=0, gcc-clean, runs printing `1`** (emits `zT_3.tag = 0; zT_4 = s.tag == zT_3.tag;`) | **REJECTS** cleanly (rc=1) — superseded by ruling m0471 (Option A emits valid C) |
     | same-module TU VALUE payload access `s.Circle` | `var v = s.Circle;` | **pre-fix SEGV rc=1 → F6: no longer SEGVs** (member lookup in `tu_items`; still returns the tag value, not the payload — payload-read emission is a follow-up) | accepts (emits `v = s.data.Circle;`, gcc-clean) |
   - **Findings:** (1) the crash is NOT `==`-specific and NOT even cross-module-specific — ANY
     field access whose resolved base type is a tagged_union and which is NOT the same-module
     `ident_expr`→`type_alias` member path hits lower.zig:2180 and SEGVs (includes same-module TU
     VALUE payload access `s.Circle`). (2) The `==` form is a SEPARATE defect: even same-module,
-    union `==` emits gcc-invalid C (the emitter has NO union-equality path — `BIN_EQ` just emits
-    `lhs == rhs` in C; `c89_emit.zig:3708`). (3) sema silently resolves `union == union` to
+    union `==` emits gcc-invalid C (the emitter had NO union-equality path — `BIN_EQ` just emitted
+    `lhs == rhs` in C; `c89_emit.zig:3708`) — **now FIXED by Task F (Option A, `.tag` suffix
+    emission, ruling m0471)**. (3) sema silently resolves `union == union` to
     `TYPE_VOID` with NO diagnostic (`semanticAnalyzerResolveComparison`, `semantic_analyzer.zig:563-568`
     returns VOID for same-type non-bool/non-pointer) — so the compiler neither rejects nor emits
     valid C; it just falls through to lowering and crashes.
@@ -820,16 +823,21 @@ branched on the CLI, never mixed.
     diagnostic (Option (b)) is OUT OF SCOPE and NOT implemented. The lower.zig:2180 SEGV fix (a
     `tagged_union_type` case in the generic field-access dispatch so member literals lower to the
     tag value) landed F6: valid programs (`var x = lib.Shape.Circle;`, TU member access) no longer
-    crash. The repro's `==` form now compiles through lowering but still emits gcc-invalid C
-    (`zT_4 = s == zT_3;` — binary `==` on the struct union, no union-equality emission path) — a
-    SEPARATE latent issue NOT fixed here (documented in NOTES.md + this section). Same-module
-    `==` invalid-C emission is the same latent issue.
+    crash. The repro's `==` form then emitted gcc-invalid C (`zT_4 = s == zT_3;` — binary `==` on
+    the struct union, no union-equality emission path) — a SEPARATE latent issue. **Task F
+    (2026-08-08) FIXES that latent issue (Option A, emitter):** per operator ruling m0471, zig1
+    SUPERSEDES the zig0 oracle for union `==` — the `.binary` handler (c89_emit.zig:3724-3739)
+    now resolves each BIN_EQ/BIN_NE operand's temp type in `hoisted_temps` and appends `.tag`
+    to `tagged_union_type` operands (mirroring the int_const `.tag =` path), emitting valid C
+    `s.tag == t.tag` with valid Zig semantics (union `==` compares the active tags). This applies
+    to BOTH cross-module and same-module union `==`/`!=`. The sema reject-`==` diagnostic (Option
+    (b)) remains OUT OF SCOPE.
   - **Blast radius:** gates mud/gol/lisp/json use tagged-union `switch` (works, lower's
     switch-case path), never `==` on union values (`builtins.zig:124` `res = a == b` compares
-    `*Value` POINTERS, not union payloads — unaffected). No gated example flips with either the
-    crash fix or the `==` rejection. Corpus: only `tagged_union_cmp_xmod` (CRASH) + hypothetical
-    same-module `s == Shape.Circle` (currently gcc-invalid, would become a green-guard). No OK
-    repro uses cross-module TU member `==` today.
+    `*Value` POINTERS, not union payloads — unaffected). No gated example flips with the crash
+    fix or the `==` emission fix. Corpus: `tagged_union_cmp_xmod` is now fully OK (dump rc=0,
+    gcc rc=0, link rc=0, runs printing `1`); the same-module `s == Shape.Circle` variant is also
+    gcc-valid and runs. No other repro uses cross-module TU member `==`.
 - **Runtime-symbol gap (json_parser case) — defect class (b), NOT an emission defect.** `json.zig`
   / `file.zig` call `extern fn arena_alloc_default(size: usize) *void`
   (`json.zig:253`, `file.zig:25`; `examples/zig0/json_parser` identical). Externs are

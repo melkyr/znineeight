@@ -3721,6 +3721,22 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var instc_br_n: []const u8 = "\n"; pal.markerWrite(instc_br_n);
             }
             var rhs = resolveTempName(emitter, b.rhs);
+            var lhs_is_tag: u8 = @intCast(u8, 0);
+            var rhs_is_tag: u8 = @intCast(u8, 0);
+            if (b.op == @intCast(u8, 10) or b.op == @intCast(u8, 11)) {
+                var ht_i: usize = @intCast(usize, 0);
+                while (ht_i < emitter.current_fn.hoisted_temps.len) : (ht_i += @intCast(usize, 1)) {
+                    var ht = emitter.current_fn.hoisted_temps.items[ht_i];
+                    if (ht.temp_id == b.lhs and ht.type_id != type_mod.TYPE_UNDEFINED) {
+                        var lty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
+                        if (lty.kind == type_mod.TypeKind.tagged_union_type) { lhs_is_tag = @intCast(u8, 1); }
+                    }
+                    if (ht.temp_id == b.rhs and ht.type_id != type_mod.TYPE_UNDEFINED) {
+                        var rty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
+                        if (rty.kind == type_mod.TypeKind.tagged_union_type) { rhs_is_tag = @intCast(u8, 1); }
+                    }
+                }
+            }
             var op_str = getBinOpStr(b.op);
             var bnr_m: []const u8 = "BNR:r"; pal.markerWrite(bnr_m);
             var bnr_rb: [10]u8 = undefined; var bnr_rl = itoa_mod.itoa(@intCast(u32, result.len), bnr_rb[0..]); var bnr_rs: usize = @intCast(usize, 9) - @intCast(usize, bnr_rl); pal.markerWrite(bnr_rb[bnr_rs..@intCast(usize, 9)]);
@@ -3734,11 +3750,19 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
             bufferedWriterWrite(&emitter.writer, lhs);
+            if (lhs_is_tag != @intCast(u8, 0)) {
+                var tag_s: []const u8 = ".tag";
+                bufferedWriterWrite(&emitter.writer, tag_s);
+            }
             var sp: []const u8 = " ";
             bufferedWriterWrite(&emitter.writer, sp);
             bufferedWriterWrite(&emitter.writer, op_str);
             bufferedWriterWrite(&emitter.writer, sp);
             bufferedWriterWrite(&emitter.writer, rhs);
+            if (rhs_is_tag != @intCast(u8, 0)) {
+                var tag_s: []const u8 = ".tag";
+                bufferedWriterWrite(&emitter.writer, tag_s);
+            }
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
