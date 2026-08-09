@@ -130,11 +130,11 @@
 
 ## Phase 1 — Core
 
-### Task F1: Core I/O builtins (5)
+### Task F1: Core I/O builtins (6)
 
 **Files:**
-- Modify: `sf/src/semantic_analyzer.zig` (intrinsic table: `@putChar`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`)
-- Modify: `sf/src/lower.zig` (5 LIR instructions: `.builtin_put_char`, `.builtin_stderr_write`, `.builtin_get_char`, `.builtin_exit`, `.builtin_sleep_ms`)
+- Modify: `sf/src/semantic_analyzer.zig` (intrinsic table: `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`)
+- Modify: `sf/src/lower.zig` (6 LIR instructions: `.builtin_put_char`, `.builtin_stdout_write`, `.builtin_stderr_write`, `.builtin_get_char`, `.builtin_exit`, `.builtin_sleep_ms`)
 - Modify: `sf/src/c89_emit.zig` (C emission per builtin; `#ifdef` for `@sleepMs`)
 - Create: `repro/mi_matrix/io_builtin_test/main.zig` + `NOTES.md`
 - Modify (docs): `sf/docs/tech_docs/05_semantic_analysis.md`, `07_lir_lowering.md`, `08_c89_emission.md`
@@ -142,35 +142,36 @@
 
 **Interfaces:**
 - Consumes: I-RT + I-PAL reports (exact builtin signatures + `#ifdef` patterns).
-- Produces: 5 builtins callable from Z98; the LIR instructions F4's std_io.zig will use.
+- Produces: 6 builtins callable from Z98; the LIR instructions F4's std_io.zig will use.
 
 **Emission (per I-PAL/I-RT — exact bodies from the reports):**
 
 - [ ] **Step 1: Verify the intrinsic mechanism.** Read how existing intrinsics (`@ptrToInt`, `@intCast`, `@sizeOf`) are resolved in `semantic_analyzer.zig` (search `name_id` + intrinsic dispatch) and lowered in `lower.zig`. This is the pattern to follow. Record the mechanism in the report.
-- [ ] **Step 2: Write the failing test.** Create `repro/mi_matrix/io_builtin_test/main.zig` exercising all 5 builtins:
+- [ ] **Step 2: Write the failing test.** Create `repro/mi_matrix/io_builtin_test/main.zig` exercising all 6 builtins:
 ```zig
 extern fn __bootstrap_print_int(n: i32) void;
 pub fn main() void {
     @putChar(@intCast(u8, 'H'));
     @putChar(@intCast(u8, 'i'));
+    @stdoutWrite("Hello", 5);
     @stderrWrite("ERR", 3);
     __bootstrap_print_int(@intCast(i32, @getChar()));
     @exit(@intCast(u8, 0));
 }
 ```
 (adjust to the actual builtin syntax the compiler expects — the exact `@`-name + arg syntax comes from the intrinsic mechanism in Step 1). Run: dump rc=0 expected (RED — builtins not yet known).
-- [ ] **Step 3: Implement sema entries.** Add the 5 intrinsics to the intrinsic-name table with correct signatures (per I-RT). `@exit` is noreturn. Verify types: `@putChar(u8)→void`, `@stderrWrite([*]const u8, usize)→void`, `@getChar()→u8`, `@exit(u8)→noreturn`, `@sleepMs(u32)→void`.
-- [ ] **Step 4: Implement lowerer LIR.** Add 5 LIR instruction variants (one per builtin). Lower each intrinsic call to its instruction with operand temps.
-- [ ] **Step 5: Implement C89 emission.** Add emission for each LIR inst: `putchar(c);` / `fwrite(buf, 1, len, stderr);` / `getchar();` / `exit(code);` / `#ifdef`-guarded sleep. Verify no `#ifdef` needed for the 4 ISO-C89 ops.
-- [ ] **Step 6: Build + verify.** Rebuild zig1. Run `io_builtin_test/`: dump rc=0, gcc rc=0, run rc=0. Verify expected output (H, i, ERR on stderr, getchar echo, exit 0).
+- [ ] **Step 3: Implement sema entries.** Add the 6 intrinsics to the intrinsic-name table with correct signatures (per I-RT). `@exit` is noreturn. Verify types: `@putChar(u8)→void`, `@stdoutWrite([*]const u8, usize)→void`, `@stderrWrite([*]const u8, usize)→void`, `@getChar()→u8`, `@exit(u8)→noreturn`, `@sleepMs(u32)→void`.
+- [ ] **Step 4: Implement lowerer LIR.** Add 6 LIR instruction variants (one per builtin). Lower each intrinsic call to its instruction with operand temps.
+- [ ] **Step 5: Implement C89 emission.** Add emission for each LIR inst: `putchar(c);` / `fwrite(buf, 1, len, stdout);` / `fwrite(buf, 1, len, stderr);` / `getchar();` / `exit(code);` / `#ifdef`-guarded sleep. Verify no `#ifdef` needed for the 5 ISO-C89 ops.
+- [ ] **Step 6: Build + verify.** Rebuild zig1. Run `io_builtin_test/`: dump rc=0, gcc rc=0, run rc=0. Verify expected output (H, i, Hello on stdout, ERR on stderr, getchar echo, exit 0).
 - [ ] **Step 7: Update tech docs.** `05` (intrinsic table), `07` (LIR insts), `08` (emission) — `[updated: 2026-08-08]`.
 - [ ] **Step 8: Commit.**
 ```bash
 git add sf/src/semantic_analyzer.zig sf/src/lower.zig sf/src/c89_emit.zig repro/mi_matrix/io_builtin_test/ sf/docs/tech_docs/05_semantic_analysis.md sf/docs/tech_docs/07_lir_lowering.md sf/docs/tech_docs/08_c89_emission.md
-git commit -m "feat: core I/O builtins (putChar, stderrWrite, getChar, exit, sleepMs)"
+git commit -m "feat: core I/O builtins (putChar, stdoutWrite, stderrWrite, getChar, exit, sleepMs)"
 ```
 
-**Gate:** 5/5 builtins dump→gcc→run rc=0; correct output; tech docs updated.
+**Gate:** 6/6 builtins dump→gcc→run rc=0; correct output; tech docs updated.
 
 ---
 
