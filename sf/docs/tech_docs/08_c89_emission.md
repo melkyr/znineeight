@@ -1186,3 +1186,49 @@ emission — a "stray I\n late in the trace" is this documented marker, not a se
 - **Error-set `#define` names exceed 31 chars** (see §6.2) — macro names, not mangler output.
 - **Marker-table gap**: `D6` (`c89_emit.zig:511-519`, getCTypeName debug, fires for every
   `tid>=20` cname lookup) was not listed in §1.16 (added above).
+
+### 6.9 Networking builtins inventory (Phase-2 std-lib plan, I-NET) [updated: 2026-08-08]
+
+**Source of truth:** `sf/src/include/net_runtime.c` (153 lines) + `net_runtime.h:6-17`. All 12
+`plat_*` socket symbols are emitted as **bare unmangled extern calls** (see §6.6) — prototypes
+come from `@cInclude`d `net_runtime.h`, no fwd-decl/body in output. The Phase-2 networking
+builtins (plan F6: socketCreate, socketBindListen, socketAccept, socketConnect, socketSend,
+socketRecv, socketSelect, socketFdZero, socketFdSet, socketFdIsset, socketClose) replace these
+extern calls; 10 of 12 symbols map 1:1, `socketConnect` has **no** existing source (net_runtime.c
+has no `plat_connect`; mud_server is server-only), and `socketInit`/`socketCleanup` are not in
+the 11-builtin list (lifecycle stays extern or folds into builtin init).
+
+**12-symbol inventory** (fd convention = plain `int`/i32, the arch-independence ruling; `u8*`
+buffers/sets):
+
+| # | C signature (net_runtime.c line) | op | builtin map | platform |
+|---|---|---|---|---|
+| 1 | `int plat_socket_init(void)` (:18) | init/WSAStartup | — (lifecycle, not in 11) | Win-only body, POSIX returns 0 |
+| 2 | `void plat_socket_cleanup(void)` (:27) | cleanup | — (lifecycle) | Win-only, POSIX no-op |
+| 3 | `int plat_create_tcp_server(unsigned short port)` (:33) | socket+bind (+SO_REUSEADDR) | socketCreate | both; SO_REUSEADDR POSIX-only |
+| 4 | `int plat_bind_listen(int sock, int backlog)` (:72) | listen | socketBindListen | both |
+| 5 | `int plat_accept(int server_sock)` (:82) | accept | socketAccept | both |
+| 6 | `int plat_recv(int sock, u8* buf, int len)` (:92) | recv | socketRecv | both |
+| 7 | `int plat_send(int sock, const u8* buf, int len)` (:100) | send | socketSend | both |
+| 8 | `void plat_close_socket(int sock)` (:108) | close | socketClose | both (closesocket/close) |
+| 9 | `int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms)` (:116) | select | socketSelect | both, identical |
+| 10 | `void plat_socket_fd_zero(u8* set)` (:131) | FD_ZERO | socketFdZero | both, identical |
+| 11 | `void plat_socket_fd_set(int fd, u8* set)` (:139) | FD_SET | socketFdSet | both (SOCKET cast Win) |
+| 12 | `int plat_socket_fd_isset(int fd, u8* set)` (:147) | FD_ISSET | socketFdIsset | both (SOCKET cast Win) |
+
+**`#ifdef`/`#pragma` emission pattern** — the exact pattern the builtins must reproduce:
+- **Include block (:4-16):** `#ifdef _WIN32` → `windows.h` + `winsock.h` (Winsock **1.1** —
+  note: `wsock32.lib`, **not** `ws2_32`) + `#pragma comment(lib, "wsock32.lib")`; `#else` →
+  `sys/socket.h`, `netinet/in.h`, `arpa/inet.h`, `sys/select.h`, `unistd.h`, `fcntl.h`.
+- **Per-function `#ifdef _WIN32`…`#else`…`#endif` in all 12 bodies** (not block-level).
+- **msvc6:** `#pragma comment(lib, "wsock32.lib")` auto-links wsock32 (net_runtime.c:8).
+- **OpenWatcom:** NO `__WATCOMC__` branch exists; OW defines `_WIN32` on Windows targets so it
+  takes the Win path, but `#pragma comment(lib,…)` is MSVC-only → OW must add `library
+  wsock32.lib` to `wlink` manually (mud_server README). Same for MinGW (`-lwsock32`).
+- **POSIX:** `#else` branch only; `#pragma comment` excluded.
+- `htons`/`htonl` used **inline** inside `plat_create_tcp_server` — no standalone wrap (no
+  htons builtin candidate in this file).
+- **Blocking model:** all sockets default-blocking; no `O_NONBLOCK`/`FIONBIO` anywhere.
+  `select()` + `timeout_ms` (>=0 wait, <0 = infinite via NULL `timeval*`) is the only
+  polling primitive. `recv`/`send` are raw returns (byte count, 0=EOF, -1=error); no
+  `errno`/`WSAGetLastError` translation — builtins should preserve this raw i32 contract.
