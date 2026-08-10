@@ -1,7 +1,7 @@
 const file = @import("file.zig");
-const std = @import("std_arena.zig");
+const std = @import("std.zig");
 
-var g_arena = std.create(1048576);
+var g_arena = std.arena.create(1048576);
 
 pub const JsonProperty = struct { key: []const u8, value: *JsonValue };
 
@@ -79,7 +79,7 @@ pub fn parseJson(arena_ptr: *void, input: []const u8) ParseError!*JsonValue {
     skipWhitespace(&p);
     if (p.pos < p.input.len) return error.InvalidSyntax;
 
-    const res_ptr_bytes = (std.alloc(&g_arena, @sizeOf(JsonValue)) orelse return error.OutOfMemory);
+    const res_ptr_bytes = (std.arena.alloc(&g_arena, @sizeOf(JsonValue)) orelse return error.OutOfMemory);
     const res_ptr = @ptrCast(*JsonValue, res_ptr_bytes);
     res_ptr.* = result;
     return res_ptr;
@@ -209,7 +209,7 @@ fn parseArray(p: *Parser) ParseError!JsonValue {
         if (peek(p) != ']') return error.ExpectedCommaOrEnd;
     }
     p.pos = saved_pos;
-    const arr_bytes = (std.alloc(&g_arena, count * @sizeOf(JsonValue)) orelse return error.OutOfMemory);
+    const arr_bytes = (std.arena.alloc(&g_arena, count * @sizeOf(JsonValue)) orelse return error.OutOfMemory);
     const arr = @ptrCast([*]JsonValue, arr_bytes)[0..count];
     var idx: usize = 0;
     if (peek(p) != ']') {
@@ -256,7 +256,7 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
         if (peek(p) != '}') return error.ExpectedCommaOrEnd;
     }
     p.pos = saved_pos;
-    const fields_bytes = (std.alloc(&g_arena, count * @sizeOf(JsonProperty)) orelse return error.OutOfMemory);
+    const fields_bytes = (std.arena.alloc(&g_arena, count * @sizeOf(JsonProperty)) orelse return error.OutOfMemory);
     const fields = @ptrCast([*]JsonProperty, fields_bytes)[0..count];
     var idx: usize = 0;
     if (peek(p) != '}') {
@@ -268,7 +268,7 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
             try expect(p, ':');
             const val = try parseValue(p);
 
-            const val_ptr_bytes = (std.alloc(&g_arena, @sizeOf(JsonValue)) orelse return error.OutOfMemory);
+            const val_ptr_bytes = (std.arena.alloc(&g_arena, @sizeOf(JsonValue)) orelse return error.OutOfMemory);
             const val_ptr = @ptrCast(*JsonValue, val_ptr_bytes);
             val_ptr.tag = val.tag;
             val_ptr.data = val.data;

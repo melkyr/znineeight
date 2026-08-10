@@ -7,11 +7,11 @@ const eval_mod = @import("eval.zig");
 const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 
+const std = @import("std.zig");
+
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");
 
-extern fn __bootstrap_print(s: [*]const c_char) void;
-extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
 
 fn print_str(s: []const u8) void {
@@ -20,7 +20,7 @@ fn print_str(s: []const u8) void {
         var buf: [2]c_char = undefined;
         buf[0] = @intCast(c_char, s[i]);
         buf[1] = 0;
-        __bootstrap_print(&buf[0]);
+        std.io.print(&buf[0]);
         i += 1;
     }
 }
@@ -29,7 +29,7 @@ fn print_value(v: *value_mod.Value) void {
     if (v.tag == value_mod.ValueTag.Nil) {
         print_str("nil");
     } else if (v.tag == value_mod.ValueTag.Int) {
-        __bootstrap_print_int(@intCast(i32, v.data.Int));
+        std.io.printInt(@intCast(i32, v.data.Int));
     } else if (v.tag == value_mod.ValueTag.Bool) {
         if (v.data.Bool) {
             print_str("true");

@@ -6,7 +6,10 @@
 
 **Working commit:** `0cb7891c` (F6 lisp closures)
 
-**MD5 (`--dump-c89`):** `605b597e8b7cff60de0ce84a0593e743` [updated: 2026-08-06]
+**MD5 (`--dump-c89`):** `141994cc81ab4bbb89722b7d30af419d` [updated: 2026-08-08]
+(Re-baselined 2026-08-08 — F4 `std.io` migration replaces `__bootstrap_print*` externs with
+`std.io.print`/`std.io.printInt` (local `std.zig`/`std_io.zig` copies); runtime output
+byte-identical to pre-F4, per F-5 AMENDMENT B. Previous `a12f2fce…` stale.)
 
 > MD5 history: re-baselined 2026-08-03 (TCO/AMENDMENT 9-11), 2026-08-04 (F-5/F-7 stores+globals),
 > 2026-08-05 (P3-6 error-code registry), 2026-08-06 (F1 @intCast range-check scope b, F6 closures)
@@ -74,3 +77,4 @@ not zig1 miscompiles.
 
 ## Notes
 Multi-file: 10 modules — sand, value, token, parser, env, eval, builtins, util, deep_copy.
+[F4 2026-08-08: `__bootstrap_print*` externs → `std.io.print`/`std.io.printInt` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies). Runtime output byte-identical to pre-F4.]

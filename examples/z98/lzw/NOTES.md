@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `5e4390561d5201b09a8d6695bd4cfb6c`
+**MD5 (`--dump-c89`):** `5e4390561d5201b09a8d6695bd4cfb6c` [verified: 2026-08-08]
 
 ## Build Recipes
 
@@ -37,3 +37,4 @@ Interactive: compress BANANA → 66 65 78 257 65 10
 
 ## Notes
 Multi-file: `main.zig` imports additional modules. Interactive program.
+[F4 2026-08-08: NO `__bootstrap_*` references — no migration needed (source unchanged).]

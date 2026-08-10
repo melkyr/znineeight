@@ -6,9 +6,11 @@
 
 **Working commit:** `bf5d3636`
 
-**MD5 (`--dump-c89`):** `e2f4c62515b4ab5e5c5b1202f7c2e12e` [updated: 2026-08-06]
-(Re-baselined 2026-08-06 — F8 ident_expr const-chain folding resolves `@intCast(i32, WIDTH/HEIGHT)`
-at comptime; runtime output byte-identical, per F-5 AMENDMENT B. Previous `f855c9f9…` stale.)
+**MD5 (`--dump-c89`):** `b246a2fecc0b5ff4402912c49970cdae` [updated: 2026-08-08]
+(Re-baselined 2026-08-08 — F4 `std.io` migration replaces `__bootstrap_sleep_ms`/`__bootstrap_print*`
+with `std.io.sleepMs`/`std.io.print*`; runtime output byte-identical to pre-F4 (glider, 100
+generations, md5 `fcbf7e7c…`), per F-5 AMENDMENT B. Previous `e2f4c625…` stale. NOTE: `sleepMs`
+now uses a real `usleep` (was a busy loop) — a 100-gen run takes ~10s.)
 
 ## Build Recipes
 
@@ -39,3 +41,4 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 
 ## Notes
 Multi-file: `main.zig` imports `std.zig` and `std_debug.zig`. Uses `system("cls")` — ignore `cls: not found` on stderr. Warnings ok.
+[F4 2026-08-08: `__bootstrap_sleep_ms` extern → `std.io.sleepMs`; `std_debug.zig` → `std.io` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

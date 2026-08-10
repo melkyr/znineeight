@@ -50,6 +50,12 @@ COMPILE gap is GONE (F3, commit `021ffcfd` — cross-module enum member resoluti
 `zT_missing_fwd_xmod`). Dump rc=0, per-file gcc `-c` rc=0 (was 6× `zT_10/16/28/34/46/91`
 undeclared).
 
+**[F4 2026-08-08]** `main.zig` `__bootstrap_print*`/`__bootstrap_write` externs → `std.io.print/
+printInt/write`; the arena import is re-pointed: `arena.zig`/`file.zig`/`json.zig` now
+`@import("std.zig")` and call `std.arena.create/alloc` (F3 `std_arena.zig`-alias form replaced).
+Verified: multi-module dump rc=0 (6 `.c`), gcc rc=0, standard-recipe link rc=0, run rc=0
+(`{}` tag-print quirk unchanged).
+
 ## F3 fixed [updated 2026-08-08 — std.arena migration]
 The D2/F2 std-lib-deferred `arena_alloc_default` link gap is CLOSED. `arena.zig`/`file.zig`/
 `json.zig` no longer call the extern `arena_alloc_default` (declared

@@ -1,84 +1,82 @@
 const file = @import("file.zig");
 const json = @import("json.zig");
 
+const std = @import("std.zig");
+
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");
 @cInclude("<stdlib.h>");
 
-extern fn __bootstrap_print(s: [*]const c_char) void;
-extern fn __bootstrap_print_int(i: i32) void;
 extern var zig_default_arena: *void;
 
 fn printSlice(s: []const u8) void {
-    __bootstrap_write(s.ptr, s.len);
+    std.io.write(s);
 }
-
-extern fn __bootstrap_write(s: [*]const c_char, len: usize) void;
 
 fn printIndent(level: usize) void {
     var i: usize = 0;
     while (i < level) : (i += 1) {
-        __bootstrap_print("  ");
+        std.io.print("  ");
     }
 }
 
 fn printValue(val: json.JsonValue, level: usize) void {
     switch (val) {
         .Null => {
-             __bootstrap_print("null");
+             std.io.print("null");
         },
         .Boolean => |b| {
             if (b) {
-                __bootstrap_print("true");
+                std.io.print("true");
             } else {
-                __bootstrap_print("false");
+                std.io.print("false");
             }
         },
         .Number => |n| {
-            __bootstrap_print("<number>");
+            std.io.print("<number>");
         },
         .String => |s| {
-            __bootstrap_print("\"");
+            std.io.print("\"");
             printSlice(s);
-            __bootstrap_print("\"");
+            std.io.print("\"");
         },
         .Array => |arr| {
-            __bootstrap_print("[");
+            std.io.print("[");
             if (arr.len > 0) {
-                __bootstrap_print("\n");
+                std.io.print("\n");
                 for (arr) |item, i| {
                     printIndent(level + 1);
                     printValue(item, level + 1);
-                    if (i < arr.len - 1) __bootstrap_print(",");
-                    __bootstrap_print("\n");
+                    if (i < arr.len - 1) std.io.print(",");
+                    std.io.print("\n");
                 }
                 printIndent(level);
             }
-            __bootstrap_print("]");
+            std.io.print("]");
         },
         .Object => |obj| {
-            __bootstrap_print("{");
+            std.io.print("{");
             if (obj.len > 0) {
-                __bootstrap_print("\n");
+                std.io.print("\n");
                 for (obj) |item, i| {
                     printIndent(level + 1);
-                    __bootstrap_print("\"");
+                    std.io.print("\"");
                     printSlice(item.key);
-                    __bootstrap_print("\": ");
+                    std.io.print("\": ");
 
                     // Optional unwrapping capture
                     if (item.value) |v| {
                         printValue(v.*, level + 1);
                     } else {
-                        __bootstrap_print("null");
+                        std.io.print("null");
                     }
 
-                    if (i < obj.len - 1) __bootstrap_print(",");
-                    __bootstrap_print("\n");
+                    if (i < obj.len - 1) std.io.print(",");
+                    std.io.print("\n");
                 }
                 printIndent(level);
             }
-            __bootstrap_print("}");
+            std.io.print("}");
         },
     }
 }
@@ -87,25 +85,25 @@ pub fn main() void {
     const v: json.JsonValue = undefined;
     _ = v;
     const arena = &zig_default_arena;
-    __bootstrap_print("Loading file...\n");
+    std.io.print("Loading file...\n");
 
     // Use catch for error handling
     const content = file.readFile(arena, "test.json") catch |err| {
-        __bootstrap_print("Error reading file: ");
-        __bootstrap_print_int(@enumToInt(err));
-        __bootstrap_print("\n");
+        std.io.print("Error reading file: ");
+        std.io.printInt(@enumToInt(err));
+        std.io.print("\n");
         return;
     };
 
-    __bootstrap_print("Parsing JSON...\n");
+    std.io.print("Parsing JSON...\n");
     const parsed = json.parseJson(arena, content) catch |err| {
-        __bootstrap_print("Parse error: ");
-        __bootstrap_print_int(@enumToInt(err));
-        __bootstrap_print("\n");
+        std.io.print("Parse error: ");
+        std.io.printInt(@enumToInt(err));
+        std.io.print("\n");
         return;
     };
 
-    __bootstrap_print("Result:\n");
+    std.io.print("Result:\n");
     printValue(parsed.*, 0);
-    __bootstrap_print("\nDone.\n");
+    std.io.print("\nDone.\n");
 }

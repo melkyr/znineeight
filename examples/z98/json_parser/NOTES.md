@@ -6,10 +6,12 @@
 
 **Working commit:** (F3) `std.arena` migration
 
-**MD5 (`--dump-c89`):** `ff9b880c3257fa96b9750b4dabe0e747` [updated: 2026-08-08]
+**MD5 (`--dump-c89`):** `f50ce1e6800d9e1365c019e46ac61292` [updated: 2026-08-08]
 (Re-baselined 2026-08-08 F3: `arena_alloc_default` extern replaced by the `std_arena.zig`
 module — emitted C changes, runtime output byte-identical to pre-fix, verified by run diff.
-Previous `c403f079…` stale.)
+Previous `c403f079…` stale. Re-baselined again 2026-08-08 F4: `__bootstrap_print*`/`__bootstrap_write`
+externs → `std.io.print/printInt/write` + arena import re-pointed `std_arena.zig` → `std.zig`/
+`std.arena`; runtime output byte-identical to pre-F4 (md5 `d90e7828…`), per F-5 AMENDMENT B.)
 
 ## Build Recipes
 
@@ -59,3 +61,8 @@ dump rc=0 (main/json/file/std_arena), per-file gcc `-c` rc=0, **standard-recipe 
 pre-fix (old binary linked against legacy runtime vs new — `diff` empty), per the F-5
 AMENDMENT B precedent. `repro/mi_matrix/extern_runtime_symbol_xmod` was migrated to
 `std_arena.zig` too and is now a green regression guard (link rc=0, run rc=0).
+**[F4 2026-08-08]** The arena import is re-pointed: `arena.zig`/`file.zig`/`json.zig` now
+`@import("std.zig")` and call `std.arena.create/alloc` (the F3 `std_arena.zig`-alias form is
+replaced by the canonical root-package API). `main.zig` uses `std.io.print/printInt/write`.
+Verified: multi-module dump rc=0 (6 `.c`), gcc rc=0, standard-recipe link rc=0, run rc=0,
+output byte-identical to pre-F4 (`d90e7828…`).

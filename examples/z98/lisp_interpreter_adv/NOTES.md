@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `5783ee16976852cecaffdaf355edb698`
+**MD5 (`--dump-c89`):** `5783ee16976852cecaffdaf355edb698` [verified: 2026-08-08]
 
 ## Build Recipes
 
@@ -38,3 +38,4 @@ Basic expressions work but `define` + call silently fails.
 
 ## Notes
 Multi-file: 10 modules. Runtime bug — variable is in scope after closure returns but value is nil. `define` followed by call produces nil instead of defined value.
+[F4 2026-08-08: `__bootstrap_print*` externs → `std.io.print`/`std.io.printInt` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies). Builds + runs rc=0; known define-after-closure runtime bug unchanged.]

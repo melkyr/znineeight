@@ -8,11 +8,11 @@ const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 const deep_copy_mod = @import("deep_copy.zig");
 
+const std = @import("std.zig");
+
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");
 
-extern fn __bootstrap_print(s: [*]const c_char) void;
-extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
 
 fn print_str(s: []const u8) void {
@@ -21,7 +21,7 @@ fn print_str(s: []const u8) void {
         var buf: [2]c_char = undefined;
         buf[0] = @intCast(c_char, s[i]);
         buf[1] = 0;
-        __bootstrap_print(&buf[0]);
+        std.io.print(&buf[0]);
         i += 1;
     }
 }
@@ -29,7 +29,7 @@ fn print_str(s: []const u8) void {
 fn print_value(v: *value_mod.Value) void {
     switch (v.*) {
         .Nil => print_str("nil"),
-        .Int => |val| __bootstrap_print_int(@intCast(i32, val)),
+        .Int => |val| std.io.printInt(@intCast(i32, val)),
         .Bool => |val| {
             if (val) {
                 print_str("true");

@@ -8,11 +8,11 @@ const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 const deep_copy_mod = @import("deep_copy.zig");
 
+const std = @import("std.zig");
+
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");
 
-extern fn __bootstrap_print(s: [*]const c_char) void;
-extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
 var perm_buf_u64: [131072]u64 = undefined;
 var temp_buf_u64: [131072]u64 = undefined;
@@ -23,7 +23,7 @@ fn print_str(s: []const u8) void {
         var buf: [2]c_char = undefined;
         buf[0] = @intCast(c_char, s[i]);
         buf[1] = 0;
-        __bootstrap_print(&buf[0]);
+        std.io.print(&buf[0]);
         i += 1;
     }
 }
@@ -31,7 +31,7 @@ fn print_str(s: []const u8) void {
 fn print_value(v: *value_mod.Value) void {
     switch (v.*) {
         .Nil => print_str("nil"),
-        .Int => |val| __bootstrap_print_int(@intCast(i32, val)),
+        .Int => |val| std.io.printInt(@intCast(i32, val)),
         .Bool => |val| {
             if (val) {
                 print_str("true");
@@ -155,7 +155,7 @@ pub fn main() void {
             else if (err == error.InvalidIf) print_str("InvalidIf")
             else if (err == error.InvalidQuote) print_str("InvalidQuote")
             else if (err == error.InvalidExpr) print_str("InvalidExpr")
-            else { var ec = @intCast(u32, @enumToInt(err)); var ei: i32 = @intCast(i32, ec); __bootstrap_print_int(ei); print_str("=err"); }
+            else { var ec = @intCast(u32, @enumToInt(err)); var ei: i32 = @intCast(i32, ec); std.io.printInt(ei); print_str("=err"); }
             print_str(nl[0..1]);
             continue;
         };

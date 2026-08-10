@@ -4,7 +4,6 @@ const std = @import("std.zig");
 @cInclude("<stdlib.h>");
 
 extern "c" fn system(s: *const c_char) i32;
-extern "c" fn __bootstrap_sleep_ms(ms: u32) void;
 
 const Cell = union(enum) {
     Dead,
@@ -136,7 +135,7 @@ pub fn main() !void {
         }
 
         gen += 1;
-        __bootstrap_sleep_ms(100);
+        std.io.sleepMs(100);
     }
 }
 
