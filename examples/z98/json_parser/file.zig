@@ -1,6 +1,10 @@
 @cInclude("<stdio.h>");
 @cInclude("<stdlib.h>");
 
+const std = @import("std_arena.zig");
+
+var g_arena = std.create(1048576);
+
 pub const File = void;
 
 extern fn fopen(filename: [*]const c_char, mode: [*]const c_char) ?*File;
@@ -22,8 +26,6 @@ pub const FileError = error{
     TooLarge,
 };
 
-extern fn arena_alloc_default(size: usize) *void;
-
 pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
     const rb_str: []const c_char = @ptrCast([*]const c_char, "rb")[0..2];
     const f = fopen(@ptrCast([*]const c_char, path.ptr), rb_str.ptr) orelse return error.OpenFailed;
@@ -35,7 +37,7 @@ pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
     if (fseek(f, 0, SEEK_SET) != 0) { return error.SeekFailed; }
 
     const usize_size = @intCast(usize, size);
-    const buffer = @ptrCast([*]u8, arena_alloc_default(usize_size));
+    const buffer = @ptrCast([*]u8, (std.alloc(&g_arena, usize_size) orelse return error.TooLarge));
     const bytes_read = fread(buffer, 1, usize_size, f);
     if (bytes_read != usize_size) { return error.ReadFailed; }
     if (ferror(f) != 0) { return error.ReadFailed; }

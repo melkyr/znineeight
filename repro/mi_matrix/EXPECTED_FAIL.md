@@ -2,7 +2,7 @@
 
 ## Totals (230 repros)
 
-- **CURRENT (2026-08-08 F7 gate sweep — multi-module fixes plan CLOSEOUT): OK=223 / FAIL=3 /
+- **CURRENT (2026-08-08 F3 — std.arena + json_parser migration): OK=223 / FAIL=3 /
   green-guards=4 / ICE=0 / CRASH=0** over **230 manifest repros** (223 + 3 + 4 = 230; raw
   classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
   `sf/build/out_release/zig1` at HEAD (post-F6 `efbf4807`; fixes landed this plan: F1 `51bfdb3c`
@@ -24,9 +24,10 @@
   tracked-separately dir and classifies FAIL on the known latent union-`==` emission); raw
   FAIL=8 = the 4 green-guards + 2 std-lib-deferred + `self_embed_optional_cycle` +
   `tagged_union_cmp_xmod`. F6's CRASH=0 (was F3's ICE=1) = `tagged_union_cmp_xmod` no longer
-  SEGVs. **4 MD5 gates byte-identical** to the post-F1 baselines (mud `6c0a83f1…`, gol
-  `0d8f0092…`, lisp `a12f2fce…` post-F1 RE-BASELINE, json `c403f079…` — full hashes in
-  QUICK_REF). test_analyzer_bin PASS. See the F7 gate-sweep section below.
+  SEGVs. **[F3 2026-08-08: json RE-BASELINED to `ff9b880c…`** (std_arena migration changes
+  emitted C; runtime byte-identical to pre-fix per the F-5 AMENDMENT B precedent); mud/gol/
+  lisp still byte-identical (`6c0a83f1…`, `0d8f0092…`, `a12f2fce…`). See the F3 section.]**
+  test_analyzer_bin PASS. See the F7 gate-sweep + F3 sections below.
 - Prior: OK=223 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 230 (2026-08-07 F4 gate sweep — char_literal switch + opt_slice null fixes CLOSEOUT). Measured with
   FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** over **230 repros** (223 + 3 + 4 = 230; raw
   classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
@@ -1442,7 +1443,7 @@ change the corpus counts.
 
 | Repro | RED (measured) | Classification (measured, sf/build/out_release/zig1) | Guards |
 |-------|----------------|---------------------------|--------|
-| `extern_runtime_symbol_xmod` | standard-recipe link rc=1: `undefined reference to 'arena_alloc_default'` (lib_*.c) | **OK-by-gate / LATENT, std-lib-deferred** — dump rc=0, all modules emit (lib + main), per-file gcc -c rc=0, standard sf-runtime link rc=1 on the ONE missing extern; legacy-runtime link (`gcc -c src/runtime/zig_runtime.c -o /tmp/rt.o`) rc=0, run rc=0 (prints `0`; arena NULL pre-`arena_create`, value incidental) | `mod_silent_drop_xmod` does NOT cover the extern pattern (all its modules link clean); this repro guards the extern-link gap and is the std-lib plan's spec (flips to PASS when the std-lib runtime provides the symbol) |
+| `extern_runtime_symbol_xmod` | pre-F3: standard-recipe link rc=1: `undefined reference to 'arena_alloc_default'` (lib_*.c) | **F3: FULLY OK (green regression guard)** — migrated off the `arena_alloc_default` extern to the `std_arena.zig` module (lib.zig imports a local std_arena copy, wraps `std.alloc` in `pub fn alloc`); dump rc=0, all modules emit (lib + main + std_arena), per-file gcc -c rc=0, **standard sf-runtime link rc=0 (no legacy object)**, run rc=0 (prints `0`; the 16-byte alloc succeeds → non-null ptr → `@ptrToInt(p)==0` false). The F2 OK-by-gate/latent std-lib-deferred classification is CLEARED (see the F3 section) | `mod_silent_drop_xmod` stays as the general emission guard; this repro now guards cross-module `std.arena` use (module emission + alloc + multi-module link + run) |
 
 **zig0 oracle verification:** dump rc=0, emits lib.c/main.c (same module set). Honest
 nuance vs the brief's "SAME link failure": zig0 re-emits the extern as `extern unsigned
@@ -1466,6 +1467,35 @@ separately as OK-by-gate/latent (mirrors the `opt_slice_null_return` precedent),
 to FAIL; the two examples are example-level link gaps, not corpus repros. No repro
 flipped; no compiler changes; 4 MD5 gates untouched (compiler unchanged). test_analyzer_bin
 PASS. Full evidence: `.superpowers/sdd/task-F2-rogue-report.md`.
+
+## F3 — `std_arena.zig` + json_parser migration (2026-08-08) — D2 arena gap CLOSED
+
+The D2/F2 `arena_alloc_default` deferral is resolved with a **Zig-side arena module** (not a
+runtime C symbol). New `sf/src/std_arena.zig` — a pure Z98 bump allocator
+(`pub const Arena = struct { data: [*]u8, capacity: usize, used: usize };` +
+`pub fn create(initial_capacity: usize) Arena`, `pub fn alloc(self: *Arena, size: usize)
+?[*]u8`, `pub fn reset(self: *Arena) void`) over a static 1 MB `g_storage` + `g_used`
+counter. `json_parser` + `json_parser_workaround` (`arena.zig`/`file.zig`/`json.zig`)
+replaced `extern fn arena_alloc_default` with `const std = @import("std_arena.zig");` +
+`std.create/alloc` (local copies of the module in each example dir so the import resolves);
+`extern_runtime_symbol_xmod` migrated the same way.
+
+**Verified (sf/build/out_release/zig1, multi-module recipe, STANDARD sf runtime, NO legacy
+object):** json_parser — dump rc=0 (main/json/file/std_arena emit), per-file gcc `-c` rc=0,
+link rc=0, run rc=0 (parses test.json). json_parser_workaround — dump rc=0, gcc `-c` rc=0
+(both the F3 cross-module-enum fix AND the std_arena migration), link rc=0, run rc=0 (prints
+`{}`; the hand-rolled tagged-union print path is a known example-source quirk). Both
+previously failed standard-recipe link with **5× `undefined reference to arena_alloc_default`**
+(4 json + 1 file). **`extern_runtime_symbol_xmod` flipped to FULLY OK (green regression
+guard)** — dump rc=0, all modules emit (lib + main + std_arena), gcc rc=0, **standard-recipe
+link rc=0**, run rc=0 (prints `0`); its F2 OK-by-gate/latent std-lib-deferred classification
+is CLEARED. Corpus counts UNCHANGED (examples + the tracked-separately repro are not
+manifest repros): effective **OK=223 / FAIL=3 / green-guards=4** over 230; the 3 FAILs
+(`field_store_drop`, `test_stub_0`, `self_embed_optional_cycle`) and 4 green-guards
+unchanged. **4 MD5 gates: mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…` byte-identical;
+json RE-BASELINED to `ff9b880c…`** (its source changed → emitted C changes; runtime output
+byte-identical to pre-fix — old legacy-linked binary vs new standard-linked binary `diff`
+empty — per the F-5 AMENDMENT B precedent). test_analyzer_bin PASS.
 
 ## F4 — D4 plat-stub gap deferred to std-lib (2026-08-08, docs only)
 
@@ -1596,8 +1626,8 @@ the Totals block above.
 | 12 | tco_factorial | 0 | 0 | 0 | 0 | unchanged FULL OK |
 | 13 | tco_defer | 0 | 0 | 0 | 0 | unchanged FULL OK |
 | 14 | tco_return_try | 0 | 0 | 0 | 0 | unchanged FULL OK |
-| 15 | json_parser | 0 | 0 (1w) | **1** | — | **unchanged LINK FAIL** — `arena_alloc_default` (std-lib-deferred, F2) |
-| 16 | json_parser_workaround | 0 | **0 (was 6× zT_xx COMPILE FAIL → now gcc-clean, 1w)** | **1** | — | **compiler defect CLEARED (F3)**; still LINK FAIL on `arena_alloc_default` (std-lib-deferred) |
+| 15 | json_parser | 0 | 0 (1w) | **0 (was 1)** | **0** | **LINK FAIL CLEARED (F3, std_arena migration)** — standard-recipe link rc=0 (no legacy object), run rc=0 parses test.json; was 5× `arena_alloc_default` undefined ref |
+| 16 | json_parser_workaround | 0 | 0 (1w) | **0 (was 1)** | **0** | **LINK FAIL CLEARED (F3, std_arena migration)** — standard-recipe link rc=0, run rc=0 (prints `{}`); both the F3 cross-module-enum compile fix AND the arena link gap resolved |
 | 17 | lisp_interpreter | **0 (was error[3000] DUMP FAIL → now dumps, F1)** | **1** | — | — | **frontend block CLEARED (F1)**; GCC FAIL 6 errors = 5× `zT_N` undeclared + 1 Opt_45 null-payload (pre-existing builtins.zig lowerer defect, follow-up) |
 | 18 | lisp_interpreter_adv | 0 | 0 | 0 | 0 | unchanged WARN OK (1w) |
 | 19 | lisp_interpreter_curr | 0 | 0 | 0 | 0 | unchanged WARN OK (1w; MEM4 recorded 9w — gcc-version/toolchain diff, benign) |
@@ -1607,7 +1637,9 @@ the Totals block above.
 **End-to-end working binaries: 16/21** (12 FULL OK + 4 WARN OK), same as MEM4 — but two
 compiler-defect classes were CLEARED (json_parser_workaround's 6× zT_xx compile gap via F3;
 lisp_interpreter's @ptrToInt frontend block via F1, exposing a separate pre-existing lowerer
-defect). No NEW regression vs MEM4.
+defect). No NEW regression vs MEM4. **[F3 2026-08-08: `json_parser` + `json_parser_workaround`
+now link+run rc=0 → end-to-end working binaries 18/21** (the 3 non-working: lisp_interpreter
+gcc FAIL, mud_server server-timeout, rogue_mud plat_* link FAIL). See the F3 section.]**
 
 ## Follow-ups (multi-module fixes plan) — NOT fixed here
 
@@ -1629,7 +1661,10 @@ defect). No NEW regression vs MEM4.
    token array; or move the token array to the module arena.
 5. **Cross-module enum-literal switch-case dropping** — observed in F6's isolated-form switch
    test; separate pre-existing switch-path gap.
-6. **json_parser / json_parser_workaround / rogue_mud / extern_runtime_symbol_xmod /
-   plat_stubs_missing_xmod** — all std-lib-deferred (see the F2/F4 sections); flips to PASS
-   when the std-zig1 runtime provides `arena_alloc_default` and the 5 `plat_*` stubs.
+6. **json_parser / json_parser_workaround / extern_runtime_symbol_xmod** — **RESOLVED (F3,
+   std_arena migration, 2026-08-08)**: the `arena_alloc_default` deferral was closed with the
+   `std_arena.zig` module, not a runtime symbol — all three now link+run rc=0 on the standard
+   sf runtime (see the F3 section). **Remaining std-lib-deferred: `rogue_mud` /
+   `plat_stubs_missing_xmod`** — the 5 `plat_*` stubs (F4); flips to PASS when the std-zig1
+   runtime provides them.
 

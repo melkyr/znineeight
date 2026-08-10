@@ -880,21 +880,27 @@ branched on the CLI, never mixed.
     fix or the `==` emission fix. Corpus: `tagged_union_cmp_xmod` is now fully OK (dump rc=0,
     gcc rc=0, link rc=0, runs printing `1`); the same-module `s == Shape.Circle` variant is also
     gcc-valid and runs. No other repro uses cross-module TU member `==`.
-- **Runtime-symbol gap (json_parser case) — defect class (b), NOT an emission defect.** `json.zig`
-  / `file.zig` call `extern fn arena_alloc_default(size: usize) *void`
-  (`json.zig:253`, `file.zig:25`; `examples/zig0/json_parser` identical). Externs are
-  link-time-provided — the compiler never emits their definitions. The symbol IS declared in
-  `sf/src/include/zig_runtime.h:21` (and `extern void* zig_default_arena` at `:22`), IS defined in
-  the legacy `src/runtime/zig_runtime.c` (`zig_default_arena` at `:31`; `arena_alloc_default` at
-  `:154-156`; documented runtime API — `docs/reference/runtime_api.md:38-48`), but is **MISSING
-  from `sf/src/include/zig_runtime.c`** (0 arena matches in 210 lines vs 365 legacy). Standard
-  QUICK_REF-recipe link fails `undefined reference to arena_alloc_default` (5 refs: `json.c` ×4 +
-  `file.c` ×1); substituting the legacy `src/runtime/zig_runtime.c` object links and RUNS correctly
-  (rc=0, parses test.json) — this is the workaround json_parser/NOTES.md already documents. The
-  fix belongs in `sf/src/include/zig_runtime.c` (port the arena functions), after which the
-  standard recipe links json_parser clean and the NOTES.md legacy-runtime workaround is no longer
-  needed. Affects exactly 2 examples: `json_parser` and `json_parser_workaround` (the latter also
-  blocked by the I3 6× zT_xx forward-decl compile gap).
+- **Runtime-symbol gap (json_parser case) — defect class (b), NOT an emission defect — FIXED
+  (F3, std.arena migration, 2026-08-08).** `json.zig` / `file.zig` / `arena.zig` previously
+  called `extern fn arena_alloc_default(size: usize) *void` (`json.zig:253`, `file.zig:25`;
+  `examples/zig0/json_parser` identical). Externs are link-time-provided — the compiler never
+  emits their definitions. The symbol IS declared in `sf/src/include/zig_runtime.h:21` (and
+  `extern void* zig_default_arena` at `:22`), IS defined in the legacy
+  `src/runtime/zig_runtime.c` (`zig_default_arena` at `:31`; `arena_alloc_default` at `:154-156`;
+  documented runtime API — `docs/reference/runtime_api.md:38-48`), but was **MISSING from
+  `sf/src/include/zig_runtime.c`** (0 arena matches in 210 lines vs 365 legacy), so the standard
+  QUICK_REF-recipe link failed `undefined reference to arena_alloc_default` (5 refs: `json.c` ×4 +
+  `file.c` ×1) and the workaround was a legacy-runtime object link. **F3 resolves the gap with a
+  Zig-side module instead of a runtime C symbol**: new `sf/src/std_arena.zig` (pure Z98 bump
+  allocator — `Arena{data,capacity,used}`, `create/alloc/reset` over a static 1 MB buffer),
+  copied into the example dirs so `@import("std_arena.zig")` resolves locally; the examples now
+  call `std.create/alloc` (no extern, no runtime change). Verified: multi-module dump rc=0
+  (main/json/file/std_arena emit), per-file gcc `-c` rc=0, **standard-recipe link rc=0 (no legacy
+  object)**, run rc=0 (parses test.json) for both `json_parser` and `json_parser_workaround`;
+  runtime output byte-identical to the pre-fix legacy-linked binary (`diff` empty, F-5 AMENDMENT B
+  precedent). The `extern_runtime_symbol_xmod` repro was migrated identically and is now a green
+  cross-module std.arena regression guard. `repro/mi_matrix/EXPECTED_FAIL.md` F3 section + both
+  example NOTES.md record the fix. [updated: 2026-08-08]
 
 ---
 

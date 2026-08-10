@@ -255,9 +255,12 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   (rogue_mud link blocked, std-lib-deferred). Follow-ups: union `==` emission, TU payload-read
   lowering, lisp builtins `zT_N` (lisp_interpreter gcc FAIL, pre-existing lowerer defect
   surfaced post-F1), scratch-arena optimization. **4 MD5 gates byte-identical** to the
-  post-F1 baselines (mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`, json `c403f079…`);
-  test_analyzer_bin PASS. Full 21-example matrix: **16/21 end-to-end working** (unchanged vs
-  MEM4) — see EXPECTED_FAIL.md F7 section.
+  post-F1 baselines at that sweep (mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`, json
+  `c403f079…`); test_analyzer_bin PASS. Full 21-example matrix: **16/21 end-to-end working**
+  (unchanged vs MEM4) — see EXPECTED_FAIL.md F7 section. **[F3 2026-08-08: D2 arena gap CLOSED
+  via the `std_arena.zig` module (json_parser + json_parser_workaround + extern_runtime_symbol_xmod
+  link+run rc=0 on the standard sf runtime; json MD5 re-baselined to `ff9b880c…`). 21-example
+  matrix now 18/21 end-to-end. See EXPECTED_FAIL.md F3 section.]**
 
 **Known issues exposed by F-1..F-8 (documented 2026-08-04):**
 - **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
@@ -303,8 +306,15 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 | `examples/z98/mud_server/main.zig` | `6c0a83f117f176f6875ce2c18c761890` |
 | `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `a12f2fcebc30f2d8c2a148facb9d1174` |
-| `examples/z98/json_parser/main.zig` | `c403f0799dbc5c56d548eee07bb9eebd` |
+| `examples/z98/json_parser/main.zig` | `ff9b880c3257fa96b9750b4dabe0e747` |
 
+- **Re-baselined 2026-08-08 (F3, std.arena migration).** json re-baselined because F3 replaces
+  the `arena_alloc_default` extern in `json.zig`/`file.zig`/`arena.zig` with the new
+  `std_arena.zig` module (`std.create/alloc`) — json's emitted C changes (new `std_arena_*.c`
+  module, no extern refs). Runtime output byte-identical to pre-fix (old legacy-linked binary vs
+  new standard-linked binary, `diff` empty), per the F-5 AMENDMENT B precedent. mud/gol/lisp
+  byte-identical. Pre-F3 json value: `c403f079…`. New json value: `ff9b880c…`.
+  [updated: 2026-08-08]
 - **Re-baselined 2026-08-08 (F1, @ptrToInt single-arg → usize).** lisp re-baselined because F1
   (commit `51bfdb3c`) makes single-arg `@ptrToInt(x)` resolve to `TYPE_USIZE` — lisp's
   sandbox addr/start/end consts are now `unsigned int`. Runtime output byte-identical to
@@ -466,7 +476,9 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 - `-I /workspace/znineeight/sf/src/include` is REQUIRED — zig1 does not copy `zig_compat.h`/`zig_runtime.h` into DIR (zig0 does; zig1 does not). Use the absolute repo path: the recipe `cd`s into DIR, so relative `sf/...` paths would break.
 - Run `gcc -c` INSIDE DIR — `gcc -c DIR/*.c` from outside writes the `.o` files to the caller's CWD, so the `*.o` link glob fails (`cannot find DIR/*.o`).
 - For **mud_server** add `/workspace/znineeight/sf/src/include/net_runtime.c` to the link step.
-- For **json_parser** use the legacy `src/runtime/zig_runtime.c` object (compiled with `-c`) per its NOTES.md.
+- For **json_parser** NO special runtime is needed post-F3 — the standard `zig_runtime.c` +
+  `zig_pal.c` recipe links it (the `arena_alloc_default` extern was replaced by the
+  `std_arena.zig` module). [updated: 2026-08-08]
 
 ### Editing source
 Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region

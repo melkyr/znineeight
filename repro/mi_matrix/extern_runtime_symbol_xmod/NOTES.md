@@ -1,40 +1,36 @@
-# extern_runtime_symbol_xmod — class-(b) runtime-library gap repro (std-lib-deferred)  [F2, 2026-08-08]
+# extern_runtime_symbol_xmod — std.arena cross-module alloc regression guard  [F3, 2026-08-08]
 
 ## What it tests
-A minimal cross-module program calling the documented runtime API extern
-`arena_alloc_default` (declared `sf/src/include/zig_runtime.h:21-22`):
-`lib.zig` re-declares it as `extern "c" fn arena_alloc_default(n: u32) [*]u8`
-and wraps it in `pub fn alloc`; `main.zig` imports `lib.zig`, calls
-`alloc`, and prints whether the returned pointer is null. This is the
-smallest exercise of the json_parser link gap (`json.zig:253`,
+A minimal cross-module program exercising the **`std_arena.zig`** bump
+allocator (the F3 fix that closed the D2/F2 `arena_alloc_default` link gap):
+`lib.zig` imports `std_arena.zig` (a local copy of `sf/src/std_arena.zig`),
+creates an `Arena`, wraps `std.alloc` in `pub fn alloc`; `main.zig` imports
+`lib.zig`, calls `alloc`, and prints whether the returned pointer is null.
+Before F3, this repro declared `extern "c" fn arena_alloc_default(n: u32)
+[*]u8` — the smallest exercise of the json_parser link gap (`json.zig:253`,
 `file.zig:25`, `arena.zig:1`): an extern the **sf runtime fails to provide**
 (`sf/src/include/zig_runtime.c` has no arena symbols; the symbol exists only
 in the legacy `src/runtime/zig_runtime.c:31/:154-156`). Per the I2 report
-(`.superpowers/sdd/I-orphan-module-report.md`) this is **class (b)
-runtime-library gap**, NOT a compiler defect — the compiler never emits
-definitions for externs; the module→`.c` emission loop is verified intact by
-`mod_silent_drop_xmod`. **Operator ruling: deferred to the std-zig1 library —
-not fixed here.** This repro is the std-lib plan's spec (flips to PASS once
-the std-lib runtime provides `arena_alloc_default`).
+(`.superpowers/sdd/I-orphan-module-report.md`) that was **class (b)
+runtime-library gap**, NOT a compiler defect — deferred to the std-zig1
+library. F3 resolves the deferral with a **Zig-side arena module** instead of
+a runtime C symbol: json_parser + json_parser_workaround + this repro now
+import `std_arena.zig` and link+run against the STANDARD sf runtime with NO
+legacy runtime object. This repro is now the green regression guard for
+cross-module `std.arena` use (module emission + alloc + multi-module link).
 
-## Measured result (2026-08-08, sf/build/out_release/zig1)
+## Measured result (2026-08-08 F3, sf/build/out_release/zig1)
 - `zig1 --dump-c89 --output-dir DIR main.zig` → dump rc=0; **all modules
-  emit** (`lib_*.c/.h`, `main_*.c/.h`, `zig_special_types.h`) — no orphan drop.
+  emit** (`lib_*.c/.h`, `main_*.c/.h`, `std_arena_*.c/.h`,
+  `zig_special_types.h`) — the std_arena module joins the emission set.
 - gcc `-c` of every emitted `.c` (standard recipe, `-I
-  /workspace/znineeight/sf/src/include`): **rc=0** (compile is clean; zig1
-  relies on the header's `void* arena_alloc_default(unsigned int)` decl and
-  emits only the call site).
-- **Standard sf-runtime link rc=1**: `lib_*.c:(.text+0x4a1): undefined
-  reference to 'arena_alloc_default'` — the ONLY undefined ref (json_parser
-  shows 5: 4 in json + 1 in file; this repro collapses it to 1).
-- **Legacy-runtime link flips to PASS**: `gcc -c
-  src/runtime/zig_runtime.c -o /tmp/rt.o && gcc *.o /tmp/rt.o
-  sf/src/include/zig_pal.c -o prog` → **link rc=0, run rc=0** (prints `0` —
-  the lazy-init arena is NULL before `arena_create`; the value is
-  incidental, the point is the symbol links and the program runs).
-  Confirms class (b): the extern is a documented runtime API
-  (`docs/reference/runtime_api.md:38-48`) that only the legacy runtime
-  defines.
+  /workspace/znineeight/sf/src/include`): **rc=0**.
+- **Standard sf-runtime link rc=0** (zig_runtime.c + zig_pal.c, NO legacy
+  object): the `arena_alloc_default` undefined ref is GONE — the repro now
+  calls `std.alloc` (module `std_arena_*.c`), which is self-contained.
+- **run rc=0**, prints `0` (the 16-byte alloc succeeds → non-null pointer →
+  `@ptrToInt(p) == 0` is false). Same printed value as the F2 legacy-runtime
+  run; the point is the cross-module std.arena path links and runs.
 
 ## Oracle verification (zig0)
 `sf/build/zig0` on a /tmp copy: dump rc=0, emits `lib.c`/`main.c` (same
@@ -67,13 +63,12 @@ links with the single `arena_alloc_default` undefined ref.
    zT_6 = 0; zT_7 = zT_5 == zT_6; zT_8 = (int)zT_7;` — `@ptrToInt` resolves
    to `usize` (single-arg call, commit `51bfdb3c`), no error.
 
-## Expected classification
-**OK-by-gate / LATENT, NOT a corpus FAIL**: dump rc=0, all modules emit,
-gcc -c clean, standard-recipe link rc=1 ONLY on the missing extern symbol.
-Counted separately from FAIL (mirrors `opt_slice_null_return`
-OK-by-gate precedent). **Deferred to the std-lib plan** — this repro is the
-spec: it flips to a clean link+run (printing `0`) once the std-zig1 runtime
-provides `arena_alloc_default` in `sf/src/include/zig_runtime.c` (or the
-json_parser legacy-runtime workaround is standardized). `mod_silent_drop_xmod`
-stays as the emission regression guard; this repro guards the extern-link
-pattern it does NOT cover.
+## Expected classification (F3)
+**FULLY OK (regression guard)**: dump rc=0, all modules emit, per-file gcc
+`-c` rc=0, standard-recipe link rc=0, run rc=0. The F2 std-lib-deferred /
+OK-by-gate-latent classification is CLEARED — the repro migrated off the
+`arena_alloc_default` extern to the `std_arena.zig` module (F3). It is the
+green regression guard for cross-module `std.arena` use: a future regression
+that drops the std_arena module, breaks its emission, or re-breaks the
+multi-module link/run flips this repro to FAIL/ICE. `mod_silent_drop_xmod`
+remains the general emission regression guard.

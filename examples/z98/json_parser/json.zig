@@ -1,4 +1,7 @@
 const file = @import("file.zig");
+const std = @import("std_arena.zig");
+
+var g_arena = std.create(1048576);
 
 pub const JsonItem = struct { key: []const u8, value: ?*JsonValue };
 
@@ -59,7 +62,7 @@ pub fn parseJson(arena: *void, input: []const u8) ParseError!*JsonValue {
     parserSkipWhitespace(&p);
     if (p.pos < p.input.len) return error.InvalidSyntax;
 
-    const res_ptr = @ptrCast(*JsonValue, arena_alloc_default(@sizeOf(JsonValue)));
+    const res_ptr = @ptrCast(*JsonValue, (std.alloc(&g_arena, @sizeOf(JsonValue)) orelse return error.OutOfMemory));
     res_ptr.* = result;
     return res_ptr;
 }
@@ -175,7 +178,7 @@ fn parseArray(p: *Parser) ParseError!JsonValue {
         if (parserPeek(p) != ']') return error.ExpectedCommaOrEnd;
     }
     p.pos = saved;
-    const arr = @ptrCast([*]JsonValue, arena_alloc_default(count * @sizeOf(JsonValue)))[0..count];
+    const arr = @ptrCast([*]JsonValue, (std.alloc(&g_arena, count * @sizeOf(JsonValue)) orelse return error.OutOfMemory))[0..count];
     var idx: usize = 0;
     if (parserPeek(p) != ']') {
         while (idx < count) {
@@ -217,7 +220,7 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
         if (parserPeek(p) != '}') return error.ExpectedCommaOrEnd;
     }
     p.pos = saved;
-    const fields = @ptrCast([*]JsonItem, arena_alloc_default(count * @sizeOf(JsonItem)))[0..count];
+    const fields = @ptrCast([*]JsonItem, (std.alloc(&g_arena, count * @sizeOf(JsonItem)) orelse return error.OutOfMemory))[0..count];
     var idx: usize = 0;
     if (parserPeek(p) != '}') {
         while (idx < count) {
@@ -230,7 +233,7 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
             parserSkipWhitespace(p);
             try parserExpect(p, ':');
             const val = try parseValue(p);
-            const val_ptr = @ptrCast(*JsonValue, arena_alloc_default(@sizeOf(JsonValue)));
+            const val_ptr = @ptrCast(*JsonValue, (std.alloc(&g_arena, @sizeOf(JsonValue)) orelse return error.OutOfMemory));
 
             val_ptr.* = val;
 
@@ -250,4 +253,4 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
     return JsonValue{ .Object = fields };
 }
 
-extern fn arena_alloc_default(size: usize) *void;
+
