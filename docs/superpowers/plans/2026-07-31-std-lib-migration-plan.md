@@ -183,6 +183,7 @@ git commit -m "feat: core I/O builtins (putChar, stdoutWrite, stderrWrite, getCh
 - Modify: `sf/src/semantic_analyzer.zig` (`@isWindows` comptime, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`)
 - Modify: `sf/src/lower.zig` (4 LIR instructions)
 - Modify: `sf/src/lir.zig` (LirInst union — new builtin variants live here)
+- Modify: `sf/src/comptime_eval.zig` (`@isWindows` folding — `host_is_windows` const at comptime_eval.zig:19)
 - Modify: `sf/src/c89_emit.zig` (C emission with `#ifdef`)
 - Create: `repro/mi_matrix/console_builtin_test/main.zig` + `NOTES.md`
 - Modify (docs): same 3 tech docs
