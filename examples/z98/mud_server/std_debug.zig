@@ -1,7 +1,5 @@
-@cInclude("zig_runtime.h");
-
-extern fn __bootstrap_print(s: *const c_char) void;
+const std = @import("std.zig");
 
 pub fn print(fmt: *const c_char, ...) void {
-    __bootstrap_print(fmt);
+    std.io.print(fmt);
 }

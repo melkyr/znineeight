@@ -1,4 +1,6 @@
 // src/util/rng.zig
+const std = @import("../../mud_server/std.zig");
+
 pub const Random = struct {
     seed: u32,
 };
@@ -15,16 +17,13 @@ pub fn Random_next(self: *Random) u32 {
 
 @cInclude("zig_runtime.h");
 
-extern "c" fn __bootstrap_print(s: [*]const u8) void;
-extern "c" fn __bootstrap_print_int(n: i32) void;
-
 pub fn Random_range(self: *Random, min: u8, max: u8) u8 {
     if (max < min) {
-        __bootstrap_print("Random_range error: min=");
-        __bootstrap_print_int(@intCast(i32, min));
-        __bootstrap_print(" max=");
-        __bootstrap_print_int(@intCast(i32, max));
-        __bootstrap_print("\n");
+        std.io.print("Random_range error: min=");
+        std.io.printInt(@intCast(i32, min));
+        std.io.print(" max=");
+        std.io.printInt(@intCast(i32, max));
+        std.io.print("\n");
         return min;
     }
     // Z98 quirk: cast to u32 before modulo to avoid overflow

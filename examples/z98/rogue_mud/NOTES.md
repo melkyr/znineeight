@@ -3,8 +3,8 @@
 ## What it tests
 Rogue-like dungeon crawler with a multi-module game engine (dungeon
 generation via BSP, rooms, scenario/quests, pathfinding, combat, entities,
-networking, UI). 20 modules total (`main.zig` + 14 `lib/*.zig` +
-`ui.zig` + `std.zig`/`std_debug.zig` transitive).
+networking, UI). 22 modules total (`main.zig` + 14 `lib/*.zig` +
+`ui.zig` + mud_server `std.zig`/`std_io.zig`/`std_debug.zig` transitive).
 
 **Entry file:** `main.zig`
 
@@ -35,10 +35,10 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c \
 ```
 
 ## Status (measured 2026-08-08, sf/build/out_release/zig1)
-- **dump rc=0** — all **20 modules** emit `.c`/`.h` files: main, sand, rng,
+- **dump rc=0** — all **22 modules** emit `.c`/`.h` files: main, sand, rng,
   scenario, point, entity, combat, tile, room, persistence, net, ui,
-  array_list, bsp, pathfinding, priority_queue, plus 2 std + 2 std_debug
-  (transitive) = 20.
+  array_list, bsp, pathfinding, priority_queue, plus mud_server `std` +
+  `std_io` + `std_debug` (transitive) = 22.
 - **gcc compile rc=0** — 0 errors, **5 warnings** (pointer-to-int
   conversions in BSP/Room generics, benign).
 - **gcc LINK FAILS** — exactly **5 undefined references**, all platform
@@ -53,9 +53,15 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c \
   module→`.c` emission is complete. (The task-brief's Step-5 draft claimed
   "~15 undefined references / module symbol gaps" — NOT reproduced on the
   current compiler; only the 5 plat_* stubs fail.)
+- **[F4 2026-08-08]** I/O migration: `__bootstrap_print`/`__bootstrap_print_int`/
+  `__bootstrap_write`/`__bootstrap_print_bytes` externs → `std.io.print`/
+  `std.io.printInt`/`std.io.write` (mud_server `std.zig`/`std_io.zig` copies,
+  imported as `../mud_server/std.zig` — existing pattern). Console (`plat_*`)
+  migration is F5's job — NOT touched. Zero `__bootstrap_*` refs remain.
+  Module count 20 → 22 (mud_server `std_io` now transitively included).
 
 ## Deferred to std-lib (D4, operator ruling)
-Final status: **all 20 modules emit, gcc compile rc=0, link fails on exactly
+Final status: **all 22 modules emit, gcc compile rc=0, link fails on exactly
 the 5 `plat_*` stubs** — `plat_is_windows`, `plat_console_gotoxy`,
 `plat_console_setcolor`, `plat_console_putchar`, `plat_console_clear` (BOTH
 single-module and multi-module recipes). All 5 are missing from ALL runtime
@@ -64,11 +70,12 @@ zig0 fails identically → this is the **D4 runtime-library gap, NOT a compiler
 defect**. **Deferred to the std-zig1 library — NOT fixed here** (feeds the
 future std-lib plan's console/platform-detect layer; guarded by
 `repro/mi_matrix/plat_stubs_missing_xmod/`). When the std-lib plan provides
-the 5 stubs, rogue_mud links and runs.
+the 5 stubs, rogue_mud links and runs. [F4 2026-08-08: I/O migration done;
+link-block status unchanged.]
 
 ## Classification
 BROKEN-at-link (runtime-library gap, D4, std-lib-deferred). Compiler
 emission correct. Run with timeout (`timeout 10 /tmp/rm_dir/rm` —
-server-style application). Re-verified 2026-08-08 at the F7 gate sweep:
-dump rc=0 (20 modules), gcc compile rc=0 (5 warnings), link rc=1 on exactly
-the 5 `plat_*` stubs — unchanged from F4.
+server-style application). Re-verified 2026-08-08 at F4: dump rc=0 (22
+modules), gcc compile rc=0 (5 warnings), link rc=1 on exactly
+the 5 `plat_*` stubs — unchanged.

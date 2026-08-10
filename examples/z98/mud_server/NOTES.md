@@ -6,8 +6,11 @@
 
 **Working commit:** `bf5d3636`
 
-**MD5 (`--dump-c89`):** `4644ad1349c55af80fa1a18fe0e17989` [updated: 2026-08-06]
-(Re-baselined 2026-08-03/2026-08-04 per AMENDMENT 9-11 / F-5 AMENDMENT B; previous `5fb57e70…` stale.)
+**MD5 (`--dump-c89`):** `ecd4086925e81c872abd1c32e7ce929e` [updated: 2026-08-08]
+(Re-baselined 2026-08-08 F4: `std_debug.zig` `__bootstrap_print` extern → `std.io.print` (local
+`std.zig`/`std_io.zig` copies; the `net_runtime.c` externs in `main.zig` stay until F6). Runtime
+output byte-identical to pre-F4 ("MUD server listening on port 4000", rc=124 timeout), per F-5
+AMENDMENT B. Previous `4644ad13…` stale.)
 
 ## Build Recipes
 
@@ -39,3 +42,4 @@ MUD server listening on port 4000
 
 ## Notes
 Multi-file: `main.zig` imports `std.zig` and `util.zig`. Needs `sf/src/include/net_runtime.c` in the link step.
+[F4 2026-08-08: `std_debug.zig` `__bootstrap_print` extern → `std.io.print` via local `std.zig`/`std_io.zig` copies. Local `std.zig` = `io` + `debug` (NO `arena` re-export — mud_server/rogue_mud don't use `std.arena`, and importing std_arena in the rogue_mud build exposes a pre-existing module-instance≥1 struct-type emission bug).]

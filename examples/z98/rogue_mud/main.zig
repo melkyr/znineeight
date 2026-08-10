@@ -20,8 +20,6 @@ const MULTIPLAYER_ENABLED: bool = false;
 // External functions for input
 extern "c" fn getchar() i32;
 extern "c" fn kbhit() i32;
-extern "c" fn __bootstrap_print(s: [*]const u8) void;
-extern "c" fn __bootstrap_print_int(n: i32) void;
 
 var buffer: [512 * 1024]u8 = undefined;
 var temp_buffer: [512 * 1024]u8 = undefined;
@@ -35,12 +33,12 @@ pub fn main() !void {
 
     var rng = rng_mod.Random_init(@intCast(u32, 12345));
 
-    __bootstrap_print("Welcome to Rogue MUD!\n");
+    std.io.print("Welcome to Rogue MUD!\n");
 
     var server: net_mod.Server = undefined;
     if (MULTIPLAYER_ENABLED) {
         server = net_mod.Server_init(4000) catch |err| {
-            __bootstrap_print("Warning: Network server failed to start, running in local-only mode.\n");
+            std.io.print("Warning: Network server failed to start, running in local-only mode.\n");
             // We continue anyway, just without networking
             var s = net_mod.Server { .listen_socket = -1, .clients = undefined };
             var si: usize = 0;
@@ -50,7 +48,7 @@ pub fn main() !void {
             s
         };
     } else {
-        __bootstrap_print("Running in single-player ASCII mode.\n");
+        std.io.print("Running in single-player ASCII mode.\n");
         server = net_mod.Server { .listen_socket = -1, .clients = undefined };
         var si: usize = 0;
         while (si < @intCast(usize, 5)) : (si += 1) {
@@ -59,7 +57,7 @@ pub fn main() !void {
     }
     defer if (server.listen_socket != -1) net_mod.Server_deinit(&server);
 
-    __bootstrap_print("Generating dungeon...\n");
+    std.io.print("Generating dungeon...\n");
 
     var dungeon = try scenario.generateDungeon(&arena, &rng, @intCast(u8, 60), @intCast(u8, 30));
 
@@ -72,7 +70,7 @@ pub fn main() !void {
         p_typ = .Player;
         combat_mod.addEntity(&dungeon, p_typ, px, py, @intCast(i16, 20));
     } else {
-        __bootstrap_print("Error: No rooms generated!\n");
+        std.io.print("Error: No rooms generated!\n");
         return;
     }
 
@@ -87,7 +85,7 @@ pub fn main() !void {
         combat_mod.addEntity(&dungeon, g_typ, ex, ey, @intCast(i16, 5));
     }
 
-    __bootstrap_print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
+    std.io.print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
 
     game_loop: while (true) {
         // Handle Networking and Local Input via select
@@ -241,15 +239,15 @@ pub fn main() !void {
             'd', 'D' => dx = 1,
             'l', 'L' => ui_mod.lookSurroundings(dungeon),
             'v', 'V' => {
-                __bootstrap_print("Saving dungeon to 'save.dat'...\n");
+                std.io.print("Saving dungeon to 'save.dat'...\n");
                 persistence.saveDungeon(&arena, dungeon, "save.dat") catch {
-                    __bootstrap_print("Failed to save dungeon!\n");
+                    std.io.print("Failed to save dungeon!\n");
                 };
             },
             'b', 'B' => {
-                __bootstrap_print("Loading dungeon from 'save.dat'...\n");
+                std.io.print("Loading dungeon from 'save.dat'...\n");
                 persistence.loadDungeon(&arena, &dungeon, "save.dat") catch {
-                    __bootstrap_print("Failed to load dungeon!\n");
+                    std.io.print("Failed to load dungeon!\n");
                 };
             },
             else => {},
@@ -270,7 +268,7 @@ pub fn main() !void {
 
         // Simple turn feedback
         if (!dungeon.entities[0].active) {
-            __bootstrap_print("You have died. Game Over.\n");
+            std.io.print("You have died. Game Over.\n");
             break :game_loop;
         }
     }

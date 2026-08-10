@@ -128,16 +128,16 @@ pub fn clearScreen() void {
 
 pub fn drawStatusBar(dungeon: scenario.Dungeon_t) void {
     const player = dungeon.entities[0];
-    __bootstrap_print("Pos: (");
-    __bootstrap_print_int(@intCast(i32, player.x));
-    __bootstrap_print(", ");
-    __bootstrap_print_int(@intCast(i32, player.y));
-    __bootstrap_print(") | ");
+    std.io.print("Pos: (");
+    std.io.printInt(@intCast(i32, player.x));
+    std.io.print(", ");
+    std.io.printInt(@intCast(i32, player.y));
+    std.io.print(") | ");
     printHP(player.hp, player.max_hp);
 }
 
 pub fn printHP(hp: i16, max_hp: i16) void {
-    __bootstrap_print("HP: ");
+    std.io.print("HP: ");
     if (hp < max_hp / 3) {
         plat_console_setcolor(@intCast(i32, COLOR_RED), @intCast(i32, COLOR_BLACK));
     } else if (hp < max_hp / 2) {
@@ -145,32 +145,23 @@ pub fn printHP(hp: i16, max_hp: i16) void {
     } else {
         plat_console_setcolor(@intCast(i32, COLOR_GREEN), @intCast(i32, COLOR_BLACK));
     }
-    __bootstrap_print_int(@intCast(i32, hp));
-    __bootstrap_print("/");
-    __bootstrap_print_int(@intCast(i32, max_hp));
+    std.io.printInt(@intCast(i32, hp));
+    std.io.print("/");
+    std.io.printInt(@intCast(i32, max_hp));
     plat_console_setcolor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
-    __bootstrap_print("\n");
+    std.io.print("\n");
 }
-
-extern "c" fn __bootstrap_write(s: *const u8, len: usize) void;
-fn __bootstrap_print_bytes(s: [*]u8, len: usize) void {
-    __bootstrap_write(@ptrCast(*const u8, s), len);
-}
-
-extern "c" fn __bootstrap_print_int(n: i32) void;
-extern "c" fn __bootstrap_print_char(c: i32) void;
-extern "c" fn __bootstrap_print(s: *const c_char) void;
 
 pub fn lookSurroundings(dungeon: scenario.Dungeon_t) void {
     const player = dungeon.entities[0];
     const px = player.x;
     const py = player.y;
 
-    __bootstrap_print("You are at (");
-    __bootstrap_print_int(@intCast(i32, px));
-    __bootstrap_print(", ");
-    __bootstrap_print_int(@intCast(i32, py));
-    __bootstrap_print("). Surroundings:\n");
+    std.io.print("You are at (");
+    std.io.printInt(@intCast(i32, px));
+    std.io.print(", ");
+    std.io.printInt(@intCast(i32, py));
+    std.io.print("). Surroundings:\n");
 
     var dy: i16 = -1;
     while (dy <= 1) : (dy += 1) {
@@ -206,14 +197,14 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
             switch (e.typ) {
                 .Player => {},
                 .Goblin => {
-                    __bootstrap_print("To the ");
-                    __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
-                    __bootstrap_print(", you see a Goblin!\n");
+                    std.io.print("To the ");
+                    std.io.write(dir_str);
+                    std.io.print(", you see a Goblin!\n");
                 },
                 .Orc => {
-                    __bootstrap_print("To the ");
-                    __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
-                    __bootstrap_print(", you see an Orc!\n");
+                    std.io.print("To the ");
+                    std.io.write(dir_str);
+                    std.io.print(", you see an Orc!\n");
                 },
             }
             return;
@@ -223,15 +214,15 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
     const idx = @intCast(usize, y) * @intCast(usize, dungeon.width) + @intCast(usize, x);
     switch (dungeon.tiles[idx]) {
         .Wall => {
-            __bootstrap_print("To the ");
-            __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
-            __bootstrap_print(", there is a solid stone wall.\n");
+            std.io.print("To the ");
+            std.io.write(dir_str);
+            std.io.print(", there is a solid stone wall.\n");
         },
         .Floor => {}, // Floors are boring
         .Door => {
-            __bootstrap_print("To the ");
-            __bootstrap_print_bytes(@ptrCast([*]u8, dir_str.ptr), dir_str.len);
-            __bootstrap_print(", you see a heavy wooden door.\n");
+            std.io.print("To the ");
+            std.io.write(dir_str);
+            std.io.print(", you see a heavy wooden door.\n");
         },
     }
 }
