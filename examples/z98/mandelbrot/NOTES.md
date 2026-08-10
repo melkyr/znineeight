@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `924141a542ecf3d5185d5d0f1980118d`
+**MD5 (`--dump-c89`):** `32ceaf9cb1d22d8c95ed1dab21d425fa` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -37,3 +37,4 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 
 ## Notes
 Entry file is `mandelbrot.zig`, NOT `main.zig`. Single file.
+[F4 2026-08-08: `__bootstrap_print` extern → `std.io.print` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

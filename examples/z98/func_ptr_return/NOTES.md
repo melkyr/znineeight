@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `cf271327bed2a523b452640598ff5a24`
+**MD5 (`--dump-c89`):** `6f686eb655f31989c3e4dafb8c958290` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -38,3 +38,4 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 
 ## Notes
 Entry file is `func_ptr_return.zig`, NOT `main.zig`.
+[F4 2026-08-08: `__bootstrap_print*` externs → `std.io.print`/`std.io.printInt` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

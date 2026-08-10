@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `c317e8ef5cb137357605835d4f1150eb`
+**MD5 (`--dump-c89`):** `41b50d151a265313f0eed0df1726bb96` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -39,3 +39,4 @@ Sorted (descending): 9 6 5 5 4 3 3 2 1 1
 
 ## Notes
 Entry file is `quicksort.zig`, NOT `main.zig`.
+[F4 2026-08-08: `__bootstrap_print*` externs → `std.io.print`/`std.io.printInt` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

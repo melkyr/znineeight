@@ -1,6 +1,6 @@
-@cInclude("zig_runtime.h");
+const std = @import("std.zig");
 
-extern fn __bootstrap_print(s: *const c_char) void;
+@cInclude("zig_runtime.h");
 
 fn strLessThan(a: [*]const u8, b: [*]const u8) bool {
     if (a == null or b == null) { return false; }
@@ -36,11 +36,11 @@ fn printStrings(ptr: [*][*]const u8, len: usize) void {
     if (ptr == null) { return; }
     var i: usize = 0;
     while (i < len) {
-        __bootstrap_print(@ptrCast(*const c_char, ptr[i]));
-        __bootstrap_print(" ");
+        std.io.print(@ptrCast([*]const c_char, ptr[i]));
+        std.io.print(" ");
         i += 1;
     }
-    __bootstrap_print("\n");
+    std.io.print("\n");
 }
 
 pub fn main() void {
@@ -50,9 +50,9 @@ pub fn main() void {
         @ptrCast([*]const u8, "cherry"),
         @ptrCast([*]const u8, "date")
     };
-    __bootstrap_print("Original: banana apple cherry date\n");
+    std.io.print("Original: banana apple cherry date\n");
 
-    __bootstrap_print("Sorted strings: ");
+    std.io.print("Sorted strings: ");
     sortStrings(@ptrCast([*][*]const u8, &words), 4);
     printStrings(@ptrCast([*][*]const u8, &words), 4);
 }

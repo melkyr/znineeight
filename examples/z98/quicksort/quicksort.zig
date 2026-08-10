@@ -1,7 +1,6 @@
-@cInclude("zig_runtime.h");
+const std = @import("std.zig");
 
-extern fn __bootstrap_print(s: *const c_char) void;
-extern fn __bootstrap_print_int(n: i32) void;
+@cInclude("zig_runtime.h");
 
 fn quicksort(ptr: [*]i32, len: usize, cmp: fn(i32, i32) bool) void {
     if (ptr == null) { return; }
@@ -40,22 +39,22 @@ fn greaterThan(a: i32, b: i32) bool {
 fn printArray(ptr: [*]i32, len: usize) void {
     var i: usize = 0;
     while (i < len) {
-        __bootstrap_print_int(ptr[i]);
-        __bootstrap_print(" ");
+        std.io.printInt(ptr[i]);
+        std.io.print(" ");
         i += 1;
     }
-    __bootstrap_print("\n");
+    std.io.print("\n");
 }
 
 pub fn main() void {
     var arr = [10]i32{ 3, 1, 4, 1, 5, 9, 2, 6, 5, 3 };
-    __bootstrap_print("Original: 3 1 4 1 5 9 2 6 5 3\n");
+    std.io.print("Original: 3 1 4 1 5 9 2 6 5 3\n");
 
-    __bootstrap_print("Sorted (ascending): ");
+    std.io.print("Sorted (ascending): ");
     quicksort(@ptrCast([*]i32, &arr), 10, lessThan);
     printArray(@ptrCast([*]i32, &arr), 10);
 
-    __bootstrap_print("Sorted (descending): ");
+    std.io.print("Sorted (descending): ");
     quicksort(@ptrCast([*]i32, &arr), 10, greaterThan);
     printArray(@ptrCast([*]i32, &arr), 10);
 }

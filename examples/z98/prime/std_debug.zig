@@ -1,7 +1,5 @@
-@cInclude("zig_runtime.h");
-
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 
 pub fn printInt(n: i32) void {
-    __bootstrap_print_int(n);
+    std.io.printInt(n);
 }

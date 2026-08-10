@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `726944fa1da785bf00c799f05e112781`
+**MD5 (`--dump-c89`):** `06f6d032c980fceb97ae1800c0eb2aa9` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -37,3 +37,4 @@ Hello, world!
 
 ## Notes
 Standard build recipe.
+[F4 2026-08-08: `std_debug.zig` migrated from `__bootstrap_print*` externs to `std.io` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

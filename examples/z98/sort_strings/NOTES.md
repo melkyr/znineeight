@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `774222f59861d890b3217439d4e64b1a`
+**MD5 (`--dump-c89`):** `4ca57dacfea1ce9b60e46fe9ca45bfba` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -38,3 +38,4 @@ Sorted strings: apple banana cherry date
 
 ## Notes
 Entry file is `sort_strings.zig`, NOT `main.zig`.
+[F4 2026-08-08: `__bootstrap_print` extern → `std.io.print` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

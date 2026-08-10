@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `96d49e025fdf638b5b9b5b8b5cc37fc4`
+**MD5 (`--dump-c89`):** `47847b359c3fa3cc241008111d3dfc3b` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -37,3 +37,4 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 
 ## Notes
 Cosmetic: month name null bytes cause display corruption in calendar output.
+[F4 2026-08-08: `std_debug.zig` extern `print` → `std.io.print` wrapper (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies). Runtime output byte-identical to pre-F4.]

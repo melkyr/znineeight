@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `7b520bbf97853e0de7e933f1ed3c2d96`
+**MD5 (`--dump-c89`):** `a8c47d442a58292ea9120ee61a92a890` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -37,3 +37,4 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 
 ## Notes
 Sorted array output.
+[F4 2026-08-08: `std_debug.zig` migrated from `__bootstrap_print*` externs to `std.io` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]

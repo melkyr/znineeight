@@ -1,10 +1,10 @@
+const std = @import("std.zig");
+
 const Width: usize = 80;
 const Height: usize = 24;
 const MaxIter: u8 = 100;
 
 @cInclude("zig_runtime.h");
-
-extern fn __bootstrap_print(s: [*]const c_char) void;
 
 fn mandelbrot(cx: f64, cy: f64) u8 {
     var x: f64 = 0.0;
@@ -56,8 +56,8 @@ pub fn main() void {
         }
         c_str[Width] = 0;
 
-        __bootstrap_print(&c_str[0]);
-        __bootstrap_print("\n");
+        std.io.print(&c_str[0]);
+        std.io.print("\n");
 
         y += 1;
     }

@@ -1,5 +1,5 @@
-@cInclude("zig_runtime.h");
+const std = @import("std.zig");
 
-// For bootstrap, we use a special signature that the type checker allows
-// but the codegen will lower specially.
-pub extern fn print(fmt: *const u8, args: anytype) void;
+pub fn print(fmt: *const c_char, args: anytype) void {
+    std.io.print(fmt);
+}

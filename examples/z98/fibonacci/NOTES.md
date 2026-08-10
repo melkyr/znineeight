@@ -6,7 +6,7 @@
 
 **Working commit:** `9d029c2e`
 
-**MD5 (`--dump-c89`):** `31baff99d2d7de89b1dfa811d0966df3`
+**MD5 (`--dump-c89`):** `6eae64764ee46dd90e644e3d717d02e6` [updated: 2026-08-08]
 
 ## Build Recipes
 
@@ -37,3 +37,4 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 
 ## Notes
 10th Fibonacci number.
+[F4 2026-08-08: `std_debug.zig` migrated from `__bootstrap_print*` externs to `std.io` (via local `std.zig`/`std_io.zig`/`std_arena.zig` copies).]
