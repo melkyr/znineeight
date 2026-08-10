@@ -1641,6 +1641,18 @@ defect). No NEW regression vs MEM4. **[F3 2026-08-08: `json_parser` + `json_pars
 now link+run rc=0 → end-to-end working binaries 18/21** (the 3 non-working: lisp_interpreter
 gcc FAIL, mud_server server-timeout, rogue_mud plat_* link FAIL). See the F3 section.]**
 
+**[F4 2026-08-08 — std.io migration (see task-F4-stdlib-report.md):]** all 21 examples
+migrated off `__bootstrap_*` (zero refs in example sources); all 21 dump rc=0; the working set
+is **unchanged at 18/21 end-to-end** (same set as F3 — no example regressed). The 6
+example-facing `__bootstrap_*` I/O wrappers were removed from `zig_runtime.c`/`.h`; the 19
+`@intCast` cast helpers now panic via `std_panic` directly (m0564). The F1/F2 feature-guard
+repros **`io_builtin_test` + `console_builtin_test` were migrated to `std.io`** (local
+`std.zig`/`std_io.zig`/`std_arena.zig` copies in each dir; the F2 console builtins' emitted
+`__bootstrap_write` calls were repointed to `std_print_len` in c89_emit.zig — the console
+builtins' stdout-write helper) — both still compile+link+run. Corpus at F4: **239 dirs measured,
+OK=232 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** (the 3 FAILs + 4 green-guards are exactly
+the documented set — no new corpus FAIL).
+
 ## Follow-ups (multi-module fixes plan) — NOT fixed here
 
 1. **Union `==` emission** — `tagged_union_cmp_xmod` and same-module union `==` emit

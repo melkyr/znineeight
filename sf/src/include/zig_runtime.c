@@ -63,13 +63,10 @@ void std_print_str(const unsigned char* ptr, unsigned int len) {
     if (ptr && len) pal_print_stdout((const char*)ptr, len);
 }
 
-/* Backward compat aliases */
-void __bootstrap_print(const char* s) { std_print(s); }
-void __bootstrap_print_int(int n) { std_print_i32(n); }
-void __bootstrap_print_char(int c) { std_print_char((unsigned char)c); }
-void __bootstrap_panic(const char* msg, const char* file, int line) { std_panic(msg); (void)file; (void)line; }
-void __bootstrap_write(const char* s, unsigned int len) { std_print_len(s, len); }
-void __bootstrap_sleep_ms(unsigned int ms) { if (ms > 0) { int _i; for (_i=0; _i<(int)ms*1000; _i++) {} } }
+/* Backward compat I/O aliases __bootstrap_print* / __bootstrap_write /
+   __bootstrap_sleep_ms / __bootstrap_panic REMOVED (F4, 2026-08-08) — the
+   examples migrated to std.io (std_io.zig builtins). The cast helpers below
+   call std_panic directly (operator ruling m0564). */
 
 /* Checked conversions (u64 -> target type) */
 
@@ -119,37 +116,37 @@ unsigned long long std_checked_cast_u64(unsigned long long val) {
 typedef char c_char;
 
 usize __bootstrap_usize_from_i64(i64 x) {
-    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0) std_panic("integer cast overflow in @intCast");
     return (usize)x;
 }
 
 i32 __bootstrap_i32_from_u32(u32 x) {
-    if (x > 2147483647U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x > 2147483647U) std_panic("integer cast overflow in @intCast");
     return (i32)x;
 }
 
 u32 __bootstrap_u32_from_u64(u64 x) {
-    if (x > (u64)4294967295U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x > (u64)4294967295U) std_panic("integer cast overflow in @intCast");
     return (u32)x;
 }
 
 u32 __bootstrap_u32_from_i32(i32 x) {
-    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0) std_panic("integer cast overflow in @intCast");
     return (u32)x;
 }
 
 usize __bootstrap_usize_from_i32(i32 x) {
-    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0) std_panic("integer cast overflow in @intCast");
     return (usize)x;
 }
 
 i32 __bootstrap_i32_from_usize(usize x) {
-    if (x > 2147483647U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x > 2147483647U) std_panic("integer cast overflow in @intCast");
     return (i32)x;
 }
 
 u8 __bootstrap_u8_from_usize(usize x) {
-    if (x > 255) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x > 255) std_panic("integer cast overflow in @intCast");
     return (u8)x;
 }
 
@@ -166,42 +163,42 @@ i32 __bootstrap_i32_from_u8(u8 x) {
 }
 
 u8 __bootstrap_u8_from_i32(i32 x) {
-    if (x < 0 || x > 255) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0 || x > 255) std_panic("integer cast overflow in @intCast");
     return (u8)x;
 }
 
 u8 __bootstrap_u8_from_u32(u32 x) {
-    if (x > 255) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x > 255) std_panic("integer cast overflow in @intCast");
     return (u8)x;
 }
 
 u16 __bootstrap_u16_from_i32(i32 x) {
-    if (x < 0 || x > 65535) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0 || x > 65535) std_panic("integer cast overflow in @intCast");
     return (u16)x;
 }
 
 u32 __bootstrap_u32_from_i64(i64 x) {
-    if (x < 0 || x > (i64)4294967295U) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0 || x > (i64)4294967295U) std_panic("integer cast overflow in @intCast");
     return (u32)x;
 }
 
 u64 __bootstrap_u64_from_i64(i64 x) {
-    if (x < 0) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < 0) std_panic("integer cast overflow in @intCast");
     return (u64)x;
 }
 
 i8 __bootstrap_i8_from_i32(i32 x) {
-    if (x < -128 || x > 127) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < -128 || x > 127) std_panic("integer cast overflow in @intCast");
     return (i8)x;
 }
 
 i16 __bootstrap_i16_from_i32(i32 x) {
-    if (x < -32768 || x > 32767) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < -32768 || x > 32767) std_panic("integer cast overflow in @intCast");
     return (i16)x;
 }
 
 i32 __bootstrap_i32_from_i64(i64 x) {
-    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer cast overflow in @intCast", __FILE__, __LINE__);
+    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) std_panic("integer cast overflow in @intCast");
     return (i32)x;
 }
 

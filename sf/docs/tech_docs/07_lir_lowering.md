@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
+# LIR Lowering Layer [updated: 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
 
 ## Summary
 
@@ -490,13 +490,23 @@ path; the `print_str`/`print_val` → `std_print*` path is untouched.
 
 | `__bootstrap_*` (zig_runtime.c:line) | Signature (C) | Consumers | Disposition |
 |---|---|---|---|
-| `__bootstrap_print` :67 | `void (const char* s)` | 20+ z98 examples (hello, quicksort, sort_strings, json_parser, mud/gol/lisp std_debug.zig, rogue_mud…) | → builtin/std_io wrapper (stdout) |
-| `__bootstrap_print_int` :68 | `void (int n)` | 15+ z98 examples (printInt wrappers, lisp `.Int`, rogue_mud HP/pos) | → builtin/std_io wrapper |
-| `__bootstrap_print_char` :69 | `void (int c)` | rogue_mud ui.zig:161 | → `@putChar(@intCast(u8, c))` |
-| `__bootstrap_panic` :70 | `void (const char*, const char*, int)` | cast helpers (this file + zig_runtime.h static copies) | **STAYS** (compiler-internal @intCast panic path; see concern) |
-| `__bootstrap_write` :71 | `void (const char*, unsigned int)` | json_parser, rogue_mud `__bootstrap_print_bytes` | → builtin/std_io wrapper (stdout write) |
-| `__bootstrap_sleep_ms` :72 | `void (unsigned int)` | game_of_life (sleep 100), oracle examples | → `@sleepMs` |
-| 19× `__bootstrap_<DST>_from_<SRC>` :121-208 | per-pair `DST (SRC)` (see below) | zig1's c89_emit checked `int_cast` arm (isBootstrapHelperDefined, c89_emit.zig:2973-3013); also zig0-emitted compiler binary | **STAY** (compiler `@intCast` runtime) |
+| `__bootstrap_print` :67 | `void (const char* s)` | 20+ z98 examples (hello, quicksort, sort_strings, json_parser, mud/gol/lisp std_debug.zig, rogue_mud…) | → `std.io.print` (std_io.zig `@stdoutWrite` walk) — **REMOVED (F4)** |
+| `__bootstrap_print_int` :68 | `void (int n)` | 15+ z98 examples (printInt wrappers, lisp `.Int`, rogue_mud HP/pos) | → `std.io.printInt` (std_io.zig itoa) — **REMOVED (F4)** |
+| `__bootstrap_print_char` :69 | `void (int c)` | rogue_mud ui.zig:161 (unused decl) | → `std.io.writeByte` — **REMOVED (F4)** |
+| `__bootstrap_panic` :70 | `void (const char*, const char*, int)` | cast helpers (this file + zig_runtime.h static copies) | **REMOVED (F4)** — cast helpers repointed to `std_panic(msg)` directly (operator ruling m0564) |
+| `__bootstrap_write` :71 | `void (const char*, unsigned int)` | json_parser, rogue_mud `__bootstrap_print_bytes` | → `std.io.write` — **REMOVED (F4)** |
+| `__bootstrap_sleep_ms` :72 | `void (unsigned int)` | game_of_life (sleep 100), oracle examples | → `std.io.sleepMs` (`@sleepMs`) — **REMOVED (F4)** |
+| 19× `__bootstrap_<DST>_from_<SRC>` :121-208 | per-pair `DST (SRC)` (see below) | zig1's c89_emit checked `int_cast` arm (isBootstrapHelperDefined, c89_emit.zig:2973-3013); also zig0-emitted compiler binary | **STAY** (compiler `@intCast` runtime; now panic via `std_panic`) |
+
+**F4 (2026-08-08) — std-lib migration COMPLETE.** All 6 example-facing wrappers are removed from
+`sf/src/include/zig_runtime.c`/`.h`; the 21 z98 examples were migrated to `std.io`
+(`std.zig`/`std_io.zig` root package; per-example local copies resolved via `@import("std.zig")`,
+the F3 std_arena precedent — bare `@import("std")` needs a resolver search-path feature, out of
+scope). `__bootstrap_panic` was removed AFTER the 19 cast helpers (both `zig_runtime.c` defs and
+`zig_runtime.h` static copies) were repointed to `std_panic("integer cast overflow in @intCast")`
+(m0564). Verified: all 21 examples dump rc=0; 19/21 link+run (lisp_interpreter gcc `zT_N`
+defect + rogue_mud D4 plat-stub link block are pre-existing); 4 MD5 gates re-baselined with
+runtime-proof (AMENDMENT B).
 
 **Builtin signatures (plan catalog, Option B):** `@putChar(c: u8) void`,
 `@stderrWrite(buf: [*]const u8, len: usize) void`, `@getChar() u8`, `@exit(code: u8) noreturn`,

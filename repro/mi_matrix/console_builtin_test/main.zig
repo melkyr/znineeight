@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 
 pub fn main() void {
     @consoleClear();
@@ -9,6 +9,6 @@ pub fn main() void {
     } else {
         @stdoutWrite("POSIXBRANCH", 11);
     }
-    __bootstrap_print_int(@intCast(i32, @isWindows()));
+    std.io.printInt(@intCast(i32, @isWindows()));
     @exit(@intCast(u8, 0));
 }

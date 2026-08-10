@@ -2084,7 +2084,7 @@ fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
         bufferedWriterWrite(&emitter.writer, swin);
     }
     if (moduleHasConsoleBuiltin(fns) != @intCast(u8, 0)) {
-        var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void __bootstrap_write(const char* s, unsigned int len);\n";
+        var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
         bufferedWriterWrite(&emitter.writer, cwin);
     }
 }
@@ -3224,7 +3224,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     var ccl12: []const u8 = "#elif defined(__WATCOMC__)\n";
     bufferedWriterWrite(&emitter.writer, ccl12);
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    var ccl13: []const u8 = "__bootstrap_write(\"\\x1b[2J\\x1b[H\", 7);\n";
+    var ccl13: []const u8 = "std_print_len(\"\\x1b[2J\\x1b[H\", 7);\n";
     bufferedWriterWrite(&emitter.writer, ccl13);
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
     var ccl14: []const u8 = "#else\n";
@@ -3264,7 +3264,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     var cg7: []const u8 = ") + 1, (int)(";
     bufferedWriterWrite(&emitter.writer, cg7);
     bufferedWriterWrite(&emitter.writer, cx);
-    var cg8: []const u8 = ") + 1); __bootstrap_write(buf, (unsigned int)len); }\n";
+    var cg8: []const u8 = ") + 1); std_print_len(buf, (unsigned int)len); }\n";
     bufferedWriterWrite(&emitter.writer, cg8);
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
     var cg9: []const u8 = "#else\n";
@@ -3314,7 +3314,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     var cc9: []const u8 = ") & 0x0F], bg_ansi[(int)(";
     bufferedWriterWrite(&emitter.writer, cc9);
     bufferedWriterWrite(&emitter.writer, cb);
-    var cc10: []const u8 = ") & 0x0F]); __bootstrap_write(buf, (unsigned int)len); }\n";
+    var cc10: []const u8 = ") & 0x0F]); std_print_len(buf, (unsigned int)len); }\n";
     bufferedWriterWrite(&emitter.writer, cc10);
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
     var cc11: []const u8 = "#else\n";

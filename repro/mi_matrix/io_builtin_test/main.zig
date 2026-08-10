@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 
 pub fn main() void {
     @putChar(@intCast(u8, 'H'));
@@ -6,6 +6,6 @@ pub fn main() void {
     @stdoutWrite("Hello", 5);
     @stderrWrite("ERR", 3);
     @sleepMs(@intCast(u32, 0));
-    __bootstrap_print_int(@intCast(i32, @getChar()));
+    std.io.printInt(@intCast(i32, @getChar()));
     @exit(@intCast(u8, 0));
 }

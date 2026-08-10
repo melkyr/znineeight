@@ -303,10 +303,19 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 | [updated: 2026-08-08] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `6c0a83f117f176f6875ce2c18c761890` |
-| `examples/z98/game_of_life/main.zig` | `0d8f0092c22c04375482a198691a3957` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `a12f2fcebc30f2d8c2a148facb9d1174` |
-| `examples/z98/json_parser/main.zig` | `ff9b880c3257fa96b9750b4dabe0e747` |
+| `examples/z98/mud_server/main.zig` | `ecd4086925e81c872abd1c32e7ce929e` |
+| `examples/z98/game_of_life/main.zig` | `b246a2fecc0b5ff4402912c49970cdae` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `141994cc81ab4bbb89722b7d30af419d` |
+| `examples/z98/json_parser/main.zig` | `f50ce1e6800d9e1365c019e46ac61292` |
+
+- **Re-baselined 2026-08-08 (F4, std.io migration).** ALL 4 re-baselined because F4 replaces every
+  `__bootstrap_print*`/`__bootstrap_write`/`__bootstrap_sleep_ms` extern in the gate entries with
+  `std.io.print`/`printInt`/`write`/`sleepMs` (local `std.zig`/`std_io.zig`/`std_arena.zig` copies;
+  json additionally re-points the arena import `std_arena.zig` → `std.zig`/`std.arena`). Runtime
+  output byte-identical to pre-F4, verified by run diff (mud "MUD server listening on port 4000"
+  rc=124; gol glider md5 `fcbf7e7c…`; lisp byte-identical; json md5 `d90e7828…`) — per the F-5
+  AMENDMENT B precedent. Pre-F4 values: mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`,
+  json `ff9b880c…` (all stale). [updated: 2026-08-08]
 
 - **Re-baselined 2026-08-08 (F3, std.arena migration).** json re-baselined because F3 replaces
   the `arena_alloc_default` extern in `json.zig`/`file.zig`/`arena.zig` with the new

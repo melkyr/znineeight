@@ -1,4 +1,4 @@
-# 00 — Shared Infrastructure [updated: 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget); F7 line-ref re-verification (main.zig:147 interner, :155-157 type_db, :506-507 StaticAnalyzers sandResetPeak, :158 AstStore)]
+# 00 — Shared Infrastructure [updated: 2026-08-08 — F4 std-lib: `sf/src/std.zig` (root package re-exporting `io`/`arena`) + `sf/src/std_io.zig` created; `zig_runtime.c`/`.h` cleaned of the 6 example-facing `__bootstrap_*` I/O wrappers (cast helpers repointed `__bootstrap_panic` → `std_panic`, m0564); prior 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget); F7 line-ref re-verification (main.zig:147 interner, :155-157 type_db, :506-507 StaticAnalyzers sandResetPeak, :158 AstStore)]
 
 > Covers: allocator, string interner, diagnostics, source manager, PAL, growable arrays, panic handler, utility modules
 > Cross-ref: [INDEX.md](INDEX.md) §G (arena tier table)
