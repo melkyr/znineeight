@@ -1,11 +1,11 @@
 # lisp_interpreter Lowerer Defects Fix Design Spec
 
 **Date:** 2026-08-13
-**Status:** Approved by operator (design questions m0757/m0763: Option 1 full union_type support; both fixed at sema as upstream; R-task creates 2 minimal repros; F3 folds any further surfaced cleanup). Ready for plan.
+**Status:** Approved by operator (design questions m0757/m0763: Option 1 full union_type support; both fixed at sema as upstream; R-task creates 2 minimal repros; F3 folds any further surfaced cleanup). Amended after F3 gate surfaced Defect C (operator ruling m0834: fix GENERAL nested-lvalue-field-store, add cross-module repro). Ready for plan.
 
 ## 1. Goal
 
-Make `examples/z98/lisp_interpreter` (the only non-working example) compile + link + run end-to-end, achieving **21/21 examples**. Two sema-rooted lowerer defects gate it: (A) bare-union literal nested in a struct literal drops its construction (`5× zT_N undeclared`); (B) module-scope `var x: ?T = null` global init types the null temp `int` instead of the optional (`1× Opt_49` type mismatch).
+Make `examples/z98/lisp_interpreter` (the only non-working example) compile + link + run end-to-end, achieving **21/21 examples**. Three lowerer defects gate it: (A) bare-union literal nested in a struct literal drops its construction (`5× zT_N undeclared`); (B) module-scope `var x: ?T = null` global init types the null temp `int` instead of the optional (`1× Opt_49` type mismatch); (C) nested field-access store drops the write-back (runtime SEGFAULT).
 
 ## 2. Problem Statement
 
@@ -39,6 +39,19 @@ Emitted C: `int zT_0; zT_0 = NULL; zG_... = zT_0;` — the null temp is `int` (g
 - Function-body `var x: ?T = null` → `semantic_analyzer.zig:1862-1867` `coercionTableAdd(..., wrap_optional_null, decl_type)`. The lowerer null branch (`lower.zig:1267-1296`) then emits `set_optional_null` correctly.
 - Module-scope globals → `main.zig:368` `phase_SemanticAnalysis` special block (`main.zig:400-441`) resolves the type + init but **never calls `tryRecordCoercion`/`coercionTableAdd`**. The null literal resolves to `TYPE_NULL`; the lowerer falls through to the fallback (`lower.zig:1298-1302`): `nextTemp(TYPE_NULL)` + `null_const` → `int`.
 
+### Defect C — nested field-access store drops the write-back (runtime SEGFAULT)
+
+Surfaced when F3's gate ran lisp_interpreter (post Defects A+B, it compiles+links but SEGFAULTS at run, rc=139). Source (`value.zig`): hand-rolled tagged unions — `v.data.Cons.car = car;` where `v: *Value`, `data: union { Cons: ConsData, ... }`, `ConsData = struct { car: *Value, cdr: *Value }`.
+
+Emitted C: the store to a nested lvalue mutates throwaway locals, never written back:
+```c
+zT_6 = v.data;        /* load union into LOCAL */
+zT_7 = zT_6.Cons;     /* copy member into LOCAL */
+zT_7.car = car;       /* mutate the LOCAL copy — never written back to v.data */
+```
+
+**Root cause — nested lvalue field-store base lowered as an rvalue copy:** `lowerAssignLValue` (lower.zig:793) → `field_access` → `lowerFieldStore` (:844). `lowerFieldStore` computes `base_temp = lowerExpr(child_0)` (:860) for non-index bases — for a nested chain (`a.b.c = x`) the base `a.b` is lowered as an rvalue (`load_field` copies), so the outer `store_field` mutates a copy. `lowerLValueAddr` (:739) has NO `field_access` branch (only index/ident/deref/paren). **Valid Zig** (oracle zig0 runs identical code rc=0); **GENERAL** (any 2+ level field-access lvalue, struct or union, same-module + cross-module).
+
 ## 3. Architecture
 
 Both defects are fixed at **sema as the upstream** (operator ruling m0759/m0761), with lowerer/emitter changes only as the necessary downstream completion of the sema resolution. This mirrors the F3 precedent (add the missing type-kind case at sema + lower + emitter) and the function-body coercion-record precedent.
@@ -48,8 +61,11 @@ Both defects are fixed at **sema as the upstream** (operator ruling m0759/m0761)
 2. **lower** `lower.zig:3363-3421` — add `union_type` branch to the struct-init field loop, emitting the field assign (mirroring struct/tagged_union branches).
 3. **emitter** `c89_emit.zig:188` `emitFieldAssign` — add `union_type` branch (the sibling `store_field` at :4202 already handles unions; this closes the assign_field asymmetry).
 
-**Defect B (1 layer, sema):**
-- `main.zig:400-441` — after resolving the global-init expression, add `classifyCoercion` + `coercionTableAdd` for `decl.child_1`, mirroring `semantic_analyzer.zig:1862-1867`. The existing lowerer null branch then emits `set_optional_null` typed as the optional. Covers `null` AND `undefined` global inits uniformly.
+**Defect B (1 layer, sema, Option 2 — operator ruling m0792):**
+- Add pub fn `semanticAnalyzerResolveModuleVarDecl` in `semantic_analyzer.zig` that owns resolve + coercion record (mirroring `:1862-1867`); `main.zig:400-441` calls it instead of hand-rolling. Coercion recording stays in ONE home (sema). Covers `null` AND `undefined` global inits. F2 re-baselines gol/lisp/json MD5s (module-scope int-literal coercion now recorded — identical to function-body behavior; operator ruling m0809).
+
+**Defect C (1 layer, lowerer lvalue path, operator ruling m0834 — GENERAL fix):**
+- Extend the lvalue/address path so a nested field-access store base lowers to its ADDRESS (store through pointer) instead of an rvalue copy. Locus: `lower.zig` `lowerLValueAddr` (:739, add `field_access` branch) and/or `lowerFieldStore` (:844, route nested-base through address). Verify against the store_field emitter (c89_emit:4134, pointer-base handling) + addr_of (:4289). Single-level field stores (`o.tag = 1`) and index bases (`arr[i].f = x`) must stay unchanged.
 
 ## 4. Tasks
 
@@ -77,22 +93,37 @@ Add `union_type` to sema `resolveStructInit` (:1029) + lower field-loop (:3363-3
 
 Add coercion record to `main.zig:400-441` global-init path. Gate: `global_null_init_xmod` green (dump/gcc/run rc=0, prints `1`).
 
-### 4.5 F3 — Gate sweep + fold further cleanup
+### 4.5 R2 — Create 2 Defect-C repros
 
-Full 21-example matrix — **`lisp_interpreter` must dump/gcc/link/run rc=0** (the headline goal). 2 repros green. 4 MD5 gates byte-identical. Corpus no new FAIL. **If a THIRD pre-existing defect surfaces once lisp_interpreter fully compiles (the F1 lesson), STOP and present — do not silently expand scope.** EXPECTED_FAIL.md v30 + QUICK_REF + tech docs.
+**`repro/mi_matrix/nested_field_store_xmod/`** (same-module): struct-in-struct (`Outer { tag, inner: Inner { a, b } }`), `build()` does `o.inner.a = v; o.inner.b = v+1;`, main prints `.inner.a/.inner.b`. Pre-fix: dump/gcc rc=0, run prints garbage (write-back dropped); zig0 oracle prints `4243`.
+
+**`repro/mi_matrix/nested_field_store_xmod2/`** (cross-module): types defined in lib.zig, store in main.zig. Pre-fix: garbage; oracle prints `78`.
+
+### 4.6 I2 — Defect-C investigation
+
+Confirm mechanism at HEAD (both repros run garbage), determine fix locus + approach (extend `lowerLValueAddr` field_access vs route `lowerFieldStore` nested-base through address), assess blast radius (which examples/repros/gates use nested field-store), update `07_lir_lowering.md`. Combined STOP for operator ruling.
+
+### 4.7 F4 — Defect C fix
+
+Per I2 ruling. Gate: both repros green (correct values); lisp_interpreter no longer SEGFAULTS; F1/F2 repros green; 4 MD5s byte-identical or re-baselined per AMENDMENT B.
+
+### 4.8 F3 — Gate sweep + fold further cleanup
+
+Full 21-example matrix — **`lisp_interpreter` must dump/gcc/link/run rc=0** (the headline goal). 4 repros green. 4 MD5 gates byte-identical. Corpus no new FAIL. **If ANOTHER pre-existing defect surfaces once lisp_interpreter fully compiles, STOP and present — do not silently expand scope.** EXPECTED_FAIL.md v30 + QUICK_REF + tech docs.
 
 ## 5. Gates
 
 - `lisp_interpreter` dump/gcc/link/run rc=0 (21/21 examples)
-- 2 new repros green (dump/gcc/link/run)
+- 4 new repros green (dump/gcc/link/run, correct runtime output)
 - 4 MD5s byte-identical UNLESS operator-approved re-baseline: gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…` (post-F2 re-baseline — module-scope int-literal coercion now recorded, runtime byte-identical per AMENDMENT B), mud `fd0fdaa4…` (mud not a gate)
-- Corpus no new FAIL (current OK=233/FAIL=3/GG=4/240)
+- Corpus no new FAIL (current OK=235/FAIL=3/GG=4/242)
 - test_analyzer_bin PASS
 
 ## 6. Blast Radius
 
-- **Repro** `union_literal_nested_xmod` + `global_null_init_xmod`: FAIL→OK.
-- **lisp_interpreter**: gcc-FAIL→FULL OK (if no third defect).
+- **Repros** `union_literal_nested_xmod` + `global_null_init_xmod` + `nested_field_store_xmod` + `nested_field_store_xmod2`: FAIL→OK.
+- **lisp_interpreter**: gcc-FAIL→FULL OK (Defects A+B+C all fixed; no SEGFAULT at run).
+- **Defect C general scope**: any `a.b.c = x` (2+ level field-access lvalue) across struct/union/ptr, same-module + cross-module. I2 audits which examples/repros currently use nested field-store; gates using it would re-baseline (AMENDMENT B). `lisp_interpreter_curr` uses whole-value assignment (unaffected).
 - **MD5 gates**: none use bare-union literals or module-scope optional null globals (verify in I) → byte-identical.
 - **Corpus**: no new FAIL (the 2 repros are new, added to OK).
 

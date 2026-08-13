@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the two sema-rooted lowerer defects gating `examples/z98/lisp_interpreter` (bare-union literal in struct literal → 5× `zT_N` undeclared; module-scope `?T = null` global init typed `int` → 1× `Opt_49` mismatch), achieving 21/21 examples end-to-end.
+**Goal:** Fix the three sema/lowerer-rooted defects gating `examples/z98/lisp_interpreter` (Defect A bare-union literal in struct literal → 5× `zT_N`; Defect B module-scope `?T = null` global typed `int` → 1× `Opt_49`; Defect C nested field-access store drops write-back → runtime SEGFAULT), achieving 21/21 examples end-to-end.
 
-**Architecture:** Both defects fixed at sema as the upstream (operator ruling m0759/m0761), with lowerer/emitter changes only as the necessary downstream completion. R (2 repros) → I (batched confirmation + blast radius + tech docs) → combined STOP → F1 (Defect A) → F2 (Defect B) → F3 (gate sweep + fold further cleanup; STOP if a third defect surfaces).
+**Architecture:** Defects A+B fixed at sema as the upstream (operator ruling m0759/m0761), lowerer/emitter as downstream completion. Defect C (surfaced by F3's gate, operator ruling m0834: fix GENERAL nested-lvalue-field-store, add cross-module repro) is a lowerer lvalue-path gap. R (2 repros) → I (batched, DONE) → R2 (2 Defect-C repros) → I2 (Defect-C investigation) → combined STOP → F1 (Defect A, DONE) → F2 (Defect B, DONE) → F4 (Defect C) → F3 (gate sweep + fold further cleanup; STOP if another defect surfaces).
 
 **Tech Stack:** Z98 compiler (`sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`, `sf/src/main.zig`), zig1 at `/tmp/fx_subfolder/zig1` (out_release wedged), gcc -m32 C89, repro battery, tech docs.
 
@@ -16,7 +16,8 @@
 - **Repro convention (post-F4):** repro `main.zig` uses `std.io.printInt(...)` with LOCAL `std.zig` + `std_io.zig` copies (byte-identical to `sf/src/std.zig`/`std_io.zig` — the resolver has no search-path, D1 precedent). Copy from `repro/mi_matrix/net_builtin_test/` (already has local copies). NO `__bootstrap_print_int` (migrated off in F4).
 - **RUNTIME gate mandatory** (AGENTS §2.5.3): every fixed repro must run rc=0 AND print the expected output. Compile-only gates are FORBIDDEN.
 - **4 MD5 gates:** gol `ff47d18d` (re-baselined F2, operator ruling m0809), lisp `c1cb748b` (re-baselined F2), json `376fd681` (re-baselined F2), mud `fd0fdaa42a419b0e72cfdb3226a54c4a` (mud NOT a gate). Byte-identical UNLESS operator-approved re-baseline with runtime proof (AMENDMENT B). **F2 re-baselines gol/lisp/json** (module-scope int-literal coercion now recorded — identical to function-body behavior; runtime byte-identical verified).
-- **Corpus:** 240 dirs, OK=233/FAIL=3/GG=4. FAIL must not increase. The 2 new repros are added to the OK count.
+- **Corpus:** 242 dirs, OK=235/FAIL=3/GG=4 (post-F1/F2). FAIL must not increase. The 4 new repros (union_literal_nested_xmod, global_null_init_xmod, nested_field_store_xmod, nested_field_store_xmod2) are added to the OK count.
+- **Defect C (surfaced at F3 gate, operator ruling m0834):** lisp_interpreter SEGFAULTS at run (rc=139) on a THIRD pre-existing defect — nested field-access store drops the write-back. `value.zig` `v.data.Cons.car = car` lowers `v.data.Cons` as an rvalue copy (lower.zig `lowerFieldStore` uses `lowerExpr(child_0)`), the store mutates throwaway locals, `v.data` never updated. **This is a GENERAL defect, not union-specific:** any `a.b.c = x` (2+ levels of field access in an lvalue) drops write-back. Valid Zig (oracle zig0 runs identical code rc=0). Fix scope = GENERAL nested-lvalue-field-store; cross-module must be covered too.
 - **Tech-doc maintenance (AGENTS §1.1.1):** every I-task and source-changing F-task MUST update the corresponding `sf/docs/tech_docs/*.md` — corrected line refs, descriptions, `[updated: 2026-08-13]` annotation. Check INDEX.md Table A.
 - **Editing:** `edit` (exact strings) or `fastedit` (line ranges; re-read region immediately before each edit; bottom-to-top). NO sed/python bulk transforms. NO scope creep.
 - **The plan is the ONLY authority.** Plan says A → do A. If you believe X/Y is better, STOP and present. On any issue, STOP.
@@ -288,6 +289,178 @@ git commit -m "fix: module-scope optional null globals emit set_optional_null (g
 
 ---
 
+### Task R2: Create 2 Defect-C repros (nested field-store write-back)
+
+**Files:**
+- Create: `repro/mi_matrix/nested_field_store_xmod/lib.zig`, `main.zig`, `NOTES.md`, local `std.zig` + `std_io.zig` copies (same-module: Value type + store in one module)
+- Create: `repro/mi_matrix/nested_field_store_xmod2/lib.zig`, `main.zig`, `NOTES.md`, local `std.zig` + `std_io.zig` copies (cross-module: Value type defined in lib.zig, store in main.zig)
+- Report: `.superpowers/sdd/task-R2-lisp-report.md`
+
+**Interfaces:**
+- Consumes: F3's finding (Defect C), operator ruling m0834 (general fix + cross-module repro).
+- Produces: 2 repros that RUN WRONG pre-fix (write-back dropped — print uninitialized value) and run CORRECT post-fix.
+
+**Context:** `v.data.Cons.car = car` (2+ level field-access lvalue) drops the write-back. The repro must exercise a nested field store and READ the value back to prove whether the write landed. Use a struct-in-struct (not union-specific) to prove the GENERAL defect. Cross-module variant proves the type-registry-driven path fails identically.
+
+- [ ] **Step 1: Create `nested_field_store_xmod/`** (same-module, struct-in-struct)
+
+Copy local `std.zig` + `std_io.zig` from `repro/mi_matrix/net_builtin_test/`. Create `lib.zig`:
+```zig
+pub const Inner = struct {
+    a: i32,
+    b: i32,
+};
+
+pub const Outer = struct {
+    tag: i32,
+    inner: Inner,
+};
+
+pub fn build(v: i32) Outer {
+    var o: Outer = undefined;
+    o.tag = 1;
+    o.inner.a = v;
+    o.inner.b = v + @intCast(i32, 1);
+    return o;
+}
+```
+Create `main.zig`:
+```zig
+const std = @import("std.zig");
+const lib_mod = @import("lib.zig");
+
+pub fn main() void {
+    var o = lib_mod.build(@intCast(i32, 42));
+    std.io.printInt(o.inner.a);
+    std.io.printInt(o.inner.b);
+}
+```
+Pre-fix: dump rc=0, gcc rc=0, run prints uninitialized garbage (write-back dropped — the store mutated throwaway locals). zig0 oracle (via /tmp copy) prints `4243`.
+
+- [ ] **Step 2: Create `nested_field_store_xmod2/`** (cross-module)
+
+Same `lib.zig` (Value types defined there). `main.zig`:
+```zig
+const std = @import("std.zig");
+const lib_mod = @import("lib.zig");
+
+pub fn main() void {
+    var o: lib_mod.Outer = undefined;
+    o.tag = 1;
+    o.inner.a = @intCast(i32, 7);
+    o.inner.b = @intCast(i32, 8);
+    std.io.printInt(o.inner.a);
+    std.io.printInt(o.inner.b);
+}
+```
+Pre-fix: dump rc=0, gcc rc=0, run prints garbage (write-back dropped — cross-module path identical). zig0 oracle prints `78`.
+
+- [ ] **Step 3: Run zig0 oracle on /tmp copies**
+
+zig0 writes beside the source — use /tmp copies. Expected: both print the correct values (oracle handles nested field-store).
+
+- [ ] **Step 4: Write NOTES.md for each repro**
+
+Mirror `net_builtin_test/NOTES.md` format: What it tests / The compiler gap (nested lvalue field-store write-back drop, lower.zig lowerFieldStore rvalue base) / Measured result (pre-fix garbage output) / Oracle verification / Expected classification (FAIL pre-fix → OK post-fix).
+
+- [ ] **Step 5: Write the R-report**
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add repro/mi_matrix/nested_field_store_xmod/ repro/mi_matrix/nested_field_store_xmod2/
+git commit -m "repro: nested field-access store write-back drop (same-module + cross-module)"
+```
+
+**Gate:** both repros RUN WRONG pre-fix (write-back dropped); zig0 oracle correct; NOTES.md written; committed.
+
+---
+
+### Task I2: Defect-C investigation — nested field-store write-back drop
+
+**Files:**
+- Investigate: `sf/src/lower.zig` (`lowerLValueAddr` :739, `lowerAssignLValue` :793, `lowerFieldStore` :844)
+- Modify (docs): `sf/docs/tech_docs/07_lir_lowering.md`
+- Report: `.superpowers/sdd/I-lisp-defC-report.md`
+
+**Interfaces:**
+- Consumes: R2 repros, F3's finding, operator ruling m0834.
+- Produces: exact locus + root cause, fix recommendation (general), blast radius (which existing repros/examples affected), tech-doc update.
+
+**Context:** `lowerAssignLValue` (lower.zig:793) → `field_access` → `lowerFieldStore` (:844). `lowerFieldStore` computes `base_temp = lowerExpr(child_0)` for non-index bases (:860) — for a nested chain the base `v.data.Cons` is lowered as an rvalue copy, so the outer `store_field` mutates a throwaway local. `lowerLValueAddr` (:739) has NO `field_access` branch (only index/ident/deref/paren). Valid Zig; general (not union-specific); cross-module affected (type-driven). NO compiler source changes.
+
+- [ ] **Step 1: Confirm the mechanism at HEAD**
+
+Read `lower.zig:739-920` (`lowerLValueAddr`, `lowerAssignLValue`, `lowerFieldStore`). Trace the exact chain for `o.inner.a = v` (field_access(field_access(o, inner), a)): confirm the inner field_access `o.inner` is lowered via `lowerExpr` (rvalue copy) → write-back dropped. Confirm `lowerLValueAddr` has no field_access branch. Run `nested_field_store_xmod` → run prints garbage (pre-fix).
+
+- [ ] **Step 2: Confirm cross-module**
+
+Run `nested_field_store_xmod2` → same garbage output. Confirm the registry is module-agnostic (the defect fires identically).
+
+- [ ] **Step 3: Determine the fix locus + approach**
+
+Analyze: (a) extend `lowerLValueAddr` with a `field_access` branch (compute the address of the field within the base's address) AND route `lowerFieldStore`'s nested-base case through it (store through pointer), or (b) a dedicated nested-base address lowering inside `lowerFieldStore` (recurse: for base field_access, take its address then store_field on the pointer). Determine which matches the existing store_field emitter (c89_emit:4134) and addr_of handling (:4289). Recommend one with file:line.
+
+- [ ] **Step 4: Assess blast radius**
+
+Grep `examples/z98/` and `repro/mi_matrix/` for nested field-access lvalue assignments (`x.y.z =`, `x.y.z.w =`, 2+ levels). Which currently-OK repros/examples would change emission? Which of the 4 MD5 gates (gol/lisp/json/mud) use nested field-store? (lisp_interpreter does — but it's not an MD5 gate; `_curr` uses whole-value assign and is unaffected.) Report which gates would re-baseline.
+
+- [ ] **Step 5: Update tech doc `07_lir_lowering.md`**
+
+Document the lvalue/address path gap (field_access base), `[updated: 2026-08-13]`, corrected refs. Do NOT fix code.
+
+- [ ] **Step 6: Write the I-report** — `.superpowers/sdd/I-lisp-defC-report.md`
+
+- [ ] **Step 7: Report back — combined STOP**
+
+Report mechanism (file:line), fix recommendation (a or b), blast radius. **STOP for operator ruling before F4.**
+
+**Gate:** mechanism confirmed at HEAD with file:line; both repros reproduce garbage pre-fix; fix locus + approach determined; blast radius assessed; tech doc updated. No compiler source changes.
+
+---
+
+### Task F4: Fix Defect C — nested field-access store write-back (per ruling)
+
+**Files:**
+- Modify: `sf/src/lower.zig` (per I2 locus — extend `lowerLValueAddr` with field_access and/or route `lowerFieldStore` nested-base through address)
+- Modify (docs): `sf/docs/tech_docs/07_lir_lowering.md` to FIXED
+- Test: `repro/mi_matrix/nested_field_store_xmod/`, `repro/mi_matrix/nested_field_store_xmod2/`
+
+**Interfaces:**
+- Consumes: I2 ruling, R2 repros.
+- Produces: nested field-access lvalue stores write back correctly (any 2+ level chain, same-module + cross-module).
+
+**Context:** Per I2 ruling (operator-approved). The fix makes the base of a nested field store lower to its ADDRESS (store through pointer) instead of an rvalue copy. Verify the store_field emitter handles a pointer base (c89_emit:4134) so the C output is `base->inner.a = v;`.
+
+- [ ] **Step 1: Write the failing test (red)**
+
+`nested_field_store_xmod/` + `nested_field_store_xmod2/` are the tests. Run pre-fix: dump rc=0, gcc rc=0, run prints garbage. Red state confirmed.
+
+- [ ] **Step 2: Implement per I2 ruling**
+
+Mirror the exact mechanism the I-report determines (extend `lowerLValueAddr` field_access branch, or recurse in `lowerFieldStore`). Ensure single-level field stores (`o.tag = 1`) are unchanged (they already work via the ident/ptr base path). Ensure `index_access` bases still work (`arr[i].f = x`).
+
+- [ ] **Step 3: Build + verify repros green**
+
+Rebuild zig1. `nested_field_store_xmod` prints `4243`, `nested_field_store_xmod2` prints `78` (dump/gcc/link/run rc=0). Inspect emitted C: `o.inner.a = v;` stored through the address, not a local copy.
+
+- [ ] **Step 4: Verify no regression + 4 MD5 gates**
+
+F1/F2 repros still green. Corpus sweep — no new FAIL. 4 MD5 gates: gol/lisp/json/mud byte-identical UNLESS the I2 blast-radius audit found a gate using nested field-store (then report + re-baseline per AMENDMENT B). Also verify lisp_interpreter run no longer SEGFAULTS.
+
+- [ ] **Step 5: Update tech doc `07_lir_lowering.md` to FIXED**
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add sf/src/lower.zig sf/docs/tech_docs/07_lir_lowering.md
+git commit -m "fix: nested field-access store write-back (nested_field_store_xmod)"
+```
+
+**Gate:** both repros green (dump/gcc/link/run rc=0, correct values); lisp_interpreter no longer SEGFAULTS at run; F1/F2 repros still green; 4 MD5s byte-identical or re-baselined per AMENDMENT B; tech doc updated.
+
+---
+
 ### Task F3: Gate sweep + full matrix reconciliation
 
 **Files:**
@@ -297,18 +470,18 @@ git commit -m "fix: module-scope optional null globals emit set_optional_null (g
 - Report: `.superpowers/sdd/task-F3-lisp-report.md`
 
 **Interfaces:**
-- Consumes: F1-F2 fixes, all 21 examples, all repros.
+- Consumes: F1-F2-F4 fixes, all 21 examples, all repros.
 - Produces: final manifest reflecting 21/21 examples end-to-end.
 
-- [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0.
+- [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0 (Defect C fixed — no SEGFAULT).
 - [ ] **Step 2: Verify 4 MD5 gates** (gol ff47d18d, lisp c1cb748b, json 376fd681 — post-F2 re-baseline, mud fd0fdaa4).
 - [ ] **Step 3: Verify test_analyzer_bin PASS.**
-- [ ] **Step 4: Update EXPECTED_FAIL.md v30** (lisp_interpreter row CLEARED, 2 repros added, follow-up #3 resolved).
+- [ ] **Step 4: Update EXPECTED_FAIL.md v30** (lisp_interpreter row CLEARED — dump/gcc/link/run all 0, 4 repros added, follow-up #3 resolved).
 - [ ] **Step 5: Update QUICK_REF.md baseline.**
 - [ ] **Step 6: Final tech doc line-ref verification.**
 - [ ] **Step 7: Commit.**
 
-**Gate:** lisp_interpreter dump/gcc/link/run rc=0 (21/21 examples); 4 MD5s byte-identical; test_analyzer_bin PASS; manifest + QUICK_REF + tech docs consistent. **If a THIRD pre-existing defect surfaces in lisp_interpreter, STOP and present — do not fold silently.**
+**Gate:** lisp_interpreter dump/gcc/link/run rc=0 (21/21 examples, no SEGFAULT); 4 MD5s byte-identical; test_analyzer_bin PASS; manifest + QUICK_REF + tech docs consistent. **If ANOTHER pre-existing defect surfaces in lisp_interpreter, STOP and present — do not fold silently.**
 
 ---
 
