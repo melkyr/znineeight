@@ -55,6 +55,14 @@
   `plat_is_windows` + `plat_console_*`, all rogue_mud-only); tracked separately
   like `opt_slice_null_return` / `extern_runtime_symbol_xmod`; manifest count
   and all totals UNCHANGED. See the F4 section below.]
+  [F5 2026-08-13: the D4 plat-stub gap is CLOSED via the F2 console builtins —
+  `rogue_mud/ui.zig`'s 5 `plat_*` console externs → `@isWindows`/
+  `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`/`@putChar`; main.zig's
+  `ui_mod.plat_is_windows()` → comptime `@isWindows()`; `plat_stubs_missing_xmod`
+  migrated to the builtins → **FULLY OK** (link rc=0, run rc=0), its
+  OK-by-gate/latent deferral CLEARED; rogue_mud links (rc=0, both recipes) +
+  runs (rc=0, ANSI console verified). Manifest counts UNCHANGED (223/3/4/0/0,
+  raw FAIL 7). See the F5 section below.]
 - Prior: OK=208 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 215 (2026-08-07 F5 gate sweep — rogue_mud emission-defects plan closeout; Verified with `/tmp/zf5/zig1` — fresh HEAD bootstrap, zig0 rc=0, gcc rc=0, 0 errors). `switch_mixed_case_argtype`
   **FAIL→OK** (added 2026-08-07 by the rogue_mud I-task): the sema mid-switch abort in
   `resolveSwitchExpr` — the MIX else-branch at semantic_analyzer.zig:1167 `return
@@ -1525,6 +1533,38 @@ BROKEN at link ONLY on these 5 stubs (both single- and multi-module recipes: all
 emit, gcc compile rc=0). No repro flipped; no compiler changes; 4 MD5 gates untouched.
 Full evidence: `.superpowers/sdd/task-F4-rogue-report.md`.
 
+## F5 — D4 plat-stub gap CLOSED via console builtins (2026-08-13) — `plat_stubs_missing_xmod` FULLY OK
+
+F5 (std-zig1 lib plan, console builtins migration) closed the D4 platform-stub gap the F2
+way — via the **compiler console builtins**, NOT runtime stubs:
+
+- **`examples/z98/rogue_mud/ui.zig`**: the 5 `plat_*` console externs
+  (`plat_is_windows`, `plat_console_gotoxy`, `plat_console_setcolor`,
+  `plat_console_putchar`, `plat_console_clear`) replaced with the F2 builtins
+  (`@isWindows()` / `@consoleClear()` / `@consoleGotoxy(x,y)` /
+  `@consoleSetColor(fg,bg)` / `@putChar(ch)`). The `plat_send` socket extern stays
+  (provided by `net_runtime.c`).
+- **`examples/z98/rogue_mud/main.zig`**: the 4 `ui_mod.plat_is_windows()` call sites →
+  comptime `@isWindows()` (folds to 0 on the POSIX host → `!@isWindows()` true).
+- **`repro/mi_matrix/plat_stubs_missing_xmod/console.zig`**: migrated off the 2 externs to
+  `@isWindows()` + `@putChar('X')`.
+
+| Repro | RED (pre-F5) | GREEN (measured, sf/build/out_release/zig1) | Guards |
+|-------|----------------|---------------------------|--------|
+| `plat_stubs_missing_xmod` | link rc=1: `undefined reference to plat_is_windows` / `plat_console_putchar` (console_*.c) | **FULLY OK** — dump rc=0, all modules emit, gcc -c rc=0, **standard-recipe link rc=0**, run rc=0; the D4 OK-by-gate/latent std-lib-deferred classification is CLEARED | guards the rogue_mud console migration (module emission + builtin wiring + multi-module link + run) |
+
+**rogue_mud (22 modules):** dump rc=0, gcc -c rc=0, **link rc=0** (BOTH single-module and
+multi-module recipes — was rc=1 on the 5 stubs), **run rc=0** — boots, renders the dungeon
+via ANSI escapes (`@consoleGotoxy`/`@consoleSetColor`/`@putChar` emit `\x1b[<y+1>;<x+1>H` +
+`\x1b[<fg>;<bg>m` + char on POSIX), accepts WASD/Q input, exits cleanly on `q`. The 5
+undefined `plat_*` refs are gone from the emitted C (0 matches across all 22 modules).
+
+**Accounting:** UNCHANGED — effective **OK=223 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0
+over 230 manifest repros** (raw classifier FAIL stays 7). `plat_stubs_missing_xmod` moves
+from the separately-tracked OK-by-gate/latent bucket to **FULLY OK** (like
+`extern_runtime_symbol_xmod` at F3). No repro flipped; **no compiler changes**; 4 MD5 gates
+untouched. See `.superpowers/sdd/task-F5-rogue-report.md`.
+
 ---
 
 ## F1 — @ptrToInt resolves to usize for single-arg calls (2026-08-08) — `ptr_to_int_void_xmod`
@@ -1732,7 +1772,9 @@ division-based magnitude loop — deferred, not an F4 defect.
 6. **json_parser / json_parser_workaround / extern_runtime_symbol_xmod** — **RESOLVED (F3,
    std_arena migration, 2026-08-08)**: the `arena_alloc_default` deferral was closed with the
    `std_arena.zig` module, not a runtime symbol — all three now link+run rc=0 on the standard
-   sf runtime (see the F3 section). **Remaining std-lib-deferred: `rogue_mud` /
-   `plat_stubs_missing_xmod`** — the 5 `plat_*` stubs (F4); flips to PASS when the std-zig1
-   runtime provides them.
+   sf runtime (see the F3 section). **`rogue_mud` / `plat_stubs_missing_xmod` — RESOLVED (F5,
+   console builtins, 2026-08-13)**: the 5 `plat_*` stubs were replaced with the F2 console
+   builtins (`@isWindows` + `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`/`@putChar`),
+   not runtime symbols — both now link+run rc=0 on the standard sf runtime (see the F5
+   section). No std-lib-deferred runtime gaps remain.
 

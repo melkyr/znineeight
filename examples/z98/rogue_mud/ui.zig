@@ -8,11 +8,6 @@ const std = @import("../mud_server/std.zig");
 @cInclude("zig_runtime.h");
 @cInclude("net_runtime.h");
 
-extern "c" fn plat_is_windows() bool;
-extern "c" fn plat_console_gotoxy(x: i32, y: i32) void;
-extern "c" fn plat_console_setcolor(fg: i32, bg: i32) void;
-extern "c" fn plat_console_putchar(c: i32) void;
-extern "c" fn plat_console_clear() void;
 extern "c" fn plat_send(sock: i32, buf: [*]const u8, len: i32) i32;
 
 pub const Cell = struct {
@@ -52,17 +47,17 @@ pub fn draw(rows: usize, cols: usize, cells: []const Cell) void {
             const prev = prev_buffer[idx];
 
             if (cur.ch != prev.ch or cur.fg != prev.fg or cur.bg != prev.bg) {
-                plat_console_gotoxy(@intCast(i32, x), @intCast(i32, y));
-                plat_console_setcolor(@intCast(i32, cur.fg), @intCast(i32, cur.bg));
-                plat_console_putchar(@intCast(i32, cur.ch));
+                @consoleGotoxy(@intCast(i32, x), @intCast(i32, y));
+                @consoleSetColor(@intCast(i32, cur.fg), @intCast(i32, cur.bg));
+                @putChar(cur.ch);
                 prev_buffer[idx] = cur;
             }
         }
     }
     // Reset color to default after drawing
-    plat_console_setcolor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
+    @consoleSetColor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
     // Move cursor out of the way
-    plat_console_gotoxy(0, @intCast(i32, rows));
+    @consoleGotoxy(0, @intCast(i32, rows));
 }
 
 pub fn drawToSocket(sock: i32, rows: usize, cols: usize, cells: []const Cell) void {
@@ -123,7 +118,7 @@ fn sendColorANSI(sock: i32, fg: u8) void {
 pub fn initUI() void { }
 
 pub fn clearScreen() void {
-    plat_console_clear();
+    @consoleClear();
 }
 
 pub fn drawStatusBar(dungeon: scenario.Dungeon_t) void {
@@ -139,16 +134,16 @@ pub fn drawStatusBar(dungeon: scenario.Dungeon_t) void {
 pub fn printHP(hp: i16, max_hp: i16) void {
     std.io.print("HP: ");
     if (hp < max_hp / 3) {
-        plat_console_setcolor(@intCast(i32, COLOR_RED), @intCast(i32, COLOR_BLACK));
+        @consoleSetColor(@intCast(i32, COLOR_RED), @intCast(i32, COLOR_BLACK));
     } else if (hp < max_hp / 2) {
-        plat_console_setcolor(@intCast(i32, COLOR_YELLOW), @intCast(i32, COLOR_BLACK));
+        @consoleSetColor(@intCast(i32, COLOR_YELLOW), @intCast(i32, COLOR_BLACK));
     } else {
-        plat_console_setcolor(@intCast(i32, COLOR_GREEN), @intCast(i32, COLOR_BLACK));
+        @consoleSetColor(@intCast(i32, COLOR_GREEN), @intCast(i32, COLOR_BLACK));
     }
     std.io.printInt(@intCast(i32, hp));
     std.io.print("/");
     std.io.printInt(@intCast(i32, max_hp));
-    plat_console_setcolor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
+    @consoleSetColor(@intCast(i32, COLOR_WHITE), @intCast(i32, COLOR_BLACK));
     std.io.print("\n");
 }
 

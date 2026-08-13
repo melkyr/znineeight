@@ -98,7 +98,7 @@ pub fn main() !void {
         var max_fd: i32 = -1;
 
         // Add stdin (FD 0) to select for non-blocking local input on POSIX
-        if (!ui_mod.plat_is_windows()) {
+        if (!@isWindows()) {
             net_mod.plat_socket_fd_set(0, @ptrCast(*u8, &read_fds));
             max_fd = 0;
         }
@@ -122,7 +122,7 @@ pub fn main() !void {
 
         if (ready_count == 0) {
             // Periodic local UI update
-            if (!ui_mod.plat_is_windows()) {
+            if (!@isWindows()) {
                 renderLocal(&temp_arena, dungeon);
                 sand_mod.sand_reset(&temp_arena);
             }
@@ -217,7 +217,7 @@ pub fn main() !void {
 
         // 3. Process Local Input
         var c: i32 = -1;
-        if (!ui_mod.plat_is_windows()) {
+        if (!@isWindows()) {
             if (net_mod.plat_socket_fd_isset(0, @ptrCast(*u8, &read_fds))) {
                 c = getchar();
             }
@@ -260,7 +260,7 @@ pub fn main() !void {
             broadcastDungeon(server, dungeon);
 
             // Immediate UI update for local player
-            if (!ui_mod.plat_is_windows()) {
+            if (!@isWindows()) {
                 renderLocal(&temp_arena, dungeon);
                 sand_mod.sand_reset(&temp_arena);
             }
