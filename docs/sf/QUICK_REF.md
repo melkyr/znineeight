@@ -29,7 +29,9 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 ```
 - You **must** link `sf/src/include/zig_runtime.c` AND `sf/src/include/zig_pal.c`, and pass
   `-I sf/src/include`. Missing any of these is the #1 cause of wasted turns.
-- For **mud_server** also add `sf/src/include/net_runtime.c` to the gcc line.
+- For **mud_server** add `sf/src/include/net_runtime.c` ONLY when building the pre-F6
+  `examples/zig0/mud_server` bootstrap example — the migrated `examples/z98/mud_server`
+  (std_net) links WITHOUT it (F6).
 - For a **no-`main` repro** (compile-only, no link/run) use `gcc -m32 -std=c89 -c ... -o /dev/null`.
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
@@ -301,13 +303,24 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-08] |
+| Entry Path | Reference md5 | [updated: 2026-08-13] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `ecd4086925e81c872abd1c32e7ce929e` |
+| `examples/z98/mud_server/main.zig` | `3abbcd5cb21aa5b01cd849a02b4b20c0` |
 | `examples/z98/game_of_life/main.zig` | `b246a2fecc0b5ff4402912c49970cdae` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `141994cc81ab4bbb89722b7d30af419d` |
 | `examples/z98/json_parser/main.zig` | `f50ce1e6800d9e1365c019e46ac61292` |
 
+- **Re-baselined 2026-08-13 (F6, networking builtins).** mud re-baselined because F6 replaces
+  mud_server's 12 `plat_*` socket externs + `plat_fd_set` with `std_net` calls (local
+  `std_net.zig` copy); `net_runtime.c` link REMOVED for migrated examples (mud_server +
+  rogue_mud) — the F6 builtin-emitted socket C replaces it. Runtime output byte-identical to
+  pre-F6 (verified by client-interaction diff: welcome + look/north responses identical; the
+  "north → You cannot go that way." quirk is pre-existing). mud_server is NOT an MD5 gate per
+  the operator. gol/lisp/json byte-identical. Pre-F6 mud value: `ecd40869…`. New mud value:
+  `3abbcd5c…`. F6 gate: net_builtin_test dump→gcc→run rc=0 prints `1` WITHOUT net_runtime.c;
+  mud_server timeout-gated socket interaction rc=0; rogue_mud dump/gcc/link rc=0 (0 `plat_*`
+  refs); corpus OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 240 dirs (no new FAIL).
+  [updated: 2026-08-13]
 - **Re-baselined 2026-08-08 (F4, std.io migration).** ALL 4 re-baselined because F4 replaces every
   `__bootstrap_print*`/`__bootstrap_write`/`__bootstrap_sleep_ms` extern in the gate entries with
   `std.io.print`/`printInt`/`write`/`sleepMs` (local `std.zig`/`std_io.zig`/`std_arena.zig` copies;
@@ -484,7 +497,9 @@ gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znine
 ```
 - `-I /workspace/znineeight/sf/src/include` is REQUIRED — zig1 does not copy `zig_compat.h`/`zig_runtime.h` into DIR (zig0 does; zig1 does not). Use the absolute repo path: the recipe `cd`s into DIR, so relative `sf/...` paths would break.
 - Run `gcc -c` INSIDE DIR — `gcc -c DIR/*.c` from outside writes the `.o` files to the caller's CWD, so the `*.o` link glob fails (`cannot find DIR/*.o`).
-- For **mud_server** add `/workspace/znineeight/sf/src/include/net_runtime.c` to the link step.
+- For **mud_server** (z98, F6-migrated) NO `net_runtime.c` is needed — the standard
+  `zig_runtime.c` + `zig_pal.c` recipe links it (the F6 builtin-emitted socket C replaces
+  net_runtime.c). [updated: 2026-08-13]
 - For **json_parser** NO special runtime is needed post-F3 — the standard `zig_runtime.c` +
   `zig_pal.c` recipe links it (the `arena_alloc_default` extern was replaced by the
   `std_arena.zig` module). [updated: 2026-08-08]
@@ -543,7 +558,7 @@ Debug build (for GDB): append `-g -O0 -Wno-implicit-function-declaration` to the
 "$OUT/zig1" --dump-c89 examples/zig0/lisp_interpreter_curr/main.zig > /tmp/lisp.c
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isf/src/include \
     /tmp/lisp.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/lisp 2>&1 | grep -c 'error:'
-# add sf/src/include/net_runtime.c for mud_server; use `gcc -c` (no link) for no-main repros
+# use `gcc -c` (no link) for no-main repros; pre-F6 mud_server examples need net_runtime.c (F6-migrated z98 mud_server does not)
 ```
 
 **3. Differential / gate (what "passing" means):**

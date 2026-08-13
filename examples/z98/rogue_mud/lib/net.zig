@@ -1,28 +1,45 @@
 const std = @import("../../mud_server/std.zig");
+const std_net = @import("../std_net.zig");
 
 pub const PlatSocket = i32;
 
-@cInclude("net_runtime.h");
-
-pub extern "c" fn plat_socket_init() i32;
-pub extern "c" fn plat_socket_cleanup() void;
-pub extern "c" fn plat_create_tcp_server(port: u16) PlatSocket;
-pub extern "c" fn plat_bind_listen(sock: PlatSocket, backlog: i32) i32;
-pub extern "c" fn plat_accept(server_sock: PlatSocket) PlatSocket;
-pub extern "c" fn plat_recv(sock: PlatSocket, buf: [*]u8, len: i32) i32;
-pub extern "c" fn plat_send(sock: PlatSocket, buf: [*]const u8, len: i32) i32;
-pub extern "c" fn plat_close_socket(sock: PlatSocket) void;
-
-pub const plat_fd_set = struct {
-    // Z98 Constraint: Use u32 array to ensure 4-byte alignment, as WinSock's select
-    // expects aligned fd_set* which contains an array of socket handles.
+pub const fd_set = struct {
+    // Opaque fd_set blob (Windows 260B / Linux 128B layouts covered by 512B).
+    // [128]u32 forces 4-byte alignment, required by WinSock's select.
     data: [128]u32,
 };
 
-pub extern "c" fn plat_socket_select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32;
-pub extern "c" fn plat_socket_fd_zero(s: *u8) void;
-pub extern "c" fn plat_socket_fd_set(fd: i32, s: *u8) void;
-pub extern "c" fn plat_socket_fd_isset(fd: i32, s: *u8) bool;
+pub fn fdZero(s: *u8) void {
+    std_net.fdZero(s);
+}
+
+pub fn fdSet(fd: i32, s: *u8) void {
+    std_net.fdSet(fd, s);
+}
+
+pub fn fdIsset(fd: i32, s: *u8) bool {
+    return std_net.fdIsset(fd, s);
+}
+
+pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32 {
+    return std_net.select(nfds, readfds, writefds, exceptfds, timeout_ms);
+}
+
+pub fn accept(server_sock: PlatSocket) PlatSocket {
+    return std_net.accept(server_sock);
+}
+
+pub fn send(sock: PlatSocket, buf: [*]const u8, len: i32) i32 {
+    return std_net.send(sock, buf, len);
+}
+
+pub fn recv(sock: PlatSocket, buf: [*]u8, len: i32) i32 {
+    return std_net.recv(sock, buf, len);
+}
+
+pub fn close(sock: PlatSocket) void {
+    std_net.close(sock);
+}
 
 pub const Client = struct {
     socket: PlatSocket,
@@ -38,13 +55,13 @@ pub const Server = struct {
 };
 
 pub fn Server_init(port: u16) !Server {
-    if (plat_socket_init() != 0) return error.SocketInitFailed;
+    if (std_net.init() != 0) return error.SocketInitFailed;
 
-    const sock = plat_create_tcp_server(port);
+    const sock = std_net.createTcpServer(port);
     if (sock < 0) return error.CreateSocketFailed;
 
-    if (plat_bind_listen(sock, 5) < 0) {
-        plat_close_socket(sock);
+    if (std_net.bindListen(sock, 5) < 0) {
+        std_net.close(sock);
         return error.ListenFailed;
     }
 
@@ -67,9 +84,9 @@ pub fn Server_deinit(self: *Server) void {
     var i: usize = 0;
     while (i < @intCast(usize, 5)) : (i += 1) {
         if (self.clients[i].active) {
-            plat_close_socket(self.clients[i].socket);
+            std_net.close(self.clients[i].socket);
         }
     }
-    plat_close_socket(self.listen_socket);
-    plat_socket_cleanup();
+    std_net.close(self.listen_socket);
+    std_net.cleanup();
 }

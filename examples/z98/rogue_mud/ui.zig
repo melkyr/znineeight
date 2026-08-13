@@ -4,11 +4,9 @@ const point_mod = @import("lib/point.zig");
 const entity_mod = @import("lib/entity.zig");
 const tile_mod = @import("lib/tile.zig");
 const std = @import("../mud_server/std.zig");
+const std_net = @import("std_net.zig");
 
 @cInclude("zig_runtime.h");
-@cInclude("net_runtime.h");
-
-extern "c" fn plat_send(sock: i32, buf: [*]const u8, len: i32) i32;
 
 pub const Cell = struct {
     ch: u8,
@@ -63,7 +61,7 @@ pub fn draw(rows: usize, cols: usize, cells: []const Cell) void {
 pub fn drawToSocket(sock: i32, rows: usize, cols: usize, cells: []const Cell) void {
     // Clear screen and Move cursor home for telnet
     const clear_home: []const u8 = "\x1b[2J\x1b[H";
-    _ = plat_send(sock, clear_home.ptr, @intCast(i32, clear_home.len));
+    _ = std_net.send(sock, clear_home.ptr, @intCast(i32, clear_home.len));
 
     var last_fg: u8 = 255;
 
@@ -78,19 +76,19 @@ pub fn drawToSocket(sock: i32, rows: usize, cols: usize, cells: []const Cell) vo
                 last_fg = cell.fg;
             }
             const char_buf: [1]u8 = [1]u8{ cell.ch };
-            _ = plat_send(sock, &char_buf[0], 1);
+            _ = std_net.send(sock, &char_buf[0], 1);
         }
         const nl: []const u8 = "\r\n";
-        _ = plat_send(sock, nl.ptr, 2);
+        _ = std_net.send(sock, nl.ptr, 2);
     }
     // Reset color at end
     const reset: []const u8 = "\x1b[0m";
-    _ = plat_send(sock, reset.ptr, @intCast(i32, reset.len));
+    _ = std_net.send(sock, reset.ptr, @intCast(i32, reset.len));
 }
 
 fn sendColorANSI(sock: i32, fg: u8) void {
     const esc: []const u8 = "\x1b[";
-    _ = plat_send(sock, esc.ptr, 2);
+    _ = std_net.send(sock, esc.ptr, 2);
 
     // Z98: switch expression for ANSI codes
     const code: []const u8 = switch (fg & 7) {
@@ -104,15 +102,15 @@ fn sendColorANSI(sock: i32, fg: u8) void {
         7 => "37", // COLOR_WHITE
         else => "37",
     };
-    _ = plat_send(sock, code.ptr, 2);
+    _ = std_net.send(sock, code.ptr, 2);
 
     if ((fg & COLOR_BRIGHT) != 0) {
         const bright: []const u8 = ";1";
-        _ = plat_send(sock, bright.ptr, 2);
+        _ = std_net.send(sock, bright.ptr, 2);
     }
 
     const end: []const u8 = "m";
-    _ = plat_send(sock, end.ptr, 1);
+    _ = std_net.send(sock, end.ptr, 1);
 }
 
 pub fn initUI() void { }

@@ -92,25 +92,25 @@ pub fn main() !void {
         // Z98 Constraint: MSVC 6.0 and OpenWatcom may require individual field assignments
         // for local aggregates. Passing addresses of locals to C89 structs can trigger
         // "expression must be constant" errors if the lifter wraps them in Optionals.
-        var read_fds: net_mod.plat_fd_set = undefined;
-        net_mod.plat_socket_fd_zero(@ptrCast(*u8, &read_fds));
+        var read_fds: net_mod.fd_set = undefined;
+        net_mod.fdZero(@ptrCast(*u8, &read_fds));
 
         var max_fd: i32 = -1;
 
         // Add stdin (FD 0) to select for non-blocking local input on POSIX
         if (!@isWindows()) {
-            net_mod.plat_socket_fd_set(0, @ptrCast(*u8, &read_fds));
+            net_mod.fdSet(0, @ptrCast(*u8, &read_fds));
             max_fd = 0;
         }
 
         if (server.listen_socket != -1) {
-            net_mod.plat_socket_fd_set(server.listen_socket, @ptrCast(*u8, &read_fds));
+            net_mod.fdSet(server.listen_socket, @ptrCast(*u8, &read_fds));
             if (server.listen_socket > max_fd) max_fd = server.listen_socket;
 
             var i: usize = 0;
             while (i < @intCast(usize, 5)) : (i += 1) {
                 if (server.clients[i].active) {
-                    net_mod.plat_socket_fd_set(server.clients[i].socket, @ptrCast(*u8, &read_fds));
+                    net_mod.fdSet(server.clients[i].socket, @ptrCast(*u8, &read_fds));
                     if (server.clients[i].socket > max_fd) max_fd = server.clients[i].socket;
                 }
             }
@@ -118,7 +118,7 @@ pub fn main() !void {
 
         // We use a timeout so we can still poll for local input if kbhit is available,
         // or just to keep the game responsive.
-        const ready_count = net_mod.plat_socket_select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 50);
+        const ready_count = net_mod.select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 50);
 
         if (ready_count == 0) {
             // Periodic local UI update
@@ -129,8 +129,8 @@ pub fn main() !void {
         }
 
         // 1. Process New Connections
-        if (server.listen_socket != -1 and net_mod.plat_socket_fd_isset(server.listen_socket, @ptrCast(*u8, &read_fds))) {
-            const client_sock = net_mod.plat_accept(server.listen_socket);
+        if (server.listen_socket != -1 and net_mod.fdIsset(server.listen_socket, @ptrCast(*u8, &read_fds))) {
+            const client_sock = net_mod.accept(server.listen_socket);
             if (client_sock >= 0) {
                 var found = false;
                 var i: usize = 0;
@@ -153,18 +153,18 @@ pub fn main() !void {
                         };
                         // Basic Telnet negotiation: Do echo, Do suppress go ahead, Will echo, Will suppress go ahead
                         const telnet_init: []const u8 = "\xff\xfd\x01\xff\xfd\x03\xff\xfb\x01\xff\xfb\x03";
-                        _ = net_mod.plat_send(client_sock, telnet_init.ptr, @intCast(i32, telnet_init.len));
+                        _ = net_mod.send(client_sock, telnet_init.ptr, @intCast(i32, telnet_init.len));
 
                         const msg: []const u8 = "Welcome to Rogue MUD!\r\nUse WASD to move.\r\n";
-                        _ = net_mod.plat_send(client_sock, msg.ptr, @intCast(i32, msg.len));
+                        _ = net_mod.send(client_sock, msg.ptr, @intCast(i32, msg.len));
                         found = true;
                         break;
                     }
                 }
                 if (!found) {
                     const msg: []const u8 = "Server full.\r\n";
-                    _ = net_mod.plat_send(client_sock, msg.ptr, @intCast(i32, msg.len));
-                    net_mod.plat_close_socket(client_sock);
+                    _ = net_mod.send(client_sock, msg.ptr, @intCast(i32, msg.len));
+                    net_mod.close(client_sock);
                 }
             }
         }
@@ -173,13 +173,13 @@ pub fn main() !void {
         var client_idx: usize = 0;
         while (client_idx < @intCast(usize, 5)) : (client_idx += 1) {
             var client = &server.clients[client_idx];
-            if (client.active and net_mod.plat_socket_fd_isset(client.socket, @ptrCast(*u8, &read_fds))) {
-                const n = net_mod.plat_recv(client.socket, &client.buffer[client.pos], @intCast(i32, 1024 - client.pos));
+            if (client.active and net_mod.fdIsset(client.socket, @ptrCast(*u8, &read_fds))) {
+                const n = net_mod.recv(client.socket, &client.buffer[client.pos], @intCast(i32, 1024 - client.pos));
                 if (n <= 0) {
                     // Client disconnected
                     dungeon.entities[client.entity_idx].active = false;
                     client.active = false;
-                    net_mod.plat_close_socket(client.socket);
+                    net_mod.close(client.socket);
                 } else {
                     client.pos += @intCast(usize, n);
                     // Process input character by character for now (primitive)
@@ -218,7 +218,7 @@ pub fn main() !void {
         // 3. Process Local Input
         var c: i32 = -1;
         if (!@isWindows()) {
-            if (net_mod.plat_socket_fd_isset(0, @ptrCast(*u8, &read_fds))) {
+            if (net_mod.fdIsset(0, @ptrCast(*u8, &read_fds))) {
                 c = getchar();
             }
         } else {

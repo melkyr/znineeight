@@ -86,6 +86,17 @@ pub const LirInst = union(enum) {
     builtin_console_clear: void,
     builtin_console_gotoxy: struct { x: u32, y: u32 },
     builtin_console_set_color: struct { fg: u32, bg: u32 },
+    builtin_socket_create: struct { port: u32, result: u32 },
+    builtin_socket_bind_listen: struct { sock: u32, backlog: u32, result: u32 },
+    builtin_socket_accept: struct { sock: u32, result: u32 },
+    builtin_socket_connect: struct { sock: u32, port: u32, result: u32 },
+    builtin_socket_send: struct { sock: u32, buf: u32, len: u32, result: u32 },
+    builtin_socket_recv: struct { sock: u32, buf: u32, len: u32, result: u32 },
+    builtin_socket_select: struct { nfds: u32, readfds: u32, writefds: u32, exceptfds: u32, timeout_ms: u32, result: u32 },
+    builtin_socket_fd_zero: struct { set: u32 },
+    builtin_socket_fd_set: struct { fd: u32, set: u32 },
+    builtin_socket_fd_isset: struct { fd: u32, set: u32, result: u32 },
+    builtin_socket_close: struct { sock: u32 },
     nop: void,
 };
 

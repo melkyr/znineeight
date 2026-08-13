@@ -2070,6 +2070,35 @@ fn moduleHasConsoleBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
+fn moduleHasNetBuiltin(fns: []LirFunction) u8 {
+    var vi: usize = @intCast(usize, 0);
+    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
+        var vf = &fns[vi];
+        var vbi: usize = @intCast(usize, 0);
+        while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
+            var vbb = &vf.blocks.items[vbi];
+            var vii: usize = @intCast(usize, 0);
+            while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
+                switch (vbb.insts.items[vii]) {
+                    .builtin_socket_create => return @intCast(u8, 1),
+                    .builtin_socket_bind_listen => return @intCast(u8, 1),
+                    .builtin_socket_accept => return @intCast(u8, 1),
+                    .builtin_socket_connect => return @intCast(u8, 1),
+                    .builtin_socket_send => return @intCast(u8, 1),
+                    .builtin_socket_recv => return @intCast(u8, 1),
+                    .builtin_socket_select => return @intCast(u8, 1),
+                    .builtin_socket_fd_zero => return @intCast(u8, 1),
+                    .builtin_socket_fd_set => return @intCast(u8, 1),
+                    .builtin_socket_fd_isset => return @intCast(u8, 1),
+                    .builtin_socket_close => return @intCast(u8, 1),
+                    else => {},
+                }
+            }
+        }
+    }
+    return @intCast(u8, 0);
+}
+
 fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
     if (moduleHasStdioBuiltin(fns) != @intCast(u8, 0)) {
         var stdio_inc: []const u8 = "#include <stdio.h>\n";
@@ -2086,6 +2115,10 @@ fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
     if (moduleHasConsoleBuiltin(fns) != @intCast(u8, 0)) {
         var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
         bufferedWriterWrite(&emitter.writer, cwin);
+    }
+    if (moduleHasNetBuiltin(fns) != @intCast(u8, 0)) {
+        var swin: []const u8 = "#ifdef _WIN32\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winsock.h>\n#pragma comment(lib, \"wsock32.lib\")\n#else\n#include <sys/socket.h>\n#include <netinet/in.h>\n#include <arpa/inet.h>\n#include <sys/select.h>\n#include <unistd.h>\n#include <fcntl.h>\n#endif\n#include <string.h>\n";
+        bufferedWriterWrite(&emitter.writer, swin);
     }
 }
 
@@ -3335,6 +3368,263 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     var cc12: []const u8 = "#endif\n";
     bufferedWriterWrite(&emitter.writer, cc12);
  }
+
+ fn emitSocketWrite(emitter: *C89Emitter, s: []const u8) void {
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, s);
+ }
+
+ fn emitSocketOptPtrValue(emitter: *C89Emitter, tid: u32) void {
+    var name = resolveTempName(emitter, tid);
+    emitSocketWrite(emitter, name);
+    var t = getTempTypeByIndex(emitter, tid);
+    if (t != @intCast(u32, 0xFFFFFFFF)) {
+        var ty = emitter.registry.types_items[@intCast(usize, t)];
+        if (ty.kind == type_mod.TypeKind.optional_type) {
+            var dot: []const u8 = ".value";
+            emitSocketWrite(emitter, dot);
+        }
+    }
+ }
+
+ fn emitSocketCreate(emitter: *C89Emitter, port: u32, result: u32) void {
+    var r = resolveTempName(emitter, result);
+    var p = resolveTempName(emitter, port);
+    var a: []const u8 = "#ifdef _WIN32\n{ SOCKET s = socket(AF_INET, SOCK_STREAM, 0);\nstruct sockaddr_in addr;\n";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, r);
+    var b: []const u8 = " = -1;\nif (s != INVALID_SOCKET) {\nmemset(&addr, 0, sizeof(addr));\naddr.sin_family = AF_INET;\naddr.sin_port = htons(";
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, p);
+    var c: []const u8 = ");\naddr.sin_addr.s_addr = htonl(INADDR_ANY);\nif (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != SOCKET_ERROR) {\n";
+    emitSocketWrite(emitter, c);
+    emitSocketWrite(emitter, r);
+    var d: []const u8 = " = (int)s;\n} else {\nclosesocket(s);\n} } }\n#else\n{ int s;\nint opt = 1;\nstruct sockaddr_in addr;\ns = socket(AF_INET, SOCK_STREAM, 0);\n";
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, r);
+    var e: []const u8 = " = -1;\nif (s >= 0) {\nsetsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));\nmemset(&addr, 0, sizeof(addr));\naddr.sin_family = AF_INET;\naddr.sin_port = htons(";
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, p);
+    var f: []const u8 = ");\naddr.sin_addr.s_addr = htonl(INADDR_ANY);\nif (bind(s, (struct sockaddr*)&addr, sizeof(addr)) >= 0) {\n";
+    emitSocketWrite(emitter, f);
+    emitSocketWrite(emitter, r);
+    var g: []const u8 = " = s;\n} else {\nclose(s);\n} } }\n#endif\n";
+    emitSocketWrite(emitter, g);
+ }
+
+ fn emitSocketBindListen(emitter: *C89Emitter, sock: u32, backlog: u32, result: u32) void {
+    var r = resolveTempName(emitter, result);
+    var s = resolveTempName(emitter, sock);
+    var b = resolveTempName(emitter, backlog);
+    var a: []const u8 = "#ifdef _WIN32\n";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, r);
+    var c: []const u8 = " = (listen((SOCKET)";
+    emitSocketWrite(emitter, c);
+    emitSocketWrite(emitter, s);
+    var d: []const u8 = ", ";
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, b);
+    var e: []const u8 = ") == SOCKET_ERROR) ? -1 : 0;\n#else\n";
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, r);
+    var f: []const u8 = " = (listen(";
+    emitSocketWrite(emitter, f);
+    emitSocketWrite(emitter, s);
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, b);
+    var g: []const u8 = ") < 0) ? -1 : 0;\n#endif\n";
+    emitSocketWrite(emitter, g);
+ }
+
+ fn emitSocketAccept(emitter: *C89Emitter, sock: u32, result: u32) void {
+    var r = resolveTempName(emitter, result);
+    var s = resolveTempName(emitter, sock);
+    var a: []const u8 = "#ifdef _WIN32\n{ SOCKET client = accept((SOCKET)";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, s);
+    var b: []const u8 = ", NULL, NULL);\n";
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, r);
+    var c: []const u8 = " = (client == INVALID_SOCKET) ? -1 : (int)client; }\n#else\n";
+    emitSocketWrite(emitter, c);
+    emitSocketWrite(emitter, r);
+    var d: []const u8 = " = accept(";
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, s);
+    var e: []const u8 = ", NULL, NULL);\n#endif\n";
+    emitSocketWrite(emitter, e);
+ }
+
+ fn emitSocketConnect(emitter: *C89Emitter, sock: u32, port: u32, result: u32) void {
+    var r = resolveTempName(emitter, result);
+    var s = resolveTempName(emitter, sock);
+    var p = resolveTempName(emitter, port);
+    var a: []const u8 = "#ifdef _WIN32\n{ struct sockaddr_in addr;\nmemset(&addr, 0, sizeof(addr));\naddr.sin_family = AF_INET;\naddr.sin_port = htons(";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, p);
+    var b: []const u8 = ");\naddr.sin_addr.s_addr = htonl(INADDR_ANY);\n";
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, r);
+    var c: []const u8 = " = (connect((SOCKET)";
+    emitSocketWrite(emitter, c);
+    emitSocketWrite(emitter, s);
+    var d: []const u8 = ", (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) ? -1 : 0; }\n#else\n{ struct sockaddr_in addr;\nmemset(&addr, 0, sizeof(addr));\naddr.sin_family = AF_INET;\naddr.sin_port = htons(";
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, p);
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, r);
+    var e: []const u8 = " = (connect(";
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, s);
+    var f: []const u8 = ", (struct sockaddr*)&addr, sizeof(addr)) < 0) ? -1 : 0; }\n#endif\n";
+    emitSocketWrite(emitter, f);
+ }
+
+ fn emitSocketSendRecv(emitter: *C89Emitter, sock: u32, buf: u32, len: u32, result: u32, is_recv: u8) void {
+    var r = resolveTempName(emitter, result);
+    var s = resolveTempName(emitter, sock);
+    var b = resolveTempName(emitter, buf);
+    var l = resolveTempName(emitter, len);
+    var fn_call: []const u8 = "send";
+    var cnst: []const u8 = "const ";
+    if (is_recv != @intCast(u8, 0)) {
+        var fnr: []const u8 = "recv";
+        fn_call = fnr;
+        var cnr: []const u8 = "";
+        cnst = cnr;
+    }
+    var a: []const u8 = "#ifdef _WIN32\n";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, r);
+    var b0: []const u8 = " = ";
+    emitSocketWrite(emitter, b0);
+    emitSocketWrite(emitter, fn_call);
+    var c: []const u8 = "((SOCKET)";
+    emitSocketWrite(emitter, c);
+    emitSocketWrite(emitter, s);
+    var d: []const u8 = ", (";
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, cnst);
+    var e: []const u8 = "char*)";
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, b);
+    var f: []const u8 = ", ";
+    emitSocketWrite(emitter, f);
+    emitSocketWrite(emitter, l);
+    var g: []const u8 = ", 0);\n#else\n";
+    emitSocketWrite(emitter, g);
+    emitSocketWrite(emitter, r);
+    emitSocketWrite(emitter, b0);
+    emitSocketWrite(emitter, fn_call);
+    var h: []const u8 = "(";
+    emitSocketWrite(emitter, h);
+    emitSocketWrite(emitter, s);
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, cnst);
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, f);
+    emitSocketWrite(emitter, l);
+    var i: []const u8 = ", 0);\n#endif\n";
+    emitSocketWrite(emitter, i);
+ }
+
+ fn emitSocketSelect(emitter: *C89Emitter, nfds: u32, readfds: u32, writefds: u32, exceptfds: u32, timeout_ms: u32, result: u32) void {
+    var r = resolveTempName(emitter, result);
+    var n = resolveTempName(emitter, nfds);
+    var t = resolveTempName(emitter, timeout_ms);
+    var a: []const u8 = "{ struct timeval tv;\nstruct timeval* p_tv = NULL;\nif (";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, t);
+    var b: []const u8 = " >= 0) {\ntv.tv_sec = ";
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, t);
+    var c: []const u8 = " / 1000;\ntv.tv_usec = (";
+    emitSocketWrite(emitter, c);
+    emitSocketWrite(emitter, t);
+    var d: []const u8 = " % 1000) * 1000;\np_tv = &tv;\n}\n";
+    emitSocketWrite(emitter, d);
+    emitSocketWrite(emitter, r);
+    var e: []const u8 = " = select(";
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, n);
+    var f: []const u8 = ", (fd_set*)";
+    emitSocketWrite(emitter, f);
+    emitSocketOptPtrValue(emitter, readfds);
+    emitSocketWrite(emitter, f);
+    emitSocketOptPtrValue(emitter, writefds);
+    emitSocketWrite(emitter, f);
+    emitSocketOptPtrValue(emitter, exceptfds);
+    var g: []const u8 = ", p_tv);\n}\n";
+    emitSocketWrite(emitter, g);
+ }
+
+ fn emitSocketFdSet(emitter: *C89Emitter, fd: u32, set: u32, is_isset: u8, result: u32) void {
+    var f = resolveTempName(emitter, fd);
+    var s = resolveTempName(emitter, set);
+    var a: []const u8 = "#ifdef _WIN32\n";
+    emitSocketWrite(emitter, a);
+    if (is_isset != @intCast(u8, 0)) {
+        var r = resolveTempName(emitter, result);
+        emitSocketWrite(emitter, r);
+        var b: []const u8 = " = (FD_ISSET((SOCKET)";
+        emitSocketWrite(emitter, b);
+        emitSocketWrite(emitter, f);
+        var c: []const u8 = ", (fd_set*)";
+        emitSocketWrite(emitter, c);
+        emitSocketWrite(emitter, s);
+        var d: []const u8 = ") != 0);\n#else\n";
+        emitSocketWrite(emitter, d);
+        emitSocketWrite(emitter, r);
+        var e: []const u8 = " = (FD_ISSET(";
+        emitSocketWrite(emitter, e);
+        emitSocketWrite(emitter, f);
+        emitSocketWrite(emitter, c);
+        emitSocketWrite(emitter, s);
+        var g: []const u8 = ") != 0);\n#endif\n";
+        emitSocketWrite(emitter, g);
+    } else {
+        var h: []const u8 = "FD_SET((SOCKET)";
+        emitSocketWrite(emitter, h);
+        emitSocketWrite(emitter, f);
+        var i: []const u8 = ", (fd_set*)";
+        emitSocketWrite(emitter, i);
+        emitSocketWrite(emitter, s);
+        var j: []const u8 = ");\n#else\nFD_SET(";
+        emitSocketWrite(emitter, j);
+        emitSocketWrite(emitter, f);
+        emitSocketWrite(emitter, i);
+        emitSocketWrite(emitter, s);
+        var k: []const u8 = ");\n#endif\n";
+        emitSocketWrite(emitter, k);
+    }
+ }
+
+ fn emitSocketFdZero(emitter: *C89Emitter, set: u32) void {
+    var s = resolveTempName(emitter, set);
+    var a: []const u8 = "#ifdef _WIN32\nFD_ZERO((fd_set*)";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, s);
+    var b: []const u8 = ");\n#else\nFD_ZERO((fd_set*)";
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, s);
+    var c: []const u8 = ");\n#endif\n";
+    emitSocketWrite(emitter, c);
+ }
+
+ fn emitSocketClose(emitter: *C89Emitter, sock: u32) void {
+    var s = resolveTempName(emitter, sock);
+    var a: []const u8 = "#ifdef _WIN32\nclosesocket((SOCKET)";
+    emitSocketWrite(emitter, a);
+    emitSocketWrite(emitter, s);
+    var b: []const u8 = ");\n#else\nclose(";
+    emitSocketWrite(emitter, b);
+    emitSocketWrite(emitter, s);
+    var c: []const u8 = ");\n#endif\n";
+    emitSocketWrite(emitter, c);
+ }
+
 
  fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     var ins: []const u8 = "I\n"; pal.markerWrite(ins);
@@ -4794,6 +5084,39 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         },
         .builtin_console_set_color => |bcc| {
             emitConsoleSetColor(emitter, bcc.fg, bcc.bg);
+        },
+        .builtin_socket_create => |bsc| {
+            emitSocketCreate(emitter, bsc.port, bsc.result);
+        },
+        .builtin_socket_bind_listen => |bsbl| {
+            emitSocketBindListen(emitter, bsbl.sock, bsbl.backlog, bsbl.result);
+        },
+        .builtin_socket_accept => |bsa| {
+            emitSocketAccept(emitter, bsa.sock, bsa.result);
+        },
+        .builtin_socket_connect => |bscon| {
+            emitSocketConnect(emitter, bscon.sock, bscon.port, bscon.result);
+        },
+        .builtin_socket_send => |bss| {
+            emitSocketSendRecv(emitter, bss.sock, bss.buf, bss.len, bss.result, @intCast(u8, 0));
+        },
+        .builtin_socket_recv => |bsr| {
+            emitSocketSendRecv(emitter, bsr.sock, bsr.buf, bsr.len, bsr.result, @intCast(u8, 1));
+        },
+        .builtin_socket_select => |bssel| {
+            emitSocketSelect(emitter, bssel.nfds, bssel.readfds, bssel.writefds, bssel.exceptfds, bssel.timeout_ms, bssel.result);
+        },
+        .builtin_socket_fd_zero => |bsfz| {
+            emitSocketFdZero(emitter, bsfz.set);
+        },
+        .builtin_socket_fd_set => |bsfs| {
+            emitSocketFdSet(emitter, bsfs.fd, bsfs.set, @intCast(u8, 0), @intCast(u32, 0));
+        },
+        .builtin_socket_fd_isset => |bsfi| {
+            emitSocketFdSet(emitter, bsfi.fd, bsfi.set, @intCast(u8, 1), bsfi.result);
+        },
+        .builtin_socket_close => |bscl| {
+            emitSocketClose(emitter, bscl.sock);
         },
         .ptr_cast => |pc| {
             var dst = resolveTempName(emitter, pc.result);

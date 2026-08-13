@@ -1,35 +1,8 @@
 const std = @import("std.zig");
 const util = @import("util.zig");
+const std_net = @import("std_net.zig");
 
 @cInclude("zig_runtime.h");
-@cInclude("net_runtime.h");
-
-// Platform socket wrappers
-extern "c" fn plat_socket_init() i32;
-extern "c" fn plat_socket_cleanup() void;
-extern "c" fn plat_create_tcp_server(port: u16) i32;
-extern "c" fn plat_bind_listen(sock: i32, backlog: i32) i32;
-extern "c" fn plat_accept(server_sock: i32) i32;
-extern "c" fn plat_recv(sock: i32, buf: [*]u8, len: i32) i32;
-extern "c" fn plat_send(sock: i32, buf: [*]const u8, len: i32) i32;
-extern "c" fn plat_close_socket(sock: i32) void;
-
-// fd_set support
-const plat_fd_set = struct {
-    // The exact layout of fd_set depends on the platform,
-    // but we treat it as an opaque blob in Zig since we use the PAL macros/functions.
-    // On Windows, fd_set is 260 bytes (FD_SETSIZE=64). On Linux, it's 128 bytes (FD_SETSIZE=1024).
-    // 512 bytes provides a safe buffer for most legacy environments.
-    // Using [128]u32 instead of [512]u8 forces 4-byte alignment, which is required by WinSock.
-    data: [128]u32,
-};
-
-extern "c" fn plat_socket_select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32;
-
-// Macros/Helper wrappers
-extern "c" fn plat_socket_fd_zero(s: *u8) void;
-extern "c" fn plat_socket_fd_set(fd: i32, s: *u8) void;
-extern "c" fn plat_socket_fd_isset(fd: i32, s: *u8) bool;
 
 // Constants
 const MAX_CLIENTS: usize = 10;
@@ -96,18 +69,18 @@ pub fn main() !void {
     initRooms();
 
     // Initialize sockets
-    if (plat_socket_init() != 0) {
+    if (std_net.init() != 0) {
         std.debug.print("Failed to init sockets\n", .{});
         return;
     }
 
-    const server = plat_create_tcp_server(PORT);
+    const server = std_net.createTcpServer(PORT);
     if (server < 0) {
         std.debug.print("Failed to create server socket\n", .{});
         return;
     }
 
-    if (plat_bind_listen(server, 5) < 0) {
+    if (std_net.bindListen(server, 5) < 0) {
         std.debug.print("Failed to listen\n", .{});
         return;
     }
@@ -121,23 +94,23 @@ pub fn main() !void {
         i += 1;
     }
 
-    var read_fds: plat_fd_set = undefined;
+    var read_fds: std_net.fd_set = undefined;
 
     while (true) {
-        plat_socket_fd_zero(@ptrCast(*u8, &read_fds));
-        plat_socket_fd_set(server, @ptrCast(*u8, &read_fds));
+        std_net.fdZero(@ptrCast(*u8, &read_fds));
+        std_net.fdSet(server, @ptrCast(*u8, &read_fds));
 
         var max_fd = server;
         i = 0;
         while (i < MAX_CLIENTS) {
             if (players[i].is_active) {
-                plat_socket_fd_set(players[i].socket, @ptrCast(*u8, &read_fds));
+                std_net.fdSet(players[i].socket, @ptrCast(*u8, &read_fds));
                 if (players[i].socket > max_fd) max_fd = players[i].socket;
             }
             i += 1;
         }
 
-        const ready_count = plat_socket_select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 100);
+        const ready_count = std_net.select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 100);
         if (ready_count < 0) {
             std.debug.print("select error\n", .{});
             break;
@@ -145,8 +118,8 @@ pub fn main() !void {
         if (ready_count == 0) continue; // timeout
 
         // Check server socket for new connection
-        if (plat_socket_fd_isset(server, @ptrCast(*u8, &read_fds))) {
-            const client = plat_accept(server);
+        if (std_net.fdIsset(server, @ptrCast(*u8, &read_fds))) {
+            const client = std_net.accept(server);
             if (client >= 0) {
                 // find free slot
                 var found = false;
@@ -161,7 +134,7 @@ pub fn main() !void {
                             .is_active = true,
                         };
                         const welcome: []const u8 = "Welcome to the MUD! Type 'look' to start.\r\n";
-                        _ = plat_send(client, welcome.ptr, @intCast(i32, welcome.len));
+                        _ = std_net.send(client, welcome.ptr, @intCast(i32, welcome.len));
                         found = true;
                         std.debug.print("New client connected\n", .{});
                         break;
@@ -170,8 +143,8 @@ pub fn main() !void {
                 }
                 if (!found) {
                     const full: []const u8 = "Server is full.\r\n";
-                    _ = plat_send(client, full.ptr, @intCast(i32, full.len));
-                    plat_close_socket(client);
+                    _ = std_net.send(client, full.ptr, @intCast(i32, full.len));
+                    std_net.close(client);
                 }
             }
         }
@@ -179,13 +152,13 @@ pub fn main() !void {
         // Data on client sockets
         i = 0;
         while (i < MAX_CLIENTS) {
-            if (players[i].is_active and plat_socket_fd_isset(players[i].socket, @ptrCast(*u8, &read_fds))) {
+            if (players[i].is_active and std_net.fdIsset(players[i].socket, @ptrCast(*u8, &read_fds))) {
                 var p = &players[i];
-                const n = plat_recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
+                const n = std_net.recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
                 if (n <= 0) {
                     // client disconnected
                     std.debug.print("Client disconnected\n", .{});
-                    plat_close_socket(p.socket);
+                    std_net.close(p.socket);
                     p.is_active = false;
                 } else {
                     p.pos += @intCast(usize, n);
@@ -199,7 +172,7 @@ pub fn main() !void {
                             const cmd_line = p.buffer[0..end];
                             const cmd = parseCommand(cmd_line);
                             const response = processCommand(p, cmd);
-                            _ = plat_send(p.socket, response.ptr, @intCast(i32, response.len));
+                            _ = std_net.send(p.socket, response.ptr, @intCast(i32, response.len));
 
                             // move remaining data
                             if (j + 1 < p.pos) {
@@ -222,8 +195,8 @@ pub fn main() !void {
         }
     }
 
-    plat_close_socket(server);
-    plat_socket_cleanup();
+    std_net.close(server);
+    std_net.cleanup();
 }
 
 fn processCommand(player: *Player, cmd: Command) []const u8 {
