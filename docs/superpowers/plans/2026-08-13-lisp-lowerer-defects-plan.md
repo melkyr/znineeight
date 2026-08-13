@@ -419,45 +419,45 @@ Report mechanism (file:line), fix recommendation (a or b), blast radius. **STOP 
 
 ---
 
-### Task F4: Fix Defect C — nested field-access store write-back (per ruling)
+### Task F4: Fix Defect C — nested field-access store write-back (Option a, operator-ruled)
 
 **Files:**
-- Modify: `sf/src/lower.zig` (per I2 locus — extend `lowerLValueAddr` with field_access and/or route `lowerFieldStore` nested-base through address)
+- Modify: `sf/src/lower.zig` (extend `lowerLValueAddr` with a `field_access` branch + route `lowerFieldStore` nested-base through it)
 - Modify (docs): `sf/docs/tech_docs/07_lir_lowering.md` to FIXED
 - Test: `repro/mi_matrix/nested_field_store_xmod/`, `repro/mi_matrix/nested_field_store_xmod2/`
 
 **Interfaces:**
-- Consumes: I2 ruling, R2 repros.
-- Produces: nested field-access lvalue stores write back correctly (any 2+ level chain, same-module + cross-module).
+- Consumes: I2 ruling, R2 repros, operator ruling m0872 (approach a — fix the primitive, not the consumer).
+- Produces: nested field-access lvalue stores write back correctly (any 2+ level chain, same-module + cross-module); `&field` (address_of on a field_access) no longer ICEs.
 
-**Context:** Per I2 ruling (operator-approved). The fix makes the base of a nested field store lower to its ADDRESS (store through pointer) instead of an rvalue copy. Verify the store_field emitter handles a pointer base (c89_emit:4134) so the C output is `base->inner.a = v;`.
+**Context (Option a, operator-ruled):** The root cause is ONE incomplete primitive — `lowerLValueAddr` (lower.zig:739) is the universal "lvalue → address" function but has NO `field_access` branch (falls through to `iceAddrOfLValueUnsupported` :777). This one gap causes TWO bugs: (1) `lowerFieldStore` (:844) falls back to `lowerExpr` (rvalue copy :860) → nested store write-back dropped; (2) `&o.inner` (address_of :1723) ICEs error[3043]. Approach (a) completes the primitive, fixing both; the proven ptr-base `store_field` emitter (c89_emit:4183-4202, handles struct AND union pointees) does the rest. This is the upstream-proper, scalable, maintainable fix (single root cause, one home for address logic) vs approach (b) which would patch only the consumer and leave the `&field` ICE.
 
 - [ ] **Step 1: Write the failing test (red)**
 
 `nested_field_store_xmod/` + `nested_field_store_xmod2/` are the tests. Run pre-fix: dump rc=0, gcc rc=0, run prints garbage. Red state confirmed.
 
-- [ ] **Step 2: Implement per I2 ruling**
+- [ ] **Step 2: Implement the fix (Option a)**
 
-Mirror the exact mechanism the I-report determines (extend `lowerLValueAddr` field_access branch, or recurse in `lowerFieldStore`). Ensure single-level field stores (`o.tag = 1`) are unchanged (they already work via the ident/ptr base path). Ensure `index_access` bases still work (`arr[i].f = x`).
+In `lower.zig`, extend `lowerLValueAddr` (:739) with a `field_access` branch: compute the address of the field within the base's address (emit an addr-of-field form — `&base.field`; the LIR/emission may need a small addition to `addr_of`-adjacent emission in c89_emit.zig). Then route `lowerFieldStore`'s nested-base case through it: for a base that is itself a field_access/index_access/deref lvalue, use `base_temp = lowerLValueAddr(child_0, ptr_type)` instead of `lowerExpr(child_0)`. Verify the ptr-base `store_field` emitter path (:4183-4202) produces `base->inner.a = v;`. Ensure single-level field stores (`o.tag = 1`, base = ident/ptr) are unchanged — they already work. Ensure `index_access` bases still work (`arr[i].f = x`, the existing :850-858 path).
 
 - [ ] **Step 3: Build + verify repros green**
 
-Rebuild zig1. `nested_field_store_xmod` prints `4243`, `nested_field_store_xmod2` prints `78` (dump/gcc/link/run rc=0). Inspect emitted C: `o.inner.a = v;` stored through the address, not a local copy.
+Rebuild zig1. `nested_field_store_xmod` prints `4243`, `nested_field_store_xmod2` prints `78` (dump/gcc/link/run rc=0). Inspect emitted C: `o.inner.a = v;` stored through the address, not a local copy. Also verify `&o.inner` no longer ICEs (a small throwaway test).
 
 - [ ] **Step 4: Verify no regression + 4 MD5 gates**
 
-F1/F2 repros still green. Corpus sweep — no new FAIL. 4 MD5 gates: gol/lisp/json/mud byte-identical UNLESS the I2 blast-radius audit found a gate using nested field-store (then report + re-baseline per AMENDMENT B). Also verify lisp_interpreter run no longer SEGFAULTS.
+F1/F2 repros still green. Corpus sweep — no new FAIL. 4 MD5 gates: gol/lisp/json/mud byte-identical (I2 audit: 0 of 4 gates use nested field-store) — if any re-baseline, report + re-baseline per AMENDMENT B. Also verify lisp_interpreter run no longer SEGFAULTS.
 
 - [ ] **Step 5: Update tech doc `07_lir_lowering.md` to FIXED**
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add sf/src/lower.zig sf/docs/tech_docs/07_lir_lowering.md
+git add sf/src/lower.zig sf/src/c89_emit.zig sf/docs/tech_docs/07_lir_lowering.md
 git commit -m "fix: nested field-access store write-back (nested_field_store_xmod)"
 ```
 
-**Gate:** both repros green (dump/gcc/link/run rc=0, correct values); lisp_interpreter no longer SEGFAULTS at run; F1/F2 repros still green; 4 MD5s byte-identical or re-baselined per AMENDMENT B; tech doc updated.
+**Gate:** both repros green (dump/gcc/link/run rc=0, correct values); `&field` no longer ICEs; lisp_interpreter no longer SEGFAULTS at run; F1/F2 repros still green; 4 MD5s byte-identical or re-baselined per AMENDMENT B; tech doc updated.
 
 ---
 
