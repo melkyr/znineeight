@@ -1,10 +1,10 @@
-# 05 — Semantic Analysis [updated: 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1413-1450); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1413-1461); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 48 | 29 non-builtin + 19 builtin name IDs |
+| `SemanticAnalyzer` fields | 60 | 30 non-builtin + 30 builtin name IDs |
 | Expression kind dispatch arms | 46+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` (coercion.zig:1-19) |
 | Coercion checks in `classifyCoercion` | ~18 | Null, optional, error union, ptr, slice, array, widening |
@@ -52,7 +52,7 @@ pub const SemanticAnalyzer = struct {
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
-    // 30 builtin name IDs (19 pre-std-lib + 6 core I/O + 4 console + 11 socket):
+    // 30 builtin name IDs (19 incl. F1/F2 + 11 socket):
     ptrcast_name_id, ptrtoint_name_id, inttoptr_name_id,
     intcast_name_id, floatcast_name_id, inttofloat_name_id,
     inttoenum_name_id, size_of_name_id, align_of_name_id,
@@ -435,7 +435,7 @@ dereferences a ptr callee to its fn type (semantic_analyzer.zig:735-742).
 
 #### Builtin I/O dispatch (F1, 2026-08-08) — `[updated: 2026-08-13]`
 
-The `builtin_call` resolver (semantic_analyzer.zig:1374-1450) dispatches 6 core I/O
+The `builtin_call` resolver (semantic_analyzer.zig:1374-1461) dispatches 6 core I/O
 builtins by `child_0` name ID (fields `putchar_name_id` … `sleep_ms_name_id`, interned in
 `semanticAnalyzerInit`; core I/O arms at semantic_analyzer.zig:1383-1398). Each resolves its
 value args via `semanticAnalyzerResolveExpr` and returns the signature type:
@@ -472,7 +472,7 @@ comptime-fold path, lower.zig:2721-2724). `if (@isWindows())` then folds to only
 
 #### Socket builtin dispatch (F6, 2026-08-13) — `[updated: 2026-08-13]`
 
-The same resolver (semantic_analyzer.zig:1413-1450) adds the 11 socket builtins by `child_0`
+The same resolver (semantic_analyzer.zig:1413-1461) adds the 11 socket builtins by `child_0`
 name ID (fields `socket_create_name_id` … `socket_close_name_id`). All resolve their value args
 via `semanticAnalyzerResolveExpr`; fd/port are `i32`/`u32` (fd = i32, arch-independence ruling
 m0544) — the emitted C bodies port `net_runtime.c:18-153` 1:1 (see 08 §6.9):
