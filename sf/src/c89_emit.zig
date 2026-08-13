@@ -3376,14 +3376,25 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
 
  fn emitSocketOptPtrValue(emitter: *C89Emitter, tid: u32) void {
     var name = resolveTempName(emitter, tid);
-    emitSocketWrite(emitter, name);
+    var is_opt = false;
     var t = getTempTypeByIndex(emitter, tid);
     if (t != @intCast(u32, 0xFFFFFFFF)) {
         var ty = emitter.registry.types_items[@intCast(usize, t)];
         if (ty.kind == type_mod.TypeKind.optional_type) {
-            var dot: []const u8 = ".value";
-            emitSocketWrite(emitter, dot);
+            is_opt = true;
         }
+    }
+    if (is_opt) {
+        var open: []const u8 = "(";
+        emitSocketWrite(emitter, open);
+        emitSocketWrite(emitter, name);
+        var has: []const u8 = ".has_value ? ";
+        emitSocketWrite(emitter, has);
+        emitSocketWrite(emitter, name);
+        var no: []const u8 = ".value : NULL)";
+        emitSocketWrite(emitter, no);
+    } else {
+        emitSocketWrite(emitter, name);
     }
  }
 

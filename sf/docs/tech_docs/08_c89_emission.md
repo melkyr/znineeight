@@ -1293,7 +1293,7 @@ mud_server/rogue_mud/net_builtin_test). Details:
   - `emitSocketAccept` ← `plat_accept` (Win: INVALID_SOCKET→-1 else `(int)client`; POSIX raw return).
   - `emitSocketConnect` ← NEW (no source existed; per operator ruling): `connect()` against `sockaddr_in` INADDR_ANY, `== SOCKET_ERROR`/`< 0` → `-1 : 0`.
   - `emitSocketSendRecv` ← `plat_send`/`plat_recv` (`send`/`recv` with `(const char*)`/`(char*)` casts, `0` flags; raw return).
-  - `emitSocketSelect` ← `plat_socket_select` (timeval from `timeout_ms`; `(fd_set*)` casts; `emitSocketOptPtrValue` appends `.value` only when the temp type is a tracked optional).
+  - `emitSocketSelect` ← `plat_socket_select` (timeval from `timeout_ms`; `(fd_set*)` casts; `emitSocketOptPtrValue` emits `(NAME.has_value ? NAME.value : NULL)` for optional-typed temps — null-coalesce mirroring `.unwrap_optional_abi`, so a null arg (has_value=0) never reads the uninitialized `.value` field; plain `NAME` otherwise). [updated: 2026-08-13]
   - `emitSocketFdZero/FdSet/FdIsset` ← the FD_* macro wrappers (Win `(SOCKET)` cast on fd).
   - `emitSocketClose` ← `plat_close_socket` (`closesocket`/`close`).
 - **Consumers:** `sf/src/std_net.zig` (zero `extern "c"`; 13 wrappers incl. `init`/`cleanup`) + migrated `examples/z98/mud_server/main.zig` + `examples/z98/rogue_mud/{lib/net.zig,ui.zig,main.zig}` (local `std_net.zig` copies; `net_runtime.c` link REMOVED). Gate: `repro/mi_matrix/net_builtin_test` dump→gcc→run rc=0 prints `1`; mud_server `timeout`-gated socket interaction rc=0; rogue_mud dump/gcc/link rc=0 (0 `plat_*` refs); 4 MD5 gates gol/lisp/json byte-identical, mud re-baselined to `3abbcd5c…`.
