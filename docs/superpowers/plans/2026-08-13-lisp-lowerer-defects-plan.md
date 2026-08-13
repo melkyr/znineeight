@@ -671,19 +671,31 @@ git commit -m "repro: bare-union C emission layout mismatch (union_emission_layo
 - Consumes: Defect-E finding, R4 repro, operator ruling m0915.
 - Produces: bare unions emit as real C `union` (max-member layout) matching `@sizeOf`; lisp_interpreter + json_parser_workaround no longer SEGFAULT from arena overflow.
 
-**Context (mechanism confirmed):** `emitUnionType` (c89_emit.zig:1528-1553) writes `"struct "` at :1536 and stacks ALL variants as fields — identical to `emitStructType`. A bare union must emit a C `union { ... }` (all members at offset 0, size = max member). The fix is minimal: change the emitted keyword to `"union "`. Field access already works via `emitFieldAssign` union branch (:260-274) and `store_field` union branch (:4202-4223) which emit `.member` — valid for both struct and union. The topo-sort already handles union_type (`tstEdgesCount`/`tstEdgesFill` union branches at :858-867/:920+). Verify no other emitter path assumes a bare union is a struct.
+**Context (mechanism confirmed, operator ruling m0944 = option 2 — 3-site fix + helper):** `emitUnionType` (c89_emit.zig:1528-1553) writes `"struct "` at :1536 and stacks ALL variants as fields — identical to `emitStructType`. A bare union must emit a C `union { ... }` (all members at offset 0, size = max member). **The fix is NOT a single keyword change** (verified: one-keyword swap fails gcc with `error: 'zT_..._Data' defined as wrong kind of tag`). The `struct` keyword appears in 3 sites for named aggregates, and the C89 tag namespace (struct/union/enum tags share ONE namespace) requires ALL 3 to agree: (1) `emitUnionType` definition :1536, (2) `emitSharedHeader` forward-decl/typedef :1130, (3) `emitSpecialTypes` forward-decl/typedef :1260. References are kind-agnostic (`getCTypeName` returns a bare mangled name via :744-745 — no keyword), so the reference path needs no change. The tagged-union/struct sites (:1435/:1467/:1503) stay `struct`; the anonymous wrapper sites (:1773/:1808/:1816/:1834/:1840) have no tag namespace. **Per operator ruling: introduce ONE helper `aggregateKeyword(kind)` returning `"union "` for union_type else `"struct "`, used at all 3 sites — single source of truth, closes the recurring keyword/site split-brain class.** Field access already works via `emitFieldAssign` union branch (:260-274) and `store_field` union branch (:4202-4223) which emit `.member` — valid for both struct and union. The topo-sort already handles union_type.
 
 - [ ] **Step 1: Write the failing test (red)**
 
 `union_emission_layout_xmod/` is the test. Pre-fix: emitted C has `struct zT_..._Data { i64 I; ... }` (stacked, ~24B) while `@sizeOf(Data)` = 8. Red.
 
-- [ ] **Step 2: Implement the fix**
+- [ ] **Step 2: Implement the fix (option 2 — 3-site + helper)**
 
-In `sf/src/c89_emit.zig`, `emitUnionType` (:1528-1553): change the `"struct "` write at :1536 to `"union "`. Verify the rest of the function (field loop emitting `type name;` per member) is correct for a C union (it is — union members are `type name;`). Check `getCTypeName` for union_type — verify it produces the correct type reference (it should already, given the prior `// ADD` union branches). Ensure `emitTypeDefinition` (:1587) dispatches union_type to `emitUnionType` (it should, per the existing dispatch). Verify a nested bare union inside a struct (`Value { tag, data }` where data is a union) emits `union` inside the struct — valid C.
+In `sf/src/c89_emit.zig`:
+1. Add a helper near `getCTypeName` (:542):
+```zig
+fn aggregateKeyword(kind: TypeKind) []const u8 {
+    if (kind == TypeKind.union_type) return "union ";
+    return "struct ";
+}
+```
+2. `emitUnionType` (:1528-1553): change the `"struct "` write at :1536 to `aggregateKeyword(ty.kind)` (ty is in scope at :1530).
+3. `emitSharedHeader` (:1130): change `"typedef struct "` to emit `"typedef "` + `aggregateKeyword(ty.kind)` + cname (ty is in scope at :1120-1121, guarded on struct/tagged_union/union).
+4. `emitSpecialTypes` (:1260): same change (ty is in scope at :1250-1251, same guard).
+
+Verify the rest of `emitUnionType` (field loop emitting `type name;` per member) is correct for a C union (it is — union members are `type name;`). Verify `emitTypeDefinition` (:1587) dispatches union_type to `emitUnionType` (it does). Verify a nested bare union inside a struct (`Value { tag, data }`) emits `union` inside the struct — valid C. **Do NOT change:** the tagged_union `struct` sites (:1435/:1467) or struct site (:1503) or the anonymous wrapper sites (:1773+). Those are correct.
 
 - [ ] **Step 3: Build + verify repros green**
 
-Rebuild zig1. `union_emission_layout_xmod`: emitted C has `union zT_..._Data { ... }`, `@sizeOf(Data)` = 8 matches runtime struct, prints `7` + `8`. `sizeof_struct_union_xmod` still prints `24`. Verify the emitted `Value` struct now matches `@sizeOf(Value)` = 16 (Tag 4 + pad + union 8 → 16).
+Rebuild zig1. `union_emission_layout_xmod`: emitted C has `union zT_..._Data { ... }` (both the forward-decl typedef AND the definition agree), `@sizeOf(Data)` = 8 matches runtime struct, prints `7` + `8`. `sizeof_struct_union_xmod` still prints `24`. Verify the emitted `Value` struct now matches `@sizeOf(Value)` = 16 (Tag 4 + pad + union 8 → 16). Verify gcc compiles clean (no "wrong kind of tag").
 
 - [ ] **Step 4: Verify no regression + 4 MD5 gates**
 
