@@ -2836,6 +2836,15 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
+                .addr_of_field => |aof| {
+                    if (aof.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, aof.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
                 .make_slice => |ms| {
                     if (ms.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ms.result)];
@@ -4294,6 +4303,59 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s: []const u8 = " = &";
             bufferedWriterWrite(&emitter.writer, s);
             bufferedWriterWrite(&emitter.writer, op);
+            var s2: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s2);
+        },
+        .addr_of_field => |af| {
+            var base = resolveTempName(emitter, af.base);
+            var result = resolveTempName(emitter, af.result);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, result);
+            var s: []const u8 = " = &";
+            bufferedWriterWrite(&emitter.writer, s);
+            bufferedWriterWrite(&emitter.writer, base);
+            var af_found: u8 = @intCast(u8, 0);
+            var af_tj: usize = @intCast(usize, 0);
+            while (af_tj < emitter.current_fn.hoisted_temps.len) : (af_tj += @intCast(usize, 1)) {
+                var ht = emitter.current_fn.hoisted_temps.items[af_tj];
+                if (ht.temp_id == af.base and ht.type_id != type_mod.TYPE_UNDEFINED) {
+                    var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
+                    var pointee: u32 = ht.type_id;
+                    if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
+                        pointee = emitter.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
+                    }
+                    var pty = emitter.registry.types_items[@intCast(usize, pointee)];
+                    if (pty.kind == type_mod.TypeKind.struct_type) {
+                        var arrow_s: []const u8 = "->";
+                        bufferedWriterWrite(&emitter.writer, arrow_s);
+                        var pst = emitter.registry.st_items[@intCast(usize, pty.payload_idx)];
+                        var fe = emitter.registry.fe_items[@intCast(usize, pst.fields_start) + @intCast(usize, af.field_id)];
+                        var fname: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+                        bufferedWriterWrite(&emitter.writer, fname);
+                        af_found = @intCast(u8, 1);
+                    } else if (pty.kind == type_mod.TypeKind.union_type) {
+                        var arrow_s: []const u8 = "->";
+                        bufferedWriterWrite(&emitter.writer, arrow_s);
+                        var pup = emitter.registry.un_items[@intCast(usize, pty.payload_idx)];
+                        var fe = emitter.registry.fe_items[@intCast(usize, pup.fields_start) + @intCast(usize, af.field_id)];
+                        var fname: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+                        bufferedWriterWrite(&emitter.writer, fname);
+                        af_found = @intCast(u8, 1);
+                    }
+                    break;
+                }
+            }
+            if (af_found == @intCast(u8, 0)) {
+                var af_m: []const u8 = "internal: addr_of_field unresolved base field (field_id ";
+                var af_b: [10]u8 = undefined;
+                var af_l = itoa_mod.itoa(af.field_id, af_b[0..]);
+                var af_s: usize = @intCast(usize, 9) - @intCast(usize, af_l);
+                var af_e: []const u8 = ")";
+                var parts: [3][]const u8 = [3][]const u8{ af_m, af_b[af_s..@intCast(usize, 9)], af_e };
+                var msg = diag_mod.diagnosticBuilderMakeMsg(emitter.interner, &parts[0], @intCast(u32, 3));
+                diag_mod.diagnosticCollectorAdd(emitter.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+                diag_mod.diagnosticCollectorFlushAndExit(emitter.diag, @intCast(u32, 3));
+            }
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },

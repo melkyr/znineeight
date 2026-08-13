@@ -774,6 +774,56 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     if (lv_node.kind == AstKind.paren_expr) {
         return lowerLValueAddr(self, lv_node.child_0, result_type);
     }
+    if (lv_node.kind == AstKind.field_access) {
+        var field_name_id = lv_node.payload;
+        var base_node_idx = lv_node.child_0;
+        var base_resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node_idx);
+        var base_ty = if (base_resolved) |bt| bt else type_mod.TYPE_VOID;
+        var base_is_ptr: u8 = @intCast(u8, 0);
+        if (base_ty != type_mod.TYPE_UNDEFINED and base_ty != type_mod.TYPE_VOID) {
+            var bty = self.ctx.registry.types_items[@intCast(usize, base_ty)];
+            if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
+                base_is_ptr = @intCast(u8, 1);
+            }
+        }
+        var base_addr: u32 = TEMP_NONE;
+        if (base_is_ptr == @intCast(u8, 1)) {
+            base_addr = lowerExpr(self, base_node_idx);
+        } else if (base_ty != type_mod.TYPE_UNDEFINED and base_ty != type_mod.TYPE_VOID) {
+            var ptr_to_base = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, base_ty, false);
+            base_addr = lowerLValueAddr(self, base_node_idx, ptr_to_base);
+        }
+        var pointee_ty = base_ty;
+        if (base_is_ptr == @intCast(u8, 1)) {
+            var bty = self.ctx.registry.types_items[@intCast(usize, base_ty)];
+            pointee_ty = self.ctx.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
+        }
+        var pty = self.ctx.registry.types_items[@intCast(usize, pointee_ty)];
+        var pkind = pty.kind;
+        var field_id: u32 = @intCast(u32, 0);
+        var found_f: u8 = @intCast(u8, 0);
+        if (pkind == type_mod.TypeKind.struct_type) {
+            var fields: []FieldEntry = undefined;
+            type_mod.typeRegistryGetStructFields(self.ctx.registry, pointee_ty, &fields);
+            var fi: usize = 0;
+            while (fi < fields.len) : (fi += 1) {
+                if (fields[fi].name_id == field_name_id) { field_id = @intCast(u32, fi); found_f = @intCast(u8, 1); break; }
+            }
+        } else if (pkind == type_mod.TypeKind.union_type) {
+            var fields: []FieldEntry = undefined;
+            type_mod.typeRegistryGetUnionFields(self.ctx.registry, pointee_ty, &fields);
+            var fi: usize = 0;
+            while (fi < fields.len) : (fi += 1) {
+                if (fields[fi].name_id == field_name_id) { field_id = @intCast(u32, fi); found_f = @intCast(u8, 1); break; }
+            }
+        }
+        if (found_f == @intCast(u8, 0)) {
+            iceAddrOfLValueUnsupported(self, lv_node_idx);
+        }
+        var tid = nextTemp(self, result_type);
+        emitInst(self, LirInst{ .addr_of_field = .{ .base = base_addr, .field_id = field_id, .result = tid } });
+        return tid;
+    }
     iceAddrOfLValueUnsupported(self, lv_node_idx);
     return @intCast(u32, 0);
 }
@@ -856,6 +906,25 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
         base_temp = nextTemp(self, ptr_type);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ptr_temp, .rhs = idx_temp, .result = base_temp } });
         resolved_base = ptr_type;
+    } else if (child_0_node.kind == AstKind.field_access or child_0_node.kind == AstKind.deref or child_0_node.kind == AstKind.paren_expr) {
+        var nested_base_ty = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
+        var nested_is_ptr: u8 = @intCast(u8, 0);
+        if (nested_base_ty) |nbt| {
+            if (nbt != type_mod.TYPE_UNDEFINED and nbt != type_mod.TYPE_VOID) {
+                var nbty = self.ctx.registry.types_items[@intCast(usize, nbt)];
+                if (nbty.kind == type_mod.TypeKind.ptr_type or nbty.kind == type_mod.TypeKind.many_ptr_type) {
+                    nested_is_ptr = @intCast(u8, 1);
+                }
+            }
+        }
+        if (nested_is_ptr == @intCast(u8, 1)) {
+            base_temp = lowerExpr(self, fa_node.child_0);
+            resolved_base = nested_base_ty;
+        } else {
+            var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, if (nested_base_ty) |et| et else type_mod.TYPE_VOID, false);
+            base_temp = lowerLValueAddr(self, fa_node.child_0, ptr_type);
+            resolved_base = ptr_type;
+        }
     } else {
         base_temp = lowerExpr(self, fa_node.child_0);
         resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
