@@ -587,6 +587,121 @@ git commit -m "fix: layout dependency graph respects field-type order (sizeof_st
 
 ---
 
+### Task R4: Create Defect-E repro (bare-union C emission layout) — ADDED per operator ruling m0915
+
+**Files:**
+- Create: `repro/mi_matrix/union_emission_layout_xmod/main.zig`, `lib.zig`, `NOTES.md`
+- Report: `.superpowers/sdd/task-R4-lisp-report.md`
+
+**Interfaces:**
+- Consumes: Defect-E finding (surfaced in F5 — union emitted as stacked C struct, 36B, vs `@sizeOf` union-max 16B → arena overflow → SEGFAULT).
+- Produces: a minimal red/green gate for F6 (the union-emission fix).
+
+**Context:** Defect E — a bare `union { I: i64, S: []const u8, F: f64 }` is emitted to C as `struct { i64 I; Slice S; f64 F; }` (ALL variants stacked, ~36B) by `emitUnionType` (c89_emit.zig:1528-1553, line 1536 writes `"struct "`) instead of a real C `union` (max member, 16B). Since `@sizeOf` correctly returns the union-max (16) post-Defect-D-fix, arena allocators sized by `@sizeOf` overflow when the runtime stores the 36B struct → memory corruption → SEGFAULT (lisp_interpreter, json_parser_workaround).
+
+- [ ] **Step 1: Write the repro**
+
+`repro/mi_matrix/union_emission_layout_xmod/lib.zig`:
+```zig
+pub const Tag = enum { A, B, C };
+
+pub const Data = union {
+    I: i64,
+    S: []const u8,
+    F: f64,
+};
+
+pub const Value = struct {
+    tag: Tag,
+    data: Data,
+};
+
+pub fn makeValue(n: i32) Value {
+    return Value{ .tag = Tag.A, .data = Data{ .I = @intCast(i64, n) } };
+}
+```
+
+`repro/mi_matrix/union_emission_layout_xmod/main.zig`:
+```zig
+const lib_mod = @import("lib.zig");
+const std = @import("std.zig");
+
+pub fn main() void {
+    var v = lib_mod.makeValue(@intCast(i32, 7));
+    std.io.printInt(@intCast(i32, v.data.I));
+    std.io.printInt(@intCast(i32, @sizeOf(lib_mod.Data)));
+}
+```
+
+**Expected:** `v.data.I` reads back `7`; `@sizeOf(Data)` = 8 (union max of i64/f64/slice, all 8 on 32-bit). Pre-fix: `v.data.I` reads `7` correctly (struct layout preserves it, field ordering) but `@sizeOf(Data)` = 8 while the C `struct` is 24B — the mismatch. **Better discriminator:** print `@sizeOf(lib_mod.Value)` too — pre-fix Value C struct is 28B (Tag 4 + pad + Data 24) but `@sizeOf(Value)` = 16 (post-Defect-D). The mismatch (16 vs 28) is the corruption vector. Verify the exact emitted-C struct sizes in /tmp.
+
+- [ ] **Step 2: Run it pre-fix — confirm the layout mismatch**
+
+Run: `mkdir -p /tmp/r4 && /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/r4 repro/mi_matrix/union_emission_layout_xmod/main.zig 2>/tmp/r4/err; cd /tmp/r4 && gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c && gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o prog && timeout 10 ./prog`
+Inspect the emitted `Data` typedef in the C: confirm it's `struct { i64 I; ... }` (stacked) NOT `union { ... }`. Record the emitted struct size (`sizeof(struct Data)` via a throwaway C check) vs `@sizeOf(Data)` = 8. The mismatch is the red state.
+
+- [ ] **Step 3: Run zig0 oracle on a /tmp copy**
+
+zig0 writes beside the source — copy to /tmp, oracle main.zig uses `__bootstrap_print_int`. Expected: zig0 emits a real C `union { i64 I; Slice S; f64 F; }` for Data → `@sizeOf(Data)` = 8 matches the runtime struct (8) → no mismatch. Record the oracle emitted union.
+
+- [ ] **Step 4: Write NOTES.md**
+
+Mirror the sibling format: What it tests / The compiler gap (emitUnionType c89_emit.zig:1528-1553 writes `struct` at :1536; `@sizeOf` union-max vs C stacked struct → arena overflow) / Measured result (emitted struct size vs @sizeOf, the mismatch) / Oracle verification (zig0 real union) / Expected classification.
+
+- [ ] **Step 5: Write the R-report + commit**
+
+Write `.superpowers/sdd/task-R4-lisp-report.md`. Commit:
+```bash
+git add repro/mi_matrix/union_emission_layout_xmod/
+git commit -m "repro: bare-union C emission layout mismatch (union_emission_layout_xmod)"
+```
+
+**Gate:** emitted-C `struct`-vs-union mismatch recorded (size discrepancy); zig0 oracle emits real union; NOTES.md + report written; committed.
+
+---
+
+### Task F6: Fix Defect E — emit bare unions as C unions (operator-ruled m0915)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (`emitUnionType` at :1528-1553)
+- Modify (docs): `sf/docs/tech_docs/08_c89_emission.md` to FIXED
+- Test: `repro/mi_matrix/union_emission_layout_xmod/`, `repro/mi_matrix/sizeof_struct_union_xmod/`
+
+**Interfaces:**
+- Consumes: Defect-E finding, R4 repro, operator ruling m0915.
+- Produces: bare unions emit as real C `union` (max-member layout) matching `@sizeOf`; lisp_interpreter + json_parser_workaround no longer SEGFAULT from arena overflow.
+
+**Context (mechanism confirmed):** `emitUnionType` (c89_emit.zig:1528-1553) writes `"struct "` at :1536 and stacks ALL variants as fields — identical to `emitStructType`. A bare union must emit a C `union { ... }` (all members at offset 0, size = max member). The fix is minimal: change the emitted keyword to `"union "`. Field access already works via `emitFieldAssign` union branch (:260-274) and `store_field` union branch (:4202-4223) which emit `.member` — valid for both struct and union. The topo-sort already handles union_type (`tstEdgesCount`/`tstEdgesFill` union branches at :858-867/:920+). Verify no other emitter path assumes a bare union is a struct.
+
+- [ ] **Step 1: Write the failing test (red)**
+
+`union_emission_layout_xmod/` is the test. Pre-fix: emitted C has `struct zT_..._Data { i64 I; ... }` (stacked, ~24B) while `@sizeOf(Data)` = 8. Red.
+
+- [ ] **Step 2: Implement the fix**
+
+In `sf/src/c89_emit.zig`, `emitUnionType` (:1528-1553): change the `"struct "` write at :1536 to `"union "`. Verify the rest of the function (field loop emitting `type name;` per member) is correct for a C union (it is — union members are `type name;`). Check `getCTypeName` for union_type — verify it produces the correct type reference (it should already, given the prior `// ADD` union branches). Ensure `emitTypeDefinition` (:1587) dispatches union_type to `emitUnionType` (it should, per the existing dispatch). Verify a nested bare union inside a struct (`Value { tag, data }` where data is a union) emits `union` inside the struct — valid C.
+
+- [ ] **Step 3: Build + verify repros green**
+
+Rebuild zig1. `union_emission_layout_xmod`: emitted C has `union zT_..._Data { ... }`, `@sizeOf(Data)` = 8 matches runtime struct, prints `7` + `8`. `sizeof_struct_union_xmod` still prints `24`. Verify the emitted `Value` struct now matches `@sizeOf(Value)` = 16 (Tag 4 + pad + union 8 → 16).
+
+- [ ] **Step 4: Verify no regression + 4 MD5 gates**
+
+F1/F2/F4/F5 repros still green (42/1/4243/78/24). Corpus sweep — no new FAIL. 4 MD5 gates: gol/lisp/json/mud — **these MAY re-baseline** if any gate example uses a bare union (the emitted C typedef changes from struct to union). Check each: if lisp_interpreter_curr uses tagged unions (not bare), no change expected; VERIFY each. Re-baseline per AMENDMENT B with runtime proof if needed.
+
+- [ ] **Step 5: Update tech doc `08_c89_emission.md` to FIXED** — union emission, corrected refs, `[updated: 2026-08-13]`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add sf/src/c89_emit.zig sf/docs/tech_docs/08_c89_emission.md
+git commit -m "fix: bare unions emit as C unions, matching sizeOf layout (union_emission_layout_xmod)"
+```
+
+**Gate:** repro green (real `union` in C, `@sizeOf` matches runtime struct size); sizeof_struct_union_xmod still 24; F1/F2/F4 repros green; 4 MD5s byte-identical or re-baselined per AMENDMENT B; corpus no new FAIL; tech doc updated.
+
+---
+
 ### Task F3: Gate sweep + full matrix reconciliation
 
 **Files:**
@@ -596,10 +711,10 @@ git commit -m "fix: layout dependency graph respects field-type order (sizeof_st
 - Report: `.superpowers/sdd/task-F3-lisp-report.md`
 
 **Interfaces:**
-- Consumes: F1-F2-F4-F5 fixes, all 21 examples, all repros.
+- Consumes: F1-F2-F4-F5-F6 fixes, all 21 examples, all repros.
 - Produces: final manifest reflecting 21/21 examples end-to-end.
 
-- [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0 AND functionally correct (evaluates `nil`/`true`/`+`/`(quote 5)`/`cons` — no silent eval failure, no SEGFAULT; Defect D fixed so its `@sizeOf(Value)` is correct). json_parser_workaround must run rc=0 (its F4-exposed SEGFAULT resolved by the Defect D fix).
+- [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0 AND functionally correct (evaluates `nil`/`true`/`+`/`(quote 5)`/`cons` — no silent eval failure, no SEGFAULT; Defects D+E fixed so its `@sizeOf(Value)` matches the C union layout and the arena doesn't overflow). json_parser_workaround must run rc=0 (its F4-exposed SEGFAULT resolved by Defect D+E fixes).
 - [ ] **Step 2: Verify 4 MD5 gates** (gol ff47d18d, lisp c1cb748b, json 376fd681 — post-F2 re-baseline, mud fd0fdaa4).
 - [ ] **Step 3: Verify test_analyzer_bin PASS.**
 - [ ] **Step 4: Update EXPECTED_FAIL.md v30** (lisp_interpreter row CLEARED — functionally OK, 5 repros added incl. sizeof_struct_union_xmod, follow-up #3 resolved).
