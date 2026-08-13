@@ -1,4 +1,4 @@
-extern fn __bootstrap_print(s: [*]const u8) void;
+const std = @import("std.zig");
 
 pub fn main() void {
     var a: [*]const u8 = "aa";
@@ -6,5 +6,5 @@ pub fn main() void {
     var c: [*]const u8 = "cc";
     var d: [*]const u8 = "dd";
     var words = [4][*]const u8{ a, b, c, d };
-    __bootstrap_print(words[0]); // expect "aa" once fixed
+    std.io.print(words[0]); // expect "aa" once fixed
 }

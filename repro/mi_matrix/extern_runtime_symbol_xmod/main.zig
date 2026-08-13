@@ -1,7 +1,7 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 const lib_mod = @import("lib.zig");
 
 pub fn main() void {
     var p = lib_mod.alloc(@intCast(u32, 16));
-    __bootstrap_print_int(@intCast(i32, @ptrToInt(p) == @intCast(usize, 0)));
+    std.io.printInt(@intCast(i32, @ptrToInt(p) == @intCast(usize, 0)));
 }

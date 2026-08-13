@@ -1,6 +1,6 @@
-extern fn __bootstrap_print_int(x: i32) void;
+const std = @import("std.zig");
 
 pub fn main() void {
     var c = @intCast(i32, 'c');
-    __bootstrap_print_int(c);
+    std.io.printInt(c);
 }

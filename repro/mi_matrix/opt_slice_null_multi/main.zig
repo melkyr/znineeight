@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 const Point = struct { x: i32, y: i32 };
 fn failA() !void { return error.A; }
 fn failB() !void { return error.B; }
@@ -16,8 +16,8 @@ pub fn main() void {
     var p2 = findPath(@intCast(i32, 2));
     var p3 = findPath(@intCast(i32, 0));
     if (p1 == null and p2 == null and p3 == null) {
-        __bootstrap_print_int(@intCast(i32, 1));
+        std.io.printInt(@intCast(i32, 1));
     } else {
-        __bootstrap_print_int(@intCast(i32, 0));
+        std.io.printInt(@intCast(i32, 0));
     }
 }

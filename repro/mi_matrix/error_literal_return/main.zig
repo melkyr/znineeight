@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(x: i32) void;
+const std = @import("std.zig");
 
 const MyErr = error{ Worse, Bad, Terrible };
 
@@ -11,8 +11,8 @@ pub fn main() void {
     const val = result catch |err| {
         var ec = @intCast(u32, @enumToInt(err));
         var ei: i32 = @intCast(i32, ec);
-        __bootstrap_print_int(ei);
+        std.io.printInt(ei);
         return;
     };
-    __bootstrap_print_int(@intCast(i32, val));
+    std.io.printInt(@intCast(i32, val));
 }

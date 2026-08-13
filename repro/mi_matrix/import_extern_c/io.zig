@@ -1,4 +1,4 @@
-extern "c" fn __bootstrap_print(s: *const u8) void;
+const std = @import("std.zig");
 pub fn printHello() void {
-    __bootstrap_print("hello");
+    std.io.print("hello");
 }

@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(x: i32) void;
+const std = @import("std.zig");
 
 const Mode = union(enum) {
     Idle: void,
@@ -15,5 +15,5 @@ pub fn main() void {
         .Stop => @intCast(i32, 2),
         else => @intCast(i32, 99),
     };
-    __bootstrap_print_int(v);
+    std.io.printInt(v);
 }

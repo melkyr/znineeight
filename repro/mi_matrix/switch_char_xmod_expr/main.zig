@@ -1,7 +1,7 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 const lib = @import("lib.zig");
 pub fn main() void {
-    __bootstrap_print_int(lib.score('a'));
-    __bootstrap_print_int(lib.score('b'));
-    __bootstrap_print_int(lib.score('q'));
+    std.io.printInt(lib.score('a'));
+    std.io.printInt(lib.score('b'));
+    std.io.printInt(lib.score('q'));
 }

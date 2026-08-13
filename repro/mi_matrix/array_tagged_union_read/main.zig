@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(x: i32) void;
+const std = @import("std.zig");
 
 const Command = union(enum) {
     Quit: void,
@@ -16,5 +16,5 @@ pub fn main() void {
         .Quit => r = r + @intCast(i32, 0),
         .Go => |d| r = r + d,
     }
-    __bootstrap_print_int(r);
+    std.io.printInt(r);
 }

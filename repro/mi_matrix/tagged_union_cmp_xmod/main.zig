@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 const lib_mod = @import("lib.zig");
 
 fn kindName(s: lib_mod.Shape) i32 {
@@ -10,5 +10,5 @@ fn kindName(s: lib_mod.Shape) i32 {
 
 pub fn main() void {
     var c = lib_mod.Shape{ .Circle = @intCast(i32, 5) };
-    __bootstrap_print_int(kindName(c));
+    std.io.printInt(kindName(c));
 }

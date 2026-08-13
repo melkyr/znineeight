@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 fn run() i32 {
     var count: i32 = 0;
     var c: u8 = 'a';
@@ -14,5 +14,5 @@ fn run() i32 {
     return count;
 }
 pub fn main() void {
-    __bootstrap_print_int(run());
+    std.io.printInt(run());
 }

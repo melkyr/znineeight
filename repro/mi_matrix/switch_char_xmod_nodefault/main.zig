@@ -1,6 +1,6 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 const lib = @import("lib.zig");
 pub fn main() void {
-    __bootstrap_print_int(@intCast(i32, lib.classify('a')));
-    __bootstrap_print_int(@intCast(i32, lib.classify('q')));
+    std.io.printInt(@intCast(i32, lib.classify('a')));
+    std.io.printInt(@intCast(i32, lib.classify('q')));
 }

@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v28 2026-08-08)
+# mi_matrix corpus — expected-fail manifest (v29 2026-08-13)
 
 ## Totals (230 repros)
 
@@ -1652,6 +1652,49 @@ repros **`io_builtin_test` + `console_builtin_test` were migrated to `std.io`** 
 builtins' stdout-write helper) — both still compile+link+run. Corpus at F4: **239 dirs measured,
 OK=232 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** (the 3 FAILs + 4 green-guards are exactly
 the documented set — no new corpus FAIL).
+
+## F4 repro migration — corpus repros off `__bootstrap_*` → std.io (2026-08-13)
+
+F4 removed the 6 example-facing `__bootstrap_*` I/O wrappers (`__bootstrap_print`,
+`__bootstrap_print_int`, `__bootstrap_print_char`, `__bootstrap_panic`, `__bootstrap_write`,
+`__bootstrap_sleep_ms`) from `zig_runtime.c`/`.h`. Corpus repros still declaring
+`extern fn __bootstrap_print*` therefore no longer LINK (`undefined reference to
+__bootstrap_print*`). **48 repro main.zig files migrated** off the extern to `std.io`
+(`std.io.print` / `std.io.printInt` / `std.io.write`), each with **byte-identical local
+`std.zig` + `std_io.zig` copies** (the F3 std_arena per-example-copy precedent, D1). The local
+`std.zig` is the reduced `io`-only root package (omits the `arena`/`debug` re-exports — see the
+D2 tracking entry below). Verified with the QUICK_REF single-file recipe
+(`zig1 --dump-c89` + `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include
+/tmp/x.c zig_runtime.c zig_pal.c`):
+
+| Repro | Result |
+|-------|--------|
+| `intcast_range_check` | dump rc=0, gcc rc=0 (LINKS), run rc=134 — PANICS `integer cast overflow in @intCast` (F1 pass criterion, link restored) |
+| `enum_literal_assign` | dump rc=0, gcc rc=0, run rc=0, prints `1` (expected_out.txt) |
+| `error_literal_return` | dump rc=0, gcc rc=0, run rc=0, prints `1` (expected_out.txt) |
+| `switch_char_expr` | dump rc=0, gcc rc=0, run rc=0, prints `120` (char switch post-F1-fix, migration is a pure I/O swap) |
+| `opt_extern_ptr_file` | dump rc=0, gcc rc=0, run rc=0, prints `1` — pre-existing optional-wrap emission RED (has_value hardcoded 1), unchanged by migration; the `printInt` path itself works |
+| `import_extern_c` | dump rc=0, gcc rc=0, run rc=0, prints `hello` (io.zig migrated `extern "c" fn __bootstrap_print` → `std.io.print`) |
+
+**`field_store_drop` disposition:** NOT migrated — it is a compile-only FAIL
+(`error[3048]: could not resolve imported file 'pal'` from its `@import("pal")`, std-lib-
+deferred). The `__bootstrap_print_int` extern is unreachable behind the frontend gate; leaving
+it does not break the gate (verified: still error[3048], 0 `.c` emitted).
+
+## D2 tracking — std_arena module-instance ≥1 emission bug (FILE the entry, out of F4 scope)
+
+**Pre-existing compiler bug (verified in the F4 stdlib review):** importing `std_arena.zig` as
+**module instance ≥ 1** emits invalid C — the `_N` instance suffix is applied to the struct
+typedef + locals (`zT_F22A6288_Arena_1`) but NOT to the function-signature type refs
+(`zT_F22A6288_Arena` return) → `error: return type is an incomplete type` / `conflicting types`
+in the emitted `std_arena_*.c`. Trigger: `rogue_mud` (multi-module build) pulling the canonical
+`std.zig` root package (which re-exports `arena`); json_parser builds std_arena at instance 0
+and is unaffected. **Out of F4 scope** (compiler change; F4 is a repro/example migration).
+Workaround today: local `std.zig` root packages omit the `arena` re-export where std_arena
+would land at instance ≥ 1 (mud_server, and the 48 migrated corpus repros). **Documented
+follow-up** — a future compiler task must fix the instance-suffix application for
+function-signature type refs (or defer std_arena to instance 0). See the F4 stdlib report
+concern 2 / DEVIATION D2 (`.superpowers/sdd/task-F4-stdlib-report.md`).
 
 ## Follow-ups (multi-module fixes plan) — NOT fixed here
 

@@ -194,3 +194,43 @@ and 4 green-guards are exactly the documented set; no new corpus FAIL.
    both classify OK.
 8. json_parser still carries the dead `zig_default_arena` extern (`main.zig:10`) — harmless (the
    emitted C shadows it with a local), out of scope.
+
+---
+
+## 9. Bounded finish — corpus repro migration (2026-08-13)
+
+Follow-up to the F4 review finding 1: the `__bootstrap_*` wrapper removal broke LINK for the
+corpus repros still declaring `extern fn __bootstrap_print*` (`undefined reference to
+__bootstrap_print*`). **48 repro main.zig files migrated** off the extern to `std.io`
+(`std.io.print` / `std.io.printInt` / `std.io.write`), each with byte-identical local
+`std.zig` + `std_io.zig` copies (the reduced `io`-only root package — `arena`/`debug`
+re-exports omitted, D1/D2 precedent). `import_extern_c`'s `io.zig` migrated
+`extern "c" fn __bootstrap_print` → `std.io.print`; 2 `main_green.zig` companions migrated
+(`anon_errset_comparison`, `xmod_global_field_access`).
+
+**Test evidence (sf/build/out_release/zig1, QUICK_REF single-file recipe, no legacy object):**
+
+- `intcast_range_check` (MUST — the F1 feature guard): dump rc=0, **gcc rc=0 (link restored)**,
+  run rc=134 — PANICS `integer cast overflow in @intCast`. Pass criterion met.
+- `enum_literal_assign` / `error_literal_return`: dump rc=0, gcc rc=0, run rc=0, both print `1`
+  (match their `expected_out.txt`).
+- `switch_char_expr`: dump rc=0, gcc rc=0, run rc=0, prints `120` (post-F1 char-switch fix; the
+  migration is a pure I/O swap — not a regression).
+- `import_extern_c`: dump rc=0, gcc rc=0, run rc=0, prints `hello` (cross-module std.io path).
+- `opt_extern_ptr_file`: dump rc=0, gcc rc=0, run rc=0, prints `1` — its RED status is the
+  pre-existing optional-wrap emission defect (has_value hardcoded 1), unchanged by the I/O
+  migration; `printInt` itself emits + runs.
+- Local `std.zig`/`std_io.zig` copies are byte-identical to the examples' (`examples/z98/hello/`
+  minus the arena/debug re-exports); verified compiling via the intcast_range_check build.
+
+**`field_store_drop` disposition:** NOT migrated — compile-only FAIL (`error[3048]` on its
+`@import("pal")`, std-lib-deferred). The `__bootstrap_print_int` extern is unreachable behind
+the frontend gate; the gate is intact (verified: still error[3048], 0 `.c` emitted).
+
+**D2 tracking entry FILED** in EXPECTED_FAIL.md (new section): pre-existing compiler bug —
+importing `std_arena.zig` at module instance ≥ 1 emits `return type is an incomplete type`
+(instance suffix on the typedef/locals but not the fn-signature type refs); rogue_mud trigger,
+verified in the F4 review; out of F4 scope; documented follow-up.
+
+**Corpus accounting unchanged** — no repro flipped; migration is repro-source only, no
+compiler/runtime changes (the 4 MD5 gates untouched).

@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 fn score(c: u8) i32 {
     return switch (c) {
         'a' => @intCast(i32, 1),
@@ -7,7 +7,7 @@ fn score(c: u8) i32 {
     };
 }
 pub fn main() void {
-    __bootstrap_print_int(score('a'));
-    __bootstrap_print_int(score('b'));
-    __bootstrap_print_int(score('q'));
+    std.io.printInt(score('a'));
+    std.io.printInt(score('b'));
+    std.io.printInt(score('q'));
 }

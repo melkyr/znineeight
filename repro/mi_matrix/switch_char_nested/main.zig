@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 fn nested(outer: u8, inner: u8) i32 {
     var r: i32 = 0;
     switch (outer) {
@@ -13,7 +13,7 @@ fn nested(outer: u8, inner: u8) i32 {
     return r;
 }
 pub fn main() void {
-    __bootstrap_print_int(nested('a', 'x'));
-    __bootstrap_print_int(nested('a', 'y'));
-    __bootstrap_print_int(nested('z', 'x'));
+    std.io.printInt(nested('a', 'x'));
+    std.io.printInt(nested('a', 'y'));
+    std.io.printInt(nested('z', 'x'));
 }

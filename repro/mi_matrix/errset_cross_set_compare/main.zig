@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 
 const E = error{ Bad, Other };
 
@@ -16,8 +16,8 @@ fn fromB() B!i32 {
 fn checkAnon() void {
     var x: E!i32 = anon();
     var r = x catch |err| {
-        if (err == error.Bad) { __bootstrap_print_int(@intCast(i32, 1)); }
-        else { __bootstrap_print_int(@intCast(i32, 0)); }
+        if (err == error.Bad) { std.io.printInt(@intCast(i32, 1)); }
+        else { std.io.printInt(@intCast(i32, 0)); }
         return;
     };
     _ = r;
@@ -26,8 +26,8 @@ fn checkAnon() void {
 fn checkNamed() void {
     var y: A!i32 = fromB();
     var s = y catch |err2| {
-        if (err2 == error.Bad) { __bootstrap_print_int(@intCast(i32, 1)); }
-        else { __bootstrap_print_int(@intCast(i32, 0)); }
+        if (err2 == error.Bad) { std.io.printInt(@intCast(i32, 1)); }
+        else { std.io.printInt(@intCast(i32, 0)); }
         return;
     };
     _ = s;

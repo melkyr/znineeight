@@ -1,11 +1,11 @@
-extern fn __bootstrap_print(s: *const u8) void;
+const std = @import("std.zig");
 
 const Writer = struct {
     write_fn: fn(s: []const u8) void,
 };
 
 fn stdoutWrite(s: []const u8) void {
-    __bootstrap_print(s.ptr);
+    std.io.print(s.ptr);
 }
 
 pub fn main() void {

@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(x: i32) void;
+const std = @import("std.zig");
 const types = @import("types.zig");
 var buf: [256]u8 = undefined;
 
@@ -15,5 +15,5 @@ pub fn main() void {
     var name = kv.data.Str;
     holders[0].name = name;
     holders[0].val = 42;
-    __bootstrap_print_int(holders[0].val);
+    std.io.printInt(holders[0].val);
 }

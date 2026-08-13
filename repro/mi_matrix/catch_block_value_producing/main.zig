@@ -1,4 +1,4 @@
-extern fn __bootstrap_print_int(x: i32) void;
+const std = @import("std.zig");
 const helper = @import("helper.zig");
 
 pub fn main() void {
@@ -6,5 +6,5 @@ pub fn main() void {
         _ = err;
         99
     };
-    __bootstrap_print_int(result);
+    std.io.printInt(result);
 }

@@ -1,5 +1,5 @@
-extern fn __bootstrap_print_int(n: i32) void;
+const std = @import("std.zig");
 const lib = @import("lib.zig");
 pub fn main() void {
-    __bootstrap_print_int(lib.run());
+    std.io.printInt(lib.run());
 }
