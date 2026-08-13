@@ -461,6 +461,132 @@ git commit -m "fix: nested field-access store write-back (nested_field_store_xmo
 
 ---
 
+### Task R3: Create Defect-D repro (sizeOf/alignOf struct-with-union) — ADDED per operator ruling m0898
+
+**Files:**
+- Create: `repro/mi_matrix/sizeof_struct_union_xmod/main.zig`, `lib.zig`, `NOTES.md`
+- Report: `.superpowers/sdd/task-R3-lisp-report.md`
+
+**Interfaces:**
+- Consumes: Defect-D investigation findings (report `.superpowers/sdd/I-lisp-defD-report.md` — the explore-agent diagnosis of the dummy dep-graph edges).
+- Produces: a minimal red/green gate for F5 (the layout-ordering fix).
+
+**Context:** Defect D — `@sizeOf`/`@alignOf` return 1/1 for a struct containing a bare union (Value=1/1, JsonValue=8) because the layout topological sort lays the struct out before its union/enum field types are sized (dummy `0->tid` dep edges from symbol_registrator.zig:78; field type_ids are TYPE_VOID placeholders at registration). The repro must isolate the ordering symptom: a struct containing a bare union where the union type is declared AFTER the struct (so the LIFO worklist pops the struct first) — `@sizeOf`/`@alignOf` must be correct post-fix.
+
+- [ ] **Step 1: Write the repro**
+
+`repro/mi_matrix/sizeof_struct_union_xmod/lib.zig`:
+```zig
+pub const Tag = enum { A, B, C };
+
+pub const Data = union {
+    I: i64,
+    S: []const u8,
+    F: f64,
+};
+
+pub const Value = struct {
+    tag: Tag,
+    data: Data,
+};
+
+pub fn compute(n: i32) i32 {
+    var v = Value{ .tag = Tag.A, .data = Data{ .I = @intCast(i64, n) } };
+    var s = @sizeOf(Value);
+    var a = @alignOf(Value);
+    var r: i32 = 0;
+    r = r + @intCast(i32, s);
+    r = r + @intCast(i32, a);
+    return r;
+}
+```
+
+`repro/mi_matrix/sizeof_struct_union_xmod/main.zig`:
+```zig
+const lib_mod = @import("lib.zig");
+const std = @import("std.zig");
+
+pub fn main() void {
+    std.io.printInt(lib_mod.compute(@intCast(i32, 0)));
+}
+```
+
+**Expected:** Value size = 24 (i64-aligned union), alignment = 8. `compute(0)` returns `24 + 8 = 32`. Pre-fix: returns `1 + 1 = 2` (or another wrong value). Verify the exact pre-fix number by running.
+
+- [ ] **Step 2: Run it pre-fix — confirm the wrong value**
+
+Run: `mkdir -p /tmp/r3 && /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/r3 repro/mi_matrix/sizeof_struct_union_xmod/main.zig 2>/tmp/r3/err; cd /tmp/r3 && gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c && gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o prog && timeout 10 ./prog`
+Expected: prints a wrong value (`2` if size collapses to 1/1). Record the actual.
+
+- [ ] **Step 3: Run zig0 oracle on a /tmp copy**
+
+zig0 writes beside the source — copy to /tmp. zig0 can't parse post-F4 std_io builtins, so the oracle main.zig uses `__bootstrap_print_int` (documented convention). Expected: prints `32` (correct). This is the post-fix reference.
+
+- [ ] **Step 4: Write NOTES.md**
+
+Mirror the sibling repro format: What it tests / The compiler gap (dummy dep edges, symbol_registrator.zig:78, type_resolver layout ordering, `size==0→1/1` :130) / Measured result (pre-fix value) / Oracle verification (zig0 `32`) / Expected classification.
+
+- [ ] **Step 5: Write the R-report + commit**
+
+Write `.superpowers/sdd/task-R3-lisp-report.md`. Commit:
+```bash
+git add repro/mi_matrix/sizeof_struct_union_xmod/
+git commit -m "repro: @sizeOf/@alignOf struct-with-union layout ordering (sizeof_struct_union_xmod)"
+```
+
+**Gate:** wrong pre-fix value recorded; zig0 oracle `32`; NOTES.md + report written; committed.
+
+---
+
+### Task F5: Fix Defect D — layout dependency graph ordering (Option B, operator-ruled)
+
+**Files:**
+- Modify: `sf/src/type_resolver.zig` (new `typeResolverBuildDependencyGraph` — real `field_type -> container_tid` edges, after field types are resolved)
+- Modify: `sf/src/main.zig` (invoke it in `phase_TypeResolution` between name-resolution (:312) and resolve (:314))
+- Modify (docs): `sf/docs/tech_docs/03_type_resolution.md` to FIXED
+- Test: `repro/mi_matrix/sizeof_struct_union_xmod/`, `repro/mi_matrix/xmod_amp_arena_union_store/`
+
+**Interfaces:**
+- Consumes: Defect-D investigation (report `.superpowers/sdd/I-lisp-defD-report.md`), operator ruling m0898 (Option B), R3 repro.
+- Produces: layout topological sort respects field-type dependencies → `@sizeOf`/`@alignOf` correct for ALL types (struct-with-union, struct-with-enum, any field ordering); lisp_interpreter Value + json_parser_workaround JsonValue sizes correct.
+
+**Context (Option B, operator-ruled):** Root cause = the dependency graph driving layout ordering carries dummy edges (`symbol_registrator.zig:78` adds `0->tid`; real `field_type->tid` edges CAN'T be added at registration because field type_ids are still TYPE_VOID placeholders). The field types get resolved LATER (`resolveAggregateFieldTypesAll`, type_resolver.zig:1078-1096). Fix: build the real graph AFTER that resolution, in the resolver (which already owns layout + `fieldEmbedsByValue`/`requiresFullDef` helpers at :324-344). This is the general fix — correct layout ordering for every struct, not a union-specific patch. The readers (comptime_eval.zig:120/129), layout math (:104-224), and C emitter are all correct and need no change.
+
+- [ ] **Step 1: Write the failing test (red)**
+
+`sizeof_struct_union_xmod/` is the test. Run pre-fix: prints `2` (wrong). Red state.
+
+- [ ] **Step 2: Implement the fix (Option B)**
+
+In `sf/src/type_resolver.zig`, add a function `typeResolverBuildDependencyGraph` that, given the resolver's registry + the now-resolved field type_ids, adds a real edge `field_type -> container_tid` for each field that **embeds by value** (struct/union/tagged_union/enum/array/tuple/optional/error_union), skipping pointer/slice fields (always-resolved, fixed 4/8 size — avoids false self-reference cycles). Mirror the existing `fieldEmbedsByValue` (:324-333) / `requiresFullDef` (:335-344) semantics for "embeds by value". A field whose type is TYPE_VOID/UNDEFINED/primitive/resolved already needs no edge. Self-referential types via pointers must NOT create cycles (the cycle guard at :307-321 is the safety net — verify it still functions).
+
+In `sf/src/main.zig`, `phase_TypeResolution` (around :302-337): call `typeResolverBuildDependencyGraph` AFTER `typeResolverResolveNames` (:312, which runs `resolveAggregateFieldTypesAll`) and BEFORE `typeResolverResolve` (:314/315, which does layout). This ensures layout ordering uses the real dependencies.
+
+Verify the fix handles: struct-before-union declaration order (the Defect D case), struct-before-enum, pointer-self-reference, and the existing corpus layouts (no layout regressions — all examples must still compile with correct sizes).
+
+- [ ] **Step 3: Build + verify repros green**
+
+Rebuild zig1 (`bash sf/scripts/build_release.sh`, gate `=== [release] Done: /tmp/fx_subfolder/zig1 ===`). `sizeof_struct_union_xmod` prints `32`. `xmod_amp_arena_union_store` (struct-with-union `@sizeOf`) — verify its sizes are now correct (it was a closest minimal repro). Also verify lisp_interpreter + json_parser_workaround `@sizeOf` values are correct (they use arenas sized by `@sizeOf` — check the emitted C for the correct constants, e.g. lisp Value size ~36, JsonValue ~28).
+
+- [ ] **Step 4: Verify no regression + 4 MD5 gates**
+
+F1/F2/F4 repros still green (42/1/4243/78). Corpus sweep — no new FAIL, and ideally `xmod_amp_arena_union_store` runtime becomes correct (was arena-corrupted). 4 MD5 gates: gol/lisp/json/mud byte-identical — BUT if any gate's emitted C changes (because a `@sizeOf` constant in its source was previously wrong), re-baseline per AMENDMENT B with runtime proof. The lisp gate (`lisp_interpreter_curr`) uses `@sizeOf(Value)` — if Value has no union, its size was already correct, so no change expected; VERIFY.
+
+- [ ] **Step 5: Update tech doc `03_type_resolution.md` to FIXED**
+
+Document: the real dependency-graph build (after field-type resolution), the embeds-by-value edge rule, corrected refs, `[updated: 2026-08-13]`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add sf/src/type_resolver.zig sf/src/main.zig sf/docs/tech_docs/03_type_resolution.md
+git commit -m "fix: layout dependency graph respects field-type order (sizeof_struct_union_xmod)"
+```
+
+**Gate:** repro green (prints `32`); xmod_amp_arena_union_store sizes correct; lisp_interpreter + json_parser_workaround `@sizeOf` constants correct in emitted C; F1/F2/F4 repros still green; 4 MD5s byte-identical or re-baselined per AMENDMENT B; corpus no new FAIL; tech doc updated.
+
+---
+
 ### Task F3: Gate sweep + full matrix reconciliation
 
 **Files:**
@@ -470,18 +596,18 @@ git commit -m "fix: nested field-access store write-back (nested_field_store_xmo
 - Report: `.superpowers/sdd/task-F3-lisp-report.md`
 
 **Interfaces:**
-- Consumes: F1-F2-F4 fixes, all 21 examples, all repros.
+- Consumes: F1-F2-F4-F5 fixes, all 21 examples, all repros.
 - Produces: final manifest reflecting 21/21 examples end-to-end.
 
-- [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0 (Defect C fixed — no SEGFAULT).
+- [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0 AND functionally correct (evaluates `nil`/`true`/`+`/`(quote 5)`/`cons` — no silent eval failure, no SEGFAULT; Defect D fixed so its `@sizeOf(Value)` is correct). json_parser_workaround must run rc=0 (its F4-exposed SEGFAULT resolved by the Defect D fix).
 - [ ] **Step 2: Verify 4 MD5 gates** (gol ff47d18d, lisp c1cb748b, json 376fd681 — post-F2 re-baseline, mud fd0fdaa4).
 - [ ] **Step 3: Verify test_analyzer_bin PASS.**
-- [ ] **Step 4: Update EXPECTED_FAIL.md v30** (lisp_interpreter row CLEARED — dump/gcc/link/run all 0, 4 repros added, follow-up #3 resolved).
+- [ ] **Step 4: Update EXPECTED_FAIL.md v30** (lisp_interpreter row CLEARED — functionally OK, 5 repros added incl. sizeof_struct_union_xmod, follow-up #3 resolved).
 - [ ] **Step 5: Update QUICK_REF.md baseline.**
 - [ ] **Step 6: Final tech doc line-ref verification.**
 - [ ] **Step 7: Commit.**
 
-**Gate:** lisp_interpreter dump/gcc/link/run rc=0 (21/21 examples, no SEGFAULT); 4 MD5s byte-identical; test_analyzer_bin PASS; manifest + QUICK_REF + tech docs consistent. **If ANOTHER pre-existing defect surfaces in lisp_interpreter, STOP and present — do not fold silently.**
+**Gate:** lisp_interpreter dump/gcc/link/run rc=0 AND functionally correct (21/21 examples); json_parser_workaround run rc=0 (no SEGFAULT); 4 MD5s byte-identical; test_analyzer_bin PASS; manifest + QUICK_REF + tech docs consistent. **If ANOTHER pre-existing defect surfaces, STOP and present — do not fold silently.**
 
 ---
 
