@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-13 — F6 networking builtins: 11 `builtin_socket_*` LIR variants (lir.zig:89-99) + lowering (lower.zig:2880-2977) + 07 §Builtin calls / F6 paragraph; prior 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214); F7 line-ref pass: core I/O builtin dispatch :2777-2814 → :2821-2858, console :2816-2837 → :2860-2878 (socket arms shifted the block)]
+# LIR Lowering Layer [updated: 2026-08-13 — F2 module-scope coercion recording: new pub sema fn `semanticAnalyzerResolveModuleVarDecl` records the init coercion (wrap_optional_null for module-scope `var g: ?T = null`) → `set_optional_null` instead of `int` null_const (Defect B FIXED; side effect `int_literal_coerce` on `g_used: usize = 0` → gol/lisp/json MD5 gates re-baselined m0809); prior 2026-08-13 — F6 networking builtins: 11 `builtin_socket_*` LIR variants (lir.zig:89-99) + lowering (lower.zig:2880-2977) + 07 §Builtin calls / F6 paragraph; prior 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214); F7 line-ref pass: core I/O builtin dispatch :2777-2814 → :2821-2858, console :2816-2837 → :2860-2878 (socket arms shifted the block)]
 
 ## Summary
 
@@ -879,26 +879,43 @@ This guard is **purely defensive** — no valid Z98 pattern triggers it today. I
 
 **Null-construction path (FIXED, Option B, [updated: 2026-08-07]):** for a `null_literal` whose coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) with an optional layer in the target chain, the null_literal branch (lower.zig:1183) walks the coercion target chain (`optional_type` → layer; `error_union_type` → payload, max 8) to find the optional layer and emits `set_optional_null` directly on a temp typed as that optional layer — instead of emitting the old dead `null_const` temp (`int zT_N; zT_N = NULL;`, typed `null_type`→`int` via `nextTemp(TYPE_NULL)` lower.zig:1184 → `getCTypeName(null_type)` = `"int"` c89_emit.zig:605). `materializeInto` then short-circuits on `src_ty == expected` (lower.zig:911) for a plain `?T`, or wraps the `?T` temp into outer error-union layers (`eul == src_ty` match at lower.zig:945 → `wrap_error_ok`) for `E!?T`. Result: no `int zT_N;`, no `zT_N = NULL;` — fixes the gcc `-Wint-conversion` warning for both `?*T` and `?[]T` null construction. Emitted C is now `Opt_... zT; zT.has_value = 0;` (or `EU`-wrapped). Non-optional-target null (pointer/fn, no optional layer) still uses the `null_const` path unchanged.
 
-**GAP — module-scope global `= null` init (Defect B, 2026-08-13):** the
-module-scope `var_decl` global-init sema (`main.zig:400-441`,
-`phase_ComptimeEvaluation`) resolves the init with
-`pushExpectedType(decl_type)` but **never records a coercion** — unlike the
-function-body `var_decl` path (`semantic_analyzer.zig:1862-1868`, which
-`classifyCoercion` + `coercionTableAdd(decl.child_1, ck, decl_type)`). For a
-module-scope `var g: ?*Node = null;` no `wrap_optional_null` entry exists, so
-the null_literal branch's `coercionTableGet` (lower.zig:1268) returns null and
-the fallback emits `null_const` with a `TYPE_NULL` temp (:1298-1301). The
-emitter types that temp `"int"` (`getCTypeName(null_type)`, c89_emit.zig:605)
-→ `int zT_0; zT_0 = NULL;` → `store_global` assigns `int` to an `Opt_`-typed
-global → gcc `incompatible types ... from type 'int'`. Contrast: a LOCAL
-`var x: ?T = null` records the coercion and emits `set_optional_null`
-(`.has_value = 0;`). Reproduction:
-`repro/mi_matrix/global_null_init_xmod` → gcc `incompatible types when
-assigning to type 'zT_..._Opt_...' from type 'int'`. Same shape as
-`examples/z98/lisp_interpreter` `parser.zig:12` `var
-global_symbol_list: ?*SymbolNode = null;`. Fix target (F1/F2): record the
-coercion in the module-scope init path (mirror sema :1862-1868); the
-lowerer/emitter paths already handle `wrap_optional_null`. [updated: 2026-08-13]
+**FIXED — module-scope global `= null` init (Defect B, [updated: 2026-08-13, F2]):**
+the module-scope `var_decl` global-init path (`main.zig` `phase_ComptimeEvaluation`
+loop, :400-441) previously hand-rolled `pushExpectedType`/`semanticAnalyzerResolveExpr`/
+`popExpectedType` and **never recorded a coercion** — unlike the function-body
+`var_decl` path (sema `classifyCoercion` + `coercionTableAdd(decl.child_1, ck, decl_type)`).
+A module-scope `var g: ?*Node = null;` had no `wrap_optional_null` entry, so the
+null_literal branch's `coercionTableGet` (lower.zig:1268) returned null and the
+fallback emitted `null_const` with a `TYPE_NULL` temp (:1298-1301), which the
+emitter typed `"int"` (`getCTypeName(null_type)`, c89_emit.zig:605) →
+`int zT_0; zT_0 = NULL;` → `store_global` assigned `int` to an `Opt_`-typed
+global → gcc `incompatible types ... from type 'int'`.
+**Fix (F2, operator ruling m0792 — Option 2):** the coercion record lives in
+sema. New **pub** fn `semanticAnalyzerResolveModuleVarDecl(self, decl_idx) u32`
+(`sf/src/semantic_analyzer.zig`, after `semanticAnalyzerResolveStmt`) owns the
+resolve + coercion record: reads the declared type from `rtt_mod.resolvedTypeTableGet`
+(`decl.child_0`), `pushExpectedType`/`semanticAnalyzerResolveExpr`/`popExpectedType`,
+then `classifyCoercion(errLitSrcType(decl.child_1, decl_type, it), decl_type)` →
+if non-`none` `coercionTableAdd(coercion_table, decl.child_1, ck, decl_type)` —
+mirroring the function-body `var_decl` block (sema :1890-1895); returns the
+resolved init type. `main.zig`'s global-init loop calls it
+(`var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);`)
+instead of hand-rolling push/resolve/pop; module-scope symbol registration
+(ident_expr nameCachePut, INT_LIT re-resolution, resolvedTypeTableSet) stays in
+main.zig. The lowerer/emitter paths already handle `wrap_optional_null`, so the
+null_literal branch now emits `set_optional_null` on an `Opt_`-typed temp:
+`zT_AEEBC7B3_Opt_26 zT_0; zT_0.has_value = 0; zG_E20C2606_g = zT_0;`. Reproduction
+`repro/mi_matrix/global_null_init_xmod`: dump/gcc/link/run rc=0, prints `1`.
+Unblocks the exact lisp shape (`examples/z98/lisp_interpreter` `parser.zig:12`
+`var global_symbol_list: ?*SymbolNode = null;`).
+**Side effect (operator re-baseline m0809, [updated: 2026-08-13]):** the fn
+records ALL non-`none` coercions, so the shared module-scope scalar
+`std_arena.zig:8 var g_used: usize = 0;` (game_of_life / lisp_interpreter_curr /
+json_parser) now records `int_literal_coerce` and the lowerer emits one cast on
+the global init (`zT_1 = (unsigned int)zT_0; zG_099B6C9A_g_used = zT_1;`) —
+matching function-body behavior for `var x: usize = 0`; runtime byte-identical
+(AMENDMENT B). gol/lisp/json MD5 gates **re-baselined** to
+`ff47d18d…`/`c1cb748b…`/`376fd681…`; mud `fd0fdaa4…` byte-identical.
 
 ---
 

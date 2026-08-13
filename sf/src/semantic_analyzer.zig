@@ -2122,3 +2122,23 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
 pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void {
     semanticAnalyzerResolveStmtIter(self, node_idx);
 }
+
+pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u32) u32 {
+    var decl = self.store.nodes.items[@intCast(usize, decl_idx)];
+    if (decl.child_1 == @intCast(u32, 0)) return @intCast(u32, type_mod.TYPE_UNDEFINED);
+    var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+    if (decl.child_0 != @intCast(u32, 0)) {
+        var rt = rtt_mod.resolvedTypeTableGet(self.type_table, decl.child_0);
+        if (rt) |t| { decl_type = t; }
+    }
+    pushExpectedType(self, decl_type);
+    var it = semanticAnalyzerResolveExpr(self, decl.child_1);
+    popExpectedType(self);
+    if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
+        var ck = coercion_mod.classifyCoercion(self.registry, errLitSrcType(self, decl.child_1, decl_type, it), decl_type);
+        if (ck != coercion_mod.CoercionKind.none) {
+            coercion_mod.coercionTableAdd(self.coercion_table, decl.child_1, ck, decl_type);
+        }
+    }
+    return it;
+}
