@@ -1091,6 +1091,34 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
         return target_type;
     }
+    if (tgt.kind == type_mod.TypeKind.union_type) {
+        var up = self.registry.un_items[@intCast(usize, tgt.payload_idx)];
+        var fstart: usize = @intCast(usize, up.fields_start);
+        var fcount: usize = @intCast(usize, up.fields_count);
+        var field_inits = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var fii: usize = 0;
+        while (fii < field_inits.len) : (fii += 1) {
+            var fi_node = self.store.nodes.items[@intCast(usize, field_inits[fii])];
+            var fname_id = fi_node.payload;
+            if (fname_id != @intCast(u32, 0)) {
+                var fi: usize = 0;
+                while (fi < fcount) : (fi += 1) {
+                    if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
+                        if (fi_node.child_0 != @intCast(u32, 0)) {
+                            var field_type = self.registry.fe_items[fstart + fi].type_id;
+                            pushExpectedType(self, field_type);
+                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
+                            popExpectedType(self);
+                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
+        return target_type;
+    }
     return type_mod.TYPE_VOID;
 }
 

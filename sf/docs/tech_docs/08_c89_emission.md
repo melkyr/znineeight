@@ -578,7 +578,7 @@ Handles indexed load/store with ptr-to-array detection:
 
 `isBasePtrToArray` (`c89_emit.zig:130`) checks if a temp's type is ptr-to-array.
 
-### 1.14 emitFieldAssign (`c89_emit.zig:181`)
+### 1.14 emitFieldAssign (`c89_emit.zig:188`)
 
 Resolves field access for `.assign_field`:
 
@@ -588,6 +588,7 @@ Resolves field access for `.assign_field`:
 | `tagged_union_type` | `.tag` (field 0), `.payload.<variant-name>._<sub>` or `.payload` (field 1) |
 | `ptr_type`/`many_ptr_type` → `struct_type` | `->field` |
 | `struct_type` | `.field` (with array copy: `{ ... while(_j < len) { base.field[_j] = src[_j]; _j++; } }`) |
+| `union_type` | `.field` (FIXED 2026-08-13, F1): the base-type dispatch (c89_emit.zig:188-307) gained a `union_type` branch (c89_emit.zig:260-274) mirroring the `struct_type` branch but scanning `un_items[payload_idx].fields_start` + `fe_items` for `field_id` (with the same array-copy handling). Previously a union-typed base fell through to the numeric `.f_<field_id>` fallback; now it emits `.member_name` like `store_field` (c89_emit.zig:4202-4209) and `ptr_type`→`union_type` (:4180-4188). Emits `zT_3.Int = v;` for a bare-union struct-literal member (repro `union_literal_nested_xmod` prints `42`; was gcc `'zT_3' undeclared`). |
 | unknown | `.f_<field_id>` (numeric fallback) |
 
 ### 1.15 Helper Functions

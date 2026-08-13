@@ -610,12 +610,27 @@ Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
 3. If field not found in expected TU → error `ERR_3009` "unknown enum literal member".
 4. Fallback → return `TYPE_VOID` (unresolvable).
 
-### semanticAnalyzerResolveStructInit (`sf/src/semantic_analyzer.zig:903-969`)
+### semanticAnalyzerResolveStructInit (`sf/src/semantic_analyzer.zig:1029-1095`)
 
 `[inference: explicit type → expected type → scan fields → push/pop expected types for each init]`
 
 - If type is tagged_union: iterate field_inits, find matching field by name_id, push expected type, resolve init, record coercion.
 - If type is struct: same process on struct fields.
+- If type is union: same process on union members (FIXED 2026-08-13).
+- **FIXED — bare `union_type` target (2026-08-13, F1):** the dispatcher now
+  has a `union_type` branch (semantic_analyzer.zig:1094-1121) mirroring the
+  `struct_type` loop — scans `un_items[payload_idx].fields_start/
+  .fields_count` for the matching member by `name_id`, push/pop expected
+  type, resolve the init, `tryRecordCoercion` per member, and
+  `resolvedTypeTableSet(node_idx, union_type)`. A bare-union struct literal
+  (`Inner{ .Int = v }`) — including nested inside an outer struct literal
+  (`Wrapper{ .tag = ..., .data = Inner{ .Int = v } }`) — now resolves to the
+  union type and records its member coercion (was `TYPE_VOID` with nothing
+  recorded, leaving the nested literal untyped). Reproduction:
+  `repro/mi_matrix/union_literal_nested_xmod` prints `42` (was gcc
+  `'zT_3' undeclared`). Same shape as `examples/z98/lisp_interpreter`
+  `token.zig` `Token{ .tag = ..., .data = TokenData{ .Int = v } }`.
+  [updated: 2026-08-13]
 
 ### semanticAnalyzerResolveAssign (`sf/src/semantic_analyzer.zig:971-1016`)
 

@@ -3417,6 +3417,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             break;
                         }
                     }
+                } else if (@enumToInt(ts.kind) == @enumToInt(type_mod.TypeKind.union_type)) {
+                    var up = self.ctx.registry.un_items[@intCast(usize, ts.payload_idx)];
+                    var fs: usize = @intCast(usize, up.fields_start);
+                    var fc: usize = @intCast(usize, up.fields_count);
+                    var fj: usize = @intCast(usize, 0);
+                    while (fj < fc) : (fj += @intCast(usize, 1)) {
+                        if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
+                            if (!is_undef_arr_field) {
+                                emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         }

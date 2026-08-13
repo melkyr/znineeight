@@ -257,6 +257,20 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
                         is_arr[0] = @intCast(u32, 1);
                         arr_len[0] = afap.length;
                     }
+                } else if (bty.kind == TypeKind.union_type) {
+                    var dot_s: []const u8 = ".";
+                    bufferedWriterWrite(writer, dot_s);
+                    var fe: type_mod.FieldEntry = registry.fe_items[@intCast(usize, registry.un_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, field_id)];
+                    var pn: []const u8 = interner_mod.stringInternerGet(interner, fe.name_id);
+                    fn_prefix = pn;
+                    fld_name_val = pn;
+                    found = @intCast(u8, 1);
+                    var af_fety: type_mod.Type = registry.types_items[@intCast(usize, fe.type_id)];
+                    if (af_fety.kind == TypeKind.array_type) {
+                        var afap: type_mod.ArrayPayload = registry.array_items[@intCast(usize, af_fety.payload_idx)];
+                        is_arr[0] = @intCast(u32, 1);
+                        arr_len[0] = afap.length;
+                    }
                 }
             }
             break;

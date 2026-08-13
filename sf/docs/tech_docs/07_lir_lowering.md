@@ -406,7 +406,7 @@ for each element:
 return base_temp
 ```
 
-### Struct Init `sf/src/lower.zig:2695`
+### Struct Init `sf/src/lower.zig:3283-3423`
 ```
 nextTemp(struct_type) → base_temp
 for each field init:
@@ -414,7 +414,23 @@ for each field init:
   find field index by name
   if TU: emit `.int_const(tag_index)` + `.assign_field(TU_FIELD_TAG, tag)` + optionally `.assign_field(TU_FIELD_PAYLOAD, val)`
   if struct: emit `.assign_field(field_index, val)`
+  if union: emit `.assign_field(field_index, val)` (FIXED 2026-08-13, F1) — see note below
 ```
+
+**FIXED — bare `union_type` struct-literal target (2026-08-13, F1):** the
+field loop now has a `union_type` branch (lower.zig:3420-3432, after the
+`struct_type` branch) scanning `un_items[payload_idx].fields_start/
+fields_count`, finding the member by `name_id`, and emitting
+`.assign_field(union_field_index, val)` — mirroring the `struct_type` branch
+(including the `is_undef_arr_field` skip). Previously a bare-union struct
+literal (`Inner{ .Int = v }`) never matched, so its member construction was
+DROPPED and the outer struct-literal field assigned an unconstructed temp
+(`zT_1.data = zT_3;` with `zT_3` never declared → gcc `'zT_3' undeclared`).
+With sema's union branch (05 §semanticAnalyzerResolveStructInit),
+`init_type` now resolves to the union type, so `base_temp` gets the union
+type and the member assign emits. Emitted C: `zT_3.Int = v; zT_1.data = zT_3;`.
+Reproduction: `repro/mi_matrix/union_literal_nested_xmod` prints `42`. Same
+shape as `examples/z98/lisp_interpreter` `token.zig`. [updated: 2026-08-13]
 
 [updated: 2026-08-07] **`undefined` array-typed fields are skipped (F2, commit ba89a6e0):** a
 pre-scan (`lower.zig:3006-3038`) computes `is_undef_arr_field` — true iff the field init is
@@ -862,6 +878,27 @@ This guard is **purely defensive** — no valid Z98 pattern triggers it today. I
 `materializeInto` (`sf/src/lower.zig:906`) is the general mechanism: given a source temp and an expected type, it walks the type hierarchy (optional layers, error union layers) and emits wrapping instructions (`wrap_optional`, `wrap_error_ok`, `wrap_error_err`, `set_optional_null`) to match the expected type shape.
 
 **Null-construction path (FIXED, Option B, [updated: 2026-08-07]):** for a `null_literal` whose coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) with an optional layer in the target chain, the null_literal branch (lower.zig:1183) walks the coercion target chain (`optional_type` → layer; `error_union_type` → payload, max 8) to find the optional layer and emits `set_optional_null` directly on a temp typed as that optional layer — instead of emitting the old dead `null_const` temp (`int zT_N; zT_N = NULL;`, typed `null_type`→`int` via `nextTemp(TYPE_NULL)` lower.zig:1184 → `getCTypeName(null_type)` = `"int"` c89_emit.zig:605). `materializeInto` then short-circuits on `src_ty == expected` (lower.zig:911) for a plain `?T`, or wraps the `?T` temp into outer error-union layers (`eul == src_ty` match at lower.zig:945 → `wrap_error_ok`) for `E!?T`. Result: no `int zT_N;`, no `zT_N = NULL;` — fixes the gcc `-Wint-conversion` warning for both `?*T` and `?[]T` null construction. Emitted C is now `Opt_... zT; zT.has_value = 0;` (or `EU`-wrapped). Non-optional-target null (pointer/fn, no optional layer) still uses the `null_const` path unchanged.
+
+**GAP — module-scope global `= null` init (Defect B, 2026-08-13):** the
+module-scope `var_decl` global-init sema (`main.zig:400-441`,
+`phase_ComptimeEvaluation`) resolves the init with
+`pushExpectedType(decl_type)` but **never records a coercion** — unlike the
+function-body `var_decl` path (`semantic_analyzer.zig:1862-1868`, which
+`classifyCoercion` + `coercionTableAdd(decl.child_1, ck, decl_type)`). For a
+module-scope `var g: ?*Node = null;` no `wrap_optional_null` entry exists, so
+the null_literal branch's `coercionTableGet` (lower.zig:1268) returns null and
+the fallback emits `null_const` with a `TYPE_NULL` temp (:1298-1301). The
+emitter types that temp `"int"` (`getCTypeName(null_type)`, c89_emit.zig:605)
+→ `int zT_0; zT_0 = NULL;` → `store_global` assigns `int` to an `Opt_`-typed
+global → gcc `incompatible types ... from type 'int'`. Contrast: a LOCAL
+`var x: ?T = null` records the coercion and emits `set_optional_null`
+(`.has_value = 0;`). Reproduction:
+`repro/mi_matrix/global_null_init_xmod` → gcc `incompatible types when
+assigning to type 'zT_..._Opt_...' from type 'int'`. Same shape as
+`examples/z98/lisp_interpreter` `parser.zig:12` `var
+global_symbol_list: ?*SymbolNode = null;`. Fix target (F1/F2): record the
+coercion in the module-scope init path (mirror sema :1862-1868); the
+lowerer/emitter paths already handle `wrap_optional_null`. [updated: 2026-08-13]
 
 ---
 
