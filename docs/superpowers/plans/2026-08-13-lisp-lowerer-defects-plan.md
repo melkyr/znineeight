@@ -211,41 +211,76 @@ git commit -m "fix: bare-union literals in struct literals lower correctly (unio
 
 ---
 
-### Task F2: Fix Defect B — coercion record for module-scope null global init
+### Task F2: Fix Defect B — coercion record for module-scope null global init (Option 2: record lives in sema)
 
 **Files:**
-- Modify: `sf/src/main.zig` (`:400-441` add coercion record for global-init)
+- Modify: `sf/src/semantic_analyzer.zig` (add pub fn `semanticAnalyzerResolveModuleVarDecl`)
+- Modify: `sf/src/main.zig` (`:400-441` call the new fn instead of hand-rolling resolve)
 - Modify (docs): `sf/docs/tech_docs/07_lir_lowering.md` to FIXED
 - Test: `repro/mi_matrix/global_null_init_xmod/`
 
 **Interfaces:**
-- Consumes: I Defect-B report, R repro.
+- Consumes: I Defect-B report, R repro, operator ruling (Option 2 — coercion recording belongs in sema, not main.zig).
 - Produces: module-scope `var x: ?T = null` (and `= undefined`) global inits emit `set_optional_null` typed as the optional.
 
-**Context:** Defect B = the module-scope global-init sema path (`main.zig:400-441`) resolves the init but never records a coercion. The function-body var_decl path (`semantic_analyzer.zig:1862-1867`) records `coercionTableAdd(..., wrap_optional_null, decl_type)`. Adding the same record makes the existing lowerer null branch (`lower.zig:1267-1296`) emit `set_optional_null` typed as the optional.
+**Context (Option 2, operator-ruled m0792):** Defect B = the module-scope global-init sema path (`main.zig:400-441`) resolves the init but never records a coercion. The function-body var_decl path (`semantic_analyzer.zig:1862-1867`) records `coercionTableAdd(..., wrap_optional_null, decl_type)`. The coercion-record logic uses sema-private helpers (`errLitSrcType` sema:722, `classifyCoercion` coercion.zig:85, `tryRecordCoercion` sema:697) — main.zig physically cannot call them, and duplicating them there would split-brain the coercion rules across two files. **Fix: add a pub sema fn that owns the resolve + coercion record; main.zig delegates to it.** The existing lowerer null branch (`lower.zig:1267-1296`) then emits `set_optional_null` typed as the optional.
 
 - [ ] **Step 1: Write the failing test (red)**
 
 `global_null_init_xmod/` is the test. Run pre-fix: dump rc=0, gcc rc≠0 (`incompatible types ... Opt_NN from int`). Red state confirmed.
 
-- [ ] **Step 2: Implement the fix**
+- [ ] **Step 2: Add the pub sema fn**
 
-Read `main.zig:400-441` (the global-init block in `phase_SemanticAnalysis`). After resolving the init expression (around `:409-411`), add a coercion record for `decl.child_1` mirroring `semantic_analyzer.zig:1862-1867`: classify the coercion (the decl type is `optional_type` → `wrap_optional_null`) and `coercionTableAdd`. Read the exact classify/record API used in the function-body path and mirror it.
+In `sf/src/semantic_analyzer.zig`, add (near the var_decl handling, e.g. after `semanticAnalyzerResolveStmtIter`):
 
-- [ ] **Step 3: Build + verify repro green**
+```zig
+pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u32) u32 {
+    var decl = self.store.nodes.items[@intCast(usize, decl_idx)];
+    if (decl.child_1 == @intCast(u32, 0)) return @intCast(u32, type_mod.TYPE_UNDEFINED);
+    var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+    if (decl.child_0 != @intCast(u32, 0)) {
+        var rt = rtt_mod.resolvedTypeTableGet(self.type_table, decl.child_0);
+        if (rt) |t| { decl_type = t; }
+    }
+    pushExpectedType(self, decl_type);
+    var it = semanticAnalyzerResolveExpr(self, decl.child_1);
+    popExpectedType(self);
+    if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
+        var ck = coercion_mod.classifyCoercion(self.registry, errLitSrcType(self, decl.child_1, decl_type, it), decl_type);
+        if (ck != coercion_mod.CoercionKind.none) {
+            coercion_mod.coercionTableAdd(self.coercion_table, decl.child_1, ck, decl_type);
+        }
+    }
+    return it;
+}
+```
+
+Verify the exact identifiers (`errLitSrcType`, `classifyCoercion`, `coercionTableAdd`, `pushExpectedType`/`popExpectedType`, `rtt_mod`) match the surrounding code — read the function-body var_decl block `:1862-1867` and `errLitSrcType` `:722` first and mirror them.
+
+- [ ] **Step 3: Rewire main.zig to call it**
+
+In `sf/src/main.zig:400-441`, replace the hand-rolled `pushExpectedType`/`semanticAnalyzerResolveExpr`/`popExpectedType` block (around `:409-411`) with:
+
+```zig
+var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);
+```
+
+Keep the rest of the block exactly as-is (the `ident_expr` `nameCachePut`, `int_lit` re-resolution, `resolvedTypeTableSet` — those are module-scope symbol-registration concerns that stay in main.zig).
+
+- [ ] **Step 4: Build + verify repro green**
 
 Rebuild zig1. `global_null_init_xmod`: dump rc=0, gcc rc=0, link rc=0, run rc=0 printing `1`. Inspect emitted C: `zG_... = <Opt temp>` where the temp is the optional type with `.has_value = 0`, not `int`.
 
-- [ ] **Step 4: Verify no regression + 4 MD5 gates**
+- [ ] **Step 5: Verify no regression + 4 MD5 gates**
 
 F1 repro still green. 4 MD5 gates byte-identical.
 
-- [ ] **Step 5: Update tech doc to FIXED**
+- [ ] **Step 6: Update tech doc to FIXED**
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add sf/src/main.zig sf/docs/tech_docs/07_lir_lowering.md
+git add sf/src/semantic_analyzer.zig sf/src/main.zig sf/docs/tech_docs/07_lir_lowering.md
 git commit -m "fix: module-scope optional null globals emit set_optional_null (global_null_init_xmod)"
 ```
 
