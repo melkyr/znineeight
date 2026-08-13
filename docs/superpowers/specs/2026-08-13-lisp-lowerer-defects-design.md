@@ -85,7 +85,7 @@ Full 21-example matrix — **`lisp_interpreter` must dump/gcc/link/run rc=0** (t
 
 - `lisp_interpreter` dump/gcc/link/run rc=0 (21/21 examples)
 - 2 new repros green (dump/gcc/link/run)
-- 4 MD5s byte-identical: gol `b246a2fe…`, lisp `141994cc…`, json `f50ce1e6…`, mud `fd0fdaa4…` (mud not a gate)
+- 4 MD5s byte-identical UNLESS operator-approved re-baseline: gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…` (post-F2 re-baseline — module-scope int-literal coercion now recorded, runtime byte-identical per AMENDMENT B), mud `fd0fdaa4…` (mud not a gate)
 - Corpus no new FAIL (current OK=233/FAIL=3/GG=4/240)
 - test_analyzer_bin PASS
 

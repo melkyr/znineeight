@@ -15,7 +15,7 @@
 - **Compile recipe:** `mkdir -p DIR && /tmp/fx_subfolder/zig1 --dump-c89 --output-dir DIR <main.zig>`; gcc: `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include -c DIR/*.c` then link `zig_runtime.c zig_pal.c` (NO net_runtime.c).
 - **Repro convention (post-F4):** repro `main.zig` uses `std.io.printInt(...)` with LOCAL `std.zig` + `std_io.zig` copies (byte-identical to `sf/src/std.zig`/`std_io.zig` — the resolver has no search-path, D1 precedent). Copy from `repro/mi_matrix/net_builtin_test/` (already has local copies). NO `__bootstrap_print_int` (migrated off in F4).
 - **RUNTIME gate mandatory** (AGENTS §2.5.3): every fixed repro must run rc=0 AND print the expected output. Compile-only gates are FORBIDDEN.
-- **4 MD5 gates:** gol `b246a2fecc0b5ff4402912c49970cdae`, lisp `141994cc81ab4bbb89722b7d30af419d`, json `f50ce1e6800d9e1365c019e46ac61292`, mud `fd0fdaa42a419b0e72cfdb3226a54c4a` (mud NOT a gate). Byte-identical UNLESS operator-approved re-baseline with runtime proof (AMENDMENT B).
+- **4 MD5 gates:** gol `ff47d18d` (re-baselined F2, operator ruling m0809), lisp `c1cb748b` (re-baselined F2), json `376fd681` (re-baselined F2), mud `fd0fdaa42a419b0e72cfdb3226a54c4a` (mud NOT a gate). Byte-identical UNLESS operator-approved re-baseline with runtime proof (AMENDMENT B). **F2 re-baselines gol/lisp/json** (module-scope int-literal coercion now recorded — identical to function-body behavior; runtime byte-identical verified).
 - **Corpus:** 240 dirs, OK=233/FAIL=3/GG=4. FAIL must not increase. The 2 new repros are added to the OK count.
 - **Tech-doc maintenance (AGENTS §1.1.1):** every I-task and source-changing F-task MUST update the corresponding `sf/docs/tech_docs/*.md` — corrected line refs, descriptions, `[updated: 2026-08-13]` annotation. Check INDEX.md Table A.
 - **Editing:** `edit` (exact strings) or `fastedit` (line ranges; re-read region immediately before each edit; bottom-to-top). NO sed/python bulk transforms. NO scope creep.
@@ -301,7 +301,7 @@ git commit -m "fix: module-scope optional null globals emit set_optional_null (g
 - Produces: final manifest reflecting 21/21 examples end-to-end.
 
 - [ ] **Step 1: Run full 21-example matrix** — lisp_interpreter must be dump/gcc/link/run rc=0.
-- [ ] **Step 2: Verify 4 MD5 gates** (gol b246a2fe, lisp 141994cc, json f50ce1e6, mud fd0fdaa4).
+- [ ] **Step 2: Verify 4 MD5 gates** (gol ff47d18d, lisp c1cb748b, json 376fd681 — post-F2 re-baseline, mud fd0fdaa4).
 - [ ] **Step 3: Verify test_analyzer_bin PASS.**
 - [ ] **Step 4: Update EXPECTED_FAIL.md v30** (lisp_interpreter row CLEARED, 2 repros added, follow-up #3 resolved).
 - [ ] **Step 5: Update QUICK_REF.md baseline.**
