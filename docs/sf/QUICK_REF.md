@@ -36,7 +36,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (237 dirs in `repro/mi_matrix/*/`, 230 manifest repros)  — classify by gcc EXIT CODE  [updated: 2026-08-08 — multi-module fixes plan closeout (F7)]
+### Corpus gate (240 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-08-13 — std-lib plan closeout (F7)]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -57,6 +57,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
+- **Post-std-lib-plan baseline (F7 gate sweep, 2026-08-13, measured with /tmp/fx_subfolder/zig1): `OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4` over 240 dirs** (233+3+4=240). FAIL=3 = `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4 green-guards counted separately. No new FAIL vs the F6 sweep. 21-example matrix **20/21 end-to-end** (lisp_interpreter is the sole gcc-FAIL — pre-existing builtins.zig `zT_N` lowerer defect); mud_server boots (server, timeout-gated). 4 MD5 gates byte-identical (mud `fd0fdaa4…` re-baselined post-F6-review). test_analyzer_bin PASS.
 - **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
 - **Post-Plan-1 baseline (2026-08-04, 5 new repros): `OK=188 FAIL=9 ICE=0 CRASH=0` over 197 repros.**
 - **Post-Plan-2 baseline (2026-08-04, emission-defect fixes): raw `OK=189 FAIL=8 ICE=0 CRASH=0` over 197 repros; 2 green-guards (`var_declared_void`, `euvoid_val_catch`) counted separately → effective `OK=189 / FAIL=6 / green-guards=2`.**
@@ -305,7 +306,7 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 | [updated: 2026-08-13] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `3abbcd5cb21aa5b01cd849a02b4b20c0` |
+| `examples/z98/mud_server/main.zig` | `fd0fdaa42a419b0e72cfdb3226a54c4a` |
 | `examples/z98/game_of_life/main.zig` | `b246a2fecc0b5ff4402912c49970cdae` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `141994cc81ab4bbb89722b7d30af419d` |
 | `examples/z98/json_parser/main.zig` | `f50ce1e6800d9e1365c019e46ac61292` |
@@ -316,10 +317,23 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   rogue_mud) — the F6 builtin-emitted socket C replaces it. Runtime output byte-identical to
   pre-F6 (verified by client-interaction diff: welcome + look/north responses identical; the
   "north → You cannot go that way." quirk is pre-existing). mud_server is NOT an MD5 gate per
-  the operator. gol/lisp/json byte-identical. Pre-F6 mud value: `ecd40869…`. New mud value:
-  `3abbcd5c…`. F6 gate: net_builtin_test dump→gcc→run rc=0 prints `1` WITHOUT net_runtime.c;
-  mud_server timeout-gated socket interaction rc=0; rogue_mud dump/gcc/link rc=0 (0 `plat_*`
+  the operator. gol/lisp/json byte-identical. Pre-F6 mud value: `ecd40869…`. F6 gate:
+  net_builtin_test dump→gcc→run rc=0 prints `1` WITHOUT net_runtime.c; mud_server
+  timeout-gated socket interaction rc=0; rogue_mud dump/gcc/link rc=0 (0 `plat_*`
   refs); corpus OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 240 dirs (no new FAIL).
+  [updated: 2026-08-13]
+- **Re-baselined 2026-08-13 (F6 REVIEW, null-coalesce optional socket ptr args).** mud
+  re-baselined AGAIN because the F6 review fix (commit `25fb7ce1`, `emitSocketOptPtrValue`)
+  changes the emitted `select` call — optional-typed fd args now emit
+  `(NAME.has_value ? NAME.value : NULL)` instead of a bare `.value` deref (mirrors
+  `.unwrap_optional_abi`; Valgrind-confirmed the pre-fix `.value` read was UB on
+  uninit payloads). New mud value: `fd0fdaa42a419b0e72cfdb3226a54c4a` (the whitespace-stripped
+  diff vs the `3abbcd5c…` baseline is exactly ONE line). Runtime output unchanged (verified by
+  client interaction). gol/lisp/json unaffected (`b246a2fe…`, `141994cc…`, `f50ce1e6…`
+  byte-identical). **F7 gate sweep (2026-08-13): all 4 re-verified byte-identical to these
+  values** with `/tmp/fx_subfolder/zig1`; 21-example matrix 20/21 end-to-end (only
+  lisp_interpreter gcc-FAIL on the pre-existing builtins.zig `zT_N` defect); test_analyzer_bin
+  PASS; corpus re-verified OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 240 dirs (no new FAIL).
   [updated: 2026-08-13]
 - **Re-baselined 2026-08-08 (F4, std.io migration).** ALL 4 re-baselined because F4 replaces every
   `__bootstrap_print*`/`__bootstrap_write`/`__bootstrap_sleep_ms` extern in the gate entries with

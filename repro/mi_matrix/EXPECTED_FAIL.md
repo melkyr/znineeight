@@ -1,33 +1,27 @@
 # mi_matrix corpus — expected-fail manifest (v29 2026-08-13)
 
-## Totals (230 repros)
+## Totals (240 dirs / 230 manifest repros)
 
-- **CURRENT (2026-08-08 F3 — std.arena + json_parser migration): OK=223 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0** over **230 manifest repros** (223 + 3 + 4 = 230; raw
-  classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
-  `sf/build/out_release/zig1` at HEAD (post-F6 `efbf4807`; fixes landed this plan: F1 `51bfdb3c`
-  @ptrToInt, F3 `021ffcfd` cross-module enum member, F5 `462ddee4` arena resize, F6 `efbf4807`
-  tagged-union member access). The 3 FAILs unchanged: 2 std-lib-deferred (`field_store_drop` +
-  `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4
-  green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
-  `var_declared_void`, `euvoid_val_catch`. **No new corpus FAIL introduced by this plan's
-  fixes.** Corpus = **237 dirs** = 230 manifest repros + **7 separately-tracked dirs**
-  (`opt_slice_null_return` + the 6 plan-added repros `ptr_to_int_void_xmod`,
-  `mod_silent_drop_xmod`, `zT_missing_fwd_xmod`, `plat_stubs_missing_xmod`,
-  `tagged_union_cmp_xmod`, `extern_runtime_symbol_xmod`).
-  **CONVENTION RECONCILIATION (F3/F6 vs plan):** the F3/F6 raw sweep counts ALL 237 dirs and
-  lumps the 4 green-guards into FAIL → **OK=229 / FAIL=8 / ICE=0 / CRASH=0** (229+8=237); the
-  manifest convention (230 repros) counts green-guards separately and excludes the 7 tracked-
-  separately dirs → **effective OK=223 / FAIL=3 / green-guards=4**. Both agree on the
-  underlying state: 229 sweep-OK = 223 manifest-OK + 6 tracked-separately OK
-  (`opt_slice_null_return` + 5 of the plan repros; `tagged_union_cmp_xmod` is the 7th
-  tracked-separately dir and classifies FAIL on the known latent union-`==` emission); raw
-  FAIL=8 = the 4 green-guards + 2 std-lib-deferred + `self_embed_optional_cycle` +
-  `tagged_union_cmp_xmod`. F6's CRASH=0 (was F3's ICE=1) = `tagged_union_cmp_xmod` no longer
-  SEGVs. **[F3 2026-08-08: json RE-BASELINED to `ff9b880c…`** (std_arena migration changes
-  emitted C; runtime byte-identical to pre-fix per the F-5 AMENDMENT B precedent); mud/gol/
-  lisp still byte-identical (`6c0a83f1…`, `0d8f0092…`, `a12f2fce…`). See the F3 section.]**
-  test_analyzer_bin PASS. See the F7 gate-sweep + F3 sections below.
+- **CURRENT (2026-08-13 F7 — std-lib plan CLOSEOUT): raw sweep of all 240 dirs (gcc-exit
+  classifier, `/tmp/fx_subfolder/zig1`, fresh F6-source build): OK=233 / FAIL=3 / ICE=0 /
+  CRASH=0 / green-guards=4** (233+3+4=240). FAIL=3 unchanged: 2 std-lib-deferred
+  (`field_store_drop` + `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (C89
+  fundamental). Green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
+  `var_declared_void`, `euvoid_val_catch`. **No new corpus FAIL introduced by the std-lib plan
+  (F1-F6).** The 3 std-lib-plan repro dirs (`io_builtin_test`, `console_builtin_test`,
+  `net_builtin_test`) all classify **OK**. The D2 (`arena_alloc_default` → `std_arena.zig`, F3)
+  and D4 (`plat_*` console stubs → builtins, F5) deferred gaps are **CLOSED**; `json_parser`,
+  `json_parser_workaround`, `rogue_mud`, `extern_runtime_symbol_xmod`, `plat_stubs_missing_xmod`
+  all link+run on the standard sf runtime (no legacy object, no `net_runtime.c`). **21-example
+  matrix: 20/21 end-to-end working** (lisp_interpreter gcc-FAIL is the pre-existing
+  builtins.zig `zT_N` lowerer defect; mud_server boots — server, timeout-gated). 4 MD5 gates:
+  gol `b246a2fe…`, lisp `141994cc…`, json `f50ce1e6…` byte-identical; mud `fd0fdaa4…` (F6
+  migration + F6-review null-coalesce re-baseline; mud is NOT an MD5 gate per the operator).
+  test_analyzer_bin PASS (build_test.sh 5/4 unchanged). See the F7 closeout section below.
+  Corpus dirs = 230 manifest repros + 10 separately-tracked dirs (`opt_slice_null_return`,
+  `ptr_to_int_void_xmod`, `mod_silent_drop_xmod`, `zT_missing_fwd_xmod`,
+  `plat_stubs_missing_xmod`, `tagged_union_cmp_xmod`, `extern_runtime_symbol_xmod`,
+  `io_builtin_test`, `console_builtin_test`, `net_builtin_test`).
 - Prior: OK=223 / FAIL=3 / green-guards=4 / ICE=0 / CRASH=0 over 230 (2026-08-07 F4 gate sweep — char_literal switch + opt_slice null fixes CLOSEOUT). Measured with
   FAIL=3 / green-guards=4 / ICE=0 / CRASH=0** over **230 repros** (223 + 3 + 4 = 230; raw
   classifier FAIL = 7 — the 4 green-guards are a sub-bucket of the raw count). Measured with
@@ -1672,7 +1666,7 @@ the Totals block above.
 | 18 | lisp_interpreter_adv | 0 | 0 | 0 | 0 | unchanged WARN OK (1w) |
 | 19 | lisp_interpreter_curr | 0 | 0 | 0 | 0 | unchanged WARN OK (1w; MEM4 recorded 9w — gcc-version/toolchain diff, benign) |
 | 20 | mud_server | 0 | 0 | 0 | 124 | unchanged CANNOT RUN — server, "MUD server listening on port 4000" (timeout) |
-| 21 | rogue_mud | 0 (20 modules) | 0 (5w) | **1** | — | **unchanged LINK FAIL** — 5 `plat_*` stubs (std-lib-deferred, F4) |
+| 21 | rogue_mud | 0 (20 modules) | 0 (5w) | **1** | — | **LINK FAIL at this sweep** — 5 `plat_*` stubs (std-lib-deferred, F4); **[F5 2026-08-13 CLEARED: the 5 stubs → console builtins, link rc=0 + run rc=0 — see the F5 section]** |
 
 **End-to-end working binaries: 16/21** (12 FULL OK + 4 WARN OK), same as MEM4 — but two
 compiler-defect classes were CLEARED (json_parser_workaround's 6× zT_xx compile gap via F3;
@@ -1680,6 +1674,11 @@ lisp_interpreter's @ptrToInt frontend block via F1, exposing a separate pre-exis
 defect). No NEW regression vs MEM4. **[F3 2026-08-08: `json_parser` + `json_parser_workaround`
 now link+run rc=0 → end-to-end working binaries 18/21** (the 3 non-working: lisp_interpreter
 gcc FAIL, mud_server server-timeout, rogue_mud plat_* link FAIL). See the F3 section.]**
+**[F5 2026-08-13: rogue_mud console migration closes the D4 gap → link rc=0 + run rc=0 →
+working set 19/21 end-to-end** (lisp_interpreter gcc FAIL + mud_server server-timeout are the
+only non-run). See the F5 section.] **[F6 2026-08-13: networking builtins + std_net migration;
+mud_server re-verified boots on the standard runtime (no net_runtime.c); the working set is
+unchanged. See the F6 section / QUICK_REF MD5 table.]**
 
 **[F4 2026-08-08 — std.io migration (see task-F4-stdlib-report.md):]** all 21 examples
 migrated off `__bootstrap_*` (zero refs in example sources); all 21 dump rc=0; the working set
@@ -1777,4 +1776,81 @@ division-based magnitude loop — deferred, not an F4 defect.
    builtins (`@isWindows` + `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`/`@putChar`),
    not runtime symbols — both now link+run rc=0 on the standard sf runtime (see the F5
    section). No std-lib-deferred runtime gaps remain.
+
+---
+
+## F7 — std-lib plan CLOSEOUT: 21-example matrix + gate sweep + fix records (2026-08-13)
+
+Closes the std-lib builtins plan (F1-F6, commits `cc63eb02`..`25fb7ce1`). Measured with
+`/tmp/fx_subfolder/zig1` (fresh F6-source build; `sf/build/out_release/` wedged — all builds
+in `/tmp`). **Full 21-example matrix (multi-module `--dump-c89 --output-dir`, standard sf
+runtime `zig_runtime.c` + `zig_pal.c`, NO `net_runtime.c`):**
+
+| # | Example | dump | gcc | link | run | Status |
+|---|---------|------|-----|------|-----|--------|
+| 1 | hello | 0 | 0 | 0 | 0 | FULL OK — "Hello, world!" |
+| 2 | fibonacci | 0 | 0 | 0 | 0 | FULL OK — `55` |
+| 3 | prime | 0 | 0 | 0 | 0 | FULL OK — `2357` |
+| 4 | heapsort | 0 | 0 | 0 | 0 | FULL OK — sorted output |
+| 5 | quicksort | 0 | 0 | 0 | 0 | FULL OK — asc/desc sorted |
+| 6 | mandelbrot | 0 | 0 | 0 | 0 | FULL OK |
+| 7 | game_of_life | 0 | 0 | 0 | 0 (40s) | FULL OK — 100 gens glider, rc=0 |
+| 8 | lzw | 0 | 0 | 0 | 0 | FULL OK |
+| 9 | func_ptr_return | 0 | 0 | 0 | 0 | FULL OK — `10 + 5 = 15` |
+| 10 | sort_strings | 0 | 0 | 0 | 0 | FULL OK |
+| 11 | days_in_month | 0 | 0 | 0 | 0 | FULL OK |
+| 12 | tco_factorial | 0 | 0 | 0 | 0 | FULL OK — `fact(10)=3628800`, deep ok |
+| 13 | tco_defer | 0 | 0 | 0 | 0 | FULL OK — defer fires once |
+| 14 | tco_return_try | 0 | 0 | 0 | 0 | FULL OK — `count(100000)=100000` |
+| 15 | json_parser | 0 | 0 | 0 | 0 | FULL OK — parses test.json (CLEARED F3) |
+| 16 | json_parser_workaround | 0 | 0 | 0 | 0 | FULL OK — prints `{}` (CLEARED F3) |
+| 17 | lisp_interpreter | 0 | 1 | 1 | — | **gcc FAIL** — pre-existing builtins.zig `zT_N` lowerer defect (5× `zT_N` undeclared + 1 Opt_45 null-payload); follow-up #3 |
+| 18 | lisp_interpreter_adv | 0 | 0 | 0 | 0 | FULL OK — REPL (EOF rc=0) |
+| 19 | lisp_interpreter_curr | 0 | 0 | 0 | 0 | FULL OK — `(+ 1 2)` → `3` |
+| 20 | mud_server | 0 | 0 | 0 | 124 | **CANNOT RUN** — server, boots "MUD server listening on port 4000" (timeout-gated; NOT an MD5 gate) |
+| 21 | rogue_mud | 0 (24 mods) | 0 | 0 | 0 | FULL OK — boots, WASD/Q, exits rc=0 on `q` (CLEARED F5) |
+
+**End-to-end: 20/21 working** — 19 run rc=0 + mud_server boots (server, timeout-gated). The
+sole gcc-FAIL is `lisp_interpreter` (pre-existing builtins.zig `zT_N` lowerer defect, NOT a
+std-lib regression; previously masked by the @ptrToInt sema block — see the multi-module-fixes
+plan F1 section). json_parser / json_parser_workaround (F3) and rogue_mud (F5) rows are
+**deferred→fixed** and now run on the standard runtime with NO legacy object and NO
+`net_runtime.c`. game_of_life needs ~10s (100 gens × 100ms sleep) — the prior 8s timeout
+showed rc=124; a 40s timeout gives rc=0.
+
+### Fix records (std-lib plan F1-F6)
+
+| Task | Commits | What landed |
+|------|---------|-------------|
+| F1 core I/O builtins | `cc63eb02` | `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` in sema/lower/emit; `repro/mi_matrix/io_builtin_test` OK |
+| F2 console builtins | `b91bf296` | `@isWindows` (comptime) + `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`; `repro/mi_matrix/console_builtin_test` OK |
+| F3 std.arena | `3b1e06bf` | `std_arena.zig` bump allocator; json_parser + json_parser_workaround + extern_runtime_symbol_xmod link+run — D2 gap CLOSED |
+| F4 std.io migration | `737e1966`,`f3077477`,`ad0c71e7`,`05124d9c`,`54a7f2c9`,`b2d03bd3` | std.zig/std_io.zig; all 21 examples + 47 repros off `__bootstrap_*`; wrappers removed; cast helpers → `std_panic` |
+| F5 rogue_mud console | `1be697e8` | rogue_mud + plat_stubs_missing_xmod on the console builtins — D4 gap CLOSED |
+| F6 networking builtins | `50da2447`,`25fb7ce1` | 11 `@socket*` builtins port net_runtime.c into the emitter; std_net.zig; mud_server + rogue_mud migrate off `net_runtime.c`; F6-review null-coalesce fix |
+
+### Gates (all PASS)
+
+- **Corpus sweep (240 dirs): OK=233 / FAIL=3 / ICE=0 / CRASH=0 / green-guards=4** (233+3+4=240).
+  FAIL=3 exactly the documented set: `field_store_drop` + `test_stub_0` (std-lib-deferred,
+  `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). No new FAIL. The 3 std-lib
+  repro dirs (`io_builtin_test`, `console_builtin_test`, `net_builtin_test`) all OK.
+- **4 MD5 gates:** gol `b246a2fecc0b5ff4402912c49970cdae`, lisp `141994cc81ab4bbb89722b7d30af419d`,
+  json `f50ce1e6800d9e1365c019e46ac61292` — **byte-identical** through F6. mud
+  `fd0fdaa42a419b0e72cfdb3226a54c4a` (F6 std_net migration + F6-review null-coalesce
+  re-baseline; mud NOT an MD5 gate per the operator).
+- **test_analyzer_bin: PASS** — `bash sf/scripts/build_test.sh` → `5 passed, 4 failed`
+  (unchanged documented baseline; the 4 fails are the pre-existing set, zero
+  `sf/src/tests/*` changes in the plan range).
+- QUICK_REF.md corpus baseline + MD5 table (mud `fd0fdaa4…`) + gcc recipe notes updated.
+  Tech docs 00/05/07/08 line-refs verified; 05 + 07 gained the F6 socket builtins
+  (was F1/F2-only).
+
+### Deferred-gap clearance summary
+
+All std-lib-deferred runtime gaps from the std-lib plan are CLOSED — no example or repro
+needs a legacy runtime object or `net_runtime.c` anymore. The only remaining FAIL items are
+the two `error[3048]` import-gap repros (`field_store_drop`, `test_stub_0` — a user program
+cannot import compiler-internal modules; pass when zig1 gains a real std lib) and
+`self_embed_optional_cycle` (C89 fundamental).
 

@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1413-1450); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
@@ -52,7 +52,7 @@ pub const SemanticAnalyzer = struct {
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
-    // 19 builtin name IDs:
+    // 30 builtin name IDs (19 pre-std-lib + 6 core I/O + 4 console + 11 socket):
     ptrcast_name_id, ptrtoint_name_id, inttoptr_name_id,
     intcast_name_id, floatcast_name_id, inttofloat_name_id,
     inttoenum_name_id, size_of_name_id, align_of_name_id,
@@ -60,6 +60,10 @@ pub const SemanticAnalyzer = struct {
     getchar_name_id, exit_name_id, sleep_ms_name_id,
     is_windows_name_id, console_clear_name_id, console_gotoxy_name_id,
     console_set_color_name_id,
+    socket_create_name_id, socket_bind_listen_name_id, socket_accept_name_id,
+    socket_connect_name_id, socket_send_name_id, socket_recv_name_id,
+    socket_select_name_id, socket_fd_zero_name_id, socket_fd_set_name_id,
+    socket_fd_isset_name_id, socket_close_name_id,
 };
 ```
 
@@ -69,7 +73,7 @@ Key state: expected-type stack for contextual type inference (enum literals, err
 
 `[inference: sandAlloc-builtin name interning, zero-init stacks/lists, return SemanticAnalyzer]`
 
-Allocates no heap memory in the struct itself. Interns 19 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`, `@isWindows`, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
+Allocates no heap memory in the struct itself. Interns 30 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`, `@isWindows`, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`, `@socketCreate`, `@socketBindListen`, `@socketAccept`, `@socketConnect`, `@socketSend`, `@socketRecv`, `@socketSelect`, `@socketFdZero`, `@socketFdSet`, `@socketFdIsset`, `@socketClose`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
 
 ### semanticAnalyzerIsTypeValueCast (`sf/src/semantic_analyzer.zig:152-160`)
 
@@ -429,12 +433,12 @@ name `fnt_<ret>_<p1>_...` (type_resolver.zig:749-778), marks it fn-ptr-used
 `f` gets this ptr-to-fn type, and `f(args, temp_sand)` works because `semanticAnalyzerResolveFnCall`
 dereferences a ptr callee to its fn type (semantic_analyzer.zig:735-742).
 
-#### Builtin I/O dispatch (F1, 2026-08-08) — `[updated: 2026-08-08]`
+#### Builtin I/O dispatch (F1, 2026-08-08) — `[updated: 2026-08-13]`
 
-The `builtin_call` resolver (semantic_analyzer.zig:1314-1348) now dispatches 6 core I/O
+The `builtin_call` resolver (semantic_analyzer.zig:1374-1450) dispatches 6 core I/O
 builtins by `child_0` name ID (fields `putchar_name_id` … `sleep_ms_name_id`, interned in
-`semanticAnalyzerInit`). Each resolves its value args via `semanticAnalyzerResolveExpr` and
-returns the signature type:
+`semanticAnalyzerInit`; core I/O arms at semantic_analyzer.zig:1383-1398). Each resolves its
+value args via `semanticAnalyzerResolveExpr` and returns the signature type:
 
 | Builtin | Args resolved | Returns |
 |---------|---------------|---------|
@@ -447,9 +451,9 @@ returns the signature type:
 
 The `@getChar` zero-arg form depends on the parser zero-arg builtin fix (parser.zig:581).
 
-#### Console builtin dispatch (F2, 2026-08-08) — `[updated: 2026-08-08]`
+#### Console builtin dispatch (F2, 2026-08-08) — `[updated: 2026-08-13]`
 
-The same resolver (semantic_analyzer.zig:1357-1372) adds the 4 console builtins by `child_0`
+The same resolver (semantic_analyzer.zig:1401-1408) adds the 4 console builtins by `child_0`
 name ID (fields `is_windows_name_id`, `console_clear_name_id`, `console_gotoxy_name_id`,
 `console_set_color_name_id`):
 
@@ -465,6 +469,31 @@ name ID (fields `is_windows_name_id`, `console_clear_name_id`, `console_gotoxy_n
 populates `comptime_values[node]` and the lowerer emits an `int_const` (`TYPE_BOOL` — set in the
 comptime-fold path, lower.zig:2721-2724). `if (@isWindows())` then folds to only the active branch
 (see 07 §Builtin console + comptime branch folding).
+
+#### Socket builtin dispatch (F6, 2026-08-13) — `[updated: 2026-08-13]`
+
+The same resolver (semantic_analyzer.zig:1413-1450) adds the 11 socket builtins by `child_0`
+name ID (fields `socket_create_name_id` … `socket_close_name_id`). All resolve their value args
+via `semanticAnalyzerResolveExpr`; fd/port are `i32`/`u32` (fd = i32, arch-independence ruling
+m0544) — the emitted C bodies port `net_runtime.c:18-153` 1:1 (see 08 §6.9):
+
+| Builtin | Args resolved | Returns |
+|---------|---------------|---------|
+| `@socketCreate(port: u32)` | `ec[0]` | `TYPE_I32` |
+| `@socketBindListen(sock: i32, backlog: u32)` | `ec[0]`, `ec[1]` | `TYPE_I32` |
+| `@socketAccept(sock: i32)` | `ec[0]` | `TYPE_I32` |
+| `@socketConnect(sock: i32, port: u32)` | `ec[0]`, `ec[1]` | `TYPE_I32` |
+| `@socketSend(sock: i32, buf: [*]const u8, len: u32)` | `ec[0]`, `ec[1]`, `ec[2]` | `TYPE_I32` |
+| `@socketRecv(sock: i32, buf: [*]u8, len: u32)` | `ec[0]`, `ec[1]`, `ec[2]` | `TYPE_I32` |
+| `@socketSelect(nfds: i32, readfds: ?[*]u8, writefds: ?[*]u8, exceptfds: ?[*]u8, timeout_ms: u32)` | `ec[0..4]` | `TYPE_I32` |
+| `@socketFdZero(set: [*]u8)` | `ec[0]` | `TYPE_VOID` |
+| `@socketFdSet(fd: i32, set: [*]u8)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
+| `@socketFdIsset(fd: i32, set: [*]u8)` | `ec[0]`, `ec[1]` | `TYPE_BOOL` |
+| `@socketClose(sock: i32)` | `ec[0]` | `TYPE_VOID` |
+
+The three fd-set args of `@socketSelect` are optional (`?[*]u8` — `null` for unused sets); the
+emitter null-coalesces them (`(NAME.has_value ? NAME.value : NULL)`, c89_emit.zig:3377-3398,
+F6-review fix). Guarded repro: `repro/mi_matrix/net_builtin_test`.
 
 ### semanticAnalyzerResolveArithmetic (`sf/src/semantic_analyzer.zig:487-511`)
 

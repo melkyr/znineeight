@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214)]
+# LIR Lowering Layer [updated: 2026-08-13 — F6 networking builtins: 11 `builtin_socket_*` LIR variants (lir.zig:89-99) + lowering (lower.zig:2880-2976) + 07 §Builtin calls / F6 paragraph; prior 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214); F7 line-ref pass: core I/O builtin dispatch :2777-2814 → :2821-2858, console :2816-2837 → :2860-2878 (socket arms shifted the block)]
 
 ## Summary
 
@@ -463,7 +463,7 @@ an undeclared `zG_...` name (gcc `'zG_...' undeclared`). Fixes `xmod_pub_const_g
 
 **print() builtin** (`sf/src/lower.zig:375`): Special-cased. Emits `print_str` for the format string, `print_val` per argument.
 
-**Builtin calls** (`sf/src/lower.zig:2395`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2721-2772`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above). **[updated: 2026-08-08] Core I/O builtins** (`lower.zig:2777-2814`, F1): `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the 6 `builtin_*` LIR (see the Builtin I/O table above). `@exit` sets `block_terminated=1` (noreturn). **[updated: 2026-08-08] Console builtins** (`lower.zig:2816-2837`, F2): `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor` emit the 3 `builtin_console_*` LIR (see the Builtin Console table above). `@isWindows()` folds via the comptime-values path (`lower.zig:2703-2724`, emits `int_const` typed `TYPE_BOOL`) and never produces a runtime LIR inst.
+**Builtin calls** (`sf/src/lower.zig:2395`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2721-2772`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above). **[updated: 2026-08-08] Core I/O builtins** (`lower.zig:2821-2858`, F1): `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the 6 `builtin_*` LIR (see the Builtin I/O table above). `@exit` sets `block_terminated=1` (noreturn). **[updated: 2026-08-08] Console builtins** (`lower.zig:2860-2878`, F2): `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor` emit the 3 `builtin_console_*` LIR (see the Builtin Console table above). `@isWindows()` folds via the comptime-values path (`lower.zig:2703-2724`, emits `int_const` typed `TYPE_BOOL`) and never produces a runtime LIR inst. **[updated: 2026-08-13] Socket builtins** (`lower.zig:2880-2976`, F6): `@socketCreate`/`@socketBindListen`/`@socketAccept`/`@socketConnect`/`@socketSend`/`@socketRecv`/`@socketSelect`/`@socketFdZero`/`@socketFdSet`/`@socketFdIsset`/`@socketClose` emit the 11 `builtin_socket_*` LIR (lir.zig:89-99, the F6 phase-2 variants).
 
 **`@intCast` range-check (F1, 2026-08-06):** the explicit `@intCast` builtin handler
 (`lower.zig:2686-2703`) now computes `is_checked` from the source/target widths
@@ -513,22 +513,29 @@ runtime-proof (AMENDMENT B).
 `@sleepMs(ms: u32) void`, `@stdoutWrite(buf: [*]const u8, len: usize) void` (added by operator
 ruling m0564 — the I-RT concern-3 flag), `@isWindows() bool` (comptime), `@consoleClear() void`,
 `@consoleGotoxy(x: i32, y: i32) void`, `@consoleSetColor(fg: i32, bg: i32) void`, then 11
-`@socket*` in Phase 2. **F1 (2026-08-08) IMPLEMENTED the first 6:** `@putChar`/`@stdoutWrite`/
-`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` are live in sema (`semantic_analyzer.zig:1314-1343`),
-lower (`lower.zig:2777-2814`, the 6 `builtin_*` LIR), and c89_emit (`emitBuiltinIncludes` +
+`@socket*` in Phase 2. **F1 (2026-08-08) IMPLEMENTED the first 6:** `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` are live in sema (`semantic_analyzer.zig:1383-1398`),
+lower (`lower.zig:2821-2858`, the 6 `builtin_*` LIR), and c89_emit (`emitBuiltinIncludes` +
 `emitFwriteCall` + the 6 emission arms). `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/
 `@exit` are portable (stdio/libc); `@sleepMs` uses `#ifdef _WIN32` `Sleep(ms)` / `#else`
 `usleep(ms*1000)` (preprocessor-guarded C emission, never comptime), matching the zig0-oracle
 runtime body. Guarded repro: `repro/mi_matrix/io_builtin_test`.
 
 **F2 (2026-08-08) IMPLEMENTED the 3 console builtins + `@isWindows`:** `@consoleClear`/
-`@consoleGotoxy`/`@consoleSetColor` are live in sema (`semantic_analyzer.zig:1357-1372`),
-lower (`lower.zig:2816-2837`, the 3 `builtin_console_*` LIR), and c89_emit (see 08 §Builtin
+`@consoleGotoxy`/`@consoleSetColor` are live in sema (`semantic_analyzer.zig:1401-1408`),
+lower (`lower.zig:2860-2878`, the 3 `builtin_console_*` LIR), and c89_emit (see 08 §Builtin
 console emission) with `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guards. `@isWindows()`
 folds in `comptime_eval.zig` (module const `host_is_windows`, currently `false`; 1-bit
 `ComptimeVal` 0/1) → `phase_ComptimeEvaluation` populates `comptime_values` → the lowerer emits
 `int_const` (`TYPE_BOOL`) and the comptime branch folding below drops the dead branch. Guarded
 repro: `repro/mi_matrix/console_builtin_test`.
+
+**F6 (2026-08-13) IMPLEMENTED the 11 socket builtins (`lir.zig:89-99`, `lower.zig:2880-2976`):**
+`@socketCreate`/`@socketBindListen`/`@socketAccept`/`@socketConnect`/`@socketSend`/
+`@socketRecv`/`@socketSelect`/`@socketFdZero`/`@socketFdSet`/`@socketFdIsset`/`@socketClose`
+emit the 11 `builtin_socket_*` LIR (phase-2 variants), lowering each call's value args to
+operand temps (fd = i32, port/backlog/len/timeout = u32; the select fd-sets are optional
+`?[*]u8` operands). The C emission ports net_runtime.c 1:1 (see 08 §6.9). Guarded repro:
+`repro/mi_matrix/net_builtin_test`.
 
 #### Comptime branch folding (F2, 2026-08-08) — `[updated: 2026-08-08]`
 

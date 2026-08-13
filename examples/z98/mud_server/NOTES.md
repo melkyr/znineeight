@@ -6,7 +6,10 @@
 
 **Working commit:** `bf5d3636`
 
-**MD5 (`--dump-c89`):** `3abbcd5cb21aa5b01cd849a02b4b20c0` [updated: 2026-08-13]
+**MD5 (`--dump-c89`):** `fd0fdaa42a419b0e72cfdb3226a54c4a` [updated: 2026-08-13]
+(Re-baselined 2026-08-13 F6 REVIEW: `emitSocketOptPtrValue` null-coalesce (commit `25fb7ce1`)
+changes the emitted `select` — optional fd args now `(NAME.has_value ? NAME.value : NULL)`.
+Previous `3abbcd5c…` (post-migration) stale. mud_server is NOT an MD5 gate per the operator.)
 (Re-baselined 2026-08-13 F6: the 12 `plat_*` externs + `plat_fd_set` in `main.zig` → `std_net`
 (local `std_net.zig` copy), `net_runtime.h` cInclude + `net_runtime.c` link REMOVED — the F6
 builtin-emitted socket C replaces it. Runtime output byte-identical to pre-F6 (verified by

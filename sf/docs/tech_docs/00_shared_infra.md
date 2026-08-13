@@ -292,7 +292,7 @@ C89 emitter must mirror for the planned std-lib builtins.
 |--------|------|--------|
 | `zig_pal.c` | `pal_print_stdout/stderr`, `pal_abort`, i64/u64/f64→str, `pal_file_open/write/close`. fd = `usize` (F-S9), `PlatFile` = `void*` Win / `int` POSIX, `PLAT_INVALID_FILE=((void*)-1)`. | NEW in sf |
 | `zig_runtime.c` | `std_print_*`/`std_panic` (forward to `pal_*`), checked-cast helpers, `__bootstrap_*` aliases. Platform-independent. | REWRITTEN from zig0 |
-| `net_runtime.c` | 12 `plat_socket_*` (WSAStartup/winsock.h vs sys/socket.h; `SOCKET` casts guarded). | inherited byte-identical from zig0 |
+| `net_runtime.c` | 12 `plat_socket_*` (WSAStartup/winsock.h vs sys/socket.h; `SOCKET` casts guarded). | inherited byte-identical from zig0; **[F6 2026-08-13: SUPERSEDED for migrated examples — the 11 socket builtins port the bodies into the emitter (see 08 §6.9); net_runtime.c link removed from mud_server/rogue_mud]** |
 
 Builtin → guard-chain map (zig0 proven patterns):
 - **print/write:** `_WIN32` `GetStdHandle(STD_OUTPUT_HANDLE)` → `WriteConsoleA`, fallback
