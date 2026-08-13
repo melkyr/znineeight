@@ -539,6 +539,11 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
        };
 }
 
+fn aggregateKeyword(kind: TypeKind) []const u8 {
+    if (kind == TypeKind.union_type) { var s: []const u8 = "union "; return s; }
+    var s: []const u8 = "struct "; return s;
+}
+
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (tid >= @intCast(u32, 20)) {
@@ -1127,7 +1132,8 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
                     dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
                 }
                 if (hash_mod.u32ToU32MapGet(&lfwd, dedup_key) == null) {
-                    var pre_s: []const u8 = "typedef struct "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    var pre_s: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    var pre_kw = aggregateKeyword(ty.kind); bufferedWriterWrite(&emitter.writer, pre_kw);
                     bufferedWriterWrite(&emitter.writer, cname);
                     var pre_s2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, pre_s2);
                     bufferedWriterWrite(&emitter.writer, cname);
@@ -1257,7 +1263,8 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
                     dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
                 }
                 if (hash_mod.u32ToU32MapGet(&emitter.fwd_decl_set, dedup_key) == null) {
-                    var pre_s: []const u8 = "typedef struct "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    var pre_s: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, pre_s);
+                    var pre_kw = aggregateKeyword(ty.kind); bufferedWriterWrite(&emitter.writer, pre_kw);
                     bufferedWriterWrite(&emitter.writer, cname);
                     var pre_s2: []const u8 = " "; bufferedWriterWrite(&emitter.writer, pre_s2);
                     bufferedWriterWrite(&emitter.writer, cname);
@@ -1533,7 +1540,7 @@ fn emitUnionType(emitter: *C89Emitter, tid: u32) void {
     var up = reg.un_items[@intCast(usize, ty.payload_idx)];
     var fstart: usize = @intCast(usize, up.fields_start);
     var fcount: usize = @intCast(usize, up.fields_count);
-    var es0a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, es0a);
+    var es0a = aggregateKeyword(ty.kind); bufferedWriterWrite(&emitter.writer, es0a);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var es0: []const u8 = " {\n"; bufferedWriterWrite(&emitter.writer, es0);
     var i: usize = @intCast(usize, 0);
