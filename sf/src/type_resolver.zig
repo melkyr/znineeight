@@ -343,6 +343,63 @@ fn requiresFullDef(kind: TypeKind) bool {
     return false;
 }
 
+fn layoutFieldNeedsEdge(kind: TypeKind) bool {
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.enum_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.optional_type) return true;
+    if (kind == TypeKind.error_union_type) return true;
+    return false;
+}
+
+fn layoutAddTypeEdge(self: *TypeResolver, field_type: u32, container_tid: u32) void {
+    if (field_type >= @intCast(u32, self.registry.types_len)) return;
+    var ft = self.registry.types_items[@intCast(usize, field_type)];
+    if (layoutFieldNeedsEdge(ft.kind)) {
+        typeResolverAddEdge(self, field_type, container_tid);
+    }
+}
+
+fn layoutAddFieldEdges(self: *TypeResolver, fstart: u16, fcount: u16, container_tid: u32) void {
+    var fi: usize = 0;
+    while (fi < @intCast(usize, fcount)) : (fi += 1) {
+        layoutAddTypeEdge(self, self.registry.fe_items[@intCast(usize, fstart) + fi].type_id, container_tid);
+    }
+}
+
+pub fn typeResolverBuildDependencyGraph(self: *TypeResolver) void {
+    var ti: usize = 0;
+    while (ti < self.registry.types_len) : (ti += 1) {
+        var ty = self.registry.types_items[ti];
+        var container_tid = @intCast(u32, ti);
+        if (ty.kind == TypeKind.struct_type) {
+            var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
+            layoutAddFieldEdges(self, sp.fields_start, sp.fields_count, container_tid);
+        } else if (ty.kind == TypeKind.tagged_union_type) {
+            var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+            layoutAddFieldEdges(self, tp.fields_start, tp.fields_count, container_tid);
+        } else if (ty.kind == TypeKind.union_type) {
+            var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+            layoutAddFieldEdges(self, up.fields_start, up.fields_count, container_tid);
+        } else if (ty.kind == TypeKind.array_type) {
+            layoutAddTypeEdge(self, self.registry.array_items[@intCast(usize, ty.payload_idx)].elem, container_tid);
+        } else if (ty.kind == TypeKind.tuple_type) {
+            var tp = self.registry.tup_items[@intCast(usize, ty.payload_idx)];
+            var ei: usize = 0;
+            while (ei < @intCast(usize, tp.elems_count)) : (ei += 1) {
+                layoutAddTypeEdge(self, self.registry.xt_items[@intCast(usize, tp.elems_start) + ei], container_tid);
+            }
+        } else if (ty.kind == TypeKind.optional_type) {
+            layoutAddTypeEdge(self, self.registry.opt_items[@intCast(usize, ty.payload_idx)].payload, container_tid);
+        } else if (ty.kind == TypeKind.error_union_type) {
+            layoutAddTypeEdge(self, self.registry.eu_items[@intCast(usize, ty.payload_idx)].payload, container_tid);
+        }
+    }
+}
+
 pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) ClassificationResult {
     var tl: usize = self.registry.types_len;
 

@@ -311,6 +311,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     const_alias_prepass.constAliasPrepass(ctx.symbol_reg, ctx.typereg, ctx.interner, ctx.store, &ctx.alloc.permanent);
     type_resolver.typeResolverResolveNames(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.resolved_types, ctx.module_reg, &ctx.alloc.permanent);
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
+    type_resolver.typeResolverBuildDependencyGraph(&tr);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
     var ptr_grp = type_resolver.classifyTypeEmissionGroups(&tr, &ctx.alloc.permanent);

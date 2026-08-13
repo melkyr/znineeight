@@ -1,4 +1,4 @@
-# 03 — Type Resolution [updated: 2026-08-08 — F7 line-ref re-verification (semantic_analyzer.zig:1290-1312 builtin_call, :1298-1301 @ptrToInt hoist, :529 resolveBitwise, :1727-1734 void-var error[3000]; lower.zig:2653-2657 @ptrToInt; type_resolver.zig:609-612 RTD/depth :610, evalConstU32Full :579-597); prior — F1 fix: @ptrToInt resolves to usize for single-arg calls; prior 2026-08-08 @ptrToInt-returns-argument-type (I1); 2026-08-06 va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; array-size mul/div/mod (F6)]
+# 03 — Type Resolution [updated: 2026-08-13 — Defect D FIXED (F5, layout dependency-graph ordering, operator ruling m0898 Option B: real `field_type -> container_tid` edges built after field-type resolution, `typeResolverBuildDependencyGraph`); prior — 2026-08-08 F7 line-ref re-verification (semantic_analyzer.zig:1290-1312 builtin_call, :1298-1301 @ptrToInt hoist, :529 resolveBitwise, :1727-1734 void-var error[3000]; lower.zig:2653-2657 @ptrToInt; type_resolver.zig:609-612 RTD/depth :610, evalConstU32Full :579-597); prior — F1 fix: @ptrToInt resolves to usize for single-arg calls; prior 2026-08-08 @ptrToInt-returns-argument-type (I1); 2026-08-06 va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; array-size mul/div/mod (F6)]
 
 ## Summary Table
 
@@ -200,7 +200,7 @@ Implicit coercion rules (`typeRegistryIsAssignable`, `type_registry.zig:794-890`
 
 ---
 
-## type_resolver.zig (`sf/src/type_resolver.zig`, 1075 lines)
+## type_resolver.zig (`sf/src/type_resolver.zig`, 1238 lines)
 
 Depends-on-graph topological sort and layout computation for all compound types. Also handles type expression resolution from AST nodes.
 
@@ -224,8 +224,12 @@ Depends-on-graph topological sort and layout computation for all compound types.
 | `worklistPop` | 84 | private | `[inference: return null if empty, decrement len, return worklist_items[len]]` | Pops a TypeId from the Kahn worklist (LIFO). |
 | `inDegreeEnsureCapacity` | 90 | private | `[inference: grow in_degree array to requested capacity (min 64), sandAlloc, update pointer and cap]` | Ensures the in_degree array is large enough for the given number of types. |
 | `alignUp` | 99 | private | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns value `v` up to alignment `a`. Used by typeResolverResolveLayout for struct/union/tagged_union layout. |
-| `typeResolverBuild` | 243 | pub | `[inference: copy dep edges, alloc in_degree array of size types_len, zero-init, count edges per target]` | Initializes in-degree array from dependency graph edges. Allocates `sorted_items` array (same size as types). |
+| `typeResolverBuild` | 243 | pub | `[inference: copy dep edges, alloc in_degree array of size types_len, zero-init, count edges per target]` | Initializes in-degree array from dependency graph edges (symbol_registrator DUMMY `0->tid` edges PLUS the real `field_type -> container_tid` edges added by `typeResolverBuildDependencyGraph`). Allocates `sorted_items` array (same size as types). |
 | `typeResolverResolve` | 268 | pub | `[inference: Kahn's algorithm — push zero-in-degree nodes, pop→resolveLayout→set state=2, decrement dependents' in-degree, push new zeros; detect circular deps]` | Topological sort + layout resolution. See [Kahn's Algorithm](#kahns-algorithm). |
+| `layoutFieldNeedsEdge` | 346 | private | `[inference: true for struct/tagged_union/union/enum/array/tuple/optional/error_union, false otherwise]` | The F5 embeds-by-value edge rule: kinds whose layout must be completed before the container's layout is computed. Pointer/slice/fn/error_set/primitive/void fields are always-resolved fixed-size → no edge (avoids false self-reference cycles). |
+| `layoutAddTypeEdge` | 358 | private | `[inference: if field_type < types_len and layoutFieldNeedsEdge(types_items[field_type].kind), typeResolverAddEdge(field_type, container_tid)]` | Adds one real `field_type -> container_tid` edge. Guards type_id bounds and skips non-embedding kinds. |
+| `layoutAddFieldEdges` | 366 | private | `[inference: for each FieldEntry in fe_items[fstart..fstart+fcount], layoutAddTypeEdge(fe.type_id, container_tid)]` | Adds edges for every field of a struct/union/tagged_union container. |
+| `typeResolverBuildDependencyGraph` | 373 | pub | `[inference: iterate all types; for struct/tagged_union/union containers call layoutAddFieldEdges over their fields, for array/tuple/optional/error_union add the elem/payload edge via layoutAddTypeEdge]` | **Defect D fix (F5, m0898 Option B).** Builds the REAL layout dependency graph from the now-resolved field type_ids, so the Kahn topological sort lays every field's type out BEFORE the container struct. Mirrors `fieldEmbedsByValue`(:324)/`requiresFullDef`(:335) semantics. Called from `phase_TypeResolution` (main.zig) AFTER `typeResolverResolveNames` (field types resolved by `resolveAggregateFieldTypesAll`) and BEFORE `typeResolverBuild`/`typeResolverResolve`. |
 | `typeResolverResolveLayout` | 103 | private | `[inference: switch on kind, compute size/alignment, update Type in registry]` | Computes size/alignment for a single type. See [Layout Resolution](#layout-resolution). |
 | `varDeclInitNeedsNameCache` | 937 | private | `[inference: return false for struct/union/enum/error_set/ident/import/fn decl, true otherwise]` | Filters var_decl init types that need name_cache registration. Used by resolveNamedTypeExpressions. |
 | `typeResolverGetSorted` | 553 | pub | `[inference: return sorted_items[0..sorted_len]]` | Returns topological order slice. |
@@ -275,6 +279,46 @@ Phase 3 — Cycle detection:
 | **error_union_type** | `union_sz = max(pt.size, 4)`, `union_align = max(pt.alignment, 4)`. `total = alignUp(alignUp(union_sz, union_align), 4) + 4`. `size = alignUp(total, union_align)`. |
 | **array_type** | `size = elem.size * length`, `alignment = elem.alignment`. |
 | **tuple_type** | Same as struct: sequential layout. `size = alignUp(offset, max_align)` (min 1). |
+
+### Defect D — layout dependency graph ordering (FIXED, F5, m0898 Option B)
+
+**[updated: 2026-08-13] FIXED.** Root cause: the dependency graph driving the layout
+topological sort carried only DUMMY edges — `symbol_registrator.zig:78`
+(`addTypeDependencies`) adds `0 -> tid` for every field, never `field_type -> tid`, because at
+symbol-registration time field `type_id`s are still `TYPE_VOID` placeholders. The real field
+types get resolved LATER (`resolveAggregateFieldTypesAll`, type_resolver.zig:1179 / per-decl
+`:927-989`). So the LIFO worklist popped a container struct BEFORE its union/enum field types
+were sized → `typeResolverResolveLayout` (:104) read `size=0`/`align=0` for the field →
+`alignUp(0,0)=0` → the `size==0 → 1/1` clamp (:130) → `@sizeOf`/`@alignOf` folded 1/1
+(comptime_eval.zig:120/129) for any struct with a by-value union field (e.g. lisp `Value`,
+json `JsonValue`).
+
+Fix (general, ordering-only): **build the real graph after field types are resolved.** New
+`typeResolverBuildDependencyGraph` (type_resolver.zig:373) adds a real `field_type ->
+container_tid` edge for every field that **embeds by value** — the F5 edge rule
+(`layoutFieldNeedsEdge` :346): struct/tagged_union/union/enum/array/tuple/optional/error_union.
+Pointer/slice/fn/error_set/primitive/void fields are always-resolved fixed-size → no edge (a
+pointer field would otherwise create a false self-reference cycle for `struct Node { next: *Node }`).
+The Kahn pass (`typeResolverResolve` :269, cycle guard :307-321) then guarantees every field type is
+laid out before its container. `phase_TypeResolution` (main.zig:313-314) calls it AFTER
+`typeResolverResolveNames` (:312, which runs `resolveAggregateFieldTypesAll`) and BEFORE
+`typeResolverBuild` (:314)/`typeResolverResolve` (:315).
+
+Verified: `repro/mi_matrix/sizeof_struct_union_xmod` prints **`24`** (was `2`; zig0 oracle
+`24`), `xmod_amp_arena_union_store` `@sizeOf(S)` emits **16** (was 1/1), struct-before-enum and
+pointer/optional-of-pointer self-reference no-cycle cases correct, `self_embed_optional_cycle`
+still correctly rejected (`error` circular-type-dep, no hang/ICE), F1/F2/F4 repros still green
+(42/1/4243/78), 4 MD5 gates byte-identical, corpus OK=238/FAIL=3/GREEN=4 over 245 dirs (no new
+FAIL). The readers (comptime_eval.zig:120/129), layout math (:104-224), and C emitter needed NO
+change.
+
+**Surfaced follow-up (NOT this fix):** a plain untagged `union` is emitted as a C `struct` with
+all variants stacked (c89_emit `ZIG_UNION_` guard, `struct` body) while its layout uses the
+max-member model — e.g. lisp_interpreter `ValueData` emits 32 bytes (Value C struct 36) but
+`@sizeOf(Value)=16`. `lisp_interpreter` (pre-existing Defect-D family) consequently still
+corrupts its arena once eval actually runs (`(+ 1 2)` SEGFAULT post-fix vs silent-fail pre-fix).
+Tracked for the F3 closeout / union-emission task; `lisp_interpreter_curr` (tagged union) is
+unaffected.
 
 ### classifyTypeEmissionGroups
 
@@ -459,8 +503,14 @@ phase_TypeResolution (main.zig)
     ├─ typeResolverInit (type_resolver.zig:226)
     │   └─ zero init
     │
+    ├─ typeResolverBuildDependencyGraph (type_resolver.zig:373)   [Defect D fix, F5]
+    │   ├─ iterate all types
+    │   ├─ struct/tagged_union/union → layoutAddFieldEdges (real field_type -> container)
+    │   ├─ array/tuple → elem edge; optional/error_union → payload edge
+    │   └─ skips pointer/slice/fn/error_set/primitive/void fields (embeds-by-value rule)
+    │
     ├─ typeResolverBuild (type_resolver.zig:244)
-    │   ├─ copy DepGraph edges from symbol_registrator
+    │   ├─ copy DepGraph edges from symbol_registrator (dummy 0->tid) + real F5 edges
     │   ├─ alloc sorted_items[0..types_len]
     │   ├─ alloc in_degree_items[0..types_len]
     │   └─ count edges per target type
@@ -651,6 +701,8 @@ To trace a specific TypeId through the pipeline:
 4. **Depth limit in resolveTypeExprFull** (type_resolver.zig:610): Hardcoded max depth of 16. Deeply nested type expressions will silently return `TYPE_UNDEFINED`.
 
 5. **evalConstU32Full fallback ambiguity** (type_resolver.zig:579-597): `0xFFFFFFFF` return value is both a valid u32 and the sentinel for uncomputable. Cannot distinguish "zero-sized array length 0xFFFFFFFF" from "failed to evaluate".
+
+7. **SURFACED (2026-08-13, F5): plain untagged `union` layout vs C emission mismatch.** A bare `union` layout uses the max-member model (`typeResolverResolveLayout` union branch, `size = alignUp(max_sz, max_align)`), but c89_emit emits a plain union as a C `struct` with ALL variants stacked (e.g. lisp_interpreter `ValueData` → 32-byte C struct) — so a union-holding struct's `@sizeOf` can under-size the emitted C struct, overflowing arena bump-alloc slots. Pre-fix masked by the Defect D 1/1 clamp; post-F5 `lisp_interpreter` `(+ 1 2)` SEGFAULTs (was silent fail) because eval now runs against the still-mismatched Value size. Tagged unions are unaffected (emitted correctly). Tracked for the F3 closeout / union-emission task.
 
 6. **FIXED (2026-08-08, F1): `@ptrToInt` now resolves to `usize` for single-arg calls.** The `builtin_call` resolver (semantic_analyzer.zig:1290-1312) had the `@ptrToInt → TYPE_USIZE` branch nested *inside* the `ec.len >= 2` guard, making it dead code for the single-arg `@ptrToInt(x)` form — the call fell through to the `ec.len >= 1` branch and returned the *argument's* type (a pointer). An untyped `const current_pos = @ptrToInt(ptr);` was typed as the pointer, and a following `(current_pos + mask) & ~mask` chain failed `semanticAnalyzerResolveBitwise` (both operands must be equal integer types; semantic_analyzer.zig:529) → const init resolved to `TYPE_VOID` → `error[3000]` (semantic_analyzer.zig:1727-1734, the void-var rejection emits at :1734). Fix: the `ptrtoint_name_id` check is now hoisted above the `ec.len` dispatch (semantic_analyzer.zig:1298-1301), mirroring the lowerer's already-correct handling (lower.zig:2653-2657):
    - `if (node.child_0 == self.ptrtoint_name_id) { if (ec.len >= 1) _ = semanticAnalyzerResolveExpr(self, ec[0]); result = type_mod.TYPE_USIZE; }`
