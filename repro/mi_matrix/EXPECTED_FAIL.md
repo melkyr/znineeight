@@ -1659,7 +1659,9 @@ F4 removed the 6 example-facing `__bootstrap_*` I/O wrappers (`__bootstrap_print
 `__bootstrap_print_int`, `__bootstrap_print_char`, `__bootstrap_panic`, `__bootstrap_write`,
 `__bootstrap_sleep_ms`) from `zig_runtime.c`/`.h`. Corpus repros still declaring
 `extern fn __bootstrap_print*` therefore no longer LINK (`undefined reference to
-__bootstrap_print*`). **48 repro main.zig files migrated** off the extern to `std.io`
+__bootstrap_print*`). **47 repro .zig files migrated** (44 `main.zig` + 2 `main_green.zig`
++ 1 `io.zig`; `field_store_drop` left unmigrated — compile-only FAIL, `error[3048]` on
+`@import("pal")`, std-lib-deferred) off the extern to `std.io`
 (`std.io.print` / `std.io.printInt` / `std.io.write`), each with **byte-identical local
 `std.zig` + `std_io.zig` copies** (the F3 std_arena per-example-copy precedent, D1). The local
 `std.zig` is the reduced `io`-only root package (omits the `arena`/`debug` re-exports — see the
@@ -1695,6 +1697,17 @@ would land at instance ≥ 1 (mud_server, and the 48 migrated corpus repros). **
 follow-up** — a future compiler task must fix the instance-suffix application for
 function-signature type refs (or defer std_arena to instance 0). See the F4 stdlib report
 concern 2 / DEVIATION D2 (`.superpowers/sdd/task-F4-stdlib-report.md`).
+
+## printInt INT_MIN overflow tracking (Minor, out of F4 scope)
+
+**Pre-existing minor defect (verified in the F4 stdlib review):** `std_io.zig`'s `printInt`
+uses `v = @intCast(u32, 0 - n)` for negatives. This is correct for all i32 values EXCEPT
+`INT_MIN` (`0 - INT_MIN` overflows i32 → panic rc=134). The suggested `0 - @intCast(u32, n)`
+was rejected in testing: this compiler's `@intCast(u32, negative)` panics, breaking the working
+`-5` case (`comptime_neg_int`). **No example or repro prints INT_MIN.** File as a documented
+follow-up: fix requires i64-widened negation (`@intCast(u32, 0 - @intCast(i64, n))`) or a
+division-based magnitude loop — deferred, not an F4 defect.
+
 
 ## Follow-ups (multi-module fixes plan) — NOT fixed here
 

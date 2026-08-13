@@ -6,5 +6,3 @@ const x: i32 = getInit();
 pub fn main() void {
     std.io.printInt(x);
 }
-x);
-}
