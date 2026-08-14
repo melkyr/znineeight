@@ -516,6 +516,37 @@ Combined: 14 MB static BSS (DEV_MAX_MEM=RELEASE_MAX_MEM=16 MB)
 > operator ruling. See `.superpowers/sdd/I-arena-sizing-report.md` +
 > `.superpowers/sdd/task-F5-rogue-report.md`.
 
+> **I-M1 peak map + OOM arithmetic `[updated: 2026-08-14]`** (measured on
+> `/tmp/fx_subfolder/zig1`, see `.superpowers/sdd/I-M1-peakmap-report.md`):
+>
+> Per-phase cumulative peaks (rogue_mud, `--max-mem` sweep forcing
+> `checkCombinedPeak` at `main.zig:200/205/208/214/222/228/234`; perm/mod/scr/total in KB):
+>
+> | after | perm | mod | scr | total |
+> |-------|------|-----|-----|-------|
+> | ImportResolution | 152 | 459 | 208 | 819 |
+> | SymbolRegistration | 177 | 485 | 208 | 870 |
+> | TypeResolution | 177 | 485 | 208 | 870 |
+> | StaticAnalyzers (+comptime+sema) | 177 | 777 | 0* | 954 |
+> | LIRLowering | 177 | 803 | 1177 | 2157 |
+> | C89Emission (final) | 239 | 803 | 1433 | 2475 |
+>
+> \* scr=0K is a measurement artifact: `phase_StaticAnalyzers` calls
+> `sandResetPeak` (`main.zig:518`) plus per-function `sandResetPeak`
+> (`analyzer.zig:819`), zeroing the scratch high-water, so the final
+> `--track-memory` `scr=` reflects only LIR+C89 scratch (not import/analyzer).
+>
+> **OOM arithmetic (why the 2 MB scratch cap breaks the largest module):**
+> `c89_emit.zig` standalone → `OOM: used=1919196 new=3492060 total=2097152`.
+> Failing alloc = `3492060 − 1919196 = 1,572,864 B = 65,536 × 24` (token-array
+> 32768→65536 doubling; `Token` = 24 B, `token.zig:115-123`). Cumulative prior
+> token arrays Σ(cap 64..32768) = 1,571,328 B + source 345,811 B ≈ 1,919,196 B
+> (`used`); total needed 3,492,060 B (`new`) vs 2,097,152 B cap → shortfall
+> ≈1.40 MB. Under the current 2×-growth/no-free token array the largest file
+> needs **≈3.5 MB scratch** (Σ cap 64..65536 = 3,144,192 B + source), i.e. the
+> scratch cap must grow past 2 MB (or the token array must stop leaking old
+> copies) before self-compile can finish import.
+
 ### Who Allocates Where
 
 | Arena | Contents | Reset Behavior |
