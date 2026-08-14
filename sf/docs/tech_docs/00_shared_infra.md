@@ -723,3 +723,47 @@ the module-arena `ctx.dep_graph` field is dead (never populated).
 `sandReallocInPlace` at the arena tail) — the single change that unblocks self-compile import;
 pre-size AST `nodes`; reset scratch per LIR function; pre-size interner buckets; measure the
 type_db 128 KB peak.
+
+---
+
+## Fix Model + Projected Footprint (I-M3) [updated: 2026-08-14]
+
+> Full report: `.superpowers/sdd/I-M3-fixmodel-report.md`. **Model only — zero `sf/src/` changes.**
+
+**Verdict:** self-compile **fits in 16 MB** (memory-only) with **~8 MB margin** on the
+combined-peak basis, under the recommended fix set (F1 token array + F2 AST pre-size + F3
+per-function LIR scratch reset + F5 arena re-size). The current failure is **not** the 16 MB
+budget — it is the **2 MB scratch cap** exceeded by the token array's 2× copy-into-bump growth
+(`c89_emit.zig` needs ≈3.49 MB scratch vs 2 MB cap, shortfall ≈1.40 MB).
+
+**Per-fix model (saving = arena bytes on the 24,790-line self-compile closure; MB decimal):**
+
+| # | Fix | Saving | Complexity | Note |
+|---|---|---|---|---|
+| F1 | Two-pass token count → exact-size token array (`import_resolver.zig:16-47`) | ~1.57 MB scratch | LOW-MED | **Closes the binding OOM**; import scratch 3,490,003 B → 1,918,675 B (~174 KB margin) |
+| F1′ | `sandReallocInPlace` grow-in-place (`allocator.zig:55-65`) | ~1.57 MB scratch | MED | Same saving, single-pass; fragile (string_buf interleaves, needs tail-guard) |
+| F2 | Pre-size AST store nodes/extra_children (`ast.zig:127-210`) | ~2.5 MB module | MED | module 7.3 MB → ~4.5 MB; removes the only other near-cap arena |
+| F3 | Reset scratch per LIR function (`lower.zig:5197-5200`, `main.zig:567`) | ~0.5–1 MB scratch | MED | Bounds unmeasured later-phase LIR scratch |
+| F4 | Read source into perm (no scratch→perm double copy) | ~345 KB transient | LOW-MED | Low value (transient) |
+| F5 | Shrink module arena 8→6 MB (`allocator.zig:75`) | ~2 MB static BSS | LOW | RAM-budget win; **gated on F2 first** |
+| F6 | Pre-size interner buckets (`string_interner.zig:136-153`) | ~50–100 KB perm | LOW | Stops rehash leak |
+| F7 | Reuse/enlarge parser arena (`import_resolver.zig:48`) | 0 (stack) | LOW-MED | Correctness only (4096-B overflow) |
+
+**Projected footprint (perm / module / scratch-import / combined-live):**
+
+| Scenario | perm | module | scratch | combined | 16 MB |
+|---|---|---|---|---|---|
+| (a) no fixes | ~1.5 MB (unreached) | ~4.2 MB (unreached) | **OOM @ 2 MB** | — | FAIL |
+| (b1) F1 only | ~1.5 MB | ~7.3 MB | ~1.92 MB | ~10.7 MB | PASS (~5 MB margin; module 0.7 MB from cap) |
+| (b2) F2 only | ~1.5 MB | ~4.5 MB | **OOM @ 2 MB** | — | FAIL |
+| (c) F1+F2+F3 | ~1.5 MB | ~4.5 MB | ~1.92 MB | **~7.9 MB** | **PASS (~8 MB margin)** |
+
+**Budget re-examination flag:** 16 MB does **not** need raising. The 14 MB **static BSS** is the
+real 16 MB-RAM risk (2 MB left for code + C runtime + stack). After F1+F2 the live combined peak
+is ~7.9 MB, so the arenas are ~6 MB over-provisioned; re-size them down (F5) rather than raise
+`DEV_MAX_MEM`. Also note `checkCombinedPeak` cannot trip as written (sum of peaks ≤ 14 MB static
+< 16 MB), so the 16 MB limit is only meaningful at the physical-RAM level.
+
+**Separate blocker (out of memory-model scope):** the parser ASan
+`parserParseUnionType` stack-buffer-overflow aborts self-compile *before* the OOM; the 16 MB
+verdict is memory-only and untestable end-to-end until that correctness bug is ruled separately.
