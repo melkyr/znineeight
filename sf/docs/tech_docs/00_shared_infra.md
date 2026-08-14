@@ -1,4 +1,4 @@
-# 00 — Shared Infrastructure [updated: 2026-08-08 — F4 std-lib: `sf/src/std.zig` (root package re-exporting `io`/`arena`) + `sf/src/std_io.zig` created; `zig_runtime.c`/`.h` cleaned of the 6 example-facing `__bootstrap_*` I/O wrappers (cast helpers repointed `__bootstrap_panic` → `std_panic`, m0564); prior 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget); F7 line-ref re-verification (main.zig:147 interner, :155-157 type_db, :506-507 StaticAnalyzers sandResetPeak, :158 AstStore)]
+# 00 — Shared Infrastructure [updated: 2026-08-14 — F-TOKEN+F-SOURCE: module source read directly into perm (no scratch→perm double materialize); sourceManagerAddFile takes ownership of the perm-backed content slice; line_offsets pre-allocated exactly (line_count+1, no heuristic doubling); prior 2026-08-08 — F4 std-lib: `sf/src/std.zig` (root package re-exporting `io`/`arena`) + `sf/src/std_io.zig` created; `zig_runtime.c`/`.h` cleaned of the 6 example-facing `__bootstrap_*` I/O wrappers (cast helpers repointed `__bootstrap_panic` → `std_panic`, m0564); prior 2026-08-08 — arena resize F5 (perm 4M/mod 8M/scr 2M, 16M budget); F7 line-ref re-verification (main.zig:147 interner, :155-157 type_db, :506-507 StaticAnalyzers sandResetPeak, :158 AstStore)]
 
 > Covers: allocator, string interner, diagnostics, source manager, PAL, growable arrays, panic handler, utility modules
 > Cross-ref: [INDEX.md](INDEX.md) §G (arena tier table)
@@ -211,12 +211,12 @@ diagnosticCollectorPrintAll:
 | `sourceFileArrayListAppend` | 44 | prv | Append `SourceFile` to array. | `sourceManagerAddFile` | `sourceFileArrayListEnsureCapacity` | items, len | Standard append. | None [inference] |
 | `sourceFileArrayListGetSlice` | 50 | prv | Return source files as `[]SourceFile`. | `sourceManagerGetFileName`, `sourceManagerGetSourceContent`, `sourceManagerGetLineOffsets`, `sourceManagerGetLocation` | (none) | items, len | Slice of live data. | None [inference] |
 | `sourceManagerInit` | 65 | pub | Init SourceManager. Allocates `SourceFileArrayList` on arena (16 bytes, 4-aligned). | `main.zig` setup | `alloc_mod.sandAlloc`, `sourceFileArrayListInit` | SourceManager | Same heap-alloc pattern as DiagnosticCollector. | None [inference] |
-| `sourceManagerAddFile` | 75 | pub | Add a source file. Copies filename and content to arena. Pre-allocates line offsets (`content.len/40 + 16`, min 64). Appends 0 as first offset. Scans content for `\n`, appends `i+1` for each. Appends `SourceFile`. Returns file_id (1-based). | parser / import resolution | `sourceManagerCopyToArena`, `util_mod.max`, `alloc_mod.sandAlloc`, `ga_mod.u32ArrayListInit`, `ga_mod.u32ArrayListEnsureCapacity`, `ga_mod.u32ArrayListAppend`, `sourceFileArrayListAppend` | SourceFile, filename arena copy, content arena copy, line_offsets array | file_id = files.len (1-based, 0 reserved as null). Line offset heuristic: content.len/40 + 16. Manual `\n` scan. | None [inference] |
+| `sourceManagerAddFile` | 75 | pub | Add a source file. Copies the filename to the arena; takes ownership of the caller's perm-backed `content` slice (no copy — the module source is read directly into perm by `import_resolver.zig:87`). Pre-allocates line offsets exactly (`line_count+1`, min 64, from a pre-count pass). Appends 0 as first offset. Scans content for `\n`, appends `i+1` for each. Appends `SourceFile`. Returns file_id (1-based). | parser / import resolution | `sourceManagerCopyToArena`, `alloc_mod.sandAlloc`, `ga_mod.u32ArrayListInit`, `ga_mod.u32ArrayListEnsureCapacity`, `ga_mod.u32ArrayListAppend`, `sourceFileArrayListAppend` | SourceFile, filename arena copy, content (caller perm slice), line_offsets array | file_id = files.len (1-based, 0 reserved as null). Line offsets pre-allocated exactly (no heuristic/×2 doubling). **[updated: 2026-08-14 — F-TOKEN+F-SOURCE]** | None [inference] |
 | `sourceManagerGetFileName` | 103 | pub | Get filename by file_id (1-based). Returns `""` for id=0 or empty files. Clamps oversized file_id to 1. | `diagnosticCollectorPrintAll` | `sourceFileArrayListGetSlice` | SourceFile array | 0 = null file, returns "". Clamp prevents OOB on corrupted file_id. | None [inference] |
 | `sourceManagerGetSourceContent` | 112 | pub | Get source content by file_id. Same null/clamp logic as GetFileName. | `diagnosticCollectorPrintAll` | `sourceFileArrayListGetSlice` | SourceFile array | Same pattern. | None [inference] |
 | `sourceManagerGetLineOffsets` | 121 | pub | Get line offsets array by file_id. Same null/clamp logic. | `diagnosticCollectorPrintAll` | `sourceFileArrayListGetSlice`, `ga_mod.u32ArrayListGetSlice` | line_offsets | Returns `[]u32` directly. | None [inference] |
 | `sourceManagerGetLocation` | 130 | pub | Convert byte offset → `Location{file_id, line, col}`. Binary search line offsets for containing line. `line = line_idx + 1`, `col = offset - offsets[line_idx]`. Returns `{0,0,0}` for null file_id. | `diagnosticCollectorPrintAll` | `sourceFileArrayListGetSlice`, `ga_mod.u32ArrayListGetSlice`, `mem_mod.binary_search` | SourceFile, line_offsets | binary_search returns index where offsets[i] <= target. Line = index + 1 (1-based). Col = offset - line_start. | None [inference] |
-| `sourceManagerCopyToArena` | 151 | prv | Copy byte slice to arena (alignment=1). Returns raw ptr. Undefined for empty slices. | `sourceManagerAddFile` | `alloc_mod.sandAlloc` | arena | Same pattern as `stringInternerCopyToArena`. | None [inference] |
+| `sourceManagerCopyToArena` | 151 | prv | Copy byte slice to arena (alignment=1). Returns raw ptr. Undefined for empty slices. **Now used only for the filename** — content is no longer copied (takes ownership of the perm-backed slice). | `sourceManagerAddFile` | `alloc_mod.sandAlloc` | arena | Same pattern as `stringInternerCopyToArena`. **[updated: 2026-08-14 — F-TOKEN+F-SOURCE]** | None [inference] |
 
 ### Data Flow — Source Management
 
@@ -262,7 +262,7 @@ undefined `isize` in the old macro was removed — any `_WIN32` compile was a pr
 
 | Function | Line | Vis. | Purpose | Called By | Calls | Data Touched | Key Decisions | Markers |
 |----------|------|------|---------|-----------|-------|-------------|---------------|---------|
-| `readFile` | 19 | pub | Read entire file into arena memory. Copies path to null-terminated C buffer (max 511 bytes). Opens with `fopen` ("rb"), seeks to end for size, allocates arena buffer, reads content. Returns `?[]u8`. | parser / import resolver, main.zig root check (F-S10) | `fopen`, `fseek`, `ftell`, `fclose`, `fread`, `sandAlloc` | Sand arena, file system | Max path 511 bytes. Binary read. Arena allocation freed only by reset. OOM returns null (not panic). Null covers missing, empty (`ftell <= 0`), and oversize paths indistinguishably. | None [inference] |
+| `readFile` | 19 | pub | Read entire file into arena memory. Copies path to null-terminated C buffer (max 511 bytes). Opens with `fopen` ("rb"), seeks to end for size, allocates arena buffer, reads content. Returns `?[]u8`. | import resolver (module source, `import_resolver.zig:87` — reads into the perm arena `reg.alloc`), main.zig root check (F-S10) | `fopen`, `fseek`, `ftell`, `fclose`, `fread`, `sandAlloc` | Sand arena, file system | Max path 511 bytes. Binary read. Arena allocation freed only by reset. OOM returns null (not panic). Null covers missing, empty (`ftell <= 0`), and oversize paths indistinguishably. **Module source is read directly into perm (was scratch) so the source manager can take ownership without a scratch→perm copy — removes the 345–349 KB scratch transient per module. [updated: 2026-08-14 — F-TOKEN+F-SOURCE]** | None [inference] |
 | `fileExists` | 48 | pub | Check if file exists by attempting `fopen("rb")`. Returns bool. Max path 511 bytes. | import resolution | `fopen`, `fclose` | file system | Opens and closes; no memory allocation. Returns true for empty files (can't distinguish empty). | None [inference] |
 | `fileOpen` | 72 | pub | Open/create/truncate a file for writing, return `usize` fd (`pal_file_open`). | `phase_C89Emission` multi-module branch | `pal_file_open` | file system | Returns `INVALID_FD` on failure (`pal.zig:79`); path capped 511 bytes. `flags` stays `i32`. | None [inference] |
 | `fileWrite` | 84 | pub | Write bytes to fd via `pal_file_write(fd: usize, …)`. | `bufferedWriterFlush` | `pal_file_write` | file system | fd is `usize` (F-S9). | None [inference] |
@@ -546,6 +546,25 @@ Combined: 14 MB static BSS (DEV_MAX_MEM=RELEASE_MAX_MEM=16 MB)
 > needs **≈3.5 MB scratch** (Σ cap 64..65536 = 3,144,192 B + source), i.e. the
 > scratch cap must grow past 2 MB (or the token array must stop leaking old
 > copies) before self-compile can finish import.
+>
+> **F-TOKEN+F-SOURCE closure `[updated: 2026-08-14]`** — the import scratch OOM is **closed** by two
+> combined changes (`import_resolver.zig` + `lexer.zig` + `source_manager.zig`):
+>
+> 1. **Two-pass exact-size token array** (`moduleRegistryParseModule`): a `count_only` lexer pass
+>    (suppresses **all** diagnostics, interning, and `string_buf` writes) counts the tokens, then the
+>    array is `sandAlloc`'d at exactly `token_count × 24` B, then a second pass lexes into it. No ×2
+>    doubling, no dead copies. (`Lexer.count_only` — `lexer.zig`.)
+> 2. **Source read directly into perm** (`moduleRegistryResolveImports` `readFile(path_s, reg.alloc)`,
+>    i.e. perm instead of scratch) and `sourceManagerAddFile` **takes ownership** of the perm-backed
+>    slice instead of copying it into perm. Removes the 345–349 KB in-scratch source transient.
+>
+> Result: `c89_emit.zig` (73,912 tokens → 1,773,888 B exact array) and `lower.zig` (79,606 tokens →
+> 1,910,544 B) no longer OOM scratch; the import scratch burst is eliminated. The **next** OOM for
+> `c89_emit`/`lower` is the **parser's 4 KB stack arena** (`p_arena_buf: [4096]u8`,
+> `import_resolver.zig:48`) — `OOM: used=2976 new=5024 total=4096` (c89_emit) / `used=2496 new=4544`
+> (lower) — a pre-existing, previously-masked limit (F-PARSEARENA, out of this task's scope).
+> rogue_mud `--track-memory` after: `perm=234K mod=803K scr=1433K total=2470K` (perm was 239K —
+> source no longer double-materialized + exact line_offsets).
 
 ### Who Allocates Where
 

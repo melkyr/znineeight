@@ -75,11 +75,13 @@ pub fn sourceManagerInit(allocator: *Sand) SourceManager {
 pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content: []const u8) u32 {
     var fname_raw = sourceManagerCopyToArena(self, filename);
     var fname_copy = fname_raw[0..filename.len];
-    var content_raw = sourceManagerCopyToArena(self, content);
-    var content_copy = content_raw[0..content.len];
 
-    var hint: usize = content.len / 40 + 16;
-    var cap = util_mod.max(@intCast(u32, hint), 64);
+    var line_count: u32 = @intCast(u32, 0);
+    for (content) |c| {
+        if (c == '\n') { line_count += 1; }
+    }
+    var cap: u32 = line_count + 1;
+    if (cap < 64) cap = 64;
     var lo_raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var lo_ptr = @ptrCast(*U32ArrayList, lo_raw);
     lo_ptr.* = ga_mod.u32ArrayListInit(self.allocator);
@@ -94,7 +96,7 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
 
     sourceFileArrayListAppend(self.files, SourceFile{
         .filename = fname_copy,
-        .content = content_copy,
+        .content = content,
         .line_offsets = lo_ptr,
     });
     return @intCast(u32, self.files.len);

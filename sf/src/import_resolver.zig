@@ -13,37 +13,28 @@ const itoa_mod = @import("util/itoa.zig");
 const sm_mod = @import("source_manager.zig");
 const AstKind = @import("ast.zig").AstKind;
 
-fn tokenArrayEnsureCapacity(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
-    if (new_cap <= cap.*) return;
-    var nc = new_cap;
-    if (nc < cap.* * 2) nc = cap.* * 2;
-    if (nc < @intCast(usize, 64)) nc = @intCast(usize, 64);
-    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(Token)) * nc, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]Token, raw);
-    for (items.*[0..len.*]) |item, i| { new_items[i] = item; }
-    items.* = new_items;
-    cap.* = nc;
-}
-
-fn tokenArrayAppend(items: *[*]Token, len: *usize, cap: *usize, alloc: *Sand, value: Token) void {
-    tokenArrayEnsureCapacity(items, len, cap, alloc, len.* + 1);
-    items.*[len.*] = value;
-    len.* += 1;
-}
-
 fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) ?u32 {
     var path_s = interner_mod.stringInternerGet(reg.interner, reg.modules.items[mod_id].path_id);
     var file_id = sm_mod.sourceManagerAddFile(reg.source_man, path_s, content);
     reg.modules.items[mod_id].source_file_id = file_id;
 
-    var tok_items: [*]Token = undefined;
-    var tok_len: usize = 0;
-    var tok_cap: usize = 0;
-    var lex = lexer_mod.lexerInit(content, file_id, reg.interner, reg.diag, scratch);
+    var token_count: usize = 0;
+    var lex1 = lexer_mod.lexerInit(content, file_id, reg.interner, reg.diag, scratch);
+    lex1.count_only = true;
     while (true) {
-        var t = lexer_mod.lexerNextToken(&lex);
-        tokenArrayAppend(&tok_items, &tok_len, &tok_cap, scratch, t);
-        if (t.kind == TokenKind.eof) break;
+        var t1 = lexer_mod.lexerNextToken(&lex1);
+        token_count += 1;
+        if (t1.kind == TokenKind.eof) break;
+    }
+    var raw = alloc_mod.sandAlloc(scratch, @intCast(usize, @sizeOf(Token)) * token_count, @intCast(usize, 4)) catch return null;
+    var tok_items = @ptrCast([*]Token, raw);
+    var lex2 = lexer_mod.lexerInit(content, file_id, reg.interner, reg.diag, scratch);
+    var tok_len: usize = 0;
+    while (true) {
+        var t2 = lexer_mod.lexerNextToken(&lex2);
+        tok_items[tok_len] = t2;
+        tok_len += 1;
+        if (t2.kind == TokenKind.eof) break;
     }
     var p_arena_buf: [4096]u8 = undefined;
     var p_arena = alloc_mod.sandInit(p_arena_buf[0..]);
@@ -93,7 +84,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             reg.modules.items[mod_id] = entry;
 
             var path_s = interner_mod.stringInternerGet(reg.interner, entry.path_id);
-            var content = pal_mod.readFile(path_s, scratch) orelse {
+            var content = pal_mod.readFile(path_s, reg.alloc) orelse {
                 var p1: []const u8 = "could not read imported file '";
                 var p2: []const u8 = "'";
                 var parts: [3][]const u8 = [3][]const u8{ p1, path_s, p2 };

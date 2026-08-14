@@ -1,4 +1,4 @@
-# 00 — Lexer & Parser [updated: 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
+# 00 — Lexer & Parser [updated: 2026-08-14 — F-TOKEN: two-pass exact-size token array (count_only lexer pass suppresses diagnostics/intern/string_buf); prior 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
 
 ## Summary Table
 
@@ -355,6 +355,18 @@ Token array ([]Token)
     ▼
 AST tree (root node index = module_root node)
 ```
+
+> **Two-pass exact-size token array `[updated: 2026-08-14 — F-TOKEN]`** — `moduleRegistryParseModule`
+> (`import_resolver.zig:21-38`) lexes each module twice: PASS 1 is a **count-only** lexer pass
+> (`Lexer.count_only = true`, `lexer.zig`) that suppresses **all** diagnostics, interning, and
+> `string_buf` writes (it is a pure token count; PASS 2 then performs every side effect in exactly
+> the pre-change source order, so output stays byte-identical); the token array is then `sandAlloc`'d
+> at exactly `token_count × 24` B (no ×2 doubling, no dead bump copies). The module source is read
+> directly into the perm arena (`import_resolver.zig:87`, `readFile(path_s, reg.alloc)`) and the
+> source manager takes ownership of that slice (no scratch→perm copy), removing the in-scratch source
+> transient. Together these close the import scratch OOM (c89_emit.zig 73,912 tokens → 1,773,888 B
+> exact array; lower.zig 79,606 → 1,910,544 B). The remaining OOM for those two modules is the
+> parser's fixed 4 KB arena (`p_arena_buf`, `import_resolver.zig:48`) — F-PARSEARENA scope.
 
 ---
 

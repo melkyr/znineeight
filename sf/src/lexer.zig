@@ -24,6 +24,7 @@ pub const Lexer = struct {
     interner: *StringInterner,
     diag: *DiagnosticCollector,
     string_buf: *U8ArrayList,
+    count_only: bool,
 };
 
 pub fn lexerInit(source: []const u8, file_id: u32, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Lexer {
@@ -39,6 +40,7 @@ pub fn lexerInit(source: []const u8, file_id: u32, interner: *StringInterner, di
         .interner = interner,
         .diag = diag,
         .string_buf = sb_ptr,
+        .count_only = false,
     };
 }
 
@@ -131,7 +133,9 @@ pub fn lexerNextToken(self: *Lexer) Token {
                 return lexerScanBuiltinIdentifier(self, start);
             }
             const bare_at_msg: []const u8 = "bare '@' is not valid; expected builtin name (e.g., @sizeOf)";
-            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1004_BARE_AT_SIGN, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), bare_at_msg);
+            if (!self.count_only) {
+                diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1004_BARE_AT_SIGN, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), bare_at_msg);
+            }
             return lexerMakeErrorToken(self, start);
         },
         '"' => return lexerScanString(self, start),
@@ -146,7 +150,9 @@ pub fn lexerNextToken(self: *Lexer) Token {
             var up3: []const u8 = "'";
             var uparts: [3][]const u8 = [3][]const u8{up1, char_buf[0..1], up3};
             var unrecognized_msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &uparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1005_UNRECOGNIZED_CHAR, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unrecognized_msg);
+            if (!self.count_only) {
+                diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1005_UNRECOGNIZED_CHAR, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unrecognized_msg);
+            }
             return lexerMakeErrorToken(self, start);
         },
     }
@@ -219,7 +225,9 @@ fn lexerSkipWSC(self: *Lexer) void {
                     }
                     if (depth > 0) {
                         const unterminated_block_msg: []const u8 = "unterminated block comment";
-                        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1001_UNTERMINATED_BLOCK_COMMENT, self.file_id, @intCast(u32, self.pos), @intCast(u32, self.pos), unterminated_block_msg);
+                        if (!self.count_only) {
+                            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1001_UNTERMINATED_BLOCK_COMMENT, self.file_id, @intCast(u32, self.pos), @intCast(u32, self.pos), unterminated_block_msg);
+                        }
                     }
                 } else {
                     return;
@@ -251,11 +259,20 @@ fn lexerMakeErrorToken(self: *Lexer, start: usize) Token {
 }
 
 fn lexerScanString(self: *Lexer, start: usize) Token {
-    self.string_buf.len = 0;
+    if (!self.count_only) { self.string_buf.len = 0; }
     while (!lexerIsAtEnd(self)) {
         var c = lexerPeek(self);
         if (c == '"') {
             _ = lexerAdvance(self);
+            if (self.count_only) {
+                return Token{
+                    
+                .kind = TokenKind.string_literal,
+                    .span_start = @intCast(u32, start),
+                    .span_len = @intCast(u16, self.pos - start),
+                    .value = TokenValue{ .string_id = @intCast(u32, 0) },
+                };
+            }
             var text: []const u8 = undefined;
             var sb_slice = ga_mod.byteArrayListGetSlice(self.string_buf);
             if (sb_slice.len > 0) {
@@ -274,15 +291,23 @@ fn lexerScanString(self: *Lexer, start: usize) Token {
             };
         }
         if (c == '\n' or c == 0) {
-            const unterminated_string_msg: []const u8 = "unterminated string literal";
-            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1000_UNTERMINATED_STRING, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unterminated_string_msg);
+            if (!self.count_only) {
+                const unterminated_string_msg: []const u8 = "unterminated string literal";
+                diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1000_UNTERMINATED_STRING, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), unterminated_string_msg);
+            }
             return lexerMakeErrorToken(self, start);
         }
         _ = lexerAdvance(self);
         if (c == '\\') {
-            ga_mod.byteArrayListAppend(self.string_buf, lexerParseEscapeSequence(self));
+            if (!self.count_only) {
+                ga_mod.byteArrayListAppend(self.string_buf, lexerParseEscapeSequence(self));
+            } else {
+                _ = lexerParseEscapeSequence(self);
+            }
         } else {
-            ga_mod.byteArrayListAppend(self.string_buf, c);
+            if (!self.count_only) {
+                ga_mod.byteArrayListAppend(self.string_buf, c);
+            }
         }
     }
     return lexerMakeErrorToken(self, start);
@@ -291,7 +316,9 @@ fn lexerScanString(self: *Lexer, start: usize) Token {
 fn lexerScanChar(self: *Lexer, start: usize) Token {
     if (lexerIsAtEnd(self) or lexerPeek(self) == '\'') {
         const empty_char_msg: []const u8 = "empty character literal";
-        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1002_INVALID_CHAR_LITERAL, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), empty_char_msg);
+        if (!self.count_only) {
+            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1002_INVALID_CHAR_LITERAL, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), empty_char_msg);
+        }
         if (lexerPeek(self) == '\'') { _ = lexerAdvance(self); }
         return lexerMakeToken(self, TokenKind.char_literal, start, .{ .int_val = @intCast(u64, 0) });
     }
@@ -304,7 +331,9 @@ fn lexerScanChar(self: *Lexer, start: usize) Token {
     }
     if (lexerPeek(self) != '\'') {
         const expected_close_msg: []const u8 = "expected closing ' in character literal";
-        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1002_INVALID_CHAR_LITERAL, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), expected_close_msg);
+        if (!self.count_only) {
+            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1002_INVALID_CHAR_LITERAL, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), expected_close_msg);
+        }
     } else {
         _ = lexerAdvance(self);
     }
@@ -368,7 +397,9 @@ fn lexerScanNumber(self: *Lexer, start: usize, first: u8) Token {
         var value = parseU64(text, base);
         if (value == 0xFFFFFFFFFFFFFFFF and !isU64MaxLiteral(text)) {
             const overflow_msg: []const u8 = "integer literal overflow; value truncated";
-            diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1011_INTEGER_OVERFLOW, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), overflow_msg);
+            if (!self.count_only) {
+                diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1011_INTEGER_OVERFLOW, self.file_id, @intCast(u32, start), @intCast(u32, self.pos), overflow_msg);
+            }
         }
         return lexerMakeToken(self, TokenKind.integer_literal, start, .{ .int_val = value });
     }
@@ -384,7 +415,10 @@ fn lexerScanIdentifierOrKeyword(self: *Lexer, start: usize) Token {
     var text = self.source[start..self.pos];
 
     if (text.len == 1 and text[0] == '_') {
-        var string_id = interner_mod.stringInternerIntern(self.interner, text);
+        var string_id: u32 = 0;
+        if (!self.count_only) {
+            string_id = interner_mod.stringInternerIntern(self.interner, text);
+        }
         return lexerMakeToken(self, TokenKind.underscore, start, .{ .string_id = string_id });
     }
 
@@ -392,10 +426,15 @@ fn lexerScanIdentifierOrKeyword(self: *Lexer, start: usize) Token {
         return lexerMakeToken(self, kind, start, .{ .none = {} });
     }
 
-    var string_id = interner_mod.stringInternerIntern(self.interner, text);
+    var string_id: u32 = 0;
+    if (!self.count_only) {
+        string_id = interner_mod.stringInternerIntern(self.interner, text);
+    }
     if (text.len == @intCast(usize, 9)) {
         if (text[@intCast(usize, 0)] == 'n' and text[@intCast(usize, 1)] == 'e' and text[@intCast(usize, 2)] == 'i' and text[@intCast(usize, 3)] == 'g' and text[@intCast(usize, 4)] == 'h' and text[@intCast(usize, 5)] == 'b' and text[@intCast(usize, 6)] == 'o' and text[@intCast(usize, 7)] == 'r' and text[@intCast(usize, 8)] == 's') {
-            var lxm: []const u8 = "LEX"; pal.stderr_write(lxm);
+            if (!self.count_only) {
+                var lxm: []const u8 = "LEX"; pal.stderr_write(lxm);
+            }
         }
     }
     return lexerMakeToken(self, TokenKind.identifier, start, .{ .string_id = string_id });
@@ -408,7 +447,10 @@ fn lexerScanBuiltinIdentifier(self: *Lexer, start: usize) Token {
         _ = lexerAdvance(self);
     }
     var text = self.source[start..self.pos];
-    var string_id = interner_mod.stringInternerIntern(self.interner, text);
+    var string_id: u32 = 0;
+    if (!self.count_only) {
+        string_id = interner_mod.stringInternerIntern(self.interner, text);
+    }
     if (text.len == @intCast(usize, 9)) {
         if (text[@intCast(usize, 0)] == '@' and text[@intCast(usize, 1)] == 'c' and text[@intCast(usize, 2)] == 'I' and text[@intCast(usize, 3)] == 'n' and text[@intCast(usize, 4)] == 'c' and text[@intCast(usize, 5)] == 'l' and text[@intCast(usize, 6)] == 'u' and text[@intCast(usize, 7)] == 'd' and text[@intCast(usize, 8)] == 'e') {
             return lexerMakeToken(self, TokenKind.c_include_builtin, start, .{ .string_id = string_id });
@@ -448,7 +490,9 @@ fn lexerParseHexEscape(self: *Lexer) u8 {
     }
     if (count == 0) {
         const s_hex: []const u8 = "\\x requires at least one hex digit";
-        diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1003_INVALID_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_hex);
+        if (!self.count_only) {
+            diag_mod.diagnosticCollectorAdd(self.diag, 0, diag_mod.ERR_1003_INVALID_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_hex);
+        }
     }
     return value;
 }
@@ -473,7 +517,9 @@ fn lexerParseEscapeSequence(self: *Lexer) u8 {
             var ue3: []const u8 = "'";
             var ueparts: [3][]const u8 = [3][]const u8{ue1, ue_char_buf[0..1], ue3};
             var s_unesc = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &ueparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1010_UNRECOGNIZED_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_unesc);
+            if (!self.count_only) {
+                diag_mod.diagnosticCollectorAdd(self.diag, 1, diag_mod.WARN_1010_UNRECOGNIZED_ESCAPE, self.file_id, @intCast(u32, self.pos - 2), @intCast(u32, self.pos), s_unesc);
+            }
             return c;
         },
     }
