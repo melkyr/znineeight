@@ -691,3 +691,35 @@ The compiler's `--markers` flag emits phase trace to stderr, which helps identif
 - Interner hash chain: markers `INT:tl`, `INT:t0`, `INT:dup`, `INT:new` show interning pattern.
 - Diagnostics: insert `diagnosticCollectorAdd` early to test error paths.
 - TrackingAllocator: wrap a phase's allocations to measure peak/total separately.
+
+---
+
+## Data-Structure Waste Audit (I-M2) [updated: 2026-08-14]
+
+> Full report: `.superpowers/sdd/I-M2-wasteaudit-report.md`. **Audit only — no `sf/src/` changes.**
+
+**Finding:** every growable collection in `sf/src/` grows by **copy-into-bump geometric
+doubling**, and **none** uses `sandReallocInPlace` (`allocator.zig:55` — defined, 0 call sites).
+Bump arenas never free, so each doubling leaks the previous array: cumulative allocation ≈ **2×**
+the final array size. Ranked by self-compile impact (scratch > module > perm):
+
+| Rank | Collection (arena) | Waste | Note |
+|---|---|---|---|
+| 1 | Token array (scratch) | ~1.57 MB (Σ cap 64..65536 × 24 B = 3.14 MB vs 1.57 MB live) | **The binding OOM** — `import_resolver.zig:16-26`; `c89_emit.zig` shortfall ≈1.40 MB vs the 2 MB cap |
+| 2 | AST store nodes/extra_children (module) | ~2× (~2-3 MB closure-wide) | `ast.zig:127-210`; module arena ~7.3 MB cumulative, AST store dominates |
+| 3 | LIR insts/blocks/hoisted_temps (scratch) | ~2× | `lir.zig:120-308`; drives scr=1177K→1433K; scratch reset only per phase (`main.zig:567`), not per function |
+| 4 | TypeRegistry — 128 KB stack arena (hidden) | ~2× | `type_db_buf[131072]` `main.zig:155-157`; invisible to `--track-memory`; `catch unreachable` OOM |
+| 5 | StringInterner entries/buckets (perm) | ~2× + leaked bucket arrays | `string_interner.zig:24-50,136-153` (full rehash each grow) |
+| 6 | Symbol tables (perm) | ~2× | `symbol_table.zig:40-62` |
+| 7 | All `U32ToU32/U64ToU32/U32ToU64` hash maps | ~2× (3 leaked arrays/grow) | `util/hash.zig:40-71,123-154,198-229` |
+| 8 | Retained source text (perm) | 1.3 MB pure copy (copy-vs-reference) | `source_manager.zig:78-79` copies scratch→perm; line_offsets pre-alloc heuristic `:81-82` can double past the hint |
+
+**Discrepancy corrections vs. prior notes:** (a) `TypeRegistry` is in a 128 KB **stack** buffer,
+not a tier arena; (b) there are two dep-graph implementations (scratch-local `DepGraph`
+`symbol_registrator.zig:18-68` + scratch-local `TypeResolver` depend/edges `type_resolver.zig:40-101`);
+the module-arena `ctx.dep_graph` field is dead (never populated).
+
+**Low-hanging fruit (for I-M3, not acted on here):** pre-size the token array (or use
+`sandReallocInPlace` at the arena tail) — the single change that unblocks self-compile import;
+pre-size AST `nodes`; reset scratch per LIR function; pre-size interner buckets; measure the
+type_db 128 KB peak.
