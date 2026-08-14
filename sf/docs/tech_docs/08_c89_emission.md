@@ -454,7 +454,7 @@ additions shifted the arms +~1200 lines); `emitInst` header :3062 → :3670.]**
 | `.builtin_console_gotoxy` | `#ifdef _WIN32` `SetConsoleCursorPosition(COORD)` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%d;%dH", y+1, x+1)` + `__bootstrap_write` `#endif` | 5176 |
 | `.builtin_console_set_color` | `#ifdef _WIN32` `SetConsoleTextAttribute` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%s;%sm", fg_ansi[fg&0x0F], bg_ansi[bg&0x0F])` + `__bootstrap_write` `#endif` | 5179 |
 
-Any unhandled variant falls through the `else => {}` at line 4885 (no-op).
+Any unhandled variant falls through the `else => {}` at line 5489 (no-op).
 
 **`@intCast` range-check emission (F1, 2026-08-06):** the `.int_cast` checked arm
 (`c89_emit.zig:4214-4260`) builds `__bootstrap_<DST>_from_<SRC>` from the target's
@@ -503,7 +503,7 @@ function, so the zig0 `return`s would exit the caller; `if (hOut != INVALID_HAND
 in sema/comptime to an `int_const` 0/1). `console_builtin_test` is gcc-clean single-
 AND multi-module.
 
-**C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:3954) is
+**C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:4853) is
 emitted as a **call followed by a `return`** (`zT = fn(args); return zT;`), i.e. it preserves a C
 stack frame — it is semantically a tail call but not a jump. Only **self-recursion** TCO achieves
 O(1) stack (rebind assigns + `goto z_bb_0;` back-edge to the entry label). Real frame-reusing
