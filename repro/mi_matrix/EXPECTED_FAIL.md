@@ -1,4 +1,35 @@
-# mi_matrix corpus — expected-fail manifest (v32 2026-08-14)
+# mi_matrix corpus — expected-fail manifest (v33 2026-08-14)
+
+## F-CLOSEOUT — std-lib closeout (2026-08-14)
+
+Final gate sweep of the std-lib closeout plan (F1+F2+F3 fixes). All gates re-verified with
+`/tmp/fx_subfolder/zig1` (HEAD `c5856928`), canonical std installed at `/tmp/fx_subfolder/lib/`:
+
+- **4 fixes landed:** **D2** (module-instance ≥1 incomplete type — FIXED in
+  `sf/src/type_resolver.zig`, module-scoped bare-ident resolution; `arena_multi_inst_xmod`
+  RED→OK), **host_is_windows** config const (`sf/src/config.zig`), **printInt INT_MIN**
+  (i64-widened negation in `sf/src/std_io.zig`), **emitSocketSelect #ifdef** guard +
+  spec-catalog sig corrections (`sf/src/c89_emit.zig` + the std-lib migration spec).
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening
+  on port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
+- **4 MD5 gates byte-identical** (F3 re-baseline, AMENDMENT B): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
+  `066c99974f6052317636854dc4c2a2d5`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **Corpus (248 dirs): `OK=242 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =
+  `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89
+  fundamental, `error[24]` circular type); green-guards = `eu_assign_incompat_payload` /
+  `euvoid_val_catch` / `field_access_optional` / `var_declared_void`. `arena_multi_inst_xmod` is
+  the 248th dir (new RED→OK repro — the D2 fix).
+- **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
+
+**Tracking entries (stay LATENT, documented — NOT fixed):**
+
+- **Win32 WSAStartup** — `std_net.init()` is a no-op on Windows (returns 0, no `WSAStartup`/
+  `WSACleanup`); a Windows build must add WinSock startup/cleanup before `createTcpServer`/`select`
+  work. `std_net.cleanup()` is likewise empty.
+- **Win-arm / OpenWatcom `#ifdef` arms untested** — the socket builtin bodies are emitted with a
+  `#ifdef _WIN32 / #else` guard (mirroring `net_runtime.c`), but only the Linux `#else` arm is
+  exercised here; the Win-arm / OpenWatcom arms remain untested.
 
 ## F-GATE — search-path gate sweep + reconciliation (2026-08-14)
 
