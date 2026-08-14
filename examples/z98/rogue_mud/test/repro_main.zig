@@ -1,5 +1,5 @@
 const repro_mod = @import("repro_mod.zig");
-const std = @import("../../mud_server/std.zig");
+const std = @import("std");
 
 pub fn main() void {
     const val = repro_mod.TEST_CONST;

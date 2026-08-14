@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 @cInclude("zig_runtime.h");
 
@@ -8,7 +8,7 @@ fn fact(n: i32, acc: i32) i32 {
 }
 
 pub fn main() !void {
-    std.debug.print("fact(10) = {}\n", .{fact(10, 1)});
+    std.io.print("fact(10) = {}\n", .{fact(10, 1)});
     _ = fact(100000, 1);
-    std.debug.print("deep ok\n", .{});
+    std.io.print("deep ok\n", .{});
 }

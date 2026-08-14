@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 fn classify(c: u8) u8 {
     var r: u8 = @intCast(u8, 0);
     switch (c) {

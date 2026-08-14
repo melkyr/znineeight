@@ -1,4 +1,28 @@
-# mi_matrix corpus — expected-fail manifest (v30 2026-08-13)
+# mi_matrix corpus — expected-fail manifest (v31 2026-08-14)
+
+## F-MIGRATE — std-lib search-path migration closeout (2026-08-14)
+
+All `examples/z98/*/` + `repro/mi_matrix/*/` sources migrated from local `@import("std.zig")` /
+`@import("std_net.zig")` / `@import("std_arena.zig")` (and rogue_mud's `../mud_server/std.zig`
+cross-refs) to bare `@import("std")` / `@import("std_net")` / `@import("std_arena")`, resolved via
+the Task F search path to the canonical `sf/src/std*.zig` installed at `<exe_dir>/lib`
+(`/tmp/fx_subfolder/lib`). All **181** local `std*.zig` copies deleted (kept:
+`std_import_bare_xmod/local/{std,std_io}.zig` — the Task R `--lib-dir` GREEN fixture). The 14
+`std.debug.print`/`printInt` sites (10 example dirs incl. `hello`, plus rogue_mud's 3 test files)
+rewritten to `std.io.print`/`printInt`, with `sf/src/std_io.zig` `print` made variadic
+(`print(s: [*]const c_char, ...)`) so the compiler's enhanced print lowering (fn name `print` +
+≥2 args) still fires — format specifiers stay interpolated.
+
+**Reclassifications (bare `@import("std")` now resolves via the default install path):**
+- `test_stub_0` — **FAIL → OK** (was `error[3048]` std-lib-deferred; now resolves + emits).
+- `std_import_bare_xmod` — **FAIL → OK** (bare `@import("std")` resolves via `<exe_dir>/lib`; its
+  `--lib-dir local/` GREEN path unchanged).
+
+**Corpus (247 dirs, std installed): `OK=241 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.**
+FAIL=2 = `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle`
+(C89 fundamental). No new FAIL; OK improved 239→241. **21-example matrix 21/21** dump/gcc/link OK
+(mud_server + rogue_mud link+run with the canonical `std.zig` io+arena re-export — the F4-D2
+arena-instance emission bug no longer triggers).
 
 ## Totals (246 dirs / 236 manifest repros)
 

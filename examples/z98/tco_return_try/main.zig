@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 @cInclude("zig_runtime.h");
 
@@ -9,7 +9,7 @@ fn count(n: i32, acc: i32) !i32 {
 
 pub fn main() !void {
     const r = try count(10, 0);
-    std.debug.print("count(10) = {}\n", .{r});
+    std.io.print("count(10) = {}\n", .{r});
     const d = try count(100000, 0);
-    std.debug.print("count(100000) = {}\n", .{d});
+    std.io.print("count(100000) = {}\n", .{d});
 }

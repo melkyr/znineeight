@@ -8,7 +8,7 @@ const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 const deep_copy_mod = @import("deep_copy.zig");
 
-const std = @import("std.zig");
+const std = @import("std");
 
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");

@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 fn swap(arr: *[10]i32, i: usize, j: usize) void {
     const temp = arr[i];
@@ -51,7 +51,7 @@ pub fn main() void {
 
     var k: usize = 0;
     while (k < 10) {
-        std.debug.printInt(arr[k]);
+        std.io.printInt(arr[k]);
         k += 1;
     }
 }

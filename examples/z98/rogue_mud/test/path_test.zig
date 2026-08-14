@@ -5,7 +5,7 @@ const scenario = @import("../lib/scenario.zig");
 const tile_mod = @import("../lib/tile.zig");
 const room_mod = @import("../lib/room.zig");
 const entity_mod = @import("../lib/entity.zig");
-const std = @import("../../mud_server/std.zig");
+const std = @import("std");
 
 pub fn main() !void {
     var buffer: [65536]u8 = undefined;
@@ -38,19 +38,19 @@ pub fn main() !void {
     const start = point_mod.Point{ .x = @intCast(u8, 0), .y = @intCast(u8, 0) };
     const goal = point_mod.Point{ .x = @intCast(u8, 2), .y = @intCast(u8, 2) };
 
-    std.debug.print("Finding path...\n", .{});
+    std.io.print("Finding path...\n", .{});
     const path_opt = pathfinding.findPath(&arena, dungeon, start, goal);
 
     if (path_opt) |path| {
-        std.debug.print("Path found! Length: {}\n", .{path.len});
+        std.io.print("Path found! Length: {}\n", .{path.len});
         if (path.len == 0) {
-            std.debug.print("Error: path length is 0\n", .{});
+            std.io.print("Error: path length is 0\n", .{});
             return;
         }
     } else {
-        std.debug.print("No path found!\n", .{});
+        std.io.print("No path found!\n", .{});
         return;
     }
 
-    std.debug.print("Pathfinding test passed!\n", .{});
+    std.io.print("Pathfinding test passed!\n", .{});
 }

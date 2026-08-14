@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 fn getInit() i32 { return 42; }
 const x: i32 = getInit();

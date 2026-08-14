@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 fn fib(n: u32) u32 {
     if (n <= 1) { return n; }
@@ -7,5 +7,5 @@ fn fib(n: u32) u32 {
 
 pub fn main() void {
     const result = fib(10);
-    std.debug.printInt(@intCast(i32, result));
+    std.io.printInt(@intCast(i32, result));
 }

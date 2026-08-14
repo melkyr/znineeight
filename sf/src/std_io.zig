@@ -12,7 +12,7 @@ pub fn writeStr(s: [*]const c_char) void {
     @stdoutWrite(@ptrCast([*]const u8, s), len);
 }
 
-pub fn print(s: [*]const c_char) void {
+pub fn print(s: [*]const c_char, ...) void {
     writeStr(s);
 }
 

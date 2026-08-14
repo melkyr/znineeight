@@ -1,7 +1,7 @@
 const file = @import("file.zig");
 const json = @import("json.zig");
 
-const std = @import("std.zig");
+const std = @import("std");
 
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");

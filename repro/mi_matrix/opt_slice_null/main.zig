@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const Point = struct { x: i32, y: i32 };
 fn fail() !void {
     return error.Fail;

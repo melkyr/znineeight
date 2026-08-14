@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 pub fn sayHello() void {
-    std.debug.print("Hello, world!\n", .{});
+    std.io.print("Hello, world!\n", .{});
 }

@@ -1,5 +1,5 @@
-const std = @import("std.zig");
-const std_net = @import("std_net.zig");
+const std = @import("std");
+const std_net = @import("std_net");
 
 // Exercise all 11 socket builtins in one process (client + server):
 // 1. @socketCreate(4001)   -> server socket (socket+bind)

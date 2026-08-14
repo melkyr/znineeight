@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 pub var buf: [16]i32 = undefined;
 pub fn main() void {
     var i: usize = 0;

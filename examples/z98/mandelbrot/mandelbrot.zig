@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 const Width: usize = 80;
 const Height: usize = 24;

@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 fn score(c: u8) i32 {
     return switch (c) {
         'a' => @intCast(i32, 1),

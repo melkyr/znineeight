@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 var counter: i32 = 0;
 fn bump() void {
     counter = counter + 1;

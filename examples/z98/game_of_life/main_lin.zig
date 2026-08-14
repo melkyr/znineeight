@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 @cInclude("zig_runtime.h");
 @cInclude("<stdlib.h>");
@@ -100,13 +100,13 @@ pub fn main() !void {
                     .Alive => '#',
                     else => unreachable,
                 };
-                std.debug.print("{c}", .{ch});
+                std.io.print("{c}", .{ch});
                 x += 1;
             }
-            std.debug.print("\n", .{});
+            std.io.print("\n", .{});
             y += 1;
         }
-        std.debug.print("Generation: {}\n", .{gen});
+        std.io.print("Generation: {}\n", .{gen});
 
         // Compute next generation
         y = 0;

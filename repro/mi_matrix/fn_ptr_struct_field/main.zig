@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 const Writer = struct {
     write_fn: fn(s: []const u8) void,

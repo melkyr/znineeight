@@ -1,5 +1,5 @@
-const std = @import("../../mud_server/std.zig");
-const std_net = @import("../std_net.zig");
+const std = @import("std");
+const std_net = @import("std_net");
 
 pub const PlatSocket = i32;
 

@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const types = @import("types.zig");
 var buf: [256]u8 = undefined;
 

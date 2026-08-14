@@ -4,7 +4,7 @@ const File = void;
 
 extern fn fopen(filename: [*]const u8, mode: [*]const u8) ?*File;
 
-const std = @import("std.zig");
+const std = @import("std");
 
 pub fn main() void {
     var path: [*]const u8 = "none.txt";

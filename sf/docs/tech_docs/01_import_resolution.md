@@ -451,6 +451,18 @@ Standard Library stub" — currently only `debug.print`/`mem.eql`/`io.Writer`/`A
 dormant; it is `std.zig` not a bare `std` file, and the `@import("std")` in `semantic.zig:65`/
 `c89_types.zig:16` is dead code not in the compile graph).
 
+**D1 fully resolved — migration complete [updated: 2026-08-14].** Task F-MIGRATE deleted all 181
+local `std*.zig` copies under `examples/z98/*/` + `repro/mi_matrix/*/` (kept
+`std_import_bare_xmod/local/` as the `--lib-dir` GREEN fixture; `examples/zig0/*/` untouched,
+oracle-only). All 34 example + 57 repro sources now use bare `@import("std")` /
+`@import("std_net")` / `@import("std_arena")`, resolved through the search path to the canonical
+`sf/src/std*.zig` (installed at `<exe_dir>/lib`). The 14 `std.debug.print`/`printInt` sites became
+`std.io.print`/`printInt`, and `sf/src/std_io.zig` `print` was made variadic
+(`print(s: [*]const c_char, ...)`) so the compiler's enhanced print lowering (fn name `print` + ≥2
+args, `lower.zig:2403`) keeps interpolating `{}`/`{c}`/`{s}` specifiers. Result: corpus
+`OK=241 / FAIL=2 / green-guards=4` (no new FAIL; `test_stub_0` + `std_import_bare_xmod` improved
+FAIL→OK), 21-example matrix 21/21, 4 MD5 gates re-baselined with runtime-identical proof.
+
 
 ---
 

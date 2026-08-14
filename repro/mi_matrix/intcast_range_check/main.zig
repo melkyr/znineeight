@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 pub fn main() void {
     var i: i64 = 2147483647;
     i = i + 1;

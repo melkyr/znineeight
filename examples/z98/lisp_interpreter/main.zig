@@ -7,7 +7,7 @@ const eval_mod = @import("eval.zig");
 const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 
-const std = @import("std.zig");
+const std = @import("std");
 
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");

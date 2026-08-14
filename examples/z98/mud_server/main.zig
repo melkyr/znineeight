@@ -1,6 +1,6 @@
-const std = @import("std.zig");
+const std = @import("std");
 const util = @import("util.zig");
-const std_net = @import("std_net.zig");
+const std_net = @import("std_net");
 
 @cInclude("zig_runtime.h");
 
@@ -70,22 +70,22 @@ pub fn main() !void {
 
     // Initialize sockets
     if (std_net.init() != 0) {
-        std.debug.print("Failed to init sockets\n", .{});
+        std.io.print("Failed to init sockets\n", .{});
         return;
     }
 
     const server = std_net.createTcpServer(PORT);
     if (server < 0) {
-        std.debug.print("Failed to create server socket\n", .{});
+        std.io.print("Failed to create server socket\n", .{});
         return;
     }
 
     if (std_net.bindListen(server, 5) < 0) {
-        std.debug.print("Failed to listen\n", .{});
+        std.io.print("Failed to listen\n", .{});
         return;
     }
 
-    std.debug.print("MUD server listening on port 4000\n", .{});
+    std.io.print("MUD server listening on port 4000\n", .{});
 
     var players: [MAX_CLIENTS]Player = undefined;
     var i: usize = 0;
@@ -112,7 +112,7 @@ pub fn main() !void {
 
         const ready_count = std_net.select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 100);
         if (ready_count < 0) {
-            std.debug.print("select error\n", .{});
+            std.io.print("select error\n", .{});
             break;
         }
         if (ready_count == 0) continue; // timeout
@@ -136,7 +136,7 @@ pub fn main() !void {
                         const welcome: []const u8 = "Welcome to the MUD! Type 'look' to start.\r\n";
                         _ = std_net.send(client, welcome.ptr, @intCast(i32, welcome.len));
                         found = true;
-                        std.debug.print("New client connected\n", .{});
+                        std.io.print("New client connected\n", .{});
                         break;
                     }
                     i += 1;
@@ -157,7 +157,7 @@ pub fn main() !void {
                 const n = std_net.recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
                 if (n <= 0) {
                     // client disconnected
-                    std.debug.print("Client disconnected\n", .{});
+                    std.io.print("Client disconnected\n", .{});
                     std_net.close(p.socket);
                     p.is_active = false;
                 } else {

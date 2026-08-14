@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const helper = @import("helper.zig");
 
 pub fn main() void {

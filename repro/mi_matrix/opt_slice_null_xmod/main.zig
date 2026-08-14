@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const lib = @import("lib.zig");
 pub fn main() void {
     var p = lib.findPath();

@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 fn run() i32 {
     var count: i32 = 0;
     var c: u8 = 'a';

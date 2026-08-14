@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 fn nested(outer: u8, inner: u8) i32 {
     var r: i32 = 0;
     switch (outer) {

@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 fn swap(a: *[10]i32, i: usize, j: usize) void {
     const temp = a[i];

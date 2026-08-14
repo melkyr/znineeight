@@ -33,6 +33,14 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   `examples/zig0/mud_server` bootstrap example — the migrated `examples/z98/mud_server`
   (std_net) links WITHOUT it (F6).
 - For a **no-`main` repro** (compile-only, no link/run) use `gcc -m32 -std=c89 -c ... -o /dev/null`.
+- **[updated: 2026-08-14 — F-MIGRATE] examples/repros now use bare `@import("std")`**, resolved
+  via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
+  install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
+  canonical std lib next to the compiler under test:
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig <exe_dir>/lib/`
+  (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
+  gone; `std_import_bare_xmod/local/` is the only remaining fixture (the Task R `--lib-dir` GREEN
+  test).
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
@@ -308,13 +316,21 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-13 — F3 closeout: post-Defect-A-D re-baseline values] |
+| Entry Path | Reference md5 | [updated: 2026-08-14 — F-MIGRATE: bare `@import("std")` search-path migration re-baseline] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `fd0fdaa42a419b0e72cfdb3226a54c4a` |
-| `examples/z98/game_of_life/main.zig` | `ff47d18dc8ef00e9b8f92f5e0a14c34a` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `c1cb748b423eef191b9c9ce7023ae2a0` |
-| `examples/z98/json_parser/main.zig` | `376fd6812ef751913bdad00de676ceb6` |
+| `examples/z98/mud_server/main.zig` | `447c491b4877e65b2ca2b87089a3021b` |
+| `examples/z98/game_of_life/main.zig` | `4074946027f8f72a325fafaa459bc8ec` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `b71a0e0c3d3ad78349e219a9e72c8b35` |
+| `examples/z98/json_parser/main.zig` | `b47f9498c56a3f6995f803600968dd3b` |
 
+- **F-MIGRATE gate sweep / closeout (2026-08-14): all 4 re-baselined** (bare `@import("std")`
+  resolves through the search path to the canonical `sf/src/std*.zig` installed at
+  `<exe_dir>/lib`; `std_io.zig` `print` is now variadic `(s: [*]const c_char, ...)` so the
+  enhanced print lowering still interpolates `{}`/`{c}`/`{s}`). Runtime-identical per AMENDMENT B:
+  gol glider md5 `fcbf7e7c…` (grid renders, "Generation: N" interpolated), lisp REPL output diff
+  empty, json parse output diff empty, mud "MUD server listening on port 4000" rc=124 — all
+  byte-identical to the pre-migration outputs. Pre-migration values (stale): mud
+  `fd0fdaa4…`, gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…`.
 - **F3 gate sweep / closeout (2026-08-13): all 4 re-verified byte-identical** to these values
   with `/tmp/fx_subfolder/zig1` (HEAD `31de6800`). gol/lisp/json were re-baselined by the
   lisp_defects plan F2 (operator ruling m0809 — module-scope int-literal coercion now recorded,

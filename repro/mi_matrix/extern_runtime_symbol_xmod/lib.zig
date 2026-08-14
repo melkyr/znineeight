@@ -1,4 +1,4 @@
-const std = @import("std_arena.zig");
+const std = @import("std_arena");
 
 var g_arena = std.create(16);
 

@@ -1,5 +1,5 @@
 // src/util/rng.zig
-const std = @import("../../mud_server/std.zig");
+const std = @import("std");
 
 pub const Random = struct {
     seed: u32,

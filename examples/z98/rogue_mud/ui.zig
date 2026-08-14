@@ -3,8 +3,8 @@ const sand_mod = @import("lib/sand.zig");
 const point_mod = @import("lib/point.zig");
 const entity_mod = @import("lib/entity.zig");
 const tile_mod = @import("lib/tile.zig");
-const std = @import("../mud_server/std.zig");
-const std_net = @import("std_net.zig");
+const std = @import("std");
+const std_net = @import("std_net");
 
 @cInclude("zig_runtime.h");
 

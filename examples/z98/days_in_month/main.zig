@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 fn isLeapYear(year: u32) bool {
     return (year % 4 == 0) and (year % 100 != 0 or year % 400 == 0);
@@ -16,10 +16,10 @@ fn daysInMonth(month: u8, year: u32) u8 {
 
 pub fn main() void {
     const year = 2024;
-    std.debug.print("Days in month for year {}:\n", .{year});
+    std.io.print("Days in month for year {}:\n", .{year});
     for (1..13) |m| {
         const month = @intCast(u8, m);
         const days = daysInMonth(month, year);
-        std.debug.print("  Month {}: {} days\n", .{ month, days });
+        std.io.print("  Month {}: {} days\n", .{ month, days });
     }
 }

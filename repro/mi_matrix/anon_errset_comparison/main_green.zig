@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const E = error{ Bad };
 fn f() E!i32 {
     return error.Bad;

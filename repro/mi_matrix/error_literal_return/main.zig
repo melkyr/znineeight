@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 const MyErr = error{ Worse, Bad, Terrible };
 

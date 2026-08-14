@@ -10,7 +10,7 @@ const room_mod = @import("lib/room.zig");
 const persistence = @import("lib/persistence.zig");
 const net_mod = @import("lib/net.zig");
 const ui_mod = @import("ui.zig");
-const std = @import("../mud_server/std.zig");
+const std = @import("std");
 
 const MULTIPLAYER_ENABLED: bool = false;
 

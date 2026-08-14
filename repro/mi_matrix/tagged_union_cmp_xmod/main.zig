@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const lib_mod = @import("lib.zig");
 
 fn kindName(s: lib_mod.Shape) i32 {

@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 
 const A: i32 = 30;
 const B: i32 = A + 5;
