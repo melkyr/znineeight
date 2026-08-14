@@ -3586,6 +3586,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     emitSocketWrite(emitter, t);
     var d: []const u8 = " % 1000) * 1000;\np_tv = &tv;\n}\n";
     emitSocketWrite(emitter, d);
+    var w: []const u8 = "#ifdef _WIN32\n";
+    emitSocketWrite(emitter, w);
     emitSocketWrite(emitter, r);
     var e: []const u8 = " = select(";
     emitSocketWrite(emitter, e);
@@ -3597,8 +3599,19 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     emitSocketOptPtrValue(emitter, writefds);
     emitSocketWrite(emitter, f);
     emitSocketOptPtrValue(emitter, exceptfds);
-    var g: []const u8 = ", p_tv);\n}\n";
+    var g: []const u8 = ", p_tv);\n#else\n";
     emitSocketWrite(emitter, g);
+    emitSocketWrite(emitter, r);
+    emitSocketWrite(emitter, e);
+    emitSocketWrite(emitter, n);
+    emitSocketWrite(emitter, f);
+    emitSocketOptPtrValue(emitter, readfds);
+    emitSocketWrite(emitter, f);
+    emitSocketOptPtrValue(emitter, writefds);
+    emitSocketWrite(emitter, f);
+    emitSocketOptPtrValue(emitter, exceptfds);
+    var h: []const u8 = ", p_tv);\n#endif\n}\n";
+    emitSocketWrite(emitter, h);
  }
 
  fn emitSocketFdSet(emitter: *C89Emitter, fd: u32, set: u32, is_isset: u8, result: u32) void {

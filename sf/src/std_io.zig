@@ -23,7 +23,7 @@ pub fn printInt(n: i32) void {
     var v: u32 = 0;
     if (n < 0) {
         is_neg = true;
-        v = @intCast(u32, 0 - n);
+        v = @intCast(u32, 0 - @intCast(i64, n));
     } else {
         v = @intCast(u32, n);
     }

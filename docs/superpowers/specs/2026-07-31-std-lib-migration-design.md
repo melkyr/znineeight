@@ -68,17 +68,19 @@ zig1.5 → zig2 (uses std lib in own source, zig0 retired) — FUTURE PLAN, NOT 
 
 `@isWindows` is comptime-folded: the C89 emitter never sees it. `if (@isWindows()) {...} else {...}` resolves to only the active branch at sema.
 
+`@sleepMs` emits a 2-way `#ifdef _WIN32 / #else`; the OpenWatcom `delay()` arm is NOT emitted — OpenWatcom takes the `#else` POSIX arm (per zig0 source, sf's build defines `ZIG_WIN32` but the emitted C checks `_WIN32`).
+
 ### Phase 2 — Networking (11 builtins)
 
 | Builtin | Signature | C89 emission |
 |---|---|---|
-| `@socketCreate` | `() i32` | `socket(AF_INET, SOCK_STREAM, 0)` |
+| `@socketCreate` | `(port: u16) i32` | `socket(AF_INET, SOCK_STREAM, 0)` |
 | `@socketBindListen` | `(port: u16) i32` | `bind` + `listen` (server helper) |
 | `@socketAccept` | `(fd: i32) i32` | `accept(fd, ...)` |
 | `@socketConnect` | `(fd: i32, addr: u32, port: u16) i32` | `connect(...)` |
 | `@socketSend` | `(fd: i32, buf: [*]const u8, len: usize) i32` | `send(...)` |
 | `@socketRecv` | `(fd: i32, buf: [*]u8, len: usize) i32` | `recv(...)` |
-| `@socketSelect` | `(fd: i32, timeout_ms: u32) bool` | `select(...)` |
+| `@socketSelect` | `(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32` | `select(...)` |
 | `@socketFdZero` | `(fd_set*) void` | `FD_ZERO` |
 | `@socketFdSet` | `(fd_set*, fd) void` | `FD_SET` |
 | `@socketFdIsset` | `(fd_set*, fd) bool` | `FD_ISSET` |
