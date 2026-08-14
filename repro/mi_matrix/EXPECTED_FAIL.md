@@ -1,4 +1,30 @@
-# mi_matrix corpus — expected-fail manifest (v31 2026-08-14)
+# mi_matrix corpus — expected-fail manifest (v32 2026-08-14)
+
+## F-GATE — search-path gate sweep + reconciliation (2026-08-14)
+
+Final gate sweep of the std-lib search-path plan (Task F + F-MIGRATE). All gates re-verified with
+`/tmp/fx_subfolder/zig1` (HEAD `51fa4342`), canonical std installed at `/tmp/fx_subfolder/lib/`:
+
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening on
+  port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
+- **4 MD5 gates byte-identical** (post-migration re-baseline): gol `4074946027f8f72a325fafaa459bc8ec`,
+  lisp `b71a0e0c3d3ad78349e219a9e72c8b35`, json `b47f9498c56a3f6995f803600968dd3b`, mud
+  `447c491b4877e65b2ca2b87089a3021b`. Runtime-identical proof (AMENDMENT B): gol renders grid (100
+  generations, 0 literal `{}`/`{c}` specifiers); lisp REPL evaluates `(+ 1 2)`→3 / `(define x 10)`
+  / `(+ x 5)`→15 / `(car (quote (5 6)))`→5; json parses test.json rc=0; mud rc=124.
+- **Corpus (247 dirs): `OK=241 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =
+  `field_store_drop` + `self_embed_optional_cycle`; green-guards =
+  `eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` / `var_declared_void`.
+- **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
+
+**Search-path record.** The **D1 defect** (bare `@import("std")` unresolved) is **resolved**: Task F
+wired the search path (tiers: importer dir → `-I`/`--lib-dir` dirs in CLI order → default install
+path `<exe_dir>/lib` → CWD), F-MIGRATE migrated all 34 example + 57 repro sources to bare
+`@import("std")` / `@import("std_net")` / `@import("std_arena")` and deleted all **181** local
+`std*.zig` copies (kept `std_import_bare_xmod/local/` as the `--lib-dir` GREEN fixture).
+Reclassifications: `test_stub_0` + `std_import_bare_xmod` **FAIL→OK**. `std_import_bare_xmod` is a
+**two-state gate**: RED (bare `@import("std")` unresolved without the search path — pre-Task-F) vs
+GREEN (resolves either via `--lib-dir local/` OR the default install path `<exe_dir>/lib`).
 
 ## F-MIGRATE — std-lib search-path migration closeout (2026-08-14)
 
