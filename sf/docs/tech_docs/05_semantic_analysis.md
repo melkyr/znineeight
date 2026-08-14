@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-08-14 — F-task root-cause fix: `semanticAnalyzerResolveFnCall` return-type fallback routes through `resolveTypeExprFull` (dead manual scan removed); symbol_registrator ident_expr alias scoped to declaring module; prior 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1441-1489); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-14 — F-task root-cause fix: `semanticAnalyzerResolveFnCall` return-type fallback routes through `resolveTypeExprFull` (dead manual scan removed); prior 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1441-1489); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
@@ -580,11 +580,7 @@ Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
 **[updated: 2026-08-14 — F-task root-cause fix]:** the Phase-1 return-type fallback's dead manual
 name-cache scan (bare `nameCacheGet(rnid)` then a module-0-first `(mti<<32)|rnid` scan) is removed;
 the fallback now always routes through `resolveTypeExprFull` with `.module_id = s.module_id`
-(semantic_analyzer.zig:786-790). The sibling `symbol_registrator.registerDecl` ident_expr alias
-branch (symbol_registrator.zig:263) now scopes its RHS type lookup to the declaring module first —
-`nameCacheGet(type_reg, (mod_id<<32)|ident_name_id)` — falling back to the bare
-`nameCacheGet(type_reg, ident_name_id)` for primitives, so `pub const Bar = Foo` in module B resolves
-B's own `Foo` rather than module-0's.
+(semantic_analyzer.zig:786-790).
 
 ### semanticAnalyzerResolveSwitchExpr (`sf/src/semantic_analyzer.zig:1046-1179`)
 

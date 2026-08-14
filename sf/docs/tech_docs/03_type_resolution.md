@@ -1,4 +1,4 @@
-# 03 — Type Resolution [updated: 2026-08-14 — F-task root-cause fix: `resolveTypeExprFull` `ident_expr` arm reordered current-module-first before bare (primitive fallback), const_alias_prepass Phase-2 seed scoped to alias declaring module; prior 2026-08-13 — Defect D FIXED (F5, layout dependency-graph ordering, operator ruling m0898 Option B: real `field_type -> container_tid` edges built after field-type resolution, `typeResolverBuildDependencyGraph`); prior — 2026-08-08 F7 line-ref re-verification (semantic_analyzer.zig:1290-1312 builtin_call, :1298-1301 @ptrToInt hoist, :529 resolveBitwise, :1727-1734 void-var error[3000]; lower.zig:2653-2657 @ptrToInt; type_resolver.zig:609-612 RTD/depth :610, evalConstU32Full :579-597); prior — F1 fix: @ptrToInt resolves to usize for single-arg calls; prior 2026-08-08 @ptrToInt-returns-argument-type (I1); 2026-08-06 va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; array-size mul/div/mod (F6)]
+# 03 — Type Resolution [updated: 2026-08-14 — F-task root-cause fix: `resolveTypeExprFull` `ident_expr` arm reordered current-module-first before bare (primitive + module-0 named-type fallback), const_alias_prepass Phase-2 seed scoped to alias declaring module; prior 2026-08-13 — Defect D FIXED (F5, layout dependency-graph ordering, operator ruling m0898 Option B: real `field_type -> container_tid` edges built after field-type resolution, `typeResolverBuildDependencyGraph`); prior — 2026-08-08 F7 line-ref re-verification (semantic_analyzer.zig:1290-1312 builtin_call, :1298-1301 @ptrToInt hoist, :529 resolveBitwise, :1727-1734 void-var error[3000]; lower.zig:2653-2657 @ptrToInt; type_resolver.zig:609-612 RTD/depth :610, evalConstU32Full :579-597); prior — F1 fix: @ptrToInt resolves to usize for single-arg calls; prior 2026-08-08 @ptrToInt-returns-argument-type (I1); 2026-08-06 va_list primitive (TYPE_VA_LIST=21) + variadic fn signatures; array-size mul/div/mod (F6)]
 
 ## Summary Table
 
@@ -357,7 +357,7 @@ Internal helpers:
 
 | AST Kind | Lines | Behavior |
 |----------|-------|----------|
-| `ident_expr` | 591-619 | Lookup, current-module-first (F-task 2026-08-14): name_cache((module_id<<32)\|canonical_id) when `module_id != MODULE_ID_NONE`, then bare name_cache(canonical_id) as the primitive fallback, then per-module name_cache scan, then symbolRegistryQualifiedLookup per module. Returns `s.type_id` or `TYPE_UNDEFINED`. Emits `NF`, `N2`, `OPTVOID:*` markers. |
+| `ident_expr` | 591-619 | Lookup, current-module-first (F-task 2026-08-14): name_cache((module_id<<32)\|canonical_id) when `module_id != MODULE_ID_NONE`, then bare name_cache(canonical_id) as the primitive + module-0 named-type fallback, then per-module name_cache scan, then symbolRegistryQualifiedLookup per module. Returns `s.type_id` or `TYPE_UNDEFINED`. Emits `NF`, `N2`, `OPTVOID:*` markers. |
 | `struct_decl` | 620-671 | Generate synthetic `anon_<node_idx>` name. Register named type. If payload (extra children), resolve each `field_decl.child_0` recursively, `feAppend` fields, `stAppend` payload. |
 | `field_access` | 672-715 | Resolve base expression. If base is `TYPE_UNDEFINED` and base is `ident_expr`, try module-qualified lookup (module symbol → field symbol). If base is `module_type`, lookup field in that module's symbol table. Emits `FAH:*` markers. |
 | `error_union_type` | 716-728 | Resolve payload type (child_1) and optional error set (child_0). If no explicit error set, creates empty error set. Returns `typeRegistryGetOrCreateErrorUnion`. |
@@ -464,9 +464,9 @@ threads `mods[mi].id` through `resolveStmtTypes`/`resolveTypeExpr`; the genuinel
 `nameCacheGet(nid)` therefore silently resolved module-0-first. The F1 reorder was still vulnerable
 because its STEP-1 bare `nameCacheGet(canonical_id)` ran before the current-module lookup. The
 F-task fix reorders the `ident_expr` arm so the current-module scoped lookup
-(`(module_id<<32)|canonical_id`) runs FIRST, the bare lookup runs SECOND (now the primitive-only
-fallback, since primitives are stored solely under the bare key), and the all-modules scan runs
-THIRD. The `field_access` arm and the symbol-lookup tiers (`:694-711`) are unchanged. For module 0
+(`(module_id<<32)|canonical_id`) runs FIRST, the bare lookup runs SECOND (now the primitive +
+module-0 named-type fallback, since primitives *and* module-0 named types are stored under the bare
+key — that shared key IS the collision), and the all-modules scan runs THIRD. The `field_access` arm and the symbol-lookup tiers (`:694-711`) are unchanged. For module 0
 the scoped key equals the bare key, so the reorder is a no-op (control behavior preserved).
 
 ---

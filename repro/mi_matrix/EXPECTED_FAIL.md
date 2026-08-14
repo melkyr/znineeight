@@ -1,4 +1,35 @@
-# mi_matrix corpus — expected-fail manifest (v33 2026-08-14)
+# mi_matrix corpus — expected-fail manifest (v34 2026-08-14)
+
+## F-CLOSEOUT — std-lib fallback demotion (2026-08-14)
+
+Final gate sweep of the std-lib fallback-demotion plan (Task F fallback demotion, Option A root-cause
+fix). All gates re-verified with `/tmp/fx_subfolder/zig1` (HEAD `5c1e17e4`), canonical std installed
+at `/tmp/fx_subfolder/lib/`:
+
+- **Root-cause fix (4 sites):** the bare name-cache key (`name_id`) collides with module-0's scoped
+  key (`(0<<32)|name_id == name_id`), so any un-scoped `nameCacheGet` silently resolved module-0-first.
+  Fixed across **4 sites** — `type_resolver.zig` (`resolveTypeExprFull` `ident_expr` arm reordered
+  current-module-first), `symbol_registrator.zig` (`registerDecl` ident_expr alias branch scoped to
+  the declaring module), `const_alias_prepass.zig` (Phase-2 seed scoped to the alias declaring
+  module), and `semantic_analyzer.zig` (`semanticAnalyzerResolveFnCall` return-type fallback now
+  routes through `resolveTypeExprFull`; dead manual scan removed). The bare-key fallback is now
+  **primitive + module-0 named type** (module-0 named types share the bare key — that IS the
+  collision).
+- **4 `r_fallback_*` repros added** (Task R): `r_fallback_fnret` (fn-return-type bare `Foo` in mod_b
+  vs module-0's `Foo`, RED→GREEN), `r_fallback_constalias` (`pub const Bar = Foo` ident_expr alias,
+  RED→GREEN), `r_fallback_constalias_prepass` (const-alias via prepass, RED→GREEN), and
+  `r_fallback_fnret_ctl` (control — no module-0 collision, stays GREEN). All 4 classify OK.
+- **Corpus (252 dirs): `OK=246 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =
+  `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89
+  fundamental, `error[24]` circular type); green-guards = `eu_assign_incompat_payload` /
+  `euvoid_val_catch` / `field_access_optional` / `var_declared_void`. Corpus grew 248→252 (the 4
+  `r_fallback_*` repros).
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening on
+  port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
+- **4 MD5 gates byte-identical** (unchanged from the F3 AMENDMENT B baseline): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
+  `066c99974f6052317636854dc4c2a2d5`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
 
 ## F-CLOSEOUT — std-lib closeout (2026-08-14)
 

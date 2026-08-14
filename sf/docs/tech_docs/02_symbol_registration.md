@@ -95,6 +95,13 @@ Two sub-cases based on `child_1` (the init expression):
 
 3. **Init is `ident_expr`** (line 259): Looks up type via `nameCacheGet`. If cached, creates `SymbolKind.type_alias` with the cached type ID and writes `RCA:p<ident_payload>`, `RCA:i<interned_name>`, `RCA:H<cached_type>` markers.
 
+   [updated: 2026-08-14] **Site-2 fix (fallback demotion, F-task):** the `ident_expr` alias branch
+   (symbol_registrator.zig:263) now scopes its RHS type lookup to the **declaring module first** —
+   `nameCacheGet(type_reg, (mod_id<<32)|ident_name_id)` — before falling back to the bare
+   `nameCacheGet(type_reg, ident_name_id)` key (which holds primitives *and* module-0 named types).
+   This mirrors `resolveTypeExprFull`'s current-module-first reorder (see 03_type_resolution.md);
+   `pub const Bar = Foo` in module B now resolves B's own `Foo`, not module-0's.
+
 Default case (no special init): creates `SymbolKind.global`.
 
 [updated: 2026-08-07] **`pub const` literal-init globals have NO storage slot (F3, commit 317f3a82):**
