@@ -769,26 +769,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         if (rt) |t| { direct_ret = t; }
                         else {
                             var drfb_m: []const u8 = "DRETFB:n"; pal_mod.markerWriteInt(drfb_m, node_idx);
-                            var rn = self.store.nodes.items[@intCast(usize, proto.return_type_node)];
-                            var brnk_m: []const u8 = "BR:rnk"; pal_mod.markerWriteInt(brnk_m, @intCast(u32, @enumToInt(rn.kind)));
-                            if (rn.kind == AstKind.ident_expr) {
-                                var rnid = self.store.identifiers.items[@intCast(usize, rn.payload)];
-                                var nc = type_mod.nameCacheGet(self.registry, @intCast(u64, rnid));
-                                if (nc == null) {
-                                    var mti: usize = 0;
-                                    while (mti < self.symbols.tables_len) : (mti += 1) {
-                                        var nck: u64 = @intCast(u64, mti) * @intCast(u64, 4294967296) + @intCast(u64, rnid);
-                                        nc = type_mod.nameCacheGet(self.registry, nck);
-                                        if (nc != null) break;
-        }
-                                }
-                                if (nc) |t| { direct_ret = t; }
-                            } else {
-                                var tre_env_fc = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = s.module_id };
-                                var fc_rt = type_resolver.resolveTypeExprFull(&tre_env_fc, proto.return_type_node, @intCast(u32, 0));
-                                var brfc_m: []const u8 = "BR:fc"; pal_mod.markerWriteInt(brfc_m, fc_rt);
-                                if (fc_rt != type_mod.TYPE_UNDEFINED) { direct_ret = fc_rt; }
-                            }
+                            var tre_env_fc = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = s.module_id };
+                            var fc_rt = type_resolver.resolveTypeExprFull(&tre_env_fc, proto.return_type_node, @intCast(u32, 0));
+                            var brfc_m: []const u8 = "BR:fc"; pal_mod.markerWriteInt(brfc_m, fc_rt);
+                            if (fc_rt != type_mod.TYPE_UNDEFINED) { direct_ret = fc_rt; }
                         }
                     var brfnr_m: []const u8 = "BR:fnr"; pal_mod.markerWriteInt(brfnr_m, direct_ret);
                 }

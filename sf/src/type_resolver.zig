@@ -675,15 +675,15 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var opm4_m: []const u8 = "OPTVOID:id"; pal_mod.markerWriteInt(opm4_m, name_id);
         var text = interner_mod.stringInternerGet(env.interner, name_id);
         var canonical_id = interner_mod.stringInternerIntern(env.interner, text);
-        var tid = type_mod.nameCacheGet(env.typereg, @intCast(u64, canonical_id));
-        var opnc_m: []const u8 = "OPTVOID:nc"; pal_mod.markerWriteInt(opnc_m, canonical_id);
-        if (tid) |t| return t;
-        var nf: []const u8 = "NF"; pal_mod.markerWrite(nf);
         if (env.module_id != MODULE_ID_NONE) {
             var ck_cur: u64 = @intCast(u64, env.module_id) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);
             var tc_cur = type_mod.nameCacheGet(env.typereg, ck_cur);
             if (tc_cur) |t| return t;
         }
+        var tid = type_mod.nameCacheGet(env.typereg, @intCast(u64, canonical_id));
+        var opnc_m: []const u8 = "OPTVOID:nc"; pal_mod.markerWriteInt(opnc_m, canonical_id);
+        if (tid) |t| return t;
+        var nf: []const u8 = "NF"; pal_mod.markerWrite(nf);
         var mi: usize = 0;
         while (mi < @intCast(usize, env.symbol_reg.tables_len)) : (mi += 1) {
             var ck: u64 = @intCast(u64, mi) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);

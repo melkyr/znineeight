@@ -260,7 +260,8 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     var rca_m: []const u8 = "RCA:p"; pal_mod.markerWriteInt(rca_m, init_node.payload);
                     var ident_name_id = store.identifiers.items[@intCast(usize, init_node.payload)];
                     var rca_i: []const u8 = "RCA:i"; pal_mod.markerWriteInt(rca_i, ident_name_id);
-                    var cached = type_mod.nameCacheGet(type_reg, @intCast(u64, ident_name_id));
+                    var cached = type_mod.nameCacheGet(type_reg, @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, ident_name_id));
+                    if (cached == null) { cached = type_mod.nameCacheGet(type_reg, @intCast(u64, ident_name_id)); }
                     if (cached) |ct| {
                         var rca_h: []const u8 = "RCA:H"; pal_mod.markerWriteInt(rca_h, ct);
                         var ck: u64 = @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);

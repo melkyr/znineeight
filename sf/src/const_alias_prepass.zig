@@ -164,6 +164,11 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
             if (type_mod.nameCacheGet(registry, @intCast(u64, dep_name))) |tid| { resolved = tid; }
 
             if (resolved == type_mod.TYPE_UNDEFINED) {
+                var mod_key = @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, dep_name);
+                if (type_mod.nameCacheGet(registry, mod_key)) |tid| { resolved = tid; }
+            }
+
+            if (resolved == type_mod.TYPE_UNDEFINED) {
                 var cmi: usize = 0;
                 while (cmi < symbol_reg.tables_len) : (cmi += 1) {
                     var ckey = @intCast(u64, cmi) * @intCast(u64, 4294967296) + @intCast(u64, dep_name);
