@@ -5,7 +5,7 @@ set -e
 
 SCRIPT_DIR="$(dirname "$0")"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-OUT_DIR="$ROOT_DIR/build/out_release"
+OUT_DIR="/tmp/fx_subfolder"
 
 echo "=== [release] Building zig0 ==="
 mkdir -p "$ROOT_DIR/build"

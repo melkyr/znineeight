@@ -8,7 +8,7 @@ set -e
 SCRIPT_DIR="$(dirname "$0")"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 ZIG0="$ROOT_DIR/build/zig0"
-ZIG1="$ROOT_DIR/build/out_release/zig1"
+ZIG1="/tmp/fx_subfolder/zig1"
 TMPDIR="/tmp/zig_diff_$$"
 
 INPUT_ZIG="${1:-examples/hello/main.zig}"

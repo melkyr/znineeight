@@ -201,7 +201,8 @@ and 4 green-guards are exactly the documented set; no new corpus FAIL.
 
 Follow-up to the F4 review finding 1: the `__bootstrap_*` wrapper removal broke LINK for the
 corpus repros still declaring `extern fn __bootstrap_print*` (`undefined reference to
-__bootstrap_print*`). **48 repro main.zig files migrated** off the extern to `std.io`
+__bootstrap_print*`). **47 repro .zig files migrated** (44 `main.zig` + 2 `main_green.zig`
++ 1 `io.zig`; `field_store_drop` left unmigrated — compile-only FAIL) off the extern to `std.io`
 (`std.io.print` / `std.io.printInt` / `std.io.write`), each with byte-identical local
 `std.zig` + `std_io.zig` copies (the reduced `io`-only root package — `arena`/`debug`
 re-exports omitted, D1/D2 precedent). `import_extern_c`'s `io.zig` migrated
