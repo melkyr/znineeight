@@ -416,7 +416,7 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3670`):
 | `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 4618 |
 | `.call` | `result = callee(args...);` (indirect call through function pointer) | 4692 |
 | `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 4718 |
-| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 5550 |
+| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 4853 |
 | `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 4899 |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 4941 |
 | `.int_cast` | `result = (type)src;` (checked: `result = __bootstrap_<DST>_from_<SRC>(src);`) | 4967 |
@@ -431,27 +431,28 @@ Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3670`):
 | `.unwrap_error_code` | `result = src.data.err;` (void-payload → `src.err;`) | 5267 |
 | `.wrap_error_ok` | `result.data.payload = src;\n result.is_error = 0;` (void-payload → `result.err = 0;\n result.is_error = 0;`) | 5296 |
 
-**[updated: 2026-08-13 — F3 final line-ref pass: all table line numbers corrected against
-current source (F1/F4/F6 additions shifted them +~1200 lines); `emitInst` header :3062 → :3670.]**
-| `.wrap_error_err` | `result.data.err = src;\n result.is_error = 1;` (void-payload → same pattern, `.err`) | 3554 |
-| `.check_optional` | `result = src.has_value;` | 3586 |
-| `.unwrap_optional` | `result = src.value;` (void-payload → nothing) | 3599 |
-| `.unwrap_optional_abi` | `result = src.has_value ? src.value : NULL;` | 3625 |
-| `.int_to_ptr` | `result = (type)(unsigned int)src;` | 3639 |
-| `.ptr_to_int` | `result = (usize)src;` | 3654 |
-| `.func_ref` | `result = fn_name;` (function pointer) | 3669 |
-| `.va_start` | `va_start(vl, last_param);` | 4848 |
-| `.va_arg` | `res = va_arg(vl, TYPE);` (TYPE = `getCTypeName(type_id)`) | 4861 |
-| `.va_end` | `va_end(vl);` | 4876 |
-| `.builtin_put_char` | `putchar(value);` | 4556 |
-| `.builtin_stdout_write` | `fwrite(ptr, 1, len, stdout);` (via `emitFwriteCall` :3139) | 4565 |
-| `.builtin_stderr_write` | `fwrite(ptr, 1, len, stderr);` | 4568 |
-| `.builtin_get_char` | `result = getchar();` (result typed `unsigned char`) | 4571 |
-| `.builtin_exit` | `exit(value);` | 4578 |
-| `.builtin_sleep_ms` | `#ifdef _WIN32` `Sleep(value);` `#else` `usleep(value * 1000);` `#endif` | 4587 |
-| `.builtin_console_clear` | `#ifdef _WIN32` `FillConsoleOutputCharacter/Attribute`+home `#elif __WATCOMC__`/`#else` `__bootstrap_write("\x1b[2J\x1b[H", 7)` `#endif` | 4789 |
-| `.builtin_console_gotoxy` | `#ifdef _WIN32` `SetConsoleCursorPosition(COORD)` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%d;%dH", y+1, x+1)` + `__bootstrap_write` `#endif` | 4792 |
-| `.builtin_console_set_color` | `#ifdef _WIN32` `SetConsoleTextAttribute` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%s;%sm", fg_ansi[fg&0x0F], bg_ansi[bg&0x0F])` + `__bootstrap_write` `#endif` | 4795 |
+**[updated: 2026-08-14 — F3 review follow-up: all rows in this table grep-verified against
+current source (the 2026-08-13 pass left the 19 trailing rows + `.tail_call` stale; F1/F4/F6
+additions shifted the arms +~1200 lines); `emitInst` header :3062 → :3670.]**
+| `.wrap_error_err` | `result.data.err = src;\n result.is_error = 1;` (void-payload → same pattern, `.err`) | 5325 |
+| `.check_optional` | `result = src.has_value;` | 5357 |
+| `.unwrap_optional` | `result = src.value;` (void-payload → nothing) | 5370 |
+| `.unwrap_optional_abi` | `result = src.has_value ? src.value : NULL;` | 5396 |
+| `.int_to_ptr` | `result = (type)(unsigned int)src;` | 5410 |
+| `.ptr_to_int` | `result = (usize)src;` | 5425 |
+| `.func_ref` | `result = fn_name;` (function pointer) | 5440 |
+| `.va_start` | `va_start(vl, last_param);` | 5452 |
+| `.va_arg` | `res = va_arg(vl, TYPE);` (TYPE = `getCTypeName(type_id)`) | 5465 |
+| `.va_end` | `va_end(vl);` | 5480 |
+| `.builtin_put_char` | `putchar(value);` | 5118 |
+| `.builtin_stdout_write` | `fwrite(ptr, 1, len, stdout);` (via `emitFwriteCall` :3139) | 5127 |
+| `.builtin_stderr_write` | `fwrite(ptr, 1, len, stderr);` | 5130 |
+| `.builtin_get_char` | `result = getchar();` (result typed `unsigned char`) | 5133 |
+| `.builtin_exit` | `exit(value);` | 5140 |
+| `.builtin_sleep_ms` | `#ifdef _WIN32` `Sleep(value);` `#else` `usleep(value * 1000);` `#endif` | 5149 |
+| `.builtin_console_clear` | `#ifdef _WIN32` `FillConsoleOutputCharacter/Attribute`+home `#elif __WATCOMC__`/`#else` `__bootstrap_write("\x1b[2J\x1b[H", 7)` `#endif` | 5173 |
+| `.builtin_console_gotoxy` | `#ifdef _WIN32` `SetConsoleCursorPosition(COORD)` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%d;%dH", y+1, x+1)` + `__bootstrap_write` `#endif` | 5176 |
+| `.builtin_console_set_color` | `#ifdef _WIN32` `SetConsoleTextAttribute` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%s;%sm", fg_ansi[fg&0x0F], bg_ansi[bg&0x0F])` + `__bootstrap_write` `#endif` | 5179 |
 
 Any unhandled variant falls through the `else => {}` at line 4885 (no-op).
 
