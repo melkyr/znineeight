@@ -28,16 +28,20 @@
 
 ---
 
-### Task 1: F-TOKEN — two-pass token count (exact-size token array)
+### Task 1: F-TOKEN+F-SOURCE — two-pass token count + source read into perm (OOM closure)
+
+> **AMENDMENT (operator ruling Option A, 2026-08-14):** Task 1 now ALSO includes F-SOURCE (read each module's source directly into perm, removing the scratch copy). Rationale: the actual token counts exceed the plan's ≤65,536 assumption — `c89_emit.zig` has **73,912 tokens**, `lower.zig` **79,606** — so an exact-size token array ALONE still leaves scratch at 2.02–2.16 MB > 2 MB. Removing the in-scratch source text closes the gap. The standalone Task 9 (F-SOURCE) is **absorbed** into this task.
 
 **Files:**
-- Modify: `sf/src/import_resolver.zig:16-81` (token array + `moduleRegistryParseModule`)
-- Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` (lexer/parser phase; add token-array exact-size note `[updated: 2026-08-14]`)
+- Modify: `sf/src/import_resolver.zig:16-81` (token array + `moduleRegistryParseModule`; `moduleRegistryResolveImports` readFile at `:96` reads into perm)
+- Modify: `sf/src/lexer.zig` (add `count_only` mode: suppress diagnostics + interning + `string_buf` writes)
+- Modify: `sf/src/source_manager.zig:75-101` (`sourceManagerAddFile` takes ownership of the perm-backed source; no scratch→perm copy)
+- Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` + `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-TOKEN-report.md`
 
 **Interfaces:**
-- Consumes: current `tokenArrayEnsureCapacity`/`tokenArrayAppend` (`import_resolver.zig:16-32`), `lexerInit`/`lexerNextToken` (`lexer.zig`).
-- Produces: token array allocated at exact size (no doubling), so import scratch for the largest module drops from ~3.49 MB to ~1.92 MB. `Token` = 24 B (`token.zig:115-123`).
+- Consumes: current `tokenArrayEnsureCapacity`/`tokenArrayAppend` (`import_resolver.zig:16-32`), `lexerInit`/`lexerNextToken` (`lexer.zig`), `sourceManagerAddFile` (`source_manager.zig`), `pal.readFile` (`pal.zig`).
+- Produces: (1) token array allocated at exact size (no doubling); (2) each module's source read directly into perm (no scratch copy). Combined, import scratch for the largest module (`c89_emit.zig`, 73,912 tokens) = exact token array (73,912 × 24 = 1,773,888 B) + `string_buf` (small) ≈ **1.78 MB < 2 MB cap — the scratch OOM is closed**. `Token` = 24 B (`token.zig:115-123`).
 
 - [ ] **Step 1: Reproduce the RED scratch OOM (baseline)**
 
@@ -75,7 +79,9 @@ while (true) {
 }
 ```
 
-If the lexer emits diagnostics during PASS 1 (it does for lexical errors), either add a `count_only: bool` field to `Lexer` that short-circuits `interner`/`diag` calls, or re-init/clear the module's lexical diagnostics between passes. Verify no duplicate diagnostics by re-running the corpus (no new FAIL / no diagnostic-count change).
+The counting pass (PASS 1) must be a pure count. **IMPORTANT (from the first implementation attempt):** suppressing only SOME side effects is not enough — interning identifiers in PASS 1 (but not strings) changes the interner insertion order and shifts `string_id` values, breaking byte-identity (the `lisp` MD5). The `count_only` mode must suppress **ALL** of: diagnostics, interning (strings, identifiers, builtins), and `string_buf` writes. PASS 2 then performs every side effect in exactly the pre-change source order, keeping the output byte-identical. Verify no duplicate diagnostics by re-running the corpus (no new FAIL / no diagnostic-count change).
+
+Then, **read the source directly into perm** instead of scratch: in `moduleRegistryResolveImports` (`import_resolver.zig:96`), change `pal.readFile(path_s, scratch)` to read into the perm arena; `sourceManagerAddFile` (`source_manager.zig:75-101`) should take ownership of the perm-backed buffer (not re-copy). `content` remains a valid slice (perm is retained), and the lexer/parser are arena-agnostic (they take `[]const u8`). This removes the 345–349 KB scratch transient — the residual that pushed exact-size tokens over the 2 MB cap.
 
 - [ ] **Step 3: Rebuild + verify the OOM is gone**
 
@@ -84,7 +90,7 @@ bash sf/scripts/build_release.sh 2>&1 | tail -2
 cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig /tmp/fx_subfolder/lib/
 mkdir -p /tmp/ftok2 && timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/ftok2 sf/src/c89_emit.zig 2>&1 | tail -3
 ```
-Expected: no `OOM`, the compile proceeds (may hit the parser ASan bug on some modules — that is Task 2, out of this task's gate; the scratch OOM on c89_emit/lower must be GONE).
+Expected: no `OOM` (the exact-size token array + perm source now fits under 2 MB). The compile may proceed to hit the parser ASan bug (on modules with >64-field unions/enums) — that is Task 2, out of this task's gate; the scratch OOM on c89_emit/lower must be GONE (grep the output for `OOM:`).
 
 - [ ] **Step 4: Gate — byte-identity + peak reduction**
 
@@ -93,8 +99,8 @@ Run the 4 MD5 gates (byte-identical) + corpus 252 (no change) + `--track-memory 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sf/src/import_resolver.zig sf/docs/tech_docs/00_lexer_parser.md
-git commit -m "fix: two-pass token count eliminates token-array doubling (scratch OOM)"
+git add sf/src/import_resolver.zig sf/src/lexer.zig sf/src/source_manager.zig sf/docs/tech_docs/00_lexer_parser.md sf/docs/tech_docs/00_shared_infra.md
+git commit -m "fix: two-pass token count + source into perm closes scratch OOM (F-TOKEN+F-SOURCE)"
 ```
 
 **Gate:** c89_emit/lower standalone no longer OOM scratch; 4 MD5s byte-identical; corpus 252 unchanged; rogue_mud import scratch peak reduced.
@@ -360,33 +366,11 @@ Full gate battery + `--track-memory` on rogue_mud and self-compile (now possible
 
 ---
 
-### Task 9: F-SOURCE — read source into perm (avoid scratch→perm double materialize)
+### Task 9: F-SOURCE — read source into perm (ABSORBED into Task 1)
 
-**Files:**
-- Modify: `sf/src/source_manager.zig:75-101`, `sf/src/import_resolver.zig:96` (readFile path)
-- Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
-- Report: `.superpowers/sdd/task-F-SOURCE-report.md`
+> **AMENDMENT (operator ruling Option A, 2026-08-14):** This task is **absorbed into Task 1** (F-TOKEN+F-SOURCE). Do NOT implement it as a standalone task — Task 1 already reads each module's source directly into perm and removes the scratch→perm double materialize. The only residue worth folding in is the `line_offsets` pre-allocation heuristic fix (`source_manager.zig:81-82`, `content.len/40 + 16` underestimates for long lines → extra doubling); apply that within Task 1's source-manager change if not already covered.
 
-**Interfaces:**
-- Consumes: `sourceManagerAddFile` (`source_manager.zig`), `pal.readFile` (`pal.zig`).
-- Produces: each module's source read once into perm (or the scratch buffer handed to the source manager) instead of scratch-then-copy. ~345 KB transient scratch saving; perm closure unchanged (1.3 MB must be retained for diagnostics).
-
-- [ ] **Step 1: Read directly into perm where lifetime permits**
-
-The scratch copy is transient (reset per module), the perm copy is retained. Read the source into the perm arena (or have `sourceManagerAddFile` take ownership of a scratch buffer and copy once). Keep `line_offsets` pre-allocation accurate (fix the `content.len/40 + 16` heuristic to avoid the extra doubling noted in I-M2).
-
-- [ ] **Step 2: Rebuild + verify byte-identity**
-
-4 MD5s byte-identical; corpus 252 unchanged; self-compile still completes.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sf/src/source_manager.zig sf/src/import_resolver.zig sf/docs/tech_docs/00_shared_infra.md
-git commit -m "fix: read module source into perm directly (avoid double materialize)"
-```
-
-**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; self-compile completes.
+- [ ] **Step 1 (skip — done in Task 1):** source-into-perm + `line_offsets` heuristic fix (covered by Task 1).
 
 ---
 
