@@ -316,12 +316,20 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-14 — F-MIGRATE: bare `@import("std")` search-path migration re-baseline] |
+| Entry Path | Reference md5 | [updated: 2026-08-14 — F3 (printInt INT_MIN) re-baseline, AMENDMENT B runtime-identity] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `447c491b4877e65b2ca2b87089a3021b` |
-| `examples/z98/game_of_life/main.zig` | `4074946027f8f72a325fafaa459bc8ec` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `b71a0e0c3d3ad78349e219a9e72c8b35` |
-| `examples/z98/json_parser/main.zig` | `b47f9498c56a3f6995f803600968dd3b` |
+| `examples/z98/mud_server/main.zig` | `a1d0dd55aada9c3fd904ae33f54de32e` |
+| `examples/z98/game_of_life/main.zig` | `9cf758d96f25d41980379564a5501bc8` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `524d2872daefb2677c8ddc1ac8f34cf5` |
+| `examples/z98/json_parser/main.zig` | `066c99974f6052317636854dc4c2a2d5` |
+
+- **F3 re-baseline (2026-08-14, commit `a55c65e2`, AMENDMENT B runtime-identity):** the `printInt`
+  INT_MIN fix changes the emitted `printInt` body in *every* `std.io` importer (the C89 emitter
+  has no dead-code elimination), so all 4 gate MD5s move. Runtime output is byte-identical —
+  gol glider md5 `fcbf7e7c…` (100 generations, rc=0), lisp evaluates `nil`/`true`/`+`/
+  `(quote 5)`/`cons` correctly (rc=0), json parses `test.json` rc=0, mud "MUD server listening
+  on port 4000" rc=124 (timeout-gated server, NOT a hard gate). Prior values (stale): mud
+  `447c491b…`, gol `40749460…`, lisp `b71a0e0c…`, json `b47f9498…`.
 
 - **F-MIGRATE gate sweep / closeout (2026-08-14): all 4 re-baselined** (bare `@import("std")`
   resolves through the search path to the canonical `sf/src/std*.zig` installed at
