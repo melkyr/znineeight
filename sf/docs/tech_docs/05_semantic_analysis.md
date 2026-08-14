@@ -580,7 +580,7 @@ Dispatched from ResolveExpr for bit_not. Returns the inner type if integer.
 **[updated: 2026-08-14 — F-task root-cause fix]:** the Phase-1 return-type fallback's dead manual
 name-cache scan (bare `nameCacheGet(rnid)` then a module-0-first `(mti<<32)|rnid` scan) is removed;
 the fallback now always routes through `resolveTypeExprFull` with `.module_id = s.module_id`
-(semantic_analyzer.zig:786-790).
+(semantic_analyzer.zig:772-775).
 
 ### semanticAnalyzerResolveSwitchExpr (`sf/src/semantic_analyzer.zig:1046-1179`)
 

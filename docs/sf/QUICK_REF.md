@@ -39,8 +39,10 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   canonical std lib next to the compiler under test:
   `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
-  gone; `std_import_bare_xmod/local/` is the only remaining fixture (the Task R `--lib-dir` GREEN
-  test).
+  gone from the migrated examples/repros; `std_import_bare_xmod/local/` remains a fixture (the Task R
+  `--lib-dir` GREEN test), and the 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass /
+  control) intentionally ship local `std.zig`/`std_io.zig` copies with explicit `.zig` imports as
+  collision-repro fixtures (out of scope to migrate).
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
