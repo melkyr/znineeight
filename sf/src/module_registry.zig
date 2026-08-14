@@ -128,6 +128,28 @@ fn moduleDirPath(path: []const u8) []const u8 {
     return empty_str;
 }
 
+fn appendZigExt(target: []const u8, scratch: *Sand) ?[]u8 {
+    var total: usize = target.len + @intCast(usize, 4);
+    var raw = alloc_mod.sandAlloc(scratch, total, @intCast(usize, 1)) catch return null;
+    var buf = @ptrCast([*]u8, raw);
+    var i: usize = 0;
+    while (i < target.len) { buf[i] = target[i]; i += 1; }
+    buf[i] = '.'; i += 1;
+    buf[i] = 'z'; i += 1;
+    buf[i] = 'i'; i += 1;
+    buf[i] = 'g';
+    return buf[0..total];
+}
+
+fn moduleResolverTryDir(self: *ModuleResolver, dir: []const u8, target: []const u8, scratch: *Sand) ?u32 {
+    var full = joinPath(dir, target, scratch) orelse return null;
+    if (pal_mod.fileExists(full)) return interner_mod.stringInternerIntern(self.interner, full);
+    var tzig = appendZigExt(target, scratch) orelse return null;
+    var full2 = joinPath(dir, tzig, scratch) orelse return null;
+    if (pal_mod.fileExists(full2)) return interner_mod.stringInternerIntern(self.interner, full2);
+    return null;
+}
+
 pub fn moduleResolverInit(alloc: *Sand, interner: *StringInterner, diag: *DiagnosticCollector) ModuleResolver {
     return ModuleResolver{
         .search_dirs = SearchDirArrayList{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0), .alloc = alloc },
@@ -144,19 +166,19 @@ pub fn moduleResolverAddSearchDir(self: *ModuleResolver, dir: []const u8) void {
 pub fn moduleResolverResolve(self: *ModuleResolver, importer_path: []const u8, target: []const u8, scratch: *Sand) ?u32 {
     var importer_dir = moduleDirPath(importer_path);
     if (importer_dir.len > 0) {
-        var full = joinPath(importer_dir, target, scratch) orelse return null;
-        if (pal_mod.fileExists(full)) return interner_mod.stringInternerIntern(self.interner, full);
+        var id = moduleResolverTryDir(self, importer_dir, target, scratch);
+        if (id) |v| return v;
     }
     var i: usize = 0;
     while (i < self.search_dirs.len) {
         var dir = interner_mod.stringInternerGet(self.interner, self.search_dirs.items[i]);
-        var full = joinPath(dir, target, scratch) orelse return null;
-        if (pal_mod.fileExists(full)) return interner_mod.stringInternerIntern(self.interner, full);
+        var id = moduleResolverTryDir(self, dir, target, scratch);
+        if (id) |v| return v;
         i += 1;
     }
     var lib_s: []const u8 = ".";
-    var lib_full = joinPath(lib_s, target, scratch) orelse return null;
-    if (pal_mod.fileExists(lib_full)) return interner_mod.stringInternerIntern(self.interner, lib_full);
+    var id = moduleResolverTryDir(self, lib_s, target, scratch);
+    if (id) |v| return v;
     return null;
 }
 

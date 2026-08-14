@@ -11,6 +11,7 @@ extern "c" fn c_exit(code: i32) void;
 extern "c" fn pal_file_open(path: [*]const u8, flags: i32) usize;
 extern "c" fn pal_file_write(fd: usize, buf: [*]const u8, len: u32) i32;
 extern "c" fn pal_file_close(fd: usize) i32;
+extern "c" fn pal_get_default_lib_path(buf: [*]u8, bufsize: i32) i32;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;
@@ -87,6 +88,10 @@ pub fn fileWrite(fd: usize, msg: []const u8) void {
 
 pub fn fileClose(fd: usize) void {
     _ = pal_file_close(fd);
+}
+
+pub fn getDefaultLibPath(buf: [*]u8, bufsize: i32) i32 {
+    return pal_get_default_lib_path(buf, bufsize);
 }
 
 pub fn exit(code: u8) void {

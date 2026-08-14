@@ -212,6 +212,44 @@ int pal_file_close(PlatFile fd) {
 #endif
 }
 
+/* pal_get_default_lib_path: compute the compiler-binary-relative default
+ * install path <exe_dir>/lib. Win9x-primary via GetModuleFileNameA (kernel32,
+ * present since Win95); Linux best-effort via readlink("/proc/self/exe").
+ * Returns the length of the written path (excluding NUL), or 0 on failure. */
+int pal_get_default_lib_path(char* buf, int bufsize)
+{
+#ifdef _WIN32
+    DWORD n;
+    int i;
+    int dir_len;
+    if (!buf || bufsize < 2) return 0;
+    n = GetModuleFileNameA(NULL, buf, (DWORD)bufsize);
+    if (n == 0 || n >= (DWORD)bufsize) return 0;
+    i = (int)n - 1;
+    while (i >= 0 && buf[i] != '\\' && buf[i] != '/') i--;
+    dir_len = i;
+#else
+    ssize_t n;
+    int i;
+    int dir_len;
+    if (!buf || bufsize < 2) return 0;
+    n = readlink("/proc/self/exe", buf, (size_t)bufsize - 1);
+    if (n <= 0 || n >= (ssize_t)bufsize - 1) return 0;
+    buf[n] = '\0';
+    i = (int)n - 1;
+    while (i >= 0 && buf[i] != '/') i--;
+    dir_len = i;
+#endif
+    if (dir_len < 0) return 0;
+    if (dir_len + 5 > bufsize) return 0;
+    buf[dir_len] = '/';
+    buf[dir_len + 1] = 'l';
+    buf[dir_len + 2] = 'i';
+    buf[dir_len + 3] = 'b';
+    buf[dir_len + 4] = '\0';
+    return dir_len + 4;
+}
+
 #if defined(_WIN32) && defined(ZIG_NO_CRT)
 int main(void);
 void __cdecl mainCRTStartup(void)

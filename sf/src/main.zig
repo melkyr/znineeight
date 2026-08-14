@@ -262,6 +262,18 @@ fn runCompiler(ctx: *CompilerContext) void {
 fn phase_ImportResolution(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "I\n"; pal.markerWrite(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
+    var si: u32 = 0;
+    while (si < ctx.cli.include_count) : (si += 1) {
+        mr_mod.moduleResolverAddSearchDir(&ctx.module_reg.resolver, ctx.cli.include_dirs[@intCast(usize, si)]);
+    }
+    var lib_buf: [512]u8 = undefined;
+    var lib_len = pal.getDefaultLibPath(&lib_buf[0], @intCast(i32, 512));
+    if (lib_len > 0) {
+        var lib_path = lib_buf[0..@intCast(usize, lib_len)];
+        if (pal.fileExists(lib_path)) {
+            mr_mod.moduleResolverAddSearchDir(&ctx.module_reg.resolver, lib_path);
+        }
+    }
     var path_id = interner_mod.stringInternerIntern(ctx.interner, ctx.cli.input_file);
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
@@ -884,6 +896,7 @@ fn parseArgs() CompilerCli {
      const s_warn_error: []const u8 = "--warn-error";
      const s_markers: []const u8 = "--markers";
      const s_include: []const u8 = "-I";
+    const s_lib_dir: []const u8 = "--lib-dir";
     const s_t: []const u8 = "-t";
     const s_a: []const u8 = "-a";
     const s_y: []const u8 = "-y";
@@ -948,7 +961,7 @@ fn parseArgs() CompilerCli {
                  cli.warn_error = true;
              } else if (matchFlag(arg, s_markers)) {
                  cli.show_markers = true;
-             } else if (matchFlag(arg, s_include)) {
+             } else if (matchFlag(arg, s_include) or matchFlag(arg, s_lib_dir)) {
                 i += 1;
                 if (i < argc and cli.include_count < 16) {
                     cli.include_dirs[@intCast(usize, cli.include_count)] = cstrToSlice(pal.argGet(i));

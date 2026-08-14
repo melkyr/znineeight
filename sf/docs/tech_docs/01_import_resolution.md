@@ -402,64 +402,54 @@ same-named modules and emitted duplicate `#include "util.h"` lines).
 4. **`source_man_stub`** (module_registry.zig:197): One-byte stub used as placeholder `SourceManager` until `moduleRegistrySetSourceMan` is called. If `moduleRegistryResolveImports` runs before `setSourceMan`, the pointer dereference will crash.
 5. **No path normalization** (module_resolver.zig:109-119,144-161): `joinPath` and `moduleResolverResolve` do not resolve `..` or `.` — only simple concatenation.
 
-### D1 Gap: Search-Path Wiring [updated: 2026-08-14]
+### D1 Gap: Search-Path Wiring — FIXED [updated: 2026-08-14]
 
-> Investigation Task I — no compiler code changes. This section records the import-resolution
-> D1 defect and the recommended search-path design for the operator ruling.
+> Task F implemented the search path (operator ruling 2026-08-14): bare `@import("std")` now
+> resolves through user `-I`/`--lib-dir` dirs then a compiler-binary-relative default install
+> path, with `.zig` auto-append for bare names.
 
-**Current resolver behavior (file:line).** `@import("...")` is parsed in `parserParseImportExpr`
+**Resolver behavior (file:line).** `@import("...")` is parsed in `parserParseImportExpr`
 (`parser.zig:615-647`); the raw string literal is interned as `path_id` (`parser.zig:629`) and,
 while parsing, `moduleRegistryResolveImport` is called (`parser.zig:642`). That call resolves via
-`moduleResolverResolve` (`module_registry.zig:144-161`), which tries exactly three tiers:
-(1) importer's own directory (`moduleDirPath` :121 + `joinPath` :109, :146-149); (2) the
-`search_dirs` list (:150-156); (3) `.` — the current working directory (:157-159). `joinPath`
-concatenates `dir + '/' + rel` verbatim — **no `.zig` extension is appended** and no `..`/`.`
-normalization occurs. `moduleRegistryResolveImports` (`import_resolver.zig:82`) then loops the
-queue, `readFile`s each resolved path, and parses. Entry-module registration is in
-`phase_ImportResolution` (`main.zig:262-270`).
+`moduleResolverResolve` (`module_registry.zig:166-183`), which tries four tiers via
+`moduleResolverTryDir` (`module_registry.zig:144-151`): (1) importer's own directory
+(`moduleDirPath` :121 + `joinPath` :109); (2) the `search_dirs` list; (3) `.` — the current working
+directory. At each tier `moduleResolverTryDir` tries `target` first, then `target + ".zig"`
+(`appendZigExt`, `module_registry.zig:131-142`) — so a bare `@import("std")` maps to `std.zig`
+(ruling 3b), while an explicit `@import("std.zig")` resolves unchanged on the first try
+(byte-neutral). `moduleRegistryResolveImports` (`import_resolver.zig:82`) then loops the queue,
+`readFile`s each resolved path, and parses.
 
-**The D1 gap.** Tier 2 is dead: `moduleResolverAddSearchDir` (`module_registry.zig:139`) is defined
-but **never called** from any CLI path. The `CompilerCli` already carries `include_dirs[16]` +
-`include_count` (`main.zig:83-84`), and `parseArgs` already parses `-I` into them
-(`main.zig:886`, `:951-956`) — but `phase_ImportResolution` never copies `cli.include_dirs` into the
-resolver. There is no `--lib-dir` flag and no default install path at all, so a bare
-`@import("std")` with no sibling file and nothing on `search_dirs` fails at the resolve-null choke
-point → `error[3048]: could not resolve imported file 'std'` (`module_registry.zig:263-270`).
+**Resolution (implemented 2026-08-14).**
+1. **`.zig` auto-append for bare names** — `moduleResolverTryDir`/`appendZigExt`
+   (`module_registry.zig:131-151`), used by all four tiers of `moduleResolverResolve`.
+2. **CLI `--lib-dir` alias of `-I`** — `parseArgs` matches `--lib-dir` on the `-I` branch
+   (`main.zig:964`, const `s_lib_dir` at `main.zig:899`), repeatable into `cli.include_dirs[16]` in
+   CLI order.
+3. **Search-dir seeding** — `phase_ImportResolution` (`main.zig:262-282`) iterates
+   `cli.include_dirs` in CLI order calling `moduleResolverAddSearchDir` (`main.zig:265-268`), then
+   appends the default install path if it exists on disk (`main.zig:269-276`). User dirs precede the
+   default path (ruling 5).
+4. **Default install path** (ruling 2, Option B) — new PAL helper `pal_get_default_lib_path`
+   (`sf/src/include/zig_pal.c:219-251`, `_WIN32` `GetModuleFileNameA` / Linux
+   `readlink("/proc/self/exe")`) returns `<exe_dir>/lib`; declared `sf/src/pal.zig:14` and wrapped
+   `pal.getDefaultLibPath` (`pal.zig:93-95`). Seeded only when `pal.fileExists` confirms the dir.
 
-**Recommended search-path design** (mirrors zig0, operator m0983). Seed `search_dirs` in
-`phase_ImportResolution` (`main.zig:262`) — before `moduleRegistryResolveImports` — in this order:
-(1) user `-I`/`--lib-dir` dirs in CLI order (already parsed at `main.zig:951-956`; add `--lib-dir`
-as an alias), then (2) the compiler-default install path `<exe_dir>/lib` (mirroring zig0's
-`join_paths(exe_dir, "lib")`, `compilation_unit.cpp:168-176`). No resolver change is needed — the
-`search_dirs` loop (`module_registry.zig:150-156`) already does the right thing once populated. The
-only missing wiring is one loop in `phase_ImportResolution`.
+**Behavior.** `@import("std")` resolves: (1) importer's own dir; (2) each `-I`/`--lib-dir` dir in
+CLI order; (3) `<exe_dir>/lib` if present; (4) `.` (CWD). The `std_import_bare_xmod` repro is GREEN
+two ways: `--lib-dir repro/mi_matrix/std_import_bare_xmod/local` (or `-I`) and, with
+`std.zig`+`std_io.zig` copied to `<exe_dir>/lib`, with no flag — both print `42`. The 4 MD5 gates
+(gol/lisp/json/mud) stay byte-identical, and the corpus gains no regression (see task-F-report).
 
-**Install-path mechanism (Win9x-primary).** zig0 derives `<exe_dir>` via `plat_get_executable_dir`:
-`GetModuleFileNameA(NULL, buf, size)` on Win9x (`platform.cpp:481-492`, kernel32 — available since
-Win95, MSVC6/OpenWatcom-portable) and `readlink("/proc/self/exe")` on Linux (`platform.cpp:834-847`).
-zig1 should mirror this in the PAL: add a `pal_get_exe_dir()`/`pal_get_default_lib_path()` helper in
-`sf/src/include/zig_pal.c` (`#ifdef _WIN32` branch already uses `<windows.h>`; see `zig_pal.c:6-13`)
-declared in `sf/src/pal.zig` (`extern "c" fn` next to `pal_file_open`, `pal.zig:11-13`). argv[0]
-(`pal.argGet(0)`, `pal.zig:109`) is a workable fallback but is relative/absent-able; a compile-time
-baked path (the `host_is_windows` module-const pattern, `comptime_eval.zig:19`) is non-portable
-across installs and is least preferred. Recommendation: **GetModuleFileNameA (Win9x primary) +
-`/proc/self/exe` (Linux best-effort)**, exactly the zig0 practice.
-
-**Bare-name `.zig` append (open question for the ruling).** zig0 does NOT auto-append `.zig` — its
-examples write `@import("std.zig")` explicitly. The D1 repro uses bare `@import("std")`, which real
-Zig special-cases to the std lib. A faithful zig0 mirror keeps explicit `.zig`; the repro's GREEN
-target (`-I local/` → `local/std.zig`) requires either a `.zig`-append step for bare names in
-`moduleResolverResolve` or in the search loop. This is a fix-scope decision, not resolved here.
-
-**Blast radius (migration scope).** Every `std.zig`/`std_io.zig` byte-identical copy is a candidate
-for deletion once the search path works: 19 `examples/z98/*/std.zig` trees (21 z98 example dirs
-total; 19 also carry `std_io.zig`) plus 7 `examples/zig0/*/std.zig`; 54 `repro/mi_matrix/*` dirs
-carry `std.zig`/`std_io.zig` (247 repro dirs total) plus 1 nested copy in
-`std_import_bare_xmod/local/`; 82 `std.zig` and 75 `std_io.zig` files exist tree-wide outside `sf/`.
-A committed `sf/lib/std.zig` stub already exists (tracked, "Z98 Standard Library stub" — currently
-only `debug.print`/`mem.eql`/`io.Writer`/`ArrayList` placeholders, dormant; it is `std.zig` not a
-bare `std` file, and the `@import("std")` in `semantic.zig:65`/`c89_types.zig:16` is dead code not
-in the compile graph).
+**Blast radius (migration scope — Task F-MIGRATE, not this task).** Every `std.zig`/`std_io.zig`
+byte-identical copy is a candidate for deletion once the search path works: 19
+`examples/z98/*/std.zig` trees (21 z98 example dirs total; 19 also carry `std_io.zig`) plus 7
+`examples/zig0/*/std.zig`; 54 `repro/mi_matrix/*` dirs carry `std.zig`/`std_io.zig` (247 repro dirs
+total) plus 1 nested copy in `std_import_bare_xmod/local/`; 82 `std.zig` and 75 `std_io.zig` files
+exist tree-wide outside `sf/`. A committed `sf/lib/std.zig` stub already exists (tracked, "Z98
+Standard Library stub" — currently only `debug.print`/`mem.eql`/`io.Writer`/`ArrayList` placeholders,
+dormant; it is `std.zig` not a bare `std` file, and the `@import("std")` in `semantic.zig:65`/
+`c89_types.zig:16` is dead code not in the compile graph).
 
 
 ---
