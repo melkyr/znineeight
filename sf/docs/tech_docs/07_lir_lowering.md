@@ -1,4 +1,4 @@
-# LIR Lowering Layer [updated: 2026-08-13 — Defect C FIXED (task F4, operator ruling m0872 — Option a): `lowerLValueAddr` (lower.zig:739) now has a `field_access` branch — computes the address of the field within the base's address (pointer base → `&base->f_N`; struct/union value base → recursive `&base` then `&addr->f_N`), emitting a new LIR inst `addr_of_field` (lir.zig:44) via the `addr_of`-adjacent C emitter form (c89_emit.zig, `result = &base->field;`). `lowerFieldStore` (lower.zig:844) routes nested field_access/deref/paren bases through it (`base_temp = lowerLValueAddr(child_0, ptr_type)`; ptr-typed bases keep `lowerExpr`) so the outer `store_field` stores through the pointer (proven ptr-base emitter c89_emit.zig:4183-4202 emits `ptr->field = v;`). Fixes BOTH: nested field-store write-back drop (repros `nested_field_store_xmod`→`4243`, `nested_field_store_xmod2`→`78`) and `&o.inner` ICE error[3043] (throwaway `&field` tests pass, incl. 3-level chains, union members, cross-module). Single-level stores unchanged; index-access bases unchanged; lisp_interpreter `v.data.Cons.car = car` now writes through `&v->data` / `&->Cons` and no longer SEGFAULTS at run; 4 MD5 gates byte-identical; corpus OK=237 FAIL=3 ICE=0 CRASH=0 GREEN=4 (no new FAIL).; prior 2026-08-13 — Defect-C investigation (task I2): documented the lvalue/address path gap — `lowerLValueAddr` (lower.zig:739) has NO `field_access` branch; 2+ level field-access lvalues (`o.inner.a = v`) lower the inner base as an rvalue COPY (`lowerFieldStore` lower.zig:860 → `lowerExpr`) and drop the write-back, and `&o.inner` ICEs error[3043]. Fix recommendation + blast radius in §Plain Assignment / §Field Store / §Address-Of; 0 of 4 MD5 gates affected; corrected stale lowerLValueAddr/lowerAssignLValue refs (655→739, 709→793).; prior 2026-08-13 — F2 module-scope coercion recording: new pub sema fn `semanticAnalyzerResolveModuleVarDecl` records the init coercion (wrap_optional_null for module-scope `var g: ?T = null`) → `set_optional_null` instead of `int` null_const (Defect B FIXED; side effect `int_literal_coerce` on `g_used: usize = 0` → gol/lisp/json MD5 gates re-baselined m0809); prior 2026-08-13 — F6 networking builtins: 11 `builtin_socket_*` LIR variants (lir.zig:89-99) + lowering (lower.zig:2880-2977) + 07 §Builtin calls / F6 paragraph; prior 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214); F7 line-ref pass: core I/O builtin dispatch :2777-2814 → :2821-2858, console :2816-2837 → :2860-2878 (socket arms shifted the block)]
+# LIR Lowering Layer [updated: 2026-08-13 — Defect C FIXED (task F4, operator ruling m0872 — Option a): `lowerLValueAddr` (lower.zig:739) now has a `field_access` branch — computes the address of the field within the base's address (pointer base → `&base->f_N`; struct/union value base → recursive `&base` then `&addr->f_N`), emitting a new LIR inst `addr_of_field` (lir.zig:44) via the `addr_of`-adjacent C emitter form (c89_emit.zig, `result = &base->field;`). `lowerFieldStore` (lower.zig:894) routes nested field_access/deref/paren bases through it (`base_temp = lowerLValueAddr(child_0, ptr_type)`; ptr-typed bases keep `lowerExpr`) so the outer `store_field` stores through the pointer (proven ptr-base emitter c89_emit.zig:4199-4218 emits `ptr->field = v;`). Fixes BOTH: nested field-store write-back drop (repros `nested_field_store_xmod`→`4243`, `nested_field_store_xmod2`→`78`) and `&o.inner` ICE error[3043] (throwaway `&field` tests pass, incl. 3-level chains, union members, cross-module). Single-level stores unchanged; index-access bases unchanged; lisp_interpreter `v.data.Cons.car = car` now writes through `&v->data` / `&->Cons` and no longer SEGFAULTS at run; 4 MD5 gates byte-identical; corpus OK=237 FAIL=3 ICE=0 CRASH=0 GREEN=4 (no new FAIL).; prior 2026-08-13 — Defect-C investigation (task I2): documented the lvalue/address path gap — `lowerLValueAddr` (lower.zig:739) has NO `field_access` branch; 2+ level field-access lvalues (`o.inner.a = v`) lower the inner base as an rvalue COPY (`lowerFieldStore` lower.zig:860 → `lowerExpr`) and drop the write-back, and `&o.inner` ICEs error[3043]. Fix recommendation + blast radius in §Plain Assignment / §Field Store / §Address-Of; 0 of 4 MD5 gates affected; corrected stale lowerLValueAddr/lowerAssignLValue refs (655→739, 709→793).; prior 2026-08-13 — F2 module-scope coercion recording: new pub sema fn `semanticAnalyzerResolveModuleVarDecl` records the init coercion (wrap_optional_null for module-scope `var g: ?T = null`) → `set_optional_null` instead of `int` null_const (Defect B FIXED; side effect `int_literal_coerce` on `g_used: usize = 0` → gol/lisp/json MD5 gates re-baselined m0809); prior 2026-08-13 — F6 networking builtins: 11 `builtin_socket_*` LIR variants (lir.zig:89-99) + lowering (lower.zig:2949-3046) + 07 §Builtin calls / F6 paragraph; prior 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214); F7 line-ref pass: core I/O builtin dispatch :2777-2814 → :2821-2858, console :2816-2837 → :2860-2878 (socket arms shifted the block); F3 line-ref pass (2026-08-13): I/O/console/socket arm ranges re-corrected post-F4 — :2821-2858→:2890-2928, :2860-2878→:2929-2948, :2880-2977→:2949-3046]
 
 ## Summary
 
@@ -360,7 +360,7 @@ lowerCompoundLValueStore(self, node_idx, lhs_val, op_r)
 
 This covers: `add_assign`, `sub_assign`, `mul_assign`, `div_assign`, `mod_assign`, `shl_assign`, `shr_assign`, `and_assign`, `xor_assign`, `or_assign`.
 
-### Plain Assignment `sf/src/lower.zig:1389`
+### Plain Assignment `sf/src/lower.zig:843` (`lowerAssignLValue`)
 ```
 lowerExpr(rhs) → src
 lowerAssignLValue(lhs, src)
@@ -369,33 +369,36 @@ lowerAssignLValue(lhs, src)
 
 **Defect-C — FIXED (2026-08-13, task F4, operator ruling m0872 — Option a).** Previously: for a
 2+ level field-access lvalue (`o.inner.a = v`), `field_access` dispatch reached `lowerFieldStore`
-(lower.zig:844). For a NON-index base (child_0 is itself `field_access`), lowerFieldStore lowered
-the base with `base_temp = lowerExpr(fa_node.child_0)` (lower.zig:860) — an **rvalue COPY**
+(lower.zig:894). For a NON-index base (child_0 is itself `field_access`), lowerFieldStore lowered
+the base with `base_temp = lowerExpr(fa_node.child_0)` — an **rvalue COPY**
 (inner `field_access` → `.load_field` into a fresh temp). The outer `store_field`
-(lower.zig:884) then mutated that throwaway local; the write-back to `o` was DROPPED (emitted C
+(lower.zig:933-941) then mutated that throwaway local; the write-back to `o` was DROPPED (emitted C
 `zT_5 = o.inner; zT_5.a = v;`, repros `nested_field_store_xmod`/`_xmod2` printed garbage).
-**Now:** `lowerFieldStore`'s nested-base case routes field_access/deref/paren bases through
+**Now:** `lowerFieldStore`'s nested-base case (lower.zig:909-927) routes
+field_access/deref/paren bases through
 `lowerLValueAddr(child_0, ptr_type)` (pointer-typed bases keep `lowerExpr`), producing a pointer
 to the inner field; the outer `store_field` stores through it (emitted C
 `zT_5 = &o; zT_6 = &zT_5->inner; zT_6->a = v;`). Repro `nested_field_store_xmod` prints `4243`,
 `nested_field_store_xmod2` prints `78`. Single-level stores unaffected (ident base stays on the
-`lowerExpr` path, which returns the local's own temp, lower.zig:2000). See §Field Store /
-§Address-Of.
+`lowerExpr` path, which returns the local's own temp, lower.zig:2014). See §Field Store /
+§Address-Of. **[F3 line-ref pass 2026-08-13: lower.zig refs corrected — `lowerFieldStore` :894
+(was :844), nested-base case :909-927 (was :859-873), ptr-base store through :933-941 (was
+:884).]**
 
-### Field Access `sf/src/lower.zig:1740`
+### Field Access `sf/src/lower.zig:2106`
 
 Two modes:
 1. **Compile-time resolved**: `TypeAlias.field` → `emitTaggedUnionInit` (for TU) or `enum_const` (for enum) or error set member
 2. **Runtime**: `lowerExpr(base)` → resolve base type → if struct/union/TU → `.load_field{ field_id }`. Slice `.len` → `SLICE_FIELD_LEN`, slice `.ptr` → `SLICE_FIELD_PTR`.
 
-### Field Store `sf/src/lower.zig:844` (`lowerFieldStore`)
+### Field Store `sf/src/lower.zig:894` (`lowerFieldStore`)
 
 Dispatched from `lowerAssignLValue` for `field_access` lvalues. Base handling:
-- **Index base** (`arr[i].field = v`, lower.zig:850-858): computes a POINTER base
+- **Index base** (`arr[i].field = v`, lower.zig:900-908): computes a POINTER base
   (`ptr_temp + idx_temp` via `BIN_ADD`, typed `*elem`) and emits `store_field{ base = ptr, field_id }`
-  → C emitter (c89_emit.zig:4183-4202) emits `ptr->field = v;`. Correct.
+  → C emitter (c89_emit.zig:4199-4218) emits `ptr->field = v;`. Correct.
 - **Nested lvalue base** (`o.inner.a = v`; base is `field_access`/`deref`/`paren_expr`,
-  lower.zig:859-873, **FIXED F4 2026-08-13**): routes through
+  lower.zig:909-927, **FIXED F4 2026-08-13**): routes through
   `base_temp = lowerLValueAddr(child_0, *BaseTy)` (or `lowerExpr` when the base is itself
   pointer-typed, keeping its existing pointer value) → `resolved_base = *BaseTy`, so the struct/
   union dispatch unwraps the pointer and `store_field` emits `ptr->field = v;`. Emitted C:
@@ -412,7 +415,7 @@ value); else `base_addr = lowerLValueAddr(base, *BaseTy)` (recursion handles nes
 ident/index/deref/paren cases); then emit a new `addr_of_field` LIR inst
 (`{ base = base_addr, field_id, result }`, lir.zig:44) which the C emitter renders as
 `result = &base->f_N;` (resolving the field name via the base temp's hoisted ptr-to-struct/union
-type, mirroring the `store_field` ptr-base emitter c89_emit.zig:4183-4202). This completes the
+type, mirroring the `store_field` ptr-base emitter c89_emit.zig:4199-4218). This completes the
 universal lvalue→address primitive and is strictly more general than patching only the consumer:
 it also un-ICEs `&o.inner` / `&v.data.Int` (see §Address-Of). Blast radius verified 2026-08-13:
 repros `dup_val_field_emit`, `tu_field_store_ptr`, `tu_ptrcast_copy`,
@@ -422,7 +425,7 @@ field-store, so no gate re-baselined (all 4 byte-identical). `examples/z98/lisp_
 `v.data.Cons.car = car` (value.zig:38-39) now emits `zT_9 = &v->data; zT_10 = &zT_9->Cons;
 zT_10->car = car;` and the example no longer SEGFAULTS at run.
 
-### Index Access `sf/src/lower.zig:1430`
+### Index Access `sf/src/lower.zig:1797`
 ```
 lowerExpr(base) → base_temp
 maybeExtractSlicePtr() → ptr_temp (extracts `.ptr` field from slice)
@@ -439,13 +442,13 @@ nextTemp(pointee_type) → tid
 emitInst(.load{ ptr_temp, tid })
 ```
 
-### Address-Of `sf/src/lower.zig:1425`
+### Address-Of `sf/src/lower.zig:1792`
 ```
 lowerLValueAddr(lvalue) → tid
 ```
 Dispatches by l-value kind: ident → `.addr_of`, index_access → ptr+idx via `BIN_ADD`, deref → reuses inner expr, paren → recurse, **field_access → `addr_of_field` (FIXED F4 2026-08-13)**.
 **FIXED (task F4, 2026-08-13, operator ruling m0872 — Option a):** `&o.inner` (and any 2+ level
-field-access address-of) previously fell through to `iceAddrOfLValueUnsupported` (lower.zig:777)
+field-access address-of) previously fell through to `iceAddrOfLValueUnsupported` (lower.zig:720)
 → ICE `error[3043] "internal: unsupported address-of l-value"`. The new `field_access` branch
 projects the field within the base's address: pointer-typed base → use the base's pointer value;
 struct/union-value base → recurse `lowerLValueAddr(base, *BaseTy)`; then emit `addr_of_field`
@@ -454,7 +457,7 @@ zT_6 = &zT_5->inner;` (verified: throwaway tests for struct/union members, 3-lev
 cross-module `&o.inner` all compile and run). This same primitive also unblocks the nested store
 via `lowerFieldStore` (see §Field Store).
 
-### Array Init `sf/src/lower.zig:2664`
+### Array Init `sf/src/lower.zig:3321`
 ```
 nextTemp(array_type) → base_temp
 for each element:
@@ -464,7 +467,7 @@ for each element:
 return base_temp
 ```
 
-### Struct Init `sf/src/lower.zig:3283-3423`
+### Struct Init `sf/src/lower.zig:3352-3505`
 ```
 nextTemp(struct_type) → base_temp
 for each field init:
@@ -476,7 +479,7 @@ for each field init:
 ```
 
 **FIXED — bare `union_type` struct-literal target (2026-08-13, F1):** the
-field loop now has a `union_type` branch (lower.zig:3420-3432, after the
+field loop now has a `union_type` branch (lower.zig:3489-3502, after the
 `struct_type` branch) scanning `un_items[payload_idx].fields_start/
 fields_count`, finding the member by `name_id`, and emitting
 `.assign_field(union_field_index, val)` — mirroring the `struct_type` branch
@@ -491,15 +494,17 @@ Reproduction: `repro/mi_matrix/union_literal_nested_xmod` prints `42`. Same
 shape as `examples/z98/lisp_interpreter` `token.zig`. [updated: 2026-08-13]
 
 [updated: 2026-08-07] **`undefined` array-typed fields are skipped (F2, commit ba89a6e0):** a
-pre-scan (`lower.zig:3006-3038`) computes `is_undef_arr_field` — true iff the field init is
+pre-scan (`lower.zig:3392-3427`) computes `is_undef_arr_field` — true iff the field init is
 `undefined_literal` AND the matching field (by `name_id`) in the struct-init type has a declared
 type of kind `array_type` (scans `struct_type` `st_items`/`fe_items` and `tagged_union_type`
-`tu_items`/`fe_items`). When true, the field's `lowerExpr` is skipped (`lower.zig:3041`, no dead
-`undefined_const` temp) and the `assign_field` is NOT emitted (`lower.zig:3082` TU payload branch,
-`lower.zig:3097` struct branch; the TU tag assign is still emitted). Matches the zig0 oracle, which
+`tu_items`/`fe_items`). When true, the field's `lowerExpr` is skipped (`lower.zig:3427`, no dead
+`undefined_const` temp) and the `assign_field` is NOT emitted (`lower.zig:3468` TU payload branch,
+`lower.zig:3483` struct branch; the TU tag assign is still emitted). Matches the zig0 oracle, which
 emits nothing for `undefined` array fields. Fixes `undef_arr_struct_literal` (previously the
 emitter's `emitFieldAssign` zero-fill hardcoded `base.fld[_j] = 0;` for the whole array regardless
 of element type, emitting `int` assigns on struct elements → gcc `incompatible types`).
+**[F3 line-ref pass 2026-08-13: pre-scan ref corrected — :3006-3038 → :3392-3427 (F1/F4 shifted
+the block).]**
 
 ### Tuple Literal `sf/src/lower.zig:2793`
 Single-element tuples forward to `lowerExpr(ec[0])`. Empty tuples return `TYPE_VOID`.
@@ -537,7 +542,7 @@ an undeclared `zG_...` name (gcc `'zG_...' undeclared`). Fixes `xmod_pub_const_g
 
 **print() builtin** (`sf/src/lower.zig:375`): Special-cased. Emits `print_str` for the format string, `print_val` per argument.
 
-**Builtin calls** (`sf/src/lower.zig:2395`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2721-2772`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above). **[updated: 2026-08-08] Core I/O builtins** (`lower.zig:2821-2858`, F1): `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the 6 `builtin_*` LIR (see the Builtin I/O table above). `@exit` sets `block_terminated=1` (noreturn). **[updated: 2026-08-08] Console builtins** (`lower.zig:2860-2878`, F2): `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor` emit the 3 `builtin_console_*` LIR (see the Builtin Console table above). `@isWindows()` folds via the comptime-values path (`lower.zig:2703-2724`, emits `int_const` typed `TYPE_BOOL`) and never produces a runtime LIR inst. **[updated: 2026-08-13] Socket builtins** (`lower.zig:2880-2977`, F6): `@socketCreate`/`@socketBindListen`/`@socketAccept`/`@socketConnect`/`@socketSend`/`@socketRecv`/`@socketSelect`/`@socketFdZero`/`@socketFdSet`/`@socketFdIsset`/`@socketClose` emit the 11 `builtin_socket_*` LIR (lir.zig:89-99, the F6 phase-2 variants).
+**Builtin calls** (`sf/src/lower.zig:2395`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2721-2772`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above). **[updated: 2026-08-08] Core I/O builtins** (`lower.zig:2890-2928`, F1): `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the 6 `builtin_*` LIR (see the Builtin I/O table above). `@exit` sets `block_terminated=1` (noreturn). **[updated: 2026-08-08] Console builtins** (`lower.zig:2929-2948`, F2): `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor` emit the 3 `builtin_console_*` LIR (see the Builtin Console table above). `@isWindows()` folds via the comptime-values path (`lower.zig:2703-2724`, emits `int_const` typed `TYPE_BOOL`) and never produces a runtime LIR inst. **[updated: 2026-08-13] Socket builtins** (`lower.zig:2949-3046`, F6): `@socketCreate`/`@socketBindListen`/`@socketAccept`/`@socketConnect`/`@socketSend`/`@socketRecv`/`@socketSelect`/`@socketFdZero`/`@socketFdSet`/`@socketFdIsset`/`@socketClose` emit the 11 `builtin_socket_*` LIR (lir.zig:89-99, the F6 phase-2 variants). **[F3 line-ref pass 2026-08-13: I/O/console/socket arm ranges corrected — :2821-2858→:2890-2928, :2860-2878→:2929-2948, :2880-2977→:2949-3046 (F4's +69 lines shifted the block).]**
 
 **`@intCast` range-check (F1, 2026-08-06):** the explicit `@intCast` builtin handler
 (`lower.zig:2686-2703`) now computes `is_checked` from the source/target widths
@@ -595,8 +600,8 @@ lower (`lower.zig:2821-2858`, the 6 `builtin_*` LIR), and c89_emit (`emitBuiltin
 runtime body. Guarded repro: `repro/mi_matrix/io_builtin_test`.
 
 **F2 (2026-08-08) IMPLEMENTED the 3 console builtins + `@isWindows`:** `@consoleClear`/
-`@consoleGotoxy`/`@consoleSetColor` are live in sema (`semantic_analyzer.zig:1401-1408`),
-lower (`lower.zig:2860-2878`, the 3 `builtin_console_*` LIR), and c89_emit (see 08 §Builtin
+`@consoleGotoxy`/`@consoleSetColor` are live in sema (`semantic_analyzer.zig:1429-1440`),
+lower (`lower.zig:2929-2948`, the 3 `builtin_console_*` LIR), and c89_emit (see 08 §Builtin
 console emission) with `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guards. `@isWindows()`
 folds in `comptime_eval.zig` (module const `host_is_windows`, currently `false`; 1-bit
 `ComptimeVal` 0/1) → `phase_ComptimeEvaluation` populates `comptime_values` → the lowerer emits

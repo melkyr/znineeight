@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1413-1461); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1441-1489); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
@@ -435,9 +435,9 @@ dereferences a ptr callee to its fn type (semantic_analyzer.zig:735-742).
 
 #### Builtin I/O dispatch (F1, 2026-08-08) — `[updated: 2026-08-13]`
 
-The `builtin_call` resolver (semantic_analyzer.zig:1374-1461) dispatches 6 core I/O
+The `builtin_call` resolver (semantic_analyzer.zig:1402-1495) dispatches 6 core I/O
 builtins by `child_0` name ID (fields `putchar_name_id` … `sleep_ms_name_id`, interned in
-`semanticAnalyzerInit`; core I/O arms at semantic_analyzer.zig:1383-1398). Each resolves its
+`semanticAnalyzerInit`; core I/O arms at semantic_analyzer.zig:1413-1428). Each resolves its
 value args via `semanticAnalyzerResolveExpr` and returns the signature type:
 
 | Builtin | Args resolved | Returns |
@@ -453,7 +453,7 @@ The `@getChar` zero-arg form depends on the parser zero-arg builtin fix (parser.
 
 #### Console builtin dispatch (F2, 2026-08-08) — `[updated: 2026-08-13]`
 
-The same resolver (semantic_analyzer.zig:1401-1408) adds the 4 console builtins by `child_0`
+The same resolver (semantic_analyzer.zig:1429-1440) adds the 4 console builtins by `child_0`
 name ID (fields `is_windows_name_id`, `console_clear_name_id`, `console_gotoxy_name_id`,
 `console_set_color_name_id`):
 
@@ -472,7 +472,7 @@ comptime-fold path, lower.zig:2721-2724). `if (@isWindows())` then folds to only
 
 #### Socket builtin dispatch (F6, 2026-08-13) — `[updated: 2026-08-13]`
 
-The same resolver (semantic_analyzer.zig:1413-1461) adds the 11 socket builtins by `child_0`
+The same resolver (semantic_analyzer.zig:1441-1489) adds the 11 socket builtins by `child_0`
 name ID (fields `socket_create_name_id` … `socket_close_name_id`). All resolve their value args
 via `semanticAnalyzerResolveExpr`; fd/port are `i32`/`u32` (fd = i32, arch-independence ruling
 m0544) — the emitted C bodies port `net_runtime.c:18-153` 1:1 (see 08 §6.9):

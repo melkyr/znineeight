@@ -36,7 +36,8 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (240 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-08-13 — std-lib plan closeout (F7)]
+### Corpus gate (246 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-08-13 — lisp_defects plan closeout (F3)]
+For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -57,6 +58,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
+- **Post-lisp-defects-plan baseline (F3 gate sweep / closeout, 2026-08-13, measured with /tmp/fx_subfolder/zig1, HEAD `31de6800`): `OK=239 FAIL=3 ICE=0 CRASH=0 GREEN=4` over 246 dirs** (239+3+4=246). FAIL=3 = `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4 green-guards counted separately. No new FAIL vs the F7 sweep; the 6 plan repro dirs (`union_literal_nested_xmod`, `global_null_init_xmod`, `nested_field_store_xmod`, `nested_field_store_xmod2`, `sizeof_struct_union_xmod`, `union_emission_layout_xmod`) all classify OK. 21-example matrix **21/21 end-to-end** — lisp_interpreter is now dump/gcc/link/run rc=0 AND functionally correct (evaluates `nil`/`true`/`+`/`(quote 5)`/`cons`; Defects A-E fixed); json_parser_workaround run rc=0 (no SEGFAULT); mud_server boots + responds (server, timeout-gated). 4 MD5 gates byte-identical (gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…`, mud `fd0fdaa4…`). test_analyzer_bin PASS.
 - **Post-std-lib-plan baseline (F7 gate sweep, 2026-08-13, measured with /tmp/fx_subfolder/zig1): `OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4` over 240 dirs** (233+3+4=240). FAIL=3 = `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4 green-guards counted separately. No new FAIL vs the F6 sweep. 21-example matrix **20/21 end-to-end** (lisp_interpreter is the sole gcc-FAIL — pre-existing builtins.zig `zT_N` lowerer defect); mud_server boots (server, timeout-gated). 4 MD5 gates byte-identical (mud `fd0fdaa4…` re-baselined post-F6-review). test_analyzer_bin PASS.
 - **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
 - **Post-Plan-1 baseline (2026-08-04, 5 new repros): `OK=188 FAIL=9 ICE=0 CRASH=0` over 197 repros.**
@@ -257,7 +259,9 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   (json_parser + json_parser_workaround link blocked, std-lib-deferred), D4 `plat_*` stubs
   (rogue_mud link blocked, std-lib-deferred). Follow-ups: union `==` emission, TU payload-read
   lowering, lisp builtins `zT_N` (lisp_interpreter gcc FAIL, pre-existing lowerer defect
-  surfaced post-F1), scratch-arena optimization. **4 MD5 gates byte-identical** to the
+  surfaced post-F1 — **RESOLVED by the lisp_defects plan F1-F6, 2026-08-13**; lisp_interpreter
+  is now dump/gcc/link/run rc=0 and functionally correct), scratch-arena optimization.
+  **4 MD5 gates byte-identical** to the
   post-F1 baselines at that sweep (mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`, json
   `c403f079…`); test_analyzer_bin PASS. Full 21-example matrix: **16/21 end-to-end working**
   (unchanged vs MEM4) — see EXPECTED_FAIL.md F7 section. **[F3 2026-08-08: D2 arena gap CLOSED
@@ -304,12 +308,20 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-13] |
+| Entry Path | Reference md5 | [updated: 2026-08-13 — F3 closeout: post-Defect-A-D re-baseline values] |
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `fd0fdaa42a419b0e72cfdb3226a54c4a` |
-| `examples/z98/game_of_life/main.zig` | `b246a2fecc0b5ff4402912c49970cdae` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `141994cc81ab4bbb89722b7d30af419d` |
-| `examples/z98/json_parser/main.zig` | `f50ce1e6800d9e1365c019e46ac61292` |
+| `examples/z98/game_of_life/main.zig` | `ff47d18dc8ef00e9b8f92f5e0a14c34a` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `c1cb748b423eef191b9c9ce7023ae2a0` |
+| `examples/z98/json_parser/main.zig` | `376fd6812ef751913bdad00de676ceb6` |
+
+- **F3 gate sweep / closeout (2026-08-13): all 4 re-verified byte-identical** to these values
+  with `/tmp/fx_subfolder/zig1` (HEAD `31de6800`). gol/lisp/json were re-baselined by the
+  lisp_defects plan F2 (operator ruling m0809 — module-scope int-literal coercion now recorded,
+  runtime byte-identical); mud is NOT an MD5 gate per the operator. **21-example matrix 21/21
+  end-to-end** — lisp_interpreter dump/gcc/link/run rc=0 AND functionally correct;
+  json_parser_workaround run rc=0 (no SEGFAULT); test_analyzer_bin PASS; corpus
+  OK=239 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 246 dirs (no new FAIL). [updated: 2026-08-13]
 
 - **Re-baselined 2026-08-13 (F6, networking builtins).** mud re-baselined because F6 replaces
   mud_server's 12 `plat_*` socket externs + `plat_fd_set` with `std_net` calls (local
@@ -334,6 +346,10 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   values** with `/tmp/fx_subfolder/zig1`; 21-example matrix 20/21 end-to-end (only
   lisp_interpreter gcc-FAIL on the pre-existing builtins.zig `zT_N` defect); test_analyzer_bin
   PASS; corpus re-verified OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 240 dirs (no new FAIL).
+  **[F3 closeout (2026-08-13): gol/lisp/json RE-BASELINED by the lisp_defects plan F2 (operator
+  ruling m0809) to `ff47d18d…`/`c1cb748b…`/`376fd681…` — see the MD5 table. F3 gate sweep: all 4
+  byte-identical; 21-example matrix 21/21 end-to-end (lisp_interpreter functionally correct);
+  corpus OK=239 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 246 dirs; test_analyzer_bin PASS.]
   [updated: 2026-08-13]
 - **Re-baselined 2026-08-08 (F4, std.io migration).** ALL 4 re-baselined because F4 replaces every
   `__bootstrap_print*`/`__bootstrap_write`/`__bootstrap_sleep_ms` extern in the gate entries with

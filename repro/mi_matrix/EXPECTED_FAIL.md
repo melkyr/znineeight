@@ -1,10 +1,32 @@
-# mi_matrix corpus — expected-fail manifest (v29 2026-08-13)
+# mi_matrix corpus — expected-fail manifest (v30 2026-08-13)
 
-## Totals (240 dirs / 230 manifest repros)
+## Totals (246 dirs / 236 manifest repros)
 
-- **CURRENT (2026-08-13 F7 — std-lib plan CLOSEOUT): raw sweep of all 240 dirs (gcc-exit
-  classifier, `/tmp/fx_subfolder/zig1`, fresh F6-source build): OK=233 / FAIL=3 / ICE=0 /
-  CRASH=0 / green-guards=4** (233+3+4=240). FAIL=3 unchanged: 2 std-lib-deferred
+- **CURRENT (2026-08-13 F3 closeout — lisp_interpreter lowerer-defects plan): raw sweep of all
+  246 dirs (gcc-exit classifier, `/tmp/fx_subfolder/zig1`, fresh F6-source build, HEAD
+  `31de6800`): OK=239 / FAIL=3 / ICE=0 / CRASH=0 / green-guards=4** (239+3+4=246). FAIL=3
+  unchanged: 2 std-lib-deferred (`field_store_drop` + `test_stub_0`, both `error[3048]`) +
+  `self_embed_optional_cycle` (C89 fundamental). Green-guards unchanged:
+  `eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`.
+  **No new corpus FAIL introduced by the lisp-defects plan (F1-F6).** The 6 plan repro dirs
+  (`union_literal_nested_xmod`, `global_null_init_xmod`, `nested_field_store_xmod`,
+  `nested_field_store_xmod2`, `sizeof_struct_union_xmod`, `union_emission_layout_xmod`) all
+  classify **OK** (246 = 236 manifest + 10 separately-tracked). **21-example matrix: 21/21
+  end-to-end working** — the sole
+  gcc-FAIL `lisp_interpreter` (pre-existing builtins.zig `zT_N` lowerer defect) is now
+  dump/gcc/link/run rc=0 AND functionally correct (evaluates `nil`/`true`/`+`/`(quote 5)`/
+  `cons`; Defects A-E fixed). `json_parser_workaround` run rc=0 (its F4-exposed SEGFAULT
+  resolved by the Defect D+E fixes) — parses test.json, prints the full tree. mud_server boots
+  (server, timeout-gated). 4 MD5 gates byte-identical: gol `ff47d18d…`, lisp `c1cb748b…`, json
+  `376fd681…`, mud `fd0fdaa4…`. test_analyzer_bin PASS (build_test.sh 5/4 unchanged). See the
+  F3 closeout section below. Corpus dirs = 236 manifest repros (230 at F7 + the 6 plan repros)
+  + 10 separately-tracked dirs (`opt_slice_null_return`, `ptr_to_int_void_xmod`,
+  `mod_silent_drop_xmod`, `zT_missing_fwd_xmod`, `plat_stubs_missing_xmod`,
+  `tagged_union_cmp_xmod`, `extern_runtime_symbol_xmod`, `io_builtin_test`,
+  `console_builtin_test`, `net_builtin_test`).
+- Prior: OK=233 / FAIL=3 / ICE=0 / CRASH=0 / green-guards=4 over 240 dirs (2026-08-13 F7 —
+  std-lib plan CLOSEOUT; measured with `/tmp/fx_subfolder/zig1`, fresh F6-source build).
+  FAIL=3 unchanged: 2 std-lib-deferred
   (`field_store_drop` + `test_stub_0`, both `error[3048]`) + `self_embed_optional_cycle` (C89
   fundamental). Green-guards unchanged: `eu_assign_incompat_payload`, `field_access_optional`,
   `var_declared_void`, `euvoid_val_catch`. **No new corpus FAIL introduced by the std-lib plan
@@ -1761,7 +1783,11 @@ division-based magnitude loop — deferred, not an F4 defect.
 3. **lisp_interpreter builtins.zig `zT_N`** — post-F1, lisp_interpreter dumps but gcc FAILs on
    5× `zT_N` undeclared (union/optional `==` comparison temp-drop class; P3-5 adjacent) + 1×
    Opt_45 null-payload global assign. Pre-existing lowerer defect, previously masked by the
-   @ptrToInt sema block. F1 report concern-2.
+   @ptrToInt sema block. F1 report concern-2. **RESOLVED (F3 closeout, 2026-08-13):** the
+   lisp_defects plan's Defects A-E fixes (bare-union literals F1, module-scope null globals F2,
+   nested field-store write-back F4, struct-with-union layout F5, bare-union C emission F6)
+   cleared lisp_interpreter's compile AND runtime failures — it now dumps/gccs/links/runs rc=0
+   and evaluates `nil`/`true`/`+`/`(quote 5)`/`cons` correctly. See the F3 closeout section.
 4. **Scratch-arena optimization** — self-compile import-phase scratch OOM (F5; token array
    doubling 32K→64K in the 2 MB scratch). Candidate options (all require operator ruling,
    plan mandates 4/8/2): scratch 2→4 MB; reset scratch per-file after the parser consumes the
@@ -1803,8 +1829,8 @@ runtime `zig_runtime.c` + `zig_pal.c`, NO `net_runtime.c`):**
 | 13 | tco_defer | 0 | 0 | 0 | 0 | FULL OK — defer fires once |
 | 14 | tco_return_try | 0 | 0 | 0 | 0 | FULL OK — `count(100000)=100000` |
 | 15 | json_parser | 0 | 0 | 0 | 0 | FULL OK — parses test.json (CLEARED F3) |
-| 16 | json_parser_workaround | 0 | 0 | 0 | 0 | FULL OK — prints `{}` (CLEARED F3) |
-| 17 | lisp_interpreter | 0 | 1 | 1 | — | **gcc FAIL** — pre-existing builtins.zig `zT_N` lowerer defect (5× `zT_N` undeclared + 1 Opt_45 null-payload); follow-up #3 |
+| 16 | json_parser_workaround | 0 | 0 | 0 | 0 | FULL OK — prints `{}` (CLEARED F3); **[2026-08-13 F3 closeout: full tree output rc=0 — SEGFAULT resolved]** |
+| 17 | lisp_interpreter | 0 | 1 | 1 | — | **gcc FAIL** — pre-existing builtins.zig `zT_N` lowerer defect (5× `zT_N` undeclared + 1 Opt_45 null-payload); follow-up #3 **[2026-08-13 F3 closeout: CLEARED — dump/gcc/link/run rc=0, functionally correct]** |
 | 18 | lisp_interpreter_adv | 0 | 0 | 0 | 0 | FULL OK — REPL (EOF rc=0) |
 | 19 | lisp_interpreter_curr | 0 | 0 | 0 | 0 | FULL OK — `(+ 1 2)` → `3` |
 | 20 | mud_server | 0 | 0 | 0 | 124 | **CANNOT RUN** — server, boots "MUD server listening on port 4000" (timeout-gated; NOT an MD5 gate) |
@@ -1816,7 +1842,8 @@ std-lib regression; previously masked by the @ptrToInt sema block — see the mu
 plan F1 section). json_parser / json_parser_workaround (F3) and rogue_mud (F5) rows are
 **deferred→fixed** and now run on the standard runtime with NO legacy object and NO
 `net_runtime.c`. game_of_life needs ~10s (100 gens × 100ms sleep) — the prior 8s timeout
-showed rc=124; a 40s timeout gives rc=0.
+showed rc=124; a 40s timeout gives rc=0. **[2026-08-13 F3 closeout: this is now 21/21 — see
+the F3 closeout section below.]**
 
 ### Fix records (std-lib plan F1-F6)
 
@@ -1853,4 +1880,78 @@ needs a legacy runtime object or `net_runtime.c` anymore. The only remaining FAI
 the two `error[3048]` import-gap repros (`field_store_drop`, `test_stub_0` — a user program
 cannot import compiler-internal modules; pass when zig1 gains a real std lib) and
 `self_embed_optional_cycle` (C89 fundamental).
+
+---
+
+## F3 — lisp_interpreter lowerer-defects plan CLOSEOUT: 21-example matrix 21/21 + gate sweep (2026-08-13)
+
+Closes the lisp_defects plan (Defects A-E, F1-F6, commits `535010d4`..`31de6800`). Measured
+with `/tmp/fx_subfolder/zig1` (fresh F6-source build, HEAD `31de6800`; `sf/build/out_release/`
+wedged — all builds in `/tmp`). **Full 21-example matrix (multi-module `--dump-c89
+--output-dir`, standard sf runtime `zig_runtime.c` + `zig_pal.c`, NO `net_runtime.c`; runs
+timeout-gated, cwd = example dir for json_parser*):**
+
+| # | Example | dump | gcc | link | run | Status |
+|---|---------|------|-----|------|-----|--------|
+| 1 | hello | 0 | 0 | 0 | 0 | FULL OK — "Hello, world!" |
+| 2 | fibonacci | 0 | 0 | 0 | 0 | FULL OK — `55` |
+| 3 | prime | 0 | 0 | 0 | 0 | FULL OK — `2357` |
+| 4 | heapsort | 0 | 0 | 0 | 0 | FULL OK — sorted output |
+| 5 | quicksort | 0 | 0 | 0 | 0 | FULL OK — asc/desc sorted |
+| 6 | mandelbrot | 0 | 0 | 0 | 0 | FULL OK |
+| 7 | game_of_life | 0 | 0 | 0 | 0 | FULL OK — 100 gens glider rc=0, stdout md5 `fcbf7e7c…` (documented) |
+| 8 | lzw | 0 | 0 | 0 | 0 | FULL OK |
+| 9 | func_ptr_return | 0 | 0 | 0 | 0 | FULL OK — `10 + 5 = 15` |
+| 10 | sort_strings | 0 | 0 | 0 | 0 | FULL OK |
+| 11 | days_in_month | 0 | 0 | 0 | 0 | FULL OK |
+| 12 | tco_factorial | 0 | 0 | 0 | 0 | FULL OK — `fact(10)=3628800`, deep ok |
+| 13 | tco_defer | 0 | 0 | 0 | 0 | FULL OK — defer fires once |
+| 14 | tco_return_try | 0 | 0 | 0 | 0 | FULL OK — `count(100000)=100000` |
+| 15 | json_parser | 0 | 0 | 0 | 0 | FULL OK — parses test.json |
+| 16 | json_parser_workaround | 0 | 0 | 0 | 0 | **FULL OK — no SEGFAULT**; parses test.json, prints full tree (F4-exposed SEGFAULT resolved by Defect D+E) |
+| 17 | lisp_interpreter | 0 | 0 | 0 | 0 | **FULL OK — CLEARED**; dump/gcc/link/run rc=0 AND functionally correct (see below) |
+| 18 | lisp_interpreter_adv | 0 | 0 | 0 | 0 | FULL OK — REPL (EOF rc=0) |
+| 19 | lisp_interpreter_curr | 0 | 0 | 0 | 0 | FULL OK — `(+ 1 2)` → `3` |
+| 20 | mud_server | 0 | 0 | 0 | 124 | server — boots "MUD server listening on port 4000"; client interaction verified (welcome + look + north responses) |
+| 21 | rogue_mud | 0 | 0 | 0 | 0 | FULL OK — boots, exits rc=0 on `q` |
+
+**End-to-end: 21/21 working.** `lisp_interpreter` is now dump/gcc/link/run rc=0 AND
+**functionally correct** — REPL session: `(+ 1 2)` → `3`, `(quote 5)` → `5`,
+`(cons 1 2)` → `(1 . 2)`, `nil` → `nil`, `true` → `true`, `(define x 10)` → `10`,
+`(* x 2)` → `20`. No silent eval failure, no SEGFAULT. The pre-existing builtins.zig `zT_N`
+lowerer defect (follow-up #3) is **RESOLVED** — the Defects A-E fixes (bare-union literals F1
+`535010d4`, module-scope null globals F2 `5a3b2adc`, nested field-store write-back F4
+`73e21c81`, struct-with-union layout F5 `8a9df9a2`, bare-union C emission F6 `31de6800`)
+collectively cleared its compile AND runtime failures.
+
+### Defects fixed by this plan (all 5, +F1/F2/F4 repros green)
+
+| Defect | Fix task | Commit | Repro | Output |
+|--------|----------|--------|-------|--------|
+| A — bare-union literal in struct literal → 5× `zT_N` | F1 | `535010d4` | `union_literal_nested_xmod` | `42` |
+| B — module-scope `?T = null` global typed `int` | F2 | `5a3b2adc` | `global_null_init_xmod` | `1` |
+| C — nested field-access store drops write-back | F4 | `73e21c81` | `nested_field_store_xmod` / `nested_field_store_xmod2` | `4243` / `78` |
+| D — `@sizeOf`/`@alignOf` struct-with-union layout ordering | F5 | `8a9df9a2` | `sizeof_struct_union_xmod` | `24` (oracle `24`) |
+| E — bare union emitted as stacked C struct (arena overflow → SEGFAULT) | F6 | `31de6800` | `union_emission_layout_xmod` | `7816` |
+
+All 6 repro dirs classify **OK** under the gcc-exit gate (dump/gcc/link/run rc=0, outputs
+above verified by run). 4 MD5 gates **byte-identical** to the F2 post-Defect-A-D re-baseline
+(gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…`, mud `fd0fdaa4…`) — no re-baseline needed.
+test_analyzer_bin PASS.
+
+### Gates (all PASS)
+
+- **Corpus sweep (246 dirs): OK=239 / FAIL=3 / ICE=0 / CRASH=0 / green-guards=4** (239+3+4=246).
+  FAIL=3 exactly the documented set: `field_store_drop` + `test_stub_0` (std-lib-deferred,
+  `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). Green-guards=4 unchanged
+  (`eu_assign_incompat_payload`, `euvoid_val_catch`, `field_access_optional`,
+  `var_declared_void`). **No new FAIL, no new ICE/CRASH, no green-guard moved.**
+- **4 MD5 gates:** gol `ff47d18dc8ef00e9b8f92f5e0a14c34a`, lisp
+  `c1cb748b423eef191b9c9ce7023ae2a0`, json `376fd6812ef751913bdad00de676ceb6` —
+  **byte-identical**; mud `fd0fdaa42a419b0e72cfdb3226a54c4a` (mud NOT an MD5 gate per the
+  operator; F6 std_net migration + null-coalesce re-baseline retained).
+- **test_analyzer_bin: PASS** — `bash sf/scripts/build_test.sh` → `5 passed, 4 failed`
+  (unchanged documented baseline; zero `sf/src/tests/*` changes in the plan range).
+- QUICK_REF.md corpus baseline (246 dirs, 21/21) + MD5 table (post-F2 re-baseline values)
+  updated to match. Tech docs 05/07/08 line-refs verified against current source.
 

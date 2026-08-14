@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-08-13 — Defect E FIXED (F6): bare `union_type` now emits a real C `union` (max-member layout matching `@sizeOf`'s union-max) instead of a stacked `struct` — the `aggregateKeyword(kind)` helper (`c89_emit.zig:542`) is the single keyword source of truth at all 3 named-aggregate sites (`emitUnionType` def :1535, `emitSharedHeader` fwd-decl :1130-era, `emitSpecialTypes` fwd-decl :1260-era), closing the struct/union tag-namespace split-brain (a one-keyword swap failed gcc: 'defined as wrong kind of tag'); `union_emission_layout_xmod` prints 7+8 (@sizeOf(Data)=8 = runtime union), `sizeof_struct_union_xmod` still 24; lisp_interpreter + json_parser_workaround no longer SEGFAULT (arena sized by @sizeOf no longer overflows the 3x-stacked struct); tagged_union/struct sites stay `struct`, anonymous wrappers unaffected; prior 2026-08-13 — F6 networking builtins: 11 socket builtins (socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) PORT net_runtime.c's 12 plat_* bodies inline (`#ifdef _WIN32/#else` per-builtin), `emitBuiltinIncludes` net-gated socket include block, std_net.zig + mud_server/rogue_mud migrated off net_runtime.c link (see §6.9); prior 2026-08-08 — F4 std-lib cleanup: the F2 console builtins' emitted `__bootstrap_write(...)` calls repointed to `std_print_len(...)` (the example-facing wrapper was removed from zig_runtime.c; `console_builtin_test` re-verified gcc-clean) — preamble + `emitConsoleClear`/`emitConsoleGotoxy`/`emitConsoleSetColor` (c89_emit.zig:2087, :3227, :3267, :3317); prior 2026-08-08 — 3 console builtins emit the `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` ANSI-escape/Win32 guard chains via `emitConsoleClear`/`emitConsoleGotoxy`/`emitConsoleSetColor` + Win98-forcing console include block in `emitBuiltinIncludes` (single- AND multi-module) — `console_builtin_test` gcc-clean; `@isWindows()` emits NO C (comptime-folded, see 05/07) (F2); prior 2026-08-08 — 6 core I/O builtins emit `putchar(c)`/`fwrite(ptr,1,len,stdout)`/`fwrite(ptr,1,len,stderr)`/`zT = getchar()`/`exit(code)`/`#ifdef _WIN32 Sleep(ms) #else usleep(ms*1000) #endif`; gated `#include` via `emitBuiltinIncludes` (`<stdio.h>`/`<stdlib.h>`/`_WIN32`→`<windows.h>`/else→`<unistd.h>`) in BOTH the single-stream `emitModuleHeader` and the multi-module `emitModuleFile` paths — `io_builtin_test` gcc-clean single- AND multi-module (F1); prior — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form now emits valid C — tagged-union `==`/`!=` emission FIXED (Task F, Option A, operator ruling m0471 SUPERSEDES the zig0 oracle which rejects union `==`): the `.binary` handler (c89_emit.zig:3724-3739) type-resolves each BIN_EQ/BIN_NE operand in `hoisted_temps` and appends `.tag` for `tagged_union_type` operands (mirrors the int_const `.tag =` path c89_emit.zig:3762-3789) — valid Zig semantics (union `==` compares the active tags); `s == lib_mod.Shape.Circle` emits `s.tag == zT_rhs.tag` (gcc-valid); `tagged_union_cmp_xmod` compiles+links+runs printing `1`; same-module union `==` also emits `.tag` (verified); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348); F7 line-ref re-verification (2026-08-08): all `c89_emit.zig`/`main.zig` refs corrected against source — emitInst :3138, emitModule :2277, emitModuleHeaderFile :2154, emitModuleFile :2399, emitMainWrapper :2313, emitFunctionSignature :1854, emitFunctionForwardDecl :1920, emitStdargInclude :2008, moduleHasVaInsts :1964, moduleQualifiedName :2111, ctypeGuardWrite :997, mangleLocalName :1838, mangleTempName :2349, c_incs list :1996-2013, dep-.h include :2121-2128, extern-name call site :4048, extern-no-fwd :1927, extern-no-body :2333, .loop_header :3071-3073, preamble :744 / main.zig:827-830, length guard :769, cincludeUnionAll call :832, LIR fn-list :543-615, C marker :710, FINAL_FLUSH :834, module name :731, sema comparison :540, lower enum_const :2207]
+# 08 — C89 Emission [updated: 2026-08-13 — Defect E FIXED (F6): bare `union_type` now emits a real C `union` (max-member layout matching `@sizeOf`'s union-max) instead of a stacked `struct` — the `aggregateKeyword(kind)` helper (`c89_emit.zig:542`) is the single keyword source of truth at all 3 named-aggregate sites (`emitUnionType` def :1535, `emitSharedHeader` fwd-decl :1130-era, `emitSpecialTypes` fwd-decl :1260-era), closing the struct/union tag-namespace split-brain (a one-keyword swap failed gcc: 'defined as wrong kind of tag'); `union_emission_layout_xmod` prints 7+8 (@sizeOf(Data)=8 = runtime union), `sizeof_struct_union_xmod` still 24; lisp_interpreter + json_parser_workaround no longer SEGFAULT (arena sized by @sizeOf no longer overflows the 3x-stacked struct); tagged_union/struct sites stay `struct`, anonymous wrappers unaffected; prior 2026-08-13 — F6 networking builtins: 11 socket builtins (socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) PORT net_runtime.c's 12 plat_* bodies inline (`#ifdef _WIN32/#else` per-builtin), `emitBuiltinIncludes` net-gated socket include block, std_net.zig + mud_server/rogue_mud migrated off net_runtime.c link (see §6.9); prior 2026-08-08 — F4 std-lib cleanup: the F2 console builtins' emitted `__bootstrap_write(...)` calls repointed to `std_print_len(...)` (the example-facing wrapper was removed from zig_runtime.c; `console_builtin_test` re-verified gcc-clean) — preamble + `emitConsoleClear`/`emitConsoleGotoxy`/`emitConsoleSetColor` (c89_emit.zig:3249, :3302, :3346; **[F3 line-ref pass 2026-08-13: console emit refs corrected]**); prior 2026-08-08 — 3 console builtins emit the `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` ANSI-escape/Win32 guard chains via `emitConsoleClear`/`emitConsoleGotoxy`/`emitConsoleSetColor` + Win98-forcing console include block in `emitBuiltinIncludes` (single- AND multi-module) — `console_builtin_test` gcc-clean; `@isWindows()` emits NO C (comptime-folded, see 05/07) (F2); prior 2026-08-08 — 6 core I/O builtins emit `putchar(c)`/`fwrite(ptr,1,len,stdout)`/`fwrite(ptr,1,len,stderr)`/`zT = getchar()`/`exit(code)`/`#ifdef _WIN32 Sleep(ms) #else usleep(ms*1000) #endif`; gated `#include` via `emitBuiltinIncludes` (`<stdio.h>`/`<stdlib.h>`/`_WIN32`→`<windows.h>`/else→`<unistd.h>`) in BOTH the single-stream `emitModuleHeader` and the multi-module `emitModuleFile` paths — `io_builtin_test` gcc-clean single- AND multi-module (F1); prior — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form now emits valid C — tagged-union `==`/`!=` emission FIXED (Task F, Option A, operator ruling m0471 SUPERSEDES the zig0 oracle which rejects union `==`): the `.binary` handler (c89_emit.zig:3724-3739) type-resolves each BIN_EQ/BIN_NE operand in `hoisted_temps` and appends `.tag` for `tagged_union_type` operands (mirrors the int_const `.tag =` path c89_emit.zig:3762-3789) — valid Zig semantics (union `==` compares the active tags); `s == lib_mod.Shape.Circle` emits `s.tag == zT_rhs.tag` (gcc-valid); `tagged_union_cmp_xmod` compiles+links+runs printing `1`; same-module union `==` also emits `.tag` (verified); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; **[F3 line-ref pass 2026-08-13: `.binary` handler ref :3724-3739 → :4369; int_const `.tag` path :3762-3789 → :4443.]** earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348); F7 line-ref re-verification (2026-08-08): all `c89_emit.zig`/`main.zig` refs corrected against source — emitInst :3138, emitModule :2277, emitModuleHeaderFile :2154, emitModuleFile :2399, emitMainWrapper :2313, emitFunctionSignature :1854, emitFunctionForwardDecl :1920, emitStdargInclude :2008, moduleHasVaInsts :1964, moduleQualifiedName :2111, ctypeGuardWrite :997, mangleLocalName :1838, mangleTempName :2349, c_incs list :1996-2013, dep-.h include :2121-2128, extern-name call site :4048, extern-no-fwd :1927, extern-no-body :2333, .loop_header :3071-3073, preamble :744 / main.zig:827-830, length guard :769, cincludeUnionAll call :832, LIR fn-list :543-615, C marker :710, FINAL_FLUSH :834, module name :731, sema comparison :540, lower enum_const :2207; F3 line-ref pass (2026-08-13): re-verified against current source post-F1/F6 — emitInst :3670, emitModule :2146, emitModuleHeaderFile :2233, emitModuleFile :2478, emitMainWrapper :2392, emitFunctionSignature :1875, emitFunctionForwardDecl :1941, emitStdargInclude :2006, moduleHasVaInsts :1985, moduleQualifiedName :2190, ctypeGuardWrite :1016, mangleLocalName :1859, mangleTempName :2505, `.loop_header` arm :3679, `.call_direct` :4718, extern-name call site :4733, extern-no-fwd :2177/:2324, extern-no-body :2370]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -379,57 +379,60 @@ unused-`z_bb_0:` label in functions with no tail call produces a `-Wunused-label
 
 ### 1.9 LirInst → C89 Emission Table
 
-Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3062`):
+Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3670`):
 
 | LirInst | C89 Output | Line |
 |---------|-----------|------|
-| `.nop` | (nothing) | 2275 |
-| `.ret_void` | `return;` | 2276 |
-| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; since F-S3 emits `z_bb_0:\n`, NOT `tco_restart:`) | 2857 |
-| `.label` | (nothing — waits for block label) | 2282 |
-| `.decl_local` | Emitted by hoisting pass in emitFunctionBody | 2283 |
-| `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`) | 2284 |
-| `.assign_field` | `base.field = src;` (struct/union/ptr/slice/tagged_union) | 2358 |
-| `.assign_index` | `base[idx] = src;` or `(*base)[idx] = src;` | 2370 |
-| `.jump` | `goto z_bb_<id>;` | 2384 |
-| `.branch` | `if (cond) goto z_bb_<then>; else goto z_bb_<else>;` | 2398 |
-| `.ret` | `return val;` | 2423 |
-| `.load_local` | `result = name;` (array: `{ ... for-loop copy ... }`) | 2432 |
-| `.store_local` | `name = val;` (`_` → `(void)val;`) | 2481 |
-| `.load_global` | `result = name;` | 3094 |
-| `.store_global` | `name = val;` | 3140 |
-| `.load_field` | `result = base.field;` (slice → `.ptr`/`.len`; tagged_union → `.tag`/`.payload`; ptr → `->field`; struct → `.field`) | 2533 |
-| `.store_field` | `base.field = val;` (same field resolution as load_field) | 2654 |
-| `.load_index` | `result = base[idx];` or `result = (*base)[idx];` | 2764 |
-| `.load` | `result = *ptr;` | 2768 |
-| `.store` | `*ptr = val;` | 2780 |
-| `.addr_of` | `result = &operand;` | 2793 |
-| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`; **BIN_EQ/BIN_NE with `tagged_union_type` operands append `.tag` to each operand name** → `s.tag == t.tag`, valid C, active-tag comparison — Task F, 2026-08-08, ruling m0471) | 3708 |
-| `.unary` | `result = op operand;` (op: `-` `!` `~`) | 2841 |
-| `.int_const` | `result = <value>;` (signed: cast + neg magnitude to avoid warnings; tagged_union: `.tag = <value>;`) | 2854 |
-| `.enum_const` | `result = <type>_<member>;` | 2928 |
-| `.float_const` | `result = <d.ddd>;` (via `formatF64`) | 2945 |
-| `.string_const` | `result = "<escaped>";` (escape: `\n`, `\t`, `\r`, `\\`, `\"`) | 2962 |
-| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) | 3900 — note: null_src null construction (return/catch null → optional) no longer emits `.null_const`; the lowerer emits `.set_optional_null` directly (Option B, 2026-08-07) |
-| `.set_optional_null` | `result.has_value = 0;` | 3914 |
-| `.bool_const` | `result = 1;` or `result = 0;` | 3017 |
-| `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 3029 |
-| `.call` | `result = callee(args...);` (indirect call through function pointer) | 3103 |
-| `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 3129 |
-| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 3954 |
-| `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 3262 |
-| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 4256 |
-| `.int_cast` | `result = (type)src;` (checked: `result = __bootstrap_<DST>_from_<SRC>(src);`) | 4214 |
-| `.int_to_float` | `result = (type)src;` | 3366 |
-| `.float_cast` | `result = (type)src;` | 3381 |
-| `.make_slice` | `result.ptr = ptr;\n result.len = len;` | 3396 |
-| `.print_str` | `std_print("literal");` | 3415 |
-| `.print_val` | `std_print_<type>(val);` (slice → `std_print_str(val.ptr, val.len)`) | 3424 |
-| `.ptr_cast` | `result = (type)src;` | 3444 |
-| `.check_error` | `result = src.is_error;` | 3459 |
-| `.unwrap_error_payload` | `result = src.data.payload;` | 3470 |
-| `.unwrap_error_code` | `result = src.data.err;` (void-payload → `src.err;`) | 3496 |
-| `.wrap_error_ok` | `result.data.payload = src;\n result.is_error = 0;` (void-payload → `result.err = 0;\n result.is_error = 0;`) | 3525 |
+| `.nop` | (nothing) | 3673 |
+| `.ret_void` | `return;` | 3674 |
+| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; since F-S3 emits `z_bb_0:\n`, NOT `tco_restart:`) | 3679 |
+| `.label` | (nothing — waits for block label) | 3684 |
+| `.decl_local` | Emitted by hoisting pass in emitFunctionBody | 5513 |
+| `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`) | 3687 |
+| `.assign_field` | `base.field = src;` (struct/union/ptr/slice/tagged_union) | 3763 |
+| `.assign_index` | `base[idx] = src;` or `(*base)[idx] = src;` | 3775 |
+| `.jump` | `goto z_bb_<id>;` | 3789 |
+| `.branch` | `if (cond) goto z_bb_<then>; else goto z_bb_<else>;` | 3803 |
+| `.ret` | `return val;` | 3828 |
+| `.load_local` | `result = name;` (array: `{ ... for-loop copy ... }`) | 3837 |
+| `.store_local` | `name = val;` (`_` → `(void)val;`) | 3886 |
+| `.load_global` | `result = name;` | 3916 |
+| `.store_global` | `name = val;` | 3962 |
+| `.load_field` | `result = base.field;` (slice → `.ptr`/`.len`; tagged_union → `.tag`/`.payload`; ptr → `->field`; struct → `.field`) | 4007 |
+| `.store_field` | `base.field = val;` (same field resolution as load_field; ptr-base struct/union pointee → `ptr->field`, :4199-4218) | 4150 |
+| `.load_index` | `result = base[idx];` or `result = (*base)[idx];` | 4276 |
+| `.load` | `result = *ptr;` | 4280 |
+| `.store` | `*ptr = val;` | 4292 |
+| `.addr_of` | `result = &operand;` | 4305 |
+| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`; **BIN_EQ/BIN_NE with `tagged_union_type` operands append `.tag` to each operand name** → `s.tag == t.tag`, valid C, active-tag comparison — Task F, 2026-08-08, ruling m0471) | 4369 |
+| `.unary` | `result = op operand;` (op: `-` `!` `~`) | 4430 |
+| `.int_const` | `result = <value>;` (signed: cast + neg magnitude to avoid warnings; tagged_union: `.tag = <value>;`) | 4443 |
+| `.enum_const` | `result = <type>_<member>;` | 4517 |
+| `.float_const` | `result = <d.ddd>;` (via `formatF64`) | 4534 |
+| `.string_const` | `result = "<escaped>";` (escape: `\n`, `\t`, `\r`, `\\`, `\"`) | 4551 |
+| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) | 4585 — note: null_src null construction (return/catch null → optional) no longer emits `.null_const`; the lowerer emits `.set_optional_null` directly (Option B, 2026-08-07) |
+| `.set_optional_null` | `result.has_value = 0;` | 4599 |
+| `.bool_const` | `result = 1;` or `result = 0;` | 4606 |
+| `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 4618 |
+| `.call` | `result = callee(args...);` (indirect call through function pointer) | 4692 |
+| `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 4718 |
+| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 5550 |
+| `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 4899 |
+| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 4941 |
+| `.int_cast` | `result = (type)src;` (checked: `result = __bootstrap_<DST>_from_<SRC>(src);`) | 4967 |
+| `.int_to_float` | `result = (type)src;` | 5040 |
+| `.float_cast` | `result = (type)src;` | 5055 |
+| `.make_slice` | `result.ptr = ptr;\n result.len = len;` | 5070 |
+| `.print_str` | `std_print("literal");` | 5089 |
+| `.print_val` | `std_print_<type>(val);` (slice → `std_print_str(val.ptr, val.len)`) | 5098 |
+| `.ptr_cast` | `result = (type)src;` | 5215 |
+| `.check_error` | `result = src.is_error;` | 5230 |
+| `.unwrap_error_payload` | `result = src.data.payload;` | 5241 |
+| `.unwrap_error_code` | `result = src.data.err;` (void-payload → `src.err;`) | 5267 |
+| `.wrap_error_ok` | `result.data.payload = src;\n result.is_error = 0;` (void-payload → `result.err = 0;\n result.is_error = 0;`) | 5296 |
+
+**[updated: 2026-08-13 — F3 final line-ref pass: all table line numbers corrected against
+current source (F1/F4/F6 additions shifted them +~1200 lines); `emitInst` header :3062 → :3670.]**
 | `.wrap_error_err` | `result.data.err = src;\n result.is_error = 1;` (void-payload → same pattern, `.err`) | 3554 |
 | `.check_optional` | `result = src.has_value;` | 3586 |
 | `.unwrap_optional` | `result = src.value;` (void-payload → nothing) | 3599 |
@@ -590,15 +593,15 @@ Resolves field access for `.assign_field`:
 | `tagged_union_type` | `.tag` (field 0), `.payload.<variant-name>._<sub>` or `.payload` (field 1) |
 | `ptr_type`/`many_ptr_type` → `struct_type` | `->field` |
 | `struct_type` | `.field` (with array copy: `{ ... while(_j < len) { base.field[_j] = src[_j]; _j++; } }`) |
-| `union_type` | `.field` (FIXED 2026-08-13, F1): the base-type dispatch (c89_emit.zig:188-307) gained a `union_type` branch (c89_emit.zig:260-274) mirroring the `struct_type` branch but scanning `un_items[payload_idx].fields_start` + `fe_items` for `field_id` (with the same array-copy handling). Previously a union-typed base fell through to the numeric `.f_<field_id>` fallback; now it emits `.member_name` like `store_field` (c89_emit.zig:4202-4209) and `ptr_type`→`union_type` (:4180-4188). Emits `zT_3.Int = v;` for a bare-union struct-literal member (repro `union_literal_nested_xmod` prints `42`; was gcc `'zT_3' undeclared`). |
+| `union_type` | `.field` (FIXED 2026-08-13, F1): the base-type dispatch (c89_emit.zig:188-307) gained a `union_type` branch (c89_emit.zig:260-274) mirroring the `struct_type` branch but scanning `un_items[payload_idx].fields_start` + `fe_items` for `field_id` (with the same array-copy handling). Previously a union-typed base fell through to the numeric `.f_<field_id>` fallback; now it emits `.member_name` like `store_field`'s ptr-base `->` emitter (c89_emit.zig:4199-4218, struct pointee :4202-4209, union pointee :4210-4218). Emits `zT_3.Int = v;` for a bare-union struct-literal member (repro `union_literal_nested_xmod` prints `42`; was gcc `'zT_3' undeclared`). **[F3 line-ref pass 2026-08-13: ptr-base store_field ref corrected — :4180-4188 → :4199-4218.]** |
 | unknown | `.f_<field_id>` (numeric fallback) |
 
 ### 1.15 Helper Functions
 
 | Function | Line | Purpose |
 |----------|------|---------|
-| `getBinOpStr` | 2189 | Maps binary op u8 → C operator string (+, -, *, /, %, &, \|, ^, <<, >>, ==, !=, <, <=, >, >=) |
-| `getUnOpStr` | 2209 | Maps unary op u8 → C operator string (-, !, ~) |
+| `getBinOpStr` | 3079 | Maps binary op u8 → C operator string (+, -, *, /, %, &, \|, ^, <<, >>, ==, !=, <, <=, >, >=) |
+| `getUnOpStr` | 3099 | Maps unary op u8 → C operator string (-, !, ~) |
 | `getCheckedCastFnName` | 2215 | Maps TypeId → checked cast function name (std_checked_cast_i8/u8/i16/u16/i32/u32/i64/u64) |
 | `getPrintFnName` | 2229 | Maps TypeId → print function name (std_print_u32/u64/i64/f64/bool/char/str) |
 | `emitCStringLiteral` | 2241 | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
@@ -1186,9 +1189,13 @@ the output** (grep `extern` → 0 hits in mud_server.c `[c89]`). Prototypes come
 `zT_97 = plat_accept(zT_96);` (:798), `zT_159 = plat_socket_fd_isset(zT_153, zT_154);` (:954),
 `plat_close_socket(zT_145);` (:926).
 
-Mechanism `[source]`: signature uses original name if `is_extern` (`c89_emit.zig:1864`); externs
-get no fwd decl (`:1927`) and no body (`:2333`); call sites use the original name
-(`:4048`). Discarded extern results: `_ = plat_send(...)` → `zT_126 = plat_send(...);
+Mechanism `[source]`: signature uses original name if `is_extern` (`c89_emit.zig:1885`, in
+`emitFunctionSignature` :1875); externs get no fwd decl (the `emitFunctionForwardDecl` caller
+guards on `is_extern == 0`, :2177/:2324) and no body (`if (func.is_extern == 0)` :2370);
+call sites use the original name
+(`:4733`). **[F3 line-ref pass 2026-08-13: extern mechanism refs corrected — :1864→:1885,
+:1927→:2177/:2324, :2333→:2370, :4048→:4733.]**
+Discarded extern results: `_ = plat_send(...)` → `zT_126 = plat_send(...);
 (void)zT_126;` (mud_server.c:883-884, matches `.store_local` `_`→`(void)val;`).
 
 **Extern-return wrapping unexercised**: every extern in the 4 examples returns plain i32/void,
@@ -1290,9 +1297,9 @@ buffers/sets):
 inline in the emitter (net_runtime.c is superseded for migrated programs — linked WITHOUT for
 mud_server/rogue_mud/net_builtin_test). Details:
 
-- **LirInst variants:** `builtin_socket_create/bind_listen/accept/connect/send/recv/select/fd_zero/fd_set/fd_isset/close` (lir.zig:89-99). Lowering + sema follow the console-builtin pattern (name_id interning, `node.child_0` dispatch in lower.zig:2880-2977 / semantic_analyzer.zig:1413-1461).
+- **LirInst variants:** `builtin_socket_create/bind_listen/accept/connect/send/recv/select/fd_zero/fd_set/fd_isset/close` (lir.zig:89-99). Lowering + sema follow the console-builtin pattern (name_id interning, `node.child_0` dispatch in lower.zig:2949-3046 / semantic_analyzer.zig:1441-1489). **[F3 line-ref pass 2026-08-13: lower/sema socket dispatch ranges corrected.]**
 - **`emitBuiltinIncludes`** gains a net-gated include block (`moduleHasNetBuiltin`, c89_emit.zig:2074-2098): `#ifdef _WIN32` → `windows.h` + `winsock.h` (Winsock 1.1, `wsock32.lib` pragma) + `#else` → `sys/socket.h`, `netinet/in.h`, `arpa/inet.h`, `sys/select.h`, `unistd.h`, `fcntl.h`, plus `#include <string.h>` — mirrors net_runtime.c:4-16.
-- **Per-builtin bodies** (c89_emit.zig:3372-3629) — each emits the exact `#ifdef _WIN32 … #else … #endif` body ported from net_runtime.c:18-153 (fd = plain `int`/i32; `SOCKET` casts only in the Win branch):
+- **Per-builtin bodies** (c89_emit.zig:3402-3667 helpers `emitSocketWrite`/`emitSocketOptPtrValue`/`emitSocketCreate`/`emitSocketSelect`/`emitSocketClose`; dispatch arms :5182-5214) — each emits the exact `#ifdef _WIN32 … #else … #endif` body ported from net_runtime.c:18-153 (fd = plain `int`/i32; `SOCKET` casts only in the Win branch):
   - `emitSocketCreate` ← `plat_create_tcp_server` (socket+SO_REUSEADDR+bind, INADDR_ANY; Win `(int)s`/`closesocket` on fail, POSIX `close` on fail); init/cleanup stay as std_net.zig no-ops (WSAStartup/WSACleanup NOT auto-emitted — documented Win-only lifecycle caveat).
   - `emitSocketBindListen` ← `plat_bind_listen` (`r = (listen(...) == SOCKET_ERROR) ? -1 : 0` Win / `< 0` POSIX).
   - `emitSocketAccept` ← `plat_accept` (Win: INVALID_SOCKET→-1 else `(int)client`; POSIX raw return).
