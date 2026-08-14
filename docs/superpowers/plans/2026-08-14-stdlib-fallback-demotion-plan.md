@@ -6,6 +6,8 @@
 
 **Architecture:** R (repro attempt, batched both loci) → F (fix both loci) → F-GATE (sweep + reconciliation). STOP for a ruling if R surfaces a design fork (e.g. const-alias "current module" semantics).
 
+**AMENDMENT 1 (2026-08-14, operator Option A — root-cause fix):** Task R found locus 1 (`semantic_analyzer.zig:774-785`) is DEAD code, and the REAL bug is a systemic bare-name-cache-key == module-0-scoped-key collision (`type_registry.zig:630` primitives under bare `nid`; `:634-648` module-0 named types under `(0<<32)|name_id == nid`). The F-task scope expands to fix the root cause across 4 sites: (1) reorder `resolveTypeExprFull` current-module-first before bare; (2) scope `symbol_registrator.zig:263`; (3) scope `const_alias_prepass.zig:164-172` (alias declaring module); (4) remove dead `semantic_analyzer.zig:774-785`.
+
 **Tech Stack:** Z98 compiler (`sf/src/*.zig`), zig1 (`/tmp/fx_subfolder/zig1`), gcc -m32 C89, tech docs (`sf/docs/tech_docs/*.md`).
 
 ## Global Constraints
@@ -43,27 +45,29 @@ Both may be MASKED post-F1 (`resolveFnSignatures` pre-populates the table for lo
 
 ---
 
-### Task F: Fix both fallbacks (route through upstream module-scoped path)
+### Task F: Fix the root cause (module-scope bare type resolution across 4 sites)
 
 **Files:**
-- Modify: `sf/src/semantic_analyzer.zig`, `sf/src/const_alias_prepass.zig`.
-- Modify (docs): `sf/docs/tech_docs/05_semantic_analysis.md` (locus 1), `sf/docs/tech_docs/03_type_resolution.md` (locus 2).
+- Modify: `sf/src/type_resolver.zig`, `sf/src/symbol_registrator.zig`, `sf/src/const_alias_prepass.zig`, `sf/src/semantic_analyzer.zig`.
+- Modify (docs): `sf/docs/tech_docs/03_type_resolution.md` (type_resolver + const_alias_prepass), `sf/docs/tech_docs/05_semantic_analysis.md` (semantic_analyzer + symbol_registrator).
 - Test: repros from Task R; `arena_multi_inst_xmod`; 4 MD5 gates; corpus.
 
-**Context:** Locus 1's `else` branch already calls `resolveTypeExprFull` with `.module_id = s.module_id` (callee's module — correct, return type is defined there). The fix collapses the `ident_expr` special-case into that same call. Locus 2's fix inserts a current-module-first check before the module-0-first scan.
+**Context (AMENDMENT 1, Option A):** The systemic root cause is that the bare name-cache key (`nid`) collides with module-0's scoped key (`(0<<32)|name_id == name_id`). `resolveTypeExprFull` STEP 1 (`type_resolver.zig:678`) does a bare `nameCacheGet` before the current-module lookup, so bare type references resolve module-0-first. The fix reorders current-module-first and scopes the sibling sites.
 
-- [ ] **Step 1 (locus 1):** In `semantic_analyzer.zig:770-792`, delete the `if (rn.kind == ident_expr) { manual scan } else { ... }` special-case; always call `resolveTypeExprFull` with `.module_id = s.module_id`. Remove the now-unused locals (`rn`, `brnk_m`, `rnid`, `nc`, `mti`, `nck`) cleanly.
-- [ ] **Step 2 (locus 2):** In `const_alias_prepass.zig:164-172`, insert `if (nameCacheGet(registry, (@intCast(u64, mod_id) << 32) | @intCast(u64, dep_name))) |tid| { resolved = tid; }` before the module-0-first `while` scan; keep the bare-name + `resolveWellKnownTypeName` fallbacks.
-- [ ] **Step 3: Rebuild** zig1 (`build_release.sh`, reinstall std lib).
-- [ ] **Step 4: Verify** repro GREEN where applicable; `arena_multi_inst_xmod` run rc=0 prints `0`; 4 MD5s byte-identical; corpus 248 dirs no regression.
-- [ ] **Step 5: Update tech docs** (`[updated: 2026-08-14]`).
-- [ ] **Step 6: Commit**
+- [ ] **Step 1 (`type_resolver.zig:673-692`):** reorder the `ident_expr` arm so the current-module scoped lookup (`:682-686`) runs BEFORE the bare `nameCacheGet` (`:678`). Bare lookup becomes the primitive fallback (second), then the all-modules scan (`:687-692`). Preserve the symbol-lookup tiers (`:694-711`) unchanged.
+- [ ] **Step 2 (`symbol_registrator.zig:263`):** scope the `nameCacheGet(type_reg, ident_name_id)` lookup — try `(mod_id<<32)|ident_name_id` (current module) first, then bare (primitive) fallback.
+- [ ] **Step 3 (`const_alias_prepass.zig:164-172`):** insert `if (nameCacheGet(registry, (@intCast(u64, mod_id) << 32) | @intCast(u64, dep_name))) |tid| { resolved = tid; }` before the module-0-first `while` scan (alias's declaring module = `mod_id`); keep bare-name + `resolveWellKnownTypeName` fallbacks.
+- [ ] **Step 4 (`semantic_analyzer.zig:770-792`):** delete the dead `if (rn.kind == ident_expr) { manual scan } else { ... }` special-case; always call `resolveTypeExprFull` with `.module_id = s.module_id`. Remove now-unused locals cleanly.
+- [ ] **Step 5: Rebuild** zig1 (`build_release.sh`, reinstall std lib).
+- [ ] **Step 6: Verify** Task R repros GREEN (`r_fallback_fnret`, `r_fallback_constalias`, `r_fallback_constalias_prepass` now compile/run correctly; `r_fallback_fnret_ctl` still `20`); `arena_multi_inst_xmod` run rc=0 prints `0`; 4 MD5s byte-identical; corpus 248 dirs no regression.
+- [ ] **Step 7: Update tech docs** (`[updated: 2026-08-14]`).
+- [ ] **Step 8: Commit**
 ```bash
-git add sf/src/semantic_analyzer.zig sf/src/const_alias_prepass.zig sf/docs/tech_docs/05_semantic_analysis.md sf/docs/tech_docs/03_type_resolution.md
-git commit -m "fix: route un-scoped type-resolution fallbacks through module-scoped path"
+git add sf/src/type_resolver.zig sf/src/symbol_registrator.zig sf/src/const_alias_prepass.zig sf/src/semantic_analyzer.zig sf/docs/tech_docs/03_type_resolution.md sf/docs/tech_docs/05_semantic_analysis.md
+git commit -m "fix: module-scope bare type resolution (bare-key/module-0-key collision)"
 ```
 
-**Gate:** both loci fixed; repro GREEN / no-regression; 4 MD5s byte-identical; corpus no new FAIL; tech docs updated.
+**Gate:** all 4 sites fixed; repros GREEN; `arena_multi_inst_xmod` GREEN; 4 MD5s byte-identical; corpus no new FAIL; tech docs updated.
 
 ---
 
