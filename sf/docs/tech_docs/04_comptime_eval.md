@@ -303,14 +303,17 @@ itself resolves `ident_expr` operands through const chains (depth-16 guarded), s
 
 ---
 
-## `host_is_windows` — single config-const flip point [updated: 2026-08-14]
+## `host_is_windows` — single config-const flip point [updated: 2026-08-14] [IMPLEMENTED: 2026-08-14]
 
-`@isWindows` is the 4th comptime-foldable builtin. Its **value** is decided by a module-level
-const, the single flip point for the entire compiler's target-platform sense:
+`@isWindows` is the 4th comptime-foldable builtin. Its **value** is decided by a dedicated config
+module const, the single flip point for the entire compiler's target-platform sense (operator
+ruling **Option A — dedicated `sf/src/config.zig`**):
 
-- **`sf/src/comptime_eval.zig:19`** — `const host_is_windows: bool = false;`
-- **`sf/src/comptime_eval.zig:156-162`** — `comptimeEvalBuiltin` `@isWindows` arm returns
-  `ComptimeVal{ .bits = host_is_windows ? 1 : 0, .width_bits = 1, .sig = false }`.
+- **`sf/src/config.zig`** — `pub const host_is_windows: bool = false;` (a Windows build flips this
+  one const to `true`; nothing else reads a hardcoded value).
+- **`sf/src/comptime_eval.zig:12`** — `const config = @import("config.zig");`
+- **`sf/src/comptime_eval.zig:155-161`** — `comptimeEvalBuiltin` `@isWindows` arm returns
+  `ComptimeVal{ .bits = config.host_is_windows ? 1 : 0, .width_bits = 1, .sig = false }`.
 
 The other two `@isWindows` sites assign only the result **type** (`TYPE_BOOL`), never the value,
 so they need no config:
@@ -318,7 +321,6 @@ so they need no config:
 - `lower.zig:2834-2836` — lowerer sets the fold temp type to `TYPE_BOOL`; the value comes from the
   `ctx.comptime_values` map populated by this module.
 
-**Operator directive: config const, no CLI.** Recommendation (for F1): keep the flip in
-`comptime_eval.zig` but promote it to a documented `pub const` (or, cleaner, move to a dedicated
-`sf/src/config.zig` with `pub const host_is_windows: bool = false;` imported here) so it is the
-single, discoverable, well-named source of truth. No `@isWindows` folding exists in any other file.
+**No CLI flag.** `config.zig` is a valid Z98 module (compiled by zig1), compiler-internal, and not
+part of any program's import graph — the 4 MD5 gates remain byte-identical. No `@isWindows` value
+folding exists in any other file.

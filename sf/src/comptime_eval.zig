@@ -9,14 +9,13 @@ const type_mod = @import("type_registry.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
+const config = @import("config.zig");
 
 pub const ComptimeVal = struct {
     bits: u64,
     width_bits: u8,
     sig: bool,
 };
-
-const host_is_windows: bool = false;
 
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
@@ -155,7 +154,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
     }
     if (node.child_0 == self.is_windows_id) {
         var wb2: u64 = @intCast(u64, 0);
-        if (host_is_windows) {
+        if (config.host_is_windows) {
             wb2 = @intCast(u64, 1);
         }
         return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u8, 1), .sig = false };
