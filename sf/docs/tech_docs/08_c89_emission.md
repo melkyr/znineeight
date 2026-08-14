@@ -158,7 +158,7 @@ Format: z<K>_<8-hex-digits>_<original-name>
 
 `mangleLocalName` (`c89_emit.zig:1838`): If the name_id is a C89 keyword, prefix with `z_`. Otherwise return original name. Used for function parameters and local variables.
 
-#### D2 gap — typedef `_N` suffix not mirrored on fn-signature type refs [updated: 2026-08-14]
+#### D2 gap — typedef `_N` suffix not mirrored on fn-signature type refs — FIXED (F1) [updated: 2026-08-14]
 
 The `_N` collision suffix (step 6 above) is applied **per mangled name**, keyed by
 `(module_id, kind, name_id)`. When the same-named type is defined in two module instances, the
@@ -176,6 +176,13 @@ the typedef in the same header is `zT_<hash>_<Name>_1`. gcc rejects the emitted 
 `repro/mi_matrix/arena_multi_inst_xmod/`). The emitter is internally consistent — it faithfully
 mangles each TypeId by its stored `module_id`; the inconsistency is upstream in type resolution.
 Fix belongs in `type_resolver.zig` (F1), not here. This doc records the emitter-side symptom.
+
+**FIXED (F1, 2026-08-14).** The root cause was fixed upstream in `type_resolver.zig`: bare
+`ident_expr` type resolution is now module-scoped (see 03 §D2 defect), so `lir_fn.return_type` /
+`param.type_id` for a bare `Arena` in module-instance N now point at N's own TypeId. The fn
+reference mangles to the same `_N`-suffixed name as the typedef in the same header, and
+`arena_multi_inst_xmod` compiles + runs clean. No emitter change was needed; the `_N` collision
+mechanism (`nameManglerMangle`) is correct and left as-is.
 
 ### 1.4 C89Emitter — Central Emitter State
 

@@ -413,7 +413,7 @@ Helper `symbolLookupAllModules` (line 578): linear scan of all symbol tables for
 3. `resolveAggregateFieldTypesAll` — field type annotations
 4. `resolveFnSignatures` — fn signatures + annotated var types
 
-#### D2 defect — bare `ident_expr` type resolution is NOT module-scoped [updated: 2026-08-14]
+#### D2 defect — bare `ident_expr` type resolution — FIXED (F1) [updated: 2026-08-14]
 
 `resolveTypeExprFull`'s `ident_expr` arm (type_resolver.zig:670-698) resolves a bare type name
 (e.g. a fn return type `Arena`) in three tiers:
@@ -444,6 +444,19 @@ but the fn signature/return type references the *module-0* TypeId, so it emits t
 first, falling back to the all-modules scan only for primitives. Blast radius: only
 `arena_multi_inst_xmod` hits instance-≥1 same-name types; mud_server/rogue_mud use their own
 `sand.zig` allocator (no `std_arena`), and the 4 MD5 gates are single-instance → 0 gate impact.
+
+**FIXED (F1, 2026-08-14).** `TypeResolveEnv` gained a `module_id: u32` field (type_resolver.zig:32),
+with sentinel `MODULE_ID_NONE = 0xFFFFFFFF` (type_resolver.zig:24) meaning "no module context"
+(global fallback). The `ident_expr` arm now resolves the current module's name_cache entry
+(type_resolver.zig:682-686) and symbol-table entry (type_resolver.zig:694-701) **before** the
+all-modules scan (preserved as the fallback for primitives/globals). Every `resolveTypeExprFull`
+call site sets `module_id` explicitly: `resolveFnSignatures` / `resolveNamedTypeExpressions` /
+`resolveDeclAggregateFieldTypes` thread `mods[mi].id`/`mod_id`; sema sites use `fs.module_id` /
+`mfs.module_id` / `s.module_id` / `self.module_id`; lower sites use `self.module_id`; main.zig
+threads `mods[mi].id` through `resolveStmtTypes`/`resolveTypeExpr`; the genuinely-global sites
+(comptime `@sizeOf`/`@alignOf`/`@intCast` type args, enum backing type) use `MODULE_ID_NONE`. The
+`field_access` arm is untouched. `arena_multi_inst_xmod` now emits self-consistent headers
+(`Arena_1` typedef ↔ `create() → Arena_1`) and runs (prints `0`).
 
 ---
 

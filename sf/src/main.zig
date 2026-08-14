@@ -398,13 +398,13 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
             var dn: []const u8 = "DN"; pal.markerWrite(dn);
             if (decl.kind == AstKind.fn_decl) {
                 if (decl.child_0 != 0) {
-                    resolveStmtTypes(ctx, decl.child_0, @intCast(u32, 0));
+                    resolveStmtTypes(ctx, mods[mi].id, decl.child_0, @intCast(u32, 0));
                 }
                 var sa0: []const u8 = "SA"; pal.markerWrite(sa0);
                 sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
                 var sa1: []const u8 = "sA"; pal.markerWrite(sa1);
             } else if (decl.kind == AstKind.var_decl and decl.child_0 != 0) {
-                var rtype = resolveTypeExpr(ctx, decl.child_0);
+                var rtype = resolveTypeExpr(ctx, mods[mi].id, decl.child_0);
                 if (rtype != type_mod.TYPE_UNDEFINED) {
                     resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decl.child_0, rtype);
                     resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, decls[di], rtype);
@@ -455,12 +455,12 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
 
 }
 
-fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
+fn resolveStmtTypes(ctx: *CompilerContext, module_id: u32, node_idx: u32, depth: u32) void {
     if (depth > @intCast(u32, 16)) return;
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.var_decl) {
         if (node.child_0 != 0) {
-            var rtype = resolveTypeExpr(ctx, node.child_0);
+            var rtype = resolveTypeExpr(ctx, module_id, node.child_0);
             if (rtype != type_mod.TYPE_UNDEFINED) {
                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node.child_0, rtype);
                 resolved_type_table.resolvedTypeTableSet(ctx.resolved_types, node_idx, rtype);
@@ -481,7 +481,7 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
         var r0nl: []const u8 = "\n"; pal.markerWrite(r0nl);
         var aii: []const u8 = "AI"; pal.markerWrite(aii);
         if (node.child_0 != 0) {
-            var rtype = resolveTypeExpr(ctx, node.child_0);
+            var rtype = resolveTypeExpr(ctx, module_id, node.child_0);
             var r1m: []const u8 = "R1t"; pal.markerWrite(r1m);
             var r1b: [20]u8 = undefined;
             var r1l = itoa_mod.itoa(rtype, r1b[0..]);
@@ -498,16 +498,16 @@ fn resolveStmtTypes(ctx: *CompilerContext, node_idx: u32, depth: u32) void {
         var decls = ast_mod.astStoreGetExtraChildren(ctx.store, node.payload);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
-            resolveStmtTypes(ctx, decls[di], depth + @intCast(u32, 1));
+            resolveStmtTypes(ctx, module_id, decls[di], depth + @intCast(u32, 1));
         }
     }
     var cd = depth + @intCast(u32, 1);
-    if (node.child_0 != 0) { resolveStmtTypes(ctx, node.child_0, cd); }
-    if (node.child_1 != 0) { resolveStmtTypes(ctx, node.child_1, cd); }
+    if (node.child_0 != 0) { resolveStmtTypes(ctx, module_id, node.child_0, cd); }
+    if (node.child_1 != 0) { resolveStmtTypes(ctx, module_id, node.child_1, cd); }
 }
 
-fn resolveTypeExpr(ctx: *CompilerContext, node_idx: u32) type_mod.TypeId {
-    var env = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner };
+fn resolveTypeExpr(ctx: *CompilerContext, module_id: u32, node_idx: u32) type_mod.TypeId {
+    var env = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner, .module_id = module_id };
     return type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
 }
 

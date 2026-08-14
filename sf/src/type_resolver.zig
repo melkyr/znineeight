@@ -21,12 +21,15 @@ const mr_mod = @import("module_registry.zig");
 const rtt_mod = @import("resolved_type_table.zig");
 const hash_mod = @import("util/hash.zig");
 
+pub const MODULE_ID_NONE: u32 = @intCast(u32, 0xFFFFFFFF);
+
 pub const TypeResolveEnv = struct {
 
     store: *AstStore,
     typereg: *TypeRegistry,
     symbol_reg: *SymbolRegistry,
     interner: *StringInterner,
+    module_id: u32,
 };
 
 pub const ClassificationResult = struct {
@@ -676,6 +679,11 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var opnc_m: []const u8 = "OPTVOID:nc"; pal_mod.markerWriteInt(opnc_m, canonical_id);
         if (tid) |t| return t;
         var nf: []const u8 = "NF"; pal_mod.markerWrite(nf);
+        if (env.module_id != MODULE_ID_NONE) {
+            var ck_cur: u64 = @intCast(u64, env.module_id) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);
+            var tc_cur = type_mod.nameCacheGet(env.typereg, ck_cur);
+            if (tc_cur) |t| return t;
+        }
         var mi: usize = 0;
         while (mi < @intCast(usize, env.symbol_reg.tables_len)) : (mi += 1) {
             var ck: u64 = @intCast(u64, mi) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);
@@ -683,6 +691,14 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             if (tc) |t| return t;
         }
         var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
+        if (env.module_id != MODULE_ID_NONE) {
+            var sym_cur = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, env.module_id, name_id);
+            if (sym_cur) |s| {
+                if (s.type_id != @intCast(u32, 0)) {
+                    return s.type_id;
+                }
+            }
+        }
         var si: usize = 0;
         while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
             var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
@@ -982,6 +998,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
 }
 
 pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_idx: u32) void {
+    env.module_id = mod_id;
     var decl = env.store.nodes.items[@intCast(usize, decl_idx)];
     var init = env.store.nodes.items[@intCast(usize, decl.child_1)];
     var spid = type_mod.nameCacheGet(env.typereg, (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, decl.payload));
@@ -1062,6 +1079,7 @@ fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry)
     while (ci < mods.len) : (ci += 1) {
         var cr = mods[ci].ast_root;
         if (cr == @intCast(u32, 0)) continue;
+        env.module_id = mods[ci].id;
         var crn = env.store.nodes.items[@intCast(usize, cr)];
         var cd = ast_mod.astStoreGetExtraChildren(env.store, crn.payload);
         var cdi: usize = 0;
@@ -1157,6 +1175,7 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
     while (mi < mods.len) : (mi += 1) {
         var root = mods[mi].ast_root;
         if (root == @intCast(u32, 0)) continue;
+        env.module_id = mods[mi].id;
         var rnode = env.store.nodes.items[@intCast(usize, root)];
         var decls = ast_mod.astStoreGetExtraChildren(env.store, rnode.payload);
         var di: usize = 0;
@@ -1229,7 +1248,7 @@ pub fn typeResolverResolveNames(
     perm_alloc: *Sand
 ) void {
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
-    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner };
+    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner, .module_id = MODULE_ID_NONE };
     _ = perm_alloc;
     resolveNamedTypeExpressions(&env, mods);
     resolveImportFieldAliases(&env, mods, module_reg);

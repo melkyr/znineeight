@@ -105,7 +105,7 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
 
 fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     if (node_idx == @intCast(u32, 0)) return null;
-    var env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbol_reg, .interner = self.interner };
+    var env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbol_reg, .interner = self.interner, .module_id = type_resolver.MODULE_ID_NONE };
     var tid = type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
     if (tid == type_mod.TYPE_UNDEFINED) return null;
     return tid;

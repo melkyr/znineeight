@@ -156,7 +156,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         }
     }
     if (decl_kind == AstKind.enum_decl) {
-        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner };
+        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner, .module_id = type_resolver.MODULE_ID_NONE };
         var backing_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
         backing_box[0] = type_mod.TYPE_U32;
         if (node.child_0 != 0) {
