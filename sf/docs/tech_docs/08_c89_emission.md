@@ -158,6 +158,25 @@ Format: z<K>_<8-hex-digits>_<original-name>
 
 `mangleLocalName` (`c89_emit.zig:1838`): If the name_id is a C89 keyword, prefix with `z_`. Otherwise return original name. Used for function parameters and local variables.
 
+#### D2 gap — typedef `_N` suffix not mirrored on fn-signature type refs [updated: 2026-08-14]
+
+The `_N` collision suffix (step 6 above) is applied **per mangled name**, keyed by
+`(module_id, kind, name_id)`. When the same-named type is defined in two module instances, the
+second instance's typedef legitimately mangles to `zT_<hash>_<Name>_1`, and the struct definition
+is emitted from that type's own `module_id` (`emitStructType`, c89_emit.zig:1505 →
+`nameManglerMangle(ty.name_id, 2, ty.module_id)`; `emitModuleHeaderFile` filters
+`ty.module_id == module_id`, c89_emit.zig:2293).
+
+The fn-signature/return-type references, however, come from `lir_fn.return_type` / `param.type_id`
+via `getCTypeName` (`emitFunctionSignature` c89_emit.zig:1893, `emitFunctionForwardDecl`
+c89_emit.zig:1942). Because type resolution resolves a bare return type `Arena` to **module 0**'s
+TypeId (see 03 §D2 defect), the fn reference mangles to the *unsuffixed* `zT_<hash>_<Name>` while
+the typedef in the same header is `zT_<hash>_<Name>_1`. gcc rejects the emitted C as
+`return type is an incomplete type` / `invalid use of incomplete typedef` (repro
+`repro/mi_matrix/arena_multi_inst_xmod/`). The emitter is internally consistent — it faithfully
+mangles each TypeId by its stored `module_id`; the inconsistency is upstream in type resolution.
+Fix belongs in `type_resolver.zig` (F1), not here. This doc records the emitter-side symptom.
+
 ### 1.4 C89Emitter — Central Emitter State
 
 Defined `c89_emit.zig:457-480`. Holds all emission context:

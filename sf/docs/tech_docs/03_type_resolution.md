@@ -409,8 +409,41 @@ Helper `symbolLookupAllModules` (line 578): linear scan of all symbol tables for
 
 `type_resolver.zig:1060-1075` — orchestrates all name resolution:
 1. `resolveNamedTypeExpressions` — var_decl type expressions
-2. `resolveAggregateFieldTypesAll` — field type annotations
-3. `resolveFnSignatures` — fn signatures + annotated var types
+2. `resolveImportFieldAliases` — import re-export field aliases (`pub const Arena = @import(...).Arena`)
+3. `resolveAggregateFieldTypesAll` — field type annotations
+4. `resolveFnSignatures` — fn signatures + annotated var types
+
+#### D2 defect — bare `ident_expr` type resolution is NOT module-scoped [updated: 2026-08-14]
+
+`resolveTypeExprFull`'s `ident_expr` arm (type_resolver.zig:670-698) resolves a bare type name
+(e.g. a fn return type `Arena`) in three tiers:
+
+1. **global name_cache** (line 675): `nameCacheGet(typereg, canonical_id)` — the bare `name_id`
+   key, populated only for primitive names by `registerPrimitiveName` (type_registry.zig:625-631).
+2. **per-module name_cache scan** (lines 680-684): `while (mi < tables_len)` builds key
+   `(mi << 32) | canonical_id` and returns the **first** matching module's TypeId — starting at
+   module 0, not the *referencing* module.
+3. **symbol scan** (lines 686-695): `symbolRegistryQualifiedLookup` over each module table, again
+   lowest module_id first.
+
+Tier 2 is the defect: it returns module **0**'s type for a same-named type that also exists in a
+later module instance. So `create()` in module instance N resolves its return type `Arena` to
+module 0's `Arena` TypeId (`module_id == 0`), not instance N's own `Arena` (`module_id == N`).
+The `field_access` arm (lines 751-794) does NOT have this problem — `arena_mod.Arena` resolves the
+base `module_type` then looks the field up in *that* module's table (line 780-789), so
+`mod_a.makeA() arena_mod.Arena` correctly targets instance N's type while `create() Arena` (bare)
+targets instance 0's.
+
+Emission consequence (D2): the struct typedef is emitted from the type's *own* `module_id` (so the
+instance-N `Arena` typedef mangles to `zT_..._Arena_N`, collision-suffixed in `nameManglerMangle`),
+but the fn signature/return type references the *module-0* TypeId, so it emits the unsuffixed
+`zT_..._Arena` — gcc rejects the emitted C as `return type is an incomplete type`. Reproduced by
+`repro/mi_matrix/arena_multi_inst_xmod/` (two-path import `a/std_arena.zig` + `b/std_arena.zig`).
+**Fix locus (F1):** thread the referencing `module_id` through `resolveTypeExprFull` / the
+`TypeResolveEnv` and resolve bare `ident_expr` type names against the current module's symbol table
+first, falling back to the all-modules scan only for primitives. Blast radius: only
+`arena_multi_inst_xmod` hits instance-≥1 same-name types; mud_server/rogue_mud use their own
+`sand.zig` allocator (no `std_arena`), and the 4 MD5 gates are single-instance → 0 gate impact.
 
 ---
 

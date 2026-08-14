@@ -1,12 +1,12 @@
-# 04 — Compile-Time Evaluation [updated: 2026-08-06 — F1/F2 bitwise+shift ops, F8 ident_expr const-chain + depth guard; lowerer intern-count cross-ref 9→12 (varargs builtins)]
+# 04 — Compile-Time Evaluation [updated: 2026-08-14 — `@isWindows` 4th foldable builtin + `host_is_windows` config-const flip point documented (comptime_eval.zig:19/156-162); prior 2026-08-06 — F1/F2 bitwise+shift ops, F8 ident_expr const-chain + depth guard; lowerer intern-count cross-ref 9→12 (varargs builtins)]
 
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
 | `ComptimeVal` fields | 3 | bits (u64), width_bits (u8), sig (bool) |
-| `ComptimeEval` fields | 7 | registry, store, interner, symbol_reg, size_of_id, align_of_id, int_cast_id |
-| Builtin intrinsics (comptime-foldable) | 3 | @sizeOf, @alignOf, @intCast — the ONLY names interned by `comptimeEvalInit` |
+| `ComptimeEval` fields | 8 | registry, store, interner, symbol_reg, size_of_id, align_of_id, int_cast_id, **is_windows_id** (2026-08-14) |
+| Builtin intrinsics (comptime-foldable) | 4 | @sizeOf, @alignOf, @intCast, **@isWindows** (2026-08-14) — the ONLY names interned by `comptimeEvalInit` |
 | Builtin names interned by sema | 9 | @ptrCast, @ptrToInt, @intToPtr, @intCast, @floatCast, @intToFloat, @intToEnum, @sizeOf, @alignOf (+ `_` stub) — type assignment only |
 | Builtin names interned by lowerer | 12 | @intCast, @intToFloat, `print`, @ptrCast, @ptrToInt, @intToPtr, @enumToInt, @sizeOf, @alignOf + **@cVaStart, @cVaArg, @cVaEnd** (2026-08-06 varargs) — LIR dispatch only |
 | Non-foldable builtins | 6 | @ptrCast, @ptrToInt, @intToPtr, @floatCast, @intToFloat, @intToEnum — comptime eval returns `null`, handled by sema type rules + runtime LIR casts |
@@ -22,9 +22,9 @@
 
 | Function | Line | Visibility | Purpose | Called By | Calls | Data Touched | Key Decisions | Markers |
 |----------|------|-----------|---------|-----------|-------|-------------|---------------|---------|
-| `comptimeEvalInit` | 28 | pub | Initialize `ComptimeEval` by interning `@sizeOf`, `@alignOf`, `@intCast` string names. Returns populated struct. | `main.zig` phase_ComptimeEvaluation (main.zig:328); unit tests (test_semantic_bin.zig) | `interner_mod.stringInternerIntern` | `interner` hash map, `ComptimeEval` fields | Three builtin IDs frozen at init; no dynamic registration. | `CE` (phase entry, main.zig:327) [inference] |
+| `comptimeEvalInit` | 28 | pub | Initialize `ComptimeEval` by interning `@sizeOf`, `@alignOf`, `@intCast`, `@isWindows` string names (4 names; `@isWindows` added 2026-08-14). Returns populated struct. | `main.zig` phase_ComptimeEvaluation (main.zig:328); unit tests (test_semantic_bin.zig) | `interner_mod.stringInternerIntern` | `interner` hash map, `ComptimeEval` fields | Three builtin IDs frozen at init; no dynamic registration. | `CE` (phase entry, main.zig:327) [inference] |
 | `comptimeEvalResolveTypeArg` | 88 | private | Resolve a type argument AST node to a `TypeId` using `resolveTypeExprFull`. Returns `null` on `node_idx==0` or `TYPE_UNDEFINED`. | `comptimeEvalBuiltin` | `type_resolver.resolveTypeExprFull` | `store`, `registry`, `symbol_reg`, `interner` | Creates ephemeral `TypeResolveEnv` each call. No caching. | None [inference] |
-| `comptimeEvalBuiltin` | 96 | private | Dispatch comptime-evaluable builtin calls. Handles `@sizeOf`, `@alignOf`, `@intCast`. Each resolves its type argument, then checks `ty.state==2` (resolved). | `comptimeEvalEvaluate` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluate`, `ast_mod.astStoreGetExtraChildren` | `self.store`, `self.registry`, `self.interner` | Guards on `ty.state==2` (fully resolved). Returns null if type unresolved. | None [inference] |
+| `comptimeEvalBuiltin` | 96 | private | Dispatch comptime-evaluable builtin calls. Handles `@sizeOf`, `@alignOf`, `@intCast`, `@isWindows`. Each resolves its type argument, then checks `ty.state==2` (resolved). | `comptimeEvalEvaluate` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluate`, `ast_mod.astStoreGetExtraChildren` | `self.store`, `self.registry`, `self.interner` | Guards on `ty.state==2` (fully resolved). Returns null if type unresolved. | None [inference] |
 | `comptimeEvalBuiltin` — `@sizeOf` | 97 | — | Extract first extra child as type arg, resolve, return `ty.size` as `ComptimeVal`. | (same as above) | same | `registry.types_items[t].size` | Always width_bits=0, sig=false (compile-time size is unsigned). | None [inference] |
 | `comptimeEvalBuiltin` — `@alignOf` | 106 | — | Same pattern as `@sizeOf` but returns `ty.alignment`. | (same as above) | same | `registry.types_items[t].alignment` | Width=0, sig=false. | None [inference] |
 | `comptimeEvalBuiltin` — `@intCast` | 115 | — | Resolve target type, evaluate inner expression, then truncate/sign-extend bits to target width. Computes mask, sign-extends if target is signed type. | (same as above) | `comptimeEvalEvaluate`, `comptimeEvalResolveTypeArg`, `ast_mod.astStoreGetExtraChildren` | `registry.types_items[t].size/kind` | Checks `ty.kind` for signed int kinds (i8/i16/i32/i64/isize). 64-bit full width passes through directly. | None [inference] |
@@ -300,3 +300,25 @@ itself resolves `ident_expr` operands through const chains (depth-16 guarded), s
   rather than degrade to a runtime call.
 - A const chain longer than the depth-16 guard silently falls back to runtime arithmetic
   (guarded, not fixed) — no current repro or gate triggers it.
+
+---
+
+## `host_is_windows` — single config-const flip point [updated: 2026-08-14]
+
+`@isWindows` is the 4th comptime-foldable builtin. Its **value** is decided by a module-level
+const, the single flip point for the entire compiler's target-platform sense:
+
+- **`sf/src/comptime_eval.zig:19`** — `const host_is_windows: bool = false;`
+- **`sf/src/comptime_eval.zig:156-162`** — `comptimeEvalBuiltin` `@isWindows` arm returns
+  `ComptimeVal{ .bits = host_is_windows ? 1 : 0, .width_bits = 1, .sig = false }`.
+
+The other two `@isWindows` sites assign only the result **type** (`TYPE_BOOL`), never the value,
+so they need no config:
+- `semantic_analyzer.zig:1429-1430` — sema `builtin_call` arm → `TYPE_BOOL`.
+- `lower.zig:2834-2836` — lowerer sets the fold temp type to `TYPE_BOOL`; the value comes from the
+  `ctx.comptime_values` map populated by this module.
+
+**Operator directive: config const, no CLI.** Recommendation (for F1): keep the flip in
+`comptime_eval.zig` but promote it to a documented `pub const` (or, cleaner, move to a dedicated
+`sf/src/config.zig` with `pub const host_is_windows: bool = false;` imported here) so it is the
+single, discoverable, well-named source of truth. No `@isWindows` folding exists in any other file.
