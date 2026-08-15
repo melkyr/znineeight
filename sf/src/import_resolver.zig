@@ -36,7 +36,7 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
         tok_len += 1;
         if (t2.kind == TokenKind.eof) break;
     }
-    var p_arena_buf: [4096]u8 = undefined;
+    var p_arena_buf: [16384]u8 = undefined;
     var p_arena = alloc_mod.sandInit(p_arena_buf[0..]);
     var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, &p_arena);
     parser_mod.parserSetModuleContext(&p, reg, mod_id);

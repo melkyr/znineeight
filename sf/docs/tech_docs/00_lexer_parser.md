@@ -1,4 +1,4 @@
-# 00 — Lexer & Parser [updated: 2026-08-14 — F-TOKEN: two-pass exact-size token array (count_only lexer pass suppresses diagnostics/intern/string_buf); prior 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
+# 00 — Lexer & Parser [updated: 2026-08-14 — F-PARSER+F-PARSEARENA: struct/union/enum/error-set/fn-type member buffers are now growable arena arrays (was `[64]u32` stack, ASan overflow on >64 members); parser stack arena `p_arena_buf` enlarged 4096→16384 B; prior — F-TOKEN: two-pass exact-size token array (count_only lexer pass suppresses diagnostics/intern/string_buf); prior 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
 
 ## Summary Table
 
@@ -136,6 +136,7 @@ Recursive-descent parser with **Pratt-style precedence climbing** for expression
 | `parserParseFieldInitListNamed` | 447 | private | `[inference: .field = value, .field2 = value2, ...]` | Named field initializer list for struct init. |
 | `parserParseStructInit` | 472 | private | `[inference: base + field init list]` | Struct init `Struct{ .x = 1, .y = 2 }`. |
 | `u32ArrayListAppendInner` | 480 | private | `[inference: dynamic growth 2x, sand alloc]` | Growable u32 array append (replicated from growable_array). |
+| `parserPushU32` | 497 | private | `[inference: append via u32ArrayListAppendInner into Parser.allocator (parser arena)]` | Growable u32 list append for member/field/param collectors (F-PARSER). |
 | `parserParseIntLiteral` | 497 | private | `[inference: int_val from TokenValue, astStoreAddIntLiteral]` | Integer literal node. |
 | `parserParseFloatLiteral` | 503 | private | `[inference: debug marker PF:, astStoreAddFloatLiteral]` | Float literal node. **Debug marker:** writes `PF:<float_val>\n` to stderr. |
 | `parserParseStringLiteral` | 514 | private | `[inference: string_id from TokenValue, astStoreAddStringLiteral]` | String literal node. |
@@ -161,12 +162,12 @@ Recursive-descent parser with **Pratt-style precedence climbing** for expression
 | `parserParseBracketType` | 943 | private | `[inference: [*c]T, []T, [N]T]` | Bracket type: many-pointer `[*c]T`, slice `[]T`, array `[N]T`. |
 | `parserParseOptionalType` | 978 | private | `[inference: ?T]` | Optional type. |
 | `parserParseErrorUnionType` | 986 | private | `[inference: !T]` | Error union type (payload side). |
-| `parserParseFnType` | 994 | private | `[inference: fn(params) ret_type]` | Function type. `...` (varargs) in fn-pointer params → error `"varargs not allowed in function pointer types"` (`parser.zig:1004-1012`). |
+| `parserParseFnType` | 994 | private | `[inference: fn(params) ret_type]` | Function type. `...` (varargs) in fn-pointer params → error `"varargs not allowed in function pointer types"` (`parser.zig:1004-1012`). Params collected via `parserPushU32` growable arena array (no `[64]u32` cap). |
 | `parserParseErrorSetDecl` | 1027 | private | `[inference: error{ Tag1, Tag2 }]` | Error set declaration (no params). |
-| `parserParseErrorSetDeclBody` | 1032 | private | `[inference: { identifier, ... } payload]` | Error set body parsing. |
-| `parserParseStructType` | 1056 | private | `[inference: struct { name: type, ... }]` | Struct type (anonymous). |
-| `parserParseEnumType` | 1086 | private | `[inference: enum[(backing)] { tag[=expr], ... }]` | Enum type (anonymous). |
-| `parserParseUnionType` | 1126 | private | `[inference: union[(enum)] { name[:type], ... }]` | Union type (anonymous). |
+| `parserParseErrorSetDeclBody` | 1032 | private | `[inference: { identifier, ... } payload]` | Error set body parsing. Members collected via `parserPushU32` growable arena array. |
+| `parserParseStructType` | 1056 | private | `[inference: struct { name: type, ... }]` | Struct type (anonymous). Fields collected via `parserPushU32` growable arena array (no `[64]u32` cap). |
+| `parserParseEnumType` | 1086 | private | `[inference: enum[(backing)] { tag[=expr], ... }]` | Enum type (anonymous). Members collected via `parserPushU32` growable arena array (was `members_buf[64]` ASan overflow). |
+| `parserParseUnionType` | 1126 | private | `[inference: union[(enum)] { name[:type], ... }]` | Union type (anonymous). Fields collected via `parserPushU32` growable arena array (was `fields_buf[64]` ASan overflow). |
 | `parserParseTypeName` | 1174 | private | `[inference: identifier[.field]* → field_access chain]` | Qualified type name `Module.Type`. |
 | `parserParseStatement` | 1192 | pub | `[inference: dispatch on keyword/identifier/lbrace/semicolon → 20+ statement forms]` | Statement parser. Dispatches to var/pub/extern/fn/if/while/for/switch/return/break/continue/defer/errdefer/test/struct/enum/union/block/labeled/expr. **Debug:** writes `PSTK:k<tok_kind>` marker. |
 | `parserEmitErrorNode` | 1225 | pub | `[inference: diagnostic + err AstNode]` | Emits error node for error recovery. |
@@ -191,7 +192,7 @@ Recursive-descent parser with **Pratt-style precedence climbing** for expression
 | `parserParseDeferStmt` | 1653 | private | `[inference: defer stmt]` | Defer statement (generic, used for both `defer` and `errdefer`). |
 | `parserParseErrdeferStmt` | 1664 | private | `[inference: errdefer stmt]` | Errdefer statement. |
 | `parserParseTestDecl` | 1667 | private | `[inference: test "name" { ... }]` | Test declaration (name is optional string literal). |
-| `parserParseContainerDecl` | 1684 | private | `[inference: struct/enum/union name { ... } — named container declaration]` | Named struct/enum/union. Handles enum backing type `enum(u8)`, union(enum), identifier name. |
+| `parserParseContainerDecl` | 1684 | private | `[inference: struct/enum/union name { ... } — named container declaration]` | Named struct/enum/union. Handles enum backing type `enum(u8)`, union(enum), identifier name. Fields/members collected via `parserPushU32` growable arena array. |
 | `parserParseBlock` | 1745 | private | `[inference: { stmts } with local_buf[64] fast path and child_buf overflow]` | Block `{ stmts }`. Optimized: first 64 stmts in stack buffer, overflow to `child_buf`. Debug: `PBX:S/T/K/L/B/P`, `PLEN:l` markers. |
 | `precToInt` | 1802 | pub | `[inference: enumToInt]` | Precedence → u8. |
 | `precFromInt` | 1806 | pub | `[inference: intToEnum]` | u8 → precedence. |
@@ -365,8 +366,27 @@ AST tree (root node index = module_root node)
 > directly into the perm arena (`import_resolver.zig:87`, `readFile(path_s, reg.alloc)`) and the
 > source manager takes ownership of that slice (no scratch→perm copy), removing the in-scratch source
 > transient. Together these close the import scratch OOM (c89_emit.zig 73,912 tokens → 1,773,888 B
-> exact array; lower.zig 79,606 → 1,910,544 B). The remaining OOM for those two modules is the
-> parser's fixed 4 KB arena (`p_arena_buf`, `import_resolver.zig:48`) — F-PARSEARENA scope.
+> exact array; lower.zig 79,606 → 1,910,544 B).
+
+> **Growable member/field buffers + parser arena `[updated: 2026-08-14 — F-PARSER+F-PARSEARENA]`** —
+> the five parser member-list collectors that were fixed `[64]u32` stack buffers
+> (`parserParseStructType`, `parserParseEnumType`, `parserParseUnionType`,
+> `parserParseContainerDecl` field/member lists) plus the same-class `parserParseFnType`
+> `param_buf` and `parserParseErrorSetDeclBody` `member_buf` are now arena-backed growable arrays.
+> New helper `parserPushU32` (`parser.zig:497`) appends through the shared
+> `u32ArrayListAppendInner` (dynamic ×2 growth) into the parser's sand arena
+> (`Parser.allocator`, the per-module `p_arena`), with copy on realloc. The `[64]u32` overflow
+> class is gone — modules with >64 struct fields / enum members / union fields / error-set members /
+> fn-type params no longer ASan stack-buffer-overflow (`parserParseEnumType` / `parserParseUnionType`
+> were the observed sites on ast.zig/parser.zig/main.zig). `parserParseBlock` keeps its original
+> stack `local_buf[64]` + `child_buf` spill (already overflow-safe; unchanged to avoid extra arena
+> pressure). The parser stack arena `p_arena_buf` (`import_resolver.zig:39`) is enlarged
+> **4096 → 16384 B** (16 KB per-module stack frame, auto-reclaimed on return — zero BSS/static-arena
+> impact); this removes the `OOM: total=4096` parser-arena failure on large modules. **Known limits
+> (out of scope):** lower.zig/main.zig still exceed 16 KB parser-arena peak (lower.zig ≈17.7 KB);
+> c89_emit.zig additionally hits a pre-existing `u16` `span_len` overflow (`ast.zig:290`,
+> `span_len: u16 = @intCast(u16, span_end - span_start)`), masked by the former 4096 OOM — both are
+> deferred (do NOT enlarge `p_arena_buf` beyond 16 KB per task ruling).
 
 ---
 
