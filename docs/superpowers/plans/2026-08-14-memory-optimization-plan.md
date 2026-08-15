@@ -292,6 +292,23 @@ For each dominant component, state concrete reduction paths (e.g. node-count red
 
 ---
 
+### F-PATHNORM-Repro: Repro — AST duplication from un-normalized import paths
+
+> **AMENDMENT (operator directive, 2026-08-15):** after Feas, create a self-contained repro of the AST-duplication defect so the fix is observable WITHOUT the full-blown self-compile (avoids scope creep + the 1 GiB temp-pool dependency). F-PATHNORM-Inv/Fix validate on this repro + corpus + 4 MD5 gates instead of full self-compile.
+
+**Files:**
+- Create: `repro/mi_matrix/pathnorm_dup_xmod/{main.zig, mod.zig, sub/mod2.zig, NOTES.md}` — small multi-module fixture with a mutual `..` import cycle mirroring the self-compile pattern (lexer.zig ↔ tests/lexer_tests.zig) at reduced scale
+- Report: `.superpowers/sdd/F-PATHNORM-Repro-report.md`
+
+- [ ] **Step 1: Create the fixture** — `main.zig` imports `mod.zig`; `mod.zig` imports `sub/mod2.zig`; `sub/mod2.zig` imports `../mod.zig`. The `..` cycle compounds `sub/../` prefixes per layer, so `mod.zig` and `sub/mod2.zig` are re-registered/re-parsed many times (each layer = a new un-normalized path string → a new module entry). Keep std out of the import chain so the repro is self-contained; `main.zig` may use `std.io.print` (installed canonical lib) if output is wanted.
+- [ ] **Step 2: RED — observe the duplication** — run the repro through the compiler under test (`/tmp/fx_subfolder/zig1`, dump + gcc + run per QUICK_REF). Observe module entries >> 2 physical files using the committed `--markers` instrumentation (import parse markers, `IRP:m` at `import_resolver.zig:111`) and/or the emitted per-module C unit count, and record `--track-memory` module-arena figure.
+- [ ] **Step 3: Record the baseline** — exact observed numbers (parse-marker count, module entries, emitted units, module arena) into `NOTES.md` + report, matching the corpus two-state-gate convention.
+- [ ] **Step 4: Commit** (`git add` the repro dir only; message `repro: AST duplication from un-normalized import paths (pathnorm)`).
+
+**Gate:** repro exists under `repro/mi_matrix/pathnorm_dup_xmod/`; RED shows duplication (module entries / parse markers >> 2 physical files); numbers recorded in NOTES.md; commit contains only the repro dir.
+
+---
+
 ### F-PATHNORM-Inv: Investigation — shared path-normalization utility
 
 **Files:**
