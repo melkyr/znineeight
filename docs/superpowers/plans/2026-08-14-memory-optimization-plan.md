@@ -189,7 +189,7 @@ git add sf/src/allocator.zig sf/src/import_resolver.zig sf/src/parser.zig sf/src
 git commit -m "fix: growable parser arena + arenaGrew warnings + span_len u16->u32 + block child-buffer bug"
 ```
 
-**Gate:** no ASan crash; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit`/`lower`; no `span_len` PANIC; `arena … grew …` warnings visible under `--track-memory --markers`; `@sizeOf(AstNode)` = 28 B; block child-buffer bug fixed; 4 MD5s byte-identical; corpus 252 unchanged; self-compile rc=0.
+**Gate:** no ASan crash; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit`/`lower`; no `span_len` PANIC; `arena … grew …` warnings visible under `--track-memory --markers`; `@sizeOf(AstNode)` = 28 B; block child-buffer bug fixed; 4 MD5s byte-identical; corpus 252 unchanged. **SELF-COMPILE rc=0 IS DEFERRED (amendment, 2026-08-14):** self-compile is NOT yet achievable due to two underlying issues now examined in their own task families — (a) AST duplication from unnormalized import paths (F-PATHNORM-{Feas,Inv,Fix}), (b) parser value-position `if (opt) |cap| expr else expr` gap (F-PARSERGAP-{Feas,Inv,Fix}). Subsequent F-tasks (F-AST, F-LIR, F-HASHMAP, F-SWEEP, F-DEADCODE, F-RESIZE) are **NOT blocked** by the deferred self-compile gate — their optimizations remain wanted.
 
 ---
 
@@ -272,6 +272,63 @@ For each dominant component, state concrete reduction paths (e.g. node-count red
 - [ ] **Step 5: Write the report** `.superpowers/sdd/task-3b-I-modulearena-report.md` + STOP for operator ruling (what to build next: a targeted fix vs an AST-representation redesign).
 
 **Gate:** per-array decomposition, per-module accumulation, waste split, ranked reduction options, and a pathology-vs-genuine verdict; zero source changes.
+
+---
+### F-PATHNORM-Feas: Feasibility — path normalization fixes AST duplication
+
+> **AMENDMENT (operator ruling, 2026-08-14):** reduce AST duplications FIRST (before F-AST). Investigation 3b-I found self-compile's module arena is ~69.6 MB of which AST store = 57.7 MB live with **nodes 88% duplicated**: `joinPath` (`module_registry.zig:109-119`) keeps `..`/`.` in resolved paths, so the same physical file is interned under multiple path strings → the path-based dedup fails → 1272 module entries parse 37 physical files (34.4× avg, 109× max) → each re-parse appends a full AST copy to the shared store. Genuine single-parse AstStore ≈ 5.0 MB (11.4× inflation).
+
+**Files:**
+- Investigate (read-only): `sf/src/module_registry.zig:109-119` (`joinPath`/`appendZigExt`), resolver path-intern + dedup (`module_registry.zig`, `import_resolver.zig`), `sf/src/string_interner.zig`
+- Modify (docs): none
+- Report: `.superpowers/sdd/F-PATHNORM-Feas-report.md`
+
+- [ ] **Step 1: Confirm the root cause** — trace how a physical file gets multiple path strings (e.g. `a/../b.zig` vs `b.zig` vs `./b.zig`) and that module dedup keys on the un-normalized string. Reproduce the duplication count (1272 entries / 37 files).
+- [ ] **Step 2: Confirm the fix direction** — verify that normalizing `..`/`.` before interning makes dedup succeed → each physical file parsed once → AST store → ~5-6 MB.
+- [ ] **Step 3: Pin the locus** — exactly where normalization must happen (joinPath, the resolver's path interning, or a shared util) and any edge cases (absolute vs relative, trailing slashes, `..` beyond root).
+- [ ] **Step 4: Write the report** (confirmed/refuted, go/no-go, scope) + feed F-PATHNORM-Inv.
+
+**Gate:** root cause confirmed, fix direction validated, precise locus + edge cases identified; zero source changes.
+
+---
+
+### F-PATHNORM-Inv: Investigation — shared path-normalization utility
+
+**Files:**
+- Investigate (read-only): all path-string handling in `sf/src/*.zig` (grep `joinPath`, `appendZigExt`, `readFile`, path interning, `@import`/`@cInclude` resolution, module dedup keys), plus `sf/src/module_registry.zig` and any `util/` candidates
+- Modify (docs): none
+- Report: `.superpowers/sdd/F-PATHNORM-Inv-report.md`
+
+**Interfaces:**
+- Consumes: F-PATHNORM-Feas findings.
+- Produces: a designed **shared path-normalization utility** (name, signature, normalization rules) + all call sites that should use it.
+
+- [ ] **Step 1: Survey all path-string consumers** — every place that builds, compares, interns, or dedups a path (`joinPath` :109-119, `appendZigExt` :131, resolver import resolution, source-manager file ids, `pal.readFile`). Note where `..`/`.` would break dedup or equality.
+- [ ] **Step 2: Design the shared utility** — e.g. `util/path.zig` `normalizePath(buf, []const u8) []const u8` (resolve `.`/`..`, collapse `//`, keep leading `/` or drive-letter, trim trailing `/`). State the exact normalization rules.
+- [ ] **Step 3: Enumerate call sites** — which consumers switch to the utility, and whether any other compiler part (not just import) needs it (search for path-equality/dedup beyond module_registry).
+- [ ] **Step 4: Write the report** (utility design + rules + full call-site list).
+
+**Gate:** shared utility designed with exact rules; all path consumers + dedup sites enumerated; zero source changes.
+
+---
+
+### F-PATHNORM-Fix: Implement — normalize import paths (dedup → no AST duplication)
+
+**Files:**
+- Modify: `sf/src/util/path.zig` (create, per F-PATHNORM-Inv design) + `sf/src/module_registry.zig` (joinPath/resolver use the utility) + any other call sites per F-PATHNORM-Inv
+- Modify (docs): `sf/docs/tech_docs/01_import_resolution.md` (`[updated: 2026-08-14]`)
+- Report: `.superpowers/sdd/F-PATHNORM-Fix-report.md`
+
+**Interfaces:**
+- Consumes: F-PATHNORM-Inv utility design.
+- Produces: normalized paths used everywhere paths are interned/deduped → each physical file parsed once.
+
+- [ ] **Step 1: Implement the shared utility** (per the design) + wire it into `joinPath`/resolver and all enumerated call sites.
+- [ ] **Step 2: Rebuild + verify** — `bash sf/scripts/build_release.sh` → gate `=== [release] Done ===`; reinstall std lib.
+- [ ] **Step 3: Gate** — 4 MD5 gates byte-identical; corpus 252 unchanged; **self-compile module arena drops ~69.6 MB → ~6 MB** (`--track-memory --markers` on `sf/src/main.zig` shows the module arena no longer ballooning; module entries ≈ 37, not 1272).
+- [ ] **Step 4: Commit** (`git add` the touched files; message `fix: normalize import paths to dedup modules (eliminate AST duplication)`)
+
+**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; self-compile module arena → ~6 MB (dedup works).
 
 ---
 
@@ -529,7 +586,63 @@ git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 ```
 
 **Gate:** self-compile completes under the sized pool; 4 MD5s byte-identical; corpus 252 unchanged; BSS reduced.
-### Task 13: F-GATE — final gate sweep + re-measure + docs reconciliation
+### F-PARSERGAP-Feas: Feasibility — parser value-position optional-capture gap
+
+> **AMENDMENT (operator ruling, 2026-08-14):** the parser gap blocks self-compile COMPLETION independent of memory. Task 13 family (Feas/Inv/Fix).
+
+**Files:**
+- Investigate (read-only): `sf/src/parser.zig` (expression/`if`-expression parsing, optional-capture `|cap|`), `sf/src/main.zig:669` (the failing construct), repro of `error[2000]`
+- Modify (docs): none
+- Report: `.superpowers/sdd/F-PARSERGAP-Feas-report.md`
+
+- [ ] **Step 1: Reproduce + confirm** — `if (opt) |cap| expr else expr` in VALUE position fails `error[2000]` (expected identifier/expression) at `main.zig:669`; stmt-position works. Record the exact failing source + diagnostic.
+- [ ] **Step 2: Locate the parser path** — which `parserParseIfExpr`/expression grammar entry rejects value-position optional-capture, and where the stmt-position path differs.
+- [ ] **Step 3: Write the report** (confirmed, locus, scope of the grammar fix) + feed F-PARSERGAP-Inv.
+
+**Gate:** failure reproduced, parser locus identified; zero source changes.
+
+---
+
+### F-PARSERGAP-Inv: Investigation — design the value-position `if (opt) |cap|` fix
+
+**Files:**
+- Investigate (read-only): `sf/src/parser.zig` expression grammar + `ast.zig` node shapes for `if_expr`, `capture`; zig0 oracle behavior if applicable
+- Modify (docs): none
+- Report: `.superpowers/sdd/F-PARSERGAP-Inv-report.md`
+
+**Interfaces:**
+- Consumes: F-PARSERGAP-Feas findings.
+- Produces: the exact parser change (which functions/nodes) to parse value-position `if (opt) |cap| expr else expr` identically to stmt-position.
+
+- [ ] **Step 1: Study the grammar** — how stmt-position `if (opt) |cap|` parses vs value-position; what token/parse path the value form should take.
+- [ ] **Step 2: Design the fix** — the parser function(s) + node emission change so value-position works (and byte-identity holds for existing stmt-position code).
+- [ ] **Step 3: Write the report** (the design + affected functions + risk) + feed F-PARSERGAP-Fix.
+
+**Gate:** fix design specified with affected functions; zero source changes.
+
+---
+
+### F-PARSERGAP-Fix: Implement — value-position optional-capture `if` expression
+
+**Files:**
+- Modify: `sf/src/parser.zig` (per F-PARSERGAP-Inv design) + possibly `sf/src/ast.zig` if a node shape changes
+- Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` (`[updated: 2026-08-14]`)
+- Report: `.superpowers/sdd/F-PARSERGAP-Fix-report.md`
+
+**Interfaces:**
+- Consumes: F-PARSERGAP-Inv design.
+- Produces: `if (opt) |cap| expr else expr` parses in value position (self-compile no longer fails `error[2000]` at main.zig:669).
+
+- [ ] **Step 1: Implement the parser fix** (per the design).
+- [ ] **Step 2: Rebuild + verify** — `bash sf/scripts/build_release.sh` → gate `=== [release] Done ===`; reinstall std lib.
+- [ ] **Step 3: Gate** — 4 MD5 gates byte-identical; corpus 252 unchanged; a repro of the value-position construct now parses (dump rc=0); self-compile progresses past the old `main.zig:669` failure.
+- [ ] **Step 4: Commit** (`git add` the touched files; message `fix: parse if (opt) |cap| expr else expr in value position`)
+
+**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; value-position repro parses; self-compile no longer fails at `main.zig:669`.
+
+---
+
+### Task 14: F-GATE — final gate sweep + re-measure + docs reconciliation
 
 **Files:**
 - Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (add F-plan record: memory-optimization closeout; version bump), `docs/sf/QUICK_REF.md` (new baseline line: corpus counts + 4 MD5s + new per-arena peaks + self-compile status)
