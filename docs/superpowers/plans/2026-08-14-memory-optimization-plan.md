@@ -363,7 +363,9 @@ For each dominant component, state concrete reduction paths (e.g. node-count red
 
 **Interfaces:**
 - Consumes: `AstStore` (`ast.zig:101-210`), `astStoreEnsureCapacity`-style helpers.
-- Produces: AST `nodes`/`extra_children` allocated with a near-final pre-size (line-count × ~4 for nodes), eliminating most of the ~2× module-arena waste (~2.5 MB on self-compile).
+- Produces: AST `nodes`/`extra_children` allocated with a near-final pre-size, eliminating most of the ~2× module-arena waste.
+
+> **AMENDMENT (operator ruling, 2026-08-15):** Task 4 delivered + accepted with two deviations (runtime-gate verified: 21/21 examples runtime-identical; self-compile module arena top 16M→8M): (1) **heuristic = token count** (nodes ×0.6/token, extra_children ×0.25/token) instead of line-count — calibrated because nodes/token is stable (0.51–0.55) while nodes/line varies 2× (3.8–6.6); line-based ×12 measured a REGRESSION (rogue 506K→966K). (2) **`moduleScanDiscover`** (import_resolver.zig:27): side-effect-free closure pre-scan (each file lexed once, O(tokens+imports), no module creation, no interner/path_to_id writes) to learn the closure token total, since the shared store's first grow point only knows module[0]'s count. Measured: rogue_mud `mod=` 506K→370K (−27%), corpus 253 unchanged, 4 MD5s byte-identical.
 
 - [ ] **Step 1: Record the module-arena baseline**
 
