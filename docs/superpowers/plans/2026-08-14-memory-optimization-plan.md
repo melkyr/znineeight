@@ -148,21 +148,22 @@ List the exact files/lines the F-task will change, ordered. If any design fork e
 
 ---
 
-### Task 2-F: Implement the growable parser arena + arenaGrew + span_len u16→u32
+### Task 2-F: Implement the growable parser arena + arenaGrew + span_len u16→u32 + block child-buffer fix
 
-> Consumes the Task 2-I design. The fixed `[64]u32` growable field buffers are already committed (`672e65d7`, `parserPushU32`).
+> Consumes the Task 2-I design. **Operator rulings (binding):** FORK A = option **1** (accept `@sizeOf(AstNode)` **28 B**; update `ast_tests.zig:50` assert 24→28 + `zzz_astnode_sz` docstring `ast.zig:113`); FORK B = **A2** (grow-aware `sandAlloc` via `Sand.growable` hook — parser.zig unchanged); **reuse** ONE `GrowableSand` across modules (reset per module). **ADDED to scope:** fix the latent **block child-buffer bug** at `parser.zig:1803` (`self.child_buf_items[0..local_len]` reads enclosing-scope entries when nested; should be `[saved_len .. saved_len+k]`). The fixed `[64]u32` growable field buffers are already committed (`672e65d7`, `parserPushU32`).
 
 **Files:**
-- Modify: `sf/src/allocator.zig` (segmented growable arena + `arenaGrew`)
-- Modify: `sf/src/import_resolver.zig` (wire `moduleRegistryParseModule` to the growable arena)
-- Modify: `sf/src/parser.zig` (verify/adjust `parserPushU32` for the new arena if the 2-I design requires it)
-- Modify: `sf/src/ast.zig:290` (`span_len` u16 → u32 + sibling fields per 2-I)
+- Modify: `sf/src/allocator.zig` (segmented growable arena via `Sand.growable` hook + `arenaGrew`)
+- Modify: `sf/src/import_resolver.zig` (wire `moduleRegistryParseModule` to ONE reused growable parser arena; reset per module)
+- Modify: `sf/src/parser.zig` (fix block child-buffer bug `:1803`; verify `parserPushU32` unchanged)
+- Modify: `sf/src/ast.zig:106,270,290,113` (`span_len` u16 → u32; update `zzz_astnode_sz` to 28 B)
+- Modify: `sf/src/tests/ast_tests.zig:50` (assert `@sizeOf(AstNode) == 28`)
 - Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` + `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-PARSER-report.md`
 
 **Interfaces:**
 - Consumes: Task 2-I design; `parserPushU32` (`672e65d7`); module arena for backing segments.
-- Produces: parser arena has NO fixed cap (segmented growable, module-arena-backed, doubles + `arenaGrew`); `span_len` widened; no ASan / no parser-arena OOM / no span_len PANIC. Byte-identical.
+- Produces: parser arena has NO fixed cap (segmented growable, module-arena-backed, doubles + `arenaGrew`); `span_len` widened to u32 (`@sizeOf(AstNode)` = 28 B); block child-buffer bug fixed; no ASan / no parser-arena OOM / no span_len PANIC. Byte-identical.
 
 - [ ] **Step 1: Reproduce the baselines (ASan overflow + parser-arena OOM + span_len PANIC)**
 
@@ -173,21 +174,22 @@ timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp3 sf/src/lower
 ```
 Record all baseline messages.
 
-- [ ] **Step 2: Implement the segmented growable parser arena per the 2-I design** (allocator.zig + import_resolver.zig).
+- [ ] **Step 2: Implement the segmented growable parser arena per the 2-I design (A2: `Sand.growable` hook; ONE reused arena, reset per module)** — allocator.zig + import_resolver.zig.
 - [ ] **Step 3: Add `arenaGrew` and wire it into the doubling path** (stderr-only, `--markers`-gated).
-- [ ] **Step 4: Widen `span_len` u16 → u32** (+ sibling fields per 2-I) in ast.zig; keep `@sizeOf(AstNode)` at the intended size.
-- [ ] **Step 5: Rebuild + verify**
+- [ ] **Step 4: Widen `span_len` u16 → u32** (`ast.zig:106,270,290`), update `zzz_astnode_sz` (`ast.zig:113`) to the 28 B layout, and update `ast_tests.zig:50` to 28.
+- [ ] **Step 5: Fix the block child-buffer bug** at `parser.zig:1803`: replace `self.child_buf_items[0..local_len]` with the correct `[saved_len .. saved_len+local_len]` slice so nested >64-statement blocks get their OWN children, not enclosing-scope entries.
+- [ ] **Step 6: Rebuild + verify**
 
-Rebuild (`bash sf/scripts/build_release.sh` → gate `=== [release] Done: /tmp/fx_subfolder/zig1 ===`), reinstall std lib. Verify: no ASan on `ast.zig`/`parser.zig`/`main.zig`; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit`/`lower`; no `span_len` PANIC; `--track-memory --markers` on `lower.zig`/`c89_emit.zig` shows `arena … grew …` lines; 4 MD5 gates byte-identical; corpus 252 unchanged.
+Rebuild (`bash sf/scripts/build_release.sh` → gate `=== [release] Done: /tmp/fx_subfolder/zig1 ===`), reinstall std lib. Verify: no ASan on `ast.zig`/`parser.zig`/`main.zig`; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit`/`lower`; no `span_len` PANIC; `--track-memory --markers` on `lower.zig`/`c89_emit.zig` shows `arena … grew …` lines; 4 MD5 gates byte-identical; corpus 252 unchanged; self-compile (`main.zig`) rc=0 (now expected to complete — the module-arena headroom arbiter for the +1.8 MB AstNode widening).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add sf/src/allocator.zig sf/src/import_resolver.zig sf/src/parser.zig sf/src/ast.zig sf/docs/tech_docs/00_lexer_parser.md sf/docs/tech_docs/00_shared_infra.md
-git commit -m "fix: growable parser arena + arenaGrew warnings + span_len u16->u32 (unblocks self-compile)"
+git add sf/src/allocator.zig sf/src/import_resolver.zig sf/src/parser.zig sf/src/ast.zig sf/src/tests/ast_tests.zig sf/docs/tech_docs/00_lexer_parser.md sf/docs/tech_docs/00_shared_infra.md
+git commit -m "fix: growable parser arena + arenaGrew warnings + span_len u16->u32 + block child-buffer bug"
 ```
 
-**Gate:** no ASan crash; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit`/`lower`; no `span_len` PANIC; `arena … grew …` warnings visible under `--track-memory --markers`; 4 MD5s byte-identical; corpus 252 unchanged.
+**Gate:** no ASan crash; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit`/`lower`; no `span_len` PANIC; `arena … grew …` warnings visible under `--track-memory --markers`; `@sizeOf(AstNode)` = 28 B; block child-buffer bug fixed; 4 MD5s byte-identical; corpus 252 unchanged; self-compile rc=0.
 
 ---
 
