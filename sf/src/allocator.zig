@@ -62,7 +62,7 @@ pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
     }
     if (sand.growable) |gs| {
         _ = gs;
-        pal.stderr_write("OOM: parser arena cannot grow (module arena exhausted)\n");
+        pal.stderr_write("OOM: growable arena cannot grow (pool exhausted)\n");
     }
     pal.stderr_write("OOM: used=");
     printUsize(sand.pos);
@@ -155,16 +155,23 @@ pub fn sandResetPeak(sand: *Sand) void {
     sand.peak = sand.pos;
 }
 
-pub fn sandReallocInPlace(sand: *Sand, old_ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) ?[*]u8 {
+pub fn sandTryReallocInPlace(sand: *Sand, old_ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) ?[*]u8 {
     if (new_size <= old_size) return old_ptr;
     var old_end: usize = @ptrToInt(old_ptr) + old_size;
     var arena_end: usize = @ptrToInt(sand.start) + sand.pos;
-    if (old_end == arena_end and new_size > old_size) {
-        sand.pos += (new_size - old_size);
-        if (sand.pos > sand.peak) sand.peak = sand.pos;
-        return old_ptr;
+    if (old_end == arena_end) {
+        var new_pos: usize = sand.pos + (new_size - old_size);
+        if (new_pos <= sand.end) {
+            sand.pos = new_pos;
+            if (sand.pos > sand.peak) sand.peak = sand.pos;
+            return old_ptr;
+        }
     }
     return null;
+}
+
+pub fn sandReallocInPlace(sand: *Sand, old_ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) ?[*]u8 {
+    return sandTryReallocInPlace(sand, old_ptr, old_size, new_size, alignment);
 }
 
 pub const CompilerAlloc = struct {
@@ -174,41 +181,47 @@ pub const CompilerAlloc = struct {
     max_mem: u32,
 };
 
-var perm_arena_buf: [4194304]u8 = undefined;
-var mod_arena_buf: [8388608]u8 = undefined;
-var scr_arena_buf: [2097152]u8 = undefined;
+pub const POOL_SIZE: usize = 268435456; // 256 MiB measurement pool; sized to measured peak + margin in Task 12
+var memory_pool_buf: [POOL_SIZE]u8 = undefined;
+var pool: Sand = undefined; // monotonic bump over memory_pool_buf; never reset
+var perm_gs: GrowableSand = undefined; // tier arena perm (pool-backed growable)
+var mod_gs: GrowableSand = undefined; // tier arena module (pool-backed growable)
+var scr_gs: GrowableSand = undefined; // tier arena scratch (pool-backed growable)
 
 pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
 pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
 
+pub fn poolPtr() *Sand {
+    return &pool;
+}
+
+pub fn poolPeak() usize {
+    return pool.peak;
+}
+
 pub fn initCompilerAlloc() CompilerAlloc {
+    pool = sandInit(memory_pool_buf[0..]);
+    growableSandInit(&perm_gs, &pool, 4096, "perm");
+    growableSandInit(&mod_gs, &pool, 4096, "module");
+    growableSandInit(&scr_gs, &pool, 4096, "scratch");
     var ca = CompilerAlloc{
-        .permanent = sandInit(perm_arena_buf[0..]),
-        .module = sandInit(mod_arena_buf[0..]),
-        .scratch = sandInit(scr_arena_buf[0..]),
+        .permanent = perm_gs.view,
+        .module = mod_gs.view,
+        .scratch = scr_gs.view,
         .max_mem = @intCast(u32, DEV_MAX_MEM),
     };
-    ca.permanent.name = "perm";
-    ca.module.name = "module";
-    ca.scratch.name = "scratch";
     return ca;
 }
 
 pub fn checkCombinedPeak(alloc: *CompilerAlloc) void {
-    var perm_kb: usize = alloc.permanent.peak / @intCast(usize, 1024);
-    var mod_kb: usize = alloc.module.peak / @intCast(usize, 1024);
-    var scr_kb: usize = alloc.scratch.peak / @intCast(usize, 1024);
-    var total_kb: usize = perm_kb + mod_kb + scr_kb;
-    var limit_kb: usize = @intCast(usize, alloc.max_mem) / @intCast(usize, 1024);
-    if (total_kb > limit_kb) {
-        var mm: []const u8 = "memory limit exceeded: max-mem="; pal.stderr_write(mm);
+    _ = alloc;
+    var pool_kb: usize = pool.peak / @intCast(usize, 1024);
+    var limit_kb: usize = POOL_SIZE / @intCast(usize, 1024);
+    if (pool_kb > limit_kb) {
+        var mm: []const u8 = "memory limit exceeded: pool limit="; pal.stderr_write(mm);
         printUsize(limit_kb);
-        var p: []const u8 = "K perm="; pal.stderr_write(p);
-        printUsize(perm_kb);
-        var m: []const u8 = "K mod="; pal.stderr_write(m);
-        printUsize(mod_kb);
-        var s: []const u8 = "K scr="; pal.stderr_write(s);
-        printUsize(scr_kb);
+        var p: []const u8 = "K pool="; pal.stderr_write(p);
+        printUsize(pool_kb);
         var t: []const u8 = "K\n"; pal.stderr_write(t);
         pal.exit(1);
     }

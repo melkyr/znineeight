@@ -72,7 +72,7 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
 pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) void {
     var parser_arena: alloc_mod.GrowableSand = undefined;
     var parser_name: []const u8 = "parser";
-    alloc_mod.growableSandInit(&parser_arena, module_arena, 4096, parser_name);
+    alloc_mod.growableSandInit(&parser_arena, alloc_mod.poolPtr(), 4096, parser_name);
     while (true) {
         var mod_id_opt = mr_mod.importQueueDequeue(&reg.import_queue);
         if (mod_id_opt) |mod_id| {

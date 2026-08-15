@@ -152,9 +152,10 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var name_mangler = nm_mod.nameManglerInit();
      var mr = mr_mod.moduleRegistryInit(&compiler_alloc.permanent, &interner, &diag);
      mr_mod.moduleRegistrySetSourceMan(&mr, &source_man);
-     var type_db_buf: [131072]u8 = undefined;
-     var type_db = alloc_mod.sandInit(type_db_buf[0..]);
-     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+     var type_db_arena: alloc_mod.GrowableSand = undefined;
+     var type_db_name: []const u8 = "type_db";
+     alloc_mod.growableSandInit(&type_db_arena, alloc_mod.poolPtr(), 4096, type_db_name);
+     var typereg = type_mod.typeRegistryInit(&type_db_arena.view, &interner);
      type_mod.typeRegistryRegisterPrimitives(&typereg);
      var store = ast_mod.astStoreInit(&compiler_alloc.module);
      var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
@@ -240,6 +241,8 @@ fn runCompiler(ctx: *CompilerContext) void {
         var perm_kb: u32 = @intCast(u32, ctx.alloc.permanent.peak / @intCast(usize, 1024));
         var mod_kb: u32 = @intCast(u32, ctx.alloc.module.peak / @intCast(usize, 1024));
         var scr_kb: u32 = @intCast(u32, ctx.alloc.scratch.peak / @intCast(usize, 1024));
+        var pool_kb: u32 = @intCast(u32, alloc_mod.poolPeak() / @intCast(usize, 1024));
+        var type_db_kb: u32 = @intCast(u32, ctx.typereg.types_alloc.peak / @intCast(usize, 1024));
         var total: u32 = perm_kb + mod_kb + scr_kb;
         var msg1: []const u8 = "track-memory: perm=";
         pal.markerWrite(msg1);
@@ -250,6 +253,12 @@ fn runCompiler(ctx: *CompilerContext) void {
         var msg3: []const u8 = "K scr=";
         pal.markerWrite(msg3);
         writeU32(scr_kb);
+        var msg3b: []const u8 = "K pool=";
+        pal.markerWrite(msg3b);
+        writeU32(pool_kb);
+        var msg3c: []const u8 = "K type_db=";
+        pal.markerWrite(msg3c);
+        writeU32(type_db_kb);
         var msg4: []const u8 = "K total=";
         pal.markerWrite(msg4);
         writeU32(total);

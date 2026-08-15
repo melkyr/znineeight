@@ -641,10 +641,11 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
     if (self.module_reg) |reg| {
-        var scratch: [256]u8 = undefined;
-        var scratch_sand = alloc_mod.sandInit(scratch[0..]);
-        var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, &scratch_sand);
-
+        var scratch_arena: alloc_mod.GrowableSand = undefined;
+        var scratch_name: []const u8 = "import_scratch";
+        alloc_mod.growableSandInit(&scratch_arena, alloc_mod.poolPtr(), 256, scratch_name);
+        var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, &scratch_arena.view);
+        _ = resolved;
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
         bi_tok.span_start, end_pos, 0, 0, 0, path_id);
