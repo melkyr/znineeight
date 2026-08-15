@@ -337,16 +337,19 @@ For each dominant component, state concrete reduction paths (e.g. node-count red
 - Modify (docs): `sf/docs/tech_docs/01_import_resolution.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/F-PATHNORM-Fix-report.md`
 
+> **AMENDMENT (operator ruling, 2026-08-15):** Fix implements BOTH the path-normalization utility AND the content-hash double-guard (directive). **Hash site = RESOLVE-TIME (Option 2, operator choice):** hash each module's source content at import-resolution time — BEFORE the module entry is created — via a `content_to_id: U32ToU32Map` hashmap on ModuleRegistry keyed by the `fnv1a` (u32, `util/hash.zig`) content hash; if the hash is already seen, REUSE the existing module id (skip creating/parsing a duplicate) — no edge-redirect/merge/neuter machinery needed. The hashmap makes recall trivial. Rationale (operator): loop-time hashing would burden every alias with an extra readFile just to check a hash that could be reused; resolve-time avoids it.
+
 **Interfaces:**
-- Consumes: F-PATHNORM-Inv utility design.
-- Produces: normalized paths used everywhere paths are interned/deduped → each physical file parsed once.
+- Consumes: F-PATHNORM-Inv utility + content-hash guard design.
+- Produces: normalized paths used everywhere paths are interned/deduped → each physical file parsed once; content-hash dedup (resolve-time) reuses already-parsed modules across path aliases.
 
 - [ ] **Step 1: Implement the shared utility** (per the design) + wire it into `joinPath`/resolver and all enumerated call sites.
+- [ ] **Step 1b: Implement the resolve-time content-hash double-guard** — `content_to_id: U32ToU32Map` on ModuleRegistry, `fnv1a` hash of module source at import-resolution (before entry creation), reuse existing module id when hash already seen. No merge/neuter machinery.
 - [ ] **Step 2: Rebuild + verify** — `bash sf/scripts/build_release.sh` → gate `=== [release] Done ===`; reinstall std lib.
-- [ ] **Step 3: Gate** — 4 MD5 gates byte-identical; corpus 252 unchanged; **self-compile module arena drops ~69.6 MB → ~6 MB** (`--track-memory --markers` on `sf/src/main.zig` shows the module arena no longer ballooning; module entries ≈ 37, not 1272).
-- [ ] **Step 4: Commit** (`git add` the touched files; message `fix: normalize import paths to dedup modules (eliminate AST duplication)`)
+- [ ] **Step 3: Gate** — 4 MD5 gates byte-identical; corpus 252 unchanged; **self-compile module arena drops ~69.6 MB → ~6 MB** (`--track-memory --markers` on `sf/src/main.zig` shows the module arena no longer ballooning; module entries ≈ 37, not 1272); **repro `pathnorm_dup_xmod` dedups** (parse markers / emitted units ≈ 6 = 3 fixture + 3 std, not 147; still prints 12).
+- [ ] **Step 4: Commit** (`git add` the touched files; message `fix: normalize import paths + content-hash module dedup (eliminate AST duplication)`)
 
-**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; self-compile module arena → ~6 MB (dedup works).
+**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; self-compile module arena → ~6 MB (dedup works); repro `pathnorm_dup_xmod` parses/units collapse to ~6.
 
 ---
 
