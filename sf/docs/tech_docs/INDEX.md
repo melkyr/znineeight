@@ -357,8 +357,7 @@ Full alphabetical index of all documented functions across all phases and module
 | `max` | util.zig | 9 |
 | `mem_eql` | mem.zig | 1 |
 | `min` | util.zig | 1 |
-| `moduleDirPath` | module_registry.zig | 121 |
-| `moduleEntryArrayListAppend` | module_registry.zig | 68 |
+| `moduleDirPath` | module_registry.zig | 121 || `moduleEntryArrayListAppend` | module_registry.zig | 68 |
 | `moduleEntryArrayListEnsureCapacity` | module_registry.zig | 54 |
 | `moduleEntryArrayListGetSlice` | module_registry.zig | 74 |
 | `moduleEntryArrayListInit` | module_registry.zig | 43 |
@@ -367,14 +366,14 @@ Full alphabetical index of all documented functions across all phases and module
 | `moduleRegistryCollectIncludes` | module_registry.zig | 439 |
 | `moduleRegistryGetModules` | module_registry.zig | 240 |
 | `moduleRegistryGetOrCreateModule` | module_registry.zig | 244 |
-| `moduleRegistryInit` | module_registry.zig | 199 |
+| `moduleRegistryInit` | module_registry.zig | 231 |
 | `moduleRegistryParseModule` | import_resolver.zig | 33 |
-| `moduleRegistryResolveImport` | module_registry.zig | 260 |
+| `moduleRegistryResolveImport` | module_registry.zig | 293 |
 | `moduleRegistryResolveImports` | import_resolver.zig | 82 |
 | `moduleRegistrySetSourceMan` | module_registry.zig | 217 |
 | `moduleRegistrySortModules` | module_registry.zig | 327 |
 | `moduleRegistryVerifyOrder` | module_registry.zig | 414 |
-| `moduleResolverAddSearchDir` | module_registry.zig | 139 |
+| `moduleResolverAddSearchDir` | module_registry.zig | 164 |
 | `moduleResolverInit` | module_registry.zig | 131 |
 | `moduleResolverResolve` | module_registry.zig | 144 |
 | `nameCacheGet` | type_registry.zig | 304 |
@@ -382,6 +381,7 @@ Full alphabetical index of all documented functions across all phases and module
 | `nameManglerMangle` | c89_emit.zig | 379 |
 | `nextTemp` | lower.zig | 325 |
 | `nodeHasExtraChildren` | ast.zig | 358 |
+| `normalizePath` | util/path.zig | 25 |
 | `onDoubleFreeStmt` | analyzer.zig | 723 |
 | `onLifetimeStmt` | analyzer.zig | 704 |
 | `onNullStmt` | analyzer.zig | 700 |

@@ -17,6 +17,7 @@ const pal = @import("pal.zig");
 const parser_mod = @import("parser.zig");
 const ast_mod = @import("ast.zig");
 const itoa_mod = @import("util/itoa.zig");
+const path_mod = @import("util/path.zig");
 const mr_mod = @import("module_registry.zig");
 const ModuleRegistry = mr_mod.ModuleRegistry;
 const import_resolver = @import("import_resolver.zig");
@@ -283,7 +284,13 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
             mr_mod.moduleResolverAddSearchDir(&ctx.module_reg.resolver, lib_path);
         }
     }
-    var path_id = interner_mod.stringInternerIntern(ctx.interner, ctx.cli.input_file);
+    var root_buf: [512]u8 = undefined;
+    var root_path = ctx.cli.input_file;
+    if (ctx.cli.input_file.len <= 512) {
+        var norm = path_mod.normalizePath(root_buf[0..ctx.cli.input_file.len], ctx.cli.input_file);
+        if (norm) |n| root_path = n;
+    }
+    var path_id = interner_mod.stringInternerIntern(ctx.interner, root_path);
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
     import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);

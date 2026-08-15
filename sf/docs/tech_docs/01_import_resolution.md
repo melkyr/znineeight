@@ -1,10 +1,13 @@
 # 01 — Import Resolution
 
+[updated: 2026-08-14 — F-PATHNORM: path normalization (`util/path.zig`) + resolve-time content-hash double-guard (`content_to_id`)]
+
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
 | `ModuleState` variants | 5 | `pending(0)`, `parsing(1)`, `parsed(2)`, `resolved(3)`, `failed(4)` |
+| Path normalization | `util/path.zig` | `normalizePath(buf, src)` collapses `.`/`..`/`//`; wired into `joinPath` (the sole path constructor), root path (`main.zig`), and search dirs |
 | `ModuleEntry` fields | 10 | id, path_id, source_file_id, state, ast_root, import_count, imports_start, symbol_table, type_offset, c_includes |
 | `ImportQueue` | LIFO stack | Enqueue dedup (linear scan), dequeue pop-back |
 | Search dir resolution | 3-tier | Importer dir → search dirs → `.` current dir |
@@ -41,7 +44,7 @@ Module graph data structures + topological sort. Contains `ModuleState`, `Module
 | `ModuleEntryArrayList` (struct) | 36 | Dynamic array of `ModuleEntry`: `items([*]ModuleEntry)`, `len(usize)`, `capacity(usize)`, `allocator(*Sand)` |
 | `SearchDirArrayList` (struct) | 78 | Dynamic array of interned search directory path IDs |
 | `ModuleResolver` (struct) | 103 | Import path resolution: `search_dirs(SearchDirArrayList)`, `interner(*StringInterner)`, `diag(*DiagnosticCollector)` |
-| `ModuleRegistry` (struct) | 163 | Central module graph: `modules(ModuleEntryArrayList)`, `import_edges_items([*]u32)`, `import_edges_len/cap`, `resolver(ModuleResolver)`, `interner(*StringInterner)`, `diag(*DiagnosticCollector)`, `source_man(*SourceManager)`, `alloc(*Sand)`, `next_id(u32)`, `path_to_id(U32ToU32Map)`, `import_queue(ImportQueue)` |
+| `ModuleRegistry` (struct) | 163 | Central module graph: `modules(ModuleEntryArrayList)`, `import_edges_items([*]u32)`, `import_edges_len/cap`, `resolver(ModuleResolver)`, `interner(*StringInterner)`, `diag(*DiagnosticCollector)`, `source_man(*SourceManager)`, `alloc(*Sand)`, `next_id(u32)`, `path_to_id(U32ToU32Map)`, `content_to_id(U32ToU32Map)`, `import_queue(ImportQueue)` |
 | `ImportQueue` (struct) | 271 | LIFO import worklist: `pending_items([*]u32)`, `pending_len/cap`, `pending_alloc(*Sand)`, `diag(*DiagnosticCollector)` |
 
 ### Functions
@@ -66,10 +69,10 @@ Module graph data structures + topological sort. Contains `ModuleState`, `Module
 
 | Function | Line | Scope | `[inference]` | Description |
 |----------|------|-------|---------------|-------------|
-| `joinPath` | 109 | private | `[inference: dir + '/' + rel, sand alloc]` | Concatenates directory path and relative path with `/` separator. |
+| `joinPath` | 109 | private | `[inference: dir + '/' + rel, sand alloc, normalize . and ..]` | Concatenates directory path and relative path with `/` separator, then normalizes `.`/`..`/`//` in place via `util/path.zig` `normalizePath` so the interned path is canonical. Output length <= input length, so the single scratch allocation is sufficient. |
 | `moduleDirPath` | 121 | private | `[inference: scan back for '/', returns prefix or ""]` | Extracts directory portion from path. Returns `""` if no `/`. |
 | `moduleResolverInit` | 131 | pub | `[inference: zero-init SearchDirArrayList]` | Creates `ModuleResolver` with empty search dirs. |
-| `moduleResolverAddSearchDir` | 139 | pub | `[inference: intern path, append to search_dirs]` | Adds a search directory. |
+| `moduleResolverAddSearchDir` | 161 | pub | `[inference: normalize + intern path, append to search_dirs]` | Adds a search directory (canonicalized via `normalizePath`). |
 | `moduleResolverResolve` | 144 | pub | `[inference: 3-tier: importer_dir → search_dirs → '.' ]` | **Import path resolution.** Tries: (1) relative to importer's directory, (2) each registered search dir, (3) current dir `.`. Returns interned resolved path ID or null. |
 
 #### Internal helpers
@@ -105,7 +108,7 @@ Module graph data structures + topological sort. Contains `ModuleState`, `Module
 
 | Function | Line | Scope | `[inference]` | Description |
 |----------|------|-------|---------------|-------------|
-| `moduleRegistryResolveImport` | 260 | pub | `[inference: resolve path, get-or-create module, record import, enqueue]` | Resolves an `@import("path")` reference: calls `moduleResolverResolve` → `moduleRegistryGetOrCreateModule` → `moduleRegistryAddImport` → `importQueueEnqueue`. Returns resolved module ID or null. |
+| `moduleRegistryResolveImport` | 293 | pub | `[inference: resolve path, path-dedup, content-hash dedup, get-or-create module, record import, enqueue]` | Resolves an `@import("path")` reference. Three-layer dedup: (1) canonical path lookup in `path_to_id` (path normalization makes syntactic aliases equal); (2) resolve-time content-hash double-guard — reads the module source, `fnv1a`-hashes it, and reuses the already-parsed module id if the hash is already in `content_to_id` (no duplicate entry is ever created); (3) `moduleRegistryGetOrCreateModule` only on a full miss. Returns resolved module ID or null. |
 
 #### Topological Sort
 
@@ -305,8 +308,15 @@ moduleRegistryResolveImport
     │   1. importer_dir + target → fileExists?
     │   2. each search_dir + target → fileExists?
     │   3. "." + target → fileExists?
+    │   (joinPath normalizes each joined path)
     │
-    ├─ moduleRegistryGetOrCreateModule (dedup via path_to_id hash)
+    ├─ path_to_id[resolved_path_id] hit → reuse existing module id
+    │
+    ├─ (path miss) resolve-time content-hash double-guard:
+    │    fnv1a(readFile(source)) in content_to_id → reuse that module id (no entry created)
+    │
+    ├─ (content miss) moduleRegistryGetOrCreateModule → record content_to_id[hash] = mod_id
+    │
     ├─ moduleRegistryAddImport (edge: importer_id → imported_id)
     └─ importQueueEnqueue(imported_id)
     │
@@ -401,6 +411,8 @@ same-named modules and emitted duplicate `#include "util.h"` lines).
 3. **No post-parse cycle detection**: The parsing loop does not detect cycles — they surface later in `moduleRegistrySortModules` (ERR_3005). The loop itself cannot hang on a cycle: `import_resolver.zig:130` enqueues only modules still in `pending` state and `import_resolver.zig:87` skips non-pending modules, so the queue always drains. In the compile pipeline (sort not invoked) a cycle would be silently tolerated with no diagnostic.
 4. **`source_man_stub`** (module_registry.zig:197): One-byte stub used as placeholder `SourceManager` until `moduleRegistrySetSourceMan` is called. If `moduleRegistryResolveImports` runs before `setSourceMan`, the pointer dereference will crash.
 5. **No path normalization** (module_resolver.zig:109-119,144-161): `joinPath` and `moduleResolverResolve` do not resolve `..` or `.` — only simple concatenation.
+   **FIXED [updated: 2026-08-14 — F-PATHNORM]:** `util/path.zig` `normalizePath` collapses `.`/`..`/`//` in-place; wired into `joinPath` (the sole path constructor, `module_registry.zig:109`), the root input path (`main.zig:286`), and search dirs. Normalization happens at the string source, before interning, so the interned path id (module dedup key), the stored `path_id`, the importer-dir derivation, `readFile`, and the source-manager filename all see canonical strings. Byte-identity preserved for canonical imports (normalizePath is the identity on dot-free paths). Note the `.zig` two-step probe (bare-then-`appendZigExt`) is untouched.
+6. **Resolve-time content-hash double-guard** (`content_to_id`, `module_registry.zig:204`): a resolve-time backstop that catches what lexical path normalization cannot (symlink/realpath aliases, absolute-vs-relative root variants, future spellings). Each module's source is `fnv1a`-hashed at import-resolution time; if the hash is already in `content_to_id`, the existing module id is reused (no duplicate entry, no merge/neuter machinery). Hash collisions are not verified by content equality (the existing module may not be parsed yet) — a 32-bit FNV collision would merge two distinct files, an accepted documented risk.
 
 ### D1 Gap: Search-Path Wiring — FIXED [updated: 2026-08-14]
 

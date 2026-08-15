@@ -6,6 +6,7 @@ const StringInterner = @import("string_interner.zig").StringInterner;
 const interner_mod = @import("string_interner.zig");
 const pal_mod = @import("pal.zig");
 const hash_mod = @import("util/hash.zig");
+const path_mod = @import("util/path.zig");
 const SourceManager = @import("source_manager.zig").SourceManager;
 const ga_mod = @import("growable_array.zig");
 const U32ArrayList = ga_mod.U32ArrayList;
@@ -106,7 +107,7 @@ pub const ModuleResolver = struct {
     diag: *DiagnosticCollector,
 };
 
-fn joinPath(dir: []const u8, rel: []const u8, scratch: *Sand) ?[]u8 {
+fn joinPath(dir: []const u8, rel: []const u8, scratch: *Sand) ?[]const u8 {
     var total: usize = dir.len + @intCast(usize, 1) + rel.len;
     var raw = alloc_mod.sandAlloc(scratch, total, @intCast(usize, 1)) catch return null;
     var buf = @ptrCast([*]u8, raw);
@@ -115,7 +116,9 @@ fn joinPath(dir: []const u8, rel: []const u8, scratch: *Sand) ?[]u8 {
     buf[i] = '/'; i += 1;
     var j: usize = 0;
     while (j < rel.len) { buf[i + j] = rel[j]; j += 1; }
-    return buf[0..total];
+    var full = buf[0..total];
+    var norm = path_mod.normalizePath(full, full) orelse return full;
+    return norm;
 }
 
 fn moduleDirPath(path: []const u8) []const u8 {
@@ -159,7 +162,13 @@ pub fn moduleResolverInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
 }
 
 pub fn moduleResolverAddSearchDir(self: *ModuleResolver, dir: []const u8) void {
-    var id = interner_mod.stringInternerIntern(self.interner, dir);
+    var buf: [512]u8 = undefined;
+    var use_dir = dir;
+    if (dir.len <= 512) {
+        var norm = path_mod.normalizePath(buf[0..dir.len], dir);
+        if (norm) |n| use_dir = n;
+    }
+    var id = interner_mod.stringInternerIntern(self.interner, use_dir);
     searchDirArrayListAppend(&self.search_dirs, id);
 }
 
@@ -195,6 +204,7 @@ pub const ModuleRegistry = struct {
     alloc: *Sand,
     next_id: u32,
     path_to_id: hash_mod.U32ToU32Map,
+    content_to_id: hash_mod.U32ToU32Map,
     import_queue: ImportQueue,
 };
 
@@ -232,6 +242,7 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .alloc = alloc,
         .next_id = @intCast(u32, 0),
         .path_to_id = hash_mod.u32ToU32MapInit(alloc),
+        .content_to_id = hash_mod.u32ToU32MapInit(alloc),
         .import_queue = importQueueInit(alloc, diag),
     };
 }
@@ -290,7 +301,43 @@ pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer
         diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3048_CANNOT_READ_FILE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
         return null;
     };
+
+    // Path-level dedup (primary guard — canonical path strings once joinPath
+    // normalizes; the syntactic-alias class collapses here).
+    var by_path = hash_mod.u32ToU32MapGet(&self.path_to_id, resolved_path_id);
+    if (by_path) |existing_id| {
+        moduleRegistryAddImport(self, importer_id, existing_id);
+        importQueueEnqueue(&self.import_queue, existing_id);
+        _ = hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, existing_id);
+        return existing_id;
+    }
+
+    // Content-hash double-guard (resolve-time, before entry creation): hash the
+    // module source; if an identical source is already recorded, reuse that
+    // module id instead of creating a duplicate entry. No merge/neuter needed —
+    // the duplicate entry is simply never created.
+    var resolved_path_s = interner_mod.stringInternerGet(self.interner, resolved_path_id);
+    var content = pal_mod.readFile(resolved_path_s, scratch) orelse {
+        // resolve-time read failed (rare) — fall through to the normal create
+        // path; the parse loop reports error[3048] if the file is genuinely
+        // unreadable.
+        var mod_id = moduleRegistryGetOrCreateModule(self, resolved_path_id);
+        moduleRegistryAddImport(self, importer_id, mod_id);
+        importQueueEnqueue(&self.import_queue, mod_id);
+        _ = hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, mod_id);
+        return mod_id;
+    };
+    var c_hash = hash_mod.fnv1a(content);
+    var by_content = hash_mod.u32ToU32MapGet(&self.content_to_id, c_hash);
+    if (by_content) |target_id| {
+        _ = hash_mod.u32ToU32MapPut(&self.path_to_id, resolved_path_id, target_id);
+        moduleRegistryAddImport(self, importer_id, target_id);
+        importQueueEnqueue(&self.import_queue, target_id);
+        _ = hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, target_id);
+        return target_id;
+    }
     var mod_id = moduleRegistryGetOrCreateModule(self, resolved_path_id);
+    _ = hash_mod.u32ToU32MapPut(&self.content_to_id, c_hash, mod_id);
     moduleRegistryAddImport(self, importer_id, mod_id);
     importQueueEnqueue(&self.import_queue, mod_id);
     _ = hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, mod_id);
