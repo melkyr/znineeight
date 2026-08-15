@@ -107,40 +107,47 @@ git commit -m "fix: two-pass token count + source into perm closes scratch OOM (
 
 ---
 
-### Task 2: F-PARSER — growable struct/union/enum field buffers (ASan fix)
+### Task 2: F-PARSER+F-PARSEARENA — growable field buffers + enlarge parser arena (ASan + 4KB-arena OOM)
+
+> **AMENDMENT (operator ruling, 2026-08-14):** this task now ALSO includes F-PARSEARENA (enlarge the parser stack buffer `p_arena_buf[4096]` → `[16384]`, i.e. 16 KB — a per-module STACK buffer, NOT one of the three static arenas, zero BSS/budget impact). Rationale: Task 1 fixed the scratch OOM, which had masked this; large modules now hit `OOM: total=4096` in the parser stack arena. The standalone Task 10 (F-PARSEARENA) is **absorbed** here. The three static arenas (perm 4 MB / module 8 MB / scratch 2 MB = 14 MB BSS) must sum well UNDER 16 MB — F-RESIZE (Task 12) shrinks them, nothing grows any arena toward 16 MB.
 
 **Files:**
 - Modify: `sf/src/parser.zig:1104-1185` (`parserParseEnumType` `members_buf[64]`, `parserParseUnionType` `fields_buf[64]`), plus the sibling `[64]u32` field buffers at `:1077` (struct), `:1731`, `:1773` (same overflow class).
+- Modify: `sf/src/import_resolver.zig:48` (`p_arena_buf: [4096]u8` → `[16384]u8`)
 - Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-PARSER-report.md`
 
 **Interfaces:**
 - Consumes: `Parser` struct has a `*Sand` arena (passed as `&p_arena` in `import_resolver.zig:48-50`); `astStoreAddExtraChildren` (`ast.zig`).
-- Produces: struct/union/enum with >64 fields/members parse correctly (no stack-buffer-overflow), byte-identical for ≤64-field inputs.
+- Produces: struct/union/enum with >64 fields/members parse correctly (no stack-buffer-overflow); parser arena enlarged so long field-init/switch-case lists no longer hit `OOM: total=4096`. Byte-identical for ≤64-field inputs.
 
 - [ ] **Step 1: Reproduce the ASan overflow (baseline)**
 
 ```bash
 mkdir -p /tmp/fp && timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp sf/src/ast.zig 2>&1 | tail -5
 ```
-Expected: `ERROR: AddressSanitizer: stack-buffer-overflow in parserParseEnumType` (or `parserParseUnionType`). Record the function + buffer.
+Expected: `ERROR: AddressSanitizer: stack-buffer-overflow in parserParseEnumType` (or `parserParseUnionType`). Record the function + buffer. Also reproduce the parser-arena OOM: `timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp2 sf/src/c89_emit.zig 2>&1 | grep "OOM:"` → `total=4096`.
 
 - [ ] **Step 2: Replace the fixed `[64]u32` buffers with arena-backed growable arrays**
 
 Each parser function does `var fields_buf: [64]u32 = undefined; fields_buf[fields_count] = field_node;`. Replace with a growable u32 list in the parser arena. Add a small helper (in `parser.zig`) `parserPushU32(self: *Parser, buf: *[*]u32, len: *usize, cap: *usize, v: u32) void` that grows via `sandAlloc(self.arena, ...)` with copy (bounded by the parser arena). Apply to all 5 `[64]u32` sites. Preserve the existing `astStoreAddExtraChildren(store, buf[0..count])` call shape so emitted C is byte-identical for the common case.
 
-- [ ] **Step 3: Rebuild + verify no ASan crash + byte-identity**
+- [ ] **Step 3: Enlarge the parser stack buffer**
 
-Rebuild (`build_release.sh`, reinstall std lib). Re-run the repro (rc should now be 0 or a clean frontend diagnostic, no ASan). Then the 4 MD5 gates + corpus 252 must be unchanged.
+Change `sf/src/import_resolver.zig:48` `var p_arena_buf: [4096]u8 = undefined;` → `var p_arena_buf: [16384]u8 = undefined;`. This is a local stack frame (16 KB), auto-reclaimed on return — no BSS/arena/budget impact.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Rebuild + verify no ASan crash + no parser-arena OOM + byte-identity**
+
+Rebuild (`build_release.sh`, reinstall std lib). Re-run the repros: `ast.zig` (no ASan), `c89_emit.zig`/`lower.zig` (no `OOM: total=4096`). Then the 4 MD5 gates + corpus 252 must be unchanged.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add sf/src/parser.zig sf/docs/tech_docs/00_lexer_parser.md
-git commit -m "fix: growable struct/union/enum field buffers (parser stack-buffer-overflow)"
+git add sf/src/parser.zig sf/src/import_resolver.zig sf/docs/tech_docs/00_lexer_parser.md
+git commit -m "fix: growable struct/union/enum field buffers + enlarge parser arena (ASan + 4KB OOM)"
 ```
 
-**Gate:** no ASan crash on `ast.zig`/`parser.zig`/`main.zig` standalone; 4 MD5s byte-identical; corpus 252 unchanged.
+**Gate:** no ASan crash on `ast.zig`/`parser.zig`/`main.zig` standalone; no parser-arena `total=4096` OOM on `c89_emit.zig`/`lower.zig`; 4 MD5s byte-identical; corpus 252 unchanged.
 
 ---
 
@@ -374,33 +381,11 @@ Full gate battery + `--track-memory` on rogue_mud and self-compile (now possible
 
 ---
 
-### Task 10: F-PARSEARENA — enlarge parser arena (correctness)
+### Task 10: F-PARSEARENA — enlarge parser arena (ABSORBED into Task 2)
 
-**Files:**
-- Modify: `sf/src/import_resolver.zig:48` (`p_arena_buf: [4096]u8` → larger)
-- Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` (`[updated: 2026-08-14]`)
-- Report: `.superpowers/sdd/task-F-PARSEARENA-report.md`
+> **AMENDMENT (operator ruling, 2026-08-14):** this task is **absorbed into Task 2** (F-PARSER+F-PARSEARENA). Do NOT implement it as a standalone task — Task 2 already enlarges `p_arena_buf[4096]` → `[16384]` (a 16 KB per-module STACK buffer, not a static arena) and verifies the `total=4096` parser-arena OOM is gone. No further work here.
 
-**Interfaces:**
-- Consumes: parser arena `p_arena_buf[4096]` (`import_resolver.zig:48`).
-- Produces: a larger parser arena so long field-init/switch-case lists no longer risk a 4096-B overflow. This is a correctness headroom change, not a memory saving (stack buffer, auto-reclaimed).
-
-- [ ] **Step 1: Enlarge the parser arena**
-
-Change `var p_arena_buf: [4096]u8 = undefined;` to a larger fixed size (e.g. `[16384]u8`). This is a stack frame — it does not affect arena/BSS footprint.
-
-- [ ] **Step 2: Rebuild + verify byte-identity**
-
-4 MD5s byte-identical; corpus 252 unchanged; self-compile completes.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sf/src/import_resolver.zig sf/docs/tech_docs/00_lexer_parser.md
-git commit -m "fix: enlarge parser arena to avoid 4KB overflow on long field lists"
-```
-
-**Gate:** 4 MD5s byte-identical; corpus 252 unchanged.
+- [ ] **Step 1 (skip — done in Task 2):** parser-arena enlargement + verification (covered by Task 2).
 
 ---
 
