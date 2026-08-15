@@ -1,4 +1,4 @@
-# 00 — Lexer & Parser [updated: 2026-08-14 — F-PARSER+F-PARSEARENA: struct/union/enum/error-set/fn-type member buffers are now growable arena arrays (was `[64]u32` stack, ASan overflow on >64 members); parser stack arena `p_arena_buf` enlarged 4096→16384 B; prior — F-TOKEN: two-pass exact-size token array (count_only lexer pass suppresses diagnostics/intern/string_buf); prior 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
+# 00 — Lexer & Parser [updated: 2026-08-15 — F-AST: AST store pre-sized from import-closure token count (discovery pass `moduleScanDiscover` + `astStoreEnsureNodesCapacity`/`astStoreEnsureExtraChildrenCapacity`, in-place-or-copy); prior 2026-08-14 — F-PARSER+F-PARSEARENA: struct/union/enum/error-set/fn-type member buffers are now growable arena arrays (was `[64]u32` stack, ASan overflow on >64 members); parser stack arena `p_arena_buf` enlarged 4096→16384 B; prior — F-TOKEN: two-pass exact-size token array (count_only lexer pass suppresses diagnostics/intern/string_buf); prior 2026-08-07 — labeled_stmt stores label name in payload; prior varargs `...` in fn params (bit0 flag); fn-pointer `...` rejected]
 
 ## Summary Table
 
@@ -296,7 +296,9 @@ Offset  Size  Field
 | `f64ArrayListAppendInner` | 178 | private | `[inference: 2x growth, sand alloc for f64]` | Growable f64 array append. |
 | `fnProtoArrayListAppendInner` | 195 | private | `[inference: 2x growth, sand alloc for FnProto]` | Growable FnProto array append. |
 | `astStoreInit` | 267 | pub | `[inference: allocates null node at index 0, initializes 7 parallel arrays]` | Creates empty `AstStore`. Node 0 is always `AstKind.err` (null sentinel). |
-| `astStoreAddNode` | 289 | pub | `[inference: span_len = end - start, append to nodes array, return index]` | Creates and stores an `AstNode`. Returns node index (u32). |
+| `astStoreEnsureNodesCapacity` | 289 | pub | `[inference: in-place realloc if arena-tail (sandReallocInPlace), else copy]` | Pre-sizes the `nodes` array to `new_capacity` (min 8). Tries `sandReallocInPlace` first; falls back to copy-into-bump. `[updated: 2026-08-15 — F-AST]` |
+| `astStoreEnsureExtraChildrenCapacity` | 313 | pub | `[inference: in-place realloc if arena-tail, else copy]` | Pre-sizes the `extra_children` array to `new_capacity` (min 8). Tries `sandReallocInPlace` first; falls back to copy-into-bump. `[updated: 2026-08-15 — F-AST]` |
+| `astStoreAddNode` | 337 | pub | `[inference: span_len = end - start, append to nodes array, return index]` | Creates and stores an `AstNode`. Returns node index (u32). |
 | `astStoreAddExtraChildren` | 301 | pub | `[inference: append to extra_children, pack (start<<16\|count)]` | Stores variable-length child list. Returns packed `(start << 16) \| count` payload. |
 | `astStoreGetExtraChildren` | 311 | pub | `[inference: unpack payload, slice extra_children]` | Retrieves extra children from payload. |
 | `astStoreAddIntLiteral` | 317 | pub | `[inference: appends to int_values, calls astStoreAddNode]` | Creates int literal node. |
@@ -367,6 +369,20 @@ AST tree (root node index = module_root node)
 > source manager takes ownership of that slice (no scratch→perm copy), removing the in-scratch source
 > transient. Together these close the import scratch OOM (c89_emit.zig 73,912 tokens → 1,773,888 B
 > exact array; lower.zig 79,606 → 1,910,544 B).
+
+> **AST-store pre-sizing `[updated: 2026-08-15 — F-AST]`** — before the parse loop,
+> `moduleRegistryResolveImports` (`import_resolver.zig:132-145`) runs a side-effect-free import-closure
+> discovery (`moduleScanDiscover`, `import_resolver.zig:27`) that walks the import graph via a path
+> stack + seen-set, lexes each file only to find `@import("...")` builtins, resolves targets via the
+> module resolver (interning resolved paths in parse order — no module creation, no diagnostics, no
+> AST writes), and sums the closure token count. The AST store is then pre-sized in **one** allocation
+> to a token-count heuristic — `nodes` ≈ `total_tokens × 6/10`, `extra_children` ≈ `total_tokens/4`
+> (`astStoreEnsureNodesCapacity` / `astStoreEnsureExtraChildrenCapacity`, `ast.zig:289/:313`, which try
+> `sandReallocInPlace` first and fall back to copy). Measured ratios are stable per token across the
+> gate programs (~0.51-0.55 nodes/token, ~0.18-0.22 extra-children/token) unlike per-line ratios
+> (~3.8 rogue_mud vs ~6.6 self-compile), so the arrays land near their final size and the
+> copy-into-bump ×2 growth waste is eliminated. Verified: 4 MD5 gates byte-identical; corpus 253
+> OK=247/FAIL=2/GG=4; rogue_mud `mod=` 506K→370K; self-compile module arena top segment 16M→8M.
 
 > **Growable member/field buffers + parser arena `[updated: 2026-08-14 — F-PARSER+F-PARSEARENA]`** —
 > the five parser member-list collectors that were fixed `[64]u32` stack buffers
