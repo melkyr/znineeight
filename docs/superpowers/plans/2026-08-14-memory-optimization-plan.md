@@ -318,8 +318,9 @@ For each dominant component, state concrete reduction paths (e.g. node-count red
 
 **Interfaces:**
 - Consumes: F-PATHNORM-Feas findings.
-- Produces: a designed **shared path-normalization utility** (name, signature, normalization rules) + all call sites that should use it.
+- Produces: a designed **shared path-normalization utility** (name, signature, normalization rules) + all call sites that should use it + a content-hash double-guard design.
 
+> **AMENDMENT (operator directive, 2026-08-15):** besides path-string dedup, investigate a **content-hash double-guard** — hash each parsed module's content and store it, so the compiler can detect a module was already parsed even when path normalization misses it (e.g. symlink/realpath aliases, absolute vs relative root paths, or future path spellings). Produce a design for this guard (where the hash is computed, where stored, when compared, cost, and how it interacts with the path-id dedup).
 - [ ] **Step 1: Survey all path-string consumers** — every place that builds, compares, interns, or dedups a path (`joinPath` :109-119, `appendZigExt` :131, resolver import resolution, source-manager file ids, `pal.readFile`). Note where `..`/`.` would break dedup or equality.
 - [ ] **Step 2: Design the shared utility** — e.g. `util/path.zig` `normalizePath(buf, []const u8) []const u8` (resolve `.`/`..`, collapse `//`, keep leading `/` or drive-letter, trim trailing `/`). State the exact normalization rules.
 - [ ] **Step 3: Enumerate call sites** — which consumers switch to the utility, and whether any other compiler part (not just import) needs it (search for path-equality/dedup beyond module_registry).
