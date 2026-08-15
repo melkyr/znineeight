@@ -638,7 +638,9 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
-                        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf);
+                        var lf_mod = lir_mod.lirFunctionRelocateToModule(lf, &ctx.alloc.module);
+                        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf_mod);
+                        alloc_mod.sandReset(&ctx.alloc.scratch);
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
@@ -692,7 +694,9 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
         var imf = lower_mod.lowerModuleInit(&ilowerer, decls, mods[mi].id);
-        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, imf);
+        var imf_mod = lir_mod.lirFunctionRelocateToModule(imf, &ctx.alloc.module);
+        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, imf_mod);
+        alloc_mod.sandReset(&ctx.alloc.scratch);
     }
     var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
