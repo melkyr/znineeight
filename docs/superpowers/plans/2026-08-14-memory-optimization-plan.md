@@ -193,55 +193,52 @@ git commit -m "fix: growable parser arena + arenaGrew warnings + span_len u16->u
 
 ---
 
-### Task 3: F-PRIMITIVES — in-place realloc + exact-size + hash-map grow helpers
+### Task 3: Unified growable arena pool (replace the 5 fixed buffers)
 
-> **AMENDMENT (operator ruling, 2026-08-14):** the segmented growable arena + `arenaGrew` warning helper introduced in Task 2 is the reusable primitive this task builds on (the `sandTryReallocInPlace`/exact-size helpers complement it). Later tasks (F-SWEEP) use both.
+> **AMENDMENT (operator long-term ruling, 2026-08-14):** this task REPLACES the old F-PRIMITIVES task. The five fixed buffers (`perm_arena_buf[4M]`, `mod_arena_buf[8M]`, `scr_arena_buf[2M]`, `type_db_buf[128K]`, `p_arena_buf[4K/16K]`) are unified into **ONE static growable pool**. This is the durable fix for the "fixed-cap OOM unmasked by the previous fix" pattern.
+
+**Design (operator-approved):**
+- One static BSS buffer `memory_pool_buf: [POOL_SIZE]u8` (POOL_SIZE ≈ 10 MiB; sized by measurement in Task 12).
+- The pool is a **monotonic bump `Sand`** (never reset) that hands out segments.
+- Each of the 5 arenas becomes a `GrowableSand` (segment chain, first segment 4 KB, double on overflow, old segments live) whose `backing` is the pool. The existing `Sand.growable` hook (A2, built in Task 2-F) makes `sandAlloc` grow transparently, so `ctx.alloc.perm/module/scratch` stay `Sand` with `.growable` set — **the whole codebase's `*Sand` usage is untouched**.
+- `arenaGrew` fires per doubling (already built); `checkCombinedPeak` becomes a **pool-level peak check** (the pool's high-water vs POOL_SIZE), which is what "16 MB budget" means as a soft, warned, tracked limit.
+- **No fixed per-arena cap remains.** The `p_arena_buf` stack buffer (Task 2-F) is superseded — the parser arena's `GrowableSand` is now pool-backed too.
 
 **Files:**
-- Modify: `sf/src/allocator.zig:55-65` (fix `sandReallocInPlace` end-check; add `sandTryReallocInPlace`)
-- Modify: `sf/src/util/hash.zig` (pre-size at init; reuse the in-place path)
-- Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
-- Report: `.superpowers/sdd/task-F-PRIMITIVES-report.md`
+- Modify: `sf/src/allocator.zig` (add `memory_pool_buf` + `pool` Sand; convert `initCompilerAlloc` to build 3 growable tier arenas backed by the pool; add `sandTryReallocInPlace` end-check; pool-level peak check)
+- Modify: `sf/src/main.zig` (`type_db_buf[131072]` → growable, pool-backed; `initCompilerAlloc` call site; `--track-memory` reports pool usage + type_db)
+- Modify: `sf/src/import_resolver.zig` (parser `GrowableSand` backing → the pool, not the module arena)
+- Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (arena → pool rewrite) + `00_lexer_parser.md` (span_len 28 B + growable parser arena notes, `[updated: 2026-08-14]`)
+- Report: `.superpowers/sdd/task-F-POOL-report.md`
 
 **Interfaces:**
-- Consumes: `Sand` (`allocator.zig:1-7`), `sandAlloc` (`:26-45`), `sandReallocInPlace` (`:55-65`).
-- Produces: `pub fn sandTryReallocInPlace(sand: *Sand, old_ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) ?[*]u8` that returns the same pointer when `old_ptr+old_size == sand.start+sand.pos` AND the growth fits within `sand.end`; returns `null` otherwise. This is the tail-guarded in-place grow used by later tasks.
+- Consumes: `GrowableSand`/`sandAlloc` growable hook + `arenaGrew` (Task 2-F); `Sand`/`sandInit`/`sandReset`/`sandReallocInPlace`.
+- Produces: one pool with 5 growable segmented arenas; `sandTryReallocInPlace` (tail-guarded); pool-level peak check; `--track-memory` reports pool peak. NO fixed arena cap remains.
 
-- [ ] **Step 1: Fix `sandReallocInPlace` to bound-check `sand.end`**
+- [ ] **Step 1: Add `sandTryReallocInPlace` (tail-guarded) + the pool**
 
-Current `sandReallocInPlace` (`allocator.zig:55-65`) extends `sand.pos` WITHOUT checking it stays within `sand.end`. Fix:
+In `allocator.zig`: (a) add `sandTryReallocInPlace` (returns the pointer when `old_ptr+old_size == sand.start+sand.pos` AND growth fits in `sand.end`, else null — fixes the existing `sandReallocInPlace` missing end-check); (b) add `memory_pool_buf: [POOL_SIZE]u8` + a `pool: Sand` monotonic bump over it; (c) `initCompilerAlloc` builds the 3 tier arenas as growable (`GrowableSand` backed by `pool`) and returns their `Sand` views with `.growable` set.
 
-```zig
-pub fn sandTryReallocInPlace(sand: *Sand, old_ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) ?[*]u8 {
-    if (new_size <= old_size) return old_ptr;
-    var old_end: usize = @ptrToInt(old_ptr) + old_size;
-    var arena_end: usize = @ptrToInt(sand.start) + sand.pos;
-    if (old_end != arena_end) return null;
-    var grow: usize = new_size - old_size;
-    if (sand.pos + grow > sand.end) return null;   // NEW: bound check
-    sand.pos += grow;
-    if (sand.pos > sand.peak) sand.peak = sand.pos;
-    return old_ptr;
-}
-```
+- [ ] **Step 2: Convert `type_db` + parser arena to pool-backed growable**
 
-- [ ] **Step 2: Add exact-size + in-place grow helpers to `util/hash.zig`**
+In `main.zig`, replace `type_db_buf[131072]` with a `GrowableSand` backed by the pool (its `*Sand` view is what `typeRegistryInit` receives). In `import_resolver.zig`, change the parser `GrowableSand` backing from `module_arena` to the pool.
 
-For each map (`u32ToU32MapGrow` `:40-71`, `u64ToU32MapGrow` `:123-154`, `u32ToU64MapGrow` `:198-229`), use `sandTryReallocInPlace` for the three arrays (keys/values/occupied) when they are arena-tail (they are, when allocated contiguously in one grow), falling back to the current copy. Additionally add an init-with-capacity path `u32ToU32MapInitCap(alloc: *Sand, cap_hint: usize)` that pre-allocates buckets at a power-of-2 ≥ cap_hint, so maps that know their size never rehash.
+- [ ] **Step 3: Pool-level peak check + `--track-memory`**
 
-- [ ] **Step 3: Rebuild + verify byte-identity**
+Rewrite `checkCombinedPeak` to check the pool's high-water against POOL_SIZE (and keep the soft `pal.exit(1)` on overflow). Extend `--track-memory` (`main.zig:239-258`) to also print `pool=XK` (and `type_db=XK`).
 
-Rebuild + reinstall std lib. 4 MD5 gates + corpus 252 must be byte-identical/unchanged (no behavior change — these are allocation-path-only edits).
+- [ ] **Step 4: Rebuild + verify byte-identity + no fixed-cap OOM**
 
-- [ ] **Step 4: Commit**
+Rebuild (`build_release.sh` → gate `=== [release] Done ===`), reinstall std lib. Verify: 4 MD5 gates byte-identical; corpus 252 unchanged; **self-compile (`main.zig`) rc=0** (the pool removes the 8 MB module cap, absorbing the +1.8 MB AstNode widening); `--track-memory --markers` on self-compile shows `pool=…` and `arena … grew …` warnings.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add sf/src/allocator.zig sf/src/util/hash.zig sf/docs/tech_docs/00_shared_infra.md
-git commit -m "feat: tail-guarded in-place realloc + hash-map pre-size helpers"
+git add sf/src/allocator.zig sf/src/main.zig sf/src/import_resolver.zig sf/docs/tech_docs/00_shared_infra.md sf/docs/tech_docs/00_lexer_parser.md
+git commit -m "feat: unified growable arena pool (no fixed per-arena caps)"
 ```
 
-**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; `sandTryReallocInPlace` now has call sites (grep confirms >0).
-
+**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; self-compile rc=0; `--track-memory --markers` shows `pool=XK` + `arena … grew …`; `sandTryReallocInPlace` has call sites; no fixed arena cap remains (grep: `arena_buf` gone).
 ---
 
 ### Task 4: F-AST — pre-size AST store (module arena)
@@ -347,38 +344,36 @@ git commit -m "fix: pre-size hash maps + in-place grow (eliminate 3-array rehash
 
 ---
 
-### Task 7: F-TYPEDB — type_db peak exposure + soft OOM
+### Task 7: F-TYPEDB — type_db soft OOM + peak exposure (growable SUBSUMED by Task 3)
+
+> **AMENDMENT (operator long-term ruling, 2026-08-14):** the `type_db` **growable** is SUBSUMED by Task 3's unified pool (type_db becomes a pool-backed `GrowableSand` there). This task keeps ONLY the soft-OOM + `--track-memory` peak exposure.
 
 **Files:**
 - Modify: `sf/src/type_registry.zig:127-136, 143-153` (`arrayGrow`, `typeRegistryEnsureCapacity`: `catch unreachable` → soft OOM)
-- Modify: `sf/src/main.zig:239-258` (`--track-memory` block: add `type_db` peak)
+- Modify: `sf/src/main.zig:239-258` (`--track-memory` block: add `type_db` peak — already extended for `pool=XK` in Task 3)
 - Modify (docs): `sf/docs/tech_docs/03_type_resolution.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-TYPEDB-report.md`
 
 **Interfaces:**
-- Consumes: `type_db_buf: [131072]u8` (`main.zig:155-157`), `TypeRegistry` (`type_registry.zig`).
-- Produces: `--track-memory` prints `type_db=XK`; type-registry OOM is a soft `pal.exit(1)` (not `catch unreachable` panic).
+- Consumes: the pool-backed `type_db` `GrowableSand` (Task 3), `TypeRegistry` (`type_registry.zig`).
+- Produces: type-registry OOM is a soft `pal.exit(1)` (not `catch unreachable` panic); `--track-memory` prints `type_db=XK`.
 
 - [ ] **Step 1: Change `catch unreachable` to a soft OOM in `type_registry.zig`**
 
 In `arrayGrow` (`:129`) and `typeRegistryEnsureCapacity` (`:148`), replace `catch unreachable` with a path that prints `OOM: type_db ...` (reuse the `sandAlloc` OOM style) and `pal.exit(1)`. (No `error` return needed — the existing callers don't handle errors.)
 
-- [ ] **Step 2: Expose type_db peak in `--track-memory`**
+- [ ] **Step 2: Rebuild + verify**
 
-In `main.zig:239-258`, add a `type_db_kb` read of the type-db sand's `peak` and append ` type_db=XK` to the printed line. The type-db sand must be reachable from `ctx` (it is created in `main.zig:155-157`).
+Rebuild. Run `--track-memory --markers` on rogue_mud — confirm `type_db=XK` prints (already wired for `pool=XK` in Task 3). 4 MD5s byte-identical (the flag is not used in the MD5 recipe); corpus 252 unchanged.
 
-- [ ] **Step 3: Rebuild + verify**
-
-Rebuild. Run `--track-memory --markers` on rogue_mud — confirm the new `type_db=XK` field prints and the other 3 arena values are unchanged. 4 MD5s byte-identical (the `--track-memory` flag is not used in the MD5 recipe, so output is unaffected); corpus 252 unchanged.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add sf/src/type_registry.zig sf/src/main.zig sf/docs/tech_docs/03_type_resolution.md
-git commit -m "fix: type_db soft OOM + peak exposure in --track-memory"
+git add sf/src/type_registry.zig sf/docs/tech_docs/03_type_resolution.md
+git commit -m "fix: type_db soft OOM (growable already pool-backed via Task 3)"
 ```
 
-**Gate:** `--track-memory` prints `type_db=XK`; no `catch unreachable` remains in `type_registry.zig` OOM paths; 4 MD5s byte-identical.
+**Gate:** no `catch unreachable` remains in `type_registry.zig` OOM paths; `--track-memory` prints `type_db=XK`; 4 MD5s byte-identical.
 
 ---
 
@@ -467,40 +462,39 @@ git commit -m "refactor: remove dead ctx.dep_graph + dead sort buffers"
 
 ---
 
-### Task 12: F-RESIZE — re-measure + shrink arenas (trim BSS)
+### Task 12: F-RESIZE — size the single pool (trim BSS)
+
+> **AMENDMENT (operator long-term ruling, 2026-08-14):** with Task 3's unified pool, "resize arenas" becomes **size the single `memory_pool_buf`** to measured peak + margin. No more five constants.
 
 **Files:**
-- Modify: `sf/src/allocator.zig:74-76` (arena sizes)
+- Modify: `sf/src/allocator.zig` (`memory_pool_buf` size)
 - Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-RESIZE-report.md`
 
 **Interfaces:**
-- Consumes: post-sweep measured peaks (Task 8), I-M3 projection (module ~4.5 MB, perm ~1.5 MB after F2).
-- Produces: reduced static BSS (arena buffers) sized to measured peaks + margin. Candidates: module 8→6 MB, perm 4→3 MB, scratch 2 MB kept (needed for the token burst headroom).
+- Consumes: post-sweep measured pool peak (Task 3/8), `--track-memory` `pool=XK`.
+- Produces: `memory_pool_buf` sized to measured peak + margin (≥25%); BSS trimmed; self-compile still completes.
 
-- [ ] **Step 1: Record post-sweep peaks**
+- [ ] **Step 1: Record the measured pool peak**
 
-Run `--track-memory --markers` on self-compile (`sf/src/main.zig`) — now that it completes — and record perm/mod/scr/type_db peaks. Add a safety margin (≥25%).
+Run `--track-memory --markers` on self-compile (`sf/src/main.zig`) and record `pool=XK` (the pool high-water). Add a safety margin (≥25%).
 
-- [ ] **Step 2: Resize the arena buffers**
+- [ ] **Step 2: Size `memory_pool_buf`**
 
-Edit `allocator.zig:74-76` to the measured-peak + margin sizes. Do NOT raise `DEV_MAX_MEM`/`RELEASE_MAX_MEM` (16 MB is the target, not the lever).
+Edit `allocator.zig` `memory_pool_buf` to the measured-peak + margin size. Do NOT raise `DEV_MAX_MEM`/`RELEASE_MAX_MEM` (16 MB is the target, not the lever).
 
 - [ ] **Step 3: Rebuild + full gate**
 
-Rebuild + reinstall std lib. Self-compile completes under the new sizes; 4 MD5s byte-identical; corpus 252 unchanged; `--track-memory` confirms the reduced BSS (static buffer sizes) and that peaks remain under the new caps.
+Rebuild + reinstall std lib. Self-compile completes under the new pool size; 4 MD5s byte-identical; corpus 252 unchanged; `--track-memory` confirms the reduced BSS and that the pool peak remains under the new size.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add sf/src/allocator.zig sf/docs/tech_docs/00_shared_infra.md
-git commit -m "fix: shrink arena buffers to measured peaks + margin (trim 14MB BSS)"
+git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 ```
 
-**Gate:** self-compile completes under the resized arenas; 4 MD5s byte-identical; corpus 252 unchanged; BSS reduced.
-
----
-
+**Gate:** self-compile completes under the sized pool; 4 MD5s byte-identical; corpus 252 unchanged; BSS reduced.
 ### Task 13: F-GATE — final gate sweep + re-measure + docs reconciliation
 
 **Files:**
