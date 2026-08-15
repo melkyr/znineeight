@@ -103,14 +103,14 @@ pub const AstNode = struct {
     flags: u8,        // u8  — offset 1 (bit0=is_const, bit1=is_pub, bit2=is_extern,
                       //        bit3=is_export, bit4=has_capture, bit5=has_index_capture,
                       //        bit6=is_inclusive, bit7=is_mutable)
-    span_len: u16,    // u16 — offset 2 (byte length; span_end = span_start + span_len)
-    span_start: u32,  // u32 — offset 4
-    child_0: u32,     // u32 — offset 8
-    child_1: u32,     // u32 — offset 12
-    child_2: u32,     // u32 — offset 16
-    payload: u32,     // u32 — offset 20
-}; // total: 24 bytes (32-bit layout)
-const zzz_astnode_sz = "ZZZ_ASTNODE_24B_OFFSETS_kind0_flags1_spanlen2_spanstart4_child0_8_child1_12_child2_16_payload_20";
+    span_len: u32,    // u32 — offset 4 (byte length; span_end = span_start + span_len)
+    span_start: u32,  // u32 — offset 8
+    child_0: u32,     // u32 — offset 12
+    child_1: u32,     // u32 — offset 16
+    child_2: u32,     // u32 — offset 20
+    payload: u32,     // u32 — offset 24
+}; // total: 28 bytes (32-bit layout)
+const zzz_astnode_sz = "ZZZ_ASTNODE_28B_OFFSETS_kind0_flags1_pad2_spanlen4_spanstart8_child0_12_child1_16_child2_20_payload_24";
 
 pub const FnProto = struct {
     name_id: u32,
@@ -267,7 +267,7 @@ pub const AstStore = struct {
 pub fn astStoreInit(arena: *Sand) AstStore {
     var null_node = AstNode{
         .kind = AstKind.err, .flags = @intCast(u8, 0),
-        .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 0),
+        .span_start = @intCast(u32, 0), .span_len = @intCast(u32, 0),
         .child_0 = @intCast(u32, 0), .child_1 = @intCast(u32, 0),
         .child_2 = @intCast(u32, 0),
         .payload = @intCast(u32, 0),
@@ -287,7 +287,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
 }
 
 pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
-    var span_len: u16 = @intCast(u16, span_end - span_start);
+    var span_len: u32 = @intCast(u32, span_end - span_start);
     var node = AstNode{
         .kind = kind, .flags = flags,
         .span_start = span_start, .span_len = span_len,

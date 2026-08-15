@@ -13,7 +13,7 @@ const itoa_mod = @import("util/itoa.zig");
 const sm_mod = @import("source_manager.zig");
 const AstKind = @import("ast.zig").AstKind;
 
-fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) ?u32 {
+fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore, p_arena: *Sand) ?u32 {
     var path_s = interner_mod.stringInternerGet(reg.interner, reg.modules.items[mod_id].path_id);
     var file_id = sm_mod.sourceManagerAddFile(reg.source_man, path_s, content);
     reg.modules.items[mod_id].source_file_id = file_id;
@@ -36,9 +36,7 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
         tok_len += 1;
         if (t2.kind == TokenKind.eof) break;
     }
-    var p_arena_buf: [16384]u8 = undefined;
-    var p_arena = alloc_mod.sandInit(p_arena_buf[0..]);
-    var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, &p_arena);
+    var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, p_arena);
     parser_mod.parserSetModuleContext(&p, reg, mod_id);
     var ecb0: u32 = @intCast(u32, 0); var ecb1: u32 = @intCast(u32, 0); var ecb2: u32 = @intCast(u32, 0); var ecb3: u32 = @intCast(u32, 0); var ecb4: u32 = @intCast(u32, 0); var ecb5: u32 = @intCast(u32, 0);
     if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { ecb0 = shared_store.extra_children.items[@intCast(usize, 0)]; }
@@ -72,6 +70,9 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
 }
 
 pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore) void {
+    var parser_arena: alloc_mod.GrowableSand = undefined;
+    var parser_name: []const u8 = "parser";
+    alloc_mod.growableSandInit(&parser_arena, module_arena, 4096, parser_name);
     while (true) {
         var mod_id_opt = mr_mod.importQueueDequeue(&reg.import_queue);
         if (mod_id_opt) |mod_id| {
@@ -79,6 +80,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             if (entry.state != mr_mod.ModuleState.pending) continue;
 
             alloc_mod.sandReset(scratch);
+            alloc_mod.sandReset(&parser_arena.view);
 
             entry.state = mr_mod.ModuleState.parsing;
             reg.modules.items[mod_id] = entry;
@@ -95,7 +97,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
                 continue;
             };
 
-            var ast_root = moduleRegistryParseModule(reg, mod_id, content, module_arena, scratch, shared_store) orelse {
+            var ast_root = moduleRegistryParseModule(reg, mod_id, content, module_arena, scratch, shared_store, &parser_arena.view) orelse {
                 entry.state = mr_mod.ModuleState.failed;
                 reg.modules.items[mod_id] = entry;
                 continue;

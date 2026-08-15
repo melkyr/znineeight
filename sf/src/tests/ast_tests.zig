@@ -47,7 +47,7 @@ fn testAstKindErrSentinel() void {
 }
 
 fn testAstNodeSize() void {
-    assertEqU32(@intCast(u32, @sizeOf(AstNode)), @intCast(u32, 24));
+    assertEqU32(@intCast(u32, @sizeOf(AstNode)), @intCast(u32, 28));
 }
 
 fn testFnProtoSize() void {

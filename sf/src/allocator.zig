@@ -4,7 +4,23 @@ pub const Sand = struct {
     end: usize,
     peak: usize,
     name: []const u8,
+    growable: ?*GrowableSand,
 };
+
+pub const SandSegment = struct {
+    start: [*]u8,
+    size: usize,
+    end: usize, // segment byte capacity (== size); Sand.end is a LENGTH, not an address
+    next: ?*SandSegment,
+};
+
+pub const GrowableSand = struct {
+    first: SandSegment,     // embedded first-segment header (e.g. 4 KB)
+    last: *SandSegment,     // active segment header
+    backing: *Sand,         // module arena (supplies new segments)
+    view: Sand,             // the stable *Sand held by consumers
+};
+
 const pal = @import("pal.zig");
 const panic_mod = @import("panic.zig");
 const itoa_mod = @import("util/itoa.zig");
@@ -17,6 +33,7 @@ pub fn sandInit(buf: []u8) Sand {
         .end = buf.len,
         .peak = @intCast(usize, 0),
         .name = uname,
+        .growable = null,
     };
     var used = s.pos;
     if (used > s.peak) s.peak = used;
@@ -24,28 +41,114 @@ pub fn sandInit(buf: []u8) Sand {
 }
 
 pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
-    var mask: usize = alignment - @intCast(usize, 1);
-    var aligned: usize = (sand.pos + mask) & ~mask;
-    var new_pos: usize = aligned + size;
-    if (new_pos > sand.end) {
-        pal.stderr_write("OOM: used=");
-        printUsize(sand.pos);
-        pal.stderr_write(" new=");
-        printUsize(new_pos);
-        pal.stderr_write(" total=");
-        printUsize(sand.end);
-        pal.stderr_write("\n");
-        panic_mod.panicHandler("out of memory", "allocator.zig", 28);
-        return error.OutOfMemory;
+    var fail_new_pos: usize = @intCast(usize, 0);
+    while (true) {
+        var mask: usize = alignment - @intCast(usize, 1);
+        var aligned: usize = (sand.pos + mask) & ~mask;
+        var new_pos: usize = aligned + size;
+        if (new_pos <= sand.end) {
+            var result: [*]u8 = sand.start + aligned;
+            sand.pos = new_pos;
+            if (new_pos > sand.peak) sand.peak = new_pos;
+            return result;
+        }
+        if (sand.growable) |gs| {
+            if (growableSandGrow(gs, sand)) {
+                continue; // retry in the new segment
+            }
+        }
+        fail_new_pos = new_pos;
+        break;
     }
-    var result: [*]u8 = sand.start + aligned;
-    sand.pos = new_pos;
-    if (new_pos > sand.peak) sand.peak = new_pos;
-    return result;
+    if (sand.growable) |gs| {
+        _ = gs;
+        pal.stderr_write("OOM: parser arena cannot grow (module arena exhausted)\n");
+    }
+    pal.stderr_write("OOM: used=");
+    printUsize(sand.pos);
+    pal.stderr_write(" new=");
+    printUsize(fail_new_pos);
+    pal.stderr_write(" total=");
+    printUsize(sand.end);
+    pal.stderr_write("\n");
+    panic_mod.panicHandler("out of memory", "allocator.zig", 28);
+    return error.OutOfMemory;
 }
 
 pub fn sandReset(sand: *Sand) void {
+    if (sand.growable) |gs| {
+        gs.last = &gs.first;
+        sand.start = gs.first.start;
+        sand.end = gs.first.end;
+        sand.pos = @intCast(usize, 0);
+        return; // peak intentionally kept (matches plain-sand behavior)
+    }
     sand.pos = @intCast(usize, 0);
+}
+
+pub fn growableSandInit(gs: *GrowableSand, backing: *Sand, first_size: usize, name: []const u8) void {
+    var raw = sandAlloc(backing, first_size, 4) catch {
+        panic_mod.panicHandler("growable init oom", "allocator.zig", 28);
+        return;
+    };
+    gs.first = SandSegment{ .start = raw, .size = first_size, .end = first_size, .next = null };
+    gs.last = &gs.first;
+    gs.backing = backing;
+    gs.view = Sand{
+        .start = raw,
+        .pos = @intCast(usize, 0),
+        .end = first_size,
+        .peak = @intCast(usize, 0),
+        .name = name,
+        .growable = null,
+    };
+    gs.view.growable = gs; // MUST be set AFTER assignment (points at caller's final location)
+}
+
+fn growableSandGrow(gs: *GrowableSand, view: *Sand) bool {
+    if (gs.last.next) |next| {
+        // chain already has this size (post-reset reuse) — no warning
+        gs.last = next;
+        view.start = next.start;
+        view.end = next.end;
+        view.pos = @intCast(usize, 0);
+        return true;
+    }
+    var old_size: usize = gs.last.size;
+    var new_size: usize = gs.last.size * 2; // 4→8→16→32 KB…
+    var raw = sandAlloc(gs.backing, new_size, 4) catch return false;
+    var seg_raw = sandAlloc(gs.backing, @intCast(usize, @sizeOf(SandSegment)), 4) catch return false;
+    var node = @ptrCast(*SandSegment, seg_raw);
+    node.* = SandSegment{ .start = raw, .size = new_size, .end = new_size, .next = null };
+    gs.last.next = node;
+    gs.last = node;
+    view.start = node.start;
+    view.end = node.end;
+    view.pos = @intCast(usize, 0);
+    arenaGrew(view.name, old_size, new_size); // fires ONLY on a new allocation
+    return true;
+}
+
+pub fn arenaGrew(name: []const u8, old_size: usize, new_size: usize) void {
+    if (!pal.isMarkersEnabled()) return;
+    var p0: []const u8 = "arena ";
+    pal.markerWrite(p0);
+    pal.markerWrite(name);
+    var p1: []const u8 = ": grew ";
+    pal.markerWrite(p1);
+    writeUsizeExact(old_size);
+    var p2: []const u8 = " -> ";
+    pal.markerWrite(p2);
+    writeUsizeExact(new_size);
+    var p3: []const u8 = "\n";
+    pal.markerWrite(p3);
+}
+
+fn writeUsizeExact(val: usize) void {
+    var buf: [16]u8 = undefined;
+    var len = itoa_mod.itoa(@intCast(u32, val), buf[0..]);
+    var start: usize = @intCast(usize, 16) - @intCast(usize, len) - @intCast(usize, 1);
+    pal.markerWrite(buf[start..@intCast(usize, 15)]);
 }
 
 pub fn sandResetPeak(sand: *Sand) void {

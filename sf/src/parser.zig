@@ -1780,6 +1780,12 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
          if (local_len < @intCast(usize, 64)) {
              local_buf[@intCast(usize, local_len)] = stmt;
          } else {
+             if (local_len == @intCast(usize, 64)) {
+                 var fi: usize = @intCast(usize, 0);
+                 while (fi < @intCast(usize, 64)) : (fi += @intCast(usize, 1)) {
+                     u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, local_buf[fi]);
+                 }
+             }
              u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, stmt);
          }
           local_len += @intCast(usize, 1);
@@ -1800,7 +1806,7 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
         if (local_len <= @intCast(usize, 64)) {
             slice = local_buf[0..local_len];
         } else {
-            slice = self.child_buf_items[0..local_len];
+            slice = self.child_buf_items[saved_len..saved_len + local_len];
         }
         payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
     }
