@@ -107,51 +107,73 @@ git commit -m "fix: two-pass token count + source into perm closes scratch OOM (
 
 ---
 
-### Task 2: F-PARSER+F-PARSEARENA — growable field buffers + enlarge parser arena (ASan + 4KB-arena OOM)
+### Task 2: F-PARSER — growable field buffers + GROWABLE parser arena + growth warnings + span_len u16→u32
 
-> **AMENDMENT (operator ruling, 2026-08-14):** this task now ALSO includes F-PARSEARENA (enlarge the parser stack buffer `p_arena_buf[4096]` → `[16384]`, i.e. 16 KB — a per-module STACK buffer, NOT one of the three static arenas, zero BSS/budget impact). Rationale: Task 1 fixed the scratch OOM, which had masked this; large modules now hit `OOM: total=4096` in the parser stack arena. The standalone Task 10 (F-PARSEARENA) is **absorbed** here. The three static arenas (perm 4 MB / module 8 MB / scratch 2 MB = 14 MB BSS) must sum well UNDER 16 MB — F-RESIZE (Task 12) shrinks them, nothing grows any arena toward 16 MB.
+> **AMENDMENT (operator ruling, 2026-08-14, second):** the fixed `p_arena_buf` enlargement is REPLACED by a **segmented growable parser arena**. Design (operator-approved):
+> - The parser arena becomes a **segmented bump arena**: starts at a small segment (4 KB); on overflow it allocates a **double-size segment** (4→8→16→32 KB…) **bump-allocated from the module arena** (8 MB, has headroom); old segments stay live (no copy → no dangling pointers into prior allocations). No fixed cap — grows until the module arena is genuinely exhausted (a real reported OOM).
+> - **Growth warnings:** a reusable helper `arenaGrew(name: []const u8, old: usize, new: usize)` writes `arena <name>: grew <old> -> <new>` to stderr, gated behind `--track-memory --markers` (byte-identity safe, off in normal runs). Fires on every segment doubling.
+> - **`span_len` u16 → u32** at `sf/src/ast.zig:290` (and sibling span fields) so a 345 KB module's spans never overflow (removes the `c89_emit` `PANIC: integer overflow`). Implementer must verify widening does not bloat `AstNode`/`Span` beyond intended layout and stays byte-identical.
+> - The growable-arena + `arenaGrew` helper becomes the **reusable primitive** for Tasks 3–8 (the other growable collections).
+> - The three static arenas (perm 4 MB / module 8 MB / scratch 2 MB = 14 MB BSS) still sum well UNDER 16 MB; F-RESIZE (Task 12) shrinks them — nothing grows any arena toward 16 MB.
 
 **Files:**
 - Modify: `sf/src/parser.zig:1104-1185` (`parserParseEnumType` `members_buf[64]`, `parserParseUnionType` `fields_buf[64]`), plus the sibling `[64]u32` field buffers at `:1077` (struct), `:1731`, `:1773` (same overflow class).
-- Modify: `sf/src/import_resolver.zig:48` (`p_arena_buf: [4096]u8` → `[16384]u8`)
-- Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` (`[updated: 2026-08-14]`)
+- Modify: `sf/src/import_resolver.zig:48` (replace fixed `p_arena_buf[4096]` with the segmented growable parser arena; `moduleRegistryParseModule` builds it)
+- Modify: `sf/src/allocator.zig` (add the segmented growable-arena machinery + `arenaGrew` helper; can reuse `sandAlloc`/`sandReset`)
+- Modify: `sf/src/ast.zig:290` (`span_len` u16 → u32 + sibling span fields)
+- Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` + `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-PARSER-report.md`
 
 **Interfaces:**
-- Consumes: `Parser` struct has a `*Sand` arena (passed as `&p_arena` in `import_resolver.zig:48-50`); `astStoreAddExtraChildren` (`ast.zig`).
-- Produces: struct/union/enum with >64 fields/members parse correctly (no stack-buffer-overflow); parser arena enlarged so long field-init/switch-case lists no longer hit `OOM: total=4096`. Byte-identical for ≤64-field inputs.
+- Consumes: `Parser` struct has a `*Sand` arena (currently `&p_arena`, `import_resolver.zig:48-50`); `astStoreAddExtraChildren` (`ast.zig`); module arena (`ctx.alloc.module`) for backing segments.
+- Produces: struct/union/enum with >64 fields/members parse correctly (no stack-buffer-overflow); parser arena has NO fixed cap (segmented growable, module-arena-backed); every doubling emits `arena <name>: grew N -> M` under `--track-memory --markers`; `span_len` no longer overflows on large modules. Byte-identical for the common case.
 
-- [ ] **Step 1: Reproduce the ASan overflow (baseline)**
+- [ ] **Step 1: Reproduce the baselines (ASan overflow + parser-arena OOM + span_len PANIC)**
 
 ```bash
 mkdir -p /tmp/fp && timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp sf/src/ast.zig 2>&1 | tail -5
 ```
-Expected: `ERROR: AddressSanitizer: stack-buffer-overflow in parserParseEnumType` (or `parserParseUnionType`). Record the function + buffer. Also reproduce the parser-arena OOM: `timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp2 sf/src/c89_emit.zig 2>&1 | grep "OOM:"` → `total=4096`.
+Expected: `ERROR: AddressSanitizer: stack-buffer-overflow in parserParseEnumType` (or `parserParseUnionType`). Also reproduce the parser-arena OOM and the span_len PANIC:
+```bash
+timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp2 sf/src/c89_emit.zig 2>&1 | grep -E "OOM:|PANIC:"
+timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fp3 sf/src/lower.zig 2>&1 | grep -E "OOM:|PANIC:"
+```
+Record all three baseline messages.
 
 - [ ] **Step 2: Replace the fixed `[64]u32` buffers with arena-backed growable arrays**
 
-Each parser function does `var fields_buf: [64]u32 = undefined; fields_buf[fields_count] = field_node;`. Replace with a growable u32 list in the parser arena. Add a small helper (in `parser.zig`) `parserPushU32(self: *Parser, buf: *[*]u32, len: *usize, cap: *usize, v: u32) void` that grows via `sandAlloc(self.arena, ...)` with copy (bounded by the parser arena). Apply to all 5 `[64]u32` sites. Preserve the existing `astStoreAddExtraChildren(store, buf[0..count])` call shape so emitted C is byte-identical for the common case.
+(Already committed in `672e65d7` — `parserPushU32`. Verify it is present; if the parser arena changes to segmented, re-verify `parserPushU32` still works: it allocates a fresh contiguous array via `sandAlloc` + copy, so it is segment-agnostic. Keep it.)
 
-- [ ] **Step 3: Enlarge the parser stack buffer**
+- [ ] **Step 3: Build the segmented growable parser arena**
 
-Change `sf/src/import_resolver.zig:48` `var p_arena_buf: [4096]u8 = undefined;` → `var p_arena_buf: [16384]u8 = undefined;`. This is a local stack frame (16 KB), auto-reclaimed on return — no BSS/arena/budget impact.
+In `sf/src/allocator.zig`, add a growable segmented bump arena (e.g. a `GrowableSand` or extend `Sand` with a segment chain): init with a 4 KB first segment; `sandAlloc`-style `alloc` that, when the current segment is full, allocates a **double-size** new segment from the backing tier arena (module), records the growth via `arenaGrew(name, old, new)`, and returns the pointer into the new segment. Old segments remain valid (they hold the previously-bumped live data). `sandReset` returns to the first segment (pos=0) reusing it. Wire `moduleRegistryParseModule` (`import_resolver.zig:48`) to use it instead of `var p_arena_buf: [16384]u8`. The parser's existing `*Sand` interface (`.start`/`.pos`/`.end`) must keep working — keep a "current segment" view inside the growable wrapper.
 
-- [ ] **Step 4: Rebuild + verify no ASan crash + no parser-arena OOM + byte-identity**
+- [ ] **Step 4: Add the `arenaGrew` growth-warning helper**
 
-Rebuild (`build_release.sh`, reinstall std lib). Re-run the repros: `ast.zig` (no ASan), `c89_emit.zig`/`lower.zig` (no `OOM: total=4096`). Then the 4 MD5 gates + corpus 252 must be unchanged.
+`arenaGrew(name, old, new)` writes `arena <name>: grew <old> -> <new>\n` via `pal.markerWrite` (gated on `--markers`; part of the existing `--track-memory --markers` channel). Call it inside the growable arena's doubling path. Verify it does not affect emitted C (it is stderr-only).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Widen `span_len` u16 → u32**
+
+In `sf/src/ast.zig:290` (and any sibling span fields that store byte offsets/lengths), widen `u16` → `u32`. Verify `AstNode`/`Span` layout does not unexpectedly bloat (check `@sizeOf(AstNode)` stays 24 B; if widening forces padding, keep the field alignment the compiler expects — byte-identity is the gate).
+
+- [ ] **Step 6: Rebuild + verify no ASan + no parser-arena OOM + no span_len PANIC + byte-identity**
+
+Rebuild (`build_release.sh`, reinstall std lib). Re-run the repros: `ast.zig` (no ASan), `c89_emit.zig`/`lower.zig` (no `OOM: total=4096`/`total=16384`, no `PANIC: integer overflow`). Then the 4 MD5 gates + corpus 252 must be unchanged. Run `--track-memory --markers` on `lower.zig`/`c89_emit.zig` and capture the `arena <name>: grew …` warning lines (evidence the growable arena + warnings work).
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add sf/src/parser.zig sf/src/import_resolver.zig sf/docs/tech_docs/00_lexer_parser.md
-git commit -m "fix: growable struct/union/enum field buffers + enlarge parser arena (ASan + 4KB OOM)"
+git add sf/src/parser.zig sf/src/import_resolver.zig sf/src/allocator.zig sf/src/ast.zig sf/docs/tech_docs/00_lexer_parser.md sf/docs/tech_docs/00_shared_infra.md
+git commit -m "fix: growable parser arena + arenaGrew warnings + span_len u16->u32 (unblocks self-compile)"
 ```
 
-**Gate:** no ASan crash on `ast.zig`/`parser.zig`/`main.zig` standalone; no parser-arena `total=4096` OOM on `c89_emit.zig`/`lower.zig`; 4 MD5s byte-identical; corpus 252 unchanged.
+**Gate:** no ASan crash on `ast.zig`/`parser.zig`/`main.zig` standalone; no parser-arena `total=4096`/`total=16384` OOM on `c89_emit.zig`/`lower.zig`; no `span_len` integer-overflow PANIC; `--track-memory --markers` shows `arena … grew …` warnings; 4 MD5s byte-identical; corpus 252 unchanged.
 
 ---
 
 ### Task 3: F-PRIMITIVES — in-place realloc + exact-size + hash-map grow helpers
+
+> **AMENDMENT (operator ruling, 2026-08-14):** the segmented growable arena + `arenaGrew` warning helper introduced in Task 2 is the reusable primitive this task builds on (the `sandTryReallocInPlace`/exact-size helpers complement it). Later tasks (F-SWEEP) use both.
 
 **Files:**
 - Modify: `sf/src/allocator.zig:55-65` (fix `sandReallocInPlace` end-check; add `sandTryReallocInPlace`)
