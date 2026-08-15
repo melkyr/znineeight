@@ -240,6 +240,40 @@ git commit -m "feat: unified growable arena pool (no fixed per-arena caps)"
 
 **Gate:** 4 MD5s byte-identical; corpus 252 unchanged; self-compile rc=0; `--track-memory --markers` shows `pool=XK` + `arena … grew …`; `sandTryReallocInPlace` has call sites; no fixed arena cap remains (grep: `arena_buf` gone).
 ---
+### Task 3b-I: Investigate the module-arena 64 MB (dump AST representation)
+
+> **AMENDMENT (operator ruling, 2026-08-14):** self-compile's module arena genuinely needs ~64 MB live for 24,790 lines (I-M3's ~7.3 MB projection was wrong). The 16 MB target **cannot** be reconsidered, so this investigation determines whether the AST is pathologically large (duplication/over-retention) or genuinely large — and what can be done. Uses I/O dumps of the AST representation to quantify.
+
+**Files:**
+- Investigate (read-only): `sf/src/ast.zig` (AstStore arrays), `sf/src/import_resolver.zig` (per-module parse into shared store), `sf/src/main.zig` (module arena wiring), `sf/src/type_resolver.zig`/`resolved_type_table.zig`/`coercion.zig`/`lir.zig` (other module-arena consumers), `sf/src/c89_emit.zig`/`semantic_analyzer.zig` (large modules)
+- Modify (docs): none (investigation)
+- Report: `.superpowers/sdd/task-3b-I-modulearena-report.md`
+
+**Interfaces:**
+- Consumes: the pool-backed module arena (Task 3); measured 64 MB live / 128 MB chain.
+- Produces: a per-array decomposition of the module arena (AST nodes / extra_children / identifiers / string_values / int_values / float_values / fn_protos / resolved types / coercion / lir_fns / maps), a per-module accumulation breakdown, and a verdict: pathology (duplication/leak) vs genuine.
+
+- [ ] **Step 1: Decompose the module arena per array**
+
+Read `ast.zig` (AstStore: `nodes`, `extra_children`, `identifiers`, `string_values`, `int_values`, `float_values`, `fn_protos` sizes/counts) and the other module-arena consumers. Compute each array's element size × count for self-compile (37 modules, 24,790 lines). Use `--dump-ast` (if it emits node counts) or instrument via `pal.stderr_write` markers to print `AstStore` array lengths at end of import / end of compile.
+
+- [ ] **Step 2: Measure per-module accumulation**
+
+Determine how much each module adds (nodes appended, extra_children, identifiers interned). Compile a handful of representative modules and record the delta. Check for **duplication**: is any module's AST added more than once, or is shared data (e.g. identifiers/string values) copied per-module instead of referenced?
+
+- [ ] **Step 3: Quantify the waste split**
+
+Split the 64 MB into: live AST nodes (28 B × count), extra_children, side arrays, resolved types/maps, and the 2× copy-into-bump dead copies. Which is dominant?
+
+- [ ] **Step 4: Produce reduction options**
+
+For each dominant component, state concrete reduction paths (e.g. node-count reduction, side-array dedup, interning of shared spans, streaming/on-demand module AST so the module arena resets per phase, node packing below 28 B). Rank by (saving ÷ complexity) and flag whether any makes 16 MB achievable for self-compile.
+
+- [ ] **Step 5: Write the report** `.superpowers/sdd/task-3b-I-modulearena-report.md` + STOP for operator ruling (what to build next: a targeted fix vs an AST-representation redesign).
+
+**Gate:** per-array decomposition, per-module accumulation, waste split, ranked reduction options, and a pathology-vs-genuine verdict; zero source changes.
+
+---
 
 ### Task 4: F-AST — pre-size AST store (module arena)
 
