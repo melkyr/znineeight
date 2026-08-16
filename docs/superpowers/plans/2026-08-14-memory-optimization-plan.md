@@ -401,6 +401,8 @@ git commit -m "fix: pre-size AST store nodes/extra_children (module arena waste)
 - Consumes: `LirFunction` lists (`lir.zig:120-308`), `lowerFn` (`lower.zig`), scratch arena (`self.alloc` = scratch, `main.zig:621`).
 - Produces: scratch reset between functions (not just per phase), bounding the LIR `insts`/`blocks`/`hoisted_temps` leak (~0.5–1 MB).
 
+> **AMENDMENT (operator ruling, 2026-08-15):** Task 5 delivered + accepted with a mechanism deviation: the brief's simple per-function `sandReset` is UNSAFE because `lir_fns` stores a shallow by-value struct copy (lists stay in scratch) and `phase_C89Emission` reads the scratch-resident LIR later. Implemented `lirFunctionRelocateToModule` (lir.zig): deep module-arena copy of all 5 lists (insts, blocks, params, hoisted_temps, switch_cases) capacity-exactly + per-function `sandReset`. Verified: 4 MD5s byte-identical, corpus 253 unchanged, rogue_mud `scr=` 511K→127K (pool 3759K→3247K), lisp 422K→63K (pool 1930K→1674K), ASan clean.
+
 - [ ] **Step 1: Locate the per-function LIR allocation site**
 
 Read `lower.zig:5197-5200` and `lir.zig:120-308`. Confirm the per-function LIR lists (`insts`, `blocks`, `params`, `hoisted_temps`, `switch_cases`) are allocated into the scratch arena and only reset per phase (`main.zig:567`).
