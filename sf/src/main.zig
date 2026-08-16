@@ -742,7 +742,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89) return;
     var mangler: c89_mod.NameMangler = undefined;
-    mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch);
+    var mangler_hint: usize = ctx.lir_fns.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
+    mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch, mangler_hint);
     var emitter: c89_mod.C89Emitter = undefined;
     emitter = c89_mod.c89EmitterInit(
         ctx.typereg,

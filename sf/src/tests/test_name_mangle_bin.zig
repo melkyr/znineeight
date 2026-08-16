@@ -36,7 +36,7 @@ pub fn main() void {
     var arena_buf: [131072]u8 = undefined;
     var arena = alloc_mod.sandInit(arena_buf[0..]);
     var interner = interner_mod.stringInternerInit(&arena, 4);
-    var mangler = c89_mod.nameManglerInit(&interner, &arena);
+    var mangler = c89_mod.nameManglerInit(&interner, &arena, @intCast(usize, 64));
 
     var fn_foo: []const u8 = "foo";
     var fn_bar: []const u8 = "bar";

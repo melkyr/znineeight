@@ -384,10 +384,10 @@ fn nameManglerPopulateKeywords(self: *NameMangler) void {
     hash_mod.u32ToU32MapPut(&self.keyword_set, interner_mod.stringInternerIntern(self.interner, k31), @intCast(u32, 1));
 }
 
-pub fn nameManglerInit(interner: *StringInterner, alloc: *Sand) NameMangler {
+pub fn nameManglerInit(interner: *StringInterner, alloc: *Sand, cache_hint: usize) NameMangler {
     var mangler = NameMangler{
         .hash_seed = @intCast(u32, 0),
-        .cache = hash_mod.u64ToU32MapInit(alloc),
+        .cache = hash_mod.u64ToU32MapInitCap(alloc, cache_hint),
         .keyword_set = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .collision_mod = hash_mod.u32ToU32MapInit(alloc),
         .collision_name = hash_mod.u32ToU32MapInit(alloc),
