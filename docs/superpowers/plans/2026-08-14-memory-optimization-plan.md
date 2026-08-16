@@ -452,18 +452,20 @@ git commit -m "fix: per-function LIR scratch reset bounds later-phase scratch pe
 ### Task 6-F: F-HASHMAP implement — pre-size maps where a hint exists
 
 **Files:**
-- Modify: every call site per the 6-I enumeration that has a safe hint (e.g. `string_interner.zig`, `type_registry.zig`, `semantic_analyzer.zig`, `type_resolver.zig`, `c89_emit.zig` — exact set from 6-I)
+- Modify: `sf/src/util/hash.zig` (ADD `...MapInitCap(alloc, hint)` — capacity-hint init allocating all 3 arrays at once) + the ~6 direct pre-size candidate call sites per the 6-I enumeration (keyword_set, emitted_type_set, fwd_decl_set, lfwd, lemit, pointer_only_map, cinclude seen; exact set from 6-I report)
 - Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-HASHMAP-report.md`
 
-**Interfaces:**
-- Consumes: 6-I enumeration + Task 3 helpers.
-- Produces: maps with a safe hint pre-sized at init; others grow via the in-place path. Eliminates the 3-array-per-grow rehash leak.
+> **AMENDMENT (operator ruling, 2026-08-15):** the plan premise was WRONG — Task 3 never added `...MapInitCap`/in-place grow to `util/hash.zig`; and true in-place grow is infeasible with the separate-3-array layout (tail-realloc extends one array; rehash needs all three). Ruling: 6-F (1) ADDS `...MapInitCap` (capacity-hint alloc for all 3 arrays at once), (2) pre-sizes the ~6 DIRECT candidates only, (3) does NOT pre-size `error_code_registry` (emitted `#define ERROR_*` slot order → byte-identity), (4) does NOT refactor map layout; unhinted maps keep the existing copy-into-bump grow (leak accepted).
 
-- [ ] **Step 1: Pre-size where a hint exists** — convert 6-I's safe candidates to `...MapInitCap(alloc, hint)`. Skip order-risky or hint-less maps (do NOT guess sizes).
-- [ ] **Step 2: Confirm in-place growth elsewhere** — remaining maps grow via the Task 3 in-place path (no 3-array copy-into-bump).
+**Interfaces:**
+- Consumes: 6-I enumeration (`.superpowers/sdd/task-F-HASHMAP-I-report.md`).
+- Produces: `...MapInitCap(alloc, hint)` in `util/hash.zig`; ~6 direct map sites pre-sized at init.
+
+- [ ] **Step 1: Add `...MapInitCap`** to `util/hash.zig` — for each map type, a capacity-hint init that allocates all 3 arrays (keys/vals/slots) at the hinted size in one go (matching the existing grow layout).
+- [ ] **Step 2: Pre-size the ~6 direct candidates** from the 6-I report (keyword_set, emitted_type_set, fwd_decl_set, lfwd, lemit, pointer_only_map, cinclude seen) — convert to `...MapInitCap` with the exact hint source. Do NOT pre-size `error_code_registry` (emitted order). Do NOT guess sizes; skip any candidate whose hint is not cheaply available.
 - [ ] **Step 3: Rebuild + verify byte-identity** — 4 MD5s byte-identical; corpus 253 unchanged; `--track-memory` on rogue_mud shows reduced module/perm peaks (record before/after); test_analyzer_bin PASS.
-- [ ] **Step 4: Commit** — `git add` the files actually changed (per 6-I) + docs; message `fix: pre-size hash maps + in-place grow (eliminate 3-array rehash leak)`.
+- [ ] **Step 4: Commit** — `git add` the files actually changed + docs; message `fix: add MapInitCap + pre-size direct hash maps (reduce rehash waste)`.
 
 **Gate:** 4 MD5s byte-identical; corpus 253 unchanged; rogue_mud module/perm peaks reduced.
 
