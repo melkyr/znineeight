@@ -400,6 +400,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
+        alloc_mod.sandReset(&ctx.alloc.scratch);
         var ast_root = mods[mi].ast_root;
         if (ast_root == @intCast(u32, 0)) { var mz: []const u8 = "MZ"; pal.markerWrite(mz); continue; }
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
