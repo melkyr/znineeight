@@ -426,37 +426,46 @@ git commit -m "fix: per-function LIR scratch reset bounds later-phase scratch pe
 
 ---
 
-### Task 6: F-HASHMAP — migrate all hash maps to pre-size/in-place
+### Task 6-I: F-HASHMAP investigate — enumerate map init sites + hint availability
+
+> **AMENDMENT (operator ruling, 2026-08-15):** Task 6 split into 6-I (investigate) + 6-F (implement) for scope control.
 
 **Files:**
-- Modify: `sf/src/util/hash.zig` (already done in Task 3) + every call site that can pre-size: `string_interner.zig:136-153`, `type_registry.zig` caches, `hash.zig` consumers in `semantic_analyzer.zig`, `type_resolver.zig`, `c89_emit.zig`.
+- Investigate (read-only): `sf/src/util/hash.zig` (map API: init/InitCap/grow/in-place), every map init site in `sf/src/`
+- Modify (docs): none
+- Report: `.superpowers/sdd/task-F-HASHMAP-I-report.md`
+
+**Interfaces:**
+- Consumes: Task 3 helpers (`u32ToU32MapInitCap`, in-place grow) — confirm exact names/signatures in `util/hash.zig`.
+- Produces: a complete enumeration of every map init site in `sf/src/`, each with (a) map type, (b) file:line, (c) whether an expected-size hint is available at init, (d) the hint source/derivation, (e) pre-size candidate Y/N + risk note.
+
+- [ ] **Step 1: Read `util/hash.zig`** — confirm the map types (U32ToU32Map, U64ToU32Map, U32ToU64Map, any others), the init/cap/grow API added in Task 3 (`...MapInitCap`, in-place grow path), and the growth/waste mechanics.
+- [ ] **Step 2: Enumerate all map init sites** — grep `sf/src/` for every map init (`u32ToU32MapInit`, `u64ToU32MapInit`, `u32ToU64MapInit`, and any others). Record each: map type, file:line, containing struct (if any), arena it allocates from.
+- [ ] **Step 3: Determine hint availability per site** — for each init site, whether an expected-size hint exists at init time (map size bounds from data already known: token count, module count, symbol count, string count, type count, resolved-type count, etc.). Derive the hint source precisely.
+- [ ] **Step 4: Flag order-safety risks** — for each pre-size candidate, whether the map's slot layout / iteration order is observable in emitted C89 (if pre-sizing could change emitted output, flag it as a byte-identity risk to skip or verify).
+- [ ] **Step 5: Write the report** — full enumeration table + recommendation of which sites 6-F should convert to `...MapInitCap`, which must NOT be touched (order-safety or no hint), and expected peak savings.
+
+**Gate:** complete map-init-site enumeration with hint availability + order-safety flags; zero source changes.
+
+---
+
+### Task 6-F: F-HASHMAP implement — pre-size maps where a hint exists
+
+**Files:**
+- Modify: every call site per the 6-I enumeration that has a safe hint (e.g. `string_interner.zig`, `type_registry.zig`, `semantic_analyzer.zig`, `type_resolver.zig`, `c89_emit.zig` — exact set from 6-I)
 - Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/task-F-HASHMAP-report.md`
 
 **Interfaces:**
-- Consumes: Task 3 helpers (`u32ToU32MapInitCap`, in-place grow).
-- Produces: maps that know their expected size pre-size at init; others grow in-place. Eliminates the 3-array-per-grow leak.
+- Consumes: 6-I enumeration + Task 3 helpers.
+- Produces: maps with a safe hint pre-sized at init; others grow via the in-place path. Eliminates the 3-array-per-grow rehash leak.
 
-- [ ] **Step 1: Enumerate map init sites**
+- [ ] **Step 1: Pre-size where a hint exists** — convert 6-I's safe candidates to `...MapInitCap(alloc, hint)`. Skip order-risky or hint-less maps (do NOT guess sizes).
+- [ ] **Step 2: Confirm in-place growth elsewhere** — remaining maps grow via the Task 3 in-place path (no 3-array copy-into-bump).
+- [ ] **Step 3: Rebuild + verify byte-identity** — 4 MD5s byte-identical; corpus 253 unchanged; `--track-memory` on rogue_mud shows reduced module/perm peaks (record before/after); test_analyzer_bin PASS.
+- [ ] **Step 4: Commit** — `git add` the files actually changed (per 6-I) + docs; message `fix: pre-size hash maps + in-place grow (eliminate 3-array rehash leak)`.
 
-`grep` for `u32ToU32MapInit`/`u64ToU32MapInit`/`u32ToU64MapInit` in `sf/src/`. For each, determine whether an expected-size hint is available at the init site.
-
-- [ ] **Step 2: Pre-size where a hint exists; in-place elsewhere**
-
-Convert sites with a known/derivable size to `...MapInitCap(alloc, hint)`. Confirm the remaining maps now grow via the in-place path (Task 3).
-
-- [ ] **Step 3: Rebuild + verify byte-identity**
-
-4 MD5s byte-identical; corpus 252 unchanged; `--track-memory` on rogue_mud shows reduced module/perm peaks from map rehash elimination.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sf/src/util/hash.zig sf/src/string_interner.zig sf/src/type_registry.zig sf/src/semantic_analyzer.zig sf/src/type_resolver.zig sf/src/c89_emit.zig sf/docs/tech_docs/00_shared_infra.md
-git commit -m "fix: pre-size hash maps + in-place grow (eliminate 3-array rehash leak)"
-```
-
-**Gate:** 4 MD5s byte-identical; corpus 252 unchanged.
+**Gate:** 4 MD5s byte-identical; corpus 253 unchanged; rogue_mud module/perm peaks reduced.
 
 ---
 
