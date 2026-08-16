@@ -628,16 +628,20 @@ git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 
 > **AMENDMENT (operator ruling, 2026-08-14):** the parser gap blocks self-compile COMPLETION independent of memory. Task 13 family (Feas/Inv/Fix).
 
+> **AMENDMENT (operator directive, 2026-08-16):** F-PARSERGAP-Feas MUST create a small standalone **repro** fixture (like F-PATHNORM-Repro) to work with — the full self-compile is an ultra-huge test target and would cause scope creep. The repro should isolate the value-position optional-capture construct at minimal size (a few lines in a `.zig` file + expected diagnostic), committed under `repro/mi_matrix/`, so Feas/Inv/Fix and all gates run against the repro instead of self-compile.
+
 **Files:**
 - Investigate (read-only): `sf/src/parser.zig` (expression/`if`-expression parsing, optional-capture `|cap|`), `sf/src/main.zig:669` (the failing construct), repro of `error[2000]`
+- Create: `repro/mi_matrix/parsergap_value_if_xmod/main.zig` (or similar name) — minimal value-position `if (opt) |cap| expr else expr` fixture + NOTES.md (per operator directive)
 - Modify (docs): none
 - Report: `.superpowers/sdd/F-PARSERGAP-Feas-report.md`
 
 - [ ] **Step 1: Reproduce + confirm** — `if (opt) |cap| expr else expr` in VALUE position fails `error[2000]` (expected identifier/expression) at `main.zig:669`; stmt-position works. Record the exact failing source + diagnostic.
-- [ ] **Step 2: Locate the parser path** — which `parserParseIfExpr`/expression grammar entry rejects value-position optional-capture, and where the stmt-position path differs.
-- [ ] **Step 3: Write the report** (confirmed, locus, scope of the grammar fix) + feed F-PARSERGAP-Inv.
+- [ ] **Step 2: Create the repro fixture** — commit `repro/mi_matrix/parsergap_value_if_xmod/` (minimal main.zig with the value-position construct + a NOTES.md recording RED baseline: dump rc=2, `error[2000]`, 0 `.c` emitted). Must be self-contained (std only via bare `@import("std")` if needed in main).
+- [ ] **Step 3: Locate the parser path** — which `parserParseIfExpr`/expression grammar entry rejects value-position optional-capture, and where the stmt-position path differs.
+- [ ] **Step 4: Write the report** (confirmed, locus, scope of the grammar fix) + feed F-PARSERGAP-Inv.
 
-**Gate:** failure reproduced, parser locus identified; zero source changes.
+**Gate:** failure reproduced, repro fixture committed, parser locus identified; zero `sf/src/` changes (repro dir only).
 
 ---
 
