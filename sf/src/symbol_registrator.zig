@@ -38,6 +38,17 @@ pub fn depGraphInit(alloc: *Sand) DepGraph {
 fn depGraphEnsureCapacity(self: *DepGraph) void {
     if (self.len < self.cap) return;
     var nc: usize = if (self.cap < 8) @intCast(usize, 8) else self.cap * 2;
+    if (self.cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.alloc,
+            @ptrCast([*]u8, self.items),
+            self.cap * @intCast(usize, @sizeOf(DepEdge)),
+            nc * @intCast(usize, @sizeOf(DepEdge)),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, @sizeOf(DepEdge)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]DepEdge, raw);
     for (self.items[0..self.len]) |item, i| { new_items[i] = item; }

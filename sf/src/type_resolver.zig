@@ -56,6 +56,17 @@ pub const TypeResolver = struct {
 fn dependEnsureCapacity(self: *TypeResolver) void {
     if (self.depend_len < self.depend_cap) return;
     var nc: usize = if (self.depend_cap < 8) @intCast(usize, 8) else self.depend_cap * 2;
+    if (self.depend_cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.alloc,
+            @ptrCast([*]u8, self.depend_items),
+            self.depend_cap * @intCast(usize, 8),
+            nc * @intCast(usize, 8),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.depend_cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 8), @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]DepEdge, raw);
     for (self.depend_items[0..self.depend_len]) |item, i| { new_items[i] = item; }
@@ -72,6 +83,17 @@ pub fn typeResolverAddEdge(self: *TypeResolver, from: u32, to: u32) void {
 fn worklistEnsureCapacity(self: *TypeResolver) void {
     if (self.worklist_len < self.worklist_cap) return;
     var nc: usize = if (self.worklist_cap < 64) @intCast(usize, 64) else self.worklist_cap * 2;
+    if (self.worklist_cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.alloc,
+            @ptrCast([*]u8, self.worklist_items),
+            self.worklist_cap * @intCast(usize, 4),
+            nc * @intCast(usize, 4),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.worklist_cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     for (self.worklist_items[0..self.worklist_len]) |item, i| { new_items[i] = item; }
