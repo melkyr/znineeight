@@ -506,7 +506,25 @@ git commit -m "fix: type_db soft OOM (growable already pool-backed via Task 3)"
 
 ---
 
-### Task 8: F-SWEEP — migrate remaining collections to exact-size/in-place/reset
+### Task 8-I: F-SWEEP re-audit — which I-M2 collections remain after Tasks 1/4/5/6/7
+
+> **AMENDMENT (operator ruling, 2026-08-16):** Task 8 split into 8-I (re-audit) + 8-F (implement). The I-M2 lever table lists ALL 37 collections, but Tasks 1/4/5/6/7 already migrated several (#1 token, #25 source+line_offsets, #12-16 AST store, #8/#19 LIR, #21/#30 maps, #34-37 type_db). 8-I determines the REMAINING set so 8-F doesn't re-touch done work.
+
+**Files:**
+- Investigate (read-only): `sf/src/` (the I-M2 catalog at `.superpowers/sdd/I-M2-wasteaudit-report.md` vs current source)
+- Modify (docs): none
+- Report: `.superpowers/sdd/task-F-SWEEP-I-report.md`
+
+- [ ] **Step 1: Load the I-M2 catalog** (37 collections, each with file:line + growth strategy + lever) and the current git log (Tasks 1-7 commits).
+- [ ] **Step 2: Mark each collection done-or-remaining** — for each of the 37, verify against live source whether the lever was already applied (token two-pass #1; source-into-perm + line_offsets #25; AST store pre-size #12-16; LIR relocate/reset #8/#19; MapInitCap #21/#30; type_db #34-37). Produce DONE list + REMAINING list.
+- [ ] **Step 3: For each REMAINING collection** — confirm its current grow path (re-read the code; lines shifted), restate the recommended lever (exact-size / in-place `sandTryReallocInPlace` / per-scope reset / pre-size), and estimate the peak saving (KB, per --track-memory intuition or prior I-M2 numbers).
+- [ ] **Step 4: Rank + write the report** — remaining set ordered by (saving ÷ risk), each with the exact lever + file:line for 8-F. Note any collection where the plan's lever is now inapplicable (already done or superseded).
+
+**Gate:** complete DONE/REMAINING classification of all 37 collections + lever per remaining collection; zero source changes.
+
+### Task 8-F: F-SWEEP implement — migrate the REMAINING collections
+
+> **AMENDMENT (operator ruling, 2026-08-16):** Task 8-F implements ONLY the REMAINING collections from the 8-I re-audit (`.superpowers/sdd/task-F-SWEEP-I-report.md`). Do NOT re-touch collections already migrated by Tasks 1/4/5/6/7. The lever table below is the I-M2 reference; the 8-I report is the authoritative remaining-set + lever + file:line.
 
 **Files:**
 - Modify: the remaining cataloged collections (I-M2 report) — see the lever table below.
@@ -533,11 +551,11 @@ After each file: rebuild + reinstall std lib + 4 MD5s + spot corpus. Fix any reg
 
 - [ ] **Step 3: Final sweep gate + measure**
 
-Full gate battery + `--track-memory` on rogue_mud and self-compile (now possible): record the new per-arena peaks.
+Full gate battery + `--track-memory` on rogue_mud: record the new per-arena peaks. (Self-compile still blocked by the F-PARSERGAP parser defect; measure the F-SWEEP effect on rogue_mud + `sf/src/*.zig` per-module peaks.)
 
 - [ ] **Step 4: Commit** (grouped logical commits, one per file or arena tier)
 
-**Gate:** all collections migrated (grep shows `sandTryReallocInPlace` used across the board); 4 MD5s byte-identical; corpus 252 unchanged; per-arena peaks reduced; self-compile still completes.
+**Gate:** REMAINING collections migrated per the 8-I report (grep shows `sandTryReallocInPlace`/exact-size/reset used on each remaining collection); 4 MD5s byte-identical; corpus 253 unchanged; per-arena peaks reduced on rogue_mud.
 
 ---
 
