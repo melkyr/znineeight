@@ -611,7 +611,11 @@ git commit -m "refactor: remove dead ctx.dep_graph + dead sort buffers"
 
 ---
 
-### Task 12: F-RESIZE — size the single pool (trim BSS)
+### Task 12: F-RESIZE — size the single pool (trim BSS) [REORDERED after F-PARSERGAP]
+
+> **AMENDMENT (operator long-term ruling, 2026-08-14):** with Task 3's unified pool, "resize arenas" becomes **size the single `memory_pool_buf`** to measured peak + margin. No more five constants.
+
+> **OPERATOR RULING (2026-08-16):** Task 12 is REORDERED to execute AFTER the F-PARSERGAP family. Its gate requires measuring the self-compile pool peak (`--track-memory` `pool=XK`) and verifying "self-compile completes under the sized pool" — both impossible while the F-PARSERGAP parser defect aborts self-compile early (rc=2 during import resolution, before the summary prints; the pool peak is at later LIR/emission phases). F-PARSERGAP {Feas+repro, Inv, Fix} executes FIRST; Task 12 runs after, measuring the real post-fix self-compile pool peak.
 
 > **AMENDMENT (operator long-term ruling, 2026-08-14):** with Task 3's unified pool, "resize arenas" becomes **size the single `memory_pool_buf`** to measured peak + margin. No more five constants.
 
