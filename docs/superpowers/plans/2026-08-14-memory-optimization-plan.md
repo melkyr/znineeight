@@ -575,7 +575,9 @@ Full gate battery + `--track-memory` on rogue_mud: record the new per-arena peak
 
 ---
 
-### Task 11: F-DEADCODE — remove dead `ctx.dep_graph` + dead buffers
+### Task 11: F-DEADCODE — remove dead `ctx.dep_graph` + dead buffers (DROPPED)
+
+> **OPERATOR RULING (2026-08-16): Task 11 DROPPED.** The implementer's BLOCKED report proved two plan mis-citations: (1) `sf/src/symbol_registrator.zig`'s DepGraph is LIVE (scratch per-phase graphs) — not to be touched; (2) the `[256]u32` `in_degree`/`worklist_items` buffers in `moduleRegistrySortModules` are the LIVE Kahn topo-sort working set (`module_registry.zig:450,462`, written/read :452-507,:519), not dead. Only `ctx.dep_graph` (main.zig:102 field + :166 init + :185 assignment) is genuinely dead (0 reads), and it is ~4-8 bytes — negligible. Operator ruled: do NOT implement; the task is dropped from the plan.
 
 **Files:**
 - Modify: `sf/src/main.zig:164` (and `:101`, `:183`) — remove unused `ctx.dep_graph`; `sf/src/symbol_registrator.zig` (the module-arena `dep_graph` field), `sf/src/module_registry.zig:359,371` (dead `[256]u32`×2 in `moduleRegistrySortModules`)
