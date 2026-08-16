@@ -129,6 +129,19 @@ fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena:
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
+        if (capacity.* > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(arena,
+                @ptrCast([*]u8, items.*),
+                capacity.* * @intCast(usize, 4),
+                new_cap * @intCast(usize, 4),
+                @intCast(usize, 4));
+            if (grown != null) {
+                capacity.* = new_cap;
+                items.*[len.*] = value;
+                len.* += 1;
+                return;
+            }
+        }
         var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
         var new_items_p = @ptrCast([*]u32, raw);
         for (items.*[0..len.*]) |item, i| {
@@ -163,6 +176,19 @@ fn u64ArrayListAppendInner(items: *[*]u64, len: *usize, capacity: *usize, arena:
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
+        if (capacity.* > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(arena,
+                @ptrCast([*]u8, items.*),
+                capacity.* * @intCast(usize, 8),
+                new_cap * @intCast(usize, 8),
+                @intCast(usize, 4));
+            if (grown != null) {
+                capacity.* = new_cap;
+                items.*[len.*] = value;
+                len.* += 1;
+                return;
+            }
+        }
         var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
         var new_items_p = @ptrCast([*]u64, raw);
         for (items.*[0..len.*]) |item, i| {
@@ -180,6 +206,19 @@ fn f64ArrayListAppendInner(items: *[*]f64, len: *usize, capacity: *usize, arena:
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
+        if (capacity.* > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(arena,
+                @ptrCast([*]u8, items.*),
+                capacity.* * @intCast(usize, 8),
+                new_cap * @intCast(usize, 8),
+                @intCast(usize, 4));
+            if (grown != null) {
+                capacity.* = new_cap;
+                items.*[len.*] = value;
+                len.* += 1;
+                return;
+            }
+        }
         var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 8) * new_cap, @intCast(usize, 4)) catch unreachable;
         var new_items_p = @ptrCast([*]f64, raw);
         for (items.*[0..len.*]) |item, i| {
@@ -197,6 +236,19 @@ fn fnProtoArrayListAppendInner(items: *[*]FnProto, len: *usize, capacity: *usize
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
+        if (capacity.* > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(arena,
+                @ptrCast([*]u8, items.*),
+                capacity.* * @sizeOf(FnProto),
+                new_cap * @sizeOf(FnProto),
+                @intCast(usize, 4));
+            if (grown != null) {
+                capacity.* = new_cap;
+                items.*[len.*] = value;
+                len.* += 1;
+                return;
+            }
+        }
         var raw = alloc_mod.sandAlloc(arena, @intCast(usize, @sizeOf(FnProto)) * new_cap, @intCast(usize, 4)) catch unreachable;
         var new_items_p = @ptrCast([*]FnProto, raw);
         for (items.*[0..len.*]) |item, i| {
@@ -333,6 +385,7 @@ pub fn astStoreEnsureExtraChildrenCapacity(store: *AstStore, new_capacity: usize
     store.extra_children.items = new_items;
     store.extra_children.capacity = new_cap;
 }
+
 
 pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
     var span_len: u32 = @intCast(u32, span_end - span_start);
