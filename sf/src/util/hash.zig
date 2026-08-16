@@ -1,6 +1,16 @@
 const alloc_mod = @import("../allocator.zig");
 const Sand = alloc_mod.Sand;
 
+fn mapCapacityFromHint(hint: usize) usize {
+    if (hint == @intCast(usize, 0)) return @intCast(usize, 0);
+    var needed: usize = (hint * @intCast(usize, 4) + @intCast(usize, 2)) / @intCast(usize, 3);
+    var cap: usize = @intCast(usize, 8);
+    while (cap < needed) {
+        cap = cap * @intCast(usize, 2);
+    }
+    return cap;
+}
+
 pub fn fnv1a(data: []const u8) u32 {
     var hash: u32 = 2166136261;
     for (data) |byte| {
@@ -23,6 +33,22 @@ pub fn u32ToU32MapInit(alloc: *Sand) U32ToU32Map {
     return U32ToU32Map{
         .keys = undefined, .values = undefined, .occupied = undefined,
         .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .alloc = alloc,
+    };
+}
+
+pub fn u32ToU32MapInitCap(alloc: *Sand, hint: usize) U32ToU32Map {
+    var cap = mapCapacityFromHint(hint);
+    if (cap == @intCast(usize, 0)) return u32ToU32MapInit(alloc);
+    var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
+    var raw_vals = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
+    var raw_occ = alloc_mod.sandAlloc(alloc, @intCast(usize, 1) * cap, @intCast(usize, 4)) catch unreachable;
+    var zi: usize = 0;
+    while (zi < cap) : (zi += 1) { raw_occ[zi] = @intCast(u8, 0); }
+    return U32ToU32Map{
+        .keys = @ptrCast([*]u32, raw_keys),
+        .values = @ptrCast([*]u32, raw_vals),
+        .occupied = @ptrCast([*]u8, raw_occ),
+        .capacity = cap, .count = @intCast(usize, 0), .alloc = alloc,
     };
 }
 
@@ -109,6 +135,22 @@ pub fn u64ToU32MapInit(alloc: *Sand) U64ToU32Map {
     };
 }
 
+pub fn u64ToU32MapInitCap(alloc: *Sand, hint: usize) U64ToU32Map {
+    var cap = mapCapacityFromHint(hint);
+    if (cap == @intCast(usize, 0)) return u64ToU32MapInit(alloc);
+    var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 8) * cap, @intCast(usize, 4)) catch unreachable;
+    var raw_vals = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
+    var raw_occ = alloc_mod.sandAlloc(alloc, @intCast(usize, 1) * cap, @intCast(usize, 4)) catch unreachable;
+    var zi: usize = 0;
+    while (zi < cap) : (zi += 1) { raw_occ[zi] = @intCast(u8, 0); }
+    return U64ToU32Map{
+        .keys = @ptrCast([*]u64, raw_keys),
+        .values = @ptrCast([*]u32, raw_vals),
+        .occupied = @ptrCast([*]u8, raw_occ),
+        .capacity = cap, .count = @intCast(usize, 0), .alloc = alloc,
+    };
+}
+
 pub fn u64ToU32MapGet(self: *U64ToU32Map, key: u64) ?u32 {
     if (self.capacity == @intCast(usize, 0)) return null;
     var mask: usize = self.capacity - @intCast(usize, 1);
@@ -181,6 +223,22 @@ pub fn u32ToU64MapInit(alloc: *Sand) U32ToU64Map {
     return U32ToU64Map{
         .keys = undefined, .values = undefined, .occupied = undefined,
         .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .alloc = alloc,
+    };
+}
+
+pub fn u32ToU64MapInitCap(alloc: *Sand, hint: usize) U32ToU64Map {
+    var cap = mapCapacityFromHint(hint);
+    if (cap == @intCast(usize, 0)) return u32ToU64MapInit(alloc);
+    var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
+    var raw_vals = alloc_mod.sandAlloc(alloc, @intCast(usize, 8) * cap, @intCast(usize, 4)) catch unreachable;
+    var raw_occ = alloc_mod.sandAlloc(alloc, @intCast(usize, 1) * cap, @intCast(usize, 4)) catch unreachable;
+    var zi: usize = 0;
+    while (zi < cap) : (zi += 1) { raw_occ[zi] = @intCast(u8, 0); }
+    return U32ToU64Map{
+        .keys = @ptrCast([*]u32, raw_keys),
+        .values = @ptrCast([*]u64, raw_vals),
+        .occupied = @ptrCast([*]u8, raw_occ),
+        .capacity = cap, .count = @intCast(usize, 0), .alloc = alloc,
     };
 }
 

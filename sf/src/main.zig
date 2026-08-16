@@ -752,6 +752,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         undefined,
         &ctx.alloc.scratch,
         &ctx.error_code_registry,
+        ctx.pointer_only_len,
     );
     emitter.module_reg = ctx.module_reg;
     errorCodeRegistryFinalize(ctx);

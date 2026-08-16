@@ -6,8 +6,14 @@ const hash_mod = @import("util/hash.zig");
 
 pub fn cincludeUnionAll(module_reg: *ModuleRegistry, alloc: *Sand) []u32 {
     var temp = ga_mod.u32ArrayListInit(alloc);
-    var seen = hash_mod.u32ToU32MapInit(alloc);
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var hint: usize = @intCast(usize, 0);
+    var hi: usize = @intCast(usize, 0);
+    while (hi < mods.len) : (hi += @intCast(usize, 1)) {
+        var m_incs_h = ga_mod.u32ArrayListGetSlice(&mods[hi].c_includes);
+        hint += m_incs_h.len;
+    }
+    var seen = hash_mod.u32ToU32MapInitCap(alloc, hint);
     var mi: usize = @intCast(usize, 0);
     while (mi < mods.len) : (mi += @intCast(usize, 1)) {
         var m_incs = ga_mod.u32ArrayListGetSlice(&mods[mi].c_includes);

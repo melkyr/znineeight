@@ -451,13 +451,15 @@ All arrays: allocation is fatal on OOM (`catch unreachable`). No shrink. Arena-a
 
 ### Hash Maps
 
-Three hash map types sharing the same design: open addressing (linear probing), power-of-2 capacity (mask = capacity-1), load factor threshold 75% (count*4 >= capacity*3 triggers grow). Maps are:
+Three hash map types sharing the same design: open addressing (linear probing), power-of-2 capacity (mask = capacity-1), load factor threshold 75% (count*4 >= capacity*3 triggers grow). Maps are: [updated: 2026-08-15]
 
-| Type | Key | Value | Struct Line | Init | Get | Put (public) | Grow (private) |
-|------|-----|-------|-------------|------|-----|-------------|----------------|
-| `U32ToU32Map` | `u32` | `u32` | 13 | `u32ToU32MapInit` (line 22) | `u32ToU32MapGet` (line 29) | `u32ToU32MapPut` (line 73) | `u32ToU32MapGrow` (line 40) |
-| `U64ToU32Map` | `u64` | `u32` | 88 | `u64ToU32MapInit` (line 97) | `u64ToU32MapGet` (line 104) | `u64ToU32MapPut` (line 148) | `u64ToU32MapGrow` (line 115) |
-| `U32ToU64Map` | `u32` | `u64` | 163 | `u32ToU64MapInit` (line 172) | `u32ToU64MapGet` (line 179) | `u32ToU64MapPut` (line 223) | `u32ToU64MapGrow` (line 190) |
+| Type | Key | Value | Struct Line | Init | InitCap | Get | Put (public) | Grow (private) |
+|------|-----|-------|-------------|------|---------|-----|-------------|----------------|
+| `U32ToU32Map` | `u32` | `u32` | 13 | `u32ToU32MapInit` (line 22) | `u32ToU32MapInitCap` | `u32ToU32MapGet` (line 29) | `u32ToU32MapPut` (line 73) | `u32ToU32MapGrow` (line 40) |
+| `U64ToU32Map` | `u64` | `u32` | 88 | `u64ToU32MapInit` (line 97) | `u64ToU32MapInitCap` | `u64ToU32MapGet` (line 104) | `u64ToU32MapPut` (line 148) | `u64ToU32MapGrow` (line 115) |
+| `U32ToU64Map` | `u32` | `u64` | 163 | `u32ToU64MapInit` (line 172) | `u32ToU64MapInitCap` | `u32ToU64MapGet` (line 179) | `u32ToU64MapPut` (line 223) | `u32ToU64MapGrow` (line 190) |
+
+**`...MapInitCap(alloc, hint)` (added 2026-08-15):** capacity-hint init — `mapCapacityFromHint(hint)` derives capacity (ceil(hint×4/3) rounded up to a power of two, min 8; hint==0 → falls back to `...MapInit`), then allocates all 3 arrays (keys, values, occupied) at that capacity in one go and zeroes `occupied`. Used at init sites with a cheap known bound to avoid rehash growth: `keyword_set` (32), `emitted_type_set`/`fwd_decl_set`/`lfwd`/`lemit` (`types_len`), `pointer_only_map` (`pointer_only_len`), `cincludeUnionAll` `seen` (sum of module `c_includes` lengths). Maps WITHOUT a hint keep lazy zero-capacity init (grow on first put).
 
 **Key design for all maps:**
 - **Key indexing:** `U32ToU32Map`/`U32ToU64Map` use `@intCast(usize, key) & mask` (low bits of key as probe start). `U64ToU32Map` uses `@intCast(usize, @intCast(u32, key & 0xFFFFFFFF)) & mask` (low 32 bits of key).

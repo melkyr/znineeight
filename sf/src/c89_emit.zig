@@ -388,7 +388,7 @@ pub fn nameManglerInit(interner: *StringInterner, alloc: *Sand) NameMangler {
     var mangler = NameMangler{
         .hash_seed = @intCast(u32, 0),
         .cache = hash_mod.u64ToU32MapInit(alloc),
-        .keyword_set = hash_mod.u32ToU32MapInit(alloc),
+        .keyword_set = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .collision_mod = hash_mod.u32ToU32MapInit(alloc),
         .collision_name = hash_mod.u32ToU32MapInit(alloc),
         .interner = interner,
@@ -506,7 +506,7 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
       global_decls_len: u32,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_len: u32) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
@@ -522,9 +522,9 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_wflag = undefined,
          .d4_t2p = undefined,
          .dl_hoisted = @intCast(u8, 0),
-         .emitted_type_set = hash_mod.u32ToU32MapInit(alloc),
-         .fwd_decl_set = hash_mod.u32ToU32MapInit(alloc),
-         .pointer_only_map = hash_mod.u32ToU32MapInit(alloc),
+         .emitted_type_set = hash_mod.u32ToU32MapInitCap(alloc, reg.types_len),
+         .fwd_decl_set = hash_mod.u32ToU32MapInitCap(alloc, reg.types_len),
+         .pointer_only_map = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, pointer_only_len)),
          .shared_set = hash_mod.u32ToU32MapInit(alloc),
          .module_reg = undefined,
          .error_code_registry = error_code_reg,
@@ -1117,8 +1117,8 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
     var pg2: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, pg2);
     emitErrorCodePrologue(emitter);
-    var lfwd: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInit(emitter.alloc);
-    var lemit: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInit(emitter.alloc);
+    var lfwd: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInitCap(emitter.alloc, reg.types_len);
+    var lemit: hash_mod.U32ToU32Map = hash_mod.u32ToU32MapInitCap(emitter.alloc, reg.types_len);
     var tsi: usize = @intCast(usize, 0);
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
