@@ -42,6 +42,17 @@ fn symbolTableEnsureCapacity(self: *SymbolTable, new_capacity: usize) void {
     var nc = new_capacity;
     if (nc < self.capacity * 2) nc = self.capacity * 2;
     if (nc < 8) nc = 8;
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @sizeOf(Symbol),
+            nc * @sizeOf(Symbol),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(Symbol)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Symbol, raw);
     for (self.items[0..self.len]) |item, i| { new_items[i] = item; }
@@ -82,6 +93,17 @@ fn symbolRegistryEnsureCapacity(self: *SymbolRegistry, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.tables_cap * 2) nc = self.tables_cap * 2;
     if (nc < 8) nc = 8;
+    if (self.tables_cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.tables_alloc,
+            @ptrCast([*]u8, self.tables_items),
+            self.tables_cap * @sizeOf(SymbolTable),
+            nc * @sizeOf(SymbolTable),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.tables_cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.tables_alloc, @intCast(usize, @sizeOf(SymbolTable)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]SymbolTable, raw);
     for (self.tables_items[0..self.tables_len]) |item, i| { new_items[i] = item; }
