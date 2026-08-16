@@ -39,6 +39,17 @@ fn resolvedTypeTableEnsureCapacity(self: *ResolvedTypeTable, new_cap: usize) voi
     var nc = new_cap;
     if (nc < self.entries_cap * 2) nc = self.entries_cap * 2;
     if (nc < @intCast(usize, 8)) nc = @intCast(usize, 8);
+    if (self.entries_cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.entries_alloc,
+            @ptrCast([*]u8, self.entries_items),
+            self.entries_cap * @sizeOf(TypeTableEntry),
+            nc * @sizeOf(TypeTableEntry),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.entries_cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, @sizeOf(TypeTableEntry)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]TypeTableEntry, raw);
     for (self.entries_items[0..self.entries_len]) |item, i| {
@@ -75,6 +86,17 @@ fn sourceTableEnsureCapacity(self: *ResolvedTypeTable, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.source_cap * 2) nc = self.source_cap * 2;
     if (nc < @intCast(usize, 8)) nc = @intCast(usize, 8);
+    if (self.source_cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.entries_alloc,
+            @ptrCast([*]u8, self.source_items),
+            self.source_cap * @intCast(usize, 4),
+            nc * @intCast(usize, 4),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.source_cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, 4) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     var si: usize = @intCast(usize, 0);

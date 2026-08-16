@@ -45,6 +45,17 @@ fn coercionTableEnsureCapacity(self: *CoercionTable, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.entries_cap * 2) nc = self.entries_cap * 2;
     if (nc < 8) nc = 8;
+    if (self.entries_cap > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.entries_alloc,
+            @ptrCast([*]u8, self.entries_items),
+            self.entries_cap * @sizeOf(CoercionEntry),
+            nc * @sizeOf(CoercionEntry),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.entries_cap = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.entries_alloc, @intCast(usize, @sizeOf(CoercionEntry)) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]CoercionEntry, raw);
     for (self.entries_items[0..self.entries_len]) |item, i| { new_items[i] = item; }
