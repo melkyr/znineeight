@@ -508,7 +508,7 @@ git commit -m "fix: type_db soft OOM (growable already pool-backed via Task 3)"
 
 ### Task 8-I: F-SWEEP re-audit — which I-M2 collections remain after Tasks 1/4/5/6/7
 
-> **AMENDMENT (operator ruling, 2026-08-16):** Task 8 split into 8-I (re-audit) + 8-F (implement). The I-M2 lever table lists ALL 37 collections, but Tasks 1/4/5/6/7 already migrated several (#1 token, #25 source+line_offsets, #12-16 AST store, #8/#19 LIR, #21/#30 maps, #34-37 type_db). 8-I determines the REMAINING set so 8-F doesn't re-touch done work.
+> **AMENDMENT (operator ruling, 2026-08-16):** Task 8 split into 8-I (re-audit) + 8-F (implement). The I-M2 lever table lists ALL 37 collections, but Tasks 1/4/5/6/7 already migrated some (#1 token, #25 source+line_offsets, #12-13 AST nodes+extra_children, #8/#19 LIR, #34-37 type_db). 8-I determines the REMAINING set so 8-F doesn't re-touch done work. **OPERATOR RULING (2026-08-16):** the 8-I re-audit (`.superpowers/sdd/task-F-SWEEP-I-report.md`) found the earlier list inaccurate — Tasks 4/6 did NOT cover #14-16 (AST identifiers/string_values/int_values/float_values/fn_protos), #21 (enum_value_table/error_code_registry/call_arg_types/call_param_map/comptime_values), or #30 (path_to_id/content_to_id). Evidence wins: **DONE=14 / REMAINING=23**; 8-F scope = the 23 REMAINING collections in the 8-I report.
 
 **Files:**
 - Investigate (read-only): `sf/src/` (the I-M2 catalog at `.superpowers/sdd/I-M2-wasteaudit-report.md` vs current source)
@@ -524,7 +524,7 @@ git commit -m "fix: type_db soft OOM (growable already pool-backed via Task 3)"
 
 ### Task 8-F: F-SWEEP implement — migrate the REMAINING collections
 
-> **AMENDMENT (operator ruling, 2026-08-16):** Task 8-F implements ONLY the REMAINING collections from the 8-I re-audit (`.superpowers/sdd/task-F-SWEEP-I-report.md`). Do NOT re-touch collections already migrated by Tasks 1/4/5/6/7. The lever table below is the I-M2 reference; the 8-I report is the authoritative remaining-set + lever + file:line.
+> **AMENDMENT (operator ruling, 2026-08-16):** Task 8-F implements ONLY the REMAINING collections from the 8-I re-audit (`.superpowers/sdd/task-F-SWEEP-I-report.md`). Do NOT re-touch collections already migrated by Tasks 1/4/5/6/7. The lever table below is the I-M2 reference; the 8-I report is the authoritative remaining-set + lever + file:line. **OPERATOR RULING (2026-08-16):** the 8-I re-audit showed the earlier "already migrated" list was inaccurate — Tasks 4/6 did NOT cover #14-16 (AST identifiers/string_values/int_values/float_values/fn_protos), #21 (enum_value_table/error_code_registry/call_arg_types/call_param_map/comptime_values), or #30 (path_to_id/content_to_id). Evidence wins: **8-F scope = the 23 REMAINING collections** listed in the 8-I report (DONE=14/REMAINING=23).
 
 **Files:**
 - Modify: the remaining cataloged collections (I-M2 report) — see the lever table below.
