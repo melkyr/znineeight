@@ -195,6 +195,17 @@ pub fn diagnosticArrayListEnsureCapacity(self: *DiagnosticArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @intCast(usize, @sizeOf(Diagnostic)),
+            new_cap * @intCast(usize, @sizeOf(Diagnostic)),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(Diagnostic)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]Diagnostic, raw);
     for (self.items[0..self.len]) |item, i| {
@@ -314,14 +325,34 @@ pub fn diagnosticCollectorAddRelatedSpan(self: *DiagnosticCollector, diag_idx: u
     if (new_len >= self.related_span_cap) {
         var new_cap = self.related_span_cap * 2;
         if (new_cap < 8) new_cap = 8;
-        var sz: usize = @intCast(usize, 16) * new_cap;
-        var raw = alloc_mod.sandAlloc(self.allocator, sz, @intCast(usize, 4)) catch unreachable;
-        var items = @ptrCast([*]RelatedSpan, raw);
-        for (self.related_span_items[0..self.related_span_len]) |item, i| {
-            items[i] = item;
+        if (self.related_span_cap > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+                @ptrCast([*]u8, self.related_span_items),
+                self.related_span_cap * @intCast(usize, 16),
+                new_cap * @intCast(usize, 16),
+                @intCast(usize, 4));
+            if (grown != null) {
+                self.related_span_cap = new_cap;
+            } else {
+                var sz: usize = @intCast(usize, 16) * new_cap;
+                var raw = alloc_mod.sandAlloc(self.allocator, sz, @intCast(usize, 4)) catch unreachable;
+                var items = @ptrCast([*]RelatedSpan, raw);
+                for (self.related_span_items[0..self.related_span_len]) |item, i| {
+                    items[i] = item;
+                }
+                self.related_span_items = items;
+                self.related_span_cap = new_cap;
+            }
+        } else {
+            var sz: usize = @intCast(usize, 16) * new_cap;
+            var raw = alloc_mod.sandAlloc(self.allocator, sz, @intCast(usize, 4)) catch unreachable;
+            var items = @ptrCast([*]RelatedSpan, raw);
+            for (self.related_span_items[0..self.related_span_len]) |item, i| {
+                items[i] = item;
+            }
+            self.related_span_items = items;
+            self.related_span_cap = new_cap;
         }
-        self.related_span_items = items;
-        self.related_span_cap = new_cap;
     }
     self.related_span_items[self.related_span_len] = RelatedSpan{
         .span_file_id = file_id,

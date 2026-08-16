@@ -57,6 +57,17 @@ pub fn moduleEntryArrayListEnsureCapacity(self: *ModuleEntryArrayList, new_capac
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @intCast(usize, @sizeOf(ModuleEntry)),
+            new_cap * @intCast(usize, @sizeOf(ModuleEntry)),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(ModuleEntry)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]ModuleEntry, raw);
     for (self.items[0..self.len]) |item, i| {
@@ -88,6 +99,17 @@ fn searchDirArrayListEnsureCapacity(self: *SearchDirArrayList, new_capacity: usi
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 2) new_cap = 2;
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.alloc,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @intCast(usize, 4),
+            new_cap * @intCast(usize, 4),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     for (self.items[0..self.len]) |item, i| { new_items[i] = item; }
@@ -213,6 +235,17 @@ fn importEdgesEnsureCapacity(items: *[*]u32, len: *usize, cap: *usize, alloc: *S
     var nc = new_cap;
     if (nc < cap.* * 2) nc = cap.* * 2;
     if (nc < 8) nc = 8;
+    if (cap.* > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(alloc,
+            @ptrCast([*]u8, items.*),
+            cap.* * @intCast(usize, 4),
+            nc * @intCast(usize, 4),
+            @intCast(usize, 4));
+        if (grown != null) {
+            cap.* = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     for (items.*[0..len.*]) |item, i| { new_items[i] = item; }
@@ -241,8 +274,8 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .source_man = @ptrCast(*SourceManager, &source_man_stub),
         .alloc = alloc,
         .next_id = @intCast(u32, 0),
-        .path_to_id = hash_mod.u32ToU32MapInit(alloc),
-        .content_to_id = hash_mod.u32ToU32MapInit(alloc),
+        .path_to_id = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
+        .content_to_id = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .import_queue = importQueueInit(alloc, diag),
     };
 }
@@ -357,6 +390,17 @@ fn importQueuePendingEnsureCapacity(items: *[*]u32, len: *usize, cap: *usize, al
     var nc = new_cap;
     if (nc < cap.* * 2) nc = cap.* * 2;
     if (nc < 8) nc = 8;
+    if (cap.* > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(alloc,
+            @ptrCast([*]u8, items.*),
+            cap.* * @intCast(usize, 4),
+            nc * @intCast(usize, 4),
+            @intCast(usize, 4));
+        if (grown != null) {
+            cap.* = nc;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * nc, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]u32, raw);
     for (items.*[0..len.*]) |item, i| { new_items[i] = item; }

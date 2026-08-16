@@ -497,6 +497,17 @@ pub fn globalDeclArrayListEnsureCapacity(self: *GlobalDeclArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < @intCast(usize, 4)) new_cap = @intCast(usize, 4);
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @sizeOf(ModuleGlobalDecl),
+            new_cap * @sizeOf(ModuleGlobalDecl),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(ModuleGlobalDecl) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]ModuleGlobalDecl, raw);
     var i: usize = @intCast(usize, 0);
