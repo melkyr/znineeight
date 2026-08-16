@@ -72,16 +72,33 @@ pub fn stringInternerInit(allocator: *Sand, bucket_count: u32) StringInterner {
         .entries_allocator = allocator,
         .allocator = allocator,
     };
-    var i: u32 = 0;
-    while (i < bucket_count) {
-        appendBucket(&interner.buckets_items, &interner.buckets_len, &interner.buckets_capacity, allocator, @intCast(u32, 0));
-        i += 1;
+    // F-SWEEP #23: pre-size buckets + entries in a single allocation each instead
+    // of the 4→8→16… growth chain (which rehashes and leaks each old array in perm).
+    // Bucket count only affects lookup distribution, never insertion order, so this
+    // is byte-identity-safe. Entries pre-sized to bucket_count/2 (the load-factor
+    // 0.5 bound) so the interner lands near its final capacity without growth.
+    var bc: usize = @intCast(usize, bucket_count);
+    if (bc > @intCast(usize, 0)) {
+        var buckets_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 4) * bc, @intCast(usize, 4)) catch unreachable;
+        interner.buckets_items = @ptrCast([*]u32, buckets_raw);
+        var bi: usize = 0;
+        while (bi < bc) : (bi += @intCast(usize, 1)) {
+            interner.buckets_items[bi] = @intCast(u32, 0);
+        }
+        interner.buckets_capacity = bc;
+        interner.buckets_len = bc;
     }
-    appendEntry(&interner.entries_items, &interner.entries_len, &interner.entries_capacity, allocator, InternEntry{
+    var ec: usize = bc / @intCast(usize, 2);
+    if (ec < @intCast(usize, 8)) ec = @intCast(usize, 8);
+    var entries_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16) * ec, @intCast(usize, 4)) catch unreachable;
+    interner.entries_items = @ptrCast([*]InternEntry, entries_raw);
+    interner.entries_capacity = ec;
+    interner.entries_items[@intCast(usize, 0)] = InternEntry{
         .text = "",
         .hash = @intCast(u32, 0),
         .next = @intCast(u32, 0),
-    });
+    };
+    interner.entries_len = @intCast(usize, 1);
     return interner;
 }
 
