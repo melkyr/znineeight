@@ -537,6 +537,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
         while (mi < mods.len) : (mi += 1) {
+            alloc_mod.sandReset(&ctx.alloc.scratch);
             var ast_root = mods[mi].ast_root;
             if (ast_root == @intCast(u32, 0)) continue;
             var sym_table = sym_mod.symbolRegistryGetTable(ctx.symbol_reg, @intCast(u32, mi));

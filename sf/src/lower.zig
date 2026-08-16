@@ -109,6 +109,17 @@ pub fn deferActionArrayListEnsureCapacity(self: *DeferActionArrayList, new_capac
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @sizeOf(DeferAction),
+            new_cap * @sizeOf(DeferAction),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(DeferAction) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]DeferAction, raw);
     for (self.items[0..self.len]) |item, i| {
@@ -149,6 +160,17 @@ pub fn loopInfoArrayListEnsureCapacity(self: *LoopInfoArrayList, new_capacity: u
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @sizeOf(LoopInfo),
+            new_cap * @sizeOf(LoopInfo),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(LoopInfo) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]LoopInfo, raw);
     for (self.items[0..self.len]) |item, i| {
@@ -189,6 +211,17 @@ pub fn switchInfoArrayListEnsureCapacity(self: *SwitchInfoArrayList, new_capacit
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @sizeOf(SwitchInfo),
+            new_cap * @sizeOf(SwitchInfo),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(SwitchInfo) * new_cap, @intCast(usize, 4)) catch unreachable;
     var new_items = @ptrCast([*]SwitchInfo, raw);
     for (self.items[0..self.len]) |item, i| {
@@ -398,12 +431,12 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .local_decl_temps = undefined,
         .local_decl_kinds = undefined,
         .local_decl_scopes = undefined,
-        .local_decl_name_map = hash_mod.u32ToU32MapInit(alloc),
+        .local_decl_name_map = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 64)),
         .local_decl_count = @intCast(usize, 0),
         ._fn_ret_type = @intCast(u32, 0),
         ._ctx_node_idx = @intCast(u32, 0),
         ._ctx_node_kind = @intCast(u32, 0),
-        .capture_shadow = hash_mod.u32ToU32MapInit(alloc),
+        .capture_shadow = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .synth_name_counter = @intCast(u32, 1),
         .current_label = @intCast(u32, 0),
 

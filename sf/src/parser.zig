@@ -482,6 +482,19 @@ fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena:
         var new_cap = capacity.*;
         if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
         if (new_cap < len.* * 2) new_cap = len.* * 2;
+        if (capacity.* > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(arena,
+                @ptrCast([*]u8, items.*),
+                capacity.* * @intCast(usize, 4),
+                new_cap * @intCast(usize, 4),
+                @intCast(usize, 4));
+            if (grown != null) {
+                capacity.* = new_cap;
+                items.*[len.*] = value;
+                len.* += 1;
+                return;
+            }
+        }
         var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
         var new_items_p = @ptrCast([*]u32, raw);
         for (items.*[0..len.*]) |item, i| {
