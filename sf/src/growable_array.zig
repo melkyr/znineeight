@@ -68,6 +68,17 @@ pub fn byteArrayListGrow(self: *U8ArrayList, new_capacity: usize) void {
     var new_cap = new_capacity;
     if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
     if (new_cap < 8) new_cap = 8;
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @intCast(usize, 1),
+            new_cap * @intCast(usize, 1),
+            @intCast(usize, 1));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
     var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 1) * new_cap, @intCast(usize, 1)) catch unreachable;
     var new_items = @ptrCast([*]u8, raw);
     for (self.items[0..self.len]) |item, i| {
