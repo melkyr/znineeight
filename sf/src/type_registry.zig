@@ -124,9 +124,30 @@ pub const TypeRegistry = struct {
     name_cache: hash_mod.U64ToU32Map,
 };
 
+fn typeDbOom(used: usize, new_bytes: usize) void {
+    var p0: []const u8 = "OOM: type_db ";
+    pal_mod.stderr_write(p0);
+    var ubuf: [16]u8 = undefined;
+    var ulen = itoa_mod.itoa(@intCast(u32, used), ubuf[0..]);
+    var ustart: usize = @intCast(usize, 15) - @intCast(usize, ulen);
+    pal_mod.stderr_write(ubuf[ustart..@intCast(usize, 15)]);
+    var p1: []const u8 = " -> ";
+    pal_mod.stderr_write(p1);
+    var nbuf: [16]u8 = undefined;
+    var nlen = itoa_mod.itoa(@intCast(u32, new_bytes), nbuf[0..]);
+    var nstart: usize = @intCast(usize, 15) - @intCast(usize, nlen);
+    pal_mod.stderr_write(nbuf[nstart..@intCast(usize, 15)]);
+    var p2: []const u8 = "\n";
+    pal_mod.stderr_write(p2);
+    pal_mod.exit(@intCast(u8, 1));
+}
+
 fn arrayGrow(items_out: *[*]u8, len_ptr: *usize, cap_ptr: *usize, alloc: *Sand, elem_size: usize) void {
     var nc: usize = if (cap_ptr.* < @intCast(usize, 8)) @intCast(usize, 8) else cap_ptr.* * @intCast(usize, 2);
-    var raw = alloc_mod.sandAlloc(alloc, elem_size * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(alloc, elem_size * nc, @intCast(usize, 4)) catch {
+        typeDbOom(len_ptr.* * elem_size, elem_size * nc);
+        return;
+    };
     var src = @ptrCast([*]u8, items_out.*);
     var dst = @ptrCast([*]u8, raw);
     var i: usize = 0;
@@ -145,7 +166,10 @@ fn typeRegistryEnsureCapacity(self: *TypeRegistry, new_cap: usize) void {
     var nc = new_cap;
     if (nc < self.types_cap * 2) nc = self.types_cap * 2;
     if (nc < 32) nc = 32;
-    var raw = alloc_mod.sandAlloc(self.types_alloc, @sizeOf(Type) * nc, @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(self.types_alloc, @sizeOf(Type) * nc, @intCast(usize, 4)) catch {
+        typeDbOom(self.types_len * @sizeOf(Type), @sizeOf(Type) * nc);
+        return;
+    };
     var new_items = @ptrCast([*]Type, raw);
     for (self.types_items[0..self.types_len]) |item, i| { new_items[i] = item; }
     self.types_items = new_items;

@@ -162,6 +162,8 @@ All follow same pattern: `payloadEnsure` → write at `len` → `len += 1`.
 
 Note: `xtAppend` and `xnAppend` use `elem_size=4` (u32), unlike the struct-payload `*Append` helpers which use `@sizeOf(PayloadStruct)`.
 
+**[updated: 2026-08-14 — F-TYPEDB soft OOM]:** `arrayGrow` and `typeRegistryEnsureCapacity` no longer `catch unreachable` on a failed `sandAlloc` from the type_db growable arena — both route through the new `typeDbOom(used, new_bytes)` helper, which prints `OOM: type_db <used> -> <new>` to stderr (mirroring the `sandAlloc` OOM diagnostic style) and exits `pal.exit(1)` (soft OOM, visible to `--track-memory`, instead of a panic). The type_db arena is pool-backed via the unified growable pool (Task 3), so its OOM only fires on true pool exhaustion.
+
 ### Type Caches
 
 | Cache | Key Type | Key Construction | Used By |
