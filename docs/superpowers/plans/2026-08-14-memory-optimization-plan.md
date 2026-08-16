@@ -464,10 +464,12 @@ git commit -m "fix: per-function LIR scratch reset bounds later-phase scratch pe
 
 - [ ] **Step 1: Add `...MapInitCap`** to `util/hash.zig` — for each map type, a capacity-hint init that allocates all 3 arrays (keys/vals/slots) at the hinted size in one go (matching the existing grow layout).
 - [ ] **Step 2: Pre-size the ~6 direct candidates** from the 6-I report (keyword_set, emitted_type_set, fwd_decl_set, lfwd, lemit, pointer_only_map, cinclude seen) — convert to `...MapInitCap` with the exact hint source. Do NOT pre-size `error_code_registry` (emitted order). Do NOT guess sizes; skip any candidate whose hint is not cheaply available.
-- [ ] **Step 3: Rebuild + verify byte-identity** — 4 MD5s byte-identical; corpus 253 unchanged; `--track-memory` on rogue_mud shows reduced module/perm peaks (record before/after); test_analyzer_bin PASS.
+- [ ] **Step 3: Rebuild + verify byte-identity** — 4 MD5s byte-identical; corpus 253 unchanged; `--track-memory` on rogue_mud (record before/after; the pre-sized maps are scratch-arena, single-digit KB — a measurable reduction is NOT expected on rogue_mud, per the review); test_analyzer_bin PASS.
 - [ ] **Step 4: Commit** — `git add` the files actually changed + docs; message `fix: add MapInitCap + pre-size direct hash maps (reduce rehash waste)`.
 
-**Gate:** 4 MD5s byte-identical; corpus 253 unchanged; rogue_mud module/perm peaks reduced.
+> **AMENDMENT (operator ruling, 2026-08-15):** gate wording corrected — the pre-sized maps are **scratch**-arena, not module/perm; the plan's "module/perm peaks reduced" was off-target. Measured identical (±1K noise); total 756K ≪ 16MB, no runtime impact. Accepted. (Reviewer also noted: `types_len`-hinted maps over-allocate at most ~1 grow's worth when few types emit — negligible, accepted.)
+
+**Gate:** 4 MD5s byte-identical; corpus 253 unchanged; byte-identity preserved (no emitted-order-observable map pre-sized).
 
 ---
 
