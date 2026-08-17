@@ -787,7 +787,12 @@ fn parserParseIfExpr(self: *Parser) ParserError!u32 {
     var capture_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
         _ = parserAdvance(self);
-        var name_tok = try parserExpect(self, TokenKind.identifier);
+        var name_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            name_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            name_tok = try parserExpect(self, TokenKind.identifier);
+        }
         _ = try parserExpect(self, TokenKind.pipe);
         var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
         var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
@@ -1496,7 +1501,12 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     var capture_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
         _ = parserAdvance(self);
-        var name_tok = try parserExpect(self, TokenKind.identifier);
+        var name_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            name_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            name_tok = try parserExpect(self, TokenKind.identifier);
+        }
         _ = try parserExpect(self, TokenKind.pipe);
         var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
         var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
