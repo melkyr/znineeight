@@ -4333,7 +4333,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var item_temp = nextTemp(self, elem_type[0]);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
             if (node.payload != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, node.payload, elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
-            if (node.child_2 != @intCast(u32, 0)) { addLocalDecl(self, node.child_2, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = node.child_2, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
+            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {

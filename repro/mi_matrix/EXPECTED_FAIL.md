@@ -1,4 +1,25 @@
-# mi_matrix corpus — expected-fail manifest (v34 2026-08-14)
+# mi_matrix corpus — expected-fail manifest (v35 2026-08-17)
+
+## B-F2 — for-index capture disambiguation, json MD5 re-baseline (2026-08-17)
+
+Compiler fix task of the parser-gaps plan (Workstream B). All gates re-verified with
+`/tmp/fx_subfolder/zig1` (HEAD `4f1200de` + B-F2 Site A fix), canonical std installed at
+`/tmp/fx_subfolder/lib/`:
+
+- **Fix:** for-loop INDEX capture is now name-disambiguated like the element capture
+  (`sf/src/lower.zig` — index capture runs through `maybeDisambiguateCapture`, TYPE_USIZE). The
+  `.Object` loop's `i` in json_parser resolves to its own counter (disambiguated `i_2`), not the
+  stale `.Array` counter. Site A only; Site B (LDS innermost-scan) NOT implemented.
+- **json MD5 RE-BASELINED:** `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081`.
+  Runtime-identity proof (AMENDMENT B): fixed binary parses `test.json` rc=0, object fields
+  comma-separated (`"status": "alpha",` / `"bugs": null`), NO trailing comma after last field —
+  pre-fix had no object-field commas + trailing `,` after `"meta"`. Array elements unchanged.
+- **gol/lisp/mud byte-identical** (no for-index collisions): gol `9cf758d96f25d41980379564a5501bc8`,
+  lisp `524d2872daefb2677c8ddc1ac8f34cf5`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **21-example matrix: 21/21 dump/gcc rc=0** (re-verified 2026-08-17 with the fixed compiler —
+  17 via main.zig + 4 single-file entries: func_ptr_return/mandelbrot/quicksort/sort_strings).
+  No repro dirs touched; fix is lowerer-internal — json_parser is the only example with
+  `for ... |item, i|` index captures.
 
 ## F-CLOSEOUT — std-lib fallback demotion (2026-08-14)
 
