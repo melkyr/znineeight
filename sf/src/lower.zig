@@ -546,7 +546,15 @@ fn lowerPrintFmt(self: *LirLowerer, fmt: []const u8, arg_ec: []const u32) void {
                 if (ai < arg_ec.len) {
                     var pv = lowerExpr(self, arg_ec[ai]);
                     var pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
-                    emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = @intCast(u8, 'd') } });
+                    var spec_fmt: u8 = @intCast(u8, 'd');
+                    var spec_i: usize = i + @intCast(usize, 1);
+                    if (spec_i < fmt.len) {
+                        var spec_c = fmt[spec_i];
+                        if (spec_c != @intCast(u8, '}')) {
+                            spec_fmt = spec_c;
+                        }
+                    }
+                    emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = spec_fmt } });
                     ai += @intCast(usize, 1);
                 }
                 var j: usize = i + @intCast(usize, 1);

@@ -3177,14 +3177,17 @@ fn isBootstrapHelperDefined(fn_name: []const u8) bool {
     return false;
 }
 
-fn getPrintFnName(reg: *TypeRegistry, tid: u32) []const u8 {
+fn getPrintFnName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "std_print_u32"; return s; }
     if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "std_print_i64"; return s; }
     if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "std_print_u64"; return s; }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "std_print_f64"; return s; }
     if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "std_print_bool"; return s; }
-    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "std_print_char"; return s; }
+    if (ty.kind == TypeKind.u8_type) {
+        if (fmt == @intCast(u8, 'c')) { var s: []const u8 = "std_print_char"; return s; }
+        { var s: []const u8 = "std_print_u32"; return s; }
+    }
     if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "std_print_str"; return s; }
     { var s: []const u8 = "std_print_i32"; return s; }
 }
@@ -5110,7 +5113,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         },
         .print_val => |p| {
             var val = resolveTempName(emitter, p.value);
-            var fn_name = getPrintFnName(emitter.registry, p.type_id);
+            var fn_name = getPrintFnName(emitter.registry, p.type_id, p.fmt);
             var ty = emitter.registry.types_items[@intCast(usize, p.type_id)];
             var is_slice: u8 = if (ty.kind == TypeKind.slice_type) @intCast(u8, 1) else @intCast(u8, 0);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
