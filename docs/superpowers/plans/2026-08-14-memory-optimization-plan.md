@@ -615,9 +615,9 @@ git commit -m "refactor: remove dead ctx.dep_graph + dead sort buffers"
 
 > **AMENDMENT (operator long-term ruling, 2026-08-14):** with Task 3's unified pool, "resize arenas" becomes **size the single `memory_pool_buf`** to measured peak + margin. No more five constants.
 
-> **OPERATOR RULING (2026-08-16):** Task 12 is REORDERED to execute AFTER the F-PARSERGAP family. Its gate requires measuring the self-compile pool peak (`--track-memory` `pool=XK`) and verifying "self-compile completes under the sized pool" — both impossible while the F-PARSERGAP parser defect aborts self-compile early (rc=2 during import resolution, before the summary prints; the pool peak is at later LIR/emission phases). F-PARSERGAP {Feas+repro, Inv, Fix} executes FIRST; Task 12 runs after, measuring the real post-fix self-compile pool peak.
+> **OPERATOR RULING (2026-08-16):** Task 12 executes AFTER F-PARSERGAP-Fix (done, b33f412a). Self-compile still does NOT complete — F-PARSERGAP-Fix uncovered 2 more pre-existing parser gaps (trailing-comma fn-call args at main.zig:759; `if (x) |_|` discard capture at cinclude.zig:23). Those 2 gaps are left to a FUTURE plan; their repros are created after Task 12 per operator directive.
 
-> **AMENDMENT (operator long-term ruling, 2026-08-14):** with Task 3's unified pool, "resize arenas" becomes **size the single `memory_pool_buf`** to measured peak + margin. No more five constants.
+> **OPERATOR RULING (2026-08-17):** self-compile will NOT be possible on THIS or any continuing task. The self-compile-completes gates on Tasks 12 and 14 are REPLACED with memory checks that are verifiable now: measure the pool peak on the largest COMPLETING inputs (rogue_mud + the 21-example matrix + `sf/src/*.zig` per-module dumps that complete) and size `memory_pool_buf` to that peak + margin (≥25%). BSS reduction is still the goal. The full self-compile peak remains unmeasurable until the future plan fixes the 2 remaining parser gaps — annotated, not blocking.
 
 **Files:**
 - Modify: `sf/src/allocator.zig` (`memory_pool_buf` size)
@@ -625,12 +625,12 @@ git commit -m "refactor: remove dead ctx.dep_graph + dead sort buffers"
 - Report: `.superpowers/sdd/task-F-RESIZE-report.md`
 
 **Interfaces:**
-- Consumes: post-sweep measured pool peak (Task 3/8), `--track-memory` `pool=XK`.
-- Produces: `memory_pool_buf` sized to measured peak + margin (≥25%); BSS trimmed; self-compile still completes.
+- Consumes: post-sweep measured pool peak (Task 3/8), `--track-memory` `pool=XK` on completing inputs.
+- Produces: `memory_pool_buf` sized to measured peak + margin (≥25%); BSS trimmed; the 2 remaining parser gaps annotated for a future plan.
 
 - [ ] **Step 1: Record the measured pool peak**
 
-Run `--track-memory --markers` on self-compile (`sf/src/main.zig`) and record `pool=XK` (the pool high-water). Add a safety margin (≥25%).
+Run `--track-memory` on the largest COMPLETING inputs and record `pool=XK` (the pool high-water) for each: rogue_mud, the 21-example matrix, and each `sf/src/*.zig` per-module dump that completes. Take the max. Add a safety margin (≥25%).
 
 - [ ] **Step 2: Size `memory_pool_buf`**
 
@@ -638,7 +638,7 @@ Edit `allocator.zig` `memory_pool_buf` to the measured-peak + margin size. Do NO
 
 - [ ] **Step 3: Rebuild + full gate**
 
-Rebuild + reinstall std lib. Self-compile completes under the new pool size; 4 MD5s byte-identical; corpus 252 unchanged; `--track-memory` confirms the reduced BSS and that the pool peak remains under the new size.
+Rebuild + reinstall std lib. 4 MD5s byte-identical; corpus 255 unchanged (OK=249/FAIL=2/GG=4); the completing inputs still complete under the new pool size; `--track-memory` confirms the reduced BSS and that the pool peak remains under the new size. Self-compile completes is NOT a gate (blocked by the 2 future-plan parser gaps).
 
 - [ ] **Step 4: Commit**
 
@@ -647,7 +647,10 @@ git add sf/src/allocator.zig sf/docs/tech_docs/00_shared_infra.md
 git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 ```
 
-**Gate:** self-compile completes under the sized pool; 4 MD5s byte-identical; corpus 252 unchanged; BSS reduced.
+**Gate:** 4 MD5s byte-identical; corpus 255 unchanged; completing inputs complete under the sized pool; BSS reduced; the 2 remaining parser gaps annotated for a future plan.
+
+---
+
 ### F-PARSERGAP-Feas: Feasibility — parser value-position optional-capture gap
 
 > **AMENDMENT (operator ruling, 2026-08-14):** the parser gap blocks self-compile COMPLETION independent of memory. Task 13 family (Feas/Inv/Fix).
