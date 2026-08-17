@@ -680,6 +680,8 @@ git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 - Consumes: F-PARSERGAP-Feas findings.
 - Produces: the exact parser change (which functions/nodes) to parse value-position `if (opt) |cap| expr else expr` identically to stmt-position.
 
+> **OPERATOR RULING (2026-08-16):** Inv review found 2 Critical — the "downstream already capture-ready" premise was FALSE for the LOWERER. `lower.zig:3310` if_expr path never reads `node.payload` (no bindOptionalCapture → unbound capture → wrong C) and never converts the optional cond before `.branch` (C89 struct branch → gcc rejects). The design must cover parser + lowerer; scope finalized in the F-PARSERGAP-Fix section (C1+C2+C3).
+
 - [ ] **Step 1: Study the grammar** — how stmt-position `if (opt) |cap|` parses vs value-position; what token/parse path the value form should take.
 - [ ] **Step 2: Design the fix** — the parser function(s) + node emission change so value-position works (and byte-identity holds for existing stmt-position code).
 - [ ] **Step 3: Write the report** (the design + affected functions + risk) + feed F-PARSERGAP-Fix.
@@ -691,20 +693,24 @@ git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 ### F-PARSERGAP-Fix: Implement — value-position optional-capture `if` expression
 
 **Files:**
-- Modify: `sf/src/parser.zig` (per F-PARSERGAP-Inv design) + possibly `sf/src/ast.zig` if a node shape changes
+- Modify: `sf/src/parser.zig` (per F-PARSERGAP-Inv design) + `sf/src/lower.zig` (if_expr capture binding + optional cond conversion — see OPERATOR RULING below) + possibly `sf/src/ast.zig` if a node shape changes
 - Modify (docs): `sf/docs/tech_docs/00_lexer_parser.md` (`[updated: 2026-08-14]`)
 - Report: `.superpowers/sdd/F-PARSERGAP-Fix-report.md`
 
+> **OPERATOR RULING (2026-08-16) — F-PARSERGAP-Fix scope = parser + lowerer (C1+C2+C3), NOT parser-only.** F-PARSERGAP-Inv review proved the plan's "downstream already capture-ready / parser-only" premise is FALSE for the LOWERER: `lower.zig:3310` if_expr path never reads `node.payload` (no `bindOptionalCapture` → unbound capture → wrong C) and never converts the optional cond before `.branch` (C89 struct branch → gcc rejects). `main.zig:680` needs both. Fix implements: **(C1)** `bindOptionalCapture(self, node.payload, orig_cond_temp)` at the top of `then_bb` in the if_expr runtime path (mirror `if_stmt:4100`); **(C2)** optional-cond conversion before branching (`check_optional` → `has_val` for `.branch`, mirror `if_stmt:4068-4075`, capture uses the original optional temp); **(C3)** the if_expr comptime-fold sub-path (`lower.zig:3314-3326`) must be verified to be capture-free (captures require an optional cond which `comptime_values` does not fold) and documented/guarded. Parser change: leading-pipe capture block verbatim from `parserParseIfStmt:1485-1495` into `parserParseIfExpr:782-800`, wire `payload = capture_node` (replace hardcoded 0).
+
+> **OPERATOR RULING (2026-08-16) — repros:** create the cross-module repro `repro/mi_matrix/parsergap_value_if_xmod_cross/` (module exposes `pub fn get_opt() ?i32`; main does `var x: i32 = if (lib.get_opt()) |cap| cap else -1;` in value position) IN ADDITION to the existing single-module `parsergap_value_if_xmod`. Cross-module value-position optional-capture is valid Zig; the type-id/scope-local fix covers it with NO extension — the repro is the proof. Both repros RED pre-fix (error[2000] at the value-position capture), GREEN post-fix.
+
 **Interfaces:**
-- Consumes: F-PARSERGAP-Inv design.
-- Produces: `if (opt) |cap| expr else expr` parses in value position (self-compile no longer fails `error[2000]` at main.zig:669).
+- Consumes: F-PARSERGAP-Inv design + C1/C2/C3 review findings.
+- Produces: `if (opt) |cap| expr else expr` parses, binds, and lowers correctly in value position, single- and cross-module (self-compile no longer fails `error[2000]` at main.zig:680).
 
-- [ ] **Step 1: Implement the parser fix** (per the design).
+- [ ] **Step 1: Implement the fix** — parser.zig (`parserParseIfExpr`: leading-pipe capture block verbatim from `parserParseIfStmt:1485-1495`, wire `payload = capture_node` replacing hardcoded 0) + lower.zig if_expr path (C1 bindOptionalCapture in then_bb mirroring if_stmt:4100; C2 optional-cond check_optional conversion before .branch mirroring if_stmt:4068-4075; C3 comptime-fold sub-path verified capture-free + documented/guarded).
 - [ ] **Step 2: Rebuild + verify** — `bash sf/scripts/build_release.sh` → gate `=== [release] Done ===`; reinstall std lib.
-- [ ] **Step 3: Gate** — 4 MD5 gates byte-identical; corpus 252 unchanged; a repro of the value-position construct now parses (dump rc=0); self-compile progresses past the old `main.zig:669` failure.
-- [ ] **Step 4: Commit** (`git add` the touched files; message `fix: parse if (opt) |cap| expr else expr in value position`)
+- [ ] **Step 3: Gate** — 4 MD5 gates byte-identical; corpus 253 unchanged (OK=247/FAIL=2/GG=4, per-module recipe); both repros (`parsergap_value_if_xmod` + `parsergap_value_if_xmod_cross`) now parse (dump rc=0) and run printing the expected value; self-compile progresses past the old `main.zig:680` failure.
+- [ ] **Step 4: Commit** (`git add` the touched files; message `fix: parse+lower if (opt) |cap| expr else expr in value position`)
 
-**Gate:** 4 MD5s byte-identical; corpus 252 unchanged; value-position repro parses; self-compile no longer fails at `main.zig:669`.
+**Gate:** 4 MD5s byte-identical; corpus 253 unchanged; both value-position capture repros (single + cross-module) parse and run correctly; self-compile no longer fails at `main.zig:680`.
 
 ---
 
