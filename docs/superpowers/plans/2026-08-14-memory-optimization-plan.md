@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **OPERATOR RULING (2026-08-17) — PLAN CLOSED, OK BUT INCOMPLETE.** Due to a large number of issues discovered during execution (multiple pre-existing parser gaps blocking self-compile completion, self-compile projected >16 MB total arena), this plan is closed by operator ruling as **OK but INCOMPLETE**. Completed: Tasks 1, 2, 3, F-PATHNORM, 4, 5, 6, 7, 8-I/8-F (all gates green; corpus 255 `OK=249/FAIL=2/GG=4`; 4 MD5s byte-identical; F-PARSERGAP-Fix b33f412a). DEFERRED to a future plan (annotated in their sections): Task 12 F-RESIZE (pool sizing, BSS trim, 16 MB verification), Task 14 F-GATE (docs reconciliation), and the remaining parser-gap fixes (`parsergap_discard_if_xmod`, `parsergap_array_type_xmod`, `parsergap_trailing_comma_xmod` repros committed under `repro/mi_matrix/`). `memory_pool_buf` stays at the 256 MiB measurement size.
+
 **Goal:** Eliminate the ~2× copy-into-bump allocation waste across all 37 growable collections, fix the two self-compile blockers (scratch OOM + parser ASan overflow), and reclaim static BSS so zig1 self-compiles end-to-end under 16 MB.
 
 **Architecture:** 13 fix-tasks interleaved by impact. Foundation first (token array, parser bug, shared primitives, hash maps), then the systematic sweep, then arena resize + gate sweep. Every fix is behavior-preserving (emitted C89 must stay byte-identical).
