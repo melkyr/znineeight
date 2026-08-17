@@ -611,43 +611,16 @@ git commit -m "refactor: remove dead ctx.dep_graph + dead sort buffers"
 
 ---
 
-### Task 12: F-RESIZE — size the single pool (trim BSS) [REORDERED after F-PARSERGAP]
+### Task 12: F-RESIZE — size the single pool (trim BSS) [DEFERRED to future plan]
 
 > **AMENDMENT (operator long-term ruling, 2026-08-14):** with Task 3's unified pool, "resize arenas" becomes **size the single `memory_pool_buf`** to measured peak + margin. No more five constants.
 
-> **OPERATOR RULING (2026-08-16):** Task 12 executes AFTER F-PARSERGAP-Fix (done, b33f412a). Self-compile still does NOT complete — F-PARSERGAP-Fix uncovered 2 more pre-existing parser gaps (trailing-comma fn-call args at main.zig:759; `if (x) |_|` discard capture at cinclude.zig:23). Those 2 gaps are left to a FUTURE plan; their repros are created after Task 12 per operator directive.
+> **OPERATOR RULING (2026-08-17) — Task 12 DEFERRED.** Self-compile abort peak was measured: at the import-resolution abort (before LIR/emission), arena tops already sum ~12.3 MiB (module 8 MiB + perm 2 MiB + scratch 2 MiB + type_db 256 K + parser 8 K), and LIR/emission phases grow the module arena further (LIR relocation, type tables, emission). Projected full self-compile arena total is likely **>16 MiB** (the fixed DEV_MAX_MEM cap) — NOT verifiable now. Since the 16 MB total-arena target is a fixed plan constraint and self-compile cannot complete to verify, **the pool sizing is DEFERRED to the future plan** (the same plan that fixes the remaining parser gaps). `memory_pool_buf` stays at the 256 MiB measurement size. Do NOT implement.
 
-> **OPERATOR RULING (2026-08-17):** self-compile will NOT be possible on THIS or any continuing task. The self-compile-completes gates on Tasks 12 and 14 are REPLACED with memory checks that are verifiable now: measure the pool peak on the largest COMPLETING inputs (rogue_mud + the 21-example matrix + `sf/src/*.zig` per-module dumps that complete) and size `memory_pool_buf` to that peak + margin (≥25%). BSS reduction is still the goal. The full self-compile peak remains unmeasurable until the future plan fixes the 2 remaining parser gaps — annotated, not blocking.
+> **OPERATOR RULING (2026-08-17) — additional parser gaps discovered:** self-compile now aborts at multiple pre-existing parser gaps beyond the 2 known, incl. `cinclude.zig:23` (`if (x) |_|` discard-capture — if_stmt requires identifier), `lower.zig:2283` (array-type parse `expected '{' after array type`), and `main.zig:759` (trailing-comma fn-call args). ALL are left to the future plan; repros are created per operator directive after this task list.
 
-**Files:**
-- Modify: `sf/src/allocator.zig` (`memory_pool_buf` size)
-- Modify (docs): `sf/docs/tech_docs/00_shared_infra.md` (`[updated: 2026-08-14]`)
-- Report: `.superpowers/sdd/task-F-RESIZE-report.md`
-
-**Interfaces:**
-- Consumes: post-sweep measured pool peak (Task 3/8), `--track-memory` `pool=XK` on completing inputs.
-- Produces: `memory_pool_buf` sized to measured peak + margin (≥25%); BSS trimmed; the 2 remaining parser gaps annotated for a future plan.
-
-- [ ] **Step 1: Record the measured pool peak**
-
-Run `--track-memory` on the largest COMPLETING inputs and record `pool=XK` (the pool high-water) for each: rogue_mud, the 21-example matrix, and each `sf/src/*.zig` per-module dump that completes. Take the max. Add a safety margin (≥25%).
-
-- [ ] **Step 2: Size `memory_pool_buf`**
-
-Edit `allocator.zig` `memory_pool_buf` to the measured-peak + margin size. Do NOT raise `DEV_MAX_MEM`/`RELEASE_MAX_MEM` (16 MB is the target, not the lever).
-
-- [ ] **Step 3: Rebuild + full gate**
-
-Rebuild + reinstall std lib. 4 MD5s byte-identical; corpus 255 unchanged (OK=249/FAIL=2/GG=4); the completing inputs still complete under the new pool size; `--track-memory` confirms the reduced BSS and that the pool peak remains under the new size. Self-compile completes is NOT a gate (blocked by the 2 future-plan parser gaps).
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sf/src/allocator.zig sf/docs/tech_docs/00_shared_infra.md
-git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
-```
-
-**Gate:** 4 MD5s byte-identical; corpus 255 unchanged; completing inputs complete under the sized pool; BSS reduced; the 2 remaining parser gaps annotated for a future plan.
+> **OPERATOR RULING (2026-08-17):** self-compile will NOT be possible on THIS or any continuing task. The self-compile-completes gates on Task 14 are REPLACED with memory checks verifiable now (completing-input pool peaks recorded). BSS reduction remains a future-plan goal.
+**Gate:** NOT IMPLEMENTED — Task 12 DEFERRED (operator ruling 2026-08-17). `memory_pool_buf` stays at 256 MiB. Pool sizing, BSS trim, and the 16 MB total-arena verification move to the future plan together with the remaining parser-gap fixes.
 
 ---
 
@@ -719,8 +692,10 @@ git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 
 ### Task 14: F-GATE — final gate sweep + re-measure + docs reconciliation
 
+> **OPERATOR RULING (2026-08-17):** self-compile will NOT complete on this plan (multiple pre-existing parser gaps — cinclude.zig:23 `|_|` discard-capture, lower.zig:2283 array-type parse, main.zig:759 trailing-comma fn-args — all deferred to the future plan). The self-compile-completes gate is REPLACED: record the completing-input pool peaks + the measured self-compile abort-peak (~12.3 MiB arena tops at import-resolution, projected >16 MiB total) as the current status. Pool sizing / BSS trim / 16 MB verification are future-plan items.
+
 **Files:**
-- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (add F-plan record: memory-optimization closeout; version bump), `docs/sf/QUICK_REF.md` (new baseline line: corpus counts + 4 MD5s + new per-arena peaks + self-compile status)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (add F-plan record: memory-optimization closeout; version bump), `docs/sf/QUICK_REF.md` (new baseline line: corpus counts + 4 MD5s + per-arena peaks + self-compile status + deferred items)
 - Modify (docs): memory-budget doc `00_shared_infra.md` (final arena sizes + measured peaks)
 - Report: `.superpowers/sdd/task-F-GATE-report.md`
 
@@ -728,17 +703,17 @@ git commit -m "fix: size memory pool to measured peak + margin (trim BSS)"
 - Consumes: all prior task outputs; final measured baselines.
 - Produces: reconciled docs (EXPECTED_FAIL, QUICK_REF) + final gate record.
 
-- [ ] **Step 1: Run the complete gate battery**
+- [ ] **Step 1: Run the gate battery (verifiable gates)**
 
-- Self-compile: `mkdir -p /tmp/fgate && timeout 300 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fgate sf/src/main.zig` → rc=0.
 - 4 MD5 gates byte-identical.
-- Corpus 252: `OK=246 / FAIL=2 / ICE=0 / CRASH=0 / GG=4`.
+- Corpus 255: `OK=249 / FAIL=2 / ICE=0 / CRASH=0 / GG=4` (per-module recipe).
 - 21-example matrix 21/21; `test_analyzer_bin` PASS.
-- `--track-memory --markers` on self-compile: record final perm/mod/scr/type_db peaks.
+- `--track-memory` completing-input peaks (rogue_mud + sf/src per-module dumps that complete): record perm/mod/scr/type_db/pool peaks.
+- Self-compile: record the abort point + arena tops at abort (~12.3 MiB, projected >16 MiB) as the CURRENT status — NOT a gate.
 
 - [ ] **Step 2: Reconcile docs**
 
-EXPECTED_FAIL.md version bump + F-plan closeout record (list the 13 fixes, self-compile now completes, arenas resized). QUICK_REF.md new baseline line (corpus counts unchanged, 4 MD5s unchanged, new peaks, self-compile GREEN).
+EXPECTED_FAIL.md version bump + F-plan closeout record (list the fixes, both parsergap repros now GREEN, self-compile status: blocked by future-plan parser gaps, pool sizing deferred). QUICK_REF.md new baseline line (corpus counts, 4 MD5s unchanged, new peaks, self-compile status, deferred-items list).
 
 - [ ] **Step 3: Commit**
 
@@ -747,7 +722,7 @@ git add repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md sf/docs/tech_docs/
 git commit -m "docs: memory-optimization gate sweep + reconciliation"
 ```
 
-**Gate:** all baselines confirmed; docs reconciled; self-compile completes under 16 MB with measured margin.
+**Gate:** verifiable baselines confirmed (MD5s, corpus, matrix, analyzer); docs reconciled; self-compile status + pool-sizing deferral recorded for the future plan.
 
 ---
 
