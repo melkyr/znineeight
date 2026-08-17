@@ -1,4 +1,43 @@
-# mi_matrix corpus — expected-fail manifest (v35 2026-08-17)
+# mi_matrix corpus — expected-fail manifest (v36 2026-08-17)
+
+## GATE — parser-gaps plan closeout, final gate sweep + reconciliation (2026-08-17)
+
+Final gate sweep of the parser-gaps plan (Workstream A + B). All gates re-verified with
+`/tmp/fx_subfolder/zig1` (HEAD `830c5691` + A-F1..A-F3 + B-F1..B-F2), canonical std installed at
+`/tmp/fx_subfolder/lib/`:
+
+- **Fixes landed (this plan):** A-F1 (`7209f5b4`, discard capture `|_|` in if-stmt/if-expr),
+  A-F2 (`891f06fc`, bare array type as const value), A-F3 (`ef425586`, trailing comma in fn-call
+  args), B-F1 (`4f1200de`, specifier-driven print dispatch `{}`/`{d}`/`{c}`), B-F2 (`830c5691`,
+  for-index capture disambiguation).
+- **Corpus (258 dirs): `OK=252 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =
+  `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89
+  fundamental, `error[24]` circular type); green-guards = `eu_assign_incompat_payload` /
+  `euvoid_val_catch` / `field_access_optional` / `var_declared_void`. Corpus grew 252→258 since the
+  F-CLOSEOUT baseline (the 3 parsergap fixtures + `parsergap_value_if_xmod` +
+  `parsergap_value_if_xmod_cross` + `pathnorm_dup_xmod`), all 6 new dirs OK. The 3 parsergap repros
+  (`parsergap_discard_if_xmod` / `parsergap_array_type_xmod` / `parsergap_trailing_comma_xmod`) —
+  previously deferred FAIL — are now **OK** (A-F1/A-F2/A-F3). Measured: **OK=252 / FAIL=2 / ICE=0 /
+  CRASH=0 / green-guards=4 over 258 dirs** (252+2+4=258). (Note: the plan's expected corpus size was
+  255 dirs; the actual corpus is 258 — the +3 is `parsergap_value_if_xmod`,
+  `parsergap_value_if_xmod_cross`, `pathnorm_dup_xmod` landing after the plan was written. Real
+  numbers recorded here.)
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening on
+  port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
+- **4 MD5 gates byte-identical:** gol `9cf758d96f25d41980379564a5501bc8`, lisp
+  `524d2872daefb2677c8ddc1ac8f34cf5`, json `fc357296537347a0ef58af49b5a40081` (B-F2 re-baseline),
+  mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
+- **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
+  (timeout 120) now progresses PAST the three pre-fix blockers (cinclude.zig:23 / lower.zig:2283 /
+  main.zig:759 — all 0 `error[` hits at those sites) into type resolution (type_resolver markers
+  `RN:`/`CLS:`/`T01` stream), where a NEW pre-existing gap blocks at `type_resolver.zig:981`
+  (`error[2000]` expected expression / unexpected token in the const-array-size evaluator
+  `evalConstU32Full` sub/div/mod arms, plus lexer.zig:236-239 report sites). Out of scope for this
+  plan — recorded, not fixed.
+- **days_in_month + json_parser runtime correct per B fixes:** days_in_month prints all 12 month-day
+  counts (Feb 2024 = 29, leap year) rc=0; json_parser parses `test.json` rc=0 with object fields
+  comma-separated and no trailing comma (B-F2 runtime-identity).
 
 ## B-F2 — for-index capture disambiguation, json MD5 re-baseline (2026-08-17)
 
