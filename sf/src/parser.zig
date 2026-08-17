@@ -753,9 +753,7 @@ fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
     var tok = parserPeek(self);
     var type_node = try parserParseBracketType(self);
     if (parserPeek(self).kind != TokenKind.lbrace) {
-        var a_sub: []const u8 = "expected '{' after array type";
-        parserAddError(self, tok, a_sub);
-        return error.UnexpectedToken;
+        return type_node;
     }
     _ = parserAdvance(self);
     var saved_child_len = self.child_buf_len;

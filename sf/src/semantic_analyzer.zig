@@ -276,10 +276,17 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     }
     var key = @intCast(u64, name_id);
     var ncg = type_mod.nameCacheGet(self.registry, key);
+    var mkey: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+    var ncgm = type_mod.nameCacheGet(self.registry, mkey);
     var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id);
     if (sym) |s| {
         var id2: []const u8 = "S\n"; pal_mod.markerWrite(id2);
-        if (s.kind == sym_mod.SymbolKind.type_alias) { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return s.type_id; }
+        if (s.kind == sym_mod.SymbolKind.type_alias) {
+            if (s.type_id != @intCast(u32, 0)) { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return s.type_id; }
+            if (ncgm) |ctm| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ctm; }
+            if (ncg) |ct| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ct; }
+            var rdt_sv: []const u8 = "SVO\n"; pal.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
+        }
         if (s.type_id != @intCast(u32, 0)) { var rdt_nm: []const u8 = "STY:N"; pal_mod.markerWriteInt(rdt_nm, name_id); var rdt_tm: []const u8 = "STY:T"; pal_mod.markerWriteInt(rdt_tm, s.type_id); if (ncg) |nt| { var rdt_ntm: []const u8 = "STY:C"; pal_mod.markerWriteInt(rdt_ntm, nt); } return s.type_id; }
         var rdt_sv: []const u8 = "SVO\n"; pal.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
