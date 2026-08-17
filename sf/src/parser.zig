@@ -784,6 +784,17 @@ fn parserParseIfExpr(self: *Parser) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.lparen);
     var cond = try parserParseExprPrec(self, Prec.assignment);
     _ = try parserExpect(self, TokenKind.rparen);
+    var capture_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.pipe) {
+        _ = parserAdvance(self);
+        var name_tok = try parserExpect(self, TokenKind.identifier);
+        _ = try parserExpect(self, TokenKind.pipe);
+        var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
+        var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        capture_node = ast_mod.astStoreAddNode(self.store, AstKind.if_capture, 0,
+            name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+            0, 0, 0, name_id);
+    }
     var then_body = try parserParseExprPrec(self, Prec.none);
     var else_body: u32 = 0;
     if (parserPeek(self).kind == TokenKind.kw_else) {
@@ -796,7 +807,7 @@ fn parserParseIfExpr(self: *Parser) ParserError!u32 {
         end_pos = last.span_start + @intCast(u32, last.span_len);
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.if_expr, 0,
-        kw.span_start, end_pos, cond, then_body, else_body, 0);
+        kw.span_start, end_pos, cond, then_body, else_body, capture_node);
 }
 
 pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {

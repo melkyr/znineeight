@@ -7,5 +7,5 @@ fn take_cap(o: ?i32) i32 {
 
 pub fn main() void {
     var v: i32 = take_cap(@intCast(i32, 7));
-    std.io.print_int(v);
+    std.io.printInt(v);
 }

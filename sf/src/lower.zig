@@ -3311,20 +3311,37 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ie_rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype3: u32 = if (ie_rt3) |t| t else type_mod.TYPE_UNDEFINED;
         var ie_fold = hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node.child_0);
+        // C3: if_expr comptime-fold sub-path is capture-free by construction (a capture
+        // requires an optional cond, which comptime_values never folds — scalars/bools
+        // only); guard on payload==0 to mirror the if_stmt fold guard defensively.
         if (ie_fold) |ie_fv| {
-            var ie_res = nextTemp(self, ie_rtype3);
-            if (ie_fv != @intCast(u64, 0)) {
-                var ie_then = lowerExpr(self, node.child_1);
-                ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1));
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
-            } else {
-                var ie_else = lowerExpr(self, node.child_2);
-                ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2));
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
+            if (node.payload == @intCast(u32, 0)) {
+                var ie_res = nextTemp(self, ie_rtype3);
+                if (ie_fv != @intCast(u64, 0)) {
+                    var ie_then = lowerExpr(self, node.child_1);
+                    ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1));
+                    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
+                } else {
+                    var ie_else = lowerExpr(self, node.child_2);
+                    ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2));
+                    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
+                }
+                return ie_res;
             }
-            return ie_res;
         }
         var cond_temp = lowerExpr(self, node.child_0);
+        var orig_cond_temp = cond_temp;
+        if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+            var cond_t = getTempType(self, cond_temp);
+            if (cond_t != type_mod.TYPE_UNDEFINED) {
+                var cond_ty = self.ctx.registry.types_items[@intCast(usize, cond_t)];
+                if (cond_ty.kind == type_mod.TypeKind.optional_type) {
+                    var has_val = nextTemp(self, type_mod.TYPE_U8);
+                    emitInst(self, LirInst{ .check_optional = .{ .value = cond_temp, .result = has_val } });
+                    cond_temp = has_val;
+                }
+            }
+        }
         var rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype: u32 = if (rt3) |t| t else type_mod.TYPE_UNDEFINED;
         var result = nextTemp(self, ie_rtype);
@@ -3336,6 +3353,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var join_bb = createBlock(self);
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = else_bb } });
         self.current_bb = then_bb;
+        if (node.payload != @intCast(u32, 0)) {
+            var icapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
+            if (icapn.kind == AstKind.if_capture) {
+                bindOptionalCapture(self, node.payload, orig_cond_temp);
+            }
+        }
         var then_val = lowerExpr(self, node.child_1);
         then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
