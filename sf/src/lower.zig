@@ -86,6 +86,7 @@ pub const SemanticContext = struct {
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     comptime_values: *hash_mod.U32ToU64Map,
+    source_file_id: u32,
 };
 
 pub const DeferActionArrayList = struct {
@@ -519,7 +520,7 @@ fn lowerPrintCall(self: *LirLowerer, ec: []const u32) u32 {
     return @intCast(u32, 0);
 }
 
-fn lowerPrintFmt(self: *LirLowerer, fmt: []const u8, arg_ec: []const u32) void {
+fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, arg_ec: []const u32) void {
     var seg_start: usize = @intCast(usize, 0);
     var ai: usize = @intCast(usize, 0);
     var i: usize = @intCast(usize, 0);
@@ -552,6 +553,15 @@ fn lowerPrintFmt(self: *LirLowerer, fmt: []const u8, arg_ec: []const u32) void {
                         var spec_c = fmt[spec_i];
                         if (spec_c != @intCast(u8, '}')) {
                             spec_fmt = spec_c;
+                            if (spec_c != @intCast(u8, 'd') and spec_c != @intCast(u8, 'c') and spec_c != @intCast(u8, 's')) {
+                                var fn_node = self.ctx.store.nodes.items[@intCast(usize, fmt_node_idx)];
+                                var isp = fn_node.span_start;
+                                var iep = isp + @intCast(u32, fn_node.span_len);
+                                var iv_msg: []const u8 = "invalid print format specifier";
+                                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0),
+                                    @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3013_INVALID_PRINT_SPECIFIER)),
+                                    self.ctx.source_file_id, isp, iep, iv_msg);
+                            }
                         }
                     }
                     emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = spec_fmt } });
@@ -2463,7 +2473,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                            var pfbytes = si_mod.stringInternerGet(self.ctx.registry.interner, pfsid);
                            var pan = store.nodes.items[@intCast(usize, ec[ec.len - @intCast(usize, 1)])];
                            var pae = ast_mod.astStoreGetExtraChildren(store, pan.payload);
-                           lowerPrintFmt(self, pfbytes, pae);
+                           lowerPrintFmt(self, ec[0], pfbytes, pae);
                        }
                         return @intCast(u32, 0);
                    }

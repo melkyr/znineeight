@@ -596,10 +596,12 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .comptime_values = &ctx.comptime_values,
+        .source_file_id = @intCast(u32, 0),
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
+        sem_ctx.source_file_id = mods[mi].source_file_id;
         var mm: []const u8 = "M"; pal.markerWrite(mm);
         var mi_buf: [20]u8 = undefined;
         var mi_len = itoa_mod.itoa(@intCast(u32, mi), mi_buf[0..]);

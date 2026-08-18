@@ -123,6 +123,7 @@ fn testLower() void {
         .call_arg_types = &call_arg_types,
         .comptime_values = &comptime_values,
         .error_code_registry = &error_code_registry,
+        .source_file_id = @intCast(u32, 0),
     };
 
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);
