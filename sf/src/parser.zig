@@ -259,6 +259,14 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
         TokenKind.plus_pct_eq => { kind = AstKind.wrap_add_assign; found = 1; },
         TokenKind.minus_pct_eq => { kind = AstKind.wrap_sub_assign; found = 1; },
         TokenKind.star_pct_eq => { kind = AstKind.wrap_mul_assign; found = 1; },
+        TokenKind.plus_pipe => { kind = AstKind.sat_add; found = 1; },
+        TokenKind.minus_pipe => { kind = AstKind.sat_sub; found = 1; },
+        TokenKind.star_pipe => { kind = AstKind.sat_mul; found = 1; },
+        TokenKind.shl_pipe => { kind = AstKind.sat_shl; found = 1; },
+        TokenKind.plus_pipe_eq => { kind = AstKind.sat_add_assign; found = 1; },
+        TokenKind.minus_pipe_eq => { kind = AstKind.sat_sub_assign; found = 1; },
+        TokenKind.star_pipe_eq => { kind = AstKind.sat_mul_assign; found = 1; },
+        TokenKind.shl_pipe_eq => { kind = AstKind.sat_shl_assign; found = 1; },
         TokenKind.slash_eq => { kind = AstKind.div_assign; found = 1; },
         TokenKind.percent_eq => { kind = AstKind.mod_assign; found = 1; },
         TokenKind.shl_eq => { kind = AstKind.shl_assign; found = 1; },
@@ -1900,7 +1908,9 @@ pub fn getInfixInfo(kind: TokenKind) ?OpInfo {
         kind == TokenKind.shl_eq or kind == TokenKind.shr_eq or
         kind == TokenKind.ampersand_eq or kind == TokenKind.pipe_eq or
         kind == TokenKind.caret_eq or kind == TokenKind.plus_pct_eq or
-        kind == TokenKind.minus_pct_eq or kind == TokenKind.star_pct_eq) return OpInfo{ .prec = Prec.assignment, .right_assoc = true };
+        kind == TokenKind.minus_pct_eq or kind == TokenKind.star_pct_eq or
+        kind == TokenKind.plus_pipe_eq or kind == TokenKind.minus_pipe_eq or
+        kind == TokenKind.star_pipe_eq or kind == TokenKind.shl_pipe_eq) return OpInfo{ .prec = Prec.assignment, .right_assoc = true };
 
     if (kind == TokenKind.kw_orelse) return OpInfo{ .prec = Prec.prec_orelse, .right_assoc = true };
     if (kind == TokenKind.kw_catch) return OpInfo{ .prec = Prec.prec_catch, .right_assoc = true };
@@ -1916,11 +1926,13 @@ pub fn getInfixInfo(kind: TokenKind) ?OpInfo {
     if (kind == TokenKind.pipe) return OpInfo{ .prec = Prec.bit_or, .right_assoc = false };
     if (kind == TokenKind.caret) return OpInfo{ .prec = Prec.bit_xor, .right_assoc = false };
     if (kind == TokenKind.ampersand) return OpInfo{ .prec = Prec.bit_and, .right_assoc = false };
-    if (kind == TokenKind.shl or kind == TokenKind.shr) return OpInfo{ .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.shl or kind == TokenKind.shr or
+        kind == TokenKind.shl_pipe) return OpInfo{ .prec = Prec.shift, .right_assoc = false };
     if (kind == TokenKind.plus or kind == TokenKind.minus or
-        kind == TokenKind.plus_pct or kind == TokenKind.minus_pct) return OpInfo{ .prec = Prec.additive, .right_assoc = false };
+        kind == TokenKind.plus_pct or kind == TokenKind.minus_pct or
+        kind == TokenKind.plus_pipe or kind == TokenKind.minus_pipe) return OpInfo{ .prec = Prec.additive, .right_assoc = false };
     if (kind == TokenKind.star or kind == TokenKind.slash or kind == TokenKind.percent or
-        kind == TokenKind.star_pct) return OpInfo{ .prec = Prec.multiply, .right_assoc = false };
+        kind == TokenKind.star_pct or kind == TokenKind.star_pipe) return OpInfo{ .prec = Prec.multiply, .right_assoc = false };
 
     return null;
 }

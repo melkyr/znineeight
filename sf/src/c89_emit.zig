@@ -3137,6 +3137,373 @@ fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signe
     }
 }
 
+fn satMaxLit(width_bits: u8) []const u8 {
+    if (width_bits == @intCast(u8, 8)) { var s: []const u8 = "127"; return s; }
+    if (width_bits == @intCast(u8, 16)) { var s: []const u8 = "32767"; return s; }
+    if (width_bits == @intCast(u8, 64)) { var s: []const u8 = "9223372036854775807"; return s; }
+    { var s: []const u8 = "2147483647"; return s; }
+}
+
+fn satMinLit(width_bits: u8) []const u8 {
+    if (width_bits == @intCast(u8, 8)) { var s: []const u8 = "(-128)"; return s; }
+    if (width_bits == @intCast(u8, 16)) { var s: []const u8 = "(-32768)"; return s; }
+    if (width_bits == @intCast(u8, 64)) { var s: []const u8 = "(-9223372036854775807 - 1)"; return s; }
+    { var s: []const u8 = "(-2147483647 - 1)"; return s; }
+}
+
+fn satMinMagLit(width_bits: u8) []const u8 {
+    if (width_bits == @intCast(u8, 8)) { var s: []const u8 = "128"; return s; }
+    if (width_bits == @intCast(u8, 16)) { var s: []const u8 = "32768"; return s; }
+    if (width_bits == @intCast(u8, 64)) { var s: []const u8 = "9223372036854775808"; return s; }
+    { var s: []const u8 = "2147483648"; return s; }
+}
+
+fn satMaxULit(width_bits: u8) []const u8 {
+    if (width_bits == @intCast(u8, 8)) { var s: []const u8 = "255"; return s; }
+    if (width_bits == @intCast(u8, 16)) { var s: []const u8 = "65535"; return s; }
+    if (width_bits == @intCast(u8, 64)) { var s: []const u8 = "0xFFFFFFFFFFFFFFFFull"; return s; }
+    { var s: []const u8 = "0xFFFFFFFFu"; return s; }
+}
+
+fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8, result: []const u8, tid: u32, is_signed: u8) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var width_bits: u8 = @intCast(u8, ty.size * @intCast(u32, 8));
+    var max_lit = satMaxLit(width_bits);
+    var min_lit = satMinLit(width_bits);
+    var minmag_lit = satMinMagLit(width_bits);
+    var maxu_lit = satMaxULit(width_bits);
+    var width_lit: [12]u8 = undefined;
+    var wl = itoa_mod.itoa(@intCast(u32, width_bits), width_lit[0..]);
+    var wls: usize = @intCast(usize, 11) - @intCast(usize, wl);
+    var width_s = width_lit[wls..@intCast(usize, 11)];
+    var sp: []const u8 = " ";
+    var eqs: []const u8 = " = ";
+    var lp: []const u8 = "(";
+    var rp: []const u8 = ")";
+    var gt0: []const u8 = " > 0 && ";
+    var lt0: []const u8 = " < 0 && ";
+    var gtp: []const u8 = " > (";
+    var ltp: []const u8 = " < (";
+    var sub: []const u8 = " - ";
+    var add: []const u8 = " + ";
+    var mul: []const u8 = " * ";
+    var div: []const u8 = " / ";
+    var shl: []const u8 = " << ";
+    var shr: []const u8 = " >> ";
+    var ge: []const u8 = " >= ";
+    var gt: []const u8 = " > ";
+    var ctq: []const u8 = ")) ? ";
+    var ot2: []const u8 = " : ((";
+    var ot1: []const u8 = " : (";
+    var colon: []const u8 = " : ";
+    var eq0ll: []const u8 = " == 0) ? 0 : ((((long long)";
+    var gtp_ll: []const u8 = ") > ";
+    var qm: []const u8 = ") ? ";
+    var ltp_ll: []const u8 = ") < ";
+    var cl4: []const u8 = ")));";
+    var qo2: []const u8 = ") ? ((";
+    var lt0q: []const u8 = " < 0) ? ";
+    var co3: []const u8 = ") : ((";
+    var ge0o2: []const u8 = " >= 0) ? ((";
+    var o2c: []const u8 = ")((";
+    var o1c: []const u8 = ")(";
+    var div0ull: []const u8 = " / (0ull - (unsigned long long)";
+    var negll: []const u8 = "(unsigned long long)(-(long long)";
+    var nz_and: []const u8 = " != 0 && ";
+    var q0c: []const u8 = ") ? 0 : (";
+    var nz_q: []const u8 = " != 0) ? ";
+    var z0o2: []const u8 = " : 0) : ((";
+    var zero_ull: []const u8 = "0ull - (unsigned long long)";
+    var qoo: []const u8 = " ? ((";
+    var o3: []const u8 = " : ((";
+    var gt0q: []const u8 = " > 0) ? ";
+    var z0c2: []const u8 = " : 0))";
+    var oo2: []const u8 = "((";
+    var cgtp2: []const u8 = ") > (";
+    var ge0: []const u8 = " >= 0 && ";
+    var cl1: []const u8 = ");";
+    var sm: []const u8 = ";";
+    var cl2: []const u8 = "));";
+    var nl: []const u8 = "\n";
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, result);
+    bufferedWriterWrite(&emitter.writer, eqs);
+    if (is_signed != @intCast(u8, 0)) {
+        var stype = getCTypeName(emitter.registry, emitter.mangler, tid);
+        var utype = getUnsignedCTypeName(emitter.registry, emitter.mangler, tid);
+        if (op == @intCast(u8, 19)) {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, gt0);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, ot2);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, lt0);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ltp);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, ot1);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, add);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, cl2);
+        } else if (op == @intCast(u8, 20)) {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, ge0);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ltp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, ot2);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, lt0);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, ot1);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, cl2);
+        } else if (op == @intCast(u8, 21)) {
+            if (width_bits == @intCast(u8, 64)) {
+                bufferedWriterWrite(&emitter.writer, lp);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, gt0);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, gtp);
+                bufferedWriterWrite(&emitter.writer, max_lit);
+                bufferedWriterWrite(&emitter.writer, div);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, ctq);
+                bufferedWriterWrite(&emitter.writer, max_lit);
+                bufferedWriterWrite(&emitter.writer, ot2);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, lt0);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, ltp);
+                bufferedWriterWrite(&emitter.writer, max_lit);
+                bufferedWriterWrite(&emitter.writer, div);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, ctq);
+                bufferedWriterWrite(&emitter.writer, max_lit);
+                bufferedWriterWrite(&emitter.writer, ot2);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, gt0);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, ltp);
+                bufferedWriterWrite(&emitter.writer, min_lit);
+                bufferedWriterWrite(&emitter.writer, div);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, ctq);
+                bufferedWriterWrite(&emitter.writer, min_lit);
+                bufferedWriterWrite(&emitter.writer, ot2);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, lt0);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, gtp);
+                bufferedWriterWrite(&emitter.writer, minmag_lit);
+                bufferedWriterWrite(&emitter.writer, div0ull);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, cl4);
+            } else {
+                bufferedWriterWrite(&emitter.writer, lp);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, eq0ll);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, mul);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, gtp_ll);
+                bufferedWriterWrite(&emitter.writer, max_lit);
+                bufferedWriterWrite(&emitter.writer, qm);
+                bufferedWriterWrite(&emitter.writer, max_lit);
+                bufferedWriterWrite(&emitter.writer, colon);
+                bufferedWriterWrite(&emitter.writer, lp);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, eq0ll);
+                bufferedWriterWrite(&emitter.writer, lhs);
+
+                bufferedWriterWrite(&emitter.writer, mul);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, ltp_ll);
+                bufferedWriterWrite(&emitter.writer, min_lit);
+                bufferedWriterWrite(&emitter.writer, qm);
+                bufferedWriterWrite(&emitter.writer, min_lit);
+                bufferedWriterWrite(&emitter.writer, ot1);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, mul);
+                bufferedWriterWrite(&emitter.writer, rhs);
+                bufferedWriterWrite(&emitter.writer, cl4);
+            }
+        } else {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ge);
+            bufferedWriterWrite(&emitter.writer, width_s);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, qoo);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, lt0q);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, colon);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, gt0q);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, z0c2);
+            bufferedWriterWrite(&emitter.writer, o3);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, lt0q);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, oo2);
+            if (width_bits == @intCast(u8, 64)) {
+                bufferedWriterWrite(&emitter.writer, zero_ull);
+                bufferedWriterWrite(&emitter.writer, lhs);
+            } else {
+                bufferedWriterWrite(&emitter.writer, negll);
+                bufferedWriterWrite(&emitter.writer, lhs);
+                bufferedWriterWrite(&emitter.writer, rp);
+            }
+            bufferedWriterWrite(&emitter.writer, cgtp2);
+            bufferedWriterWrite(&emitter.writer, minmag_lit);
+            bufferedWriterWrite(&emitter.writer, shr);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, colon);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, stype);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, utype);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, shl);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, colon);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, oo2);
+            bufferedWriterWrite(&emitter.writer, utype);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, shr);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, colon);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, stype);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, utype);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, shl);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, rp);
+            bufferedWriterWrite(&emitter.writer, sm);
+        }
+    } else {
+        if (op == @intCast(u8, 19)) {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, ot1);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, add);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, cl1);
+        } else if (op == @intCast(u8, 20)) {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, gt);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, q0c);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, sub);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, cl1);
+        } else if (op == @intCast(u8, 21)) {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, nz_and);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, div);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, ot1);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, mul);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, cl1);
+        } else {
+            bufferedWriterWrite(&emitter.writer, lp);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ge);
+            bufferedWriterWrite(&emitter.writer, width_s);
+            bufferedWriterWrite(&emitter.writer, qo2);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, nz_q);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, z0o2);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, shr);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, ctq);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            bufferedWriterWrite(&emitter.writer, ot1);
+            bufferedWriterWrite(&emitter.writer, lhs);
+            bufferedWriterWrite(&emitter.writer, shl);
+            bufferedWriterWrite(&emitter.writer, rhs);
+            bufferedWriterWrite(&emitter.writer, cl2);
+        }
+    }
+    bufferedWriterWrite(&emitter.writer, nl);
+}
+
 fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "std_checked_cast_i8"; return s; }
@@ -4437,6 +4804,13 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var wty: u32 = @intCast(u32, 0);
                 var wsg: u8 = @intCast(u8, 0);
                 getTempTypeInfo(emitter, b.result, &wty, &wsg);
+                if (b.op >= @intCast(u8, 19)) {
+                    var sfty = emitter.registry.types_items[@intCast(usize, wty)];
+                    if (sfty.kind == TypeKind.void_type or sfty.kind == TypeKind.integer_literal_type) {
+                        getTempTypeInfo(emitter, b.lhs, &wty, &wsg);
+                    }
+                    emitSatBinary(emitter, b.op, lhs, rhs, result, wty, wsg);
+                } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, result);
                 var eqs: []const u8 = " = ";
@@ -4469,6 +4843,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     bufferedWriterWrite(&emitter.writer, rhs);
                 }
                 var s2: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, s2);
+                }
             } else {
             var lhs_is_tag: u8 = @intCast(u8, 0);
             var rhs_is_tag: u8 = @intCast(u8, 0);

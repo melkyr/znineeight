@@ -103,6 +103,14 @@ pub const AstKind = enum(u8) {
     wrap_add_assign = 101,
     wrap_sub_assign = 102,
     wrap_mul_assign = 103,
+    sat_add = 104,
+    sat_sub = 105,
+    sat_mul = 106,
+    sat_shl = 107,
+    sat_add_assign = 108,
+    sat_sub_assign = 109,
+    sat_mul_assign = 110,
+    sat_shl_assign = 111,
 };
 
 pub const AstNode = struct {

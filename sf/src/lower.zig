@@ -54,6 +54,10 @@ const BIN_GE   = @intCast(u8, 15);
 const BIN_WADD = @intCast(u8, 16);
 const BIN_WSUB = @intCast(u8, 17);
 const BIN_WMUL = @intCast(u8, 18);
+const BIN_SADD = @intCast(u8, 19);
+const BIN_SSUB = @intCast(u8, 20);
+const BIN_SMUL = @intCast(u8, 21);
+const BIN_SSHL = @intCast(u8, 22);
 const UN_NEG   = @intCast(u8, 0);
 const UN_NOT   = @intCast(u8, 1);
 const UN_BNOT  = @intCast(u8, 2);
@@ -1581,6 +1585,29 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_WSUB, .lhs = lhs, .rhs = rhs, .result = tid } });
         } else {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_WMUL, .lhs = lhs, .rhs = rhs, .result = tid } });
+        }
+        return tid;
+    } else if (node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or node.kind == AstKind.sat_mul or node.kind == AstKind.sat_shl) {
+        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
+            var ft: u32 = rtype;
+            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
+            var ctid = nextTemp(self, ft);
+            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
+            return ctid;
+        }
+        var lhs = lowerExpr(self, node.child_0);
+        var rhs = lowerExpr(self, node.child_1);
+        var tid = nextTemp(self, rtype);
+        if (node.kind == AstKind.sat_add) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SADD, .lhs = lhs, .rhs = rhs, .result = tid } });
+        } else if (node.kind == AstKind.sat_sub) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSUB, .lhs = lhs, .rhs = rhs, .result = tid } });
+        } else if (node.kind == AstKind.sat_mul) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SMUL, .lhs = lhs, .rhs = rhs, .result = tid } });
+        } else {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSHL, .lhs = lhs, .rhs = rhs, .result = tid } });
         }
         return tid;
     } else if (node.kind == AstKind.div) {
@@ -3942,6 +3969,25 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
+    } else if (node.kind == AstKind.sat_add_assign or node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or node.kind == AstKind.sat_shl_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        if (node.kind == AstKind.sat_add_assign) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        } else if (node.kind == AstKind.sat_sub_assign) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        } else if (node.kind == AstKind.sat_mul_assign) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        } else {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        return op_r;
     } else if (node.kind == AstKind.div_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
         var rhs_val = lowerExpr(self, node.child_1);
@@ -4871,6 +4917,24 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_WSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         } else {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_WMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        }
+        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+    } else if (node.kind == AstKind.sat_add_assign or node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or node.kind == AstKind.sat_shl_assign) {
+        var lhs_val = lowerExpr(self, node.child_0);
+        var rhs_val = lowerExpr(self, node.child_1);
+        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        if (op_rt) |t| { op_r_box[0] = t; }
+        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+        var op_r = nextTemp(self, op_r_box[0]);
+        if (node.kind == AstKind.sat_add_assign) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        } else if (node.kind == AstKind.sat_sub_assign) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        } else if (node.kind == AstKind.sat_mul_assign) {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        } else {
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         }
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.div_assign) {

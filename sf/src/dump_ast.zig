@@ -114,6 +114,14 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
         AstKind.wrap_add_assign => { var s: []const u8 = "wrap_add_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.wrap_sub_assign => { var s: []const u8 = "wrap_sub_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.wrap_mul_assign => { var s: []const u8 = "wrap_mul_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_add => { var s: []const u8 = "sat_add"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_sub => { var s: []const u8 = "sat_sub"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_mul => { var s: []const u8 = "sat_mul"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_shl => { var s: []const u8 = "sat_shl"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_add_assign => { var s: []const u8 = "sat_add_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_sub_assign => { var s: []const u8 = "sat_sub_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_mul_assign => { var s: []const u8 = "sat_mul_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.sat_shl_assign => { var s: []const u8 = "sat_shl_assign"; fmt.copyStr(buf, &idx, s); },
     }
     buf[idx] = 0;
     return buf[0..idx];

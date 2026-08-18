@@ -1593,11 +1593,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.add or node.kind == AstKind.sub or
                node.kind == AstKind.mul or node.kind == AstKind.div or
                node.kind == AstKind.mod_op or node.kind == AstKind.wrap_add or
-               node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
+               node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul or
+               node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or
+               node.kind == AstKind.sat_mul) {
         result = semanticAnalyzerResolveArithmetic(self, node_idx, node.kind);
     } else if (node.kind == AstKind.bit_and or node.kind == AstKind.bit_or or
                node.kind == AstKind.bit_xor or node.kind == AstKind.shl or
-               node.kind == AstKind.shr) {
+               node.kind == AstKind.shr or node.kind == AstKind.sat_shl) {
         result = semanticAnalyzerResolveBitwise(self, node_idx);
     } else if (node.kind == AstKind.bool_and or node.kind == AstKind.bool_or) {
         result = semanticAnalyzerResolveLogical(self, node_idx);
@@ -1612,7 +1614,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
                node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign or
                node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or
-               node.kind == AstKind.wrap_mul_assign) {
+               node.kind == AstKind.wrap_mul_assign or node.kind == AstKind.sat_add_assign or
+               node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or
+               node.kind == AstKind.sat_shl_assign) {
         result = semanticAnalyzerResolveAssign(self, node_idx);
     } else if (node.kind == AstKind.range_exclusive or node.kind == AstKind.range_inclusive) {
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
@@ -1960,7 +1964,9 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                    node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
                    node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign or
                    node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or
-                   node.kind == AstKind.wrap_mul_assign) {
+                   node.kind == AstKind.wrap_mul_assign or node.kind == AstKind.sat_add_assign or
+                   node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or
+                   node.kind == AstKind.sat_shl_assign) {
             _ = semanticAnalyzerResolveExpr(self, node_idx);
         } else if (node.kind == AstKind.labeled_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
