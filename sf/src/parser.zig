@@ -399,12 +399,14 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
         return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, 0);
     }
     var saved_fncall: usize = self.child_buf_len;
-    while (parserPeek(self).kind != TokenKind.rparen and parserPeek(self).kind != TokenKind.eof) {
+    while (true) {
         var arg = try parserParseExprPrec(self, Prec.none);
         u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
-        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
+        if (parserPeek(self).kind == TokenKind.rparen) break;
+        _ = try parserExpect(self, TokenKind.comma);
+        if (parserPeek(self).kind == TokenKind.rparen) break;
     }
-    var rparen = parserAdvance(self);
+    var rparen = try parserExpect(self, TokenKind.rparen);
     var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     var payload: u32 = 0;
     if (self.child_buf_len > saved_fncall) {
