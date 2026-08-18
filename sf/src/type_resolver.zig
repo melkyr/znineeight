@@ -977,16 +977,16 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     var lhs = evalConstU32Full(env, sz_node.child_0);
                     var rhs = evalConstU32Full(env, sz_node.child_1);
                     if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF)) {
-                        if (sz_node.kind == AstKind.add) arr_len = lhs + rhs;
-                        else arr_len = lhs - rhs;
+                        if (sz_node.kind == AstKind.add) { arr_len = lhs + rhs; }
+                        else { arr_len = lhs - rhs; }
                     }
                 } else if (sz_node.kind == AstKind.mul or sz_node.kind == AstKind.div or sz_node.kind == AstKind.mod_op) {
                     var lhs = evalConstU32Full(env, sz_node.child_0);
                     var rhs = evalConstU32Full(env, sz_node.child_1);
                     if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0)) {
-                        if (sz_node.kind == AstKind.mul) arr_len = lhs * rhs;
-                        else if (sz_node.kind == AstKind.div) arr_len = lhs / rhs;
-                        else arr_len = lhs % rhs;
+                        if (sz_node.kind == AstKind.mul) { arr_len = lhs * rhs; }
+                        else if (sz_node.kind == AstKind.div) { arr_len = lhs / rhs; }
+                        else { arr_len = lhs % rhs; }
                     }
                 } else if (sz_node.kind == AstKind.ident_expr) {
                     var al = evalConstU32Full(env, node.child_1);

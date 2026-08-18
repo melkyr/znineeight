@@ -292,8 +292,8 @@ pub fn diagnosticCollectorAdd(self: *DiagnosticCollector, level: u8, code: u16, 
         .note_ids = [3]u32{ @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) },
         .related_span_idx = @intCast(u16, 0),
     });
-    if (level == 0) self.error_count += 1;
-    else if (level == 1) self.warning_count += 1;
+    if (level == 0) { self.error_count += 1; }
+    else if (level == 1) { self.warning_count += 1; }
     return @intCast(u32, self.diagnostics.len - 1);
 }
 
