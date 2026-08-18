@@ -2075,24 +2075,34 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var arr_tid: u32 = @intCast(u32, 0);
         {
             var li: usize = @intCast(usize, 0);
+            var lds_found: u8 = @intCast(u8, 0);
+            var lds_best: usize = @intCast(usize, 0);
+            var lds_best_scope: u32 = @intCast(u32, 0);
             while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
-                if (self.local_decl_names[li] == name_id) {
-                    arr_temp = self.local_decl_temps[li];
-                    arr_kind = self.local_decl_kinds[li];
-                    arr_tid = self.local_decl_types[li];
-                    var lds_m: []const u8 = "LDS:n"; pal.markerWrite(lds_m);
-                    var lds_nb: [10]u8 = undefined; var lds_nl = itoa_mod.itoa(name_id, lds_nb[0..]); var lds_ns: usize = @intCast(usize, 9) - @intCast(usize, lds_nl); pal.markerWrite(lds_nb[lds_ns..@intCast(usize, 9)]);
-                    var lds_tm: []const u8 = "t"; pal.markerWrite(lds_tm);
-                    var lds_tb: [10]u8 = undefined; var lds_tl = itoa_mod.itoa(self.local_decl_types[li], lds_tb[0..]); var lds_ts: usize = @intCast(usize, 9) - @intCast(usize, lds_tl); pal.markerWrite(lds_tb[lds_ts..@intCast(usize, 9)]);
-                    var lds_rm: []const u8 = "r"; pal.markerWrite(lds_rm);
-                    var lds_rb: [10]u8 = undefined; var lds_rl = itoa_mod.itoa(self.local_decl_temps[li], lds_rb[0..]); var lds_rs: usize = @intCast(usize, 9) - @intCast(usize, lds_rl); pal.markerWrite(lds_rb[lds_rs..@intCast(usize, 9)]);
-                    var lds_km: []const u8 = "k"; pal.markerWrite(lds_km);
-                    var lds_kb: [10]u8 = undefined; var lds_kl = itoa_mod.itoa(@intCast(u32, self.local_decl_kinds[li]), lds_kb[0..]); var lds_ks: usize = @intCast(usize, 9) - @intCast(usize, lds_kl); pal.markerWrite(lds_kb[lds_ks..@intCast(usize, 9)]);
-                     var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
-                     if (arr_tid == type_mod.TYPE_VOID) { var vflb_m: []const u8 = "VFLOW:iTV\n"; pal.markerWrite(vflb_m); }
-                     break;
-                 }
-             }
+                if (self.local_decl_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) {
+                    if (lds_found == @intCast(u8, 0) or self.local_decl_scopes[li] > lds_best_scope) {
+                        lds_best = li;
+                        lds_best_scope = self.local_decl_scopes[li];
+                        lds_found = @intCast(u8, 1);
+                    }
+                }
+            }
+            if (lds_found != @intCast(u8, 0)) {
+                li = lds_best;
+                arr_temp = self.local_decl_temps[li];
+                arr_kind = self.local_decl_kinds[li];
+                arr_tid = self.local_decl_types[li];
+                var lds_m: []const u8 = "LDS:n"; pal.markerWrite(lds_m);
+                var lds_nb: [10]u8 = undefined; var lds_nl = itoa_mod.itoa(name_id, lds_nb[0..]); var lds_ns: usize = @intCast(usize, 9) - @intCast(usize, lds_nl); pal.markerWrite(lds_nb[lds_ns..@intCast(usize, 9)]);
+                var lds_tm: []const u8 = "t"; pal.markerWrite(lds_tm);
+                var lds_tb: [10]u8 = undefined; var lds_tl = itoa_mod.itoa(self.local_decl_types[li], lds_tb[0..]); var lds_ts: usize = @intCast(usize, 9) - @intCast(usize, lds_tl); pal.markerWrite(lds_tb[lds_ts..@intCast(usize, 9)]);
+                var lds_rm: []const u8 = "r"; pal.markerWrite(lds_rm);
+                var lds_rb: [10]u8 = undefined; var lds_rl = itoa_mod.itoa(self.local_decl_temps[li], lds_rb[0..]); var lds_rs: usize = @intCast(usize, 9) - @intCast(usize, lds_rl); pal.markerWrite(lds_rb[lds_rs..@intCast(usize, 9)]);
+                var lds_km: []const u8 = "k"; pal.markerWrite(lds_km);
+                var lds_kb: [10]u8 = undefined; var lds_kl = itoa_mod.itoa(@intCast(u32, self.local_decl_kinds[li]), lds_kb[0..]); var lds_ks: usize = @intCast(usize, 9) - @intCast(usize, lds_kl); pal.markerWrite(lds_kb[lds_ks..@intCast(usize, 9)]);
+                var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
+                if (arr_tid == type_mod.TYPE_VOID) { var vflb_m: []const u8 = "VFLOW:iTV\n"; pal.markerWrite(vflb_m); }
+            }
          }
          var a3r_m: []const u8 = "A3R:r"; pal.markerWrite(a3r_m);
          var a3r_rb: [10]u8 = undefined; var a3r_rl = itoa_mod.itoa(arr_temp, a3r_rb[0..]); var a3r_rs: usize = @intCast(usize, 9) - @intCast(usize, a3r_rl); pal.markerWrite(a3r_rb[a3r_rs..@intCast(usize, 9)]);
@@ -3743,11 +3753,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var body_node = store.nodes.items[@intCast(usize, prong_node.child_0)];
             var prong_val: u32 = @intCast(u32, 0);
             if (body_node.kind == AstKind.block) {
+                self.scope_depth += @intCast(u32, 1);
                 var block_ec = ast_mod.astStoreGetExtraChildren(store, body_node.payload);
                 var bj: usize = 0;
                 while (bj < block_ec.len) : (bj += 1) {
                     lowerStmt(self, block_ec[bj]);
                 }
+                self.scope_depth -= @intCast(u32, 1);
                 prong_val = @intCast(u32, 0);
             } else {
                 prong_val = lowerExpr(self, prong_node.child_0);
@@ -4632,6 +4644,26 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
     } else if (node.kind == AstKind.var_decl) {
         var name_id = node.payload;
+        var c_name_id = name_id;
+        if (self.local_decl_count > @intCast(usize, 0)) {
+            var scli: usize = @intCast(usize, 0);
+            while (scli < self.local_decl_count) : (scli += @intCast(usize, 1)) {
+                if (self.local_decl_names[scli] == name_id and self.local_decl_scopes[scli] < self.scope_depth) {
+                    var or_s = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
+                    var nb: [96]u8 = undefined;
+                    var np: usize = @intCast(usize, 0);
+                    while (np < or_s.len and np < @intCast(usize, 95)) : (np += 1) { nb[np] = or_s[np]; }
+                    nb[np] = @intCast(u8, '_'); np += 1;
+                    var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
+                    var scb: [16]u8 = undefined; var scl2 = itoa_mod.itoa(sc, scb[0..]);
+                    var s_start: usize = @intCast(usize, 15) - @intCast(usize, scl2);
+                    var si2: usize = s_start;
+                    while (si2 < s_start + @intCast(usize, scl2) and np < @intCast(usize, 95)) : (si2 += 1) { nb[np] = scb[si2]; np += 1; }
+                    c_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, nb[0..np]);
+                    break;
+                }
+            }
+        }
         var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         if (node.child_0 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
@@ -4661,7 +4693,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var vb: []const u8 = "VB"; pal.markerWrite(vb);
             } else {
             var dl_temp = nextTemp(self, decl_type);
-            emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = decl_type, .temp = dl_temp } });
+            emitInst(self, LirInst{ .decl_local = .{ .name_id = c_name_id, .type_id = decl_type, .temp = dl_temp } });
             addLocalDecl(self, name_id, decl_type, dl_temp, self.scope_depth);
             if (node.child_1 != 0) {
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
@@ -4670,13 +4702,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (dt2.kind == type_mod.TypeKind.array_type) is_array_type = @intCast(u8, 1);
                 if (is_array_type == @intCast(u8, 1) and (init_node.kind == AstKind.array_init or init_node.kind == AstKind.tuple_literal)) {
                     var arr_temp = lowerExpr(self, node.child_1);
-                    emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = arr_temp } });
+                    emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = arr_temp } });
                 } else if (init_node.kind == AstKind.undefined_literal) {
                     var arr_temp = nextTemp(self, decl_type);
                     if (is_array_type == @intCast(u8, 1)) {
                         emitInst(self, LirInst{ .undefined_const = .{ .result = arr_temp, .type_id = decl_type } });
                     }
-                    emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = arr_temp } });
+                    emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = arr_temp } });
                 } else {
                     if (decl_type == type_mod.TYPE_VOID) {
                         var t4u_vi_m: []const u8 = "T4U:vI\n"; pal.markerWrite(t4u_vi_m);
@@ -4696,11 +4728,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var init_val = lowerExpr(self, node.child_1);
 
                     if (decl_type != type_mod.TYPE_VOID) {
-                    emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = init_val } });
+                    emitInst(self, LirInst{ .store_local = .{ .name_id = c_name_id, .value = init_val } });
                     var reg: u32 = @intCast(u32, 0);
                     if (findLocalTemp(self, name_id)) |r| { reg = r; }
                     if (reg != @intCast(u32, 0)) {
-                        emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = init_val } });
+                        emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = init_val } });
                     }
                     var vds_m: []const u8 = "VDS:n"; pal.markerWrite(vds_m);
                     var vds_nb: [10]u8 = undefined; var vds_nl = itoa_mod.itoa(name_id, vds_nb[0..]); var vds_ns: usize = @intCast(usize, 9) - @intCast(usize, vds_nl); pal.markerWrite(vds_nb[vds_ns..@intCast(usize, 9)]);
