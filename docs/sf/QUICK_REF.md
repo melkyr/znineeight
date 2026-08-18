@@ -46,7 +46,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Corpus gate (258 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-08-17 — GATE parser-gaps closeout]
+### Corpus gate (264 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-08-18 — strict-zig-if GATE closeout]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -67,6 +67,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
+- **Post-strict-zig-if baseline (GATE gate sweep, 2026-08-18, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `1585adf2`, canonical std reinstalled): `OK=254 FAIL=6 ICE=0 CRASH=0 GREEN=4` over 264 dirs** (254+6+4=264). Real FAIL=6 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` + `parsergap_specifier_xmod` + `parsergap_strict_comma_xmod` (the plan's expected FAIL=5, unchanged) + `strictzig_brace_if_xmod` (the M1 hard-RED fixture, FAIL **by design**). Corpus grew 258→264 (5 followup parsergap dirs + the M1 fixture). 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical: gol `9cf758d9…`, lisp `88dcb7f9…` (repo-root CWD), json `fc357296…`, mud `a1d0dd55…`. test_analyzer_bin PASS. Self-compile re-check passes the M2 blockers (type_resolver.zig:981/:987-990 — 0 hits) and now hits the next pre-existing gap at `util/hash.zig:18:21` (`*%` saturating-mul, error[2000]) — recorded, out of scope.
 - **Post-parser-gaps baseline (GATE gate sweep, 2026-08-17, measured with /tmp/fx_subfolder/zig1, HEAD `830c5691`): `OK=252 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 258 dirs** (252+2+4=258). FAIL=2 unchanged = `field_store_drop` + `self_embed_optional_cycle`; green-guards unchanged. Corpus grew 252→258 (the 3 parsergap fixtures + `parsergap_value_if_xmod` + `parsergap_value_if_xmod_cross` + `pathnorm_dup_xmod`), all 6 new dirs OK; the 3 previously-deferred parsergap repros (`discard_if` / `array_type` / `trailing_comma`) are now **OK** (A-F1/A-F2/A-F3). 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `9cf758d9…`, lisp `524d2872…`, json `fc357296…` [B-F2 re-baseline], mud `a1d0dd55…`). test_analyzer_bin PASS ("5 passed, 4 failed"). Self-compile re-check passes the pre-fix blockers (cinclude.zig:23 / lower.zig:2283 / main.zig:759) and now hits a NEW pre-existing gap at `type_resolver.zig:981` (const-array-size evaluator) — recorded, out of scope.
 - **Post-fallback-demotion baseline (F-CLOSEOUT fallback-demotion gate sweep, 2026-08-14, measured with /tmp/fx_subfolder/zig1, HEAD `5c1e17e4`): `OK=246 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 252 dirs** (246+2+4=252). FAIL=2 = `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental, `error[24]` circular type). The 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass / control) are the new dirs — 3 RED→GREEN + 1 control, all OK (bare-key/module-0-key collision fixed across 4 sites: type_resolver / symbol_registrator / const_alias_prepass / semantic_analyzer). The 4 green-guards counted separately. 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `9cf758d9…`, lisp `524d2872…`, json `066c9997…` [B-F2 re-baselined 2026-08-17 → `fc357296…`, see gate table], mud `a1d0dd55…`, unchanged from F3 AMENDMENT B except json). test_analyzer_bin PASS.
 - **Post-closeout baseline (F-CLOSEOUT gate sweep, 2026-08-14, measured with /tmp/fx_subfolder/zig1, HEAD `c5856928`): `OK=242 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 248 dirs** (242+2+4=248). FAIL=2 = `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental, `error[24]` circular type). `arena_multi_inst_xmod` is the 248th dir (new RED→OK — the D2 fix). The 4 green-guards counted separately. 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `9cf758d9…`, lisp `524d2872…`, json `066c9997…` [B-F2 re-baselined 2026-08-17 → `fc357296…`, see gate table], mud `a1d0dd55…`, F3 AMENDMENT B re-baseline except json). test_analyzer_bin PASS.
@@ -321,11 +322,11 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-| Entry Path | Reference md5 | [updated: 2026-08-17 — B-F2 for-index capture disambiguation json re-baseline, AMENDMENT B runtime-identity] |
+| Entry Path | Reference md5 | [updated: 2026-08-18 — lisp row corrected to repo-root CWD measurement `88dcb7f9…` (lisp gate is CWD-sensitive); others unchanged from 2026-08-17 B-F2] |
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `a1d0dd55aada9c3fd904ae33f54de32e` |
 | `examples/z98/game_of_life/main.zig` | `9cf758d96f25d41980379564a5501bc8` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `524d2872daefb2677c8ddc1ac8f34cf5` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `88dcb7f9abf215aa6420f63e0e67e9c3` |
 | `examples/z98/json_parser/main.zig` | `fc357296537347a0ef58af49b5a40081` |
 
 - **B-F2 re-baseline (2026-08-17, AMENDMENT B runtime-identity):** the for-loop INDEX capture fix

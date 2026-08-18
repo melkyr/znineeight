@@ -1,4 +1,42 @@
-# mi_matrix corpus — expected-fail manifest (v36 2026-08-17)
+# mi_matrix corpus — expected-fail manifest (v37 2026-08-18)
+
+## GATE — strict-zig-if migration plan closeout, gate sweep + reconciliation (2026-08-18)
+
+Final gate sweep of the strict-zig-if migration plan (M1 fixture + M2 migration). All gates
+re-verified with `/tmp/fx_subfolder/zig1` (rebuilt 2026-08-18 at HEAD `1585adf2`, canonical std
+reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **M2 fixes landed (this plan):** the 3 invalid `;`-before-`else` if/else sites migrated to
+  braced form (`sf/src/type_resolver.zig:980-981` + `:987-990`, `sf/src/diagnostics.zig:295-296`)
+  — commit `1585adf2`. No `sf/src` changes in this gate task (docs-only).
+- **Corpus (264 dirs): `OK=254 / FAIL=6 / ICE=0 / CRASH=0 / green-guards=4`.** 254+6+4=264.
+  Real FAIL=6 = `field_store_drop` (bare `@import("pal")`, `error[3048]`),
+  `self_embed_optional_cycle` (C89 fundamental, `error[24]` circular type),
+  `parsergap_selfblok_xmod` (`error[2000]`), `parsergap_specifier_xmod` (`error[3013]`),
+  `parsergap_strict_comma_xmod` (`error[2000]`) — the plan's expected FAIL=5, UNCHANGED — plus
+  `strictzig_brace_if_xmod` (the M1 hard-RED fixture, `error[2000]`, FAIL **by design** — it ships
+  the invalid `;`-before-`else` form). Green-guards unchanged (`eu_assign_incompat_payload` /
+  `euvoid_val_catch` / `field_access_optional` / `var_declared_void`, all `error[3000]`, 0 `.c`).
+  Delta vs plan expectation (263 dirs, FAIL=5): actual = 264 dirs — the +1 is the M1 fixture
+  `strictzig_brace_if_xmod` landing in the corpus, counted as FAIL per its gate role (264 =
+  258 at the parser-gaps closeout + 5 followup parsergap dirs [many_ptr / selfblok / shadow_local
+  / specifier / strict_comma] + 1 M1 fixture). OK=254 unchanged (no fixture flipped; migration
+  is byte-identical). ICE=0, CRASH=0.
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** Runs: 19 exit rc=0 (incl. json_parser +
+  json_parser_workaround rc=0 from their dirs with test.json present, game_of_life 100 generations
+  rc=0); mud_server rc=124 ("MUD server listening on port 4000", timeout-gated server); rogue_mud
+  boots "Welcome to Rogue MUD!" + exits on `q` rc=0.
+- **4 MD5 gates byte-identical** (all MATCH the plan/M2 baselines, measured with the rebuilt
+  compiler): gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3`
+  (repo-root CWD — CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud
+  `a1d0dd55aada9c3fd904ae33f54de32e`. Byte-identity proof: the migration emits byte-identical C.
+- **test_analyzer_bin PASS** ("Analyzer tests passed.", rc=0).
+- **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
+  (timeout 120) now passes the M2 blocker — **0 hits for `type_resolver.zig:98x`** in filtered
+  stderr (the braced migration at :981/:987-990 compiles). It proceeds into type resolution and
+  hits the next pre-existing gap at `sf/src/util/hash.zig:18:21` (`error[2000]` expected expression /
+  unexpected token — the `*%` saturating-mul construct `hash = hash *% 16777619;`). **Recorded,
+  out of scope — not fixed** (next self-compile blocker; see QUICK_REF).
 
 ## GATE — parser-gaps plan closeout, final gate sweep + reconciliation (2026-08-17)
 
