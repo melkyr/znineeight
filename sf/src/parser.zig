@@ -1674,7 +1674,8 @@ fn parserParseSwitchStmt(self: *Parser) ParserError!u32 {
 fn parserParseReturnExpr(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     var expr: u32 = 0;
-    if (parserPeek(self).kind != TokenKind.semicolon) {
+    var nt = parserPeek(self).kind;
+    if (nt != TokenKind.semicolon and nt != TokenKind.comma and nt != TokenKind.rbrace and nt != TokenKind.eof) {
         expr = try parserParseExprPrec(self, Prec.none);
     }
     var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
