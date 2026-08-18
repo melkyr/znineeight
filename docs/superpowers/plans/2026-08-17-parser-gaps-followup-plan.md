@@ -482,7 +482,7 @@ Report to `.superpowers/sdd/task-F3-report.md`.
 - [ ] **Step 1: Reproduce RED baseline (R4)** — record current mis-resolution (`22`).
 - [ ] **Step 2: Implement the fix** (the empirically-verified `outA` patch from I-SITEB):
 
-1. **LDS scan** (`lower.zig:2066-2086`): change to max-scope scan — iterate `li` from `count→0`, apply `self.local_decl_scopes[li] <= self.scope_depth`, break on the FIRST (i.e. innermost-matching) hit. NOT a plain full reversal (gol breaks on plain reversal — I-SITEB §1.1/§1.4). Keep the LDS/A3R markers or note their shift.
+1. **LDS scan** (`lower.zig:2066-2086`): change to a FORWARD max-scope scan (per I-SITEB §1.2, the empirically-verified outA shape) — iterate `li` from `0→count`, apply `self.local_decl_scopes[li] <= self.scope_depth`, keep the match with the deepest visible scope, tie → first (forward). This is NOT a plain reversal and NOT a first-match break (plain reversal breaks gol byte-identity; first-match-forward leaves shadowing broken — both disproven by I-SITEB §1.2). Keep the LDS/A3R markers or note their shift.
 2. **Shadowed-var C-name synthesis** (`lower.zig:4606-4638`): the shadowed decl's C name must be synthesized (distinct slot) — LDS reversal alone fixes reads but still prints `22` because c89_emit dedups `decl_local` by name_id (`c89_emit.zig:2586`) and `assign` prefers `a.name_id` (:3730). Synth the shadowed var's C name so the inner and outer `x` get distinct C slots.
 3. **Switch-prong scope gate** (`lower.zig:3716-3723`): the scope filter exposes a pre-existing bug where switch-as-expression captures register at `scope_depth+1` (:3704/:3708) but the prong body is lowered unscoped — gate it or mud/lisp emit `TEMP_NONE` reads.
 
