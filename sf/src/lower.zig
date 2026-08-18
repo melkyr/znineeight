@@ -3573,6 +3573,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (ec.len == 0) {
             return nextTemp(self, type_mod.TYPE_VOID);
         }
+        var trt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var trt_id: u32 = if (trt) |it| it else @intCast(u32, 0);
+        if (trt_id != @intCast(u32, 0)) {
+            var trt_ty = self.ctx.registry.types_items[@intCast(usize, trt_id)];
+            if (trt_ty.kind == type_mod.TypeKind.array_type) {
+                var ap = self.ctx.registry.array_items[@intCast(usize, trt_ty.payload_idx)];
+                var base_temp = nextTemp(self, trt_id);
+                var ei: usize = @intCast(usize, 0);
+                while (ei < ec.len) : (ei += @intCast(usize, 1)) {
+                    var val_temp = lowerExpr(self, ec[ei]);
+                    var ix_temp = nextTemp(self, type_mod.TYPE_U32);
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
+                    emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
+                }
+                return base_temp;
+            }
+        }
         return lowerExpr(self, ec[0]);
     } else if (node.kind == AstKind.swt_ex) {
         var swe_m: []const u8 = "SWE:s\n"; pal.markerWrite(swe_m);
@@ -4641,7 +4658,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var is_array_type: u8 = @intCast(u8, 0);
                 var dt2 = self.ctx.registry.types_items[@intCast(usize, decl_type)];
                 if (dt2.kind == type_mod.TypeKind.array_type) is_array_type = @intCast(u8, 1);
-                if (is_array_type == @intCast(u8, 1) and init_node.kind == AstKind.array_init) {
+                if (is_array_type == @intCast(u8, 1) and (init_node.kind == AstKind.array_init or init_node.kind == AstKind.tuple_literal)) {
                     var arr_temp = lowerExpr(self, node.child_1);
                     emitInst(self, LirInst{ .assign = .{ .name_id = name_id, .dst = dl_temp, .src = arr_temp } });
                 } else if (init_node.kind == AstKind.undefined_literal) {
