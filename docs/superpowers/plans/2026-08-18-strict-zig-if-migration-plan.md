@@ -20,6 +20,16 @@
 - The `*%` operator gap at `util/hash.zig:18` is a separate pre-existing blocker — out of scope (record, do not fix).
 - NO scope creep beyond the 3 migration sites + the M8 diagnostic.
 
+## AMENDMENT (2026-08-18, operator ruling, M4-fix round)
+
+M4 final review found a 4th unmigrated `;`-before-`else` site in the self-compile closure:
+`sf/src/c89_emit.zig:410-412` (kind_char dispatch). It was missed because M2/M3 Step-1
+verification grepped only `type_resolver.zig:98x` + first error (`head -10` stops at the first
+error, so c89_emit was never reached). Operator ruling: **FIX c89_emit.zig:410-412 to braced form
+AND expand the self-compile verification to a tree-wide `;\s*else` scan** so no same-class site
+is missed. This is plan-scope-consistent: the plan's goal is "self-compile unblocks," and the
+4th site is the same defect class with the same byte-identical braced fix.
+
 ---
 
 ### Task M0: Revert F5 leftovers — DONE (controller, 2026-08-18)
