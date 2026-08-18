@@ -1,4 +1,42 @@
-# mi_matrix corpus — expected-fail manifest (v39 2026-08-18)
+# mi_matrix corpus — expected-fail manifest (v40 2026-08-18)
+
+## GATE — self-compile-gaps plan closeout (wrap/sat operators + multi-line string + switch-prong) (2026-08-18)
+
+Final gate sweep of the self-compile-gaps plan (docs/superpowers/plans/2026-08-18-self-compile-gaps-plan.md).
+Docs-only task — no `sf/src` changes. All gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt
+2026-08-18, canonical std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **F tasks included in this closeout:**
+  - F2 (`fdcf3b54`): multi-line string literal migration to escaped `\n` (c89_emit.zig:1881) —
+    self-compile construct passes.
+  - F1 (`9cb844b4` + `541092b4` + `10ba14e9`): full wrapping/saturating operator family
+    (`+% -% *%` + prefix `-%` + `+%= -%= *%=` then `+| -| *| <<|` + `+|= -|= *|= <<|=`),
+    signed+unsigned — `parsergap_wrap_arith_xmod` RED→OK, `hash.zig:18 *%` self-compile passes.
+  - F3 (`3079df02`): value-less `return` in switch prongs (return-only per STOP ruling) —
+    `parsergap_switch_comma_xmod` RED→OK, `lexer.zig` value-less-return site passes.
+- **Corpus (266 dirs): `OK=256 / FAIL=6 / ICE=0 / CRASH=0 / green-guards=4`** (256+6+4=266). The
+  FAIL=6 set is **unchanged** (byte-identical to the v39 baseline): `field_store_drop` (error[3048]) +
+  `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) +
+  `parsergap_specifier_xmod` (error[3013]) + `parsergap_strict_comma_xmod` (error[2000]) +
+  `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged
+  (`eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` / `var_declared_void`).
+  Corpus grew 264→266 (this plan's R1 `parsergap_wrap_arith_xmod` + R3
+  `parsergap_switch_comma_xmod`), **both RED→OK** — OK=254→256, FAIL=6 unmoved (R1/R3 were never
+  part of the FAIL=6 baseline set). **No regression.**
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** Runs spot-checked: days_in_month rc=0 (all 12
+  month-day counts); game_of_life 100 generations rc=0; rogue_mud boots "Welcome to Rogue MUD!" +
+  exits on `q` rc=0; json_parser parses test.json rc=0 (CWD-sensitive — run from its dir).
+- **4 MD5 gates byte-identical** (all MATCH the v39 baselines, no re-baseline this task): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
+- **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
+  (timeout 120, rc=2): all 3 plan constructs pass — 0 `util/hash.zig:18` `*%` hits, 0
+  `c89_emit.zig:1881` hits, 0 `lexer.zig` value-less-return hits. **Remaining pre-existing blocker:**
+  **210 `error[3000] cannot-declare-variable-of-type-void` sema errors** (the VOID-decl family —
+  same class as the `var_declared_void` green-guard, but real gap in self-compile sources). The F3
+  report's suspicion of a `lexer.zig slice_expr` error[3043] ICE is **NOT reproduced** — the filtered
+  self-compile stderr shows 210× error[3000] and ZERO ICE-class errors. Recorded, NOT fixed.
 
 ## GATE — parser-gaps followup plan closeout + F6 json historical pointer (2026-08-18)
 

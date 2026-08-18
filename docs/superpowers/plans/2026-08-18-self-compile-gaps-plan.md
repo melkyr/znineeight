@@ -189,11 +189,17 @@ var fwdnl2: []const u8 = "\n"; pal.markerWrite(fwdnl2);
 
 ### Task GATE: final sweep + reconciliation
 
-- [ ] Corpus 266 dirs (264 + R1 + R3): expect OK=254/FAIL=6/GG=4 unchanged (repros stay FAIL-by-design or flip OK per ruling). MEASURE.
-- [ ] 4 MD5s byte-identical; matrix 21/21; test_analyzer "5 passed, 4 failed".
-- [ ] Self-compile: all 3 constructs pass; record next blocker (if any) — do NOT fix.
-- [ ] Docs: EXPECTED_FAIL version bump + closeout record; QUICK_REF baseline line. Corpus heading update if dir count changes.
-- [ ] Commit docs-only. Report to `.superpowers/sdd/task-GATE-report.md`.
+- [x] Corpus 266 dirs (264 + R1 + R3): expect OK=254/FAIL=6/GG=4 unchanged (repros stay FAIL-by-design or flip OK per ruling). MEASURE.
+- [x] 4 MD5s byte-identical; matrix 21/21; test_analyzer "5 passed, 4 failed".
+- [x] Self-compile: all 3 constructs pass; record next blocker (if any) — do NOT fix.
+- [x] Docs: EXPECTED_FAIL version bump + closeout record; QUICK_REF baseline line. Corpus heading update if dir count changes.
+- [x] Commit docs-only. Report to `.superpowers/sdd/task-GATE-report.md`.
+
+**GATE numbers-correction (2026-08-18, measured):** the plan's "OK=254/FAIL=6/GG=4 unchanged"
+prediction was arithmetically impossible — 254+6+4=264, but the corpus grew 264→266 (R1 + R3).
+Measured: **OK=256/FAIL=6/ICE=0/CRASH=0/GG=4 over 266 dirs**. FAIL=6 set is byte-identical to the
+v39 baseline (the 6 baseline FAILs were never R1/R3); R1 + R3 both RED→OK, adding +2 to OK
+(254→256). FAIL count unmoved — NOT the brief's assumed "FAIL=4". No regression.
 
 ---
 
