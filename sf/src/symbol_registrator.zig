@@ -281,7 +281,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         sym_kind = sym_mod.SymbolKind.type_alias;
                         sym_mod_id = mod_id;
                     }
-                } else if (init_node.kind == AstKind.array_type or init_node.kind == AstKind.slice_type) {
+                } else if (init_node.kind == AstKind.array_type or init_node.kind == AstKind.slice_type or init_node.kind == AstKind.many_ptr_type) {
                     var at_m: []const u8 = "AT:p"; pal_mod.markerWriteInt(at_m, name_id);
                     var acached = type_mod.nameCacheGet(type_reg, @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id));
                     if (acached == null) { acached = type_mod.nameCacheGet(type_reg, @intCast(u64, name_id)); }
