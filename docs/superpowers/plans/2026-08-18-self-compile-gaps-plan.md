@@ -139,6 +139,15 @@ NOTES.md documents: (a) RED — rc=2 `error[2000]` (expected expression / unexpe
 - [ ] Operator rules: (a) F1 wrap-op implementation split (full-family all-at-once vs wrap-first-then-sat), (b) saturating-emit strategy (if any spec question), (c) prefix `-%` handling, (d) F3 fix shape.
 - [ ] Record rulings in a plan AMENDMENT section.
 
+
+### AMENDMENT (2026-08-18, operator rulings after consolidated STOP)
+
+- **R1 plan-note (d) correction:** "parse stops at first error" is factually wrong — zig1 flags ALL 15 forms in a single run and each fails isolated (R1 NOTES.md documents observed reality). The I-ARITH probe battery confirms per-form RED; no plan-behavior change.
+- **F1 split (operator):** wrapping family FIRST (`+% -% *%` + compound `+%= -%= *%=` + prefix `-%` = 7 forms) as commit 1, then saturating family (`+| -| *| <<|` + compound `+|= -|= *|= <<|=` = 8 forms) as commit 2. Both within Task F1.
+- **Signed operands (operator + Zig-spec verification):** Zig langref (master) confirms all wrap/sat operators apply to Integers — both signed AND unsigned. Signed wrap = "Twos-complement wrapping behavior" (langref example: `-%@as(i8, -128) == -128`; wrap demo uses i32). Signed saturating clamps to signed min/max. Therefore F1 MUST support signed operands; the emission layer (c89_emit.zig) is where signed semantics are realized. Emitter strategy: wrapping ops on unsigned emit plain C `+ - *`; wrapping on signed emits via unsigned-width cast arithmetic + cast back (two's-complement defined on all zig1 targets); saturating emits explicit min/max clamp ternaries; `<<|` emits clamped shift. Signed emission must be correct even though no gate/corpus currently exercises it (only `hash.zig:18` `*%` on u32).
+- **F1 build hazard (I-ARITH):** `dump_ast.zig:12` and `dump_tokens.zig:43` are exhaustive switches without `else` — new TokenKind/AstKind entries require added cases or else-branches or the F1 build fails. `main.zig:383-384` comptime-fold gate hardcodes AstKind values 33..42/62/64 — new kinds won't fold (inert for F1 targets; extend for full-family correctness is optional).
+- **F3 scope (operator):** RETURN-ONLY. I-SWITCH proved `break`/`continue` have NO `;`-check and ALREADY parse GREEN in switch prongs — only value-less `return` is broken. Plan Task F3's "return/break/continue" wording is amended to return-only. Fix: `parserParseReturnExpr` (parser.zig:1662) skips the value when the next token is in `{semicolon, comma, rbrace, eof}` (currently `;`-only). Byte-identity holds by construction; downstream `resolveReturnStmt`/lower already guard `child_0==0`.
+
 ---
 
 ### Task F2: source migration multi-line string (c89_emit.zig:1881) — no repro/I
