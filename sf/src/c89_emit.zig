@@ -407,9 +407,9 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
     }
     var hash = hash_mod.fnv1a(name);
     var kind_char: u8 = @intCast(u8, 'L');
-    if (kind == @intCast(u8, 0)) kind_char = @intCast(u8, 'F');
-    else if (kind == @intCast(u8, 1)) kind_char = @intCast(u8, 'G');
-    else if (kind == @intCast(u8, 2)) kind_char = @intCast(u8, 'T');
+    if (kind == @intCast(u8, 0)) { kind_char = @intCast(u8, 'F'); }
+    else if (kind == @intCast(u8, 1)) { kind_char = @intCast(u8, 'G'); }
+    else if (kind == @intCast(u8, 2)) { kind_char = @intCast(u8, 'T'); }
     var buf: [32]u8 = undefined;
     var p: usize = @intCast(usize, 0);
     buf[p] = @intCast(u8, 'z'); p += @intCast(usize, 1);

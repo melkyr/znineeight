@@ -1,4 +1,44 @@
-# mi_matrix corpus — expected-fail manifest (v37 2026-08-18)
+# mi_matrix corpus — expected-fail manifest (v38 2026-08-18)
+
+## GATE — M4-fix: 4th ;-before-else site + verification expansion + docs correction (2026-08-18)
+
+M4 final review found the plan's "exactly 3 sites" premise was incomplete: a 4th `;`-before-`else`
+site existed at `sf/src/c89_emit.zig:410-412` in the self-compile closure (missed because M2/M3
+verification grepped only the first error). Per operator ruling (2026-08-18), this gate fixes that
+site, expands the self-compile verification to a tree-wide scan, and corrects the docs' false
+"sole next blocker" claim. All gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt 2026-08-18
+at HEAD `31d55084` + M4-fix, canonical std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **Fix (this gate):** `sf/src/c89_emit.zig:410-412` migrated to braced form (same mechanical
+  change as M2) — the `nameManglerMangle` kind-char chain:
+  `if (kind == 0) { ... } else if (kind == 1) { ... } else if (kind == 2) { ... }`.
+  This is the 4th and last `;`-before-`else` site in the self-compile closure; the fix is
+  **byte-identical** (measured, not assumed).
+- **Tree-wide scan (verification expansion):** after the fix, the full self-compile
+  (`zig1 --markers --dump-c89 --output-dir /tmp/scX sf/src/main.zig`, timeout 120) scans ALL
+  non-9999 errors — **ZERO `';' not allowed before 'else'` errors remain anywhere in the closure.**
+  Source-tree scan (awk, `;`-ending line followed by `else` on the next line):
+  `for f in $(find sf/src -name '*.zig'); do awk 'prev ~ /;[ \t]*$/ && $0 ~ /^[ \t]*else\b/ { print FILENAME ":" FNR ": " prev " ||| " $0 } { prev = $0 }' "$f"; done`
+  → **0 hits**. (The only `; else` text left in sf/src is the emitted-C string literal
+  `"; else goto z_bb_"` at `c89_emit.zig:3833` — not a Z98 construct.)
+- **4 MD5 gates byte-identical** (baselines unchanged): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD), json
+  `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **Corpus spot-check (byte-identical, expect no movement):** `strictzig_brace_if_xmod` FAIL by
+  design (M8's diagnostic fires on the fixture's invalid form — the M1 hard-RED fixture),
+  `parsergap_selfblok_xmod` FAIL (`error[2000]`), `field_store_drop` FAIL (`error[3048]`) — no
+  movement vs v37.
+- **Self-compile re-check — TRUE remaining blockers (ALL pre-existing, ALL out of scope, recorded
+  only), in order of appearance:**
+  1. `sf/src/util/hash.zig:18:21` — `*%` saturating-mul (`hash = hash *% 16777619;`),
+     `error[2000]` expected expression / unexpected token.
+  2. `sf/src/c89_emit.zig:1881-1882` — unterminated string literal on a line-split string,
+     `error[0]` (cascades at 1939).
+  3. `sf/src/lexer.zig:236-239` — `error[2000]` expected expression / unexpected token report
+     sites.
+  The v37 narrative ("next gap = hash.zig:18") implied a sole blocker and was FALSE — the filtered
+  stderr also showed c89_emit.zig:411-412 (now fixed), c89_emit.zig:1881-1882, and lexer.zig:236-239.
+  Corrected here and in QUICK_REF.
 
 ## GATE — strict-zig-if migration plan closeout, gate sweep + reconciliation (2026-08-18)
 
