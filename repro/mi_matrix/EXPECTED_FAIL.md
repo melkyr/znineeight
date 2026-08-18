@@ -1,4 +1,44 @@
-# mi_matrix corpus — expected-fail manifest (v38 2026-08-18)
+# mi_matrix corpus — expected-fail manifest (v39 2026-08-18)
+
+## GATE — parser-gaps followup plan closeout + F6 json historical pointer (2026-08-18)
+
+Final gate sweep of the parser-gaps followup plan (docs/superpowers/plans/2026-08-17-parser-gaps-followup-plan.md).
+Docs-only task — no `sf/src` changes. All gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt
+2026-08-18, canonical std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **F tasks included in this closeout:**
+  - F1-followup (`1b3a1b5c`): tuple-literal→array init element-wise lowering (parsergap_many_ptr_xmod
+    dependency, operator ruling 2026-08-18).
+  - F1 (`84470c61`): many_ptr type-alias registration (parsergap_many_ptr_xmod RED→OK).
+  - F2 (`7bb775ad`): restore strict fn-call arg comma/close diagnostics (parsergap_strict_comma_xmod).
+  - F3 (`9963858f`): invalid print specifier is a compile error, error[3013] (parsergap_specifier_xmod).
+  - F4 (`e8321314`): Site B — innermost-local resolution for shadowed vars (parsergap_shadow_local_xmod).
+  - F5: **dropped** — became the strict-zig migration plan (M0-M4 + M8, commits `54e7e8b7`..`29132823`),
+    all committed separately.
+  - F6 (this task): EXPECTED_FAIL historical json `066c9997…` entries at :169/:186 get the
+    `→ fc357296…` forward-pointer (see the two F-CLOSEOUT sections below).
+- **Corpus (264 dirs): `OK=254 / FAIL=6 / ICE=0 / CRASH=0 / green-guards=4`** — byte-identical to the
+  strict-zig M3 sweep (254+6+4=264). Real FAIL=6 = `field_store_drop` (error[3048]) +
+  `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) +
+  `parsergap_specifier_xmod` (error[3013]) + `parsergap_strict_comma_xmod` (error[2000]) +
+  `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged
+  (`eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` / `var_declared_void`).
+  Corpus grew 258→264 (5 followup parsergap dirs + the M1 fixture) at the M3 sweep; no movement this task.
+- **21-example matrix: 21/21 dump/gcc/link rc=0.** Runs: 19 exit rc=0 (incl. days_in_month all 12
+  month-day counts rc=0, Feb 2024 = 29; json_parser parses test.json rc=0, object fields
+  comma-separated, no trailing comma — B-F2 runtime-identity; game_of_life 100 generations rc=0);
+  mud_server rc=124 ("MUD server listening on port 4000", timeout-gated server); rogue_mud boots
+  "Welcome to Rogue MUD!" + exits on `q` rc=0.
+- **4 MD5 gates byte-identical** (all MATCH the current baselines, no re-baseline this task): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **test_analyzer_bin PASS** ("Analyzer tests passed.", rc=0).
+- **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
+  (timeout 120) passes the M2 blockers (type_resolver.zig:981/:987-990 — 0 hits) AND the M4-fix 4th
+  site (`c89_emit.zig:410-412` — 0 hits). **Remaining pre-existing blockers (ALL recorded, ALL out of
+  scope, NOT fixed):** (1) `util/hash.zig:18:21` — `*%` saturating-mul, error[2000]; (2)
+  `c89_emit.zig:1881-1882` — unterminated string literal, error[0] (+cascades 1939); (3)
+  `lexer.zig:236-239` — error[2000] expected-expression/unexpected-token report sites.
 
 ## GATE — M4-fix: 4th ;-before-else site + verification expansion + docs correction (2026-08-18)
 
@@ -166,7 +206,8 @@ at `/tmp/fx_subfolder/lib/`:
   port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
 - **4 MD5 gates byte-identical** (unchanged from the F3 AMENDMENT B baseline): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
-  `066c99974f6052317636854dc4c2a2d5`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081` [B-F2 re-baselined
+  2026-08-17, see gate table], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
 
 ## F-CLOSEOUT — std-lib closeout (2026-08-14)
@@ -183,7 +224,8 @@ Final gate sweep of the std-lib closeout plan (F1+F2+F3 fixes). All gates re-ver
   on port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
 - **4 MD5 gates byte-identical** (F3 re-baseline, AMENDMENT B): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
-  `066c99974f6052317636854dc4c2a2d5`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081` [B-F2 re-baselined
+  2026-08-17, see gate table], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **Corpus (248 dirs): `OK=242 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =
   `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89
   fundamental, `error[24]` circular type); green-guards = `eu_assign_incompat_payload` /
