@@ -1536,6 +1536,12 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     }
     if (parserPeek(self).kind == TokenKind.semicolon) {
         _ = parserAdvance(self);
+        if (parserPeek(self).kind == TokenKind.kw_else) {
+            var else_tok = parserPeek(self);
+            var else_msg: []const u8 = "';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }";
+            parserAddError(self, else_tok, else_msg);
+            return error.UnexpectedToken;
+        }
     }
     var end_pos: u32 = kw.span_start;
     if (self.pos > 0) {
