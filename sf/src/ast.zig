@@ -96,6 +96,13 @@ pub const AstKind = enum(u8) {
     range_exclusive = 94,
     range_inclusive = 95,
     c_include = 96,
+    wrap_add = 97,
+    wrap_sub = 98,
+    wrap_mul = 99,
+    wrap_negate = 100,
+    wrap_add_assign = 101,
+    wrap_sub_assign = 102,
+    wrap_mul_assign = 103,
 };
 
 pub const AstNode = struct {

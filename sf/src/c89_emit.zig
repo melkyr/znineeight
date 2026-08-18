@@ -3092,13 +3092,49 @@ fn getBinOpStr(op: u8) []const u8 {
     else if (op == @intCast(u8, 13)) { var s: []const u8 = "<="; return s; }
     else if (op == @intCast(u8, 14)) { var s: []const u8 = ">"; return s; }
     else if (op == @intCast(u8, 15)) { var s: []const u8 = ">="; return s; }
+    else if (op == @intCast(u8, 16)) { var s: []const u8 = "+"; return s; }
+    else if (op == @intCast(u8, 17)) { var s: []const u8 = "-"; return s; }
+    else if (op == @intCast(u8, 18)) { var s: []const u8 = "*"; return s; }
     else { var s: []const u8 = "???"; return s; }
 }
 
 fn getUnOpStr(op: u8) []const u8 {
     if (op == @intCast(u8, 0)) { var s: []const u8 = "-"; return s; }
     else if (op == @intCast(u8, 1)) { var s: []const u8 = "!"; return s; }
+    else if (op == @intCast(u8, 3)) { var s: []const u8 = "-"; return s; }
     else { var s: []const u8 = "~"; return s; }
+}
+
+fn getUnsignedCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.u8_type or ty.kind == TypeKind.c_char_type) { var s: []const u8 = "unsigned char"; return s; }
+    if (ty.kind == TypeKind.i16_type or ty.kind == TypeKind.u16_type) { var s: []const u8 = "unsigned short"; return s; }
+    if (ty.kind == TypeKind.i32_type or ty.kind == TypeKind.u32_type or
+        ty.kind == TypeKind.isize_type or ty.kind == TypeKind.usize_type or
+        ty.kind == TypeKind.integer_literal_type) { var s: []const u8 = "unsigned int"; return s; }
+    if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type) {
+        return getCTypeName(reg, mangler, type_mod.TYPE_U64);
+    }
+    return getCTypeName(reg, mangler, tid);
+}
+
+fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed: *u8) void {
+    out_type.* = type_mod.TYPE_USIZE;
+    out_signed.* = @intCast(u8, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < emitter.current_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
+        var ht = emitter.current_fn.hoisted_temps.items[i];
+        if (ht.temp_id == temp_id and ht.type_id != type_mod.TYPE_UNDEFINED) {
+            var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
+            out_type.* = ht.type_id;
+            if (bty.kind == TypeKind.i8_type or bty.kind == TypeKind.i16_type or
+                bty.kind == TypeKind.i32_type or bty.kind == TypeKind.i64_type or
+                bty.kind == TypeKind.isize_type) {
+                out_signed.* = @intCast(u8, 1);
+            }
+            return;
+        }
+    }
 }
 
 fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
@@ -4397,6 +4433,43 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var instc_br_n: []const u8 = "\n"; pal.markerWrite(instc_br_n);
             }
             var rhs = resolveTempName(emitter, b.rhs);
+            if (b.op >= @intCast(u8, 16)) {
+                var wty: u32 = @intCast(u32, 0);
+                var wsg: u8 = @intCast(u8, 0);
+                getTempTypeInfo(emitter, b.result, &wty, &wsg);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, result);
+                var eqs: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, eqs);
+                var sp: []const u8 = " ";
+                if (wsg != @intCast(u8, 0)) {
+                    var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
+                    var ct = getCTypeName(emitter.registry, emitter.mangler, wty);
+                    bufferedWriterWrite(&emitter.writer, ct);
+                    var o2: []const u8 = ")(("; bufferedWriterWrite(&emitter.writer, o2);
+                    var ut = getUnsignedCTypeName(emitter.registry, emitter.mangler, wty);
+                    bufferedWriterWrite(&emitter.writer, ut);
+                    var o3: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o3);
+                    bufferedWriterWrite(&emitter.writer, lhs);
+                    bufferedWriterWrite(&emitter.writer, sp);
+                    var wop = getBinOpStr(b.op);
+                    bufferedWriterWrite(&emitter.writer, wop);
+                    bufferedWriterWrite(&emitter.writer, sp);
+                    var o3c: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o3c);
+                    bufferedWriterWrite(&emitter.writer, ut);
+                    var o3b: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o3b);
+                    bufferedWriterWrite(&emitter.writer, rhs);
+                    var o4: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o4);
+                } else {
+                    bufferedWriterWrite(&emitter.writer, lhs);
+                    bufferedWriterWrite(&emitter.writer, sp);
+                    var wop = getBinOpStr(b.op);
+                    bufferedWriterWrite(&emitter.writer, wop);
+                    bufferedWriterWrite(&emitter.writer, sp);
+                    bufferedWriterWrite(&emitter.writer, rhs);
+                }
+                var s2: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, s2);
+            } else {
             var lhs_is_tag: u8 = @intCast(u8, 0);
             var rhs_is_tag: u8 = @intCast(u8, 0);
             if (b.op == @intCast(u8, 10) or b.op == @intCast(u8, 11)) {
@@ -4441,10 +4514,37 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .unary => |u| {
             var result = resolveTempName(emitter, u.result);
             var opd = resolveTempName(emitter, u.operand);
+            if (u.op == @intCast(u8, 3)) {
+                var wty: u32 = @intCast(u32, 0);
+                var wsg: u8 = @intCast(u8, 0);
+                getTempTypeInfo(emitter, u.result, &wty, &wsg);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+                if (wsg != @intCast(u8, 0)) {
+                    var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
+                    var ct = getCTypeName(emitter.registry, emitter.mangler, wty);
+                    bufferedWriterWrite(&emitter.writer, ct);
+                    var o2: []const u8 = ")(0u - ("; bufferedWriterWrite(&emitter.writer, o2);
+                    var ut = getUnsignedCTypeName(emitter.registry, emitter.mangler, wty);
+                    bufferedWriterWrite(&emitter.writer, ut);
+                    var o3: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o3);
+                    bufferedWriterWrite(&emitter.writer, opd);
+                    var o4: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o4);
+                } else {
+                    var op_str = getUnOpStr(u.op);
+                    bufferedWriterWrite(&emitter.writer, op_str);
+                    bufferedWriterWrite(&emitter.writer, opd);
+                }
+                var s2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+            } else {
             var op_str = getUnOpStr(u.op);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
@@ -4454,6 +4554,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, opd);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
+            }
         },
         .int_const => |ic| {
             var result = resolveTempName(emitter, ic.result);

@@ -70,14 +70,26 @@ pub fn lexerNextToken(self: *Lexer) Token {
             return lexerMakeToken(self, TokenKind.dot, start, .{ .none = {} });
         },
         '+' => {
+            if (lexerMatch(self, '%')) {
+                if (lexerMatch(self, '=')) return lexerMakeToken(self, TokenKind.plus_pct_eq, start, .{ .none = {} });
+                return lexerMakeToken(self, TokenKind.plus_pct, start, .{ .none = {} });
+            }
             if (lexerMatch(self, '=')) return lexerMakeToken(self, TokenKind.plus_eq, start, .{ .none = {} });
             return lexerMakeToken(self, TokenKind.plus, start, .{ .none = {} });
         },
         '-' => {
+            if (lexerMatch(self, '%')) {
+                if (lexerMatch(self, '=')) return lexerMakeToken(self, TokenKind.minus_pct_eq, start, .{ .none = {} });
+                return lexerMakeToken(self, TokenKind.minus_pct, start, .{ .none = {} });
+            }
             if (lexerMatch(self, '=')) return lexerMakeToken(self, TokenKind.minus_eq, start, .{ .none = {} });
             return lexerMakeToken(self, TokenKind.minus, start, .{ .none = {} });
         },
         '*' => {
+            if (lexerMatch(self, '%')) {
+                if (lexerMatch(self, '=')) return lexerMakeToken(self, TokenKind.star_pct_eq, start, .{ .none = {} });
+                return lexerMakeToken(self, TokenKind.star_pct, start, .{ .none = {} });
+            }
             if (lexerMatch(self, '=')) return lexerMakeToken(self, TokenKind.star_eq, start, .{ .none = {} });
             return lexerMakeToken(self, TokenKind.star, start, .{ .none = {} });
         },

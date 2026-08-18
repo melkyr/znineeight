@@ -106,6 +106,14 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
         AstKind.payload_capture => { var s: []const u8 = "payload_capture"; fmt.copyStr(buf, &idx, s); },
         AstKind.range_exclusive => { var s: []const u8 = "range_exclusive"; fmt.copyStr(buf, &idx, s); },
         AstKind.range_inclusive => { var s: []const u8 = "range_inclusive"; fmt.copyStr(buf, &idx, s); },
+        AstKind.c_include => { var s: []const u8 = "c_include"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_add => { var s: []const u8 = "wrap_add"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_sub => { var s: []const u8 = "wrap_sub"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_mul => { var s: []const u8 = "wrap_mul"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_negate => { var s: []const u8 = "wrap_negate"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_add_assign => { var s: []const u8 = "wrap_add_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_sub_assign => { var s: []const u8 = "wrap_sub_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.wrap_mul_assign => { var s: []const u8 = "wrap_mul_assign"; fmt.copyStr(buf, &idx, s); },
     }
     buf[idx] = 0;
     return buf[0..idx];
