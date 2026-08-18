@@ -300,6 +300,7 @@ Report to `.superpowers/sdd/task-I-SELFBLOK-report.md`: locus, parser-only vs ca
 **Interfaces:**
 - Consumes: R1 fixture; A-I2/A-F2 context (array_type|slice_type → type_alias branch).
 - Produces: `const P = [*]u8;` registers `type_alias`; R1 prints correct value rc=0.
+- **DEPENDENCY: R1's fixture uses `var arr: [4]u8 = .{ 1, 2, 3, 4 };` — the shorthand tuple-literal→array init, which is itself a BROKEN pre-existing gap (emits `arr = zT_1;` whole-array assign of a scalar → gcc rejects). F1 GREEN therefore requires the **F1-followup** task below (tuple→array element-wise lowering) to land first, OR the R1 fixture's `arr` init must be rewritten to the explicit `[4]u8{ 1, 2, 3, 4 }` form (which works today). Operator ruling 2026-08-18: fix the tuple→array path in the F1-followup and keep the R1 fixture unchanged.**
 
 - [ ] **Step 1: Reproduce RED baseline (R1)** — record current `rc=2` + error.
 - [ ] **Step 2: Implement the fix**
@@ -310,7 +311,7 @@ In `symbol_registrator.zig:284`, extend the branch:
 ```
 (ast.zig:87 `many_ptr_type = 85`; downstream already handles it: type_resolver.zig:922, semantic_analyzer.zig:1561, varDeclInitNeedsNameCache returns true.)
 
-- [ ] **Step 3: Build + GREEN verify**
+- [ ] **Step 3: Build + GREEN verify** (after F1-followup lands, or fixture adapted per the ruling)
 
 `bash sf/scripts/build_release.sh` → gate; reinstall std. R1 repro: `rc=0`, gcc rc=0, run prints correct value. Controls (`const A = [10]u8;`, `const S = []const u8;`) unchanged GREEN.
 
@@ -324,6 +325,69 @@ In `symbol_registrator.zig:284`, extend the branch:
 git commit -m "fix: register many_ptr_type const as type alias (parsergap_many_ptr_xmod)"
 ```
 Report to `.superpowers/sdd/task-F1-report.md`.
+
+---
+
+### Task F1-followup: tuple-literal→array init element-wise lowering
+
+**Files:**
+- Modify: `sf/src/lower.zig` — `tuple_literal` case (:3570-3576), var-decl array-init gate (:4644)
+
+**Interfaces:**
+- Consumes: operator ruling 2026-08-18 (fix tuple→array path); R1 fixture's `var arr: [4]u8 = .{ 1, 2, 3, 4 };`.
+- Produces: `var arr: [4]u8 = .{ 1, 2, 3, 4 };` lowers to element-wise `assign_index` stores (gcc rc=0, arr[0]=1, arr[3]=4); R1 fixture runs.
+- Produces (gate): 4 MD5s byte-identical; corpus unchanged; explicit `[4]u8{...}` array_init unchanged.
+
+- [ ] **Step 1: Reproduce the broken path**
+
+`var arr: [4]u8 = .{ 1, 2, 3, 4 };` + reads → current: dump rc=0 BUT emitted C has `arr = zT_1;` (whole-array assign of scalar `ec[0]`) → gcc rc=1 `assignment to expression with array type`. Explicit `[4]u8{ 1, 2, 3, 4 }` control works (element-wise, gcc rc=0).
+
+- [ ] **Step 2: Implement the fix** (mirror the `array_init` element-wise pattern at lower.zig:3407-3415)
+
+Root cause: `tuple_literal` case (lower.zig:3570-3576) returns `lowerExpr(self, ec[0])` — only the first element as a scalar — and the var-decl gate at :4644 only routes `AstKind.array_init` to the array path; tuple_literal falls to the generic else (:4653) → `arr = zT_1`.
+
+In the `tuple_literal` case (`lower.zig:3570`), when the resolved type of the tuple (`resolvedTypeTableGet(self.ctx.resolved_types, node_idx)`) is an `array_type`, emit the same element-wise loop as `array_init`:
+```zig
+} else if (node.kind == AstKind.tuple_literal) {
+    var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+    var tupm: []const u8 = "TUP\n"; pal.markerWrite(tupm);
+    if (ec.len == 0) {
+        return nextTemp(self, type_mod.TYPE_VOID);
+    }
+    var trt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    var trt_id: u32 = if (trt) |it| it else @intCast(u32, 0);
+    var trt_ty = if (trt_id != @intCast(u32, 0)) self.ctx.registry.types_items[@intCast(usize, trt_id)] else null;
+    if (trt_ty != null and trt_ty.?.kind == type_mod.TypeKind.array_type) {
+        var ap = self.ctx.registry.array_items[@intCast(usize, trt_ty.?.payload_idx)];
+        var base_temp = nextTemp(self, trt_id);
+        var ei: usize = @intCast(usize, 0);
+        while (ei < ec.len) : (ei += @intCast(usize, 1)) {
+            var val_temp = lowerExpr(self, ec[ei]);
+            var ix_temp = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
+            emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
+        }
+        return base_temp;
+    }
+    return lowerExpr(self, ec[0]);
+}
+```
+(Adapt the `?.`/`null` optional handling to the file's existing Z98 dialect idioms — `if (trt_ty) |tt|` style; verify `array_items` access matches `array_init`'s :3395-3398. The `assign_index` emit is identical to :3413.)
+
+- [ ] **Step 3: Build + GREEN verify**
+
+`bash sf/scripts/build_release.sh` → gate; reinstall std. Standalone tuple→array fixture: dump rc=0, gcc rc=0, run prints `1` then `4`. Explicit `[4]u8{...}` control byte-identical to pre-fix (gcc rc=0). R1 fixture now reaches the F1 many_ptr gate.
+
+- [ ] **Step 4: Byte-identity gates**
+
+4 MD5s byte-identical (gol/lisp/json/mud baselines) — the change fires only on tuple_literal-into-array-typed context, which no gate/corpus program uses (grep confirmed zero `= .{` array inits in examples/repros).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "fix: tuple-literal array init lowers element-wise (parser-gaps followup F1-followup)"
+```
+Report to `.superpowers/sdd/task-F1-followup-report.md`.
 
 ---
 
