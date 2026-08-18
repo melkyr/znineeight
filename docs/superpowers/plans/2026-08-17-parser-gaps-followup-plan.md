@@ -280,12 +280,15 @@ Report to `.superpowers/sdd/task-I-SELFBLOK-report.md`: locus, parser-only vs ca
 
 ---
 
-### Task STOP: Consolidated ruling
+### Task STOP: Consolidated ruling — COMPLETE (rulings 2026-08-18)
 
-- [ ] Present the findings from R1-R5 + I-SPECIFIER + I-SITEB + I-SELFBLOK to the operator.
-- [ ] Obtain rulings for: F3 validation locus (threaded lowerer vs semantic analyzer), F4 blast-radius handling (re-baseline list), F5 fix scope.
-- [ ] Fill the F3/F4/F5 task placeholders below from the I reports + rulings.
-- [ ] Commit the plan amendment documenting the rulings.
+- [x] Findings from R1-R5 + I-SPECIFIER + I-SITEB + I-SELFBLOK presented to the operator.
+- [x] **Operator rulings obtained:**
+  - **F3 (specifier validation locus):** Option **a** — thread `source_file_id` into `SemanticContext`, validate in `lowerPrintFmt`, new `ERR_3013_INVALID_PRINT_SPECIFIER`.
+  - **F4 (Site B blast radius):** implement the I-SITEB outA fix (max-scope LDS + shadowed-var C-name synth + switch-prong scope gate). **lisp re-baseline APPROVED if runtime-identical** (`524d2872…→88dcb7f9…` projected; runtime proof required at F4 Step 4).
+  - **F5 (self-compile blocker):** Option **A** — parse brace-less if then/else bodies as **statements** (mirror zig0 `parseStatement`), giving correct nearest-if binding. NOT the Option-B lookahead.
+- [x] F3/F4/F5 task placeholders filled from the I reports + rulings (see amended tasks below).
+- [x] Commit the plan amendment documenting the rulings.
 
 ---
 
@@ -367,48 +370,124 @@ Report to `.superpowers/sdd/task-F2-report.md`.
 
 ---
 
-### Task F3: Specifier validation → compile error — per I-SPECIFIER
+### Task F3: Specifier validation → compile error — per I-SPECIFIER (Option a: threaded lowerer + ERR_3013)
 
-**Files:** (filled from I-SPECIFIER — likely `sf/src/lower.zig` `lowerPrintFmt` + `SemanticContext`/main.zig threading, or `sf/src/semantic_analyzer.zig`)
+**Files:**
+- Modify: `sf/src/lower.zig` (`lowerPrintFmt` :522-576 + `SemanticContext` :77-89), `sf/src/main.zig` (thread `source_file_id` into SemanticContext init :639/:695)
+- Verify: `sf/src/diagnostics.zig` (`diagnosticCollectorAdd` :263, ErrorCode enum — new `ERR_3013_INVALID_PRINT_SPECIFIER`)
 
 **Interfaces:**
-- Consumes: I-SPECIFIER report + operator ruling; R3 fixture.
-- Produces: invalid specifier → compile error; `{d}`/`{c}`/`{}`/`{s}` unchanged; R3 expected-RED now errors; 4 MD5s byte-identical.
+- Consumes: I-SPECIFIER report + operator ruling (Option a — thread `source_file_id` into SemanticContext, validate in `lowerPrintFmt`); R3 fixture.
+- Produces: invalid specifier → compile error `error[3013]`; `{d}`/`{c}`/`{}`/`{s}` unchanged; R3 expected-RED now errors; 4 MD5s byte-identical.
 
-- [ ] Implement per the I-SPECIFIER design + ruling (exact code filled at STOP).
-- [ ] Build + R3 GREEN (error on `{x}`/space) + controls (`{d}`/`{c}`/`{}`) unchanged.
-- [ ] Byte-identity gates (4 MD5s).
-- [ ] Commit + report `.superpowers/sdd/task-F3-report.md`.
+- [ ] **Step 1: Reproduce RED baseline (R3)** — record current silent-success (rc=0, prints decimal `65`).
+- [ ] **Step 2: Implement the fix**
+
+Per I-SPECIFIER report:
+1. Add `ERR_3013_INVALID_PRINT_SPECIFIER` to the `ErrorCode` enum in `diagnostics.zig` (no existing fit; 3012 is varargs-specific). Level 0 (error).
+2. Thread `source_file_id` into `SemanticContext` (`lower.zig:77-89`): add the field, set it at the `lowererInit` call sites in `main.zig:639/:695`.
+3. In `lowerPrintFmt` (`lower.zig:522-576`), after capturing the specifier char at :549-556, validate it: allowed set is `'d'`, `'c'`, `'s'`; empty `{}` → `'d'` (unchanged). On an invalid char, emit the diagnostic via `ctx.diag` (threaded `source_file_id`) using the print-call span, then treat as error. Match the message to NOTES.md's expectation `invalid format specifier`.
+4. Boundary: single-arg `print(fmt)` calls (`ec.len < 2`) bypass `lowerPrintFmt` (`lower.zig:2444` guard) — leave unvalidated (documented, out of scope; also the actual mechanism protecting json's `print("{")`/`print("}")`).
+
+- [ ] **Step 3: Build + R3 GREEN (error)**
+
+`bash sf/scripts/build_release.sh` → gate; reinstall std. R3 fixture `{x}`: `rc=2`, `error[3013]`, 0-byte `.c`. Space-specifier `{ }` also errors. Controls `{d}`/`{c}`/`{}` + `{s}` all unchanged GREEN.
+
+- [ ] **Step 4: Byte-identity gates**
+
+4 MD5s byte-identical (gol/lisp/json/mud baselines) — no gate/corpus/example program uses an invalid specifier (I-SPECIFIER blast-radius grep confirmed only `parsergap_specifier_xmod` has one).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "fix: invalid print specifier is a compile error (parser-gaps followup F3)"
+```
+Report to `.superpowers/sdd/task-F3-report.md`.
 
 ---
 
-### Task F4: Site B — LDS innermost resolution + capture_shadow scope-gate — per I-SITEB
+### Task F4: Site B — max-scope LDS + shadowed-var C-name synth + switch-prong scope gate — per I-SITEB
 
-**Files:** (filled from I-SITEB — `sf/src/lower.zig` LDS scan :2066-2086 + capture_shadow gating)
+**Files:**
+- Modify: `sf/src/lower.zig` — LDS scan :2066-2086 (max-scope first-tie), shadowed-var C-name synthesis :4606-4638, switch-prong scope gate :3716-3723
 
 **Interfaces:**
 - Consumes: I-SITEB report + operator ruling; R4 fixture.
-- Produces: shadowed locals resolve innermost; R4 correct; gates per ruling (any re-baseline with runtime proof).
+- Produces: shadowed locals resolve innermost; R4 GREEN (prints `2` then `1`); **lisp gate re-baselined `524d2872…→88dcb7f9…` under operator ruling (runtime-identical proof required)**; gol/mud/json stay byte-identical.
 
-- [ ] Implement per the I-SITEB design + ruling (exact code filled at STOP).
-- [ ] Build + R4 GREEN (prints `2` then `1`).
-- [ ] Heavy gate battery: 4 MD5s (any re-baseline per ruling + runtime proof), full corpus, 21-example matrix, test_analyzer.
-- [ ] Commit + report `.superpowers/sdd/task-F4-report.md`.
+- [ ] **Step 1: Reproduce RED baseline (R4)** — record current mis-resolution (`22`).
+- [ ] **Step 2: Implement the fix** (the empirically-verified `outA` patch from I-SITEB):
+
+1. **LDS scan** (`lower.zig:2066-2086`): change to max-scope scan — iterate `li` from `count→0`, apply `self.local_decl_scopes[li] <= self.scope_depth`, break on the FIRST (i.e. innermost-matching) hit. NOT a plain full reversal (gol breaks on plain reversal — I-SITEB §1.1/§1.4). Keep the LDS/A3R markers or note their shift.
+2. **Shadowed-var C-name synthesis** (`lower.zig:4606-4638`): the shadowed decl's C name must be synthesized (distinct slot) — LDS reversal alone fixes reads but still prints `22` because c89_emit dedups `decl_local` by name_id (`c89_emit.zig:2586`) and `assign` prefers `a.name_id` (:3730). Synth the shadowed var's C name so the inner and outer `x` get distinct C slots.
+3. **Switch-prong scope gate** (`lower.zig:3716-3723`): the scope filter exposes a pre-existing bug where switch-as-expression captures register at `scope_depth+1` (:3704/:3708) but the prong body is lowered unscoped — gate it or mud/lisp emit `TEMP_NONE` reads.
+
+- [ ] **Step 3: Build + GREEN verify**
+
+`bash sf/scripts/build_release.sh` → gate; reinstall std. R4 fixture: `rc=0`, run prints `2` then `1`. All 4 R4 exploration shapes now correct (block `21`, while-loop `21`, capture `21`, for-index `0120`). gol glider + mud boot runtime-identical to pre-fix.
+
+- [ ] **Step 4: Heavy gate battery** (per operator ruling: re-baseline allowed if runtime-identical)
+
+4 MD5 gates: gol `9cf758d9…`, mud `a1d0dd55…`, json `fc357296…` byte-identical; **lisp `524d2872…` → NEW value (`88dcb7f9…` projected from I-SITEB) with runtime-identity proof (REPL output byte-identical to pre-fix)**. Full corpus (per-module recipe; I-SITEB measured OK=255/FAIL=3/GG=5@263 with selfblok FAIL + many_ptr new GG — record exact), 21-example matrix, test_analyzer. Update QUICK_REF + EXPECTED_FAIL lisp baseline if it moved.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "fix: innermost local resolution for shadowed vars (Site B)"
+```
+Report to `.superpowers/sdd/task-F4-report.md`.
 
 ---
 
-### Task F5: Self-compile blocker fix — per I-SELFBLOK
+### Task F5: Self-compile blocker fix — brace-less if then/else parsed as STATEMENT (Option A)
 
-**Files:** (filled from I-SELFBLOK)
+**Files:**
+- Modify: `sf/src/parser.zig` (`parserParseIfStmt`, then-body :1515-1520 and else-body :1532)
 
 **Interfaces:**
-- Consumes: I-SELFBLOK report + operator ruling; R5 fixture.
-- Produces: R5 fixture GREEN; self-compile passes the previously-failing construct.
+- Consumes: I-SELFBLOK report + operator ruling (Option A = upstream, mirror zig0); R5 fixture.
+- Produces: R5 fixture GREEN (prints `1` rc=0); self-compile passes `type_resolver.zig:981`; **nested brace-less `if (a) if (b) x=1; else y=2;` binds `else` to the INNER if (nearest-if, matching zig0 + Zig)**.
 
-- [ ] Implement per the I-SELFBLOK design + ruling (exact code filled at STOP).
-- [ ] Build + R5 GREEN.
-- [ ] Byte-identity gates + self-compile re-check (must pass the pinned construct).
-- [ ] Commit + report `.superpowers/sdd/task-F5-report.md`.
+- [ ] **Step 1: Reproduce RED baseline (R5)** — record current `rc=2` error[2000] at the `else`.
+- [ ] **Step 2: Implement the fix** (Option A — parse the brace-less then/else bodies as STATEMENTS, mirroring zig0 `parseStatement()` at parser.cpp:2056 which consumes the terminating `;` inside the then-body, then checks `else`):
+
+In `parserParseIfStmt`, change the brace-less then-body branch (:1515-1520) from expression to statement:
+```zig
+    var then_body: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        then_body = try parserParseBlock(self);
+    } else {
+        then_body = try parserParseStatement(self);
+    }
+```
+and the brace-less else-body branch (:1532) from expression to statement:
+```zig
+        } else {
+            else_node = try parserParseStatement(self);
+        }
+```
+Do NOT add the `then_braced` flag or the `parserPeekN(1)==kw_else` lookahead (the I-SELFBLOK Option-B sketch is superseded by this ruling). Keep the trailing `;` consume (:1535-1537) — it becomes a no-op for brace-less bodies (the statement parser already consumed the `;`) but remains for braced bodies. The `PIF:b` marker line (:1522) stays byte-identical.
+
+Rationale: `parserParseStatement` (:1241-1272) on a plain `x=1;` goes through `parserParseExprStmt` (:1304-1310) which consumes the `;` and returns the same raw expr node as today (downstream AST shape unchanged for expr bodies); on a nested `if` it recurses into `parserParseIfStmt`, so the inner `if` consumes its own `else` — correct nearest-if. Matches zig0's `parseStatement()` (parser.cpp:1925-1986, then-branch via `parseStatement` :2056).
+
+- [ ] **Step 3: Build + GREEN verify**
+
+`bash sf/scripts/build_release.sh` → gate; reinstall std (`cp sf/src/std*.zig /tmp/fx_subfolder/lib/`). R5 fixture: `rc=0`, gcc rc=0, run prints `1`. Nested dangling-else control `if (a) if (b) x=1; else y=2;` → rc=0, else binds inner (prints `2` when b false). 7-form control battery from I-SELFBLOK §5.2 stays GREEN.
+
+- [ ] **Step 4: Byte-identity gates**
+
+4 MD5s byte-identical (gol/lisp/json/mud baselines) — verified in the I-SELFBLOK /tmp/ibuild patched build.
+
+- [ ] **Step 5: Self-compile re-check**
+
+`timeout 120 /tmp/fx_subfolder/zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig` → the pinned `type_resolver.zig:981` construct passes. The NEXT known gap is `*%` wrapping-multiply at `util/hash.zig:18` (no lexer token) — record but do NOT fix (out of F5 scope).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -m "fix: parse brace-less if then/else bodies as statements (parser)"
+```
+Report to `.superpowers/sdd/task-F5-report.md`.
 
 ---
 
