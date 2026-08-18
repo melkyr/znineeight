@@ -3118,9 +3118,7 @@ fn getUnsignedCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []c
     return getCTypeName(reg, mangler, tid);
 }
 
-fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed: *u8) void {
-    out_type.* = type_mod.TYPE_USIZE;
-    out_signed.* = @intCast(u8, 0);
+fn getTempTypeInfoResolve(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed: *u8) u8 {
     var i: usize = @intCast(usize, 0);
     while (i < emitter.current_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
         var ht = emitter.current_fn.hoisted_temps.items[i];
@@ -3131,10 +3129,32 @@ fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signe
                 bty.kind == TypeKind.i32_type or bty.kind == TypeKind.i64_type or
                 bty.kind == TypeKind.isize_type) {
                 out_signed.* = @intCast(u8, 1);
+            } else {
+                out_signed.* = @intCast(u8, 0);
             }
-            return;
+            return @intCast(u8, 1);
         }
     }
+    return @intCast(u8, 0);
+}
+
+fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, fb1: u32, fb2: u32, out_type: *u32, out_signed: *u8) void {
+    if (getTempTypeInfoResolve(emitter, temp_id, out_type, out_signed) == @intCast(u8, 1)) return;
+    if (fb1 != @intCast(u32, 0)) {
+        if (getTempTypeInfoResolve(emitter, fb1, out_type, out_signed) == @intCast(u8, 1)) return;
+    }
+    if (fb2 != @intCast(u32, 0)) {
+        if (getTempTypeInfoResolve(emitter, fb2, out_type, out_signed) == @intCast(u8, 1)) return;
+    }
+    var tmi_m: []const u8 = "internal: temp type resolution failed in getTempTypeInfo (temp ";
+    var tmi_b: [10]u8 = undefined;
+    var tmi_l = itoa_mod.itoa(temp_id, tmi_b[0..]);
+    var tmi_s: usize = @intCast(usize, 9) - @intCast(usize, tmi_l);
+    var tmi_e: []const u8 = ")";
+    var parts: [3][]const u8 = [3][]const u8{ tmi_m, tmi_b[tmi_s..@intCast(usize, 9)], tmi_e };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(emitter.interner, &parts[0], @intCast(u32, 3));
+    diag_mod.diagnosticCollectorAdd(emitter.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+    diag_mod.diagnosticCollectorFlushAndExit(emitter.diag, @intCast(u32, 3));
 }
 
 fn satMaxLit(width_bits: u8) []const u8 {
@@ -4833,11 +4853,11 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             if (b.op >= @intCast(u8, 16)) {
                 var wty: u32 = @intCast(u32, 0);
                 var wsg: u8 = @intCast(u8, 0);
-                getTempTypeInfo(emitter, b.result, &wty, &wsg);
+                getTempTypeInfo(emitter, b.result, b.lhs, b.rhs, &wty, &wsg);
                 if (b.op >= @intCast(u8, 19)) {
                     var sfty = emitter.registry.types_items[@intCast(usize, wty)];
                     if (sfty.kind == TypeKind.void_type or sfty.kind == TypeKind.integer_literal_type) {
-                        getTempTypeInfo(emitter, b.lhs, &wty, &wsg);
+                        getTempTypeInfo(emitter, b.lhs, b.rhs, @intCast(u32, 0), &wty, &wsg);
                     }
                     emitSatBinary(emitter, b.op, lhs, rhs, result, wty, wsg);
                 } else {
@@ -4927,7 +4947,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             if (u.op == @intCast(u8, 3)) {
                 var wty: u32 = @intCast(u32, 0);
                 var wsg: u8 = @intCast(u8, 0);
-                getTempTypeInfo(emitter, u.result, &wty, &wsg);
+                getTempTypeInfo(emitter, u.result, u.operand, @intCast(u32, 0), &wty, &wsg);
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, result);
                 var s: []const u8 = " = ";
