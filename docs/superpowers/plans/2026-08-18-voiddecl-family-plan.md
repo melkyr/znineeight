@@ -362,3 +362,13 @@ Fix the cross-module struct/tagged-union ref void collapse per I-XMODTYPE. Gates
 - [ ] **Step 1:** `bash <skilldir>/scripts/review-package b86279d4 HEAD` → .diff.
 - [ ] **Step 2:** Dispatch final reviewer (requesting-code-review/code-reviewer.md template).
 - [ ] **Step 3:** Fix wave for Critical/Important findings (ONE fixer), re-review.
+
+---
+
+## AMENDMENT (2026-08-18, operator ruling after R1 BLOCKED)
+
+**R1 finding (evidence over plan):** the brief's literal-form fixture (`var cmp_op = if (kind == 1) 13 else 12;`) is GREEN (rc=0, prints 12), not RED. The actual trigger for shape A is **untyped module-level `const`** referenced in an inferred `var` init in value position: bare (`var x = A;`), binary-op operand (`var x = A + B;`), or as both if-branches (`if (c) A else B`). This matches the real `lower.zig:4410` site exactly (`BIN_LE`/`BIN_LT` are untyped module consts at lower.zig:50-51). Annotating the const (`: u8`) or the var (`: u32`) downgrades to warning/GREEN. Cross-module untyped consts (`mod.A`) also RED. Full 22-probe evidence: `repro/mi_matrix/voiddecl_ifexpr_xmod/NOTES.md`, `.superpowers/sdd/task-R1-voiddecl-report.md`.
+
+**Operator ruling:** R1 becomes a two-fixture task — (1) literal form committed as a GREEN control/negative fixture documenting the literal-does-not-trigger finding, AND (2) module-const form committed as the RED trigger fixture. Both under `repro/mi_matrix/voiddecl_ifexpr_xmod/` (or sibling dir if cleaner).
+
+**I-IFEXPR pivot (binding):** the if-expr is the carrier, NOT the poison. Investigate **const resolution** — untyped `const X = <expr>` resolving to void in value position (what makes the reference void) — not the if-expr bool/cond mechanics per se. Locus lead: symbol/type resolution of untyped module-level consts (TYPE_VOID collapse when referenced from an inferred var init), compare annotated-const/annotated-var GREEN paths.
