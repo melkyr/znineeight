@@ -472,6 +472,13 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         fields_count = @intCast(usize, up.fields_count);
     } else if (base_ty.kind == type_mod.TypeKind.tagged_union_type) {
         var tp = self.registry.tu_items[@intCast(usize, base_ty.payload_idx)];
+        var tag_s: []const u8 = "tag";
+        var tag_id = interner_mod.stringInternerIntern(self.interner, tag_s);
+        if (field_name_id == tag_id) {
+            var ft_m: []const u8 = "FT:TAG\n"; pal_mod.markerWrite(ft_m);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, tp.tag_type);
+            return tp.tag_type;
+        }
         fields_start = @intCast(usize, tp.fields_start);
         fields_count = @intCast(usize, tp.fields_count);
     } else if (base_ty.kind == type_mod.TypeKind.module_type) {
