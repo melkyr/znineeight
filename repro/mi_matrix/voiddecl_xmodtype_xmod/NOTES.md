@@ -85,7 +85,10 @@ main.zig:6:4: error[3000]: cannot declare variable of type void
 | shape E alone (module-var carrier) | `var inst = mod.gblk.insts.items[0];` | 2 | — | — | RED |
 Each construct trips independently; committed fixture fires both.
 \* ctlE runs but derefs `undefined` items pointer → SIGSEGV at runtime; this is
-fixture data, not a compiler defect (dump+gcc both clean).
+fixture data, not a compiler defect (dump+gcc both clean). The committed fixture's own
+line 6 (`var inst = mod.gblk.insts.items[0];`) carries the same undefined-deref
+implication — hence the fixture is compile-gate only and can never print `7` (see
+Post-fix expectation).
 
 ## Escalation ladder (brief Step 1 ladder + extras, all probed in /tmp)
 | # | form | dump rc | verdict |
@@ -142,10 +145,20 @@ I-IFEXPR / I-SWITCHEXPR / I-U64CAST, PLUS the two-step alias-in-annotation path
 (`const T = other_mod.T;` used as a type).
 
 ## Post-fix expectation
-Committed fixture flips RED→GREEN: dump rc=0, gcc rc=0, run prints `7`. Escalation
-rows 9/10/12/13/14/16 and matrix 1'/2'/3'/8' flip too. main.zig:588 and the 5
-lower.zig sites should leave the self-compile error set together (they share this
-carrier shape).
+Committed fixture flips RED→GREEN as a **compile gate**: dump rc=0, gcc rc=0. It does
+NOT print `7` — main.zig:6 (`var inst = mod.gblk.insts.items[0];`) derefs the
+`undefined [*]Item` carrier and SIGSEGVs at runtime BEFORE the printInt on line 7
+(identical undefined-deref to ctlE). The print-`7` vehicle is the D-alone control
+(`var c = mod.makeCtx();`), not this fixture. Escalation rows 9/10/11/12/13/14/16
+(7 of 16 ladder rows RED) and matrix 1'/2'/3'/8' (4 of 12 matrix rows RED) flip too —
+the exact RED sets in the tables above. main.zig:588 should leave the self-compile
+error set. Whether the 5 lower.zig sites (5218/5275/5319/5395/5403) flip is NOT
+established here: the committed E-shape proves the module-var tagged-union
+field-access path trips, but lower.zig:5218's exact carrier
+(`blk = self.func.blocks.items[bi]`, a fn-local pointer-deref chain) was GREEN in the
+matrix (row 8 — probed only to BasicBlock, never the full `blk.insts.items[ii]` →
+LirInst chain, never the tagged-union member access). I-XMODTYPE must confirm the
+real-site mechanism before claiming all 5 sites flip.
 
 ## Cross-ref
 R1 sibling (if-expr carrier): `repro/mi_matrix/voiddecl_ifexpr_xmod/`. R2 sibling
