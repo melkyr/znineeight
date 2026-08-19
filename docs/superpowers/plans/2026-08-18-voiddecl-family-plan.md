@@ -372,3 +372,62 @@ Fix the cross-module struct/tagged-union ref void collapse per I-XMODTYPE. Gates
 **Operator ruling:** R1 becomes a two-fixture task — (1) literal form committed as a GREEN control/negative fixture documenting the literal-does-not-trigger finding, AND (2) module-const form committed as the RED trigger fixture. Both under `repro/mi_matrix/voiddecl_ifexpr_xmod/` (or sibling dir if cleaner).
 
 **I-IFEXPR pivot (binding):** the if-expr is the carrier, NOT the poison. Investigate **const resolution** — untyped `const X = <expr>` resolving to void in value position (what makes the reference void) — not the if-expr bool/cond mechanics per se. Locus lead: symbol/type resolution of untyped module-level consts (TYPE_VOID collapse when referenced from an inferred var init), compare annotated-const/annotated-var GREEN paths.
+
+---
+
+## AMENDMENT 2 (2026-08-18, operator ruling after all 4 I-tasks + audit cleared)
+
+**R-LADDER + 4 I-TASKS COMPLETE, ALL APPROVED** (see ledger). Two DISTINCT roots behind the 9 self-compile error[3000] sites:
+
+- **ROOT 1 — untyped module-level const/var collapse** (shapes A/B/C/D): `symbol_registrator.zig:235` starts `sym_type_id = 0`; only set for import/type-decl/ident-alias/array-slice-many_ptr inits, NEVER general value-expression inits. Value-position ref → `TYPE_VOID` via SVO `semantic_analyzer.zig:291` / Q1VF `:424-426` → var-decl hard error `:1915-1921`. Covers **4 sites**: main.zig:588, symbol_registrator:258/:357, lower.zig:4410. Verified independently by I-IFEXPR, I-SWITCHEXPR, I-U64CAST.
+- **ROOT 2 — tagged-union `.tag` discriminator gap** (shape E): `resolveFieldAccess` tagged_union_type branch `semantic_analyzer.zig:473-476` + variant loop `:570-586` + NF fallback `:588-591` never searches the discriminator → `TYPE_VOID`. Fix = return `tp.tag_type` when `field_name_id == interner("tag")`. Covers **5 lower.zig sites**: 5218/5275/5319/5395/5403. Verified by I-XMODTYPE (R4 matrix row-8 blind spot confirmed: chain GREEN up to `.tag`).
+- **NEW BLOCKER (post-fix exposure):** `error[3043]` unslice_slice_expr ICE at `lower.zig:722-739` — exposed only after Roots 1+2 clear the 9. Not part of the void family.
+
+### OPERATOR RULINGS (binding, 2026-08-18)
+1. **REJECT lazy resolve-and-backfill at consumption** (the `:291`/`:424-426` fallback design) — "the biggest sin on zig0"; fallbacks are NOT allowed on a prod-grade compiler.
+2. **MANDATE "front immediate resolution"**: resolve module-level const/var init types at DECLARATION time, upstream, order-independent. No lazy fallback.
+3. **NO leaking pass logic into `main.zig`** (orchestrator). The resolution pass lives in its own `.zig` file. Existing leaking logic (`main.zig:448-455` nameCachePut ident block, `resolveStmtTypes` `:475-525`) is to be moved INTO the pass.
+4. F fixes MUST address root causes upstream — no patches, no fallbacks.
+5. **ICE gets its own separated R/I/F task** appended at the end of this plan (repro → investigate → fix).
+
+### Task I-FRONTRES (NEW, read-only — Root 1 front-resolution design decision)
+
+**Consumes:** I-IFEXPR/I-SWITCHEXPR/I-U64CAST/I-XMODTYPE reports. **Produces:** the definitive Root-1 fix design (mechanism + locus + pass placement) for F1.
+
+**Decision framing (binding input):** the operator pre-selected the dedicated semantic-analyzer pass (Approach B). This task validates that choice against the alternatives and pins the exact implementation:
+
+- **Approach A — extend the type-resolver prepass (`resolveNamedTypeExpressions`):** lives in type_resolver.zig, runs pre-`typeResolverBuild`. PRO: no new pass/phase. CON: `resolveTypeExprFull` is a TYPE-expr resolver, not a VALUE-expr resolver (returns `TYPE_UNDEFINED` on `@intCast`/enum-member/cross-module-type/binary/struct-literal — exactly the failing forms); runs BEFORE the type registry is built so cross-module types unavailable (cannot fix shape D structurally); single linear pass (no fixpoint → cross-module const chains still order-fail); risks reimplementing sema inside the type resolver (the "leaking logic" smell).
+- **Approach B — dedicated pass using the semantic-analyzer resolver (operator-selected):** a new pass (own `.zig` file or `pub fn` in semantic_analyzer.zig) running AFTER type resolution (`main.zig:344`) and BEFORE fn-body sema, walking all modules' module-level `var_decl` inits, resolving each via the existing `semanticAnalyzerResolveExpr`/`semanticAnalyzerResolveModuleVarDecl`, writing `sym.type_id` + `nameCachePut`, iterating to fixpoint for cross-module const chains. PRO: reuses the ONE real value-expr resolver (no second typing implementation); runs after types exist (fixes D/E structurally); order-independent; REMOVES leaking logic from main.zig. CON: new orchestration surface; must isolate side effects (coercion table / enum_value_table / error_code_registry appends + diagnostics) — proposed: throwaway scratch `SemanticAnalyzer` context per module, diagnostics suppressed, side tables discarded; heavier but module-level init count is small.
+
+- [ ] **Step 1:** Verify the pass placement is correct: AFTER `typeResolverResolve` (`main.zig:344`) and BEFORE `phase_SemanticAnalysis` fn-body loop (`main.zig:421`). Confirm `semanticAnalyzerResolveExpr` can be invoked with a throwaway context at that point (read `semanticAnalyzerInit` main.zig:411 signature + `semanticAnalyzerResolveModuleVarDecl` semantic_analyzer.zig:2128-2146).
+- [ ] **Step 2:** Confirm the exact side-effect isolation needed: which of coercion_table/enum_value_table/error_code_registry/call_arg_types/call_param_map the throwaway context should bind vs leave unbound; whether diagnostics from the pass must be suppressed (or deduped) to avoid duplicate-warning regressions; whether the later real sema run re-resolves module inits (idempotent) or must skip them.
+- [ ] **Step 3:** Pin the fixpoint termination bound for cross-module const chains (acyclic const graph → bounded iterations; match `constAliasPrepass`'s Kahn intent).
+- [ ] **Step 4:** Report: `.superpowers/sdd/task-I-FRONTRES-report.md` with the validated design (mechanism, locus, new-file-vs-function placement, exact main.zig call-site + which leaking blocks to remove, side-effect contract, fixpoint bound, byte-identity reasoning, discriminating test). Zero source changes; tree clean; revert any /tmp instrumentation.
+
+### Task F1 (RE-MAPPED — Root 1, front immediate resolution)
+
+Implement the validated I-FRONTRES design: a dedicated front-resolution pass (own file) that resolves every module-level `var_decl` init type via the semantic-analyzer resolver and writes `sym.type_id` + `nameCachePut`, order-independent fixpoint. Remove the leaking `main.zig:448-455` ident nameCachePut block + `resolveStmtTypes` into the pass. NO fallback added at `:291`/`:424-426`. Gates: R1-R4 RED→GREEN (all four fixtures), 4 MD5s byte-identical, corpus unchanged, matrix/analyzer baseline, self-compile frontier re-check (tree-wide) — expect the 4 Root-1 sites (main.zig:588, symbol_registrator:258/:357, lower.zig:4410) cleared; the 5 Root-2 sites remain until F2.
+
+### Task F2 (RE-MAPPED — Root 2, tagged-union `.tag`)
+
+Add the discriminator to field-access resolution: in the `resolveFieldAccess` tagged_union_type branch (`semantic_analyzer.zig:473-476`/`:570-591`), when `field_name_id == interner("tag")` return `tp.tag_type` (`TaggedUnionPayload.tag_type`, type_registry.zig:83). Root-cause fix, not a fallback. Gates: R4-E + re-created `.tag` probe fixture GREEN, 4 MD5s byte-identical, corpus unchanged, matrix/analyzer baseline, self-compile — expect the 5 Root-2 lower.zig sites (5218/5275/5319/5395/5403) cleared; verify total error[3000]==0 (not just tracked 9).
+
+### Task R-ICE (NEW, appended — error[3043] slice_expr repro)
+
+Create `repro/mi_matrix/parsergap_slice_expr_xmod/{main.zig,NOTES.md}` reproducing the `error[3043] internal: unsupported slice_expr form/base` ICE (lower.zig:722-739). RED = rc=3 ICE (exit code 3, flushAndExit), 0-byte .c. GREEN control = a supported slice form. NOTES.md: purpose, fixture, RED baseline verbatim, control, post-fix expectation. Fixture only, no sf/src changes, no rebuild.
+
+### Task I-ICE (NEW, appended — read-only)
+
+Trace the `slice_expr` lowering path (`lower.zig:3849+`): what base forms hit `iceSliceUnsupported`, which slice_expr forms ARE supported (array `[0..]`/`[a..b]`/`[a..]`, slice `[0..len]`, etc.), where the gap is, blast radius (whole-closure scan of slice_expr uses in sf/src), exact fix locus, byte-identity reasoning. Report: `.superpowers/sdd/task-I-ICE-report.md`. Zero source changes; tree clean.
+
+### Task F-ICE (NEW, appended)
+
+Fix the slice_expr gap per I-ICE. Gates: R-ICE RED→GREEN, 4 MD5s byte-identical, corpus unchanged, matrix/analyzer baseline, self-compile frontier re-check (tree-wide), whole-closure scan (0 same-class sites).
+
+### Task GATE (AMENDED)
+
+Corpus sweep = prior 277 + R1-R4 dirs + R-ICE dir (282); EXPECTED_FAIL version bump + closeout (2 roots, 4 I-task mechanism records, F1/F2, R-ICE/I-ICE/F-ICE, new self-compile status); QUICK_REF baseline; record next self-compile blocker (do NOT fix).
+
+### Task M-FINAL (unchanged)
+
+Whole-branch review, BASE = b86279d4, requesting-code-review template + fix wave.
