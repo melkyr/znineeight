@@ -431,3 +431,11 @@ Corpus sweep = prior 277 + R1-R4 dirs + R-ICE dir (282); EXPECTED_FAIL version b
 ### Task M-FINAL (unchanged)
 
 Whole-branch review, BASE = b86279d4, requesting-code-review template + fix wave.
+
+### AMENDMENT 3 — operator ruling 2026-08-19: json MD5 re-baseline (F1 gate)
+
+**Ruling (question tool):** Re-baseline json. F1 gate becomes **"3 MD5s byte-identical (gol/lisp/mud) + json re-baselined to `9720478c937409a29fe23ae0199821cf` with runtime-identity proof"** (precedent B-F2 `066c9997→fc357296`, F3 all-four).
+
+**Rationale:** the front-resolution pass types json_parser's untyped module `var g_arena = std.arena.create(1048576)`, so 5 temp decls in emitted C change `unsigned int` → `Arena*` (void-collapse artifact removal). Runtime-identical (rc=0, byte-identical stdout), corpus classification unchanged. The old `fc357296…` json baseline is superseded. GATE + QUICK_REF must carry the new value + the `[F1 re-baselined … → 9720478c…]` forward-pointer on any historical references.
+
+**Source:** validated design in `.superpowers/sdd/task-I-FRONTRES-report.md` (read-only, tree clean, HEAD `70735d9b`).
