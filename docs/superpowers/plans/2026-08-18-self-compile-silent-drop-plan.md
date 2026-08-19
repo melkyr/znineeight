@@ -369,3 +369,29 @@ Reviewer verifies: all ladder fixtures committed with valid NOTES.md; I-DROP rep
 - [ ] **Step 3: Fix wave if needed**
 
 Address any Critical/Important findings (one fix subagent for all findings), then re-review. Record Minor findings in the ledger.
+
+---
+
+## AMENDMENT (2026-08-18) — u16 array-index overflow fix (whole-class sweep)
+
+**Context.** I-DROP isolated the mechanism: modules 1-4 are silently dropped because `astStoreAddExtraChildren` (ast.zig:424) packs `(start << 16) | count` into the u32 `AstNode.payload`; when `store.extra_children.len >= 65536` during self-compile, `start << 16` wraps, module_root payloads decode to wrong regions, registration runs on garbage (0 named types), and cross-module struct refs fall to TYPE_VOID → 213x error[3000]. The R-ladder (R1-R6) all stayed below the boundary, so nothing tripped.
+
+**Operator rulings (2026-08-18, question tool):**
+1. Fix scope = the WHOLE class (not just extra_children): widen every `*_start: u16` index into the two unbounded arrays (`ast.extra_children`, `type_registry.xt_items`/`xn_items`) to u32. Repack sites `<< 16` → `<< 32`.
+2. `AstNode.payload` u32 → u64, encoding `(start << 32) | count`, decode `>> 32` / `& 0xFFFFFFFF`. Accept AstNode growth 28 → 32 bytes. `*_count` fields stay u16.
+3. Success gate: self-compile ADVANCES past the 213x error[3000] (modules 1-4 register cleanly).
+
+**Task R1: scale repro crossing the boundary (voiddecl_boundary_xmod)**
+- Create `repro/mi_matrix/voiddecl_boundary_xmod/`: N sibling modules, each carrying ~10k `pub const vNNNN: u32 = NNNN;` + one `pub const S = struct { v: u32 };` + `pub fn make() S`; `main.zig` imports all N, calls `m1.make()` (early) + `mLast.make()`, prints `.v`.
+- Tune N so `ast.extra_children.len` crosses 65,536 (R4 showed ~10k extra_children per 10k-const module; N=7 → ~70k).
+- RED: `error[3000]` on struct-return calls for modules parsed after the boundary. GREEN control: small N below boundary prints correctly. NOTES.md documents N, boundary crossing, RED/GREEN.
+- Commit message: `repro: extra_children 65536 boundary probe (voiddecl_boundary_xmod)`.
+
+**Task F1: the sweep (one implementer, two staged commits)**
+- Commit 1 (extra_children path): ast.zig:126 `payload: u32`→u64; :128 `zzz_astnode_sz` → 32-byte layout; :424 encode `(start<<32)|count`; :428 decode `>>32`/`&0xFFFFFFFF`; :132 `FnProto.params_start: u16`→u32 (params_count stays u16); parser.zig:1444/1448 `param_start`→u32 (drop `@intCast(u16,…)`); repack sites `<<16`→`<<32` u64 result at analyzer.zig:407,784, lower.zig:5472, semantic_analyzer.zig:1653, type_resolver.zig:1228; audit every `AstNode.payload`/`astStoreGetExtraChildren` consumer for the u64 change.
+- Commit 2 (type_registry path): type_registry.zig:79 `FnPayload.params_start`→u32; :80-84 `fields_start`/`members_start`/`elems_start`/`tags_start`→u32; :512/:523/:550 `GetOrCreateTuple/Fn/ErrorSet` `*_start: u16`→u32; truncation casts → u32 at symbol_registrator.zig:207, semantic_analyzer.zig:2090, type_resolver.zig:391,1226; update `GetOrCreate*` callers.
+- Gates per commit: 4 MD5s byte-identical (gol 9cf758d9…, lisp 88dcb7f9…, mud a1d0dd55…, json fc357296…); corpus 269 unchanged; matrix 21/21; test_analyzer 5/4; R1 RED→GREEN; self-compile marker scan: RN: markers present for modules 1-4 and the 213x error[3000] resolved (or frontier advances to the next genuine blocker, recorded not fixed).
+
+**Task GATE (amended):** after the existing GATE content, additionally record in the closeout: the u16-index-overflow mechanism, the whole-class sweep (payload u64 + all *_start u32), R1 fixture (boundary repro), and the new self-compile status. Corpus = 269 + R1 dir. 4 MD5s byte-identical. Version bump.
+
+**Task M-FINAL (unchanged):** whole-branch review, BASE = `a441da3e`.
