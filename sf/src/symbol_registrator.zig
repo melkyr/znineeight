@@ -116,7 +116,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         }
         if (fcount > 0) {
             type_mod.stAppend(type_reg, type_mod.StructPayload{
-                .fields_start = @intCast(u16, fstart),
+                .fields_start = @intCast(u32, fstart),
                 .fields_count = @intCast(u16, fcount),
             });
         }
@@ -145,7 +145,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         if ((@intCast(u16, node.flags) & 1) != 0) {
             type_mod.tuAppend(type_reg, type_mod.TaggedUnionPayload{
                 .tag_type = type_mod.TYPE_U32,
-                .fields_start = @intCast(u16, fstart),
+                .fields_start = @intCast(u32, fstart),
                 .fields_count = @intCast(u16, fcount),
             });
             var tu_last: usize = type_reg.tu_len - @intCast(usize, 1);
@@ -155,7 +155,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
         } else {
             type_mod.unAppend(type_reg, type_mod.UnionPayload{
-                .fields_start = @intCast(u16, fstart),
+                .fields_start = @intCast(u32, fstart),
                 .fields_count = @intCast(u16, fcount),
                 .tag_type = type_mod.TYPE_VOID,
             });
@@ -193,7 +193,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             i += 1;
         }
         type_mod.enAppend(type_reg, type_mod.EnumPayload{
-            .members_start = @intCast(u16, mstart),
+            .members_start = @intCast(u32, mstart),
             .members_count = @intCast(u16, mcount),
             .backing_type = backing_box[0],
         });
@@ -204,7 +204,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
     }
     if (decl_kind == AstKind.error_set_decl) {
-        var tags_start_idx: u16 = @intCast(u16, type_reg.xn_len);
+        var tags_start_idx: u32 = @intCast(u32, type_reg.xn_len);
         var i: usize = 0;
         while (i < children.len) : (i += 1) {
             type_mod.xnAppend(type_reg, children[i]);

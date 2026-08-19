@@ -2087,7 +2087,7 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     var saved = self._stub_0;
     var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
     if (ec.len == @intCast(usize, 0)) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
-    var start: u16 = @intCast(u16, self.registry.xt_len);
+    var start: u32 = @intCast(u32, self.registry.xt_len);
     var i: usize = 0;
     while (i < ec.len) : (i += @intCast(usize, 1)) {
         self._stub_0 = semanticAnalyzerResolveExpr(self, ec[i]);

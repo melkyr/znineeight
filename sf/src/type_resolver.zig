@@ -388,7 +388,7 @@ fn layoutAddTypeEdge(self: *TypeResolver, field_type: u32, container_tid: u32) v
     }
 }
 
-fn layoutAddFieldEdges(self: *TypeResolver, fstart: u16, fcount: u16, container_tid: u32) void {
+fn layoutAddFieldEdges(self: *TypeResolver, fstart: u32, fcount: u16, container_tid: u32) void {
     var fi: usize = 0;
     while (fi < @intCast(usize, fcount)) : (fi += 1) {
         layoutAddTypeEdge(self, self.registry.fe_items[@intCast(usize, fstart) + fi].type_id, container_tid);
@@ -775,7 +775,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     });
                 }
                 type_mod.stAppend(env.typereg, type_mod.StructPayload{
-                    .fields_start = @intCast(u16, sd_fstart),
+                    .fields_start = @intCast(u32, sd_fstart),
                     .fields_count = @intCast(u16, sd_fc),
                 });
                 var sd_st_idx: u32 = @intCast(u32, env.typereg.st_len - @intCast(usize, 1));
@@ -831,7 +831,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         }
     }
     if (node.kind == AstKind.error_set_decl) {
-        var esd_start_box: [1]u16 = [1]u16{ @intCast(u16, env.typereg.xn_len) };
+        var esd_start_box: [1]u32 = [1]u32{ @intCast(u32, env.typereg.xn_len) };
         var esd_count_box: [1]u16 = [1]u16{ @intCast(u16, 0) };
         if (node.payload != 0) {
             var esd_children = ast_mod.astStoreGetExtraChildren(env.store, node.payload);
@@ -911,7 +911,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         while (fnt_a < fnt_pc) : (fnt_a += @intCast(usize, 1)) {
             type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
         }
-        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), @intCast(u16, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
+        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), @intCast(u32, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0]);
         var opm3_m: []const u8 = "OPTVOID:fntT"; pal_mod.markerWriteInt(opm3_m, fnt_tid);
         type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
         return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
@@ -1223,7 +1223,7 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
                 var is_variadic: u8 = @intCast(u8, 0);
                 if ((decl.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { is_variadic = @intCast(u8, 1); }
-                var fn_start: u16 = @intCast(u16, env.typereg.xt_len);
+                var fn_start: u32 = @intCast(u32, env.typereg.xt_len);
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
                     var pnodes = ast_mod.astStoreGetExtraChildren(env.store, p_payload);

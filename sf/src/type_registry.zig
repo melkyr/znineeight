@@ -75,13 +75,13 @@ pub const ArrayPayload = struct { elem: TypeId, length: u32 };
 pub const SlicePayload = struct { elem: TypeId };
 pub const OptionalPayload = struct { payload: TypeId };
 pub const EUPayload = struct { payload: TypeId, error_set: TypeId };
-pub const ErrorSetPayload = struct { tags_start: u16, tags_count: u16 };
-pub const FnPayload = struct { name_id: u32, module_id: u32, params_start: u16, params_count: u16, return_type: TypeId, is_extern: u8, flags_packed: u8 };
-pub const StructPayload = struct { fields_start: u16, fields_count: u16 };
-pub const EnumPayload = struct { members_start: u16, members_count: u16, backing_type: TypeId };
-pub const UnionPayload = struct { fields_start: u16, fields_count: u16, tag_type: TypeId };
-pub const TaggedUnionPayload = struct { tag_type: TypeId, fields_start: u16, fields_count: u16 };
-pub const TuplePayload = struct { elems_start: u16, elems_count: u16 };
+pub const ErrorSetPayload = struct { tags_start: u32, tags_count: u16 };
+pub const FnPayload = struct { name_id: u32, module_id: u32, params_start: u32, params_count: u16, return_type: TypeId, is_extern: u8, flags_packed: u8 };
+pub const StructPayload = struct { fields_start: u32, fields_count: u16 };
+pub const EnumPayload = struct { members_start: u32, members_count: u16, backing_type: TypeId };
+pub const UnionPayload = struct { fields_start: u32, fields_count: u16, tag_type: TypeId };
+pub const TaggedUnionPayload = struct { tag_type: TypeId, fields_start: u32, fields_count: u16 };
+pub const TuplePayload = struct { elems_start: u32, elems_count: u16 };
 pub const UnresolvedPayload = struct { name_id: u32, module_id: u32 };
 pub const FieldEntry = struct { name_id: u32, type_id: TypeId, offset: u32 };
 pub const EnumMember = struct { name_id: u32, value: i64 };
@@ -509,7 +509,7 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
     return tid;
 }
 
-pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems_count: u16) u32 {
+pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems_count: u16) u32 {
     tupAppend(self, TuplePayload{ .elems_start = elems_start, .elems_count = elems_count });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.tuple_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
@@ -520,7 +520,7 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u16, elems
     return tid;
 }
 
- pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u16, params_count: u16, return_type: TypeId) u32 {
+ pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u32, params_count: u16, return_type: TypeId) u32 {
      var p2m: []const u8 = "P2:n"; pal.markerWrite(p2m);
      var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
      var i: usize = 0;
@@ -547,11 +547,11 @@ pub fn typeRegistryMarkFnPtrUsed(self: *TypeRegistry, tid: u32) void {
     self.types_items[@intCast(usize, tid)].flags = self.types_items[@intCast(usize, tid)].flags | @intCast(u8, 1);
 }
 
-pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u16, tags_count: u16) u32 {
+pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u32, tags_count: u16) u32 {
     var key: u64 = @intCast(u64, tags_count);
     var ki: u16 = 0;
     while (ki < tags_count) : (ki += 1) {
-        var tag = self.xn_items[@intCast(usize, tags_start + ki)];
+        var tag = self.xn_items[@intCast(usize, tags_start + @intCast(u32, ki))];
         key = (key ^ @intCast(u64, tag)) * @intCast(u64, 1099511628211);
     }
     if (hash_mod.u64ToU32MapGet(&self.es_cache, key)) |existing| return existing;

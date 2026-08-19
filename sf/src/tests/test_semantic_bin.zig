@@ -219,7 +219,7 @@ fn testResolveStructField() void {
     var fstart = @intCast(u32, 0);
     type_mod.feAppend(&typereg, type_mod.FieldEntry{ .name_id = fnid2, .type_id = type_mod.TYPE_U8, .offset = @intCast(u32, 0) });
 
-    var sp = type_mod.StructPayload{ .fields_start = @intCast(u16, fstart), .fields_count = @intCast(u16, 2) };
+    var sp = type_mod.StructPayload{ .fields_start = @intCast(u32, fstart), .fields_count = @intCast(u16, 2) };
     type_mod.stAppend(&typereg, sp);
     var pidx: u32 = @intCast(u32, typereg.st_len - 1);
 
@@ -327,7 +327,7 @@ fn testResolveFieldNotFound() void {
     var fnid1 = interner_mod.stringInternerIntern(&interner, fn1);
     type_mod.feAppend(&typereg, type_mod.FieldEntry{ .name_id = fnid1, .type_id = type_mod.TYPE_U32, .offset = @intCast(u32, 0) });
 
-    var sp = type_mod.StructPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 1) };
+    var sp = type_mod.StructPayload{ .fields_start = @intCast(u32, 0), .fields_count = @intCast(u16, 1) };
     type_mod.stAppend(&typereg, sp);
     var pidx: u32 = @intCast(u32, typereg.st_len - @intCast(usize, 1));
 
@@ -865,7 +865,7 @@ fn testFnCallArith() void {
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
     var ct = coercion_mod.coercionTableInit(&arena);
     var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
-    var fn_start: u16 = @intCast(u16, typereg.xt_len);
+    var fn_start: u32 = @intCast(u32, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
     var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), fn_start, @intCast(u16, 2), type_mod.TYPE_I32);
@@ -910,7 +910,7 @@ fn testFnCallWrongArgCount() void {
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
     var ct = coercion_mod.coercionTableInit(&arena);
     var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
-    var fn_start: u16 = @intCast(u16, typereg.xt_len);
+    var fn_start: u32 = @intCast(u32, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_I32);
     var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_I32);
     var un: []const u8 = "add";
@@ -1037,7 +1037,7 @@ fn testFnCallCoercion() void {
     var rtt = rtt_mod.resolvedTypeTableInit(&arena);
     var ct = coercion_mod.coercionTableInit(&arena);
     var sa = sa_mod.semanticAnalyzerInit(&arena, &rtt, &diag, &typereg, &symreg, &store, @intCast(u32, 0), &ct);
-    var fn_start: u16 = @intCast(u16, typereg.xt_len);
+    var fn_start: u32 = @intCast(u32, typereg.xt_len);
     type_mod.xtAppend(&typereg, type_mod.TYPE_U32);
     var fn_tid = type_mod.typeRegistryGetOrCreateFn(&typereg, @intCast(u32, 0), @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), fn_start, @intCast(u16, 1), type_mod.TYPE_U32);
     var un: []const u8 = "f";
@@ -1219,7 +1219,7 @@ fn testSwitchExhaustiveness() void {
     var em_start = typereg.em_len;
     var emi: usize = 0;
     while (emi < 3) : (emi += 1) { type_mod.emAppend(&typereg, em_buf[emi]); }
-    type_mod.enAppend(&typereg, type_mod.EnumPayload{ .members_start = @intCast(u16, em_start), .members_count = @intCast(u16, 3), .backing_type = @intCast(u32, 0) });
+    type_mod.enAppend(&typereg, type_mod.EnumPayload{ .members_start = @intCast(u32, em_start), .members_count = @intCast(u16, 3), .backing_type = @intCast(u32, 0) });
     var en_tid: u32 = @intCast(u32, typereg.en_len - @intCast(usize, 1));
     var sn: []const u8 = "E";
     var snid = interner_mod.stringInternerIntern(&interner, sn);
@@ -1922,7 +1922,7 @@ fn testErrorSetMemberIndex() void {
 
     type_mod.xnAppend(&typereg, fnf_id);
     type_mod.xnAppend(&typereg, oom_id);
-    var es_type_id = type_mod.typeRegistryGetOrCreateErrorSet(&typereg, @intCast(u16, 0), @intCast(u16, 2));
+    var es_type_id = type_mod.typeRegistryGetOrCreateErrorSet(&typereg, @intCast(u32, 0), @intCast(u16, 2));
 
     var mi1 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, es_type_id, fnf_id);
     if (mi1 != @intCast(u32, 0)) { fail("testESMemberIndex: FileNotFound not ordinal 0"); return; }

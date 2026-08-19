@@ -244,7 +244,7 @@ fn testEnumLayout(interner: *interner_mod.StringInterner) void {
     type_mod.typeRegistryRegisterPrimitives(&tr);
     var s: []const u8 = "MyEnum";
     var nid = interner_mod.stringInternerIntern(interner, s);
-    type_mod.enAppend(&tr, type_mod.EnumPayload{ .members_start = @intCast(u16, 0), .members_count = @intCast(u16, 0), .backing_type = type_mod.TYPE_U16 });
+    type_mod.enAppend(&tr, type_mod.EnumPayload{ .members_start = @intCast(u32, 0), .members_count = @intCast(u16, 0), .backing_type = type_mod.TYPE_U16 });
     var en_payload_idx = tr.en_len - 1;
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.enum_type);
     var ety = tr.types_items[@intCast(usize, tid)];
@@ -267,7 +267,7 @@ fn testUnionLayout(interner: *interner_mod.StringInterner) void {
     type_mod.typeRegistryRegisterPrimitives(&tr);
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U32, .offset = @intCast(u32, 0) });
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U64, .offset = @intCast(u32, 0) });
-    type_mod.unAppend(&tr, type_mod.UnionPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 2), .tag_type = @intCast(u32, 0) });
+    type_mod.unAppend(&tr, type_mod.UnionPayload{ .fields_start = @intCast(u32, 0), .fields_count = @intCast(u16, 2), .tag_type = @intCast(u32, 0) });
     var un_payload_idx = tr.un_len - 1;
     var s: []const u8 = "MyUnion";
     var nid = interner_mod.stringInternerIntern(interner, s);
@@ -292,7 +292,7 @@ fn testTaggedUnionLayout(interner: *interner_mod.StringInterner) void {
     type_mod.typeRegistryRegisterPrimitives(&tr);
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U32, .offset = @intCast(u32, 0) });
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U8, .offset = @intCast(u32, 0) });
-    type_mod.tuAppend(&tr, type_mod.TaggedUnionPayload{ .tag_type = type_mod.TYPE_U8, .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 2) });
+    type_mod.tuAppend(&tr, type_mod.TaggedUnionPayload{ .tag_type = type_mod.TYPE_U8, .fields_start = @intCast(u32, 0), .fields_count = @intCast(u16, 2) });
     var tu_payload_idx = tr.tu_len - 1;
     var s: []const u8 = "MyTaggedUnion";
     var nid = interner_mod.stringInternerIntern(interner, s);
@@ -365,7 +365,7 @@ fn testTupleLayout(interner: *interner_mod.StringInterner) void {
     type_mod.typeRegistryRegisterPrimitives(&tr);
     type_mod.xtAppend(&tr, type_mod.TYPE_U32);
     type_mod.xtAppend(&tr, type_mod.TYPE_U8);
-    type_mod.tupAppend(&tr, type_mod.TuplePayload{ .elems_start = @intCast(u16, 0), .elems_count = @intCast(u16, 2) });
+    type_mod.tupAppend(&tr, type_mod.TuplePayload{ .elems_start = @intCast(u32, 0), .elems_count = @intCast(u16, 2) });
     var tup_payload_idx = tr.tup_len - 1;
     var s: []const u8 = "MyTuple";
     var nid = interner_mod.stringInternerIntern(interner, s);
@@ -388,7 +388,7 @@ fn testTupleEmptyLayout(interner: *interner_mod.StringInterner) void {
     var a = alloc_mod.sandInit(buf[0..]);
     var tr = type_mod.typeRegistryInit(&a, interner);
     type_mod.typeRegistryRegisterPrimitives(&tr);
-    type_mod.tupAppend(&tr, type_mod.TuplePayload{ .elems_start = @intCast(u16, 0), .elems_count = @intCast(u16, 0) });
+    type_mod.tupAppend(&tr, type_mod.TuplePayload{ .elems_start = @intCast(u32, 0), .elems_count = @intCast(u16, 0) });
     var tup_payload_idx = tr.tup_len - 1;
     var s: []const u8 = "EmptyTuple";
     var nid = interner_mod.stringInternerIntern(interner, s);
@@ -975,7 +975,7 @@ fn testStructLayout(interner: *interner_mod.StringInterner) void {
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_U8, .offset = @intCast(u32, 0) });
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = type_mod.TYPE_I64, .offset = @intCast(u32, 0) });
 
-    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 3) });
+    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u32, 0), .fields_count = @intCast(u16, 3) });
     var st_payload_idx = tr.st_len - 1;
 
     var s: []const u8 = "MyStruct";
@@ -1045,10 +1045,10 @@ fn testCircularCycle(interner: *interner_mod.StringInterner) void {
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = b_tid, .offset = @intCast(u32, 0) });
     type_mod.feAppend(&tr, type_mod.FieldEntry{ .name_id = @intCast(u32, 0), .type_id = a_tid, .offset = @intCast(u32, 0) });
 
-    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u16, 0), .fields_count = @intCast(u16, 1) });
+    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u32, 0), .fields_count = @intCast(u16, 1) });
     var a_sp_idx = tr.st_len - 1;
 
-    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u16, 1), .fields_count = @intCast(u16, 1) });
+    type_mod.stAppend(&tr, type_mod.StructPayload{ .fields_start = @intCast(u32, 1), .fields_count = @intCast(u16, 1) });
     var b_sp_idx = tr.st_len - 1;
 
     var aty = tr.types_items[@intCast(usize, a_tid)];
