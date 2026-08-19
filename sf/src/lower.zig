@@ -516,7 +516,7 @@ pub fn createBlock(self: *LirLowerer) u32 {
 fn lowerPrintCall(self: *LirLowerer, ec: []const u32) u32 {
     var store = self.ctx.store;
     var fmt_node = store.nodes.items[@intCast(usize, ec[0])];
-    var string_id = fmt_node.payload;
+    var string_id: u32 = @intCast(u32, fmt_node.payload);
     emitInst(self, LirInst{ .print_str = .{ .string_id = string_id } });
     var tuple_node = store.nodes.items[@intCast(usize, ec[1])];
     var tuple_ec = ast_mod.astStoreGetExtraChildren(store, tuple_node.payload);
@@ -834,7 +834,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         return lowerLValueAddr(self, lv_node.child_0, result_type);
     }
     if (lv_node.kind == AstKind.field_access) {
-        var field_name_id = lv_node.payload;
+        var field_name_id: u32 = @intCast(u32, lv_node.payload);
         var base_node_idx = lv_node.child_0;
         var base_resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node_idx);
         var base_ty = if (base_resolved) |bt| bt else type_mod.TYPE_VOID;
@@ -952,7 +952,7 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
 
 fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
     var fa_node = self.ctx.store.nodes.items[@intCast(usize, fa_node_idx)];
-    var field_name_id = fa_node.payload;
+    var field_name_id: u32 = @intCast(u32, fa_node.payload);
     var child_0_node = self.ctx.store.nodes.items[@intCast(usize, fa_node.child_0)];
     var base_temp: u32 = undefined;
     var resolved_base: ?u32 = null;
@@ -1282,7 +1282,7 @@ fn emitTaggedUnionInit(self: *LirLowerer, tu_type_id: u32, variant_index: u32) u
 
 fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) void {
     var cap = self.ctx.store.nodes.items[@intCast(usize, capture_node)];
-    var cap_name = cap.payload;
+    var cap_name: u32 = @intCast(u32, cap.payload);
     var cond_ty = getTempType(self, cond_temp);
     var cap_type = cond_ty;
     var cap_temp = cond_temp;
@@ -1480,7 +1480,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
         return tid;
     } else if (node.kind == AstKind.error_literal) {
-        var name_id: u32 = node.payload;
+        var name_id: u32 = @intCast(u32, node.payload);
         var reg_code: u32 = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, name_id);
         var val = @intCast(u64, reg_code);
         var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
@@ -2225,7 +2225,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.field_access) {
-        var field_name_id = node.payload;
+        var field_name_id: u32 = @intCast(u32, node.payload);
         var base_node = store.nodes.items[@intCast(usize, node.child_0)];
         if (base_node.kind == AstKind.ident_expr and self.ctx.has_symbols != @intCast(u8, 0)) {
             var base_name_id = store.identifiers.items[@intCast(usize, base_node.payload)];
@@ -2512,7 +2512,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          }
            var prt2_nl: []const u8 = "\n"; pal.markerWrite(prt2_nl);
           var d9p_m: []const u8 = "D9:p"; pal.markerWrite(d9p_m);
-        var d9p_b: [20]u8 = undefined; var d9p_l = itoa_mod.itoa(node.payload, d9p_b[0..]); var d9p_s: usize = @intCast(usize, 19) - @intCast(usize, d9p_l); pal.markerWrite(d9p_b[d9p_s..@intCast(usize, 19)]);
+        var d9p_b: [20]u8 = undefined; var d9p_l = itoa_mod.itoa(@intCast(u32, node.payload & @intCast(u64, 0xFFFFFFFF)), d9p_b[0..]); var d9p_s: usize = @intCast(usize, 19) - @intCast(usize, d9p_l); pal.markerWrite(d9p_b[d9p_s..@intCast(usize, 19)]);
          var d9p_nl: []const u8 = "\n"; pal.markerWrite(d9p_nl);
          var callee_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
          if (callee_rt) |crt| {
@@ -2531,14 +2531,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       var e0m: []const u8 = "E0:p"; pal.markerWrite(e0m);
                       var e0b: [10]u8 = undefined; var e0l = itoa_mod.itoa(@intCast(u32, @enumToInt(store.nodes.items[@intCast(usize, ec[0])].kind)), e0b[0..]); var e0s: usize = @intCast(usize, 9) - @intCast(usize, e0l); pal.markerWrite(e0b[e0s..@intCast(usize, 9)]);
                       var e01m: []const u8 = "n"; pal.markerWrite(e01m);
-                      var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(store.nodes.items[@intCast(usize, ec[0])].payload, e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.markerWrite(e01b[e01s..@intCast(usize, 9)]);
+                      var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(@intCast(u32, store.nodes.items[@intCast(usize, ec[0])].payload & @intCast(u64, 0xFFFFFFFF)), e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.markerWrite(e01b[e01s..@intCast(usize, 9)]);
                       var e02m: []const u8 = "i"; pal.markerWrite(e02m);
                       var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(store.identifiers.items[@intCast(usize, store.nodes.items[@intCast(usize, ec[0])].payload)], e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
                       var e0nl: []const u8 = "\n"; pal.markerWrite(e0nl);
                       }
                        var pfmtn = store.nodes.items[@intCast(usize, ec[0])];
                        if (pfmtn.kind == AstKind.string_literal) {
-                           var pfsid: u32 = pfmtn.payload;
+                           var pfsid: u32 = @intCast(u32, pfmtn.payload);
                            if (@intCast(usize, pfmtn.payload) < store.string_values.len) { pfsid = store.string_values.items[@intCast(usize, pfmtn.payload)]; }
                            var pfbytes = si_mod.stringInternerGet(self.ctx.registry.interner, pfsid);
                            var pan = store.nodes.items[@intCast(usize, ec[ec.len - @intCast(usize, 1)])];
@@ -2661,14 +2661,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var bkv: u8 = bnode.kind; var bfb: [10]u8 = undefined; var bfl = itoa_mod.itoa(@intCast(u32, bkv), bfb[0..]); var bfs: usize = @intCast(usize, 9) - @intCast(usize, bfl); pal.markerWrite(bfb[bfs..@intCast(usize, 9)]); var bfsp: []const u8 = "bk\n"; pal.markerWrite(bfsp);
             var base_node = bnode;
             if (base_node.kind == AstKind.ident_expr or base_node.kind == @enumToInt(AstKind.field_access)) {
-            var field_name_id: u32 = callee_node.payload;
+            var field_name_id: u32 = @intCast(u32, callee_node.payload);
             if (base_node.kind == @enumToInt(AstKind.field_access)) {
                     var chain: [4]u32 = undefined;
                     var chain_len: u32 = @intCast(u32, 0);
-                    chain[@intCast(usize, chain_len)] = callee_node.payload; chain_len += @intCast(u32, 1);
+                    chain[@intCast(usize, chain_len)] = @intCast(u32, callee_node.payload); chain_len += @intCast(u32, 1);
                     var cw = base_node;
                     while (cw.kind == @enumToInt(AstKind.field_access)) {
-                        chain[@intCast(usize, chain_len)] = cw.payload; chain_len += @intCast(u32, 1);
+                        chain[@intCast(usize, chain_len)] = @intCast(u32, cw.payload); chain_len += @intCast(u32, 1);
                         cw = store.nodes.items[@intCast(usize, cw.child_0)];
                     }
                     if (cw.kind != @enumToInt(AstKind.ident_expr)) { return @intCast(u32, 0); }
@@ -2697,7 +2697,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (sm.module_id != @intCast(u32, 0) and sm.module_id != self.module_id) {
                         var dz1_m: []const u8 = "DZ1:PASS\n"; pal.markerWrite(dz1_m);
                         var target_mod_id = sm.module_id;
-                        var field_name_id = callee_node.payload;
+                        var field_name_id: u32 = @intCast(u32, callee_node.payload);
                         var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod_id, field_name_id);
                         if (field_sym) |fs| { var a3: []const u8 = "F3a1"; pal.markerWrite(a3);
                             if (fs.kind == @intCast(u8, 3)) {
@@ -3313,7 +3313,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var capture_node = self.ctx.store.nodes.items[@intCast(usize, node.child_2)];
                 var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
-                var catch_cap_name = maybeDisambiguateCapture(self, capture_node.payload, type_mod.TYPE_I32);
+                var catch_cap_name = maybeDisambiguateCapture(self, @intCast(u32, capture_node.payload), type_mod.TYPE_I32);
                 addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp, self.scope_depth);
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
@@ -3403,7 +3403,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         // requires an optional cond, which comptime_values never folds — scalars/bools
         // only); guard on payload==0 to mirror the if_stmt fold guard defensively.
         if (ie_fold) |ie_fv| {
-            if (node.payload == @intCast(u32, 0)) {
+            if (node.payload == @intCast(u64, 0)) {
                 var ie_res = nextTemp(self, ie_rtype3);
                 if (ie_fv != @intCast(u64, 0)) {
                     var ie_then = lowerExpr(self, node.child_1);
@@ -3441,10 +3441,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var join_bb = createBlock(self);
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = else_bb } });
         self.current_bb = then_bb;
-        if (node.payload != @intCast(u32, 0)) {
+        if (node.payload != @intCast(u64, 0)) {
             var icapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
             if (icapn.kind == AstKind.if_capture) {
-                bindOptionalCapture(self, node.payload, orig_cond_temp);
+                bindOptionalCapture(self, @intCast(u32, node.payload), orig_cond_temp);
             }
         }
         var then_val = lowerExpr(self, node.child_1);
@@ -3525,7 +3525,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var vfi_em: []const u8 = "e"; pal.markerWrite(vfi_em);
             var vfi_eb: [10]u8 = undefined; var vfi_el = itoa_mod.itoa(@intCast(u32, ei), vfi_eb[0..]); var vfi_es: usize = @intCast(usize, 9) - @intCast(usize, vfi_el); pal.markerWrite(vfi_eb[vfi_es..@intCast(usize, 9)]);
             var vfi_nl2: []const u8 = "\n"; pal.markerWrite(vfi_nl2);
-            var fi_name_id = fi_node.payload;
+            var fi_name_id: u32 = @intCast(u32, fi_node.payload);
             var sti_m: []const u8 = "STI:t"; pal.markerWrite(sti_m);
             var sti_tb: [10]u8 = undefined; var sti_tl = itoa_mod.itoa(self.temp_counter, sti_tb[0..]); var sti_ts: usize = @intCast(usize, 9) - @intCast(usize, sti_tl); pal.markerWrite(sti_tb[sti_ts..@intCast(usize, 9)]);
             var sti_em: []const u8 = "e"; pal.markerWrite(sti_em);
@@ -3737,7 +3737,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
                 } else if (case_node.kind == AstKind.error_literal) {
-                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, case_node.payload));
+                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, @intCast(u32, case_node.payload)));
                     var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev3) |v| { cval3 = @intCast(u64, v); }
                     case_val = cval3;
@@ -3786,7 +3786,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var tp = self.ctx.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
                     var case_ec = ast_mod.astStoreGetExtraChildren(store, prong_node.payload);
                     var capy_m: []const u8 = "CAPY:n"; pal.markerWrite(capy_m);
-                    var capy_pb: [10]u8 = undefined; var capy_pl = itoa_mod.itoa(prong_node.payload, capy_pb[0..]); var capy_ps: usize = @intCast(usize, 9) - @intCast(usize, capy_pl); pal.markerWrite(capy_pb[capy_ps..@intCast(usize, 9)]);
+                    var capy_pb: [10]u8 = undefined; var capy_pl = itoa_mod.itoa(@intCast(u32, prong_node.payload & @intCast(u64, 0xFFFFFFFF)), capy_pb[0..]); var capy_ps: usize = @intCast(usize, 9) - @intCast(usize, capy_pl); pal.markerWrite(capy_pb[capy_ps..@intCast(usize, 9)]);
                     var capy_lm: []const u8 = "l"; pal.markerWrite(capy_lm);
                     var capy_lb: [10]u8 = undefined; var capy_ll = itoa_mod.itoa(@intCast(u32, case_ec.len), capy_lb[0..]); var capy_ls: usize = @intCast(usize, 9) - @intCast(usize, capy_ll); pal.markerWrite(capy_lb[capy_ls..@intCast(usize, 9)]);
                     var capy_n: []const u8 = "\n"; pal.markerWrite(capy_n);
@@ -4178,7 +4178,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         self.scope_depth -= @intCast(u32, 1);
     } else if (node.kind == AstKind.labeled_stmt) {
         var saved_label = self.current_label;
-        self.current_label = node.payload;
+        self.current_label = @intCast(u32, node.payload);
         if (node.child_0 != @intCast(u32, 0)) {
             lowerStmt(self, node.child_0);
         }
@@ -4190,7 +4190,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     } else if (node.kind == AstKind.if_stmt) {
         var if_fold = hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node.child_0);
         if (if_fold) |ifv| {
-            if (node.payload == @intCast(u32, 0)) {
+            if (node.payload == @intCast(u64, 0)) {
                 if (ifv != @intCast(u64, 0)) {
                     self.block_terminated = @intCast(u8, 0);
                     lowerStmtBody(self, node.child_1);
@@ -4260,10 +4260,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = fallthrough } });
         self.current_bb = then_bb;
         self.block_terminated = @intCast(u8, 0);
-        if (node.payload != @intCast(u32, 0)) {
+        if (node.payload != @intCast(u64, 0)) {
             var icapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
             if (icapn.kind == AstKind.if_capture) {
-                bindOptionalCapture(self, node.payload, orig_cond_temp);
+                bindOptionalCapture(self, @intCast(u32, node.payload), orig_cond_temp);
             }
         }
         var ifb_m: []const u8 = "IFB:b"; pal.markerWrite(ifb_m);
@@ -4293,7 +4293,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var mwc2b: [10]u8 = undefined; var mwc2l = itoa_mod.itoa(node.child_2, mwc2b[0..]); var mwc2s: usize = @intCast(usize, 9) - @intCast(usize, mwc2l); pal.markerWrite(mwc2b[mwc2s..@intCast(usize, 9)]);
         var mwc2n: []const u8 = "\n"; pal.markerWrite(mwc2n);
         var mwp: []const u8 = "MW:pl"; pal.markerWrite(mwp);
-        var mwpb: [10]u8 = undefined; var mwpl = itoa_mod.itoa(node.payload, mwpb[0..]); var mwps: usize = @intCast(usize, 9) - @intCast(usize, mwpl); pal.markerWrite(mwpb[mwps..@intCast(usize, 9)]);
+        var mwpb: [10]u8 = undefined; var mwpl = itoa_mod.itoa(@intCast(u32, node.payload & @intCast(u64, 0xFFFFFFFF)), mwpb[0..]); var mwps: usize = @intCast(usize, 9) - @intCast(usize, mwpl); pal.markerWrite(mwpb[mwps..@intCast(usize, 9)]);
         var mwpn: []const u8 = "\n"; pal.markerWrite(mwpn);
         var entry_bb = self.current_bb;
         var cond_bb = createBlock(self);
@@ -4333,14 +4333,14 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
         self.current_bb = body_bb;
         self.block_terminated = @intCast(u8, 0);
-        if (node.payload != @intCast(u32, 0)) {
+        if (node.payload != @intCast(u64, 0)) {
             var wcapn = self.ctx.store.nodes.items[@intCast(usize, node.payload)];
             if (wcapn.kind == AstKind.while_capture) {
                 var wck_tid = getTempType(self, cond_temp);
                 var wck_kind: u32 = @intCast(u32, 0);
                 if (@intCast(usize, wck_tid) < self.ctx.registry.types_len) { wck_kind = @intCast(u32, @enumToInt(self.ctx.registry.types_items[@intCast(usize, wck_tid)].kind)); }
                 var wck_m: []const u8 = "WCAPKIND:"; pal.markerWriteInt(wck_m, wck_kind);
-                bindOptionalCapture(self, node.payload, orig_cond_temp);
+                bindOptionalCapture(self, @intCast(u32, node.payload), orig_cond_temp);
             }
         }
         var wbt_m: []const u8 = "WBT:"; pal.markerWrite(wbt_m);
@@ -4397,7 +4397,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var start_temp = lowerExpr(self, pattern.child_0);
                 var cap_type = if (pat_type) |pt| pt else type_mod.TYPE_U32;
                 if (node.payload != 0) {
-                    var fcapr = maybeDisambiguateCapture(self, node.payload, cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
+                    var fcapr = maybeDisambiguateCapture(self, @intCast(u32, node.payload), cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
                 }
                 var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
@@ -4467,7 +4467,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, elem_type[0]);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-            if (node.payload != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, node.payload, elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
+            if (node.payload != @intCast(u64, 0)) { var fcaps = maybeDisambiguateCapture(self, @intCast(u32, node.payload), elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
             if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
@@ -4530,7 +4530,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     if (cev2) |v| { cval2 = @intCast(u64, v); }
                     case_val = cval2;
                 } else if (case_node.kind == AstKind.error_literal) {
-                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, case_node.payload));
+                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, @intCast(u32, case_node.payload)));
                     var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev3) |v| { cval3 = @intCast(u64, v); }
                     case_val = cval3;
@@ -4688,7 +4688,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
     } else if (node.kind == AstKind.break_stmt) {
         if (self.loop_stack.len == @intCast(usize, 0)) { return; }
-        var label_id = node.payload;
+        var label_id: u32 = @intCast(u32, node.payload);
         var exit_target: u32 = @intCast(u32, 0);
         var exit_scope: u32 = @intCast(u32, 0);
         if (label_id == @intCast(u32, 0)) {
@@ -4714,7 +4714,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
     } else if (node.kind == AstKind.continue_stmt) {
         if (self.loop_stack.len == @intCast(usize, 0)) { return; }
-        var label_id = node.payload;
+        var label_id: u32 = @intCast(u32, node.payload);
         var header_target: u32 = @intCast(u32, 0);
         var cont_scope: u32 = @intCast(u32, 0);
         if (label_id == @intCast(u32, 0)) {
@@ -4739,7 +4739,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.var_decl) {
-        var name_id = node.payload;
+        var name_id: u32 = @intCast(u32, node.payload);
         var c_name_id = name_id;
         if (self.local_decl_count > @intCast(usize, 0)) {
             var scli: usize = @intCast(usize, 0);
@@ -5469,14 +5469,14 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
         var va_msg: []const u8 = "variadic function must have at least one fixed parameter";
         _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3012_VARARGS_INVALID)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), va_msg);
     }
-    var p_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+    var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
     if (proto.params_count > @intCast(u16, 0)) {
         var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
         var pi: usize = @intCast(usize, 0);
         while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
             var pnode = store.nodes.items[@intCast(usize, pnodes[pi])];
             if (pnode.child_0 != @intCast(u32, 0)) {
-                var p_name_id = pnode.payload;
+                var p_name_id: u32 = @intCast(u32, pnode.payload);
                 var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
                 if (p_type) |_| { var dp: []const u8 = "HP"; pal.markerWrite(dp); } else { var dp: []const u8 = "MP"; pal.markerWrite(dp); }
                 var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
@@ -5562,7 +5562,7 @@ pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFu
         if (dcl.kind != AstKind.var_decl) continue;
         if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) continue;
         if (dcl.child_1 == @intCast(u32, 0)) continue;
-        var g_name_id = dcl.payload;
+        var g_name_id: u32 = @intCast(u32, dcl.payload);
         var g_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mod_id, g_name_id);
         if (g_sym) |gss| {
             if (gss.kind != sym_mod.SymbolKind.global) continue;

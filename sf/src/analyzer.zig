@@ -46,7 +46,7 @@ pub const AllocState = enum(u8) {
     unknown = 5,
 };
 
-fn identNameId(store: *AstStore, payload: u32) u32 {
+fn identNameId(store: *AstStore, payload: u64) u32 {
     return store.identifiers.items[@intCast(usize, payload)];
 }
 
@@ -404,7 +404,7 @@ pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) void {
     if (node.kind != AstKind.fn_decl) return;
     var proto_idx = node.payload;
     var proto = ctx.store.fn_protos.items[@intCast(usize, proto_idx)];
-    var param_payload: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+    var param_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
     var params = ast_mod.astStoreGetExtraChildren(ctx.store, param_payload);
     var pi: usize = 0;
     while (pi < params.len) : (pi += 1) {
@@ -598,7 +598,7 @@ pub fn applyNullGuardRefinement(store: *AstStore, cond_idx: u32, then_state: *St
 
 pub fn handleNullVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
-    var name_id = node.payload;
+    var name_id: u32 = @intCast(u32, node.payload);
     var init_idx = node.child_1;
     if (init_idx != @intCast(u32, 0)) {
         var st = classifyExpr(ctx, state, init_idx);
@@ -667,7 +667,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         if (ctx.null_analysis_mode != @intCast(u8, 0)) {
             applyNullGuardRefinement(ctx.store, node.child_0, then_state, else_state);
             if (kind == AstKind.if_capture) {
-                smap_mod.stateMapSet(then_state, node.payload, @enumToInt(PtrState.safe));
+                smap_mod.stateMapSet(then_state, @intCast(u32, node.payload), @enumToInt(PtrState.safe));
             }
         }
         walkBlock(ctx, then_state, node.child_1, visit_fn);
@@ -677,7 +677,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         analyzeExpr(ctx, state, node.child_0);
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
         if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.while_capture) {
-            smap_mod.stateMapSet(body_state, node.payload, @enumToInt(PtrState.safe));
+            smap_mod.stateMapSet(body_state, @intCast(u32, node.payload), @enumToInt(PtrState.safe));
         }
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
@@ -732,16 +732,16 @@ fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     if (node.kind == AstKind.var_decl) {
         if (node.child_1 != @intCast(u32, 0)) {
             var prov = classifyProvenance(ctx, state, node.child_1);
-            smap_mod.stateMapSet(state, node.payload, prov);
+            smap_mod.stateMapSet(state, @intCast(u32, node.payload), prov);
         } else {
-            smap_mod.stateMapSet(state, node.payload, @intCast(u8, @enumToInt(Provenance.unknown)));
+            smap_mod.stateMapSet(state, @intCast(u32, node.payload), @intCast(u8, @enumToInt(Provenance.unknown)));
         }
      }
      if (node.kind == AstKind.plain_assign) {
          var lhs_node = ctx.store.nodes.items[@intCast(usize, node.child_0)];
         if (lhs_node.kind == AstKind.ident_expr) {
             var prov = classifyProvenance(ctx, state, node.child_1);
-            smap_mod.stateMapSet(state, lhs_node.payload, prov);
+            smap_mod.stateMapSet(state, @intCast(u32, lhs_node.payload), prov);
         }
     }
 }
@@ -749,7 +749,7 @@ fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
 fn onDoubleFreeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.var_decl) {
-        handleAllocCall(ctx, state, node.payload, node.child_1);
+        handleAllocCall(ctx, state, @intCast(u32, node.payload), node.child_1);
      }
      if (node.kind == AstKind.plain_assign) {
          handleAllocAssign(ctx, state, node_idx);
@@ -779,15 +779,15 @@ pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
 pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
     var decl = ctx.store.nodes.items[@intCast(usize, fn_decl_idx)];
-    if (decl.payload != @intCast(u32, 0)) {
+    if (decl.payload != @intCast(u64, 0)) {
         var proto = ctx.store.fn_protos.items[@intCast(usize, decl.payload)];
-        var pp: u32 = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+        var pp: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
         var params = ast_mod.astStoreGetExtraChildren(ctx.store, pp);
         var pi: usize = 0;
         while (pi < params.len) : (pi += 1) {
             var pn = ctx.store.nodes.items[@intCast(usize, params[pi])];
             if (pn.kind == AstKind.param_decl) {
-                smap_mod.stateMapSet(&state, pn.payload, @intCast(u8, @enumToInt(Provenance.param)));
+                smap_mod.stateMapSet(&state, @intCast(u32, pn.payload), @intCast(u8, @enumToInt(Provenance.param)));
             }
         }
     }

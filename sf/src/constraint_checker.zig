@@ -35,7 +35,7 @@ pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *Diagnosti
         if (tid == type_mod.TYPE_VOID or tid == @intCast(u32, 0)) return;
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind != type_mod.TypeKind.enum_type and ty.kind != type_mod.TypeKind.tagged_union_type) return;
-        if (node.payload == @intCast(u32, 0)) return;
+        if (node.payload == @intCast(u64, 0)) return;
         var member_count: u16 = 0;
         if (ty.kind == type_mod.TypeKind.enum_type) {
             var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
@@ -51,7 +51,7 @@ pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *Diagnosti
         while (pi < prongs.len) : (pi += 1) {
             var prong = store.nodes.items[@intCast(usize, prongs[pi])];
             if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { has_else = 1; } else {
-                if (prong.payload != @intCast(u32, 0)) {
+                if (prong.payload != @intCast(u64, 0)) {
                     var items = ast_mod.astStoreGetExtraChildren(store, prong.payload);
                     var count: u16 = @intCast(u16, items.len);
                     covered_count += count;
@@ -91,7 +91,7 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
             if (node.child_0 != @intCast(u32, 0)) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
             if (node.child_1 != @intCast(u32, 0)) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
             if (node.child_2 != @intCast(u32, 0)) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
-            if (node.payload != @intCast(u32, 0)) {
+            if (node.payload != @intCast(u64, 0)) {
                 var extra = ast_mod.astStoreGetExtraChildren(store, node.payload);
                 var ei: usize = 0;
                 while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }
@@ -101,7 +101,7 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
         if (node.child_0 != @intCast(u32, 0)) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
         if (node.child_1 != @intCast(u32, 0)) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
         if (node.child_2 != @intCast(u32, 0)) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
-        if (node.payload != @intCast(u32, 0)) {
+        if (node.payload != @intCast(u64, 0)) {
             var extra = ast_mod.astStoreGetExtraChildren(store, node.payload);
             var ei: usize = 0;
             while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }

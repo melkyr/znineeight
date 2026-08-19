@@ -123,13 +123,13 @@ pub const AstNode = struct {
     child_0: u32,     // u32 — offset 12
     child_1: u32,     // u32 — offset 16
     child_2: u32,     // u32 — offset 20
-    payload: u32,     // u32 — offset 24
-}; // total: 28 bytes (32-bit layout)
-const zzz_astnode_sz = "ZZZ_ASTNODE_28B_OFFSETS_kind0_flags1_pad2_spanlen4_spanstart8_child0_12_child1_16_child2_20_payload_24";
+    payload: u64,     // u64 — offset 24
+}; // total: 32 bytes (32-bit layout)
+const zzz_astnode_sz = "ZZZ_ASTNODE_32B_OFFSETS_kind0_flags1_pad2_spanlen4_spanstart8_child0_12_child1_16_child2_20_payload_24";
 
 pub const FnProto = struct {
     name_id: u32,
-    params_start: u16,
+    params_start: u32,
     params_count: u16,
     return_type_node: u32,
 };
@@ -337,7 +337,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .span_start = @intCast(u32, 0), .span_len = @intCast(u32, 0),
         .child_0 = @intCast(u32, 0), .child_1 = @intCast(u32, 0),
         .child_2 = @intCast(u32, 0),
-        .payload = @intCast(u32, 0),
+        .payload = @intCast(u64, 0),
     };
     var store = AstStore{
         .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -402,7 +402,7 @@ pub fn astStoreEnsureExtraChildrenCapacity(store: *AstStore, new_capacity: usize
 }
 
 
-pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
+pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u64) u32 {
     var span_len: u32 = @intCast(u32, span_end - span_start);
     var node = AstNode{
         .kind = kind, .flags = flags,
@@ -414,19 +414,19 @@ pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u
     return @intCast(u32, store.nodes.len - 1);
 }
 
-pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
+pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u64 {
     var start = @intCast(u32, store.extra_children.len);
     var i: usize = 0;
     while (i < children.len) {
         u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);
         i += 1;
     }
-    return (start << @intCast(u32, 16)) | @intCast(u32, children.len);
+    return (@intCast(u64, start) << @intCast(u64, 32)) | @intCast(u64, children.len);
 }
 
-pub fn astStoreGetExtraChildren(store: *AstStore, payload: u32) []const u32 {
-    var start: usize = @intCast(usize, payload >> 16);
-    var count: usize = @intCast(usize, payload & @intCast(u32, 0xFFFF));
+pub fn astStoreGetExtraChildren(store: *AstStore, payload: u64) []const u32 {
+    var start: usize = @intCast(usize, payload >> 32);
+    var count: usize = @intCast(usize, payload & @intCast(u64, 0xFFFFFFFF));
     return store.extra_children.items[start .. start + count];
 }
 
@@ -517,7 +517,7 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
 
 pub fn astStoreComputeMemory(store: *AstStore) u64 {
     var total: u64 = 0;
-    total += @intCast(u64, store.nodes.len) * @intCast(u64, 28);
+    total += @intCast(u64, store.nodes.len) * @sizeOf(AstNode);
     total += @intCast(u64, store.extra_children.len) * @sizeOf(u32);
     total += @intCast(u64, store.identifiers.len) * @sizeOf(u32);
     total += @intCast(u64, store.int_values.len) * @sizeOf(u64);

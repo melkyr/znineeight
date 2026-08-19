@@ -47,11 +47,11 @@ fn testAstKindErrSentinel() void {
 }
 
 fn testAstNodeSize() void {
-    assertEqU32(@intCast(u32, @sizeOf(AstNode)), @intCast(u32, 28));
+    assertEqU32(@intCast(u32, @sizeOf(AstNode)), @intCast(u32, 32));
 }
 
 fn testFnProtoSize() void {
-    assertEqU32(@intCast(u32, @sizeOf(FnProto)), @intCast(u32, 12));
+    assertEqU32(@intCast(u32, @sizeOf(FnProto)), @intCast(u32, 16));
 }
 
 fn testAstStoreInit() void {

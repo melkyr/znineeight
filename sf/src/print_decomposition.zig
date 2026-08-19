@@ -42,7 +42,7 @@ pub fn printDecompParseAndValidate(store: *AstStore, interner: *StringInterner, 
     if (args.len != @intCast(usize, 2)) return null;
     var fmt_node = store.nodes.items[@intCast(usize, args[0])];
     if (fmt_node.kind != AstKind.string_literal) return null;
-    var raw = interner_mod.stringInternerGet(interner, fmt_node.payload);
+    var raw = interner_mod.stringInternerGet(interner, @intCast(u32, fmt_node.payload));
     var spec_count = printDecompScanFormat(raw);
     var tup_node = store.nodes.items[@intCast(usize, args[1])];
     if (tup_node.kind != AstKind.tuple_literal) return null;

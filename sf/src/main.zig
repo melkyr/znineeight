@@ -439,7 +439,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                     var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);
                     var v2tb: [20]u8 = undefined; var v2tl = itoa_mod.itoa(init_type, v2tb[0..]); var v2ts: usize = @intCast(usize, 19) - @intCast(usize, v2tl); pal.markerWrite(v2tb[v2ts..@intCast(usize, 19)]);
                     var v2nl: []const u8 = "\n"; pal.markerWrite(v2nl);
-                    var v49p_m: []const u8 = "V49:p"; pal.markerWriteInt(v49p_m, decl.payload);
+                    var v49p_m: []const u8 = "V49:p"; pal.markerWriteInt(v49p_m, @intCast(u32, decl.payload));
                     var v49t_m: []const u8 = "V49:t"; pal.markerWriteInt(v49t_m, init_type);
                     if (init_type <= @intCast(u32, ctx.typereg.types_len - @intCast(usize, 1))) {
                         var ty = ctx.typereg.types_items[@intCast(usize, init_type)];
@@ -449,7 +449,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                         if (init_type != type_mod.TYPE_UNDEFINED) {
                             var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, decl.payload);
                             type_mod.nameCachePut(ctx.typereg, ck, init_type);
-                            var regtl_m: []const u8 = "REG:tl"; pal.markerWriteInt(regtl_m, decl.payload);
+                            var regtl_m: []const u8 = "REG:tl"; pal.markerWriteInt(regtl_m, @intCast(u32, decl.payload));
                             var regtt_m: []const u8 = "REG:tt"; pal.markerWriteInt(regtt_m, init_type);
                         }
                     }
@@ -474,6 +474,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
 
 fn resolveStmtTypes(ctx: *CompilerContext, module_id: u32, node_idx: u32, depth: u32) void {
     if (depth > @intCast(u32, 16)) return;
+    var rst_m: []const u8 = "RST:n"; pal.markerWrite(rst_m); var rst_b: [12]u8 = undefined; var rst_l = itoa_mod.itoa(node_idx, rst_b[0..]); var rst_s: usize = @intCast(usize, 11) - @intCast(usize, rst_l); pal.markerWrite(rst_b[rst_s..@intCast(usize, 11)]); var rst_nl: []const u8 = "\n"; pal.markerWrite(rst_nl);
     var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.var_decl) {
         if (node.child_0 != 0) {
@@ -648,7 +649,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
-                        var gv_name = decl.payload;
+                        var gv_name: u32 = @intCast(u32, decl.payload);
                         var gv_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mods[mi].id, gv_name);
                         if (gv_sym) |gvs| {
                             if (gvs.kind == sym_mod.SymbolKind.global) {

@@ -129,20 +129,20 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
 
 fn nodeGetNameId(store: *AstStore, node: AstNode) u32 {
     switch (node.kind) {
-        AstKind.var_decl => { return node.payload; },
-        AstKind.field_decl => { return node.payload; },
-        AstKind.param_decl => { return node.payload; },
-        AstKind.field_access => { return node.payload; },
-        AstKind.enum_literal => { return node.payload; },
-        AstKind.error_literal => { return node.payload; },
-        AstKind.labeled_stmt => { return node.payload; },
-        AstKind.break_stmt => { return node.payload; },
-        AstKind.continue_stmt => { return node.payload; },
-        AstKind.if_capture => { return node.payload; },
-        AstKind.while_capture => { return node.payload; },
-        AstKind.for_stmt => { return node.payload; },
-        AstKind.builtin_call => { return node.payload; },
-        AstKind.import_expr => { return node.payload; },
+        AstKind.var_decl => { return @intCast(u32, node.payload); },
+        AstKind.field_decl => { return @intCast(u32, node.payload); },
+        AstKind.param_decl => { return @intCast(u32, node.payload); },
+        AstKind.field_access => { return @intCast(u32, node.payload); },
+        AstKind.enum_literal => { return @intCast(u32, node.payload); },
+        AstKind.error_literal => { return @intCast(u32, node.payload); },
+        AstKind.labeled_stmt => { return @intCast(u32, node.payload); },
+        AstKind.break_stmt => { return @intCast(u32, node.payload); },
+        AstKind.continue_stmt => { return @intCast(u32, node.payload); },
+        AstKind.if_capture => { return @intCast(u32, node.payload); },
+        AstKind.while_capture => { return @intCast(u32, node.payload); },
+        AstKind.for_stmt => { return @intCast(u32, node.payload); },
+        AstKind.builtin_call => { return @intCast(u32, node.payload); },
+        AstKind.import_expr => { return @intCast(u32, node.payload); },
         AstKind.fn_decl => {
             if (@intCast(usize, node.payload) < store.fn_protos.len) {
                 return store.fn_protos.items[node.payload].name_id;

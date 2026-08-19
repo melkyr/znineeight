@@ -181,7 +181,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             if (root.kind == AstKind.module_root) {
                 var p1: []const u8 = "IRP:m"; pal_mod.markerWriteInt(p1, mod_id);
                 var p2: []const u8 = "IRP:n"; pal_mod.markerWriteInt(p2, ast_root);
-                var p3: []const u8 = "IRP:p"; pal_mod.markerWriteInt(p3, root.payload);
+                var p3: []const u8 = "IRP:p"; pal_mod.markerWriteInt(p3, @intCast(u32, root.payload & @intCast(u64, 0xFFFFFFFF)));
                 var decls = ast_mod.astStoreGetExtraChildren(shared_store, root.payload);
                 var p4: []const u8 = "IRD:c"; pal_mod.markerWriteInt(p4, @intCast(u32, decls.len));
                 var di2: usize = @intCast(usize, 0);

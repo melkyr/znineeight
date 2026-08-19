@@ -760,7 +760,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                 if (sd_fd.kind == AstKind.field_decl) {
                     var sd_ft = resolveTypeExprFull(env, sd_fd.child_0, depth + @intCast(u32, 1));
                     sd_fty[sd_fc] = sd_ft;
-                    sd_fnm[sd_fc] = sd_fd.payload;
+                    sd_fnm[sd_fc] = @intCast(u32, sd_fd.payload);
                     sd_fc += 1;
                 }
             }
@@ -799,7 +799,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     if (base_sym) |bs| {
                         if (bs.kind == sym_mod.SymbolKind.module) {
                             var mod_id = bs.module_id;
-                            var payload_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, node.payload);
+                            var payload_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, @intCast(u32, node.payload));
                             if (payload_sym) |ps| {
                                 if (ps.type_id != @intCast(u32, 0)) {
                                     fah_matched = @intCast(u8, 1);
@@ -817,7 +817,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var base_ty = env.typereg.types_items[@intCast(usize, base_type)];
         if (base_ty.kind == type_mod.TypeKind.module_type) {
             var mod_id = base_ty.module_id;
-            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, node.payload);
+            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, @intCast(u32, node.payload));
             if (sym) |s| {
                 if (s.type_id != @intCast(u32, 0)) {
                     fah_matched = @intCast(u8, 1);
@@ -1035,7 +1035,7 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                     var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
                     var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
-                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(@intCast(u32, fd.payload), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
                     var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
                     var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
                     if (ft != type_mod.TYPE_UNDEFINED) {
@@ -1056,7 +1056,7 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                     var dft_nm: []const u8 = "DFT:n"; pal_mod.markerWriteInt(dft_nm, @intCast(u32, fi2));
                     var dft_tm: []const u8 = "DFT:t"; pal_mod.markerWriteInt(dft_tm, ft);
                     var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
-                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(fd.payload, b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(@intCast(u32, fd.payload), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
                     var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
                     var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
                     var dtwr_m: []const u8 = "DTWR\n"; pal_mod.markerWrite(dtwr_m);
@@ -1133,8 +1133,8 @@ fn resolveImportFieldAlias(env: *TypeResolveEnv, module_reg: *mr_mod.ModuleRegis
         if (fi.kind != AstKind.field_access) return type_mod.TYPE_UNDEFINED;
         var fb = env.store.nodes.items[@intCast(usize, fi.child_0)];
         if (fb.kind != AstKind.import_expr) return type_mod.TYPE_UNDEFINED;
-        var t2 = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, fb.payload);
-        if (t2) |m2| return resolveImportFieldAlias(env, module_reg, importer_mod_id, m2, fi.payload, depth + @intCast(u32, 1));
+        var t2 = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, @intCast(u32, fb.payload));
+        if (t2) |m2| return resolveImportFieldAlias(env, module_reg, importer_mod_id, m2, @intCast(u32, fi.payload), depth + @intCast(u32, 1));
     }
     return type_mod.TYPE_UNDEFINED;
 }
@@ -1155,11 +1155,11 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
             if (init.kind != AstKind.field_access) { continue; }
             var base = env.store.nodes.items[@intCast(usize, init.child_0)];
             if (base.kind != AstKind.import_expr) { continue; }
-            var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, base.payload);
+            var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, @intCast(u32, base.payload));
             if (target) |mtid| {
-                var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, init.payload, @intCast(u32, 0));
+                var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, @intCast(u32, init.payload), @intCast(u32, 0));
                 if (resolved != type_mod.TYPE_UNDEFINED) {
-                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, decl.payload);
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, @intCast(u32, decl.payload));
                     if (sym) |sp| {
                         sp.type_id = resolved;
                     }
@@ -1225,7 +1225,7 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 if ((decl.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { is_variadic = @intCast(u8, 1); }
                 var fn_start: u32 = @intCast(u32, env.typereg.xt_len);
                 if (proto.params_count > @intCast(u16, 0)) {
-                    var p_payload = (@intCast(u32, proto.params_start) << @intCast(u32, 16)) | @intCast(u32, proto.params_count);
+                    var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
                     var pnodes = ast_mod.astStoreGetExtraChildren(env.store, p_payload);
                     var pi: usize = 0;
                     while (pi < pnodes.len) : (pi += 1) {
@@ -1250,7 +1250,7 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 if (vtype != type_mod.TYPE_UNDEFINED) {
                     rtt_mod.resolvedTypeTableSet(resolved_types, decl.child_0, vtype);
                     rtt_mod.resolvedTypeTableSet(resolved_types, decls[di], vtype);
-                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, decl.payload);
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, @intCast(u32, decl.payload));
                     if (sym) |sp| {
                         sp.type_id = vtype;
                     }

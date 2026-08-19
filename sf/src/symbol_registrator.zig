@@ -106,7 +106,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             var fd = store.nodes.items[@intCast(usize, children[i])];
             if (fd.kind == AstKind.field_decl) {
                 type_mod.feAppend(type_reg, type_mod.FieldEntry{
-                    .name_id = fd.payload,
+                    .name_id = @intCast(u32, fd.payload),
                     .type_id = type_mod.TYPE_VOID,
                     .offset = @intCast(u32, 0),
                 });
@@ -134,7 +134,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             var fd = store.nodes.items[@intCast(usize, children[i])];
             if (fd.kind == AstKind.field_decl) {
                 type_mod.feAppend(type_reg, type_mod.FieldEntry{
-                    .name_id = fd.payload,
+                    .name_id = @intCast(u32, fd.payload),
                     .type_id = type_mod.TYPE_VOID,
                     .offset = @intCast(u32, 0),
                 });
@@ -186,7 +186,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
                     var ev = type_resolver.evalConstU32Full(&tre_env, mnode.child_1);
                     if (ev != @intCast(u32, 0xFFFFFFFF)) { mval = ev; }
                 }
-                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = mnode.payload, .value = @intCast(i64, mval) });
+                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = @intCast(u32, mnode.payload), .value = @intCast(i64, mval) });
                 mcount += 1;
                 auto_val = mval + @intCast(u32, 1);
             }
@@ -226,7 +226,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
     switch (node.kind) {
          AstKind.var_decl => {
              var ra_msg: []const u8 = "Ra"; pal_mod.markerWrite(ra_msg);
-             var name_id = node.payload;
+             var name_id: u32 = @intCast(u32, node.payload);
              var d12m: []const u8 = "D12:n"; pal_mod.markerWrite(d12m);
              var d12b: [20]u8 = undefined; var d12l = itoa_mod.itoa(name_id, d12b[0..]); var d12s: usize = @intCast(usize, 19) - @intCast(usize, d12l); pal_mod.markerWrite(d12b[d12s..@intCast(usize, 19)]);
              var d12nl: []const u8 = "\n"; pal_mod.markerWrite(d12nl);
@@ -236,9 +236,9 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             if (node.child_1 != 0) {
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 if (init_node.kind == AstKind.import_expr) {
-                    var target = hash_mod.u32ToU32MapGet(&reg.path_to_id, init_node.payload);
+                    var target = hash_mod.u32ToU32MapGet(&reg.path_to_id, @intCast(u32, init_node.payload));
                     var m5m: []const u8 = "M5:p"; pal_mod.markerWrite(m5m);
-                    var m5pb: [20]u8 = undefined; var m5pl = itoa_mod.itoa(init_node.payload, m5pb[0..]); var m5ps: usize = @intCast(usize, 19) - @intCast(usize, m5pl); pal_mod.markerWrite(m5pb[m5ps..@intCast(usize, 19)]);
+                    var m5pb: [20]u8 = undefined; var m5pl = itoa_mod.itoa(@intCast(u32, init_node.payload), m5pb[0..]); var m5ps: usize = @intCast(usize, 19) - @intCast(usize, m5pl); pal_mod.markerWrite(m5pb[m5ps..@intCast(usize, 19)]);
                     if (target) |mtid| {
                         var rs_msg: []const u8 = "Rs"; pal_mod.markerWrite(rs_msg);
                         sym_kind = sym_mod.SymbolKind.module;
@@ -268,7 +268,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     sym_kind = sym_mod.SymbolKind.type_alias;
                     sym_mod_id = mod_id;
                 } else if (init_node.kind == AstKind.ident_expr) {
-                    var rca_m: []const u8 = "RCA:p"; pal_mod.markerWriteInt(rca_m, init_node.payload);
+                    var rca_m: []const u8 = "RCA:p"; pal_mod.markerWriteInt(rca_m, @intCast(u32, init_node.payload));
                     var ident_name_id = store.identifiers.items[@intCast(usize, init_node.payload)];
                     var rca_i: []const u8 = "RCA:i"; pal_mod.markerWriteInt(rca_i, ident_name_id);
                     var cached = type_mod.nameCacheGet(type_reg, @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, ident_name_id));
@@ -340,7 +340,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         AstKind.test_decl => {
             if (node.payload != 0) {
                 var sym = sym_mod.Symbol{
-                    .name_id = node.payload,
+                    .name_id = @intCast(u32, node.payload),
                     .type_id = @intCast(u32, 0),
                     .kind = sym_mod.SymbolKind.test_sym,
                     .flags = @intCast(u16, node.flags),
@@ -353,7 +353,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             }
         },
         AstKind.struct_decl, AstKind.enum_decl, AstKind.union_decl => {
-            var name_id = node.payload;
+            var name_id: u32 = @intCast(u32, node.payload & @intCast(u64, 0xFFFFFFFF));
             var type_kind: TypeKind = switch (node.kind) {
                 AstKind.struct_decl => TypeKind.struct_type,
                 AstKind.enum_decl => TypeKind.enum_type,
@@ -376,7 +376,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             _ = sym_mod.symbolTableInsert(table, sym);
         },
         AstKind.error_set_decl => {
-            var name_id = node.payload;
+            var name_id: u32 = @intCast(u32, node.payload & @intCast(u64, 0xFFFFFFFF));
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, TypeKind.error_set_type);
             if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }
             var sym = sym_mod.Symbol{
@@ -392,7 +392,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             _ = sym_mod.symbolTableInsert(table, sym);
         },
         AstKind.import_expr => {
-            var path_id = node.payload;
+            var path_id: u32 = @intCast(u32, node.payload);
             var target_mod_id = hash_mod.u32ToU32MapGet(&reg.path_to_id, path_id);
             if (target_mod_id) |tid| {
                 var sym = sym_mod.Symbol{
@@ -426,7 +426,7 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
     if (module_id == @intCast(u32, 0)) {
         var dg: []const u8 = "RS"; pal_mod.markerWrite(dg);
         var pb: [20]u8 = undefined;
-        var pl = itoa_mod.itoa(root.payload, pb[0..]);
+        var pl = itoa_mod.itoa(@intCast(u32, root.payload & @intCast(u64, 0xFFFFFFFF)), pb[0..]);
         var ps: usize = @intCast(usize, 19) - @intCast(usize, pl);
         pal_mod.markerWrite(pb[ps..@intCast(usize, 19)]);
         var sc: []const u8 = ":"; pal_mod.markerWrite(sc);

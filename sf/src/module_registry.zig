@@ -562,11 +562,11 @@ pub fn moduleRegistryCollectIncludes(store: *AstStore, decls: []u32, c_includes:
     while (di < decls.len) : (di += @intCast(usize, 1)) {
         var decl = store.nodes.items[@intCast(usize, decls[di])];
         if (decl.kind == AstKind.c_include) {
-            ga_mod.u32ArrayListAppend(c_includes, decl.payload);
+            ga_mod.u32ArrayListAppend(c_includes, @intCast(u32, decl.payload));
         } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
             var init = store.nodes.items[@intCast(usize, decl.child_1)];
             if (init.kind == AstKind.c_include) {
-                ga_mod.u32ArrayListAppend(c_includes, init.payload);
+                ga_mod.u32ArrayListAppend(c_includes, @intCast(u32, init.payload));
             }
         }
     }

@@ -130,6 +130,11 @@ u32 __bootstrap_u32_from_u64(u64 x) {
     return (u32)x;
 }
 
+usize __bootstrap_usize_from_u64(u64 x) {
+    if (x > (u64)4294967295U) std_panic("integer cast overflow in @intCast");
+    return (usize)x;
+}
+
 u32 __bootstrap_u32_from_i32(i32 x) {
     if (x < 0) std_panic("integer cast overflow in @intCast");
     return (u32)x;

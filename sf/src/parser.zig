@@ -423,7 +423,7 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
     }
     var rparen = try parserExpect(self, TokenKind.rparen);
     var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.child_buf_len > saved_fncall) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_fncall..self.child_buf_len]);
     }
@@ -460,7 +460,7 @@ fn parserParseOrelseRHS(self: *Parser, next_min: Prec) ParserError!u32 {
     return parserParseExprPrec(self, next_min);
 }
 
-fn parserParseFieldInitListNamed(self: *Parser) ParserError!u32 {
+fn parserParseFieldInitListNamed(self: *Parser) ParserError!u64 {
     var saved_child_len = self.child_buf_len;
     while (parserPeek(self).kind == TokenKind.dot) {
         _ = parserAdvance(self);
@@ -477,7 +477,7 @@ fn parserParseFieldInitListNamed(self: *Parser) ParserError!u32 {
         if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.child_buf_len > saved_child_len) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_child_len..self.child_buf_len]);
     }
@@ -637,7 +637,7 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
      }
     var rparen = parserAdvance(self);
     end = rparen.span_start + @intCast(u32, rparen.span_len);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.child_buf_len > saved_builtin) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_builtin..self.child_buf_len]);
     }
@@ -747,7 +747,7 @@ fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
         if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.child_buf_len > saved_child_len) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_child_len..self.child_buf_len]);
     }
@@ -782,7 +782,7 @@ fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
     var rbrace = try parserExpect(self, TokenKind.rbrace);
     var gap: []const u8 = "";
     _ = gap;
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.child_buf_len > saved_child_len) {
         payload = ast_mod.astStoreAddExtraChildren(self.store,
             self.child_buf_items[saved_child_len..self.child_buf_len]);
@@ -849,7 +849,7 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     }
     _ = try parserExpect(self, TokenKind.rbrace);
 
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.child_buf_len > saved_switch) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_switch..self.child_buf_len]);
     }
@@ -857,7 +857,7 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
     var pswe_node = ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
         kw_tok.span_start, end_pos, cond, 0, 0, payload);
-    var pswe_b: [10]u8 = undefined; var pswe_l = itoa_mod.itoa(pswe_node, pswe_b[0..]); var pswe_s: usize = @intCast(usize, 9) - @intCast(usize, pswe_l); var pswe_m: []const u8 = "PSWE:n"; pal.markerWrite(pswe_m); pal.markerWrite(pswe_b[pswe_s..@intCast(usize, 9)]); var pswe_pm: []const u8 = "p"; pal.markerWrite(pswe_pm); var pswe_pb: [10]u8 = undefined; var pswe_pl = itoa_mod.itoa(payload, pswe_pb[0..]); var pswe_ps: usize = @intCast(usize, 9) - @intCast(usize, pswe_pl); pal.markerWrite(pswe_pb[pswe_ps..@intCast(usize, 9)]); var pswe_nl: []const u8 = "\n"; pal.markerWrite(pswe_nl);
+    var pswe_b: [10]u8 = undefined; var pswe_l = itoa_mod.itoa(pswe_node, pswe_b[0..]); var pswe_s: usize = @intCast(usize, 9) - @intCast(usize, pswe_l); var pswe_m: []const u8 = "PSWE:n"; pal.markerWrite(pswe_m); pal.markerWrite(pswe_b[pswe_s..@intCast(usize, 9)]); var pswe_pm: []const u8 = "p"; pal.markerWrite(pswe_pm); var pswe_pb: [10]u8 = undefined; var pswe_pl = itoa_mod.itoa(@intCast(u32, payload & @intCast(u64, 0xFFFFFFFF)), pswe_pb[0..]); var pswe_ps: usize = @intCast(usize, 9) - @intCast(usize, pswe_pl); pal.markerWrite(pswe_pb[pswe_ps..@intCast(usize, 9)]); var pswe_nl: []const u8 = "\n"; pal.markerWrite(pswe_nl);
     return pswe_node;
 }
 
@@ -939,9 +939,9 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
     var pcb_pb: [10]u8 = undefined; var pcb_pl = itoa_mod.itoa(flags, pcb_pb[0..]); var pcb_ps: usize = @intCast(usize, 9) - @intCast(usize, pcb_pl); pal.markerWrite(pcb_pb[pcb_ps..@intCast(usize, 9)]);
     var pcb_n: []const u8 = "\n"; pal.markerWrite(pcb_n);
     var pcb_sm: []const u8 = "PCB:S"; pal.markerWriteInt(pcb_sm, @intCast(u32, case_len));
-    var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, case_items[0..case_len]);
+    var items_payload: u64 = ast_mod.astStoreAddExtraChildren(self.store, case_items[0..case_len]);
     var ppl_m: []const u8 = "PPL:n"; pal.markerWrite(ppl_m);
-    var ppl_pb: [10]u8 = undefined; var ppl_pl = itoa_mod.itoa(items_payload, ppl_pb[0..]); var ppl_ps: usize = @intCast(usize, 9) - @intCast(usize, ppl_pl); pal.markerWrite(ppl_pb[ppl_ps..@intCast(usize, 9)]);
+    var ppl_pb: [10]u8 = undefined; var ppl_pl = itoa_mod.itoa(@intCast(u32, items_payload & @intCast(u64, 0xFFFFFFFF)), ppl_pb[0..]); var ppl_ps: usize = @intCast(usize, 9) - @intCast(usize, ppl_pl); pal.markerWrite(ppl_pb[ppl_ps..@intCast(usize, 9)]);
     var ppl_n: []const u8 = "\n"; pal.markerWrite(ppl_n);
     var end_pos: u32 = start_tok.span_start + @intCast(u32, start_tok.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.swt_prong, flags,
@@ -1081,7 +1081,7 @@ fn parserParseFnType(self: *Parser) ParserError!u32 {
     {
         ret_type = try parserParseType(self);
     }
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (param_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, param_buf[0..param_count]);
     }
@@ -1110,7 +1110,7 @@ fn parserParseErrorSetDeclBody(self: *Parser, kw: Token) ParserError!u32 {
         }
     }
     _ = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (member_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, member_buf[0..member_count]);
     }
@@ -1140,7 +1140,7 @@ fn parserParseStructType(self: *Parser) ParserError!u32 {
         }
     }
     _ = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (fields_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
     }
@@ -1179,7 +1179,7 @@ fn parserParseEnumType(self: *Parser) ParserError!u32 {
         }
     }
     _ = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (members_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, members_buf[0..members_count]);
     }
@@ -1224,7 +1224,7 @@ fn parserParseUnionType(self: *Parser) ParserError!u32 {
         }
     }
     _ = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (fields_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
     }
@@ -1311,7 +1311,7 @@ pub fn parserParseModuleRoot(self: *Parser) ParserError!u32 {
         u32ArrayListAppendInner(&self.decl_buf_items, &self.decl_buf_len, &self.decl_buf_capacity, self.allocator, decl);
     }
 
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (self.decl_buf_len > @intCast(usize, 0)) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, self.decl_buf_items[0..self.decl_buf_len]);
     }
@@ -1441,11 +1441,11 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     }
     _ = try parserExpect(self, TokenKind.rparen);
 
-    var param_start: u16 = @intCast(u16, 0);
+    var param_start: u32 = 0;
     var param_count: u16 = @intCast(u16, 0);
     if (self.child_buf_len > @intCast(usize, 0)) {
         var pp = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
-        param_start = @intCast(u16, pp >> 16);
+        param_start = @intCast(u32, pp >> 32);
         param_count = @intCast(u16, self.child_buf_len);
         self.child_buf_len = 0;
     }
@@ -1818,7 +1818,7 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
         }
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (fields_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
     }
@@ -1856,7 +1856,7 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
           }
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
+    var payload: u64 = 0;
     if (local_len > @intCast(usize, 0)) {
         var slice: []u32 = undefined;
         if (local_len <= @intCast(usize, 64)) {
@@ -1867,7 +1867,7 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
         payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
     }
     self.child_buf_len = saved_len;
-    var plen_m: []const u8 = "PLEN:l"; pal.markerWrite(plen_m); var plen_lb: [10]u8 = undefined; var plen_ll = itoa_mod.itoa(@intCast(u32, local_len), plen_lb[0..]); var plen_ls: usize = @intCast(usize, 9) - @intCast(usize, plen_ll); pal.markerWrite(plen_lb[plen_ls..@intCast(usize, 9)]); var plen_pm: []const u8 = "p"; pal.markerWrite(plen_pm); var plen_pb: [10]u8 = undefined; var plen_pl = itoa_mod.itoa(payload, plen_pb[0..]); var plen_ps: usize = @intCast(usize, 9) - @intCast(usize, plen_pl); pal.markerWrite(plen_pb[plen_ps..@intCast(usize, 9)]); var plen_nl: []const u8 = "\n"; pal.markerWrite(plen_nl);
+    var plen_m: []const u8 = "PLEN:l"; pal.markerWrite(plen_m); var plen_lb: [10]u8 = undefined; var plen_ll = itoa_mod.itoa(@intCast(u32, local_len), plen_lb[0..]); var plen_ls: usize = @intCast(usize, 9) - @intCast(usize, plen_ll); pal.markerWrite(plen_lb[plen_ls..@intCast(usize, 9)]); var plen_pm: []const u8 = "p"; pal.markerWrite(plen_pm); var plen_pb: [10]u8 = undefined; var plen_pl = itoa_mod.itoa(@intCast(u32, payload & @intCast(u64, 0xFFFFFFFF)), plen_pb[0..]); var plen_ps: usize = @intCast(usize, 9) - @intCast(usize, plen_pl); pal.markerWrite(plen_pb[plen_ps..@intCast(usize, 9)]); var plen_nl: []const u8 = "\n"; pal.markerWrite(plen_nl);
     return ast_mod.astStoreAddNode(self.store, AstKind.block, 0, lbrace.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len), 0, 0, 0, payload);
 }
 

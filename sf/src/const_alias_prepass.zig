@@ -203,7 +203,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
         var rt = resolved_sym.type_id;
 
         var decl_node = store.nodes.items[@intCast(usize, resolved_sym.decl_node)];
-        var alias_own_name = decl_node.payload;
+        var alias_own_name: u32 = @intCast(u32, decl_node.payload & @intCast(u64, 0xFFFFFFFF));
         var alias_own_text = interner_mod.stringInternerGet(interner, alias_own_name);
         var alias_own_canonical = interner_mod.stringInternerIntern(interner, alias_own_text);
 

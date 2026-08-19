@@ -108,6 +108,11 @@ ZIG_INLINE ZIG_UNUSED u32 __bootstrap_u32_from_u64(u64 x) {
     return (u32)x;
 }
 
+ZIG_INLINE ZIG_UNUSED usize __bootstrap_usize_from_u64(u64 x) {
+    if (x > (u64)4294967295U) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (usize)x;
+}
+
 ZIG_INLINE ZIG_UNUSED u32 __bootstrap_u32_from_i32(i32 x) {
     if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u32)x;
