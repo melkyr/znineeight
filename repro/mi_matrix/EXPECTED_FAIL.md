@@ -1,4 +1,76 @@
-# mi_matrix corpus — expected-fail manifest (v40 2026-08-18)
+# mi_matrix corpus — expected-fail manifest (v41 2026-08-19)
+
+## GATE — self-compile silent-drop plan closeout (R-ladder + I-DROP + F1 u16→u32 sweep) (2026-08-19)
+
+Final gate sweep of the self-compile silent-drop plan
+(docs/superpowers/plans/2026-08-18-self-compile-silent-drop-plan.md). Docs-only task — no `sf/src`
+changes (the F1 code fix landed in the plan's prior task, commits `378c71fa` + `50ebbf82`). All
+gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt 2026-08-19 at HEAD `50ebbf82`, canonical
+std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **R-ladder fixtures (6, all GREEN):** the plan's scale probes ruled out module-count / chain-depth /
+  identifier-volume / tree-shape triggers — nothing below the 65,536-entry boundary trips:
+  - `voiddecl_struct_xmod_r1` (`d1ad390b`) — sanity baseline: cross-module struct return at 2
+    modules, GREEN.
+  - `voiddecl_chain_r2` (`d3405b00`) — import-chain depth probe (N ∈ {5,10,20,40}), GREEN — depth
+    alone does NOT trip.
+  - `voiddecl_count_r3` (`f35e1835`) — sibling-module-count probe (N up to 39), GREEN — module count
+    alone does NOT trip.
+  - `voiddecl_volume_r4` (`3badc5cc`) — interned-identifier volume probe (up to 10k ids), GREEN —
+    volume alone does NOT trip.
+  - `voiddecl_nested_r5` (`44f7d210`) — nested import-tree probe (6 children × 4 grandchildren, 24
+    leaf make()s), GREEN — tree shape does NOT trip.
+  - `voiddecl_mimic_r6v2` (`7c61c462`) — self-hosting-shape mimic (39 modules), GREEN — shape+scale
+    does NOT reconstruct the drop.
+- **I-DROP mechanism (isolated — the true trigger, fixed by F1):** u32 span-start overflow in
+  `astStoreAddExtraChildren` (`sf/src/ast.zig:424`). The module_root decl span is packed as
+  `(start << 16) | count`; when `store.extra_children.len >= 65536` during self-compile, `start << 16`
+  wraps to `start & 0xFFFF`, so every module parsed at/after the boundary decodes to the wrong
+  (early) extra_children region and **silently registers 0 named types** (m1 = 0 symbols, m2-m4 =
+  4/18/10 stray garbage `var_decl`s; `RN:` absent for all of m1-m4). Every cross-module ref to their
+  types falls back to TYPE_VOID (`resolveFnSignatures`, type_resolver.zig:1214) → the 213×
+  `error[3000]`. The trigger is **aggregate extra_children length**, not module count (sf/src modules
+  are large). Isolated by instrumentation (task-I-DROP-report); NOT a registration skip, NOT OOM, NOT
+  cyclic re-entrancy (CYE=0/CYF=0).
+- **Two boundary repro fixtures (both now GREEN):**
+  - `voiddecl_boundary_xmod` (`069b6b35`) — the silent-drop RED form: N=7 × 10k-const modules; the
+    bare-`std` module (imported first, parsed last under the LIFO import queue) is silently dropped →
+    dump/gcc/run rc=0 but EMPTY stdout (expected `1 7`). Post-F1 GREEN: run prints `1 7`.
+  - `voiddecl_boundary_xmod_err` (`b4993838`) — the error[3000] RED form: same shape with m1 imported
+    first (parsed last, start wrapped 65539→3) → `rc=2`, `error[3000]: cannot declare variable of type
+    void` at `main.zig:10:4`, 0 `.c` emitted. Post-F1 GREEN: run prints `1`.
+- **F1 whole-class sweep (the fix):** `AstNode.payload` u32→u64, encoding `(start << 32) | count`
+  (decode `>> 32` / `& 0xFFFFFFFF`); every `*_start: u16` index into the two unbounded arrays
+  (`ast.extra_children`, `type_registry.xt_items`/`xn_items`) widened to u32 — `*_count` stays u16.
+  Commits `378c71fa` (type_registry path) + `50ebbf82` (extra_children path). **Commit order reversed
+  from the plan staging** (type_registry landed first) — operator accepted.
+- **New self-compile status:** `error[3000]` **213x → 9**; modules 1-4 now register cleanly
+  (`RN:m1`/`RN:m2`/`RN:m3`/`RN:m4` markers present, `RN:m5n38` boundary control present). The 9
+  residual `error[3000]` are the **same pre-existing VOID-decl family, newly reached** — recorded,
+  **NOT fixed** (all `cannot declare variable of type void`). **Next blocker = the VOID-decl family
+  (9 sites).**
+- **Corpus (277 dirs): `OK=267 / FAIL=6 / ICE=0 / CRASH=0 / green-guards=4`** (267+6+4=277). Corpus
+  grew 266→277: +3 signed wrap/sat emission probes (`sat_i64_mul` / `sat_signed_battery` /
+  `wrap_signed_battery`, commit `13991817`, landed post-v40-gate) + the 6 R-ladder fixtures + the 2
+  boundary repros — all 11 new dirs **OK**. FAIL=6 **unchanged** (byte-identical to the v40
+  baseline): `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) +
+  `parsergap_selfblok_xmod` (error[2000]) + `parsergap_specifier_xmod` (error[3013]) +
+  `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL
+  **by design**). Green-guards unchanged (`eu_assign_incompat_payload` / `euvoid_val_catch` /
+  `field_access_optional` / `var_declared_void`). **No regression.**
+- **21-example matrix: 21/21 dump/gcc/link rc=0** (PASS=21, FAIL=0). Runs: json_parser parses
+  test.json rc=0 (CWD-sensitive — run from its dir); game_of_life prints the correct glider grid then
+  loops on the missing `cls` — timeout-gated rc=124, counted PASS; mud_server rc=124 (timeout-gated
+  server); rogue_mud boots + exits on `q` rc=0.
+- **4 MD5 gates byte-identical** (all MATCH the v40 baselines, no re-baseline this plan): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+- **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
+- **Trigger isolation (recorded, NOT fixed):** the silent module 1-4 drop was the u16 span-start
+  overflow (I-DROP mechanism above) — FIXED by F1. The newly-reached 9 `error[3000]` VOID-decl sites
+  (main.zig:588, symbol_registrator:258/:357, lower.zig:4410/:5218/:5275/:5319/:5395/:5403) are the
+  next genuine blocker — the same pre-existing VOID-decl family as the `var_declared_void`
+  green-guard, **recorded, NOT fixed** (see the QUICK_REF baseline line).
 
 ## GATE — self-compile-gaps plan closeout (wrap/sat operators + multi-line string + switch-prong) (2026-08-18)
 
