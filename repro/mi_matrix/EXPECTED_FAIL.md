@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v42 2026-08-20)
+# mi_matrix corpus — expected-fail manifest (v43 2026-08-20)
 
 ## GATE — voiddecl-family plan closeout, final sweep + reconciliation (2026-08-20)
 
@@ -68,6 +68,60 @@ landed in the plan's prior F tasks). All gates re-verified with `/tmp/fx_subfold
   `.payload.<first>._0` reading the wrong width. 0 sites in sf/src. (2) **`.tag` read-load asymmetry**
   (AMENDMENT 6): F2 fixed `.tag` sema-only; bare `.tag` value-reads OUTSIDE a switch still no-load
   (pre-existing, disclosed in I-PAYLOAD §5, accepted by operator).
+
+## GATE — widthbits-overflow plan closeout, final sweep + reconciliation (2026-08-20)
+
+Final gate sweep of the widthbits-overflow plan (docs/superpowers/plans/2026-08-20-widthbits-overflow-plan.md,
+STOP ruling 2026-08-20, AMENDMENT 2 `f3b0b916`). Docs-only task — no `sf/src` changes (the F1 fix landed in
+the plan's prior task, commit `d5a966f7`). All gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt
+2026-08-20 at HEAD `d5a966f7`, canonical std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **Width-bits mechanism (F1 `d5a966f7` — the LAST self-compile blocker, now FIXED):** the self-compile PANIC
+  `c89_emit.zig:5002` was `width_bits = @intCast(u8, bty.size * @intCast(u32, 8))` — a u8 integer-cast
+  overflow when emitting a `.int_const` for a >31-byte tagged-union temp (40 bytes: 40*8 = 320 > 255).
+  **3-site class** (every `@intCast(u8, <size>*@intCast(u32, 8))` width computation): `c89_emit.zig:5002`
+  (the `.int_const` PANIC locus), `c89_emit.zig:3190` (`emitSatBinary` — int-only operands, size ≤ 8,
+  overflow-unreachable), and **`comptime_eval.zig:139` — the second LIVE site** (I-WIDTHBITS blast-radius
+  correction; comptime-side `@intCast` fold reachable from a >31-byte non-int target). **Fix (Option B u32
+  widening, per the STOP ruling):** `width_bits`/`wb` u8→u32 across the full enumerated surface — c89_emit.zig
+  17 edit lines / 6 contiguous regions (`:3160/:3167/:3174/:3181` sat-helper params + their `@intCast(u8,…)`
+  comparisons, `:3190/:4992/:5002` compute sites, `:3313/:3428` op-21/22 consumers, `:5020/:5028` `<64`
+  guards; `:5024` keeps `sb: u8`), comptime_eval.zig 17 edit lines / 5 contiguous regions (`:16` field,
+  `:56` `maxw`, the 8 literal constructions `:119/:128/:160/:173/:175/:177/:178/:196`, `:139` second live
+  site, `:141/:144/:146/:183-188` consumers; `:203` pass-through untouched). **STOP-approved `>=`
+  shift-guard hardening:** `comptime_eval.zig:141` and `:185` changed `wb == @intCast(u32, 64)` →
+  `wb >= @intCast(u32, 64)` (eliminates synthetic-only u64 shift-by->63 UB on >31-byte non-int `@intCast`
+  targets; behavior-identical for all int/char/bool targets). Shift-guard invariant preserved: every
+  `1 << width_bits` is lexically inside the `is_signed != 0` block (`c89_emit.zig:5018`), tagged unions
+  never set `is_signed`, so widths at any shift site stay ≤ 64 — widening introduces zero shift-UB.
+  Whole-tree scan: **zero remaining `@intCast(u8, <size>*8)` width computations**; 61 `width_bits` hits
+  confined to the 2 files; zero cross-file consumer of `ComptimeVal.width_bits`.
+- **R1 fixture (`582bfc4e`, `widthbits_union_intconst_xmod`): RED→GREEN.** Pre-fix: `PANIC: integer cast
+  overflow` (rc=134) at `zig_runtime.h:154` on the `.int_const` tag emission for a 40-byte tagged-union
+  temp. Post-fix: dump rc=0, gcc rc=0, correct `.tag =` emission. Corpus 286→287 with the fixture counted;
+  it now classifies **OK**.
+- **Corpus (287 dirs): `OK=276 / FAIL=7 / ICE=0 / CRASH=0 / green-guards=4`** (276+7+4=287). Corpus grew
+  286→287 (+1 dir this plan: the R1 fixture `widthbits_union_intconst_xmod`, RED→OK). **FAIL=7 set
+  unchanged** (byte-identical to the v42 baseline): `field_store_drop` (error[3048]) +
+  `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) +
+  `parsergap_slice_expr_xmod` (error[2000]+[3000], clean-reject) + `parsergap_specifier_xmod` (error[3013]) +
+  `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by
+  design**). Green-guards unchanged (`eu_assign_incompat_payload` / `euvoid_val_catch` /
+  `field_access_optional` / `var_declared_void`). **No regression.**
+- **21-example matrix: 21/21 dump/gcc rc=0** (PASS=21, FAIL=0; 17 via main.zig + 4 single-file
+  func_ptr_return/mandelbrot/quicksort/sort_strings).
+- **4 MD5 gates byte-identical** (all MATCH the v42 baselines, no re-baseline this plan): gol
+  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  CWD-sensitive), json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  Byte-identity by construction: emitted width-dependent output runs only for int temps ≤ 64 bits; no
+  gate/corpus/example uses a >31-byte tagged-union `.int_const`.
+- **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
+- **MAJOR MILESTONE — self-compile FULLY GREEN:** `timeout 120 /tmp/fx_subfolder/zig1 --markers --dump-c89
+  --output-dir /tmp/sc sf/src/main.zig` → **rc=0, 40 `.c` emitted, zero `error[` non-9999, zero PANIC**. The
+  widthbits fix was the **LAST self-compile blocker — next frontier blocker: NONE** (recorded explicitly;
+  nothing invented). Informational only, NOT a blocker: the `--markers` emitted .c do not pass strict
+  single-file `gcc -c` (`zT_68 undeclared`, `zF_..._main` arg-count mismatch) — a pre-existing `--markers`
+  emission quirk unrelated to this widening; no gate requires gcc of self-compile output.
 
 ## GATE — self-compile silent-drop plan closeout (R-ladder + I-DROP + F1 u16→u32 sweep) (2026-08-19)
 
