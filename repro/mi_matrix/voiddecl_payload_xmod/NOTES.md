@@ -95,6 +95,15 @@ currently-active `a: u32` prints the value. Like the tagprobe fixture, the compi
 gate is the primary post-fix signal — this fixture uses `undefined`, so runtime
 prints are not the gate.
 
+## Post-fix (F-PAYLOAD, 2026-08-20)
+
+`var p = x.payload;` now compiles GREEN: dump rc=0 + gcc rc=0, `.c` emits a REAL load
+`zT_3 = x.payload.a._0;` (result-temp type = first non-void variant field type u32).
+Run rc=0 (prints a garbage value — `x` is `undefined`, runtime prints are not the
+gate). The 2-locus fix: sema `semantic_analyzer.zig` tagged-union branch maps
+`.payload` → first non-void variant field type (array→ptr mirrored), lower
+`lower.zig` emits `load_field { field_id = TU_FIELD_PAYLOAD }`.
+
 ## Commit hash + date
 
 Base HEAD `838935ce` (pre-fixture, branch `zig1_start`), 2026-08-20. Fixture's own

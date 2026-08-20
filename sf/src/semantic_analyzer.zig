@@ -479,6 +479,26 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, tp.tag_type);
             return tp.tag_type;
         }
+        var payload_s: []const u8 = "payload";
+        var payload_id = interner_mod.stringInternerIntern(self.interner, payload_s);
+        if (field_name_id == payload_id) {
+            var fpe_count: usize = @intCast(usize, tp.fields_count);
+            var fpei: usize = 0;
+            while (fpei < fpe_count) : (fpei += 1) {
+                var fpe = self.registry.fe_items[@intCast(usize, tp.fields_start) + fpei];
+                if (fpe.type_id != type_mod.TYPE_VOID) {
+                    var payload_res = fpe.type_id;
+                    var payload_rt = self.registry.types_items[@intCast(usize, payload_res)];
+                    if (payload_rt.kind == type_mod.TypeKind.array_type) {
+                        var payload_elem = self.registry.array_items[@intCast(usize, payload_rt.payload_idx)].elem;
+                        payload_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, payload_elem, false);
+                    }
+                    var fpe_m: []const u8 = "FP:PAYLOAD\n"; pal_mod.markerWrite(fpe_m);
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, payload_res);
+                    return payload_res;
+                }
+            }
+        }
         fields_start = @intCast(usize, tp.fields_start);
         fields_count = @intCast(usize, tp.fields_count);
     } else if (base_ty.kind == type_mod.TypeKind.module_type) {

@@ -2459,6 +2459,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                     }
                     var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
+                    var payload_s: []const u8 = "payload";
+                    var payload_id = si_mod.stringInternerIntern(self.ctx.registry.interner, payload_s);
+                    if (field_name_id == payload_id and fa_box[0] != type_mod.TYPE_VOID) {
+                        var gape_fpl: []const u8 = "GAPE:fpl\n"; pal.markerWrite(gape_fpl);
+                        var sf_nid = nameMapGet(self, base_temp);
+                        emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = tid } });
+                        return tid;
+                    }
                 } else {
                 var fields: []FieldEntry = undefined;
                 if (kind == type_mod.TypeKind.union_type) {
