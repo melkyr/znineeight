@@ -13,7 +13,7 @@ const config = @import("config.zig");
 
 pub const ComptimeVal = struct {
     bits: u64,
-    width_bits: u8,
+    width_bits: u32,
     sig: bool,
 };
 
@@ -53,7 +53,7 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
             var lv: u64 = l.bits;
             var rv: u64 = r.bits;
             var use_signed = l.sig or r.sig;
-            var maxw: u8 = l.width_bits;
+            var maxw: u32 = l.width_bits;
             if (r.width_bits > maxw) { maxw = r.width_bits; }
             if (op_kind == AstKind.add) return ComptimeVal{ .bits = lv + rv, .width_bits = maxw, .sig = use_signed };
             if (op_kind == AstKind.sub) return ComptimeVal{ .bits = lv - rv, .width_bits = maxw, .sig = use_signed };
@@ -116,7 +116,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
-            if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.size), .width_bits = @intCast(u8, 0), .sig = false };
+            if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.size), .width_bits = @intCast(u32, 0), .sig = false };
         }
         return null;
     }
@@ -125,7 +125,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
-            if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.alignment), .width_bits = @intCast(u8, 0), .sig = false };
+            if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.alignment), .width_bits = @intCast(u32, 0), .sig = false };
         }
         return null;
     }
@@ -136,14 +136,14 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
         if (tid) |t| {
             if (inner) |cv| {
                 var ty = self.registry.types_items[@intCast(usize, t)];
-                var wb: u8 = @intCast(u8, ty.size * @intCast(u32, 8));
+                var wb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
                 var sig: bool = (ty.kind == type_mod.TypeKind.i8_type or ty.kind == type_mod.TypeKind.i16_type or ty.kind == type_mod.TypeKind.i32_type or ty.kind == type_mod.TypeKind.i64_type or ty.kind == type_mod.TypeKind.isize_type);
-                if (wb == @intCast(u8, 64)) {
+                if (wb >= @intCast(u32, 64)) {
                     return ComptimeVal{ .bits = cv.bits, .width_bits = wb, .sig = sig };
                 }
                 var mask: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
                 var masked = cv.bits & mask;
-                if (sig and (cv.bits & (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u8, 1)))) != @intCast(u64, 0)) {
+                if (sig and (cv.bits & (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1)))) != @intCast(u64, 0)) {
                     var not_mask: u64 = (@intCast(u64, 0) - mask) - @intCast(u64, 1);
                     masked = cv.bits | not_mask;
                 }
@@ -157,7 +157,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
         if (config.host_is_windows) {
             wb2 = @intCast(u64, 1);
         }
-        return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u8, 1), .sig = false };
+        return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u32, 1), .sig = false };
     }
     return null;
 }
@@ -170,30 +170,30 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     if (node_idx == @intCast(u32, 0)) return null;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.int_literal) {
-        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u8, 0), .sig = true };
+        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u32, 0), .sig = true };
     } else if (node.kind == AstKind.char_literal) {
-        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u8, 8), .sig = false };
+        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u32, 8), .sig = false };
     } else if (node.kind == AstKind.bool_literal) {
-        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u8, 1), .sig = false };
-        return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u8, 1), .sig = false };
+        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
+        return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
     } else if (node.kind == AstKind.negate) {
         var inner = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (inner) |cv| {
             var nv: u64 = @intCast(u64, 0) - cv.bits;
-            if (cv.width_bits != @intCast(u8, 0)) {
-                var wb: u8 = cv.width_bits;
-                if (wb == @intCast(u8, 64)) {
+            if (cv.width_bits != @intCast(u32, 0)) {
+                var wb: u32 = cv.width_bits;
+                if (wb >= @intCast(u32, 64)) {
                     return ComptimeVal{ .bits = nv, .width_bits = wb, .sig = cv.sig };
                 }
                 var mask: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
                 var masked = nv & mask;
-                if (cv.sig and (nv & (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u8, 1)))) != @intCast(u64, 0)) {
+                if (cv.sig and (nv & (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1)))) != @intCast(u64, 0)) {
                     var not_mask: u64 = (@intCast(u64, 0) - mask) - @intCast(u64, 1);
                     masked = nv | not_mask;
                 }
                 return ComptimeVal{ .bits = masked, .width_bits = wb, .sig = cv.sig };
             }
-            return ComptimeVal{ .bits = nv, .width_bits = @intCast(u8, 0), .sig = true };
+            return ComptimeVal{ .bits = nv, .width_bits = @intCast(u32, 0), .sig = true };
         }
         return null;
     } else if (node.kind == AstKind.bit_not) {
