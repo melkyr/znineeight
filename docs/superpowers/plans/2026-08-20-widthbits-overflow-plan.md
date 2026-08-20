@@ -81,13 +81,16 @@ Trace `c89_emit.zig:4984-5055`: how `width_bits` is computed (`:4992/:5002`), wh
 
 - [ ] **Step 2: Enumerate the full `width_bits`/`wb`-typed surface**
 
-All sites that must widen if Option B is chosen (exact file:line + current type):
+All sites that must widen if Option B is chosen (exact file:line + current type) — **ENUMERATION AMENDMENT 1 (2026-08-20, whole-tree grep + source-verified, supersedes the pre-plan draft list):**
 - `c89_emit.zig:4992` `var width_bits: u8` and `:5002` cast
 - `c89_emit.zig:3190` `var width_bits: u8` (emitSatBinary)
-- `c89_emit.zig:3160/3167/3174/3181` helper params `width_bits: u8` (satMaxLit/satMinLit/satMinMagLit/satMaxULit)
+- `c89_emit.zig:3160/3167/3174/3181` helper params `width_bits: u8` (satMaxLit/satMinLit/satMinMagLit/satMaxULit) — each also compares `width_bits == @intCast(u8, 8/16/64)` at `:3161-3163/:3168-3170/:3175-3177/:3182-3184`
 - `c89_emit.zig:3196/5020/5021/5024/5028/5029` consumers (itoa casts, comparisons, shifts)
-- `comptime_eval.zig:16` `ComptimeVal.width_bits: u8`; `:56-57` width-max arithmetic; `:139` `var wb: u8`
-Also flag any cross-file consumer of `ComptimeVal.width_bits` (lower/c89_emit reads).
+- `c89_emit.zig:3313` and `:3428` `width_bits == @intCast(u8, 64)` comparisons (emitSatBinary op 21 / op 22 branches — consumers found by whole-tree grep, NOT in the pre-plan draft list)
+- `comptime_eval.zig:16` `ComptimeVal.width_bits: u8` field; `:56` `var maxw: u8`; `:57` `r.width_bits > maxw`; `:139` `var wb: u8`
+- `comptime_eval.zig:141` `wb == @intCast(u8, 64)`; `:144` `1 << wb` mask; `:146` sign-bit shift `wb - @intCast(u8, 1)`; `:183` `cv.width_bits != @intCast(u8, 0)`; `:184` `var wb: u8 = cv.width_bits`; `:185` `wb == @intCast(u8, 64)`; `:188` `1 << wb` mask (negate branch consumers — found by whole-tree grep, NOT in the pre-plan draft list)
+- `comptime_eval.zig` `ComptimeVal` literal constructions carrying `.width_bits = @intCast(u8, 0|1|8)` at `:119/:128/:160/:173/:175/:177/:178/:196/:203` (all must become `@intCast(u32, ...)` in lockstep with the `:16` field widen)
+Also flag any cross-file consumer of `ComptimeVal.width_bits` (lower/c89_emit reads — whole-tree grep 2026-08-20 found NONE outside `comptime_eval.zig` itself).
 
 - [ ] **Step 3: Propose the exact fix (default Option B)**
 
@@ -108,15 +111,15 @@ Write `.superpowers/sdd/task-I-WIDTHBITS-report.md`. Revert any /tmp instrumenta
 ### Task F1: widen width_bits u8→u32 (per STOP ruling)
 
 **Files:**
-- Modify: `sf/src/c89_emit.zig` (`:4992/:5002`, `:3190`, `:3160/:3167/:3174/:3181` params, `:3196/:5020/:5021/:5024/:5028/:5029` consumers)
-- Modify: `sf/src/comptime_eval.zig` (`:16`, `:56-57`, `:139`)
-- Modify (if cross-file consumers found): any file reading `ComptimeVal.width_bits`
+- Modify: `sf/src/c89_emit.zig` (`:4992/:5002`, `:3190`, `:3160/:3167/:3174/:3181` params + their `:3161-3163/:3168-3170/:3175-3177/:3182-3184` `@intCast(u8,...)` comparisons, `:3196/:5020/:5021/:5024/:5028/:5029` consumers, `:3313/:3428` `@intCast(u8, 64)` comparisons)
+- Modify: `sf/src/comptime_eval.zig` (`:16`, `:56-57`, `:139`, `:141/:144/:146`, `:183-188`, `:119/:128/:160/:173/:175/:177/:178/:196/:203` `.width_bits` literal constructions)
+- Modify (if cross-file consumers found): any file reading `ComptimeVal.width_bits` (whole-tree grep 2026-08-20: NONE)
 
 **Consumes:** I-WIDTHBITS §3 exact widening + STOP ruling. **Produces:** the gap-fill.
 
 - [ ] **Step 1: Implement the widening (fastedit)**
 
-Per I-WIDTHBITS §3 + STOP ruling: widen `width_bits`/`wb` u8→u32 at every enumerated site, add `@intCast(u32, ...)` wrappers, update comparisons/shifts (`@intCast(u64, width_bits)` shifts unchanged; `width_bits < @intCast(u8, 64)` → `@intCast(u32, 64)`). Single contiguous edits per region; re-read after each edit.
+Per I-WIDTHBITS §3 + STOP ruling: widen `width_bits`/`wb` u8→u32 at every enumerated site (I-WIDTHBITS Step 2 AMENDMENT 1 list — including the whole-tree-grep-found consumers at `c89_emit.zig:3313/:3428` and `comptime_eval.zig:141/:144/:146/:183-188`), add `@intCast(u32, ...)` wrappers, update comparisons/shifts (`@intCast(u64, width_bits)` shifts unchanged; `width_bits < @intCast(u8, 64)` → `@intCast(u32, 64)`). Single contiguous edits per region; re-read after each edit.
 
 - [ ] **Step 2: Rebuild + gates**
 
