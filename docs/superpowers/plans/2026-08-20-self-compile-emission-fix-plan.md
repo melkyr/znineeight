@@ -4,11 +4,13 @@
 
 **Goal:** Fix the 5 C-emission defect classes so `zig1` produces a compilable `zig1_5` (self-compiled compiler): `build_zig1_5.sh` completes with 0 gcc errors, both binaries smoke on hello, and the 4 MD5 + corpus 287 + matrix 21/21 byte-identity gate holds.
 
-**Architecture:** D → R → I → I-E → F-A..F-E → GATE pipeline. D maps the 5 error classes to root causes (read-only); R builds one minimal RED fixture per independent root cause; I pins the upstream-correct fix per root cause (read-only, STOP on design forks); **I-E pins the E1 design + triages the class-1b residual (read-only, AMENDMENT 1)**; **F is split into F-A..F-E — one fix task per root cause (AMENDMENT 1)**; GATE reconciles docs.
+**Architecture:** D → R → I → I-E → I-A → F-A..F-E → GATE pipeline. D maps the 5 error classes to root causes (read-only); R builds one minimal RED fixture per independent root cause; I pins the upstream-correct fix per root cause (read-only, STOP on design forks); **I-E pins the E1 design + triages the class-1b residual (read-only, AMENDMENT 1)**; **I-A pins the upstream A fix — type-identity keying (read-only, AMENDMENT 3)**; **F is split into F-A..F-E — one fix task per root cause (AMENDMENT 1)**; GATE reconciles docs.
 
 > **OPERATOR RULING (2026-08-20, AMENDMENT 1):** (1) Lower.zig fixes are approved — "I don't have a concern if the files are different from the plan"; root causes C (C1) and E (E1) are fixed in `lower.zig` as their upstream-correct location. (2) An I-E follow-up task pins E1's which-variant-payload derivation (the I report left a `<variant payload type_id>` placeholder) and triages the 202 class-1b errors into shapes before any F-E code. (3) F is split into F-A, F-B, F-C, F-D, F-E — one per root cause, each independently gated + reviewed. (4) A1 (kind-G module-independent mangle key) accepted, with an F-A grep gate for same-named user globals. E2 (emitter `int zT_n` fallback) rejected as a patch. C2 (emitter name+type dedup) rejected in favor of C1.
 
 > **OPERATOR RULING (2026-08-20, AMENDMENT 2):** I-E findings accepted (option a). F-E re-scoped to three parts: **E1** (bindOptionalCapture tagged-union branch — latent-correct, first-non-void-variant derivation), **E1c** (variant-payload field access `inst.<variant>.<field>` — the dominant class-1b producer, root `semantic_analyzer.zig:607` + `lower.zig:2450-2458`, ~115 errs), and **tag-test** (if (union.field) compares runtime tag vs variant index, `lower.zig:4225-4237` — required for the R fixture to print 7). F-E runs AFTER F-A and F-C (their ~68 class-1b errors collapse first); it re-measures the class-1b residual before the full self-compile gate.
+
+> **OPERATOR RULING (2026-08-20, AMENDMENT 3):** F-A BLOCKED — A1 (drop `module_id` for kind G) MERGED json's `g_arena` (defined in both `file.zig` and `json.zig`) → json MD5 changed, NOT a re-baseline case. The root flaw is kind-G overloading (type-storage globals = shared, user globals = per-module). A new **I-A** follow-up task pins the upstream fix (type-identity keying) — answer two questions: (1) what identity key makes type-storage globals one name without merging user globals, (2) where the type-storage-vs-user discriminator is available at mangle time. F-A is re-scoped to implement the I-A result (revert the A1 working-tree edit first; json gate must stay byte-identical).
 
 **Tech Stack:** Z98 compiler (`sf/src/*.zig`), compiler under test `/tmp/fx_subfolder/zig1`, gcc -m32 -std=c89, `bash sf/scripts/build_release.sh`, 4 MD5 gates, corpus 287, matrix 21/21.
 
@@ -132,39 +134,65 @@ Report at `.superpowers/sdd/task-IE-emission-report.md`. If a second class-1b sh
 
 ---
 
+### Task I-A: pin the upstream A fix — type-identity keying (read-only)
 
+> **AMENDMENT 3 (2026-08-20):** F-A was BLOCKED — A1 (drop `module_id` for all kind G) fixed the type-storage collision but MERGED user globals: json_parser defines `g_arena` in BOTH `file.zig` and `json.zig`, and A1 collapsed them into one C symbol → json MD5 changed (`fb846433…` vs `9720478c…`), so json is NOT a re-baseline case. A1's root flaw: **kind G (`kind == 1`) is overloaded** — it carries both type-storage globals (shared, one runtime descriptor per type) AND user module globals (per-module storage). The upstream fix must key type-storage globals by the **type they store** (not by `(name_id, module_id)`), while user globals keep per-module keying. This I-A task pins that fix precisely (read-only); F-A is then amended to implement it.
+
+**Files:**
+- Read: `sf/src/c89_emit.zig:400-479` (`nameManglerMangle`), `:2330-2348` (extern decls), `:2436-2452` (`emitGlobalDecls`), `:4387-4431` (`load_global`), `:4433-4449` (`store_global`); `sf/src/lir.zig:472-477` (`ModuleGlobalDecl`); `sf/src/main.zig:585-629` (global_decls registration); `sf/src/lower.zig:1317-1329` (`lowerGlobalRef`), `:900-915`, `:2325-2335`, `:5580-5595` (load/store_global emission)
+- Create: `.superpowers/sdd/task-IA-emission-report.md` (report, read-only — no commit)
+
+**Consumes:** F-A BLOCKED evidence (`task-FA-emission-report.md`). **Produces:** the exact upstream fix for root cause A + the answer to the two open questions, so F-A implements without re-reading.
+
+**Mechanism already established (do NOT re-derive — verify only if a line contradicts):**
+- `nameManglerMangle` (`c89_emit.zig:400-479`) cache key = `(module_id << 35) | (kind << 32) | name_id`; for kind G the base mangled name is `zG_<fnv1a(name)>_<name>` with `_N` suffix on collision. The collision maps (`collision_mod`/`collision_name`, `:472-473`) key only on the mangled STRING. The A1 edit (currently in the working tree, UNCOMMITTED) changed the key so kind-G drops `module_id`.
+- Kind-G mangle call sites all pass the GLOBAL's `module_id`: extern decls `:2336`, defs `:2441`, `load_global` `:4388`, `store_global` `:4435`.
+- `ModuleGlobalDecl` (`lir.zig:472-477`) = `{ name_id, module_id, type_id, has_runtime_init }`. **No per-type-storage flag exists.**
+- Registration: `main.zig:585-629` appends a `ModuleGlobalDecl` for each storage `var_decl` (flag 0x04 gate at `:586`; `gv_is_storage` at `:591-599`; import_expr/field-access-of-import excluded at `:603-606`). `module_id = mods[mi].id` (the DECLARING module).
+- `load_global`/`store_global` LIR carry the global's own `module_id` (from `s.module_id`/`gss.module_id` — the declaring module), so both the definition (`emitGlobalDecls`) and all references mangle with the SAME module_id → they AGREE. The collision in the A fixture arises because the SAME type name is declared as a storage global in MULTIPLE modules (tmod aliases `Color`, cmod1/cmod2 import it) → each gets its own `module_id` → 3 different `_N`-suffixed names for one logical type descriptor.
+- `json_parser` `g_arena` in `file.zig` + `json.zig` is a genuine USER global (per-module storage) — it must stay per-module (this is why A1 fails).
+
+**The two questions (answer them in the report):**
+1. **What identity key should type-storage globals use so all modules agree on ONE name, without merging distinct user globals?** Candidate: key by the STORED TYPE's identity — i.e. use the type's `type_id` (or the type name's `name_id` with the type's OWNING module) instead of `(global name_id, global module_id)`. Since a type-storage global's `type_id` is the type it stores (and `ModuleGlobalDecl.type_id` is already populated at `main.zig:622`), derive the mangle identity from the TYPE, not the global. Verify: is `type_id` globally unique per type (so two modules that each define a DIFFERENT type named `Color` stay distinct)? Trace where `type_id` is assigned/registered in the type registry.
+2. **Where is the type-storage vs user-global discriminator available at mangle time?** At `emitGlobalDecls`/`load_global`/`store_global`, the code has `g.type_id`/`lg.result`-typed temps but must know the global is a TYPE descriptor to apply type-identity keying. Determine: is the discriminator derivable from existing data (e.g. `g.type_id`'s type has `name_id == g.name_id` — the global is named after its own type), or does it need a new field on `ModuleGlobalDecl`/LIR `load_global`/`store_global` (main.zig + lower.zig registration)? Recommend the minimal correct option, respecting the "upstream, maintainable" bar (no patch, no A1/A2-style overload).
+
+- [ ] **Step 1: Verify the A1 failure mechanism end-to-end** (the json `g_arena` merge) against the working-tree A1 edit — confirm the diagnosis, then note the A1 edit must be REVERTED or reworked.
+- [ ] **Step 2: Answer question 1** — the exact type-identity keying (type_id vs type-owning-module), with the two-modules-same-type-name analysis.
+- [ ] **Step 3: Answer question 2** — where the discriminator lives / whether a new field is needed, and the exact files/lines for the fix.
+- [ ] **Step 4: Write the report** at `.superpowers/sdd/task-IA-emission-report.md` with the pinned fix design (function + lines + code shape). No commit (read-only). If the fix requires a `ModuleGlobalDecl`/LIR field, present the exact struct/registration change.
+
+---
 ### Task F-A: fix — mangler collision on type storage globals (root cause A)
 
 **Files:**
-- Modify: `sf/src/c89_emit.zig:400-476` (kind-G cache key drops `module_id`)
+- Modify: per the I-A report (c89_emit.zig + optionally lir.zig/main.zig/lower.zig for the discriminator field)
 - Report: `.superpowers/sdd/task-FA-emission-report.md`
 
-**Consumes:** I report §A (A1 recommended). **Produces:** `emission_mangler_collision_xmod` GREEN.
+> **AMENDMENT 3 (2026-08-20):** A1 (drop `module_id` for kind G) was REJECTED — it merged json's `g_arena` (2 modules). F-A now implements the I-A-pinned **type-identity keying**: type-storage globals mangle by the STORED TYPE's identity (all modules agree on one name), user globals keep per-module keying. First REVERT the uncommitted A1 working-tree edit in `nameManglerMangle` before applying the I-A fix.
 
-- [ ] **Step 1: Apply fix A1**
+**Consumes:** I-A report (pinned fix, `task-IA-emission-report.md`). **Produces:** `emission_mangler_collision_xmod` GREEN + json gate intact.
 
-In `nameManglerMangle` `c89_emit.zig:404`, make the kind-G (storage global) cache key a pure function of `(name_id, kind)` — drop `module_id` for `kind == 1` (per I report §A shape). All other kinds unchanged. Via `edit`/`fastedit` (re-read region, bottom-to-top).
+- [ ] **Step 1: Revert the A1 working-tree edit + apply the I-A fix**
 
-- [ ] **Step 2: Verify no same-named user global across two modules**
+The A1 edit in `nameManglerMangle` (`c89_emit.zig:404-407`, the `if (kind != @intCast(u8, 1))` module_id drop) is UNCOMMITTED in the working tree — revert it. Then apply the I-A report's pinned type-identity keying exactly (function + lines + code shape from the report). Via `edit`/`fastedit` (re-read region, bottom-to-top).
 
-Whole-tree scan (I report §A residual): confirm no two modules define the same module-scope `var` name in `sf/src` or the std lib (grep the corpus + self-compile closure). If a real collision exists, STOP and report (re-route to A2).
-
-- [ ] **Step 3: Rebuild + reinstall std**
+- [ ] **Step 2: Rebuild + reinstall std**
 
 ```bash
 bash sf/scripts/build_release.sh
 cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig /tmp/fx_subfolder/lib/
 ```
 
-- [ ] **Step 4: Fixture GREEN + byte-identity gate**
+- [ ] **Step 3: Fixture GREEN + byte-identity gate**
 
-Re-run `emission_mangler_collision_xmod`: dump + gcc -c → 0 errors. Then 4 MD5s byte-identical (gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3`, json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`), corpus 287 unchanged, matrix 21/21. If an MD5 changed: check emitted C correct + runtime-identical → STOP + propose re-baseline; else STOP (defect).
+Re-run `emission_mangler_collision_xmod`: dump + gcc -c → 0 errors. Then 4 MD5s byte-identical (gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` repo-root CWD, json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`), corpus 287 unchanged, matrix 21/21. json MUST stay byte-identical (the g_arena merge gate). If an MD5 changed: check emitted C correct + runtime-identical → STOP + propose re-baseline; else STOP (defect).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
-Commit: `fix: mangler kind-G module-independent name (type storage globals)`
+Commit: `fix: mangle type-storage globals by stored type identity`
 
 ---
+
 
 ### Task F-B: fix — local dedup 128-slot cap (root cause B)
 
