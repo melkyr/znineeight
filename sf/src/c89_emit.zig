@@ -509,7 +509,8 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
       shared_set: U32ToU32Map,
       module_reg: *mr_mod.ModuleRegistry,
       error_code_registry: *hash_mod.U32ToU32Map,
-      dedup_names: [128]u32,
+      dedup_names: [*]u32,
+      dedup_cap: u32,
      dedup_count: u32,
      fl_name_ids: [128]u32,
       fl_temps: [128]u32,
@@ -541,7 +542,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .shared_set = hash_mod.u32ToU32MapInit(alloc),
          .module_reg = undefined,
          .error_code_registry = error_code_reg,
-          .dedup_names = undefined,
+          .dedup_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
+          .dedup_cap = @intCast(u32, 128),
           .dedup_count = @intCast(u32, 0),
            .fl_name_ids = undefined,
            .fl_temps = undefined,
@@ -6073,10 +6075,17 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                             if (emitter.dedup_names[@intCast(usize, dl_lc)] == dl.name_id) { dl_is_dup = @intCast(u8, 1); break; }
                         }
                         if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.markerWrite(da); continue; }
-                        if (@intCast(usize, emitter.dedup_count) < @intCast(usize, 128)) {
-                            emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
-                            emitter.dedup_count += @intCast(u32, 1);
+                        if (emitter.dedup_count >= emitter.dedup_cap) {
+                            var nb = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, emitter.dedup_cap * @intCast(u32, 2)) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                            var ci: u32 = @intCast(u32, 0);
+                            while (ci < emitter.dedup_count) : (ci += @intCast(u32, 1)) {
+                                nb[@intCast(usize, ci)] = emitter.dedup_names[@intCast(usize, ci)];
+                            }
+                            emitter.dedup_names = nb;
+                            emitter.dedup_cap = emitter.dedup_cap * @intCast(u32, 2);
                         }
+                        emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
+                        emitter.dedup_count += @intCast(u32, 1);
                          var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
                          var p1tb: [10]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 9) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 9)]);
                          var p1im: []const u8 = "T"; pal.markerWrite(p1im);
