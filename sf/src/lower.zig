@@ -305,11 +305,12 @@ pub const LirLowerer = struct {
     socket_fd_set_name_id: u32,
     socket_fd_isset_name_id: u32,
     socket_close_name_id: u32,
-    local_decl_names: [64]u32,
-    local_decl_types: [64]u32,
-    local_decl_temps: [64]u32,
-    local_decl_kinds: [64]u8,
-    local_decl_scopes: [64]u32,
+    local_decl_names: [*]u32,
+    local_decl_types: [*]u32,
+    local_decl_temps: [*]u32,
+    local_decl_kinds: [*]u8,
+    local_decl_scopes: [*]u32,
+    local_decl_cap: usize,
     local_decl_name_map: hash_mod.U32ToU32Map,
     local_decl_count: usize,
     _fn_ret_type: u32,
@@ -435,11 +436,12 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .socket_fd_set_name_id = socket_fd_set_id,
          .socket_fd_isset_name_id = socket_fd_isset_id,
          .socket_close_name_id = socket_close_id,
-        .local_decl_names = undefined,
-        .local_decl_types = undefined,
-        .local_decl_temps = undefined,
-        .local_decl_kinds = undefined,
-        .local_decl_scopes = undefined,
+        .local_decl_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
+        .local_decl_types = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
+        .local_decl_temps = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
+        .local_decl_kinds = @ptrCast([*]u8, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 1), @intCast(usize, 4)) catch unreachable),
+        .local_decl_scopes = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
+        .local_decl_cap = @intCast(usize, 64),
         .local_decl_name_map = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 64)),
         .local_decl_count = @intCast(usize, 0),
         ._fn_ret_type = @intCast(u32, 0),
@@ -625,8 +627,38 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
     return result;
 }
 
+fn growLocalDecls(self: *LirLowerer) void {
+    var new_cap: usize = if (self.local_decl_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.local_decl_cap * @intCast(usize, 2);
+    var raw_names = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_types = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_temps = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_kinds = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_scopes = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst = @ptrCast([*]u32, raw_names);
+    var tdst = @ptrCast([*]u32, raw_types);
+    var mdst = @ptrCast([*]u32, raw_temps);
+    var kdst = @ptrCast([*]u8, raw_kinds);
+    var sdst = @ptrCast([*]u32, raw_scopes);
+    if (self.local_decl_count > @intCast(usize, 0)) {
+        var ci: usize = 0;
+        while (ci < self.local_decl_count) : (ci += @intCast(usize, 1)) {
+            ndst[ci] = self.local_decl_names[ci];
+            tdst[ci] = self.local_decl_types[ci];
+            mdst[ci] = self.local_decl_temps[ci];
+            kdst[ci] = self.local_decl_kinds[ci];
+            sdst[ci] = self.local_decl_scopes[ci];
+        }
+    }
+    self.local_decl_names = ndst;
+    self.local_decl_types = tdst;
+    self.local_decl_temps = mdst;
+    self.local_decl_kinds = kdst;
+    self.local_decl_scopes = sdst;
+    self.local_decl_cap = new_cap;
+}
+
 fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_depth: u32) void {
-    if (self.local_decl_count >= @intCast(usize, 64)) return;
+    if (self.local_decl_count >= self.local_decl_cap) { growLocalDecls(self); }
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_types[self.local_decl_count] = type_id;
     self.local_decl_temps[self.local_decl_count] = temp;
