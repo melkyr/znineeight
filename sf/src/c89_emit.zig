@@ -475,6 +475,19 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
     return mangled_id;
 }
 
+pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name_id: u32, module_id: u32, type_id: u32) u32 {
+    if (type_id < @intCast(u32, registry.types_len)) {
+        var ty = registry.types_items[@intCast(usize, type_id)];
+        if (ty.name_id != @intCast(u32, 0) and ty.name_id == name_id) {
+            // Type-storage global: identity = the stored type (name + owning module),
+            // so every module aliasing this type agrees on ONE C symbol.
+            return nameManglerMangle(self, ty.name_id, @intCast(u8, 1), ty.module_id);
+        }
+    }
+    // User module global: keep per-module keying.
+    return nameManglerMangle(self, name_id, @intCast(u8, 1), module_id);
+}
+
  pub const C89Emitter = struct {
      writer: BufferedWriter,
      indent: u32,
@@ -2330,7 +2343,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     while (ggi < emitter.global_decls_len) : (ggi += @intCast(u32, 1)) {
         var ggl = emitter.global_decls[@intCast(usize, ggi)];
         if (ggl.module_id != module_id) continue;
-        var gg_mid = nameManglerMangle(emitter.mangler, ggl.name_id, @intCast(u8, 1), ggl.module_id);
+        var gg_mid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, ggl.name_id, ggl.module_id, ggl.type_id);
         var gg_name = interner_mod.stringInternerGet(emitter.interner, gg_mid);
         var gg_type = getCTypeName(emitter.registry, emitter.mangler, ggl.type_id);
         bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
@@ -2435,7 +2448,7 @@ fn emitGlobalDecls(emitter: *C89Emitter, module_id: u32, all: u8) void {
     while (gi < emitter.global_decls_len) : (gi += @intCast(u32, 1)) {
         var g = emitter.global_decls[@intCast(usize, gi)];
         if (all == @intCast(u8, 0) and g.module_id != module_id) continue;
-        var gmid = nameManglerMangle(emitter.mangler, g.name_id, @intCast(u8, 1), g.module_id);
+        var gmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, g.name_id, g.module_id, g.type_id);
         var gname = interner_mod.stringInternerGet(emitter.interner, gmid);
         var gtype = getCTypeName(emitter.registry, emitter.mangler, g.type_id);
         bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
@@ -4382,23 +4395,24 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .load_global => |lg| {
-            var gmid = nameManglerMangle(emitter.mangler, lg.name_id, @intCast(u8, 1), lg.module_id);
+            var lg_tid: u32 = @intCast(u32, 0);
+            var lg_tj: usize = @intCast(usize, 0);
+            while (lg_tj < emitter.current_fn.hoisted_temps.len) : (lg_tj += @intCast(usize, 1)) {
+                var lg_ht = emitter.current_fn.hoisted_temps.items[lg_tj];
+                if (lg_ht.temp_id == lg.result) { lg_tid = lg_ht.type_id; break; }
+            }
+            var gmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, lg.name_id, lg.module_id, lg_tid);
             var gname = interner_mod.stringInternerGet(emitter.interner, gmid);
             hash_mod.u32ToU32MapPut(&emitter.temp_global_map, lg.result, gmid);
             var result = mangleTempName(emitter.interner, lg.result);
             var lg_is_arr: u8 = @intCast(u8, 0);
             var lg_arr_len: u32 = @intCast(u32, 0);
-            var lg_tj: usize = @intCast(usize, 0);
-            while (lg_tj < emitter.current_fn.hoisted_temps.len) : (lg_tj += @intCast(usize, 1)) {
-                var lg_ht = emitter.current_fn.hoisted_temps.items[lg_tj];
-                if (lg_ht.temp_id == lg.result) {
-                    var lg_dty = emitter.registry.types_items[@intCast(usize, lg_ht.type_id)];
-                    if (lg_dty.kind == type_mod.TypeKind.array_type) {
-                        lg_is_arr = @intCast(u8, 1);
-                        var lg_ap = emitter.registry.array_items[@intCast(usize, lg_dty.payload_idx)];
-                        lg_arr_len = lg_ap.length;
-                    }
-                    break;
+            if (lg_tid < @intCast(u32, emitter.registry.types_len)) {
+                var lg_dty = emitter.registry.types_items[@intCast(usize, lg_tid)];
+                if (lg_dty.kind == type_mod.TypeKind.array_type) {
+                    lg_is_arr = @intCast(u8, 1);
+                    var lg_ap = emitter.registry.array_items[@intCast(usize, lg_dty.payload_idx)];
+                    lg_arr_len = lg_ap.length;
                 }
             }
             if (lg_is_arr == @intCast(u8, 1)) {
@@ -4428,22 +4442,23 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .store_global => |sg| {
-            var val = resolveTempName(emitter, sg.value);
-            var sgmid = nameManglerMangle(emitter.mangler, sg.name_id, @intCast(u8, 1), sg.module_id);
-            var name = interner_mod.stringInternerGet(emitter.interner, sgmid);
-            var sg_is_arr: u8 = @intCast(u8, 0);
-            var sg_arr_len: u32 = @intCast(u32, 0);
+            var sg_tid: u32 = @intCast(u32, 0);
             var sg_tj: usize = @intCast(usize, 0);
             while (sg_tj < emitter.current_fn.hoisted_temps.len) : (sg_tj += @intCast(usize, 1)) {
                 var sg_ht = emitter.current_fn.hoisted_temps.items[sg_tj];
-                if (sg_ht.temp_id == sg.value) {
-                    var sg_dty = emitter.registry.types_items[@intCast(usize, sg_ht.type_id)];
-                    if (sg_dty.kind == type_mod.TypeKind.array_type) {
-                        sg_is_arr = @intCast(u8, 1);
-                        var sg_ap = emitter.registry.array_items[@intCast(usize, sg_dty.payload_idx)];
-                        sg_arr_len = sg_ap.length;
-                    }
-                    break;
+                if (sg_ht.temp_id == sg.value) { sg_tid = sg_ht.type_id; break; }
+            }
+            var val = resolveTempName(emitter, sg.value);
+            var sgmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, sg.name_id, sg.module_id, sg_tid);
+            var name = interner_mod.stringInternerGet(emitter.interner, sgmid);
+            var sg_is_arr: u8 = @intCast(u8, 0);
+            var sg_arr_len: u32 = @intCast(u32, 0);
+            if (sg_tid < @intCast(u32, emitter.registry.types_len)) {
+                var sg_dty = emitter.registry.types_items[@intCast(usize, sg_tid)];
+                if (sg_dty.kind == type_mod.TypeKind.array_type) {
+                    sg_is_arr = @intCast(u8, 1);
+                    var sg_ap = emitter.registry.array_items[@intCast(usize, sg_dty.payload_idx)];
+                    sg_arr_len = sg_ap.length;
                 }
             }
             if (sg_is_arr == @intCast(u8, 1)) {
