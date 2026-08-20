@@ -479,3 +479,23 @@ Sema `semanticAnalyzerResolveSliceExpr` gains a base-is-sliceable check (array/s
 - Placed AFTER the current F-REJECT → GATE sequence (out of the current critical path; 0 live sites).
 
 **GATE (re-amended 2):** record F-ICE (3 loci + Fix A + Fix B ratified) + F-REJECT + R/I/F-PAYLOAD status + next blockers = PANIC `c89_emit.zig:5002` width_bits u8 overflow (recorded NOT fixed) + `.payload` latent (0 sites, R/I/F-PAYLOAD cluster). Corpus = prior + `parsergap_zeroarr_slice_xmod` + `voiddecl_payload_xmod` dirs.
+
+---
+
+### AMENDMENT 6 — operator ruling 2026-08-20: F-PAYLOAD design (post-I-PAYLOAD critical evaluation)
+
+**Context:** I-PAYLOAD (DONE_WITH_CONCERNS, report `.superpowers/sdd/task-I-PAYLOAD-report.md`) traced the `.payload` gap and proposed a 2-locus fix. The controller critically evaluated the report for upstreamness + correctness against live source (verified: `lower.zig:1018-1029` store side ALREADY maps `.payload`→`TU_FIELD_PAYLOAD`; `:2450-2461` read side has NO such mapping and falls through to `:2497 return tid` with no load; `c89_emit.zig:4521-4546` load_field TU_FIELD_PAYLOAD resolves `res_ty` from the result temp's hoisted type then scans variants for `vfe.type_id == res_ty` → `.payload.<variant>._0`). Operator ruled the following F-PAYLOAD design:
+
+**F-PAYLOAD — 2-locus fix (ENDORSED):**
+1. **Locus 1 (sema):** `semantic_analyzer.zig`, `tagged_union_type` branch, insert after the `.tag` block (`:475-481`), before `fields_start/fields_count` read (`:482-483`). Mirror `.tag` symmetrically: `field_name_id == interner("payload")` → loop `fe_items[fields_start .. fields_start+fields_count]` for the first non-void variant field type, `resolvedTypeTableSet(node_idx, fe.type_id)`, `return fe.type_id`; all-void union falls through to `TYPE_VOID` (kept). **MUST mirror the array→ptr conversion from `:583-586`** (array-typed variant → `ptr(elem)`) so array-typed variants behave identically to `x.a` (controller-flagged gap 1).
+2. **Locus 2 (lower):** `lower.zig`, field_access value path, tagged-union branch (`:2450-2461`), after the variant-name loop, before the struct/union `else` (`:2462`). If `field_name_id == interner("payload")` and `fa_box[0] != TYPE_VOID`: `sf_nid = nameMapGet(self, base_temp)`; `emitInst(load_field { name_id = sf_nid, base = base_temp, field_id = TU_FIELD_PAYLOAD, result = tid })`; `return tid`. (`tid` = the `fa_box[0]`-typed temp from `:2417`; emission then produces `tid = x.payload.<variant>._0` via result-temp-type match.)
+
+**Sema-only fix is REJECTED** (silent no-load → uninitialized temp = fallback-like, violates ruling 4). Locus 2 is the symmetric completion of the existing store mapping — root cause, not patch.
+
+**Documented dialect limitation (mandatory):** `.payload`'s static type = first non-void variant field type (deterministic). On a MIXED-type union (`{a: u32, b: i64}`) the single static type is inherently arbitrary — if the runtime active variant differs from the first non-void variant, the emitted `.payload.<first>._0` reads the wrong width. Latent (0 sites in sf/src); recorded as a dialect limitation, not fixed further here.
+
+**`.tag` read-load symmetry — NOT in scope (operator):** F2 fixed `.tag` sema-only; bare `.tag` value-reads (outside switch) still no-load (pre-existing, disclosed in I-PAYLOAD §5). F-PAYLOAD fixes `.payload` reads only; the `.tag` read-load asymmetry is accepted + recorded as a separate latent (do NOT fix here).
+
+**Gates:** R-PAYLOAD fixture RED→GREEN (compile gate: dump rc=0, gcc rc=0; fixture uses `undefined` so runtime prints are NOT the gate); 4 MD5s byte-identical (gol `9cf758d9…`/lisp `88dcb7f9…`/mud `a1d0dd55…`/json `9720478c…`, lisp from repo root); corpus +1 dir (`voiddecl_payload_xmod` flips to OK); matrix 21/21; test_analyzer 5/4; self-compile frontier re-check (error[3000]==0/error[3043]==0 must hold). Byte-identity holds by construction (0 `.payload` reads in sf/src/gates/corpus except the fixture).
+
+**Commit message:** `fix: resolve tagged-union .payload accessor (voiddecl-family F-PAYLOAD)`
