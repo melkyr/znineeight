@@ -34,13 +34,13 @@ A **D → R → I → I-E → F-A..F-E → GATE** pipeline (initial operator rul
 - **D (discovery)** — read-only. Map all 5 classes to root causes and emitter sites; produce the class→root-cause table; identify shared vs distinct root causes. No code changes.
 - **R (repro)** — one minimal fixture per independent root cause under `repro/mi_matrix/<name>_xmod/`, RED = reproduces the bad C emission (`gcc -c` fails) with the current `/tmp/fx_subfolder/zig1`.
 - **I (investigate)** — read-only. Pin the upstream-correct fix for each root cause. STOP for an operator ruling if any design fork arises.
-- **I-E (investigate-E, AMENDMENT 1)** — read-only. Pin E1's which-variant-payload derivation (replacing the I report's `<variant payload type_id>` placeholder) and triage the 202 class-1b errors into shapes (if-capture family vs any second shape) before F-E.
-- **F-A..F-E (fix, AMENDMENT 1)** — one fix task per root cause. F-A/B/D touch `sf/src/c89_emit.zig`; F-C/E touch `sf/src/lower.zig` (operator-approved: "I don't have a concern if the files are different from the plan"). F-E carries the full self-compile success gate (`build_zig1_5.sh` rc=0 + both binaries + smoke). Each independently gated + reviewed.
+- **I-E (investigate-E, AMENDMENT 1)** — read-only. Pin E1's which-variant-payload derivation (replacing the I report's `<variant payload type_id>` placeholder) and triage the 202 class-1b errors into shapes before F-E. **AMENDMENT 2 (2026-08-20):** I-E found E1 fixes ~0 of the 202 (no tagged-union if-captures in the corpus); the dominant class-1b producer is E1c (variant-payload field access `inst.<variant>.<field>`, `semantic_analyzer.zig:607` + `lower.zig:2450-2458`, ~115 errs); ~68 of the 202 are A/C and collapse when those land.
+- **F-A..F-E (fix, AMENDMENT 1)** — one fix task per root cause. F-A/B/D touch `sf/src/c89_emit.zig`; F-C/E touch `sf/src/lower.zig` (operator-approved: "I don't have a concern if the files are different from the plan"). **AMENDMENT 2:** F-E re-scoped to E1 + E1c + tag-test (`lower.zig:4225-4237`, required for the fixture to print 7), runs AFTER F-A + F-C, re-measures the class-1b residual, and carries the full self-compile success gate (`build_zig1_5.sh` rc=0 + both binaries + smoke). Each independently gated + reviewed.
 - **GATE** — reconcile `docs/sf/QUICK_REF.md` + `repro/mi_matrix/EXPECTED_FAIL.md`.
 
 ## Global Constraints
 
-- **Emission-fix scope only.** Memory (AST-spill/I-O, 16 MB target) and the correctness plan's T3-T6 (determinism/runtime/memory comparison) are **separate, deferred** plans. Do NOT touch them. Fix files: `sf/src/c89_emit.zig` (A, B, D) and `sf/src/lower.zig` (C1, E1) per AMENDMENT 1.
+- **Emission-fix scope only.** Memory (AST-spill/I-O, 16 MB target) and the correctness plan's T3-T6 (determinism/runtime/memory comparison) are **separate, deferred** plans. Do NOT touch them. Fix files: `sf/src/c89_emit.zig` (A, B, D), `sf/src/lower.zig` (C1, E1), and `sf/src/semantic_analyzer.zig:607` (E1c) per AMENDMENT 1 + AMENDMENT 2.
 - **Hard byte-identity gate** (see below) with a **runtime-priority override**.
 - Branch `zig1_start`. `scripts/self_compile/build_zig1_5.sh` is committed first (`ee2cbef6`).
 - Never touch/ls `sf/build/out_release/` (WEDGED); all compiler runs `timeout 120`.

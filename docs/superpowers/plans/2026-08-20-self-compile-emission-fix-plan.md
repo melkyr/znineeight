@@ -8,6 +8,8 @@
 
 > **OPERATOR RULING (2026-08-20, AMENDMENT 1):** (1) Lower.zig fixes are approved — "I don't have a concern if the files are different from the plan"; root causes C (C1) and E (E1) are fixed in `lower.zig` as their upstream-correct location. (2) An I-E follow-up task pins E1's which-variant-payload derivation (the I report left a `<variant payload type_id>` placeholder) and triages the 202 class-1b errors into shapes before any F-E code. (3) F is split into F-A, F-B, F-C, F-D, F-E — one per root cause, each independently gated + reviewed. (4) A1 (kind-G module-independent mangle key) accepted, with an F-A grep gate for same-named user globals. E2 (emitter `int zT_n` fallback) rejected as a patch. C2 (emitter name+type dedup) rejected in favor of C1.
 
+> **OPERATOR RULING (2026-08-20, AMENDMENT 2):** I-E findings accepted (option a). F-E re-scoped to three parts: **E1** (bindOptionalCapture tagged-union branch — latent-correct, first-non-void-variant derivation), **E1c** (variant-payload field access `inst.<variant>.<field>` — the dominant class-1b producer, root `semantic_analyzer.zig:607` + `lower.zig:2450-2458`, ~115 errs), and **tag-test** (if (union.field) compares runtime tag vs variant index, `lower.zig:4225-4237` — required for the R fixture to print 7). F-E runs AFTER F-A and F-C (their ~68 class-1b errors collapse first); it re-measures the class-1b residual before the full self-compile gate.
+
 **Tech Stack:** Z98 compiler (`sf/src/*.zig`), compiler under test `/tmp/fx_subfolder/zig1`, gcc -m32 -std=c89, `bash sf/scripts/build_release.sh`, 4 MD5 gates, corpus 287, matrix 21/21.
 
 ## Global Constraints
@@ -236,36 +238,51 @@ Commit: `fix: suppress void result assignment in indirect call (.call arm)`
 
 ---
 
-### Task F-E: fix — void temp from tagged-union if-capture (root cause E, E1 lowering)
+### Task F-E: fix — void-temp class-1b (root cause E: E1 + E1c + tag-test)
+
+> **AMENDMENT 2 (2026-08-20):** I-E investigation re-scoped F-E. E1 (if-capture) fixes ~0 of the 202 class-1b errors (corpus has no tagged-union if-captures); the dominant producer is **E1c** (variant-payload field access `inst.<variant>.<field>`, ~115 errs, root `semantic_analyzer.zig:607` override + `lower.zig:2450-2458`); ~68 of the 202 are actually A (~30 global/pal type loss) + C (~38 switch-arm conflation) and collapse when those land; and the R fixture won't print 7 until the **tag-test** bug is fixed (`lower.zig:4225-4237` tests the constant variant index, not `i`'s runtime tag). Runs AFTER F-A and F-C.
 
 **Files:**
-- Modify: `sf/src/lower.zig:1283-1303` (`bindOptionalCapture` tagged-union branch), plus any E1b shape the I-E report finds
+- Modify: `sf/src/lower.zig` (E1 `bindOptionalCapture` tagged-union branch; E1c variant-payload field access at `:2450-2458`; tag-test at `:4225-4237`), `sf/src/semantic_analyzer.zig:607` (drop the `result = base_type_id` override for tagged-union field access)
 - Report: `.superpowers/sdd/task-FE-emission-report.md`
 
-**Consumes:** I-E report (E1 pinned design + class-1b triage). **Produces:** `emission_void_temp_xmod` GREEN + full self-compile build.
+**Consumes:** I-E report (E1 pinned design + E1c analysis + tag-test), F-A + F-C results (reorder). **Produces:** class-1b residual re-measured (expect ~68 already gone from A/C), `emission_void_temp_xmod` GREEN printing 7, full self-compile build.
 
-- [ ] **Step 1: Apply fix E1 (and E1b if I-E found a second shape)**
+- [ ] **Step 1: Apply fix E1 (bindOptionalCapture tagged-union branch)**
 
-In `bindOptionalCapture`, add the `tagged_union_type` branch per the I-E report's pinned design (load `TU_FIELD_PAYLOAD` into a payload-typed temp, mirroring the switch-arm at `lower.zig:3790-3815`). Apply E1b per the I-E report if a second class-1b shape was identified and designed. Via `edit`/`fastedit`.
+In `bindOptionalCapture`, add the `tagged_union_type` branch per the I-E report's pinned first-non-void-variant derivation (`types_items[cond_ty].payload_idx` → `tu_items[...]` → `fe_items[fields_start+i].type_id`, first `!= TYPE_VOID`), emitting `load_field TU_FIELD_PAYLOAD` into a payload-typed temp — mirroring the switch-arm at `lower.zig:3790-3815`. Via `edit`/`fastedit`.
 
-- [ ] **Step 2: Rebuild + reinstall std** (as F-A Step 3)
+- [ ] **Step 2: Apply fix E1c (variant-payload field access — the dominant class-1b producer)**
 
-- [ ] **Step 3: Fixture GREEN + byte-identity gate**
+Fix `inst.<variant>.<field>`: stop overriding the result to `base_type_id` for tagged-union field access at `semantic_analyzer.zig:607`, and emit a real payload load in `lower.zig:2450-2458` (payload struct member access `.payload.<variant>._0`, or `load_field TU_FIELD_PAYLOAD` + variant-tag check) so a follow-on `.field` (`inst.call_direct.result`, `inst.tail_call.is_extern`) resolves instead of producing a void temp. Via `edit`/`fastedit`.
 
-Re-run `emission_void_temp_xmod`: dump + gcc -c → 0 errors, run → expected output (prints 7). Then 4 MD5s byte-identical + corpus 287 unchanged + matrix 21/21. Runtime-priority override as in F-A.
+- [ ] **Step 3: Apply tag-test fix (if (union.field) compares runtime tag)**
 
-- [ ] **Step 4: Full self-compile build + smoke (success gate)**
+Fix `if (union.field)` so the condition compares `load_field TU_FIELD_TAG` on the *base* (`i`) against the nominated variant index, instead of testing the constant tag value of the nominated variant (`lower.zig:4225-4237` + `:2450-2458`). Required for the fixture to print 7. Via `edit`/`fastedit`.
+
+- [ ] **Step 4: Rebuild + reinstall std** (as F-A Step 3)
+
+- [ ] **Step 5: Fixture GREEN + byte-identity gate**
+
+Re-run `emission_void_temp_xmod`: dump + gcc -c → 0 errors, run → prints 7. Then 4 MD5s byte-identical + corpus 287 unchanged + matrix 21/21. Runtime-priority override as in F-A.
+
+- [ ] **Step 6: Re-measure class-1b residual**
+
+Regenerate `/tmp/emit_errs.txt` and count remaining `zT_<n> undeclared`. Expected: the ~68 A/C errors are gone (landed in F-A/F-C), E1c removed its ~115, leaving a small residual to triage. If a substantial NEW shape appears, STOP and report.
+
+- [ ] **Step 7: Full self-compile build + smoke (success gate)**
 
 ```bash
 bash scripts/self_compile/build_zig1_5.sh
 ```
-Expected: rc=0, `=== [zig1_5] Done: /tmp/zig1_5 ===`, both `zig1_5_asan` + `zig1_5_clean` produced. Smoke both on `examples/z98/hello/main.zig` (rc=0, `.c` emitted). If any gcc error remains, it is an incomplete fix (iterate) or a NEW class (STOP and report). Confirm the class-1b residual dropped per the I-E triage.
+Expected: rc=0, `=== [zig1_5] Done: /tmp/zig1_5 ===`, both `zig1_5_asan` + `zig1_5_clean` produced. Smoke both on `examples/z98/hello/main.zig` (rc=0, `.c` emitted). If any gcc error remains, it is an incomplete fix (iterate) or a NEW class (STOP and report).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
-Commit: `fix: bind tagged-union if-capture to payload (void temp)`
+Commit: `fix: tagged-union payload access (E1 if-capture, E1c variant-payload field, tag-test)`
 
 ---
+
 
 ### Task GATE: reconcile docs + closeout
 
