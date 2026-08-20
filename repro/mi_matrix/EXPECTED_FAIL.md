@@ -1,4 +1,73 @@
-# mi_matrix corpus — expected-fail manifest (v41 2026-08-19)
+# mi_matrix corpus — expected-fail manifest (v42 2026-08-20)
+
+## GATE — voiddecl-family plan closeout, final sweep + reconciliation (2026-08-20)
+
+Final gate sweep of the voiddecl-family plan (docs/superpowers/plans/2026-08-18-voiddecl-family-plan.md,
+GATE task lines 351-357, re-amended at :459/:481). Docs-only task — no `sf/src` changes (all fixes
+landed in the plan's prior F tasks). All gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt
+2026-08-20 at HEAD `df82d010`, canonical std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **VOID-decl family FULLY FIXED** — the 9 self-compile `error[3000] cannot-declare-variable-of-type-void`
+  sites (main.zig:588, symbol_registrator:258/:357, lower.zig:4410/:5218/:5275/:5319/:5395/:5403):
+  - **Root 1 — untyped module-level const/var collapse, FIXED by F1 (`27c71619`):** dedicated
+    front-resolution pass (own file, I-FRONTRES design) resolving every module-level `var_decl` init
+    type via the semantic-analyzer resolver, writing `sym.type_id` + `nameCachePut`, order-independent
+    fixpoint; the leaking `main.zig:448-455` nameCachePut block + `resolveStmtTypes` moved INTO the pass.
+  - **Root 2 — tagged-union `.tag` discriminator gap, FIXED by F2 (`660ff8e2`):**
+    `resolveFieldAccess` tagged_union_type branch (`semantic_analyzer.zig:473-476`/`:570-591`) now
+    returns `tp.tag_type` when `field_name_id == interner("tag")`.
+  - Self-compile `error[3000]`: **9 → 0** (this gate: 0 non-9999 error[3000]).
+- **F-ICE (`fd56da3b`) — slice_expr ICE `error[3043]` → 0 whole-tree:** 3-loci fix (zero-length array
+  `type_resolver.zig:1002`; array-init element resolution `semantic_analyzer.zig:2120-2124`; sentinel
+  collision `lower.zig:3907` `TYPE_UNDEFINED`→`TEMP_NONE`) **+ Fix A** (`semantic_analyzer.zig:2115-2141`
+  array-init full child resolution) **+ Fix B** (`:841-852` FN3 fn-call arg resolution) — **ratified via
+  AMENDMENT 5** (operator ruling 2026-08-19; Fix A/B exceeded the brief's 3 loci to satisfy the
+  `error[3043]→0` gate). `parsergap_zeroarr_slice_xmod` RED→GREEN (runs rc=0, prints `0`).
+- **F-REJECT (`838935ce`) — scalar-base slice clean reject:** sema `semanticAnalyzerResolveSliceExpr`
+  base-is-sliceable check (array/slice/many-ptr allowed; scalar → proper diagnostic). R-ICE fixture
+  `parsergap_slice_expr_xmod`: `rc=3 ICE` → `rc=2 error[2000]` (`cannot slice base type: expected array,
+  slice, or many-pointer`), 0 `.c`, no `internal:` message.
+- **R/I/F-PAYLOAD (`19d919bd`) — tagged-union `.payload` accessor (2-locus, AMENDMENT 6 ruling
+  2026-08-20):** Locus 1 sema `semantic_analyzer.zig` tagged_union branch (after the `.tag` block,
+  before the fields read — first non-void variant field type, mirroring the `:583-586` array→ptr
+  conversion); Locus 2 lower `lower.zig:2450-2461` value path (load_field `TU_FIELD_PAYLOAD`, symmetric
+  to the existing store mapping `:1018-1029`). `voiddecl_payload_xmod` RED→OK (compile gate: dump rc=0,
+  gcc rc=0, runs rc=0; fixture uses `undefined` so runtime prints are NOT the gate).
+- **Corpus (286 dirs): `OK=275 / FAIL=7 / ICE=0 / CRASH=0 / green-guards=4`** (275+7+4=286). Corpus grew
+  277→286 (+9 dirs this plan: `parsergap_slice_expr_xmod`, `parsergap_zeroarr_slice_xmod`,
+  `voiddecl_ifexpr_xmod` + `voiddecl_ifexpr_ctl_xmod` (R1 two-fixture), `voiddecl_switchexpr_xmod`,
+  `voiddecl_u64cast_xmod`, `voiddecl_xmodtype_xmod`, `voiddecl_tagprobe_xmod`, `voiddecl_payload_xmod`).
+  FAIL=7 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) +
+  `parsergap_selfblok_xmod` (error[2000]) + `parsergap_specifier_xmod` (error[3013]) +
+  `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL
+  **by design**) + `parsergap_slice_expr_xmod` (**now clean-reject FAIL** — the F-REJECT ICE→FAIL flip,
+  intended). Green-guards unchanged (`eu_assign_incompat_payload` / `euvoid_val_catch` /
+  `field_access_optional` / `var_declared_void`). **No regression.**
+- **21-example matrix: 21/21 dump/gcc/link rc=0** (PASS=21, FAIL=0; 17 via main.zig + 4 single-file
+  func_ptr_return/mandelbrot/quicksort/sort_strings). Runs: json_parser parses test.json rc=0
+  (CWD-sensitive — from its dir); game_of_life + mud_server + rogue_mud timeout-gated rc=124 with
+  correct output — counted PASS.
+- **4 MD5 gates:** gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3`
+  (repo-root CWD — CWD-sensitive), mud `a1d0dd55aada9c3fd904ae33f54de32e` **byte-identical**; **json
+  RE-BASELINED** `fc357296537347a0ef58af49b5a40081` → `9720478c937409a29fe23ae0199821cf` (AMENDMENT 3
+  ruling 2026-08-19: the F1 front-resolution pass types json_parser's untyped module
+  `var g_arena = std.arena.create(1048576)`, so 5 temp decls in emitted C change `unsigned int` →
+  `Arena*`; runtime-identical — rc=0, byte-identical stdout — corpus classification unchanged).
+  Historical json `fc357296…` refs carry the `[F1 re-baselined 2026-08-19 → 9720478c…]` forward-pointer.
+- **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
+- **Next blocker (recorded, NOT fixed):** PANIC `c89_emit.zig:5002` — `width_bits = @intCast(u8, size*8)`
+  u8 overflow on a 40-byte tagged-union temp. Self-compile `timeout 120 zig1 --markers --dump-c89
+  --output-dir /tmp/sc sf/src/main.zig` → rc=134 (`PANIC: integer cast overflow` at
+  `/tmp/fx_subfolder/zig_runtime.h:154`; `STN:width_bits=zT_16/4528/4600` + `P1:t3254T94N5002` markers),
+  with **error[3000]==0 AND error[3043]==0** (gate holds). Identical abort point to F-ICE/F-REJECT/
+  F-PAYLOAD — the frontier of this plan, NOT fixed.
+- **Documented latents (recorded, NOT fixed):** (1) **mixed-type-union `.payload` static-type dialect
+  limitation** (AMENDMENT 6): `.payload`'s static type = first non-void variant field type
+  (deterministic); on a MIXED-type union (`{a: u32, b: i64}`) the single static type is inherently
+  arbitrary — a runtime active variant differing from the first non-void variant emits
+  `.payload.<first>._0` reading the wrong width. 0 sites in sf/src. (2) **`.tag` read-load asymmetry**
+  (AMENDMENT 6): F2 fixed `.tag` sema-only; bare `.tag` value-reads OUTSIDE a switch still no-load
+  (pre-existing, disclosed in I-PAYLOAD §5, accepted by operator).
 
 ## GATE — self-compile silent-drop plan closeout (R-ladder + I-DROP + F1 u16→u32 sweep) (2026-08-19)
 
@@ -64,7 +133,7 @@ std reinstalled at `/tmp/fx_subfolder/lib/`):
   server); rogue_mud boots + exits on `q` rc=0.
 - **4 MD5 gates byte-identical** (all MATCH the v40 baselines, no re-baseline this plan): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
-  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
 - **Trigger isolation (recorded, NOT fixed):** the silent module 1-4 drop was the u16 span-start
   overflow (I-DROP mechanism above) — FIXED by F1. The newly-reached 9 `error[3000]` VOID-decl sites
@@ -100,7 +169,7 @@ Docs-only task — no `sf/src` changes. All gates re-verified with `/tmp/fx_subf
   exits on `q` rc=0; json_parser parses test.json rc=0 (CWD-sensitive — run from its dir).
 - **4 MD5 gates byte-identical** (all MATCH the v39 baselines, no re-baseline this task): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
-  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
 - **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
   (timeout 120, rc=2): all 3 plan constructs pass — 0 `util/hash.zig:18` `*%` hits, 0
@@ -141,7 +210,7 @@ Docs-only task — no `sf/src` changes. All gates re-verified with `/tmp/fx_subf
   "Welcome to Rogue MUD!" + exits on `q` rc=0.
 - **4 MD5 gates byte-identical** (all MATCH the current baselines, no re-baseline this task): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
-  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** ("Analyzer tests passed.", rc=0).
 - **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
   (timeout 120) passes the M2 blockers (type_resolver.zig:981/:987-990 — 0 hits) AND the M4-fix 4th
@@ -173,7 +242,7 @@ at HEAD `31d55084` + M4-fix, canonical std reinstalled at `/tmp/fx_subfolder/lib
   `"; else goto z_bb_"` at `c89_emit.zig:3833` — not a Z98 construct.)
 - **4 MD5 gates byte-identical** (baselines unchanged): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD), json
-  `fc357296537347a0ef58af49b5a40081`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **Corpus spot-check (byte-identical, expect no movement):** `strictzig_brace_if_xmod` FAIL by
   design (M8's diagnostic fires on the fixture's invalid form — the M1 hard-RED fixture),
   `parsergap_selfblok_xmod` FAIL (`error[2000]`), `field_store_drop` FAIL (`error[3048]`) — no
@@ -218,7 +287,7 @@ reinstalled at `/tmp/fx_subfolder/lib/`):
   boots "Welcome to Rogue MUD!" + exits on `q` rc=0.
 - **4 MD5 gates byte-identical** (all MATCH the plan/M2 baselines, measured with the rebuilt
   compiler): gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3`
-  (repo-root CWD — CWD-sensitive), json `fc357296537347a0ef58af49b5a40081`, mud
+  (repo-root CWD — CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud
   `a1d0dd55aada9c3fd904ae33f54de32e`. Byte-identity proof: the migration emits byte-identical C.
 - **test_analyzer_bin PASS** ("Analyzer tests passed.", rc=0).
 - **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
@@ -253,8 +322,8 @@ Final gate sweep of the parser-gaps plan (Workstream A + B). All gates re-verifi
 - **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening on
   port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
 - **4 MD5 gates byte-identical:** gol `9cf758d96f25d41980379564a5501bc8`, lisp
-  `524d2872daefb2677c8ddc1ac8f34cf5`, json `fc357296537347a0ef58af49b5a40081` (B-F2 re-baseline),
-  mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  `524d2872daefb2677c8ddc1ac8f34cf5`, json `fc357296537347a0ef58af49b5a40081` (B-F2 re-baseline)
+  [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
 - **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
   (timeout 120) now progresses PAST the three pre-fix blockers (cinclude.zig:23 / lower.zig:2283 /
@@ -277,7 +346,8 @@ Compiler fix task of the parser-gaps plan (Workstream B). All gates re-verified 
   (`sf/src/lower.zig` — index capture runs through `maybeDisambiguateCapture`, TYPE_USIZE). The
   `.Object` loop's `i` in json_parser resolves to its own counter (disambiguated `i_2`), not the
   stale `.Array` counter. Site A only; Site B (LDS innermost-scan) NOT implemented.
-- **json MD5 RE-BASELINED:** `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081`.
+- **json MD5 RE-BASELINED:** `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081`
+  [→ `9720478c…` F1 re-baselined 2026-08-19, see the v42 GATE entry].
   Runtime-identity proof (AMENDMENT B): fixed binary parses `test.json` rc=0, object fields
   comma-separated (`"status": "alpha",` / `"bugs": null`), NO trailing comma after last field —
   pre-fix had no object-field commas + trailing `,` after `"meta"`. Array elements unchanged.
@@ -317,7 +387,7 @@ at `/tmp/fx_subfolder/lib/`:
 - **4 MD5 gates byte-identical** (unchanged from the F3 AMENDMENT B baseline): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
   `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081` [B-F2 re-baselined
-  2026-08-17, see gate table], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  2026-08-17, see gate table; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
 
 ## F-CLOSEOUT — std-lib closeout (2026-08-14)
@@ -335,7 +405,7 @@ Final gate sweep of the std-lib closeout plan (F1+F2+F3 fixes). All gates re-ver
 - **4 MD5 gates byte-identical** (F3 re-baseline, AMENDMENT B): gol
   `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
   `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081` [B-F2 re-baselined
-  2026-08-17, see gate table], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+  2026-08-17, see gate table; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **Corpus (248 dirs): `OK=242 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =
   `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89
   fundamental, `error[24]` circular type); green-guards = `eu_assign_incompat_payload` /
