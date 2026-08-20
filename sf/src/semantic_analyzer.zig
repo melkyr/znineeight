@@ -842,6 +842,13 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var fn3: []const u8 = "FN3:N"; pal_mod.markerWriteInt(fn3, node_idx);
         var fn3_ct_m: []const u8 = "FN3:T"; pal_mod.markerWriteInt(fn3_ct_m, callee_type);
         var fn3_ck_m: []const u8 = "FN3:K"; pal_mod.markerWriteInt(fn3_ck_m, @intCast(u32, @enumToInt(callee_ty.kind)));
+        var fn3_args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var fn3_i: usize = @intCast(usize, 0);
+        while (fn3_i < fn3_args.len) : (fn3_i += @intCast(usize, 1)) {
+            pushExpectedType(self, @intCast(u32, 0));
+            _ = semanticAnalyzerResolveExpr(self, fn3_args[fn3_i]);
+            popExpectedType(self);
+        }
         return type_mod.TYPE_VOID;
     }
     var fn4a: []const u8 = "FN4a\n"; pal_mod.markerWrite(fn4a);
@@ -2108,22 +2115,29 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
 fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var saved = self._stub_0;
+    var annot_tid: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
     if (node.child_0 != @intCast(u32, 0)) {
         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
         if (rt) |t| {
             var tt = self.registry.types_items[@intCast(usize, t)];
-            if (tt.kind == type_mod.TypeKind.array_type) { self._stub_0 = saved; return t; }
+            if (tt.kind == type_mod.TypeKind.array_type) { annot_tid = t; }
         }
     }
      var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
-     if (ec.len == @intCast(usize, 0)) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
-     var el = self.store.nodes.items[@intCast(usize, ec[@intCast(usize, 0)])];
-     self._stub_0 = type_mod.TYPE_VOID;
-     if (el.kind == AstKind.char_literal) { self._stub_0 = type_mod.TYPE_U8; }
-     else if (el.kind == AstKind.int_literal) { self._stub_0 = type_mod.TYPE_U32; }
-     else { self._stub_0 = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
-     if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
-     var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, self._stub_0, @intCast(u32, ec.len));
+     if (ec.len == @intCast(usize, 0)) { self._stub_0 = saved; if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { return annot_tid; } return type_mod.TYPE_VOID; }
+     var arr_elem_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
+     var aei: usize = @intCast(usize, 0);
+     while (aei < ec.len) : (aei += @intCast(usize, 1)) {
+         var el = self.store.nodes.items[@intCast(usize, ec[aei])];
+         var el_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
+         if (el.kind == AstKind.char_literal) { el_tid = type_mod.TYPE_U8; }
+         else if (el.kind == AstKind.int_literal) { el_tid = type_mod.TYPE_U32; }
+         else { el_tid = semanticAnalyzerResolveExpr(self, ec[aei]); }
+         if (el_tid == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
+         if (aei == @intCast(usize, 0)) { arr_elem_tid = el_tid; }
+     }
+     if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { self._stub_0 = saved; return annot_tid; }
+     var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, arr_elem_tid, @intCast(u32, ec.len));
      self._stub_0 = saved;
      return arr_tid;
 }

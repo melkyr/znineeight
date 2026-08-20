@@ -971,12 +971,15 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             if (node.child_1 != 0) {
                 var sz_node = env.store.nodes.items[@intCast(usize, node.child_1)];
                 var arr_len: u32 = @intCast(u32, 0);
+                var arr_resolved: bool = false;
                 if (sz_node.kind == AstKind.int_literal) {
                     arr_len = @intCast(u32, env.store.int_values.items[@intCast(usize, sz_node.payload)]);
+                    arr_resolved = true;
                 } else if (sz_node.kind == AstKind.add or sz_node.kind == AstKind.sub) {
                     var lhs = evalConstU32Full(env, sz_node.child_0);
                     var rhs = evalConstU32Full(env, sz_node.child_1);
                     if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF)) {
+                        arr_resolved = true;
                         if (sz_node.kind == AstKind.add) { arr_len = lhs + rhs; }
                         else { arr_len = lhs - rhs; }
                     }
@@ -984,6 +987,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     var lhs = evalConstU32Full(env, sz_node.child_0);
                     var rhs = evalConstU32Full(env, sz_node.child_1);
                     if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0)) {
+                        arr_resolved = true;
                         if (sz_node.kind == AstKind.mul) { arr_len = lhs * rhs; }
                         else if (sz_node.kind == AstKind.div) { arr_len = lhs / rhs; }
                         else { arr_len = lhs % rhs; }
@@ -992,6 +996,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     var al = evalConstU32Full(env, node.child_1);
                     if (al != @intCast(u32, 0xFFFFFFFF)) {
                         arr_len = al;
+                        arr_resolved = true;
                     }
                 }
                 var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m);
@@ -999,7 +1004,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                 var t2l = itoa_mod.itoa(arr_len, t2b[0..]);
                 var t2s: usize = @intCast(usize, 19) - @intCast(usize, t2l);
                 pal_mod.markerWrite(t2b[t2s..@intCast(usize, 19)]);
-                if (arr_len != @intCast(u32, 0)) {
+                if (arr_resolved) {
                     var at = type_mod.typeRegistryGetOrCreateArray(env.typereg, child_type, arr_len);
                     var t3m: []const u8 = "T3a"; pal_mod.markerWrite(t3m);
                     var t3b: [20]u8 = undefined;
