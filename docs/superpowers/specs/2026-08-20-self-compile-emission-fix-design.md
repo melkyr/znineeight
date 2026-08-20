@@ -25,21 +25,22 @@ The correctness plan (`2026-08-20-correctness-on-self-compilation-plan.md`) Task
 ### Key emitter facts (verified)
 
 - The `zG_`/`zT_`/`zF_` prefixes are constructed dynamically by kind in `nameManglerMangle` (`sf/src/c89_emit.zig:410-412`): kind 0/1/2 → `F`/`G`/`T`. So `zG_<TypeHash>_<Name>` = a **global** (kind 1) mangled identifier. Class 1 means enum constants are referenced as globals (`zG_`) but the emitter never emits a definition for most of them.
-- The emitter is `sf/src/c89_emit.zig` (single large file). All 5 classes are emission-stage (post-lowering); they do NOT affect parsing/sema/lowering, which is why `--dump-c89` rc=0 (compiler-side clean) coexists with uncompilable output.
+- The emitter is `sf/src/c89_emit.zig` (single large file). Discovery (D) showed the classes split: A/B/D are emission-stage defects in `c89_emit.zig`; C/E originate in lowering (`lower.zig` — 64-slot local-decl cap, tagged-union if-capture binding) and surface in emission. All are post-parse/sema; `--dump-c89` rc=0 (compiler-side clean) coexists with uncompilable output.
 
 ## Architecture
 
-A single **D → R → I → F → GATE** pipeline (operator ruling: "Single D→R→I→F pipeline"). The D task discovers which of the 5 classes share a root cause (a class→root-cause→emitter-site map); R builds one minimal fixture per *independent* root cause; I pins the upstream-correct fix per root cause; F applies them; GATE reconciles docs.
+A **D → R → I → I-E → F-A..F-E → GATE** pipeline (initial operator ruling: "Single D→R→I→F pipeline"; AMENDMENT 1 2026-08-20: I-E follow-up added, F split per root cause). The D task discovers which of the 5 classes share a root cause (a class→root-cause→emitter-site map); R builds one minimal fixture per *independent* root cause; I pins the upstream-correct fix per root cause; I-E pins the E1 design + triages class-1b; F-A..F-E apply one fix each; GATE reconciles docs.
 
 - **D (discovery)** — read-only. Map all 5 classes to root causes and emitter sites; produce the class→root-cause table; identify shared vs distinct root causes. No code changes.
 - **R (repro)** — one minimal fixture per independent root cause under `repro/mi_matrix/<name>_xmod/`, RED = reproduces the bad C emission (`gcc -c` fails) with the current `/tmp/fx_subfolder/zig1`.
-- **I (investigate)** — read-only. Pin the upstream-correct fix for each root cause (the right emitter change, not a patch of the emitted text). STOP for an operator ruling if any design fork arises.
-- **F (fix)** — apply the fixes to `sf/src/c89_emit.zig`. Gate: `build_zig1_5.sh` completes (rc=0, both binaries), smoke rc=0, and the byte-identity gate holds.
+- **I (investigate)** — read-only. Pin the upstream-correct fix for each root cause. STOP for an operator ruling if any design fork arises.
+- **I-E (investigate-E, AMENDMENT 1)** — read-only. Pin E1's which-variant-payload derivation (replacing the I report's `<variant payload type_id>` placeholder) and triage the 202 class-1b errors into shapes (if-capture family vs any second shape) before F-E.
+- **F-A..F-E (fix, AMENDMENT 1)** — one fix task per root cause. F-A/B/D touch `sf/src/c89_emit.zig`; F-C/E touch `sf/src/lower.zig` (operator-approved: "I don't have a concern if the files are different from the plan"). F-E carries the full self-compile success gate (`build_zig1_5.sh` rc=0 + both binaries + smoke). Each independently gated + reviewed.
 - **GATE** — reconcile `docs/sf/QUICK_REF.md` + `repro/mi_matrix/EXPECTED_FAIL.md`.
 
 ## Global Constraints
 
-- **Emission-only.** Memory (AST-spill/I-O, 16 MB target) and the correctness plan's T3-T6 (determinism/runtime/memory comparison) are **separate, deferred** plans. Do NOT touch them.
+- **Emission-fix scope only.** Memory (AST-spill/I-O, 16 MB target) and the correctness plan's T3-T6 (determinism/runtime/memory comparison) are **separate, deferred** plans. Do NOT touch them. Fix files: `sf/src/c89_emit.zig` (A, B, D) and `sf/src/lower.zig` (C1, E1) per AMENDMENT 1.
 - **Hard byte-identity gate** (see below) with a **runtime-priority override**.
 - Branch `zig1_start`. `scripts/self_compile/build_zig1_5.sh` is committed first (`ee2cbef6`).
 - Never touch/ls `sf/build/out_release/` (WEDGED); all compiler runs `timeout 120`.
