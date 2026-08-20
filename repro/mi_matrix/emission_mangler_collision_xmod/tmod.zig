@@ -1,8 +1,6 @@
-pub const Color = enum(u8) {
-    Red,
-    Green,
-    Blue,
-};
+const color = @import("color.zig");
+
+pub const Color = color.Color;
 
 pub fn name(c: Color) i32 {
     return switch (c) {
