@@ -444,7 +444,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
-         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map);
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, &ctx.module_reg.path_to_id);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];

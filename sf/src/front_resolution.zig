@@ -75,7 +75,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
             var root = ct.store.nodes.items[@intCast(usize, ast_root)];
             var decls = ast_mod.astStoreGetExtraChildren(ct.store, root.payload);
             var src_fid = mods[mi].source_file_id;
-            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map);
+            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, &ct.module_reg.path_to_id);
             var di: usize = 0;
             while (di < decls.len) : (di += 1) {
                 var decl = ct.store.nodes.items[@intCast(usize, decls[di])];
