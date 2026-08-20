@@ -5250,14 +5250,34 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
          .call => |c| {
             var result = resolveTempName(emitter, c.result);
             var callee = resolveTempName(emitter, c.callee);
+            var is_void: u8 = @intCast(u8, 0);
+            var hti: usize = @intCast(usize, 0);
+            while (hti < emitter.current_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
+                var ht = emitter.current_fn.hoisted_temps.items[hti];
+                if (ht.temp_id == c.callee) {
+                    var ct = ht.type_id;
+                    var cty = emitter.registry.types_items[@intCast(usize, ct)];
+                    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+                        ct = emitter.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+                        cty = emitter.registry.types_items[@intCast(usize, ct)];
+                    }
+                    if (cty.kind == type_mod.TypeKind.fn_type) {
+                        var fp = emitter.registry.fn_items[@intCast(usize, cty.payload_idx)];
+                        if (fp.return_type == type_mod.TYPE_VOID) { is_void = @intCast(u8, 1); }
+                    }
+                    break;
+                }
+            }
             if (c.args_count > @intCast(u32, 0)) {
                 var ad_m: []const u8 = "AD:a"; pal.markerWrite(ad_m);
                 var ad_ab: [20]u8 = undefined; var ad_al = itoa_mod.itoa(c.args_count, ad_ab[0..]); var ad_as: usize = @intCast(usize, 19) - @intCast(usize, ad_al); pal.markerWrite(ad_ab[ad_as..@intCast(usize, 19)]);
             }
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = ";
-            bufferedWriterWrite(&emitter.writer, s);
+            if (is_void == @intCast(u8, 0)) {
+                bufferedWriterWrite(&emitter.writer, result);
+                var s: []const u8 = " = ";
+                bufferedWriterWrite(&emitter.writer, s);
+            }
             bufferedWriterWrite(&emitter.writer, callee);
             var sp: []const u8 = "(";
             bufferedWriterWrite(&emitter.writer, sp);
