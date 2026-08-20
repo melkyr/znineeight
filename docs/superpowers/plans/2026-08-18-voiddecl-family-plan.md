@@ -459,3 +459,23 @@ Sema `semanticAnalyzerResolveSliceExpr` gains a base-is-sliceable check (array/s
 **GATE (re-amended):** record F-ICE (3 loci) + F-REJECT + next blocker = PANIC `c89_emit.zig:5002` (`width_bits = @intCast(u8, size*8)` u8 overflow on 40-byte tagged-union temp), recorded NOT fixed. Corpus = prior + `parsergap_zeroarr_slice_xmod` dir.
 
 **M-FINAL:** unchanged, BASE = b86279d4.
+
+---
+
+### AMENDMENT 5 — operator ruling 2026-08-19: F-ICE scope-deviation ratification + `.payload` latent R/I/F cluster
+
+**F-ICE scope-deviation RATIFIED.** The F-ICE implementer added 2 upstream sema root-cause fixes beyond the brief's 3 mandated loci to satisfy the `error[3043]→0` gate (commit `fd56da3b`):
+- **Fix A** — `semantic_analyzer.zig:2115-2141` array-init element resolution: the old resolver returned the annotated array type immediately (annotation `child_0`→array_type early-return) without resolving element sub-expressions, leaving them without `resolved_type_table` entries. Now resolves ALL `ec[i]` (capturing `annot_tid` separately), then returns `annot_tid` if set else the derived array type. Root cause of the 12 sub-class (a) sites.
+- **Fix B** — `semantic_analyzer.zig:841-852` FN3 fn-call arg resolution: the FN3 branch (callee not a function type) previously returned `TYPE_VOID` without resolving args; the 10 `itoa_mod.itoa(…, buf[0..])` sites hit FN3 so their slice args never resolved → `se_rt==null` → ICE. Now resolves all args (discarding results) via the existing `pushExpectedType/resolve/popExpectedType` idiom (same as FN1 `:821-826` / FN4 varargs `:891-899`).
+- **Rationale (operator-ratified):** the 3 loci empirically clear only 6/24 sites — I-ICE's sub-class attribution was wrong (the 12 "sentinel collision" itoa sites are actually the FN3 missing-arg-resolution path, proven by mutual exclusion: Fix B cleared exactly those 10, Locus 3 cleared only parser:540 + c89_emit:6037). Both fixes are ruling-4-compliant root causes (no patches/fallbacks), restore the resolver's child-resolution invariant, and are byte-identity-proven across the standard gate surface. FN2 (`:831`, `callee_type==0`) was checked and is defensive dead code (ResolveExpr returns literal 0 only for `node_idx==0`, impossible for a well-formed fn_call) — NOT a live gap.
+- **Gate met:** self-compile `error[3043]`→0 whole-tree; 4 MD5s byte-identical (json held `9720478c…`); corpus +1 dir (`parsergap_zeroarr_slice_xmod`, RED rc=3→GREEN prints `0`); matrix 21/21; test_analyzer 5/4; R-ICE scalar-base fixture STAYS RED (rc=3 ICE unchanged, separate F-REJECT sub-class).
+- **Next blocker (recorded, NOT fixed):** PANIC `c89_emit.zig:5002` `width_bits = @intCast(u8, size*8)` u8 overflow on 40-byte tagged-union temp.
+
+**NEW `.payload` latent R/I/F cluster (same-class as F2 `.tag`):**
+`x.payload` on a tagged union resolves to `TYPE_VOID` (documented latent, `TU_FIELD_PAYLOAD` type_registry.zig:38, currently 0 sites in sf/src) — the exact analog of the `.tag` gap F2 fixed at `semantic_analyzer.zig:475-481`.
+- **R-PAYLOAD (repro):** `repro/mi_matrix/voiddecl_payload_xmod/` — tagged-union `union(enum) { a: u32, b: void }` var, read `x.payload`, RED rc=2 `error[3000]`-class (void) or resolved-void, GREEN control = `.tag` read. Fixture convention bare `@import("std")` + `std.io.printInt`, main.zig + NOTES.md committed, timeout-gated. Commit msg: `repro: tagged-union .payload accessor resolves void (voiddecl_payload_xmod)`.
+- **I-PAYLOAD (read-only):** trace `resolveFieldAccess` tagged_union_type branch (semantic_analyzer.zig:473-481 region) for `field_name_id == interner("payload")`; confirm `tp.tag_type` fix pattern applies symmetrically (payload = the field type of the active variant); blast radius = whole-closure scan for `.payload` reads (expect 0 in sf/src); locus + byte-identity reasoning. Report `.superpowers/sdd/task-I-PAYLOAD-report.md`. NOTE: unlike F2's fixed-width `.tag`, `.payload`'s type depends on the active variant — design must handle (e.g. emit variant-field type via existing loop `:577-593` which already resolves variant fields — the gap is only that the `.payload` *name* isn't mapped).
+- **F-PAYLOAD:** implement per I-PAYLOAD ruling; gates = R-PAYLOAD RED→GREEN, 4 MD5s byte-identical, corpus +1 dir, matrix 21/21, test_analyzer 5/4, self-compile frontier re-check.
+- Placed AFTER the current F-REJECT → GATE sequence (out of the current critical path; 0 live sites).
+
+**GATE (re-amended 2):** record F-ICE (3 loci + Fix A + Fix B ratified) + F-REJECT + R/I/F-PAYLOAD status + next blockers = PANIC `c89_emit.zig:5002` width_bits u8 overflow (recorded NOT fixed) + `.payload` latent (0 sites, R/I/F-PAYLOAD cluster). Corpus = prior + `parsergap_zeroarr_slice_xmod` + `voiddecl_payload_xmod` dirs.
