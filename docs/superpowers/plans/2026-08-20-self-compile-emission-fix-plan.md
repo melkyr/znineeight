@@ -19,7 +19,7 @@
 ## Global Constraints
 
 - **Emission-only.** Zero memory (AST-spill/16 MB) work; zero determinism/runtime/memory (correctness-plan T3-T6) work. Fix scope: `sf/src/c89_emit.zig` (A, B, D), `sf/src/lower.zig` (C1, E1) per AMENDMENT 1, and `sf/src/semantic_analyzer.zig` (I-FA2 import-expr field-access resolution) per AMENDMENT 4 — no other files.
-- **Hard byte-identity gate:** 4 MD5s byte-identical — gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD), json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`. Corpus 287 `OK=276 FAIL=7 ICE=0 CRASH=0 GREEN=4`. Matrix 21/21.
+- **Hard byte-identity gate:** 4 MD5s byte-identical — gol `9cf758d96f25d41980379564a5501bc8`, lisp `851c9ed307bc8dc9ac5920a323d371e1` (repo-root CWD, **re-baselined 2026-08-20 AMENDMENT 5**), json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`. Corpus 287 `OK=276 FAIL=7 ICE=0 CRASH=0 GREEN=4`. Matrix 21/21.
 - **Runtime-priority override:** if a fix changes an MD5 but the emitted C is still correct AND runtime-identical, STOP and report to operator + propose a re-baseline. If MD5 changes with any runtime/correctness doubt, STOP without proposing.
 - **`sf/build/out_release/` is WEDGED — NEVER touch/list/build into it.** All compiler runs `timeout 120`.
 - **Build:** `bash sf/scripts/build_release.sh` → gate `=== [release] Done: /tmp/fx_subfolder/zig1 ===`; then reinstall std: `cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig /tmp/fx_subfolder/lib/`.
@@ -252,11 +252,13 @@ Commit: `fix: grow local dedup table past 128 (duplicate redecls)`
 
 ### Task F-C: fix — sibling-variant payload conflation (root cause C, C1 lowering)
 
+> **AMENDMENT 5 (2026-08-20, operator ruling):** F-C was implemented (`sf/src/lower.zig`, uncommitted) — fixture `emission_sibling_payload_xmod` GREEN (gcc -c rc=0, prints `3`), gol/json/mud byte-identical, but **lisp MD5 CHANGED** `88dcb7f9…` → `851c9ed307bc8dc9ac5920a323d371e1` (causality proven deterministic; diff confined to `eval_5A35D832.c`). Root cause: lisp's `eval` has >64 locals — pre-fix `addLocalDecl` silently dropped locals 65+ (fallback lowering path); post-fix all locals register (correct direct path). I-report §C(b) byte-identity claim falsified for >64-local functions. **Runtime check: pre-fix vs post-fix lisp binaries, identical REPL input → byte-for-byte identical stdout (no functional regression).** **OPERATOR RULING: ACCEPT the change + re-baseline lisp MD5 to `851c9ed307bc8dc9ac5920a323d371e1`** (runtime-priority override). Commit F-C with the new lisp baseline; record the re-baseline in the GATE closeout. Fix remains uncommitted in the working tree pending this amendment.
+
 **Files:**
 - Modify: `sf/src/lower.zig:308-314` (5 arrays), `:629` (64-cap → grow), `:656-677` (`maybeDisambiguateCapture` full scan)
 - Report: `.superpowers/sdd/task-FC-emission-report.md`
 
-**Consumes:** I report §C (C1, operator-approved lower.zig scope). **Produces:** `emission_sibling_payload_xmod` GREEN.
+**Consumes:** I report §C (C1, operator-approved lower.zig scope). **Produces:** `emission_sibling_payload_xmod` GREEN; lisp re-baselined `851c9ed3…`.
 
 - [ ] **Step 1: Apply fix C1**
 
@@ -266,7 +268,7 @@ Grow the 5 `local_decl_*` arrays from `[64]` to growable (`sandAlloc`-backed, mi
 
 - [ ] **Step 3: Fixture GREEN + byte-identity gate**
 
-Re-run `emission_sibling_payload_xmod`: dump + gcc -c → 0 errors, run → expected output. Then 4 MD5s byte-identical + corpus 287 unchanged + matrix 21/21. Runtime-priority override as in F-A.
+Re-run `emission_sibling_payload_xmod`: dump + gcc -c → 0 errors, run → expected output. Then 4 MD5s: gol `9cf758d96f25d41980379564a5501bc8`, lisp `851c9ed307bc8dc9ac5920a323d371e1` (**RE-BASELINED per AMENDMENT 5**, repo-root CWD), json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e` byte-identical + corpus 287 unchanged + matrix 21/21. (Post-fix lisp runtime must be verified identical to pre-fix on identical REPL input — already proven in the AMENDMENT 5 evidence.) Runtime-priority override as in F-A.
 
 - [ ] **Step 4: Commit**
 
