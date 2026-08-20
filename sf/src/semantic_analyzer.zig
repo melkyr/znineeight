@@ -2079,6 +2079,12 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
     if (node.child_2 != @intCast(u32, 0)) { _ = semanticAnalyzerResolveExpr(self, node.child_2); }
     if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
+    if (!(bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.array_type or bt.kind == type_mod.TypeKind.many_ptr_type or bt.kind == type_mod.TypeKind.ptr_type)) {
+        var sl_msg: []const u8 = "cannot slice base type: expected array, slice, or many-pointer";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 2000), self.source_file_id, node_idx, node_idx, sl_msg);
+        self._stub_0 = saved;
+        return type_mod.TYPE_VOID;
+    }
     self._stub_1 = type_mod.TYPE_VOID;
     var ix_elem2 = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
     if (ix_elem2 != type_mod.TYPE_UNDEFINED) {
