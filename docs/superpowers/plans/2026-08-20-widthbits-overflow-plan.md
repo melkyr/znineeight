@@ -106,20 +106,22 @@ Write `.superpowers/sdd/task-I-WIDTHBITS-report.md`. Revert any /tmp instrumenta
 
 ### Task STOP: consolidated ruling
 
-- [ ] Present R1 evidence + I-WIDTHBITS report to the operator. Operator fills the F placeholder (Option B endorsed, u16-vs-u32 adjudicated, any scope adjustments). Plan AMENDMENT committed documenting the ruling.
+- [x] Present R1 evidence + I-WIDTHBITS report to the operator. Operator fills the F placeholder (Option B endorsed, u16-vs-u32 adjudicated, any scope adjustments). Plan AMENDMENT committed documenting the ruling.
+
+**STOP ruling (2026-08-20, operator):** Option B **u32** widening endorsed (not u16). **`>=` shift-guard hardening approved as an in-scope F1 companion edit:** `comptime_eval.zig:141` and `:185` change `wb == @intCast(u32, 64)` → `wb >= @intCast(u32, 64)` (eliminates synthetic-only u64 shift-by->63 UB on >31B non-int @intCast targets; behavior-identical for all int/char/bool targets). I-WIDTHBITS blast-radius correction accepted: `comptime_eval.zig:139` is a second LIVE site. Minor: `:203` is a pass-through, not a literal — literal-construction set is 8 sites (`:119/:128/:160/:173/:175/:177/:178/:196`); `:5024` keeps `sb: u8`.
 
 ### Task F1: widen width_bits u8→u32 (per STOP ruling)
 
 **Files:**
 - Modify: `sf/src/c89_emit.zig` (`:4992/:5002`, `:3190`, `:3160/:3167/:3174/:3181` params + their `:3161-3163/:3168-3170/:3175-3177/:3182-3184` `@intCast(u8,...)` comparisons, `:3196/:5020/:5021/:5024/:5028/:5029` consumers, `:3313/:3428` `@intCast(u8, 64)` comparisons)
-- Modify: `sf/src/comptime_eval.zig` (`:16`, `:56-57`, `:139`, `:141/:144/:146`, `:183-188`, `:119/:128/:160/:173/:175/:177/:178/:196/:203` `.width_bits` literal constructions)
+- Modify: `sf/src/comptime_eval.zig` (`:16`, `:56-57`, `:139`, `:141/:144/:146`, `:183-188`, `:119/:128/:160/:173/:175/:177/:178/:196` `.width_bits` literal constructions — `:203` is a pass-through, NO edit)
 - Modify (if cross-file consumers found): any file reading `ComptimeVal.width_bits` (whole-tree grep 2026-08-20: NONE)
 
 **Consumes:** I-WIDTHBITS §3 exact widening + STOP ruling. **Produces:** the gap-fill.
 
 - [ ] **Step 1: Implement the widening (fastedit)**
 
-Per I-WIDTHBITS §3 + STOP ruling: widen `width_bits`/`wb` u8→u32 at every enumerated site (I-WIDTHBITS Step 2 AMENDMENT 1 list — including the whole-tree-grep-found consumers at `c89_emit.zig:3313/:3428` and `comptime_eval.zig:141/:144/:146/:183-188`), add `@intCast(u32, ...)` wrappers, update comparisons/shifts (`@intCast(u64, width_bits)` shifts unchanged; `width_bits < @intCast(u8, 64)` → `@intCast(u32, 64)`). Single contiguous edits per region; re-read after each edit.
+Per I-WIDTHBITS §3 + STOP ruling (2026-08-20): widen `width_bits`/`wb` u8→u32 at every enumerated site (I-WIDTHBITS Step 2 AMENDMENT 1 list — including the whole-tree-grep-found consumers at `c89_emit.zig:3313/:3428` and `comptime_eval.zig:141/:144/:146/:183-188`), add `@intCast(u32, ...)` wrappers, update comparisons/shifts (`@intCast(u64, width_bits)` shifts unchanged; `width_bits < @intCast(u8, 64)` → `@intCast(u32, 64)`). **STOP-approved companion edits:** `comptime_eval.zig:141` and `:185` guards `wb == @intCast(u32, 64)` → `wb >= @intCast(u32, 64)` (shift-UB hardening; see STOP ruling). `:5024` keeps `sb: u8`. Single contiguous edits per region; re-read after each edit.
 
 - [ ] **Step 2: Rebuild + gates**
 

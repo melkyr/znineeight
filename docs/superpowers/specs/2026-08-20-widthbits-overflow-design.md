@@ -28,7 +28,7 @@ Three sites compute a bit-width as `u8` from `ty.size * 8`:
 |---|---|---|
 | `c89_emit.zig:5002` (`.int_const`) | any hoisted temp type (tagged union, struct, …) | **PANIC (live)** |
 | `c89_emit.zig:3190` (`emitSatBinary`) | integer types only (sat math) | same class, safe today (size ≤ 8) |
-| `comptime_eval.zig:139` (`int_cast` fold) | integer types only | same class, safe today (size ≤ 8) |
+| `comptime_eval.zig:139` (`int_cast` fold) | **any resolvable `@intCast` target type** (the fold computes `wb` from the TARGET type) | **PANIC (live, R1 probe-verified 2026-08-20)** — `@intCast(Big, 5)` on a >31B union PANICs rc=134; control `@intCast(Small, 5)` on a 4B union emits `.tag = 5;`. Pre-fix `== 64` guard makes the `1 << wb` shift only reachable for int/char/bool targets; **post-widen the guards become `>= 64`** (STOP ruling) so >31B non-int targets do not shift `u64` by ≥ 64 (UB). |
 
 Supporting `width_bits: u8` surface: `c89_emit.zig:3160/3167/3174/3181` (`satMaxLit/satMinLit/satMinMagLit/satMaxULit` params), `comptime_eval.zig:16` (`ComptimeVal.width_bits: u8`), `comptime_eval.zig:56-57` (width max arithmetic).
 
