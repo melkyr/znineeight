@@ -439,3 +439,23 @@ Whole-branch review, BASE = b86279d4, requesting-code-review template + fix wave
 **Rationale:** the front-resolution pass types json_parser's untyped module `var g_arena = std.arena.create(1048576)`, so 5 temp decls in emitted C change `unsigned int` → `Arena*` (void-collapse artifact removal). Runtime-identical (rc=0, byte-identical stdout), corpus classification unchanged. The old `fc357296…` json baseline is superseded. GATE + QUICK_REF must carry the new value + the `[F1 re-baselined … → 9720478c…]` forward-pointer on any historical references.
 
 **Source:** validated design in `.superpowers/sdd/task-I-FRONTRES-report.md` (read-only, tree clean, HEAD `70735d9b`).
+
+### AMENDMENT 4 — operator ruling 2026-08-19: F-ICE re-scope + F-REJECT (slice_expr sub-classes)
+
+**Context:** I-ICE (approved) mapped the slice_expr ICE (`error[3043]`, `iceSliceUnsupported` lower.zig:722-739) into TWO genuinely-different sub-classes with different fix loci, plus an invalid-Zig scalar-base case. R-ICE's fixture (`n[1..]` scalar base) is a DIFFERENT sub-class than the real self-compile blocker (node 172203 = zero-length-array `[0]u32` slice) and has ZERO instances in sf/src. The plan's F-ICE gate "R-ICE RED→GREEN" is therefore unmet by the 3-loci fix alone.
+
+**Operator ruling (question tool, 2026-08-19):** (1) F-ICE re-scoped to the self-compile 3-loci fix. (2) The scalar-base slice is INVALID Zig (cannot slice a scalar integer) — "zig0 compiles zig1" only proves constructs IN zig1 source are valid, and `n[1..]` is not in sf/src. Correct handling = a separate CLEAN-REJECT task (sema base-is-sliceable validation → proper diagnostic, not ICE, not support). (3) "lets do the clean reject path".
+
+**F-ICE (RE-SCOPED) — 3-loci self-compile fix:**
+1. `type_resolver.zig:1002` — zero-length array support (drops `arr_len == 0` for `[0]u32` → `dummy` unregistered → VOID base → ICE at source_manager.zig:135/137).
+2. `semantic_analyzer.zig:2120-2124` — array-init element resolution (resolve all `ec[i]`, not just `ec[0]`) — PRIMARY root-cause fix for the 12 sub-class (a) sites.
+3. `lower.zig:3907` — sentinel fix (`TYPE_UNDEFINED`==18 collides with legal temp index 18; use `TEMP_NONE` 0xFFFFFFFF) for the 12 sub-class (b) open-ended `[0..]` fn-call-arg sites.
+**Gate:** self-compile `error[3043]` → 0 (node 172203 + all 24 closure sites), PLUS a NEW committed repro `parsergap_zeroarr_slice_xmod` (the real `[0]u32[0..]` form). R-ICE scalar-base fixture stays RED here (unchanged). 4 MD5s byte-identical (gol/lisp/mud + json `9720478c…`), corpus +1 dir, matrix 21/21, test_analyzer 5/4.
+
+**F-REJECT (NEW, after F-ICE) — scalar-base clean reject:**
+Sema `semanticAnalyzerResolveSliceExpr` gains a base-is-sliceable check (array/slice/many-ptr allowed; scalar/other rejected with a proper `error[2000]`-class diagnostic). The ICE becomes unreachable for scalar base and stays a genuine invariant guard.
+**Gate:** R-ICE fixture `rc=3 ICE` → `rc=2 error[2000]` (0-byte .c, no `internal:` message). 4 MD5s byte-identical, corpus unchanged, matrix 21/21, test_analyzer 5/4.
+
+**GATE (re-amended):** record F-ICE (3 loci) + F-REJECT + next blocker = PANIC `c89_emit.zig:5002` (`width_bits = @intCast(u8, size*8)` u8 overflow on 40-byte tagged-union temp), recorded NOT fixed. Corpus = prior + `parsergap_zeroarr_slice_xmod` dir.
+
+**M-FINAL:** unchanged, BASE = b86279d4.
