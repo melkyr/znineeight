@@ -929,6 +929,8 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
     var lv_node = store.nodes.items[@intCast(usize, lv_node_idx)];
     if (lv_node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, lv_node.payload)];
+        var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
+        if (shadow) |syn| { if (captureShadowShouldRedirect(self, name_id, syn)) { name_id = syn; } }
         if (isStorageGlobal(self, name_id)) {
             var gs_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
             if (gs_sym) |gss2| {
@@ -4894,6 +4896,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var si2: usize = s_start;
                     while (si2 < s_start + @intCast(usize, scl2) and np < @intCast(usize, 95)) : (si2 += 1) { nb[np] = scb[si2]; np += 1; }
                     c_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, nb[0..np]);
+                    _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, name_id, c_name_id);
                     break;
                 }
             }
@@ -4928,7 +4931,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             } else {
             var dl_temp = nextTemp(self, decl_type);
             emitInst(self, LirInst{ .decl_local = .{ .name_id = c_name_id, .type_id = decl_type, .temp = dl_temp } });
-            addLocalDecl(self, name_id, decl_type, dl_temp, self.scope_depth);
+            addLocalDecl(self, c_name_id, decl_type, dl_temp, self.scope_depth);
             if (node.child_1 != 0) {
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 var is_array_type: u8 = @intCast(u8, 0);
@@ -4964,7 +4967,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     if (decl_type != type_mod.TYPE_VOID) {
                     emitInst(self, LirInst{ .store_local = .{ .name_id = c_name_id, .value = init_val } });
                     var reg: u32 = @intCast(u32, 0);
-                    if (findLocalTemp(self, name_id)) |r| { reg = r; }
+                    if (findLocalTemp(self, c_name_id)) |r| { reg = r; }
                     if (reg != @intCast(u32, 0)) {
                         emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = init_val } });
                     }
