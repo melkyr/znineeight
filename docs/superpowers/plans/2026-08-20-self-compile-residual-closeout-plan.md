@@ -192,3 +192,26 @@ Add these variation fixtures (same full-graph RED discipline; each gcc error tex
 
 Commit for the variation fixtures (verbatim): `repro: self-compile residual fixture variations (enum/payload/multi arg, struct/3+ alias, if/catch/param shadow)`
 
+---
+
+## AMENDMENT 8 (operator ruling, 2026-08-21): runtime-verification-first + folded forward plan
+
+The uncommitted F changes (3 files: `sf/src/c89_emit.zig`, `sf/src/lower.zig`, `sf/src/semantic_analyzer.zig`, currently in the working tree at HEAD `089a6390`) are **NOT reverted**. They are the A₂/C₂/E₂ fix attempt whose self-compile result is 425→269 with `TokenValue.none` ×62 (new) and gol/lisp MD5 changes. The operator ruled: runtime behavior + C correctness is the gate, not MD5. The plan now executes in this order: **Task RV first** (runtime verification of the gates, re-baseline + commit if pass, STOP if not), then the **folded forward-plan tasks** below.
+
+### Ruling 1 — Task RV (NEW, executes FIRST): runtime-verify the current uncommitted changes
+
+Build the compiler two ways and compare **runtime behavior**, not MD5:
+
+- **zig1_new** = built from the working tree WITH the 3-file uncommitted diff.
+- **zig1_base** = built from clean `089a6390` (the 3-file diff stashed or via `git worktree`, then restored — MUST be verified identical to the original diff before and after).
+- For **all 4 MD5 gates** (`examples/z98/game_of_life`, `lisp_interpreter_curr` (repo-root CWD), `json_parser` (from its own dir), `mud_server`) **and all 21 examples**: dump C with each compiler, `gcc -m32`-build each side, run the binary, capture stdout + exit code.
+- **PASS** = every example is runtime-identical (stdout + exit) between zig1_new and zig1_base, AND every emitted `.c` compiles (`gcc -c` rc=0) on both sides. On PASS: **re-baseline the 2 changed MD5s** (gol/lisp new values) in `repro/mi_matrix/EXPECTED_FAIL.md` + `docs/sf/QUICK_REF.md` + this plan's Global Constraints, then commit the 3 source files (verbatim `fix: self-compile residual emission defects (type-storage extern, sibling payload, void temp)`), then commit the doc re-baseline (`docs: residual-closeout runtime verification + MD5 re-baseline (AMENDMENT 8)`).
+- **FAIL** = any runtime difference OR any invalid/uncompilable C on either side → **STOP**, present to the operator, no commit.
+
+### Ruling 2 — Folded forward-plan tasks (execute AFTER RV, in this order)
+
+- **F-A2EXT**: A₂ extern breadth — the `emitModuleHeaderFile` type-storage branch must emit the `extern` in **every** header (drop the owner-module filter the F attempt applied), not owner-only. Target: `zG_` re-count 9→0.
+- **F-E2DOWN**: E₂ downstream — the `TokenValue.none` ×62 family: a tagged-union literal in value position (`.{ .none = {} }` as a call arg) is lowered to a `.none` member access on the union C struct which has `.tag`/`.payload`, not `.none`. This is a separate lowering gap surfaced by the merged loop. Needs an I-style investigation of union-literal value emission, then a fix.
+- **C2-RV**: `findLocalTemp` `>=` + `<=` change gol/lisp bytes — verify runtime-identical (the operator's runtime-priority rule); re-baseline if so.
+- Each folded task follows the normal R/I/F discipline as needed; the **self-compile class re-count == 0** gate (plan Task F Step 4 recipe) remains binding for A₂/E₂/C₂, and the success gate (Task F Step 5: `build_zig1_5.sh` rc=0 + smoke) remains the plan's terminal goal.
+
