@@ -73,7 +73,7 @@ Pin why the payload-type conflation persists after F-C; name the exact site(s) t
 
 - [ ] **Step 3: E₂ design — void-temp producers**
 
-Pin the lexer call-arg void-temp site + confirm the 38 switch-arm / 30 pal producers are covered by C₂/A₂ respectively (so E₂'s own fix is the lexer site only, if that's where it lands).
+**Superseded by AMENDMENT 7 Ruling 1** (operator-ruled merged-loop fix, `semantic_analyzer.zig:836-867`): resolve each arg once, typed where `ai < params_count`, untyped otherwise. Confirm the 38 switch-arm / 30 pal producers collapse onto C₂/A₂ respectively (F re-count confirms).
 
 - [ ] **Step 4: Verify each fix would NOT change the 4 MD5s / corpus / matrix**
 
@@ -158,3 +158,37 @@ Post-residual-closeout baseline paragraph: self-compile now produces a *buildabl
 - [ ] **Step 4: Commit**
 
 Commit: `docs: self-compile residual closeout GATE + reconciliation`
+
+---
+
+## AMENDMENT 7 (operator ruling, 2026-08-21): E₂ merged-loop fix + R variation fixtures
+
+### Ruling 1 — E₂ fix = merged single resolution loop (NOT E2 fallback, NOT E3 patch)
+
+The operator rejected the E2 fallback ("push `call_arg_types` if present else 0") as a non-compilerish second thing. The upstream-correct fix is a **single merged loop** in `semanticAnalyzerResolveFnCall` (`sf/src/semantic_analyzer.zig:836-867`): replace the two loops (typed :846-857 + untyped :860-865) with ONE loop that resolves each arg exactly once — typed with the param type when `ai < params_count`, untyped (push 0) otherwise. No fallback, no double-resolution.
+
+Verified invariants (do NOT re-derive):
+- `direct_ret != 0` implies `decl_cap != 0` (both from `s.decl_node` in the `s.kind == function` branch), so the `decl_cap != 0` + `fn_type` guards are always true inside FN1. The second loop's only legitimate remaining job is the excess args (`ai >= params_count`); it is otherwise a redundant clobberer.
+- The clobber is not only union-literal args: an **enum-literal arg** (e.g. `TokenKind.eof`) is typed correctly in loop 1, then `semanticAnalyzerResolveEnumLiteral` with `topExpectedType==0` returns VOID (`:1068-1070`) in loop 2 → also voided. The merged loop fixes enum-literal AND union-literal AND null/error-literal args uniformly.
+- **Byte-identity**: any arg the double-pass degrades to VOID produces a void temp → skipped decl → `zT_ undeclared` gcc error. Therefore every correctly-compiling program has ZERO such args → merged loop is byte-identical on the 4 MD5s / corpus OKs / matrix (F still verifies empirically).
+
+### Ruling 2 — C₂ fix confirmed: `<=` at `lower.zig:4876` (inner shadows outer; rename the local, not the capture).
+
+### Ruling 3 — A₂ fix confirmed: c89_emit.zig only (def gated on type owner module + dedup; extern in every header). `main.zig` is out of scope.
+
+### Ruling 4 — R variation fixtures (add to Task R, before I/F)
+
+Add these variation fixtures (same full-graph RED discipline; each gcc error text must match the self-compile residual shape):
+
+- **E₂ (3 new):**
+  - `emission_void_temp_enum_xmod` — direct call passing a plain enum-literal arg (no union literal), e.g. `setKind(TokenKind.eof)` → RED `zT_ undeclared` on the enum-literal temp, isolating the enum-literal clobber (NOT covered by the existing fixture).
+  - `emission_void_temp_payload_xmod` — union literal with a non-void payload (`.ident = .{ .name = "x" }`) → RED, isolating the non-void-payload variant.
+  - `emission_void_temp_multi_xmod` — two union-literal args in one call → RED, proves the merged loop resolves each independently.
+  - Control (known GREEN, document as control): indirect call `mod_a.makeToken(...)` (FN4 path) must stay GREEN.
+- **A₂ (3 new):**
+  - struct-type storage global (not just enum); two different types aliased ident-base in one module; 3+ aliasing modules; single-file `--dump-c89` mode (the `all==1` duplicate-def path).
+- **C₂ (3 new):**
+  - if-capture + same-named local in body (E1 path); catch-capture + same-named local; param named same as a local inside a fn; nested arm (two-level equal-scope).
+
+Commit for the variation fixtures (verbatim): `repro: self-compile residual fixture variations (enum/payload/multi arg, struct/3+ alias, if/catch/param shadow)`
+

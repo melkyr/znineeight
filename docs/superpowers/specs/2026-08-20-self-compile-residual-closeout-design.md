@@ -29,8 +29,8 @@ A **R → I → F → GATE** pipeline. One R fixture per residual (A₂, C₂, E
 ## Residual fix targets
 
 - **A₂**: single-owner definition + `extern` propagation to every referencing module's header chain. The type-storage global is emitted once (in the type's owner module) and every module that references it must see an `extern` (via the module's own emitted header include chain). Discriminator = the I-A `types_items[type_id].name_id == name_id` predicate already in `nameManglerMangleGlobal`; the missing piece is *where the definition is emitted* and *who gets the extern*.
-- **C₂**: sibling-payload conflation at scale — the `.payload`-typed field access in multi-variant unions (the F-C work covered the local-decl arrays; this is the residual payload-type mismatch).
-- **E₂**: void-temp producers — lexer call-argument void temp (the 69-strong producer) + switch-arm capture (root C, should collapse when C₂ lands) + pal/global (root A, should collapse when A₂ lands). The lexer producer is a distinct, independently-fixable site.
+- **C₂**: equal-scope shadow conflation at scale — a same-named local declared inside a switch/if/catch arm body (at `scope_depth+1`, equal to the capture's recorded scope) is not renamed by the strict `<` check at `lower.zig:4876`, so emission name-dedup collapses the local into the capture's payload type → `incompatible types when assigning` (48) + `has no member` (9). Fix (AMENDMENT 7, operator-confirmed): `<` → `<=` (inner shadows outer; rename the local, not the capture).
+- **E₂**: void-temp producers — root cause is the FN1 direct-call path (`semantic_analyzer.zig:836-867`) **double-resolving** each call argument: loop 1 types it with the param type, loop 2 re-resolves it with `pushExpectedType(0)`, degrading enum-literal / union-literal args to VOID → void temp → skipped decl → `zT_ undeclared` (137). Switch-arm capture (38) collapses with C₂; pal/global (30) collapses with A₂. Fix (AMENDMENT 7, operator-ruled): **merged single resolution loop** — resolve each arg exactly once, typed where `ai < params_count`, untyped otherwise; no fallback, no double-resolution.
 
 ## Global Constraints
 
