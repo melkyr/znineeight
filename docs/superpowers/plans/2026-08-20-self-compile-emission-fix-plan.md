@@ -369,3 +369,13 @@ Add a post-emission-fix baseline paragraph; note that self-compile now produces 
 - [ ] **Step 4: Commit**
 
 Commit: `docs: self-compile emission-fix GATE closeout + reconciliation`
+
+---
+
+## AMENDMENT 6 — CLOSEOUT (self-compile NOT reached)
+
+> **OPERATOR RULING (2026-08-20):** The plan's success gate (`build_zig1_5.sh` → rc=0) was **NOT reached**. After F-A..F-E, the full 40-module self-compile still fails with **425 gcc errors** (down from 1195). The 5 minimal fixtures went GREEN, but each root cause proved only *its fixture shape* — the full import graph exercises the same 3 root causes in more sites. Residual classes: **A₂** `zG_` undeclared **182** (type-storage globals defined in multiple modules + `extern` only in the owner's header, so referencing modules without that header in their include chain see "undeclared" — e.g. `zG_8143F551_AstKind`), **C₂** incompatible-assign **48** + no-member **9** (sibling-payload conflation at scale), **E₂** `zT_` undeclared **137** (69 lexer call-arg void-temp + 38 switch-arm/root-C + 30 pal/root-A). Root causes B (dedup) and D (void-call) are genuinely at **0** — fully closed. GATE task **deferred**; no EXPECTED_FAIL/QUICK_REF closeout written.
+
+**Root cause of the miss:** minimal fixtures under-exercised the full graph. The follow-up plan (`2026-08-20-self-compile-residual-closeout-plan.md`) re-does the work with **full-graph fixtures** (3+ module import chains that reproduce the exact self-compile error text) and a **self-compile re-count == 0** gate per class, so "fixture GREEN" implies "class gone at scale".
+
+**Deferred to the residual-closeout plan:** A₂ (single-owner definition + extern propagation), C₂ (sibling-payload at scale), E₂ (void-temp producers incl. lexer). Memory (AST-spill/16 MB), determinism/runtime/memory (correctness-plan T3-T6) remain separate deferred plans.
