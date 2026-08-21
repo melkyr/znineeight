@@ -665,13 +665,6 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_dep
     self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
     self.local_decl_scopes[self.local_decl_count] = at_depth;
     self.local_decl_count += @intCast(usize, 1);
-    var adt_m: []const u8 = "ADT:n"; pal.markerWrite(adt_m);
-    var adt_nb: [10]u8 = undefined; var adt_nl = itoa_mod.itoa(name_id, adt_nb[0..]); var adt_ns: usize = @intCast(usize, 9) - @intCast(usize, adt_nl); pal.markerWrite(adt_nb[adt_ns..@intCast(usize, 9)]);
-    var adt_tm: []const u8 = "t"; pal.markerWrite(adt_tm);
-    var adt_tb: [10]u8 = undefined; var adt_tl = itoa_mod.itoa(type_id, adt_tb[0..]); var adt_ts: usize = @intCast(usize, 9) - @intCast(usize, adt_tl); pal.markerWrite(adt_tb[adt_ts..@intCast(usize, 9)]);
-    var adt_rm: []const u8 = "r"; pal.markerWrite(adt_rm);
-    var adt_rb: [10]u8 = undefined; var adt_rl = itoa_mod.itoa(temp, adt_rb[0..]); var adt_rs: usize = @intCast(usize, 9) - @intCast(usize, adt_rl); pal.markerWrite(adt_rb[adt_rs..@intCast(usize, 9)]);
-    var adt_nl2: []const u8 = "\n"; pal.markerWrite(adt_nl2);
     var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
     var adnb: [10]u8 = undefined; var adnl = itoa_mod.itoa(name_id, adnb[0..]); var adns: usize = @intCast(usize, 9) - @intCast(usize, adnl); pal.markerWrite(adnb[adns..@intCast(usize, 9)]);
     var adtm: []const u8 = "t"; pal.markerWrite(adtm);
@@ -841,7 +834,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     if (lv_node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, lv_node.payload)];
         var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
-        if (shadow) |syn| { name_id = syn; }
+        if (shadow) |syn| { if (captureShadowShouldRedirect(self, name_id, syn)) { name_id = syn; } }
         var is_local: bool = false;
         var loc_kind: u8 = @intCast(u8, 0);
         var li: usize = @intCast(usize, 0);
@@ -1243,6 +1236,22 @@ fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
         if (self.local_decl_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) { return self.local_decl_temps[li]; }
     }
     return null;
+}
+
+fn captureShadowShouldRedirect(self: *LirLowerer, name_id: u32, syn: u32) bool {
+    var cap_scope: u32 = @intCast(u32, 0);
+    var cap_idx: usize = @intCast(usize, 0);
+    var cap_found: u8 = @intCast(u8, 0);
+    var ci: usize = @intCast(usize, 0);
+    while (ci < self.local_decl_count) : (ci += @intCast(usize, 1)) {
+        if (self.local_decl_names[ci] == syn) { cap_scope = self.local_decl_scopes[ci]; cap_idx = ci; cap_found = @intCast(u8, 1); break; }
+    }
+    if (cap_found == @intCast(u8, 0)) return true;
+    var si: usize = @intCast(usize, 0);
+    while (si < self.local_decl_count) : (si += @intCast(usize, 1)) {
+        if (self.local_decl_names[si] == name_id and si > cap_idx and self.local_decl_scopes[si] <= self.scope_depth and self.local_decl_scopes[si] >= cap_scope) return false;
+    }
+    return true;
 }
 
 fn vaListArgTemp(self: *LirLowerer, arg_node: u32) u32 {
@@ -2011,7 +2020,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = store.identifiers.items[@intCast(usize, node.payload)];
         var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
-        if (shadow) |syn| { name_id = syn; }
+        if (shadow) |syn| { if (captureShadowShouldRedirect(self, name_id, syn)) { name_id = syn; } }
         if (self.ctx.has_symbols != @intCast(u8, 0)) {
          var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
          if (sym) |s| {
@@ -2184,7 +2193,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var lds_best_scope: u32 = @intCast(u32, 0);
             while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
                 if (self.local_decl_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) {
-                    if (lds_found == @intCast(u8, 0) or self.local_decl_scopes[li] > lds_best_scope) {
+                    if (lds_found == @intCast(u8, 0) or self.local_decl_scopes[li] >= lds_best_scope) {
                         lds_best = li;
                         lds_best_scope = self.local_decl_scopes[li];
                         lds_found = @intCast(u8, 1);
@@ -4873,7 +4882,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (self.local_decl_count > @intCast(usize, 0)) {
             var scli: usize = @intCast(usize, 0);
             while (scli < self.local_decl_count) : (scli += @intCast(usize, 1)) {
-                if (self.local_decl_names[scli] == name_id and self.local_decl_scopes[scli] < self.scope_depth) {
+                if (self.local_decl_names[scli] == name_id and self.local_decl_scopes[scli] <= self.scope_depth) {
                     var or_s = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
                     var nb: [96]u8 = undefined;
                     var np: usize = @intCast(usize, 0);

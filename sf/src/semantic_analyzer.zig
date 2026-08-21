@@ -804,7 +804,6 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
     var direct_ret: u32 = @intCast(u32, 0);
-    var cpp_val_fnx: u32 = @intCast(u32, 0);
     var decl_cap: u32 = 0;
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, callee_node.payload)]);
@@ -837,31 +836,36 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var fn1: []const u8 = "FN1\n"; pal_mod.markerWrite(fn1);
         var fn1r_m: []const u8 = "FN1:R"; pal_mod.markerWriteInt(fn1r_m, direct_ret);
         var args = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var has_params: u8 = @intCast(u8, 0);
+        var pcount: u16 = @intCast(u16, 0);
+        var pstart: u32 = @intCast(u32, 0);
         if (decl_cap != 0) {
             var ft = rtt_mod.resolvedTypeTableGet(self.type_table, decl_cap);
             if (ft) |ftid| { var sfm: []const u8 = "SF:H\n"; pal.markerWrite(sfm);
             var ft_ty = self.registry.types_items[@intCast(usize, ftid)];
             if (ft_ty.kind == type_mod.TypeKind.fn_type) {
                 var ftp = self.registry.fn_items[@intCast(usize, ft_ty.payload_idx)];
-                var ai2: usize = 0;
-                while (ai2 < args.len and ai2 < @intCast(usize, ftp.params_count)) : (ai2 += 1) {
-                    var cpp_key = (@intCast(u32, decl_cap) << @intCast(u32, 16)) | @intCast(u32, ai2);
-                    cpp_val_fnx = type_mod.TYPE_UNDEFINED;
-                    if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { cpp_val_fnx = cpp_v; } else { cpp_val_fnx = self.registry.xt_items[@intCast(usize, ftp.params_start) + ai2]; }
-                    hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai2], cpp_val_fnx);
-                    pushExpectedType(self, cpp_val_fnx);
-                    var dxc_at = semanticAnalyzerResolveExpr(self, args[ai2]);
-                    popExpectedType(self);
-                    tryRecordCoercion(self, args[ai2], errLitSrcType(self, args[ai2], cpp_val_fnx, dxc_at), cpp_val_fnx);
-                }
+                pcount = ftp.params_count;
+                pstart = ftp.params_start;
+                has_params = @intCast(u8, 1);
             }
             }
             }
         var ai: usize = 0;
         while (ai < args.len) : (ai += 1) {
-            pushExpectedType(self, @intCast(u32, 0));
-            _ = semanticAnalyzerResolveExpr(self, args[ai]);
+            var expected: u32 = @intCast(u32, 0);
+            if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
+                var cpp_key = (@intCast(u32, decl_cap) << @intCast(u32, 16)) | @intCast(u32, ai);
+                expected = type_mod.TYPE_UNDEFINED;
+                if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { expected = cpp_v; } else { expected = self.registry.xt_items[@intCast(usize, pstart) + ai]; }
+                hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], expected);
+            }
+            pushExpectedType(self, expected);
+            var dxc_at = semanticAnalyzerResolveExpr(self, args[ai]);
             popExpectedType(self);
+            if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
+                tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], expected, dxc_at), expected);
+            }
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, direct_ret);
         return direct_ret;
