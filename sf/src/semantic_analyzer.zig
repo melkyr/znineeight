@@ -624,7 +624,6 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var elem = self.registry.array_items[@intCast(usize, rt.payload_idx)].elem;
                 result = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem, false);
             }
-            if (base_ty.kind == type_mod.TypeKind.tagged_union_type) { result = base_type_id; }
             var ff_m: []const u8 = "FF:R"; pal_mod.markerWriteInt(ff_m, result);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
             return result;

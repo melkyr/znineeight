@@ -1325,6 +1325,18 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         emitInst(self, LirInst{ .unwrap_optional = .{ .value = cond_temp, .result = unwrapped } });
         cap_type = opt_pay;
         cap_temp = unwrapped;
+    } else if (ct.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp = self.ctx.registry.tu_items[@intCast(usize, ct.payload_idx)];
+        var payload_tid: u32 = undefined;
+        var fi: usize = 0;
+        while (fi < @intCast(usize, tp.fields_count)) : (fi += 1) {
+            var fe = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + fi];
+            if (fe.type_id != type_mod.TYPE_VOID) { payload_tid = fe.type_id; break; }
+        }
+        var payload_temp = nextTemp(self, payload_tid);
+        emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = cond_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
+        cap_type = payload_tid;
+        cap_temp = payload_temp;
     } else {
         var bound = nextTemp(self, cond_ty);
         emitInst(self, LirInst{ .assign = .{ .dst = bound, .src = cond_temp, .name_id = cap_name } });
@@ -2484,10 +2496,55 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var tstart: usize = @intCast(usize, tp2.fields_start);
                     var tcount: usize = @intCast(usize, tp2.fields_count);
                     var tfi: usize = 0;
+                    var is_type_base: u8 = @intCast(u8, 0);
+                    if (self.ctx.has_symbols != @intCast(u8, 0)) {
+                        if (base_node.kind == AstKind.ident_expr) {
+                            var bb_name = store.identifiers.items[@intCast(usize, base_node.payload)];
+                            var bsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, bb_name);
+                            if (bsym) |bs| {
+                                if (bs.kind == sym_mod.SymbolKind.type_alias) {
+                                    is_type_base = @intCast(u8, 1);
+                                } else if (bs.kind == sym_mod.SymbolKind.global) {
+                                    if (bs.type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                                        var bst = self.ctx.registry.types_items[@intCast(usize, bs.type_id)];
+                                        if (bst.name_id != @intCast(u32, 0) and bst.name_id == bb_name) { is_type_base = @intCast(u8, 1); }
+                                    }
+                                }
+                            }
+                        } else if (base_node.kind == AstKind.field_access) {
+                            var fb_base = store.nodes.items[@intCast(usize, base_node.child_0)];
+                            if (fb_base.kind == AstKind.ident_expr) {
+                                var fb_name = store.identifiers.items[@intCast(usize, fb_base.payload)];
+                                var fbsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, fb_name);
+                                if (fbsym) |fs| {
+                                    if (fs.kind == sym_mod.SymbolKind.module) {
+                                        var mbr = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, fs.module_id, @intCast(u32, base_node.payload));
+                                        if (mbr) |ms| {
+                                            if (ms.kind == sym_mod.SymbolKind.type_alias) {
+                                                is_type_base = @intCast(u8, 1);
+                                            } else if (ms.kind == sym_mod.SymbolKind.global) {
+                                                if (ms.type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                                                    var mst = self.ctx.registry.types_items[@intCast(usize, ms.type_id)];
+                                                    if (mst.name_id != @intCast(u32, 0) and mst.name_id == @intCast(u32, base_node.payload)) { is_type_base = @intCast(u8, 1); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     while (tfi < tcount) : (tfi += 1) {
                         if (self.ctx.registry.fe_items[tstart + tfi].name_id == field_name_id) {
                             var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, tfi));
-                            return emitTaggedUnionInit(self, fa_box[0], @intCast(u32, tfi));
+                            var var_fe = self.ctx.registry.fe_items[tstart + tfi];
+                            if (var_fe.type_id != type_mod.TYPE_VOID and is_type_base == @intCast(u8, 0)) {
+                                var payload_temp = nextTemp(self, var_fe.type_id);
+                                var sf_nid = nameMapGet(self, base_temp);
+                                emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
+                                return payload_temp;
+                            }
+                            return emitTaggedUnionInit(self, type_box[0], @intCast(u32, tfi));
                         }
                     }
                     var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
@@ -4254,8 +4311,40 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var if_z: []const u8 = "ZERO"; pal.markerWrite(if_z);
         }
         var if_nl: []const u8 = "\n"; pal.markerWrite(if_nl);
-        var cond_temp = lowerExpr(self, node.child_0);
-        var orig_cond_temp = cond_temp;
+        var cond_temp = TEMP_NONE;
+        var orig_cond_temp = TEMP_NONE;
+        var cond_node = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+        if (cond_node.kind == AstKind.field_access) {
+            var fa_base_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, cond_node.child_0);
+            if (fa_base_rt) |fbrt| {
+                var fbrt_ty = self.ctx.registry.types_items[@intCast(usize, fbrt)];
+                if (fbrt_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                    var tu_tp = self.ctx.registry.tu_items[@intCast(usize, fbrt_ty.payload_idx)];
+                    var tstart: usize = @intCast(usize, tu_tp.fields_start);
+                    var tcount: usize = @intCast(usize, tu_tp.fields_count);
+                    var tfi: usize = 0;
+                    while (tfi < tcount) : (tfi += 1) {
+                        if (self.ctx.registry.fe_items[tstart + tfi].name_id == @intCast(u32, cond_node.payload)) { break; }
+                    }
+                    if (tfi < tcount) {
+                        var tu_base = lowerExpr(self, cond_node.child_0);
+                        var tg_nid = nameMapGet(self, tu_base);
+                        var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+                        emitInst(self, LirInst{ .load_field = .{ .name_id = tg_nid, .base = tu_base, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
+                        var vidx_temp = nextTemp(self, type_mod.TYPE_U32);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, tfi), .result = vidx_temp } });
+                        var tcond = nextTemp(self, type_mod.TYPE_BOOL);
+                        emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = tag_temp, .rhs = vidx_temp, .result = tcond } });
+                        cond_temp = tcond;
+                        orig_cond_temp = tu_base;
+                    }
+                }
+            }
+        }
+        if (cond_temp == TEMP_NONE) {
+            cond_temp = lowerExpr(self, node.child_0);
+            orig_cond_temp = cond_temp;
+        }
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
         if (cond_ty_id) |ct| {
             var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
