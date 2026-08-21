@@ -49,7 +49,7 @@ pub const Lexer = struct {
 };
 
 pub fn nextToken(self: Lexer) Token {
-    return mod_a.makeToken(TokenKind.eof, self.pos, .{ .none = {} });
+    return makeToken(TokenKind.eof, self.pos, .{ .none = {} });
 }
 ```
 `main.zig`:

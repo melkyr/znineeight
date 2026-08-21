@@ -42,7 +42,7 @@ pub fn emit(inst: Inst) void {
     switch (inst) {
         .store => |s| {
             var s: []const u8 = " = *";
-            std.io.printStr(s);
+            std.io.write(s);
         },
         .load => |l| {
             std.io.printInt(@intCast(i32, l.result));
