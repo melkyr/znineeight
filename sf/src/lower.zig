@@ -309,6 +309,7 @@ pub const LirLowerer = struct {
     local_decl_types: [*]u32,
     local_decl_temps: [*]u32,
     local_decl_kinds: [*]u8,
+    local_decl_is_capture: [*]u8,
     local_decl_scopes: [*]u32,
     local_decl_cap: usize,
     local_decl_name_map: hash_mod.U32ToU32Map,
@@ -440,6 +441,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .local_decl_types = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_temps = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_kinds = @ptrCast([*]u8, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 1), @intCast(usize, 4)) catch unreachable),
+        .local_decl_is_capture = @ptrCast([*]u8, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 1), @intCast(usize, 4)) catch unreachable),
         .local_decl_scopes = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_cap = @intCast(usize, 64),
         .local_decl_name_map = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 64)),
@@ -633,11 +635,13 @@ fn growLocalDecls(self: *LirLowerer) void {
     var raw_types = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_temps = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_kinds = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_is_capture = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_scopes = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var ndst = @ptrCast([*]u32, raw_names);
     var tdst = @ptrCast([*]u32, raw_types);
     var mdst = @ptrCast([*]u32, raw_temps);
     var kdst = @ptrCast([*]u8, raw_kinds);
+    var icdst = @ptrCast([*]u8, raw_is_capture);
     var sdst = @ptrCast([*]u32, raw_scopes);
     if (self.local_decl_count > @intCast(usize, 0)) {
         var ci: usize = 0;
@@ -646,6 +650,7 @@ fn growLocalDecls(self: *LirLowerer) void {
             tdst[ci] = self.local_decl_types[ci];
             mdst[ci] = self.local_decl_temps[ci];
             kdst[ci] = self.local_decl_kinds[ci];
+            icdst[ci] = self.local_decl_is_capture[ci];
             sdst[ci] = self.local_decl_scopes[ci];
         }
     }
@@ -653,16 +658,18 @@ fn growLocalDecls(self: *LirLowerer) void {
     self.local_decl_types = tdst;
     self.local_decl_temps = mdst;
     self.local_decl_kinds = kdst;
+    self.local_decl_is_capture = icdst;
     self.local_decl_scopes = sdst;
     self.local_decl_cap = new_cap;
 }
 
-fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_depth: u32) void {
+fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_depth: u32, is_capture: u8) void {
     if (self.local_decl_count >= self.local_decl_cap) { growLocalDecls(self); }
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_types[self.local_decl_count] = type_id;
     self.local_decl_temps[self.local_decl_count] = temp;
     self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
+    self.local_decl_is_capture[self.local_decl_count] = is_capture;
     self.local_decl_scopes[self.local_decl_count] = at_depth;
     self.local_decl_count += @intCast(usize, 1);
     var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
@@ -1353,7 +1360,7 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         emitInst(self, LirInst{ .assign = .{ .dst = bound, .src = cond_temp, .name_id = cap_name } });
         cap_temp = bound;
     }
-    addLocalDecl(self, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1));
+    addLocalDecl(self, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
     emitInst(self, LirInst{ .decl_local = .{ .name_id = cap_name, .type_id = cap_type, .temp = cap_temp } });
 }
 
@@ -3422,10 +3429,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
                 var catch_cap_name = maybeDisambiguateCapture(self, @intCast(u32, capture_node.payload), type_mod.TYPE_I32);
-                addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp, self.scope_depth);
+                addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp, self.scope_depth, @intCast(u8, 1));
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
+            self.capture_shadow.count = @intCast(usize, 0);
             var err_val = lowerExprOrBlock(self, node.child_1);
             var cdiag_et: u32 = getTempType(self, err_val);
             var cdiag_e1: []const u8 = "CDIAG:errT"; pal.markerWriteInt(cdiag_e1, cdiag_et);
@@ -3569,6 +3577,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
+        self.capture_shadow.count = @intCast(usize, 0);
         return result;
       } else if (node.kind == AstKind.array_init) {
          var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
@@ -3906,11 +3915,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var payload_temp = nextTemp(self, fe.type_id);
                         _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
                          emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
-                        addLocalDecl(self, capture_name, fe.type_id, payload_temp, self.scope_depth + @intCast(u32, 1));
+                        addLocalDecl(self, capture_name, fe.type_id, payload_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
                         emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe.type_id, .temp = payload_temp } });
                     }
                      } else {
-                         addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0], self.scope_depth + @intCast(u32, 1));
+                         addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = tu_base_box[0] } });
                      }
                 }
@@ -4425,6 +4434,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 0);
         }
         self.current_bb = join_bb;
+        self.capture_shadow.count = @intCast(usize, 0);
     } else if (node.kind == AstKind.while_stmt) {
         var mw_m: []const u8 = "MW:en"; pal.markerWrite(mw_m);
         var mw_b: [20]u8 = undefined; var mw_l = itoa_mod.itoa(node.child_0, mw_b[0..]); var mw_s: usize = @intCast(usize, 19) - @intCast(usize, mw_l); pal.markerWrite(mw_b[mw_s..@intCast(usize, 19)]);
@@ -4511,6 +4521,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
+        self.capture_shadow.count = @intCast(usize, 0);
         self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
      } else if (node.kind == AstKind.for_stmt) {
           var forx_m: []const u8 = "FORX\n"; pal.markerWrite(forx_m);
@@ -4537,7 +4548,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var start_temp = lowerExpr(self, pattern.child_0);
                 var cap_type = if (pat_type) |pt| pt else type_mod.TYPE_U32;
                 if (node.payload != 0) {
-                    var fcapr = maybeDisambiguateCapture(self, @intCast(u32, node.payload), cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
+                    var fcapr = maybeDisambiguateCapture(self, @intCast(u32, node.payload), cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
                 }
                 var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
@@ -4607,8 +4618,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, elem_type[0]);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
-            if (node.payload != @intCast(u64, 0)) { var fcaps = maybeDisambiguateCapture(self, @intCast(u32, node.payload), elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
-            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
+            if (node.payload != @intCast(u64, 0)) { var fcaps = maybeDisambiguateCapture(self, @intCast(u32, node.payload), elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
+            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
@@ -4722,12 +4733,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                               var payload_temp2 = nextTemp(self, fe2.type_id);
                              _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
                               emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
-                              addLocalDecl(self, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1));
+                              addLocalDecl(self, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
                               emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
                               var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
                           }
                       } else {
-                          addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1));
+                          addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
                           emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = tu_base_box2[0] } });
                       }
                   }
@@ -4884,7 +4895,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (self.local_decl_count > @intCast(usize, 0)) {
             var scli: usize = @intCast(usize, 0);
             while (scli < self.local_decl_count) : (scli += @intCast(usize, 1)) {
-                if (self.local_decl_names[scli] == name_id and self.local_decl_scopes[scli] <= self.scope_depth) {
+                if (self.local_decl_names[scli] == name_id and self.local_decl_scopes[scli] <= self.scope_depth and self.local_decl_is_capture[scli] != @intCast(u8, 0)) {
                     var or_s = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
                     var nb: [96]u8 = undefined;
                     var np: usize = @intCast(usize, 0);
@@ -4931,7 +4942,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             } else {
             var dl_temp = nextTemp(self, decl_type);
             emitInst(self, LirInst{ .decl_local = .{ .name_id = c_name_id, .type_id = decl_type, .temp = dl_temp } });
-            addLocalDecl(self, c_name_id, decl_type, dl_temp, self.scope_depth);
+            addLocalDecl(self, c_name_id, decl_type, dl_temp, self.scope_depth, @intCast(u8, 0));
             if (node.child_1 != 0) {
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 var is_array_type: u8 = @intCast(u8, 0);
@@ -5630,7 +5641,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
                     .type_id = p_tid,
                     .temp_id = p_temp,
                 });
-                addLocalDecl(self, p_name_id, p_tid, p_temp, self.scope_depth);
+                addLocalDecl(self, p_name_id, p_tid, p_temp, self.scope_depth, @intCast(u8, 0));
                 self.hoisted_temps.items[@intCast(usize, p_temp)].type_id = p_tid;
                 if (p_type) |pt| {
                     var lpf_m: []const u8 = "LPF:n"; pal.markerWrite(lpf_m);
