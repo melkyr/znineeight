@@ -215,3 +215,27 @@ Build the compiler two ways and compare **runtime behavior**, not MD5:
 - **C2-RV**: `findLocalTemp` `>=` + `<=` change gol/lisp bytes — verify runtime-identical (the operator's runtime-priority rule); re-baseline if so.
 - Each folded task follows the normal R/I/F discipline as needed; the **self-compile class re-count == 0** gate (plan Task F Step 4 recipe) remains binding for A₂/E₂/C₂, and the success gate (Task F Step 5: `build_zig1_5.sh` rc=0 + smoke) remains the plan's terminal goal.
 
+---
+
+## AMENDMENT 9 (operator ruling, 2026-08-21): commit progress, fix C₂ regression FIRST, then the rest
+
+Task RV returned **FAIL** (report `.superpowers/sdd/task-RV-emission-report.md`): 20/21 examples runtime-identical, but `json_parser_workaround` is runtime-different (valid C, wrong behavior). Emitted C: in `parseObject`'s second pass, stores write a shadow temp `keyVal_1` while reads still reference stale `keyVal`, so every object key prints as the last key. Root cause = the C₂ shadow/scope cluster (`captureShadowShouldRedirect` guard + `findLocalTemp` `>`→`>=` + the local-name scan `>`→`>=` + var-decl disambiguation `<`→`<=`) applies the redirect inconsistently between the store site and the read site.
+
+**Operator rulings:**
+
+1. **The 3-file uncommitted diff is NOT reverted.** It carries genuine results (A₂ 182→9, E₂ merged loop operator-ruled, C₂ assign 48→15) that would have to be re-derived. It is committed as a progress checkpoint, not a clean fix. The commit message must NOT overclaim.
+2. **A minimal `<=`-only fix is NOT correct** (leaves C₂ no-member at 72). The `json_parser_workaround` regression is a C₂-completeness fix, not a separate concern — it restores C₂ to what it was intended to do.
+3. **New Task F-C3 (executes FIRST, before the other folded tasks):** I/F cycle for the capture-shadow redirect consistency — pin the exact store-vs-read redirect disagreement, fix `captureShadowShouldRedirect` (or the scope comparisons) so the write and read see the same name, then re-verify `json_parser_workaround` runtime-identical + the full 21-example matrix. Commit verbatim: `fix: capture-shadow redirect consistency (json_parser_workaround regression)`.
+4. **Task ordering after F-C3:** F-A2EXT → F-E2DOWN → C2-RV → re-count == 0 + build smoke → GATE. The `C2-RV` (`findLocalTemp >=` + `<=` runtime identity across all 21) is folded into F-C3's re-verification gate.
+
+### F-C3 task (I/F cycle)
+
+- **I step (read-only):** in `lower.zig`, trace why `captureShadowShouldRedirect` returns different results at the store site (`lowerLValueAddr` ident_expr arm, the redirect at `:834`) vs the read site (`lowerExprImpl` ident_expr arm, `:2020`), and how the two `>`→`>=` scope-comparison changes (`findLocalTemp` `:1243`, the local-name scan `:2193`) and the `<`→`<=` var-decl disambiguation (`:4882`) interact to produce `keyVal_1` on write vs `keyVal` on read. Report the exact divergence and the minimal consistent fix.
+- **F step:** apply the fix; re-dump `json_parser_workaround` and confirm the emitted C writes and reads the SAME temp (`keyVal`), runtime matches the base output.
+- **RV step:** full 21-example runtime comparison (the RV recipe) — all 21 runtime-identical between the fixed compiler and the base compiler; `json_parser_workaround` stdout byte-identical to base.
+- **Commit verbatim:** `fix: capture-shadow redirect consistency (json_parser_workaround regression)`
+
+### The C₂ intent
+
+C₂'s fix (`captureShadowShouldRedirect` + scope comparisons) exists to rename an inner same-named local so it doesn't collide with a sibling-payload capture. F-C3 makes that redirect *consistent* (both write and read rename, or neither), so C₂ closes its class without regressing the loop-resolved capture case `json_parser_workaround` exercises. F-C3 does NOT remove C₂ — it completes it.
+
