@@ -285,3 +285,33 @@ In `sf/src/`, investigate and report the exact design for emitting a type-storag
 
 Deliverable: report at `.superpowers/sdd/task-FA2EXT-I-report.md`. Read-only, no commit. On completion, F-A2EXT's F step implements the pinned design (target `zG_` 9→0, class re-count gate, commit verbatim `fix: self-compile residual emission defects (type-storage extern, sibling payload, void temp)`).
 
+---
+
+## AMENDMENT 12 (operator ruling, 2026-08-21): switch-on-enum I/F task + self-compile terminal gate re-scope
+
+**Context — completed residual fixes (all controller-verified):**
+- **F-C3-tighten** (`6534a65b`): `local_decl_is_capture` flag gates the var-decl rename; `json_parser_workaround` stdout BYTE-IDENTICAL to base (md5 `dc22fa473650bd3dcdf4d8a1559a260b`); RV 21/21 runtime-identical.
+- **F-A2EXT** (`b019c671`): Option A `ts_ref_set` owner-module type-storage defs/externs; `zG_` 9→0 (defs in `coercion_F654E5FA.c`/`lir_64CB5435.c`/`symbol_table_74081C75.c`, externs in owner headers).
+- **F-E2DOWN** (`9e00bec7`): void-payload union-literal store guard (`lower.zig:3757`); `TokenValue has no member 'none'` 62→0.
+- 4 MD5 gates byte-identical to HEAD throughout (gol `4afb203fdde7a880ec6e7aed32543691`, lisp `5f886646b164a70c52bf042eb54bda78` repo-root CWD, json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`).
+
+**Terminal-gate finding (controller-verified):** the plan's original success gate (`build_zig1_5.sh` rc=0, class re-count A₂/E₂/C₂ == 0) is **NOT achievable** with the planned work. Current self-compile = 194 gcc errors: `incompatible types when assigning` ×86 (enum-temp-typed-as-`unsigned int` class, gcc-unmasked by F-A2EXT), `zT_<n> undeclared` ×68, `request for member` ×22, `has no member` ×8, `pal` ×5, misc ×5. These are NEW residual classes the plan did not scope (the enum-temp typing defect, plus others), and closing the entire self-compile cleanly is a much longer tail than this plan's scope.
+
+**Operator ruling (this amendment):**
+1. **Re-scope the terminal gate.** This plan's success is re-defined as: the three scoped residual fixes landed (A₂ `zG_`=0, `TokenValue.none`=0, json_parser_workaround runtime-correct) + all gates run + docs reconciled. The 194 remaining self-compile errors are **recorded as a known deferred state** (new residual classes → a future plan), NOT a failure of this plan.
+2. **NEW Task F-SWITCH (I/F cycle) for the switch-on-enum emission defect** — a runtime-correctness bug (silent mis-compile), higher severity than the compile errors.
+
+### Task F-SWITCH — switch-on-enum case-value resolution (I/F cycle)
+
+**Mechanism (controller-traced):** `switch_br` emission (`c89_emit.zig:5549-5589`) prints `c.value` from `switch_cases`; the value is populated during lowering (`lower.zig:3846-3860`): for an `enum_literal` case node, `case_val = case_node.payload` (fallback) then overridden by `enum_value_table.get(case_ec[ci])` if present. `enum_value_table` stores the **field index** `fi`, not the member's declared value (`semantic_analyzer.zig:1032`: `enum_value_table.put(node_idx, fi)`). For `enum(u8) { Red, Green, Blue }` field index == value only by coincidence of implicit 0..N-1 numbering. Fixture evidence: `emission_type_storage_extern_xmod` emits `case 8/9/10` for `.Red/.Green/.Blue` (should be `case 0/1/2`) — the `fi` was computed against a **wrong, larger enum** (Red/Green/Blue at positions 8/9/10 in some other type's field list), indicating cross-module enum-literal resolution picks the wrong `current_switch_cond_tu` for `Color.Red` (`@import("mod_a.zig").Color` alias path). Result: no case matches → `default` → uninitialized temp → garbage runtime output (fixture prints garbage instead of 3).
+
+- **I step (read-only):** pin exactly why the switch-condition/case enum literals resolve `fi` against the wrong enum for cross-module `Color.Red` (trace `semantic_analyzer.zig` switch-cond resolution + `current_switch_cond_tu` + `enum_value_table` population for the import-base alias case), and whether `enum_value_table` should store the member's *declared value* (from the enum's value list) rather than the field index for explicit-valued enums. Report: `.superpowers/sdd/task-FSWITCH-I-report.md`.
+- **F step:** apply the fix; re-run both A2 fixtures (`emission_type_storage_extern_xmod` + `emission_mangler_collision_xmod`) — they must now print their documented values (3); 4 MD5 gates byte-identical vs HEAD; json_parser_workaround runtime unchanged. Commit verbatim: `fix: switch-on-enum case values resolve the correct enum (cross-module alias)`
+- **RV step:** full 21-example runtime comparison vs the pre-fix build — all 21 runtime-identical EXCEPT any that were affected by the enum-switch bug (document which).
+
+### Remaining task order (after F-SWITCH)
+
+1. F-SWITCH (I then F).
+2. **Gate sweep + docs reconciliation:** run ALL gates (4 MD5s, corpus 287+5 fixtures, matrix 21/21, test_analyzer) with the final compiler; update `EXPECTED_FAIL.md` + `QUICK_REF.md` to record: the three residual fixes landed, the new 4-MD5 baselines if any changed (with runtime-identity justification per the runtime-priority override), the deferred 194-error self-compile state, and the switch-on-enum fix. Commit verbatim: `docs: self-compile residual closeout GATE + reconciliation`.
+3. **M-FINAL** whole-branch review.
+
