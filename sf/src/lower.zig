@@ -3754,7 +3754,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var fj: usize = @intCast(usize, 0);
                     while (fj < fc) : (fj += @intCast(usize, 1)) {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
-                            if (!is_undef_arr_field) {
+                            if (!is_undef_arr_field and self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
                                 emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
                             }
                             break;
