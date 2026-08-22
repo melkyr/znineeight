@@ -516,6 +516,7 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
       fl_temps: [128]u32,
        fl_count: u32,
       temp_global_map: U32ToU32Map,
+      ts_ref_set: U32ToU32Map,
       global_decls: [*]lir_mod.ModuleGlobalDecl,
       global_decls_len: u32,
    };
@@ -549,6 +550,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .fl_temps = undefined,
            .fl_count = @intCast(u32, 0),
            .temp_global_map = hash_mod.u32ToU32MapInit(alloc),
+           .ts_ref_set = hash_mod.u32ToU32MapInit(alloc),
            .global_decls = undefined,
            .global_decls_len = @intCast(u32, 0),
        };
@@ -2371,6 +2373,27 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
         var gg_sc: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, gg_sc);
     }
+    var tsi2: u32 = @intCast(u32, 0);
+    while (@intCast(usize, tsi2) < emitter.registry.types_len) : (tsi2 += @intCast(u32, 1)) {
+        if (hash_mod.u32ToU32MapGet(&emitter.ts_ref_set, tsi2) == null) continue;
+        var tsty = emitter.registry.types_items[@intCast(usize, tsi2)];
+        if (tsty.name_id == @intCast(u32, 0)) continue;
+        if (tsty.module_id != module_id) continue;
+        var tsgmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, tsty.name_id, tsty.module_id, tsi2);
+        if (hash_mod.u32ToU32MapGet(&gg_set, tsgmid) != null) continue;
+        hash_mod.u32ToU32MapPut(&gg_set, tsgmid, @intCast(u32, 1));
+        var tsgname = interner_mod.stringInternerGet(emitter.interner, tsgmid);
+        var tsgtype = getCTypeName(emitter.registry, emitter.mangler, tsi2);
+        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
+        var tsgx: []const u8 = "extern ";
+        bufferedWriterWrite(&emitter.writer, tsgx);
+        bufferedWriterWrite(&emitter.writer, tsgtype);
+        var tsg_sp: []const u8 = " ";
+        bufferedWriterWrite(&emitter.writer, tsg_sp);
+        bufferedWriterWrite(&emitter.writer, tsgname);
+        var tsg_sc: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, tsg_sc);
+    }
     var fnl: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, fnl);
     var e0: []const u8 = "#endif /* ZIG_MODULE_";
@@ -2488,6 +2511,27 @@ fn emitGlobalDecls(emitter: *C89Emitter, module_id: u32, all: u8) void {
         bufferedWriterWrite(&emitter.writer, gname);
         var sc: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, sc);
+    }
+    var tsgi: u32 = @intCast(u32, 0);
+    while (@intCast(usize, tsgi) < emitter.registry.types_len) : (tsgi += @intCast(u32, 1)) {
+        if (hash_mod.u32ToU32MapGet(&emitter.ts_ref_set, tsgi) == null) continue;
+        var tsty = emitter.registry.types_items[@intCast(usize, tsgi)];
+        if (tsty.name_id == @intCast(u32, 0)) continue;
+        if (all == @intCast(u8, 0)) {
+            if (module_id != tsty.module_id) continue;
+        }
+        var tsgmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, tsty.name_id, tsty.module_id, tsgi);
+        if (hash_mod.u32ToU32MapGet(&gd_set, tsgmid) != null) continue;
+        hash_mod.u32ToU32MapPut(&gd_set, tsgmid, @intCast(u32, 1));
+        var tsgname = interner_mod.stringInternerGet(emitter.interner, tsgmid);
+        var tsgtype = getCTypeName(emitter.registry, emitter.mangler, tsgi);
+        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
+        bufferedWriterWrite(&emitter.writer, tsgtype);
+        var tssp: []const u8 = " ";
+        bufferedWriterWrite(&emitter.writer, tssp);
+        bufferedWriterWrite(&emitter.writer, tsgname);
+        var tssc: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, tssc);
     }
 }
 

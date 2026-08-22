@@ -703,6 +703,43 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
     var module_name: []const u8 = "output";
 
+    var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.scratch);
+    var ts_fi: usize = @intCast(usize, 0);
+    while (ts_fi < fns.len) : (ts_fi += @intCast(usize, 1)) {
+        var ts_fn = fns[ts_fi];
+        var ts_bi: usize = @intCast(usize, 0);
+        while (ts_bi < ts_fn.blocks.len) : (ts_bi += @intCast(usize, 1)) {
+            var ts_blk = ts_fn.blocks.items[ts_bi];
+            var ts_ii: usize = @intCast(usize, 0);
+            while (ts_ii < ts_blk.insts.len) : (ts_ii += @intCast(usize, 1)) {
+                var ts_inst = ts_blk.insts.items[ts_ii];
+                var ts_tg = @enumToInt(ts_inst.tag);
+                if (ts_tg != @enumToInt(lir_mod.LirInst.load_global) and ts_tg != @enumToInt(lir_mod.LirInst.store_global)) continue;
+                var ts_name_id: u32 = @intCast(u32, 0);
+                var ts_tmp: u32 = @intCast(u32, 0);
+                if (ts_tg == @enumToInt(lir_mod.LirInst.load_global)) {
+                    ts_name_id = ts_inst.load_global.name_id;
+                    ts_tmp = ts_inst.load_global.result;
+                } else {
+                    ts_name_id = ts_inst.store_global.name_id;
+                    ts_tmp = ts_inst.store_global.value;
+                }
+                var ts_tid: u32 = @intCast(u32, 0);
+                var ts_tj: usize = @intCast(usize, 0);
+                while (ts_tj < ts_fn.hoisted_temps.len) : (ts_tj += @intCast(usize, 1)) {
+                    var ts_ht = ts_fn.hoisted_temps.items[ts_tj];
+                    if (ts_ht.temp_id == ts_tmp) { ts_tid = ts_ht.type_id; break; }
+                }
+                if (ts_tid >= @intCast(u32, ctx.typereg.types_len)) continue;
+                var ts_ty = ctx.typereg.types_items[@intCast(usize, ts_tid)];
+                if (ts_ty.name_id != @intCast(u32, 0) and ts_ty.name_id == ts_name_id) {
+                    hash_mod.u32ToU32MapPut(&ts_ref_set, ts_tid, @intCast(u32, 1));
+                }
+            }
+        }
+    }
+    emitter.ts_ref_set = ts_ref_set;
+
     if (ctx.cli.output_dir_set) {
         var poi: u32 = @intCast(u32, 0);
         while (poi < ctx.pointer_only_len) : (poi += 1) {
