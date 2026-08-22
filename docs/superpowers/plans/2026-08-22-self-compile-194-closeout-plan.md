@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the 194 residual self-compile gcc errors across 6 classes (V → R×6 → STOP → I → F → GATE), so each class's full-graph fixture flips GREEN with no functional regression and the self-compile count trends down-or-flat. NO `rc=0` hard gate.
+**Goal:** Close the 194 residual self-compile gcc errors across 6 classes (V → R×6 → STOP → F-MIGRATE → I/F per merged group → GATE), so each class's full-graph fixture flips GREEN with no functional regression and the self-compile count trends down-or-flat. NO `rc=0` hard gate.
 
-**Architecture:** One read-only V task (collection-iteration verify) then six R fixtures in a row (one per error class), a STOP for operator review, I tasks per merged root cause, F tasks per root, a soft re-count check, then docs GATE. Runtime-identity is the gate, not byte-identity.
+**Architecture:** One read-only V task (collection-iteration verify) then six R fixtures in a row (one per error class), a STOP for operator review (ruling recorded 2026-08-22: R5 migration first, C1 priority I/F, R1+R3 one I/F, R4+R6 one separate I/F), then F-MIGRATE (R5 `pal`→`pal_mod`), then I-A/F-A (C1), I-B/F-B (R1+R3 conflation root), I-C/F-C (R4+R6), soft re-count checks, then docs GATE. Runtime-identity is the gate, not byte-identity.
 
 **Tech Stack:** Z98 compiler (`sf/src/*.zig`), compiler under test `/tmp/fx_subfolder/zig1`, gcc -m32 -std=c89, `bash sf/scripts/build_release.sh`, 4 MD5 gates, corpus 303, matrix 21/21.
 
@@ -192,74 +192,172 @@ Present `.superpowers/sdd/task-V-194-report.md` + `task-R1..R6-194-report.md` to
 
 Merge shared root causes across R's; re-scope or drop any unfixtureable class; amend the plan as directed. Do not proceed to I until the ruling is given.
 
----
+**OPERATOR RULING (2026-08-22, recorded):** (1) **R5 = sf/src source migration FIRST** (`pal.` → `pal_mod.` in `semantic_analyzer.zig:290/:293/:844`, `symbol_registrator.zig:409-413`, `type_registry.zig:388-393/:405-410/:524-542` — the 3 files that import `pal_mod` but call bare `pal`), so the compiler is spec-compliant and emits no `pal` errors before anything else. Verified safe: zig0 resolves a module by global module-symbol namespace regardless of alias name; zig1 needs the explicit alias. A separate future note: a spec-invalid undeclared identifier should emit a diagnostic (zig1 currently drops to TYPE_VOID silently) — NOT in this plan's scope. (2) **C1 (LirInst tag-emission, 48 errors) gets its own I/F with PRIORITY.** (3) **R1+R3 fold into ONE I/F** (shared name-keyed conflation root; assign 86 + request-member 22). (4) **R4+R6 fold into ONE SEPARATE I/F** (no-member 8 + misc 5; R4 `.f_2` sub-shape + R6 aggregate sub-shape folded INTO that I step as required investigations). Rationale: two I/F groups avoid scope creep; R4/6 kept separate from R1/3 so each I/F stays focused.
 
-### Task I: investigate — pin upstream-correct fix per merged root cause
-
-**Files:**
-- Read: `sf/src/*.zig` (sites from the R reports)
-- Create: `.superpowers/sdd/task-I-194-report.md` (report, no commit)
-
-**Consumes:** V + R1-R6 reports + operator ruling (merged root causes). **Produces:** per-root-cause fix design.
-
-- [ ] **Step 1: For each merged root cause, verify the mechanism**
-
-Starting from the R probable mechanisms, trace the actual upstream cause in `sf/src`. Confirm or overturn each; cite exact file:line.
-
-- [ ] **Step 2: Pin the fix design**
-
-Name the exact function/line to change and the shape of the change (mirroring prior F-task discipline: minimal, upstream-consistent).
-
-- [ ] **Step 3: Byte-identity reasoning**
-
-For each fix, reason whether it can affect the 4 MD5s / corpus / matrix. Flag any that could change existing-correct output (the runtime-priority override governs).
-
-- [ ] **Step 4: Flag design forks → STOP for operator ruling**
-
-If any root cause has two valid fixes with different risk, present them and STOP.
-
-- [ ] **Step 5: Write report**
-
-Report at `.superpowers/sdd/task-I-194-report.md`. No commit (read-only).
 
 ---
 
-### Task F: fix — apply the fixes
+### Task F-MIGRATE: fix R5 — migrate bare `pal` to `pal_mod` (FIRST)
 
 **Files:**
-- Modify: `sf/src/*.zig` (the sites named in the I report)
-- Report: `.superpowers/sdd/task-F-194-report.md`
+- Modify: `sf/src/semantic_analyzer.zig` (bare `pal.` at :290/:293/:844 → `pal_mod.`), `sf/src/symbol_registrator.zig` (:409-413), `sf/src/type_registry.zig` (:388-393/:405-410/:524-542)
+- Report: `.superpowers/sdd/task-FMIGRATE-194-report.md`
 
-**Consumes:** I report. **Produces:** each class fixture GREEN + no functional regression.
+**Consumes:** operator ruling (1). **Produces:** compiler spec-compliant — zero bare-`pal` references emitted; `emission_pal_xmod` GREEN + self-compile R5-class 5→0.
 
-- [ ] **Step 1: Apply each fix**
+- [ ] **Step 1: Apply the source migration**
 
-Implement the I-report fixes via `edit`/`fastedit` (re-read before each edit, bottom-to-top).
+Via `edit`/`fastedit` (re-read region before each edit, bottom-to-top): in the 3 files that import `const pal_mod = @import("pal.zig")`, replace every bare `pal.` reference with `pal_mod.`. Confirm no file uses bare `pal` without importing `pal_mod`. Do NOT touch files that correctly use `const pal = @import("pal.zig")`.
 
-- [ ] **Step 2: Rebuild + reinstall std**
+- [ ] **Step 2: Grep for residual bare `pal`**
+
+Run: `grep -rn '[^_]pal\.' sf/src/*.zig | grep -v 'pal_mod\.' | grep -v 'pal\.zig'` — expected: zero residual bare-`pal.` calls across sf/src.
+
+- [ ] **Step 3: Rebuild + reinstall std**
 
 ```bash
 bash sf/scripts/build_release.sh
 cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig /tmp/fx_subfolder/lib/
 ```
 
-- [ ] **Step 3: R fixtures GREEN**
+- [ ] **Step 4: R5 fixture GREEN + self-compile pal-class re-count**
 
-Re-run each R fixture: dump + gcc -c. Expected: 0 errors, `.c` compiles.
+Dump + gcc `emission_pal_xmod` → 0 errors (GREEN). Then self-compile re-count: `bash scripts/self_compile/build_zig1_5.sh` → `cd /tmp/zig1_5/gen && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /workspace/znineeight/sf/src/include -c *.c 2>/tmp/emit_errs_migrate.txt`; grep `'pal' undeclared` count → 5→0. Record the full class split of the residual file (expected: 194 minus the pal-class 5 and the ~29 `zT_ = pal` R2 co-symptoms).
 
-- [ ] **Step 4: Runtime-identity gate (4 MD5s + matrix 21/21)**
+- [ ] **Step 5: Runtime-identity gate**
 
-Verify the 21-example matrix runs runtime-identical to base; for each of the 4 MD5 gates, if the MD5 changed, verify runtime-identical output and re-baseline (default). Benign emission diffs do not fail.
-
-- [ ] **Step 5: Soft re-count observation**
-
-Regenerate the self-compile error file (`bash scripts/self_compile/build_zig1_5.sh` → `cd /tmp/zig1_5/gen && gcc -c *.c 2>/tmp/emit_errs_194.txt`) and record the per-class counts vs the 194 baseline. Decreased-or-flat is the expectation; record whether each class went down, stayed, or rose. Not blocking.
+Verify matrix 21/21 runtime-identical to base `ad4e91b0`; 4 MD5 gates runtime-identical (byte-diff with runtime-identity = re-baseline default per operator). The migration is a pure alias rename — expected byte-neutral, verify anyway.
 
 - [ ] **Step 6: Commit**
 
-Commit: `fix: self-compile 194-error residual classes (assign, zT-undeclared, request-member, no-member, pal, misc)`
+Commit: `fix: migrate bare pal to pal_mod (spec-compliant module alias)`
 
 ---
+
+### Task I-A: investigate — C1 LirInst tag-emission (PRIORITY, 48 errors)
+
+**Files:**
+- Read: `sf/src/lower.zig:5370` (C1 site), `sf/src/c89_emit.zig` (tag-emission path)
+- Create: `.superpowers/sdd/task-IA-194-report.md` (report, no commit)
+
+**Consumes:** V report (C1 = LIVE F-SWITCH-shape, 48 errors: `zT_N.tag = zG_6BA597BC_LirInst` whole-type-global instead of variant's declared tag constant). **Produces:** fix design for C1.
+
+- [ ] **Step 1: Trace the C1 emitter path**
+
+Read `lower.zig:5370` (`var tg = @enumToInt(inst.tag)` context) and the emitted `lower_1EB7D337.c` `.tag = zG_6BA597BC_LirInst;` (48 hits). Pin why the whole-type global is emitted instead of the variant's declared tag constant (the F-SWITCH fix stored declared member values — is C1 the sibling that never got the same treatment?).
+
+- [ ] **Step 2: Pin the fix design**
+
+Name the exact function/line to change and the shape (mirroring F-SWITCH discipline). Confirm whether the fix is lower-side, emitter-side, or both.
+
+- [ ] **Step 3: Byte-identity reasoning + write report**
+
+Reason whether the fix can affect the 4 MD5s / corpus / matrix. Flag forks → STOP if two valid fixes with different risk. Report at `.superpowers/sdd/task-IA-194-report.md`. No commit.
+
+---
+
+### Task F-A: fix — C1 LirInst tag-emission (PRIORITY)
+
+**Files:**
+- Modify: `sf/src/*.zig` (sites named in the I-A report)
+- Report: `.superpowers/sdd/task-FA-194-report.md`
+
+**Consumes:** I-A report. **Produces:** C1 fixture/class closed — self-compile R1-class 48→0.
+
+- [ ] **Step 1: Apply the I-A fix** via `edit`/`fastedit`.
+- [ ] **Step 2: Rebuild + reinstall std** (`bash sf/scripts/build_release.sh` + std cp).
+- [ ] **Step 3: Self-compile re-count** — R1 `incompatible types when assigning` count 86→38 (the 48 C1 errors gone); record full class split.
+- [ ] **Step 4: Runtime-identity gate** — matrix 21/21 runtime-identical; 4 MD5s runtime-identical (re-baseline default on benign diff).
+- [ ] **Step 5: Commit**
+
+Commit: `fix: LirInst tag-emission emits variant declared tag constant (48 errors)`
+
+---
+
+### Task I-B: investigate — R1+R3 name-keyed conflation root (86+22)
+
+**Files:**
+- Read: `sf/src/c89_emit.zig:2667-2690` (hoist dedup by name_id), `:6155-6180` (dedup_names), `sf/src/lower.zig` (local_decl machinery)
+- Create: `.superpowers/sdd/task-IB-194-report.md` (report, no commit)
+
+**Consumes:** V report (B1-B7 name-conflation family) + R1/R3 reports. **Produces:** fix design for the shared root — same-named locals of different types collapse to one C local typed first-seen (R1: `incompatible types when assigning` 86; R3: `request for member` 22).
+
+- [ ] **Step 1: Verify the shared root**
+
+Confirm both classes trace to `emitHoistedDecls` keying locals by `name_id` only (V report B-family): R1 = two same-named locals of different types (Type vs CoercionKind, Slice vs u32); R3 = scalar vs struct (ci:usize vs CallInfo capture).
+
+- [ ] **Step 2: Pin the fix design**
+
+The key question: how to disambiguate hoisted locals that share a name_id but differ in type — extend the hoist dedup key (name_id + type_id? name_id + scope?) or the pre-existing capture-only disambiguation (`local_decl_is_capture`) to the hoist path. Name the exact function/line and change shape. This is the highest-risk design (it touches the emission dedup that the 4 MD5 gates exercise) — a byte-identity reasoning section is mandatory.
+
+- [ ] **Step 3: Flag forks → STOP**
+
+If the fix can change existing-correct output (any corpus dir with same-named same-type locals), present the options and STOP for ruling (runtime-priority override governs; a benign byte-diff would re-baseline).
+
+- [ ] **Step 4: Write report** at `.superpowers/sdd/task-IB-194-report.md`. No commit.
+
+---
+
+### Task F-B: fix — R1+R3 name-keyed conflation root
+
+**Files:**
+- Modify: `sf/src/*.zig` (sites named in the I-B report)
+- Report: `.superpowers/sdd/task-FB-194-report.md`
+
+**Consumes:** I-B report (+ any STOP ruling). **Produces:** `emission_assign_xmod` + `emission_request_member_xmod` GREEN; self-compile R1 86→0 + R3 22→0.
+
+- [ ] **Step 1: Apply the I-B fix** via `edit`/`fastedit`.
+- [ ] **Step 2: Rebuild + reinstall std**.
+- [ ] **Step 3: R1 + R3 fixtures GREEN** (dump + gcc → 0 errors).
+- [ ] **Step 4: Self-compile re-count** — R1 →0, R3 →0; record full class split of the residual file.
+- [ ] **Step 5: Runtime-identity gate** — matrix 21/21 runtime-identical; 4 MD5s runtime-identical (re-baseline default on benign diff per operator).
+- [ ] **Step 6: Commit**
+
+Commit: `fix: hoisted local disambiguation by type (name-keyed conflation, 108 errors)`
+
+---
+
+### Task I-C: investigate — R4+R6 no-member/misc (8+5)
+
+**Files:**
+- Read: `sf/src/c89_emit.zig` (name-keyed dedup sites, `.assign` array-copy :4273-4307, `emitMainWrapper` :2442-2482), `sf/src/lower.zig` (field-access paths)
+- Create: `.superpowers/sdd/task-IC-194-report.md` (report, no commit)
+
+**Consumes:** V report + R4/R6 reports. **Produces:** fix design for R4 (no-member 8) + R6 (misc 5), INCLUDING the two folded sub-shapes: R4 `.f_2` (2 errors, NOT reproduced in R — investigate the anon-payload field_id=2 lowering trigger) and R6 `aggregate value` (1 error, NOT cleanly reproduced — investigate the B5 `ct` shared root).
+
+- [ ] **Step 1: Verify R4 root**
+
+Confirm R4 = same name_id conflation (EnumPayload first-seen → later EUPayload fields fail). If the I-B fix lands first, confirm R4's dominant `.payload` shape (6 of 8) is closed by I-B's disambiguation; investigate the residual `.f_2` (2) as a distinct lowering issue (`field_id=2` on anon-payload, `fc.result`).
+
+- [ ] **Step 2: Verify R6 root**
+
+Confirm R6 subscripted (3) + too-few-args (1) mechanism; investigate the `aggregate value` sub-shape's B5 `ct` root (V report B5: `c89_emit.zig:4960/5046` `ct` slice vs `:5330` `ct` u32).
+
+- [ ] **Step 3: Pin fix design + byte-identity reasoning**
+
+Name exact functions/lines + change shapes. Flag any that could affect existing-correct output → STOP for ruling.
+
+- [ ] **Step 4: Write report** at `.superpowers/sdd/task-IC-194-report.md`. No commit.
+
+---
+
+### Task F-C: fix — R4+R6 no-member/misc
+
+**Files:**
+- Modify: `sf/src/*.zig` (sites named in the I-C report)
+- Report: `.superpowers/sdd/task-FC-194-report.md`
+
+**Consumes:** I-C report (+ any STOP ruling). **Produces:** `emission_no_member_xmod` + `emission_misc_xmod` GREEN; self-compile R4 8→0 + R6 5→0.
+
+- [ ] **Step 1: Apply the I-C fix** via `edit`/`fastedit`.
+- [ ] **Step 2: Rebuild + reinstall std**.
+- [ ] **Step 3: R4 + R6 fixtures GREEN** (dump + gcc → 0 errors).
+- [ ] **Step 4: Self-compile re-count** — R4 →0, R6 →0; record full class split of the residual file.
+- [ ] **Step 5: Runtime-identity gate** — matrix 21/21 runtime-identical; 4 MD5s runtime-identical (re-baseline default on benign diff per operator).
+- [ ] **Step 6: Commit**
+
+Commit: `fix: no-member + misc emission classes (8 + 5 errors)`
+
 
 ### Task GATE: reconcile docs + closeout
 
