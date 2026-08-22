@@ -1035,6 +1035,20 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                 }
             }
         }
+        if (tu_ty.kind == type_mod.TypeKind.enum_type) {
+            var enp = self.registry.en_items[@intCast(usize, tu_ty.payload_idx)];
+            var estart: usize = @intCast(usize, enp.members_start);
+            var ecount: usize = @intCast(usize, enp.members_count);
+            var emi: usize = 0;
+            while (emi < ecount) : (emi += 1) {
+                var member = self.registry.em_items[estart + emi];
+                if (member.name_id == n) {
+                    hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, member.value));
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
+                    return self.current_switch_cond_tu;
+                }
+            }
+        }
     }
     if (self.expected_type_stack_len > 0) {
         var top: u32 = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - 1)];
@@ -1229,7 +1243,8 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var cond_es: u32 = @intCast(u32, 0);
     if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
         var cond_ty = self.registry.types_items[@intCast(usize, cond_type)];
-        if (cond_ty.kind == type_mod.TypeKind.tagged_union_type) {
+        if (cond_ty.kind == type_mod.TypeKind.tagged_union_type or
+            cond_ty.kind == type_mod.TypeKind.enum_type) {
             self.current_switch_cond_tu = cond_type;
             var rs: []const u8 = "Z"; pal_mod.markerWrite(rs);
         } else if (cond_ty.kind == type_mod.TypeKind.error_set_type) {
@@ -1282,17 +1297,19 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                     var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
                     if (ev) |idx| {
                         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
-                        var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
-                        var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
-                        var scfe_nm: []const u8 = "SCFE:n"; pal_mod.markerWriteInt(scfe_nm, cap_name);
-                        var scfe_tm: []const u8 = "SCFE:t"; pal_mod.markerWriteInt(scfe_tm, fe.type_id);
-                        var scfe_km: []const u8 = "SCFE:k"; pal_mod.markerWriteInt(scfe_km, @intCast(u32, @enumToInt(tu_ty.kind)));
-                        if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-                        self.local_decl_names[self.local_decl_count] = cap_name;
-                        self.local_decl_types[self.local_decl_count] = fe.type_id;
-                        self.local_decl_count += @intCast(usize, 1);
-                        var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
-                        var scax_tm: []const u8 = "SCAX:T"; pal_mod.markerWriteInt(scax_tm, fe.type_id);
+                        if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                            var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
+                            var fe: type_mod.FieldEntry = self.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
+                            var scfe_nm: []const u8 = "SCFE:n"; pal_mod.markerWriteInt(scfe_nm, cap_name);
+                            var scfe_tm: []const u8 = "SCFE:t"; pal_mod.markerWriteInt(scfe_tm, fe.type_id);
+                            var scfe_km: []const u8 = "SCFE:k"; pal_mod.markerWriteInt(scfe_km, @intCast(u32, @enumToInt(tu_ty.kind)));
+                            if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
+                            self.local_decl_names[self.local_decl_count] = cap_name;
+                            self.local_decl_types[self.local_decl_count] = fe.type_id;
+                            self.local_decl_count += @intCast(usize, 1);
+                            var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
+                            var scax_tm: []const u8 = "SCAX:T"; pal_mod.markerWriteInt(scax_tm, fe.type_id);
+                        }
                     }
                 } else {
                     var sce_rm: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm, cap_name);
