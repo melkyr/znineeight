@@ -385,12 +385,12 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
     var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
     var key: u64 = (@intCast(u64, elem) << @intCast(u64, 1)) | ic;
     if (hash_mod.u64ToU32MapGet(&self.slice_cache, key)) |existing| {
-        var u2h_m: []const u8 = "U2H:e"; pal.markerWrite(u2h_m);
-        var u2h_eb: [20]u8 = undefined; var u2h_el = itoa_mod.itoa(elem, u2h_eb[0..]); var u2h_es: usize = @intCast(usize, 19) - @intCast(usize, u2h_el); pal.markerWrite(u2h_eb[u2h_es..@intCast(usize, 19)]);
-        var u2h_rm: []const u8 = "r"; pal.markerWrite(u2h_rm);
-        var u2h_rb: [20]u8 = undefined; var u2h_rl = itoa_mod.itoa(existing, u2h_rb[0..]); var u2h_rs: usize = @intCast(usize, 19) - @intCast(usize, u2h_rl); pal.markerWrite(u2h_rb[u2h_rs..@intCast(usize, 19)]);
-        var u2h_cm: []const u8 = "c"; pal.markerWrite(u2h_cm);
-        var u2h_cb: [20]u8 = undefined; var u2h_cl = itoa_mod.itoa(@intCast(u32, ic), u2h_cb[0..]); var u2h_cs: usize = @intCast(usize, 19) - @intCast(usize, u2h_cl); pal.markerWrite(u2h_cb[u2h_cs..@intCast(usize, 19)]);
+        var u2h_m: []const u8 = "U2H:e"; pal_mod.markerWrite(u2h_m);
+        var u2h_eb: [20]u8 = undefined; var u2h_el = itoa_mod.itoa(elem, u2h_eb[0..]); var u2h_es: usize = @intCast(usize, 19) - @intCast(usize, u2h_el); pal_mod.markerWrite(u2h_eb[u2h_es..@intCast(usize, 19)]);
+        var u2h_rm: []const u8 = "r"; pal_mod.markerWrite(u2h_rm);
+        var u2h_rb: [20]u8 = undefined; var u2h_rl = itoa_mod.itoa(existing, u2h_rb[0..]); var u2h_rs: usize = @intCast(usize, 19) - @intCast(usize, u2h_rl); pal_mod.markerWrite(u2h_rb[u2h_rs..@intCast(usize, 19)]);
+        var u2h_cm: []const u8 = "c"; pal_mod.markerWrite(u2h_cm);
+        var u2h_cb: [20]u8 = undefined; var u2h_cl = itoa_mod.itoa(@intCast(u32, ic), u2h_cb[0..]); var u2h_cs: usize = @intCast(usize, 19) - @intCast(usize, u2h_cl); pal_mod.markerWrite(u2h_cb[u2h_cs..@intCast(usize, 19)]);
         return existing;
     }
     sliceAppend(self, SlicePayload{ .elem = elem });
@@ -402,12 +402,12 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.slice_len - @intCast(usize, 1)),
     });
     hash_mod.u64ToU32MapPut(&self.slice_cache, key, tid);
-    var u2n_m: []const u8 = "U2N:e"; pal.markerWrite(u2n_m);
-    var u2n_eb: [20]u8 = undefined; var u2n_el = itoa_mod.itoa(elem, u2n_eb[0..]); var u2n_es: usize = @intCast(usize, 19) - @intCast(usize, u2n_el); pal.markerWrite(u2n_eb[u2n_es..@intCast(usize, 19)]);
-    var u2n_rm: []const u8 = "r"; pal.markerWrite(u2n_rm);
-    var u2n_rb: [20]u8 = undefined; var u2n_rl = itoa_mod.itoa(tid, u2n_rb[0..]); var u2n_rs: usize = @intCast(usize, 19) - @intCast(usize, u2n_rl); pal.markerWrite(u2n_rb[u2n_rs..@intCast(usize, 19)]);
-    var u2n_cm: []const u8 = "c"; pal.markerWrite(u2n_cm);
-    var u2n_cb: [20]u8 = undefined; var u2n_cl = itoa_mod.itoa(@intCast(u32, ic), u2n_cb[0..]); var u2n_cs: usize = @intCast(usize, 19) - @intCast(usize, u2n_cl); pal.markerWrite(u2n_cb[u2n_cs..@intCast(usize, 19)]);
+    var u2n_m: []const u8 = "U2N:e"; pal_mod.markerWrite(u2n_m);
+    var u2n_eb: [20]u8 = undefined; var u2n_el = itoa_mod.itoa(elem, u2n_eb[0..]); var u2n_es: usize = @intCast(usize, 19) - @intCast(usize, u2n_el); pal_mod.markerWrite(u2n_eb[u2n_es..@intCast(usize, 19)]);
+    var u2n_rm: []const u8 = "r"; pal_mod.markerWrite(u2n_rm);
+    var u2n_rb: [20]u8 = undefined; var u2n_rl = itoa_mod.itoa(tid, u2n_rb[0..]); var u2n_rs: usize = @intCast(usize, 19) - @intCast(usize, u2n_rl); pal_mod.markerWrite(u2n_rb[u2n_rs..@intCast(usize, 19)]);
+    var u2n_cm: []const u8 = "c"; pal_mod.markerWrite(u2n_cm);
+    var u2n_cb: [20]u8 = undefined; var u2n_cl = itoa_mod.itoa(@intCast(u32, ic), u2n_cb[0..]); var u2n_cs: usize = @intCast(usize, 19) - @intCast(usize, u2n_cl); pal_mod.markerWrite(u2n_cb[u2n_cs..@intCast(usize, 19)]);
     return tid;
 }
 
@@ -521,13 +521,13 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
 }
 
  pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u32, params_count: u16, return_type: TypeId) u32 {
-     var p2m: []const u8 = "P2:n"; pal.markerWrite(p2m);
-     var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
+     var p2m: []const u8 = "P2:n"; pal_mod.markerWrite(p2m);
+     var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal_mod.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
      var i: usize = 0;
      while (i < self.types_len) : (i += 1) {
          var it = self.types_items[i];
          if (it.kind == TypeKind.fn_type and it.name_id == name_id and self.fn_items[self.types_items[i].payload_idx].module_id == module_id) {
-             var p2hm: []const u8 = "H"; pal.markerWrite(p2hm);
+             var p2hm: []const u8 = "H"; pal_mod.markerWrite(p2hm);
              return @intCast(u32, i);
          }
      }
@@ -538,8 +538,8 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
         .name_id = name_id, .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.fn_len - @intCast(usize, 1)),
     });
-    var p2sb: [20]u8 = undefined; var p2sl = itoa_mod.itoa(tid, p2sb[0..]); var p2ss: usize = @intCast(usize, 19) - @intCast(usize, p2sl); pal.markerWrite(p2sb[p2ss..@intCast(usize, 19)]);
-    var p2nl2: []const u8 = "\n"; pal.markerWrite(p2nl2);
+    var p2sb: [20]u8 = undefined; var p2sl = itoa_mod.itoa(tid, p2sb[0..]); var p2ss: usize = @intCast(usize, 19) - @intCast(usize, p2sl); pal_mod.markerWrite(p2sb[p2ss..@intCast(usize, 19)]);
+    var p2nl2: []const u8 = "\n"; pal_mod.markerWrite(p2nl2);
     return tid;
 }
 

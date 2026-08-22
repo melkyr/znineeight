@@ -287,10 +287,10 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
             if (s.type_id != @intCast(u32, 0)) { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return s.type_id; }
             if (ncgm) |ctm| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ctm; }
             if (ncg) |ct| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ct; }
-            var rdt_sv: []const u8 = "SVO\n"; pal.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
+        var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
         }
         if (s.type_id != @intCast(u32, 0)) { var rdt_nm: []const u8 = "STY:N"; pal_mod.markerWriteInt(rdt_nm, name_id); var rdt_tm: []const u8 = "STY:T"; pal_mod.markerWriteInt(rdt_tm, s.type_id); if (ncg) |nt| { var rdt_ntm: []const u8 = "STY:C"; pal_mod.markerWriteInt(rdt_ntm, nt); } return s.type_id; }
-        var rdt_sv: []const u8 = "SVO\n"; pal.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
+            var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
     if (ncg) |t| { var id3: []const u8 = "C2:T"; pal_mod.markerWriteInt(id3, t); return t; }
      var d8n_m: []const u8 = "D8:Nn"; pal_mod.markerWriteInt(d8n_m, name_id);
@@ -841,7 +841,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var pstart: u32 = @intCast(u32, 0);
         if (decl_cap != 0) {
             var ft = rtt_mod.resolvedTypeTableGet(self.type_table, decl_cap);
-            if (ft) |ftid| { var sfm: []const u8 = "SF:H\n"; pal.markerWrite(sfm);
+            if (ft) |ftid| { var sfm: []const u8 = "SF:H\n"; pal_mod.markerWrite(sfm);
             var ft_ty = self.registry.types_items[@intCast(usize, ftid)];
             if (ft_ty.kind == type_mod.TypeKind.fn_type) {
                 var ftp = self.registry.fn_items[@intCast(usize, ft_ty.payload_idx)];

@@ -406,11 +406,11 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                  };
                  var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
                  _ = sym_mod.symbolTableInsert(table, sym);
-                 var imr: []const u8 = "IMR:n"; pal.markerWrite(imr);
-                 var imb: [10]u8 = undefined; var iml = itoa_mod.itoa(path_id, imb[0..]); var ims: usize = @intCast(usize, 9) - @intCast(usize, iml); pal.markerWrite(imb[ims..@intCast(usize, 9)]);
-                 var imm: []const u8 = "m"; pal.markerWrite(imm);
-                 var immb: [10]u8 = undefined; var imml = itoa_mod.itoa(tid, immb[0..]); var imms: usize = @intCast(usize, 9) - @intCast(usize, imml); pal.markerWrite(immb[imms..@intCast(usize, 9)]);
-                 var imsnl: []const u8 = " "; pal.markerWrite(imsnl);
+                 var imr: []const u8 = "IMR:n"; pal_mod.markerWrite(imr);
+                 var imb: [10]u8 = undefined; var iml = itoa_mod.itoa(path_id, imb[0..]); var ims: usize = @intCast(usize, 9) - @intCast(usize, iml); pal_mod.markerWrite(imb[ims..@intCast(usize, 9)]);
+                 var imm: []const u8 = "m"; pal_mod.markerWrite(imm);
+                 var immb: [10]u8 = undefined; var imml = itoa_mod.itoa(tid, immb[0..]); var imms: usize = @intCast(usize, 9) - @intCast(usize, imml); pal_mod.markerWrite(immb[imms..@intCast(usize, 9)]);
+                 var imsnl: []const u8 = " "; pal_mod.markerWrite(imsnl);
              }
          },
         else => {},
