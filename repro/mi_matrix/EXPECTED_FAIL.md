@@ -1,4 +1,68 @@
-# mi_matrix corpus — expected-fail manifest (v43 2026-08-20)
+# mi_matrix corpus — expected-fail manifest (v44 2026-08-22)
+
+## GATE — self-compile residual closeout, final sweep + reconciliation (2026-08-22)
+
+Final gate sweep of the self-compile residual closeout plan
+(docs/superpowers/plans/2026-08-20-self-compile-residual-closeout-plan.md, AMENDMENT 12
+re-scope). Docs-only task — no `sf/src` changes (all fixes landed in the plan's prior F
+tasks). All gates re-verified with `/tmp/fx_subfolder/zig1` (rebuilt at HEAD `b9256f2e`,
+canonical std reinstalled at `/tmp/fx_subfolder/lib/`):
+
+- **4 residual fixes landed (all controller-verified this plan):**
+  - **F-C3-tighten** (`6534a65b`) — `local_decl_is_capture` flag gates the var-decl rename;
+    `json_parser_workaround` stdout BYTE-IDENTICAL to base (md5 `dc22fa473650bd3dcdf4d8a1559a260b`);
+    RV 21/21 runtime-identical.
+  - **F-A2EXT** (`b019c671`) — Option A `ts_ref_set` owner-module type-storage defs/externs;
+    self-compile `zG_` **9→0**.
+  - **F-E2DOWN** (`9e00bec7`) — void-payload union-literal store guard (`lower.zig:3757`);
+    self-compile `TokenValue has no member 'none'` **62→0**.
+  - **F-SWITCH** (`b9256f2e`) — switch-on-plain-enum case values now correct (`case 0/1/2`;
+    `enum_value_table` no longer resolves cross-module enum literals against a wrong, larger
+    enum's field list). Fixture `emission_type_storage_extern_xmod` prints **3**
+    (`case 0/1/2`), `emission_mangler_collision_xmod` prints **4** (NOTES corrected 3→4,
+    doc error).
+- **Self-compile residual state (AMENDMENT 12 — terminal gate re-scoped):** NOT buildable.
+  `timeout 120 /tmp/fx_subfolder/zig1 --markers --dump-c89 --output-dir /tmp/sc
+  sf/src/main.zig` → **194 remaining gcc errors** (`incompatible types when assigning` ×86
+  enum-temp-typed-as-`unsigned int`, `zT_<n> undeclared` ×68, `request for member` ×22,
+  `has no member` ×8, `pal` ×5, misc ×5) = **deferred NEW residual classes** (out of this
+  plan's scope, recorded for a future plan). Scoped gates HOLD: `zG_` re-count **0**,
+  `TokenValue.none` **0**, `json_parser_workaround` runtime-correct. This plan's success =
+  the 4 scoped fixes landed + all gates run + docs reconciled.
+- **Corpus (303 dirs): `OK=292 / FAIL=7 / ICE=0 / CRASH=0 / green-guards=4`** (292+7+4=303).
+  Corpus grew 287→303 (+16 emission-fixture dirs from this plan's R tasks — all 16 classify
+  **OK**; the plan's R fixtures `emission_type_storage_extern_xmod`, `emission_sibling_payload_scale_xmod`,
+  `emission_void_temp_scale_xmod` + the AMENDMENT 7/8 variation fixtures + the Task D legacy
+  fixtures `emission_mangler_collision_xmod` etc., all RED→OK). **FAIL=7 set unchanged**
+  (byte-identical to the v43 baseline): `field_store_drop` (error[3048]) +
+  `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) +
+  `parsergap_slice_expr_xmod` (error[2000]+[3000], clean-reject) + `parsergap_specifier_xmod`
+  (error[3013]) + `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod`
+  (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged
+  (`eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` /
+  `var_declared_void`). **No regression.**
+- **21-example matrix: 21/21 dump/gcc/link rc=0** (PASS=21, FAIL=0; 17 via main.zig + 4
+  single-file func_ptr_return/mandelbrot/quicksort/sort_strings). Runs: json_parser parses
+  test.json rc=0 (CWD-sensitive — from its dir); game_of_life + mud_server + rogue_mud
+  timeout-gated rc=124 with correct output (boots "Welcome to Rogue MUD!", "MUD server
+  listening on port 4000") — counted PASS.
+- **4 MD5 gates (2 RE-BASELINED, 2 UNCHANGED — runtime-priority override):**
+  - gol **`9cf758d9…` → `4afb203fdde7a880ec6e7aed32543691`** RE-BASELINED — the documented
+    baseline predated the F-attempt emission changes (this plan's F tasks); current HEAD
+    emits `4afb203f…` (matches the AMENDMENT 12 controller-verified value). Runtime-identity
+    justification: gol renders the glider grid rc=0 (md5 `40cfee96…` for 100 gen), corpus
+    classification unchanged — per the operator's runtime-priority rule the runtime is the
+    gate, not byte-identity.
+  - lisp **`88dcb7f9…` → `5f886646b164a70c52bf042eb54bda78`** (repo-root CWD) RE-BASELINED —
+    the gate-documented v43 value `88dcb7f9…` predates the F-attempt emission changes (the
+    residual plan's Global Constraints carried an intermediate AMENDMENT-5 value `851c9ed3…`,
+    now superseded); runtime-identity justification: REPL evaluates `(+ 1 2)`→3 /
+    `(define x 10)` / `(+ x 5)`→15 / `(car (quote (5 6)))`→5 rc=0.
+  - json `9720478c937409a29fe23ae0199821cf` — **UNCHANGED** (matches).
+  - mud `a1d0dd55aada9c3fd904ae33f54de32e` — **UNCHANGED** (matches).
+  Historical gol `9cf758d9…` / lisp `88dcb7f9…` refs below carry the `[→ 4afb203f…]` /
+  `[→ 5f886646…]` forward-pointer.
+- **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
 
 ## GATE — voiddecl-family plan closeout, final sweep + reconciliation (2026-08-20)
 
@@ -47,7 +111,7 @@ landed in the plan's prior F tasks). All gates re-verified with `/tmp/fx_subfold
   func_ptr_return/mandelbrot/quicksort/sort_strings). Runs: json_parser parses test.json rc=0
   (CWD-sensitive — from its dir); game_of_life + mud_server + rogue_mud timeout-gated rc=124 with
   correct output — counted PASS.
-- **4 MD5 gates:** gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3`
+- **4 MD5 gates:** gol `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22]
   (repo-root CWD — CWD-sensitive), mud `a1d0dd55aada9c3fd904ae33f54de32e` **byte-identical**; **json
   RE-BASELINED** `fc357296537347a0ef58af49b5a40081` → `9720478c937409a29fe23ae0199821cf` (AMENDMENT 3
   ruling 2026-08-19: the F1 front-resolution pass types json_parser's untyped module
@@ -111,7 +175,7 @@ the plan's prior task, commit `d5a966f7`). All gates re-verified with `/tmp/fx_s
 - **21-example matrix: 21/21 dump/gcc rc=0** (PASS=21, FAIL=0; 17 via main.zig + 4 single-file
   func_ptr_return/mandelbrot/quicksort/sort_strings).
 - **4 MD5 gates byte-identical** (all MATCH the v42 baselines, no re-baseline this plan): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22] (repo-root CWD —
   CWD-sensitive), json `9720478c937409a29fe23ae0199821cf`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
   Byte-identity by construction: emitted width-dependent output runs only for int temps ≤ 64 bits; no
   gate/corpus/example uses a >31-byte tagged-union `.int_const`.
@@ -186,7 +250,7 @@ std reinstalled at `/tmp/fx_subfolder/lib/`):
   loops on the missing `cls` — timeout-gated rc=124, counted PASS; mud_server rc=124 (timeout-gated
   server); rogue_mud boots + exits on `q` rc=0.
 - **4 MD5 gates byte-identical** (all MATCH the v40 baselines, no re-baseline this plan): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22] (repo-root CWD —
   CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
 - **Trigger isolation (recorded, NOT fixed):** the silent module 1-4 drop was the u16 span-start
@@ -222,7 +286,7 @@ Docs-only task — no `sf/src` changes. All gates re-verified with `/tmp/fx_subf
   month-day counts); game_of_life 100 generations rc=0; rogue_mud boots "Welcome to Rogue MUD!" +
   exits on `q` rc=0; json_parser parses test.json rc=0 (CWD-sensitive — run from its dir).
 - **4 MD5 gates byte-identical** (all MATCH the v39 baselines, no re-baseline this task): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22] (repo-root CWD —
   CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
 - **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
@@ -263,7 +327,7 @@ Docs-only task — no `sf/src` changes. All gates re-verified with `/tmp/fx_subf
   mud_server rc=124 ("MUD server listening on port 4000", timeout-gated server); rogue_mud boots
   "Welcome to Rogue MUD!" + exits on `q` rc=0.
 - **4 MD5 gates byte-identical** (all MATCH the current baselines, no re-baseline this task): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD —
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22] (repo-root CWD —
   CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** ("Analyzer tests passed.", rc=0).
 - **Self-compile re-check:** `zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig`
@@ -295,7 +359,7 @@ at HEAD `31d55084` + M4-fix, canonical std reinstalled at `/tmp/fx_subfolder/lib
   → **0 hits**. (The only `; else` text left in sf/src is the emitted-C string literal
   `"; else goto z_bb_"` at `c89_emit.zig:3833` — not a Z98 construct.)
 - **4 MD5 gates byte-identical** (baselines unchanged): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3` (repo-root CWD), json
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22] (repo-root CWD), json
   `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **Corpus spot-check (byte-identical, expect no movement):** `strictzig_brace_if_xmod` FAIL by
   design (M8's diagnostic fires on the fixture's invalid form — the M1 hard-RED fixture),
@@ -340,7 +404,7 @@ reinstalled at `/tmp/fx_subfolder/lib/`):
   rc=0); mud_server rc=124 ("MUD server listening on port 4000", timeout-gated server); rogue_mud
   boots "Welcome to Rogue MUD!" + exits on `q` rc=0.
 - **4 MD5 gates byte-identical** (all MATCH the plan/M2 baselines, measured with the rebuilt
-  compiler): gol `9cf758d96f25d41980379564a5501bc8`, lisp `88dcb7f9abf215aa6420f63e0e67e9c3`
+  compiler): gol `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `88dcb7f9abf215aa6420f63e0e67e9c3` [→ `5f886646…`, residual-closeout GATE re-baselined 2026-08-22]
   (repo-root CWD — CWD-sensitive), json `fc357296537347a0ef58af49b5a40081` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud
   `a1d0dd55aada9c3fd904ae33f54de32e`. Byte-identity proof: the migration emits byte-identical C.
 - **test_analyzer_bin PASS** ("Analyzer tests passed.", rc=0).
@@ -375,7 +439,7 @@ Final gate sweep of the parser-gaps plan (Workstream A + B). All gates re-verifi
   numbers recorded here.)
 - **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening on
   port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
-- **4 MD5 gates byte-identical:** gol `9cf758d96f25d41980379564a5501bc8`, lisp
+- **4 MD5 gates byte-identical:** gol `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp
   `524d2872daefb2677c8ddc1ac8f34cf5`, json `fc357296537347a0ef58af49b5a40081` (B-F2 re-baseline)
   [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
@@ -405,7 +469,7 @@ Compiler fix task of the parser-gaps plan (Workstream B). All gates re-verified 
   Runtime-identity proof (AMENDMENT B): fixed binary parses `test.json` rc=0, object fields
   comma-separated (`"status": "alpha",` / `"bugs": null`), NO trailing comma after last field —
   pre-fix had no object-field commas + trailing `,` after `"meta"`. Array elements unchanged.
-- **gol/lisp/mud byte-identical** (no for-index collisions): gol `9cf758d96f25d41980379564a5501bc8`,
+- **gol/lisp/mud byte-identical** (no for-index collisions): gol `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22],
   lisp `524d2872daefb2677c8ddc1ac8f34cf5`, mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **21-example matrix: 21/21 dump/gcc rc=0** (re-verified 2026-08-17 with the fixed compiler —
   17 via main.zig + 4 single-file entries: func_ptr_return/mandelbrot/quicksort/sort_strings).
@@ -439,7 +503,7 @@ at `/tmp/fx_subfolder/lib/`:
 - **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening on
   port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
 - **4 MD5 gates byte-identical** (unchanged from the F3 AMENDMENT B baseline): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
   `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081` [B-F2 re-baselined
   2026-08-17, see gate table; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **test_analyzer_bin PASS** (build_test.sh "5 passed, 4 failed" — unchanged baseline).
@@ -457,7 +521,7 @@ Final gate sweep of the std-lib closeout plan (F1+F2+F3 fixes). All gates re-ver
 - **21-example matrix: 21/21 dump/gcc/link rc=0.** mud_server run rc=124 ("MUD server listening
   on port 4000", timeout-gated); rogue_mud run rc=0 (boots "Welcome to Rogue MUD!", exits on `q`).
 - **4 MD5 gates byte-identical** (F3 re-baseline, AMENDMENT B): gol
-  `9cf758d96f25d41980379564a5501bc8`, lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
+  `9cf758d96f25d41980379564a5501bc8` [→ `4afb203f…`, residual-closeout GATE re-baselined 2026-08-22], lisp `524d2872daefb2677c8ddc1ac8f34cf5`, json
   `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081` [B-F2 re-baselined
   2026-08-17, see gate table; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55aada9c3fd904ae33f54de32e`.
 - **Corpus (248 dirs): `OK=242 / FAIL=2 / ICE=0 / CRASH=0 / green-guards=4`.** FAIL=2 =

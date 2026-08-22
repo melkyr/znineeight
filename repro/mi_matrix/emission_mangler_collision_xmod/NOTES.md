@@ -140,6 +140,9 @@ modules mangle `Color`'s storage global to the **same** `zG_E5B43CF8_Color`:
 cmod1/cmod2 both reference `zG_E5B43CF8_Color`, tmod's definition and its
 `tmod.h` extern become the unsuffixed `zG_E5B43CF8_Color`, and because
 `cmod1.h`/`cmod2.h` both include `tmod.h`, the extern is visible in every
-referencing TU → `gcc -c` rc=0 and the binary prints `3` (`1 + 2`).
+referencing TU → `gcc -c` rc=0 and the binary prints `4` (`kind1() + kind2()` =
+`1 + 3`; `kind1()` switches on `Color.Red` → 1, `kind2()` switches on
+`Color.Blue` → 3 — the documented `3 (1 + 2)` in an earlier revision was a DOC
+ERROR). The emitted `case 0/1/2` switch resolution is correct post-fix.
 (Verified: renaming the emitted `_1`/`_2` suffixes to the unsuffixed name —
 the post-fix mangler simulation — makes `gcc -c` rc=0.)
