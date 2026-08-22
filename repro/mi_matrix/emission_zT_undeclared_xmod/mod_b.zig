@@ -20,11 +20,25 @@ pub const Emitter = struct {
 pub fn emitInst(emitter: *Emitter, inst: Inst) u32 {
     var acc: u32 = 0;
     switch (inst) {
-        .jump => |t| {
-            var wty: u32 = 0;
-            var wsg: u8 = 0;
-            getTypeInfo(emitter, t.result, t.target, 0, &wty, &wsg);
-            acc = wty;
+        .binary => |b| {
+            var result = resolveTempName(emitter, b.result);
+            var lhs = resolveTempName(emitter, b.lhs);
+            var rhs = resolveTempName(emitter, b.rhs);
+            if (b.op >= 16) {
+                var wty: u32 = 0;
+                var wsg: u8 = 0;
+                getTypeInfo(emitter, b.result, b.lhs, b.rhs, &wty, &wsg);
+                acc = result + lhs + rhs + wty;
+            }
+        },
+        .string_const => |sc| {
+            var str: []const u8 = "hi";
+            var si: usize = 0;
+            while (si < str.len) : (si += 1) {
+                var b = str[si];
+                acc = acc + b;
+            }
+            acc = acc + sc.result;
         },
         else => {},
     }

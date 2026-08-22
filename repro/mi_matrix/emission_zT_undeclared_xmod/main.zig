@@ -4,6 +4,6 @@ const mod_b = @import("mod_b.zig");
 
 pub fn main() void {
     var em = mod_b.Emitter{ .x = 0 };
-    var i = mod_a.makeJump(5);
+    var i = mod_a.makeBinary(20, 1, 2, 3);
     std.io.printInt(@intCast(i32, mod_b.emitInst(&em, i)));
 }
