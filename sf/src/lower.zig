@@ -2121,16 +2121,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          }
                          var b2nl: []const u8 = "\n"; pal.markerWrite(b2nl);
                      }
-                      var node_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-                      if (node_rt) |nt| {
-                          var nty = self.ctx.registry.types_items[@intCast(usize, nt)];
-                          if (@enumToInt(nty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.tagged_union_type))) {
-                              var literal_tid = lowerGlobalRef(self, s.*, name_id);
-                              var tu_tid2 = nextTemp(self, nt);
-                               emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = tu_tid2, .field_id = type_mod.TU_FIELD_TAG, .src = literal_tid } });
-                              return tu_tid2;
-                          }
-                      }
                       return lowerGlobalRef(self, s.*, name_id);
                 } else if (s.kind == sym_mod.SymbolKind.module) {
                     var mam: []const u8 = "module used as value expression";
