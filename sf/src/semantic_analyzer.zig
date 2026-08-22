@@ -331,8 +331,9 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     var pfa_fnm: []const u8 = "PFA:FN"; pal_mod.markerWriteInt(pfa_fnm, field_name_id);
 
     if (base_node.kind == AstKind.ident_expr) {
-        _ = semanticAnalyzerResolveExpr(self, node.child_0);
-        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, base_node.payload)]);
+        var base_rt = semanticAnalyzerResolveExpr(self, node.child_0);
+        var base_ident_id = self.store.identifiers.items[@intCast(usize, base_node.payload)];
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_ident_id);
         if (sym) |s| {
             if (s.kind == sym_mod.SymbolKind.type_alias) {
                 var alias_type_id = s.type_id;
@@ -427,6 +428,17 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
                 return type_mod.TYPE_VOID;
             }
+        } else if (base_rt == type_mod.TYPE_VOID) {
+            var uisp: u32 = base_node.span_start;
+            var uiep = uisp + @intCast(u32, base_node.span_len);
+            var uinm = interner_mod.stringInternerGet(self.interner, base_ident_id);
+            var ui1: []const u8 = "identifier '";
+            var ui2: []const u8 = "' is not declared or imported in this module";
+            var uiparts: [3][]const u8 = [3][]const u8{ui1, uinm, ui2};
+            var uimsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &uiparts[0], @intCast(u32, 3));
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), self.source_file_id, uisp, uiep, uimsg);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
         }
     } else if (base_node.kind == AstKind.import_expr) {
         var path_id: u32 = @intCast(u32, base_node.payload);
