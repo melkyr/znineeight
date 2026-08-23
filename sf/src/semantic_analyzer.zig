@@ -1276,6 +1276,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
     var i: usize = 0;
+    var sw_base: usize = self.stmt_work_len;
 
     while (i < prongs.len) : (i += 1) {
         var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
@@ -1349,6 +1350,11 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
           var saved_tu = self.current_switch_cond_tu;
           var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
          self.current_switch_cond_tu = saved_tu;
+        while (self.stmt_work_len > sw_base) {
+            self.stmt_work_len -= @intCast(usize, 1);
+            var wi = self.stmt_work_items[self.stmt_work_len];
+            if (wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
+        }
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
         if (bt == type_mod.TYPE_NORETURN) {}

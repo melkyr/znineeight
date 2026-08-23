@@ -2445,12 +2445,40 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
         var wfn_mid = nameManglerMangle(emitter.mangler, func.name_id, @intCast(u8, 0), func.module_id);
         var wfn_name = interner_mod.stringInternerGet(emitter.interner, wfn_mid);
         var wrty = emitter.registry.types_items[@intCast(usize, func.return_type)];
-        var ws1: []const u8 = "int main(void) {\n"; bufferedWriterWrite(&emitter.writer, ws1);
+        var wsig0: []const u8 = "int main(void) {\n";
+        var wsig1: []const u8 = "int main(int argc, unsigned char** argv) {\n";
+        var wcall0: []const u8 = "();\n";
+        var wcall1: []const u8 = "(argc, argv);\n";
+        var wcall2: []const u8 = "(argc, zT_main_argv);\n";
+        var wsig: []const u8 = wsig0;
+        var wcall: []const u8 = wcall0;
+        var wslice_argv: u8 = @intCast(u8, 0);
+        if (func.params.len >= @intCast(usize, 2)) {
+            var wargv_ty = emitter.registry.types_items[@intCast(usize, func.params.items[1].type_id)];
+            if (wargv_ty.kind == type_mod.TypeKind.slice_type) {
+                wslice_argv = @intCast(u8, 1);
+            }
+        }
+        if (func.params.len > @intCast(usize, 0)) {
+            wsig = wsig1;
+            wcall = wcall1;
+            if (wslice_argv == @intCast(u8, 1)) {
+                wcall = wcall2;
+            }
+        }
+        bufferedWriterWrite(&emitter.writer, wsig);
         emitModuleInitCalls(emitter);
+        if (wslice_argv == @intCast(u8, 1)) {
+            var wargv_slice_c = getCTypeName(emitter.registry, emitter.mangler, func.params.items[1].type_id);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            bufferedWriterWrite(&emitter.writer, wargv_slice_c);
+            var wsa1: []const u8 = " zT_main_argv; zT_main_argv.ptr = (unsigned char**)argv; zT_main_argv.len = (unsigned int)argc;\n";
+            bufferedWriterWrite(&emitter.writer, wsa1);
+        }
         if (wrty.kind == type_mod.TypeKind.void_type) {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             bufferedWriterWrite(&emitter.writer, wfn_name);
-            var wv1: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, wv1);
+            bufferedWriterWrite(&emitter.writer, wcall);
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var wv2: []const u8 = "return 0;\n"; bufferedWriterWrite(&emitter.writer, wv2);
         } else if (wrty.kind == type_mod.TypeKind.error_union_type) {
@@ -2463,7 +2491,7 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var we2: []const u8 = "zT_main_result = "; bufferedWriterWrite(&emitter.writer, we2);
             bufferedWriterWrite(&emitter.writer, wfn_name);
-            var we3: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, we3);
+            bufferedWriterWrite(&emitter.writer, wcall);
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             if (wpay.kind == type_mod.TypeKind.void_type) {
                 var we4: []const u8 = "return zT_main_result.is_error ? zT_main_result.err : 0;\n"; bufferedWriterWrite(&emitter.writer, we4);
@@ -2474,7 +2502,7 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var wi1: []const u8 = "return (int)"; bufferedWriterWrite(&emitter.writer, wi1);
             bufferedWriterWrite(&emitter.writer, wfn_name);
-            var wi2: []const u8 = "();\n"; bufferedWriterWrite(&emitter.writer, wi2);
+            bufferedWriterWrite(&emitter.writer, wcall);
         }
         var ws4: []const u8 = "}\n\n"; bufferedWriterWrite(&emitter.writer, ws4);
         var wm: []const u8 = "WRAP:main\n"; pal.markerWrite(wm);
