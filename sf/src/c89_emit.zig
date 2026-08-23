@@ -2449,32 +2449,14 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
         var wsig1: []const u8 = "int main(int argc, unsigned char** argv) {\n";
         var wcall0: []const u8 = "();\n";
         var wcall1: []const u8 = "(argc, argv);\n";
-        var wcall2: []const u8 = "(argc, zT_main_argv);\n";
         var wsig: []const u8 = wsig0;
         var wcall: []const u8 = wcall0;
-        var wslice_argv: u8 = @intCast(u8, 0);
-        if (func.params.len >= @intCast(usize, 2)) {
-            var wargv_ty = emitter.registry.types_items[@intCast(usize, func.params.items[1].type_id)];
-            if (wargv_ty.kind == type_mod.TypeKind.slice_type) {
-                wslice_argv = @intCast(u8, 1);
-            }
-        }
         if (func.params.len > @intCast(usize, 0)) {
             wsig = wsig1;
             wcall = wcall1;
-            if (wslice_argv == @intCast(u8, 1)) {
-                wcall = wcall2;
-            }
         }
         bufferedWriterWrite(&emitter.writer, wsig);
         emitModuleInitCalls(emitter);
-        if (wslice_argv == @intCast(u8, 1)) {
-            var wargv_slice_c = getCTypeName(emitter.registry, emitter.mangler, func.params.items[1].type_id);
-            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-            bufferedWriterWrite(&emitter.writer, wargv_slice_c);
-            var wsa1: []const u8 = " zT_main_argv; zT_main_argv.ptr = (unsigned char**)argv; zT_main_argv.len = (unsigned int)argc;\n";
-            bufferedWriterWrite(&emitter.writer, wsa1);
-        }
         if (wrty.kind == type_mod.TypeKind.void_type) {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             bufferedWriterWrite(&emitter.writer, wfn_name);

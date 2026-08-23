@@ -60,13 +60,13 @@ pub fn copyFieldA() u32 {
 ```
 
 `main.zig` (reproduces the `too few arguments` shape — a `main` with parameters,
-mirroring `sf/src/main.zig`'s `pub fn main(argc: u32, argv: [][*]u8)`):
+mirroring `sf/src/main.zig`'s `pub fn main(argc: i32, argv: [*]*const u8)`):
 ```zig
 const std = @import("std");
 const mod_a = @import("mod_a.zig");
 const mod_b = @import("mod_b.zig");
 
-pub fn main(argc: u32, argv: [][*]u8) void {
+pub fn main(argc: i32, argv: [*]*const u8) void {
     _ = argv;
     var t = mod_b.copyFieldA();
     t = mod_b.copyFieldB();
