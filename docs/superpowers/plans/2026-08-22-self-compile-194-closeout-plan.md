@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the 194 residual self-compile gcc errors across 6 classes (V → R×6 → STOP → F-MIGRATE → I/F per merged group → GATE), so each class's full-graph fixture flips GREEN with no functional regression and the self-compile count trends down-or-flat. NO `rc=0` hard gate.
+**Goal:** Close the 194 residual self-compile gcc errors across 6 classes (V → R×6 → STOP → F-MIGRATE → I/F per merged group + orelse task → GATE), so each class's full-graph fixture flips GREEN with no functional regression and the self-compile count trends down-or-flat. NO `rc=0` hard gate.
 
-**Architecture:** One read-only V task (collection-iteration verify) then six R fixtures in a row (one per error class), a STOP for operator review (ruling recorded 2026-08-22: R5 migration first, C1 priority I/F, R1+R3 one I/F, R4+R6 one separate I/F), then F-MIGRATE (R5 `pal`→`pal_mod`), then I-A/F-A (C1), I-B/F-B (R1+R3 conflation root), I-C/F-C (R4+R6), soft re-count checks, then docs GATE. Runtime-identity is the gate, not byte-identity.
+**Architecture:** One read-only V task (collection-iteration verify) then six R fixtures in a row (one per error class), a STOP for operator review (ruling recorded 2026-08-22: R5 migration first, C1 priority I/F, R1+R3 one I/F, R4+R6 one separate I/F), then F-MIGRATE (R5 `pal`→`pal_mod` + AMENDMENT 2 undeclared-identifier diagnostic), then I-A/F-A (C1), I-B (R1+R3 conflation root) → **AMENDMENT 3: I-B2 (`capture_shadow` rename-redirect lifetime, before F-B) → F-B (re-scoped: type-differs disambiguation on I-B2's redirect, R1 38→9) → R-ORELSE/I-ORELSE/F-ORELSE (separate orelse value-flow task, 6 errors)**, then I-C/F-C (R4+R6), soft re-count checks, then docs GATE. Runtime-identity is the gate, not byte-identity.
 
 **Tech Stack:** Z98 compiler (`sf/src/*.zig`), compiler under test `/tmp/fx_subfolder/zig1`, gcc -m32 -std=c89, `bash sf/scripts/build_release.sh`, 4 MD5 gates, corpus 303, matrix 21/21.
 
@@ -300,24 +300,98 @@ If the fix can change existing-correct output (any corpus dir with same-named sa
 
 - [ ] **Step 4: Write report** at `.superpowers/sdd/task-IB-194-report.md`. No commit.
 
+**AMENDMENT 3 (2026-08-23, operator ruling — after I-B):** F-B's first implementation pass reached R1 38→15 (not →0). The 15 residual split: 9 = same conflation root but blocked by the design's scope guard (`local_decl_scopes[scli] <= self.scope_depth`), 6 = a DIFFERENT root (`orelse return/continue` lowering assigns the enclosing function's first param to the unwrap result temp). Operator analysis + ruling: (1) the scope guard is the wrong predicate for the type-differs clause (C emission is function-scoped — same name + different type in one function must rename regardless of Zig block scope), BUT relaxing it would be a patch that leaves the REAL root cause intact; (2) the real root cause is `capture_shadow`'s LIFETIME — the flat `U32ToU32Map` redirect (`lower.zig:321`) is shared by TWO rename kinds (arm-scoped capture renames via `maybeDisambiguateCapture` + function-scope type-differs renames) with ONE set of arm-exit resets (lower.zig:3472/3616/3997/4473/4560/4620/4672/4788) and NO plain-block-exit reset, so a scope-0 type-differs rename would be silently wiped by the next inner arm exit. **RULING: (i) amend plan — new read-only Task I-B2 investigates a correct scope-aware rename redirect BEFORE F-B; the uncommitted F-B edit is REVERTED (done); (ii) the orelse bug (6 errors) is a SEPARATE task (R-ORELSE/I-ORELSE/F-ORELSE) with its own fixture.** F-B re-scoped below: apply the type-differs disambiguation ONLY after I-B2's redirect design, dropping the scope guard (scope handled by the redirect, not the rename predicate). The I-B analysis (9-vs-6 split, site catalog) feeds I-B2 directly.
+
 ---
 
-### Task F-B: fix — R1+R3 name-keyed conflation root
+### Task I-B2: investigate — `capture_shadow` rename-redirect lifetime (READ-ONLY, before F-B)
 
 **Files:**
-- Modify: `sf/src/*.zig` (sites named in the I-B report)
+- Read: `sf/src/lower.zig` (capture_shadow map :321, init :455, puts :713/:736/:4967, resets :3472/:3616/:3997/:4473/:4560/:4620/:4672/:4788, readers `captureShadowShouldRedirect` :1282-1296, findLocalTemp, the two disambiguators :697-741; local_decl arrays incl. `local_decl_scope` + `local_decl_fn`)
+- Create: `.superpowers/sdd/task-IB2-194-report.md` (report, no commit)
+
+**Consumes:** I-B report (9-vs-6 residual split + site catalog), the reverted F-B working design. **Produces:** a correct scope-aware rename-redirect design that F-B implements.
+
+- [ ] **Step 1: Characterize the two rename kinds' lifetime needs**
+
+Enum the two `capture_shadow` writers: (a) `maybeDisambiguateCapture` (capture shadowing — arm-scoped, dies at arm exit), (b) type-differs var_decl rename (scope-0 function-top locals like `rparen`/`a3pnl` — must persist to function end). Confirm the flat map + arm-exit-only resets wipe (b) prematurely (a same-named inner arm would re-fire, or subsequent reads of the renamed local resolve to the wrong name).
+
+- [ ] **Step 2: Design the scope-aware redirect**
+
+Candidates to investigate: (1) store the rename mapping in the `local_decl` arrays themselves (add a `rename_id` column; `findLocalTemp`/read-resolution consult it with proper scope semantics), retiring the flat-map redirect for type-differs renames; (2) give `capture_shadow` entries a scope/function column and reset per-entry on block/arm exit instead of wholesale; (3) reset `capture_shadow` at plain block exit too + make the type-differs path register its rename with the local's live range. Recommend ONE. Name exact functions/lines + change shape.
+
+- [ ] **Step 3: Byte-identity reasoning + forks**
+
+Reason whether the redirect redesign can change the 4 MD5s / corpus / matrix (gates have zero within-function same-name/different-type collisions — a redesign that only affects renames should stay byte-identical, but verify the reader path is the same for gate programs). Flag forks → STOP.
+
+- [ ] **Step 4: Write report** at `.superpowers/sdd/task-IB2-194-report.md`. No commit.
+
+---
+
+### Task F-B: fix — R1+R3 name-keyed conflation root (re-scoped by AMENDMENT 3)
+
+**Files:**
+- Modify: `sf/src/lower.zig` (the I-B2 redirect design + the type-differs var_decl clause + `bindOptionalCapture` type-aware rename)
 - Report: `.superpowers/sdd/task-FB-194-report.md`
 
-**Consumes:** I-B report (+ any STOP ruling). **Produces:** `emission_assign_xmod` + `emission_request_member_xmod` GREEN; self-compile R1 86→0 + R3 22→0.
+**Consumes:** I-B2 report (redirect design) + I-B report (site catalog). **Produces:** `emission_assign_xmod` + `emission_request_member_xmod` GREEN; self-compile R1 38→9 (the 9 scope-guard-blocked conflation errors; the 6-orelse are out of scope → separate task), R3 22→0.
 
-- [ ] **Step 1: Apply the I-B fix** via `edit`/`fastedit`.
+- [ ] **Step 1: Apply the I-B2 redirect + type-differs disambiguation** via `edit`/`fastedit`. The var_decl type-differs clause does NOT carry the `scopes[scli] <= self.scope_depth` condition (scope is handled by the redirect); the `is_capture` clause keeps it verbatim (json behavior).
 - [ ] **Step 2: Rebuild + reinstall std**.
 - [ ] **Step 3: R1 + R3 fixtures GREEN** (dump + gcc → 0 errors).
-- [ ] **Step 4: Self-compile re-count** — R1 →0, R3 →0; record full class split of the residual file.
+- [ ] **Step 4: Self-compile re-count** — R1 38→9 (NOT 0 — the 6 orelse errors are a separate task), R3 22→0; record full class split of the residual file.
 - [ ] **Step 5: Runtime-identity gate** — matrix 21/21 runtime-identical; 4 MD5s runtime-identical (re-baseline default on benign diff per operator).
 - [ ] **Step 6: Commit**
 
 Commit: `fix: hoisted local disambiguation by type (name-keyed conflation, 108 errors)`
+
+---
+
+### Task R-ORELSE: repro — orelse return/continue value-flow bug
+
+**Files:**
+- Create: `repro/mi_matrix/emission_orelse_xmod/{main.zig,mod_a.zig,NOTES.md}`
+- Report: `.superpowers/sdd/task-RORELSE-194-report.md`
+
+**Consumes:** I-B report Class B (6 errors: `module_registry full`, `import_resolver content`, `pal f` — `orelse return null`/`continue` emits `zT_N = <first-param>` instead of the orelse expression). **Produces:** RED fixture.
+
+- [ ] **Step 1: Write a minimal fixture** — a fn with a parameter that does `var x = optional_ret() orelse return null;` (and a `continue` variant in a loop), then uses `x`. 3+ modules.
+- [ ] **Step 2: Verify RED** — dump + gcc; expect `incompatible types when assigning` with the orelse path assigning the first param (e.g. `zT_N = self;` then `x = zT_N`), matching the self-compile shape.
+- [ ] **Step 3: NOTES.md** — source, RED evidence, probable mechanism (lower.zig:3504-3548 orelse arm: `null_val` from `lowerExpr(child_1)` = the return/continue's temp, materialized into join_temp), expected post-fix.
+- [ ] **Step 4: Commit** — `repro: self-compile 194-error fixture (orelse return/continue value-flow)`
+
+---
+
+### Task I-ORELSE: investigate — orelse value-flow fix (READ-ONLY)
+
+**Files:**
+- Read: `sf/src/lower.zig:3504-3548` (orelse_expr arm)
+- Create: `.superpowers/sdd/task-IORELSE-194-report.md` (report, no commit)
+
+**Consumes:** R-ORELSE fixture. **Produces:** fix design for the orelse return/continue value-flow bug.
+
+- [ ] **Step 1: Trace** why the orelse RHS `return`/`continue` produces the first-param temp in join_temp (the value-flow: block-terminated handling in the orelse arm — does the arm emit a jump/ret that the join assignment should skip?).
+- [ ] **Step 2: Pin fix design** — exact function/line, lower-side shape.
+- [ ] **Step 3: Byte-identity reasoning + report** at `.superpowers/sdd/task-IORELSE-194-report.md`. No commit.
+
+---
+
+### Task F-ORELSE: fix — orelse value-flow
+
+**Files:**
+- Modify: `sf/src/lower.zig` (I-ORELSE site)
+- Report: `.superpowers/sdd/task-FORELSE-194-report.md`
+
+**Consumes:** I-ORELSE report. **Produces:** `emission_orelse_xmod` GREEN; self-compile 6 orelse errors →0.
+
+- [ ] **Step 1: Apply the I-ORELSE fix** via `edit`/`fastedit`.
+- [ ] **Step 2: Rebuild + reinstall std**.
+- [ ] **Step 3: Fixture GREEN** (dump + gcc → 0 errors).
+- [ ] **Step 4: Self-compile re-count** — the 6 orelse errors →0; record full class split.
+- [ ] **Step 5: Runtime-identity gate** — matrix 21/21 runtime-identical; 4 MD5s runtime-identical.
+- [ ] **Step 6: Commit**
+
+Commit: `fix: orelse return/continue emits the orelse value, not the first param`
 
 ---
 
