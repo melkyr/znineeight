@@ -726,6 +726,20 @@ fn addLocalDeclRenamed(self: *LirLowerer, src_name: u32, name_id: u32, type_id: 
     var adc_tb: [10]u8 = undefined; var adc_tl = itoa_mod.itoa(type_id, adc_tb[0..]); var adc_ts: usize = @intCast(usize, 9) - @intCast(usize, adc_tl); pal.markerWrite(adc_tb[adc_ts..@intCast(usize, 9)]);
     var adc_nl2: []const u8 = "\n"; pal.markerWrite(adc_nl2);
 }
+fn synthName(self: *LirLowerer, name_id: u32) u32 {
+    var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
+    var name_buf: [96]u8 = undefined;
+    var np: usize = @intCast(usize, 0);
+    while (np < orig_str.len and np < @intCast(usize, 95)) : (np += 1) { name_buf[np] = orig_str[np]; }
+    name_buf[np] = @intCast(u8, '_'); np += 1;
+    var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
+    var scb: [16]u8 = undefined; var scl = itoa_mod.itoa(sc, scb[0..]);
+    var sc_start: usize = @intCast(usize, 15) - @intCast(usize, scl);
+    var sci: usize = sc_start;
+    while (sci < sc_start + @intCast(usize, scl) and np < @intCast(usize, 95)) : (sci += 1) { name_buf[np] = scb[sci]; np += 1; }
+    return si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
+}
+
 fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_id: u32) u32 {
     var eli: usize = self.local_decl_count;
     while (eli > @intCast(usize, 0)) {
@@ -754,18 +768,7 @@ fn maybeDisambiguateCaptureIfTypeDiffers(self: *LirLowerer, capture_name: u32, c
     while (eli > @intCast(usize, 0)) {
         eli -= @intCast(usize, 1);
         if (self.local_decl_names[eli] == capture_name and self.local_decl_fn[eli] == self.fn_seq and self.local_decl_types[eli] != cap_type_id) {
-            var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
-            var name_buf: [96]u8 = undefined;
-            var np: usize = @intCast(usize, 0);
-            while (np < orig_str.len and np < @intCast(usize, 95)) : (np += 1) { name_buf[np] = orig_str[np]; }
-            name_buf[np] = @intCast(u8, '_'); np += 1;
-            var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
-            var scb: [16]u8 = undefined; var scl = itoa_mod.itoa(sc, scb[0..]);
-            var sc_start: usize = @intCast(usize, 15) - @intCast(usize, scl);
-            var sci: usize = sc_start;
-            while (sci < sc_start + @intCast(usize, scl) and np < @intCast(usize, 95)) : (sci += 1) { name_buf[np] = scb[sci]; np += 1; }
-            var syn_id = si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
-            return syn_id;
+            return synthName(self, capture_name);
         }
     }
     return capture_name;
@@ -1317,7 +1320,7 @@ fn resolveLocalSrcName(self: *LirLowerer, name_id: u32) u32 {
     var li: usize = self.local_decl_count;
     while (li > @intCast(usize, 0)) {
         li -= @intCast(usize, 1);
-        if (self.local_decl_src_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) { return self.local_decl_names[li]; }
+        if (self.local_decl_src_names[li] == name_id and self.local_decl_fn[li] == self.fn_seq and self.local_decl_scopes[li] <= self.scope_depth) { return self.local_decl_names[li]; }
     }
     return name_id;
 }
@@ -5002,32 +5005,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var scli: usize = @intCast(usize, 0);
             while (scli < self.local_decl_count) : (scli += @intCast(usize, 1)) {
                 if (self.local_decl_names[scli] == name_id and self.local_decl_scopes[scli] <= self.scope_depth and self.local_decl_is_capture[scli] != @intCast(u8, 0)) {
-                    var or_s = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
-                    var nb: [96]u8 = undefined;
-                    var np: usize = @intCast(usize, 0);
-                    while (np < or_s.len and np < @intCast(usize, 95)) : (np += 1) { nb[np] = or_s[np]; }
-                    nb[np] = @intCast(u8, '_'); np += 1;
-                    var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
-                    var scb: [16]u8 = undefined; var scl2 = itoa_mod.itoa(sc, scb[0..]);
-                    var s_start: usize = @intCast(usize, 15) - @intCast(usize, scl2);
-                    var si2: usize = s_start;
-                    while (si2 < s_start + @intCast(usize, scl2) and np < @intCast(usize, 95)) : (si2 += 1) { nb[np] = scb[si2]; np += 1; }
-                    c_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, nb[0..np]);
+                    c_name_id = synthName(self, name_id);
                     _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, name_id, c_name_id);
                     break;
                 }
                 if (self.local_decl_names[scli] == name_id and self.local_decl_fn[scli] == self.fn_seq and self.local_decl_types[scli] != decl_type) {
-                    var or_s2 = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
-                    var nb2: [96]u8 = undefined;
-                    var np2: usize = @intCast(usize, 0);
-                    while (np2 < or_s2.len and np2 < @intCast(usize, 95)) : (np2 += 1) { nb2[np2] = or_s2[np2]; }
-                    nb2[np2] = @intCast(u8, '_'); np2 += 1;
-                    var sc2 = self.synth_name_counter; self.synth_name_counter = sc2 + @intCast(u32, 1);
-                    var scb2: [16]u8 = undefined; var scl22 = itoa_mod.itoa(sc2, scb2[0..]);
-                    var s_start2: usize = @intCast(usize, 15) - @intCast(usize, scl22);
-                    var si22: usize = s_start2;
-                    while (si22 < s_start2 + @intCast(usize, scl22) and np2 < @intCast(usize, 95)) : (si22 += 1) { nb2[np2] = scb2[si22]; np2 += 1; }
-                    c_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, nb2[0..np2]);
+                    c_name_id = synthName(self, name_id);
                     type_rename = @intCast(u8, 1);
                     break;
                 }
