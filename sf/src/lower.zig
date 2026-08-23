@@ -3571,13 +3571,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var und_oej_tb: [10]u8 = undefined; var und_oej_tl = itoa_mod.itoa(join_temp, und_oej_tb[0..]); var und_oej_ts: usize = @intCast(usize, 9) - @intCast(usize, und_oej_tl); pal.markerWrite(und_oej_tb[und_oej_ts..@intCast(usize, 9)]);
         var und_oej_nl: []const u8 = "\n"; pal.markerWrite(und_oej_nl);
         self.current_bb = null_bb;
-        var null_val = lowerExpr(self, node.child_1);
-        var oe_int: SrcIntent = SrcIntent.value;
-        var oe_an = self.ctx.store.nodes.items[@intCast(usize, node.child_1)];
-        if (oe_an.kind == AstKind.null_literal) { oe_int = SrcIntent.null_src; }
-        if (oe_an.kind == AstKind.error_literal) { oe_int = SrcIntent.error_src; }
-        null_val = materializeInto(self, null_val, if (rt) |t| t else type_mod.TYPE_UNDEFINED, oe_int);
-        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = null_val } });
+        var oe_nd = self.ctx.store.nodes.items[@intCast(usize, node.child_1)];
+        if (oe_nd.kind == AstKind.return_stmt or oe_nd.kind == AstKind.break_stmt or oe_nd.kind == AstKind.continue_stmt) {
+            lowerStmt(self, node.child_1);
+        } else {
+            var null_val = lowerExpr(self, node.child_1);
+            var oe_int: SrcIntent = SrcIntent.value;
+            var oe_an = self.ctx.store.nodes.items[@intCast(usize, node.child_1)];
+            if (oe_an.kind == AstKind.null_literal) { oe_int = SrcIntent.null_src; }
+            if (oe_an.kind == AstKind.error_literal) { oe_int = SrcIntent.error_src; }
+            null_val = materializeInto(self, null_val, if (rt) |t| t else type_mod.TYPE_UNDEFINED, oe_int);
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = null_val } });
+        }
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
