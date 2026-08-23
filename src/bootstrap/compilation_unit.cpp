@@ -123,8 +123,8 @@ static void fatalError(const char* message) {
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
-      token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
-      transient_arena_(1024 * 1024 * 16), // 16MB cap for transient
+      token_arena_(1024 * 1024 * 24), // 24MB cap for tokens
+      transient_arena_(1024 * 1024 * 24), // 24MB cap for transient
       scratch_arena_(SCRATCH_ARENA_CAPACITY),
       scratch_nesting_depth_(0),
       type_interner_(arena),
@@ -248,7 +248,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     mod->file_id = file_id;
 
     // Initialize per-module arena for AST nodes
-    mod->mod_arena = new (arena_.alloc(sizeof(ArenaAllocator))) ArenaAllocator(5 * 1024 * 1024);
+    mod->mod_arena = new (arena_.alloc(sizeof(ArenaAllocator))) ArenaAllocator(10 * 1024 * 1024);
 
     // Compute stable hash for the module based on absolute canonical path
     char abs_path[1024];

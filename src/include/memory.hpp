@@ -141,7 +141,7 @@ public:
      */
     ArenaAllocator(size_t capacity_cap)
         : head(NULL), total_cap(capacity_cap), total_allocated_from_os(0), total_used_for_stats(0),
-          peak_allocated_(0), hard_limit_(16 * 1024 * 1024) {}
+          peak_allocated_(0), hard_limit_(24 * 1024 * 1024) {}
 
     /**
      * @brief Destroys the ArenaAllocator, freeing all memory chunks.

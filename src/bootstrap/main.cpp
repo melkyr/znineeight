@@ -11,8 +11,8 @@
 #include "platform.hpp"
 #include <new>
 
-// Default arena size for the bootstrap compiler: 16MB
-static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
+// Default arena size for the bootstrap compiler: 24MB (raised from 16MB — self-host needs ~45MB)
+static const size_t DEFAULT_ARENA_SIZE = 24 * 1024 * 1024;
 
 /**
  * @brief Executes the full compilation pipeline for a single file.
