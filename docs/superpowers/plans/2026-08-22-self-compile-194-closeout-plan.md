@@ -427,9 +427,11 @@ Name exact functions/lines + change shapes. Flag any that could affect existing-
 
 **Consumes:** I-C report (+ any STOP ruling). **Produces:** `emission_no_member_xmod` + `emission_misc_xmod` GREEN; self-compile R4 8→0 + R6 5→0.
 
+> **AMENDMENT 4 (2026-08-23, operator ruling "ammend opt a"):** the R6 fixture `emission_misc_xmod` uses a SLICE-typed argv (`main(argc: u32, argv: [][*]u8)` → emitted `Slice_zT_...`), which the I-C report §2.1 wrongly assumed emits `unsigned char**` (that is only the self-compile's `[*]*const u8` main). The brief's byte-exact Fix (2) therefore converts the fixture's `too few arguments` into a new `incompatible type for argument 2`. Fix (2) is EXTENDED (option a): when the Zig `main` has a slice-typed argv param, `emitMainWrapper` constructs the slice from the C runtime's argc/argv (a temp of the slice C type + `tmp.ptr = (unsigned char**)argv; tmp.len = (unsigned int)argc;` — C89-safe: no compound literals, struct temp + 2 field assigns), and calls `zF_main(argc, tmp)`. The 6 pre-existing non-target errors in `emission_misc_xmod` (`fb_1 = src` R1-family ×3 + `zT_23` R2 ×3, documented in the fixture `NOTES.md:170-174`) remain OUT of F-C scope; the fixture gate is therefore "0 NEW errors beyond those 6 documented non-target classes" (i.e. too-few-args gone, incompatible-arg gone, only the 6 pre-existing remain). Many-pointer argv (`[*]*const u8`, self-compile) keeps the `(argc, argv)` path byte-identical.
+
 - [ ] **Step 1: Apply the I-C fix** via `edit`/`fastedit`.
 - [ ] **Step 2: Rebuild + reinstall std**.
-- [ ] **Step 3: R4 + R6 fixtures GREEN** (dump + gcc → 0 errors).
+- [ ] **Step 3: R4 + R6 fixtures** — `emission_no_member_xmod` GREEN (gcc → 0 errors); `emission_misc_xmod` → 0 NEW errors beyond the 6 documented non-target classes (too-few-args + incompatible-arg gone; only `fb_1 = src` ×3 + `zT_23` ×3 remain).
 - [ ] **Step 4: Self-compile re-count** — R4 →0, R6 →0; record full class split of the residual file.
 - [ ] **Step 5: Runtime-identity gate** — matrix 21/21 runtime-identical; 4 MD5s runtime-identical (re-baseline default on benign diff per operator).
 - [ ] **Step 6: Commit**
