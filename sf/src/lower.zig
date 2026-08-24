@@ -4312,6 +4312,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var void_temp = nextTemp(self, type_mod.TYPE_VOID);
         lowerStmtBody(self, node_idx);
         return void_temp;
+    } else if (node.kind == AstKind.labeled_stmt) {
+        var ls_void = nextTemp(self, type_mod.TYPE_VOID);
+        lowerStmt(self, node_idx);
+        return ls_void;
     } else {
         return @intCast(u32, 0);
     }
