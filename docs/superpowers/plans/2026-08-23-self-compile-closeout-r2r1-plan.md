@@ -20,7 +20,7 @@
 - **The plan is the ONLY authority.** STOP on any issue/confusion. Commit messages verbatim per task.
 - **Self-compile re-count recipe:** `bash scripts/self_compile/build_zig1_5.sh` then `cd /tmp/zig1_5/gen && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /workspace/znineeight/sf/src/include -c *.c 2>/tmp/emit_errs_<n>.txt`.
 
-> **AMENDMENT 1 (2026-08-24, operator rulings after A-ANALYZE):** (1) `emission_misc_xmod` is NOT solved — it fails on a NEW live RED class (array-copy direct-assign: `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root = the array-copy `.assign`/`.store_local` path emits BOTH the bogus `dst = src;` line AND the correct copy loop, `c89_emit.zig`). Operator ruling: **extend this plan with a new R/I/F task set — R-ACOPY / I-ACOPY / F-ACOPY** (added below, before GATE-FINAL) to reproduce, investigate, and fix this array-copy direct-assign bug. (2) `emission_pal_xmod` now classifies **green-guard** (front-end `error[20]` reject = correct rejection of the undeclared-identifier class; the class can never be a gcc-RED fixture again). (3) **Corpus re-baselined 303 → 310** (GATE-FINAL measures the true 310-dir corpus: +7 new 194-plan fixture dirs; their per-dir classification recorded in the final sweep). (4) **A-ADD scope:** write fixtures for the 4 verified-live RED shapes (§5.1) AND a representative set of expected-GREEN control cells grouped by family (§5.2), documenting each control as GREEN per A-ADD Step 2 — do NOT force a wrong class. Incidental out-of-plan live bug (optional-fn-ptr wrap gap, §6.1) recorded only, NOT fixed.
+> **AMENDMENT 1 (2026-08-24, operator rulings after A-ANALYZE):** (1) `emission_misc_xmod` is NOT solved — it fails on a NEW live RED class (array-copy direct-assign: `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root = the array-copy `.assign`/`.store_local` path emits BOTH the bogus `dst = src;` line AND the correct copy loop, `c89_emit.zig`). Operator ruling: **extend this plan with a new R/I/F task set — R-ACOPY / I-ACOPY / F-ACOPY** (added below, before GATE-FINAL) to reproduce, investigate, and fix this array-copy direct-assign bug. **Ruling (b) (2026-08-24): A-ADD writes ALL 4 live-RED shapes (incl. the array-copy fixture `emission_array_copy_xmod`); R-ACOPY is re-pointed to VERIFY that fixture, not create its own.** (2) `emission_pal_xmod` now classifies **green-guard** (front-end `error[20]` reject = correct rejection of the undeclared-identifier class; the class can never be a gcc-RED fixture again). (3) **Corpus re-baselined 303 → 310** (GATE-FINAL measures the true 310-dir corpus: +7 new 194-plan fixture dirs; their per-dir classification recorded in the final sweep). (4) **A-ADD scope:** write fixtures for the 4 verified-live RED shapes (§5.1) AND a representative set of expected-GREEN control cells grouped by family (§5.2), documenting each control as GREEN per A-ADD Step 2 — do NOT force a wrong class. Incidental out-of-plan live bug (optional-fn-ptr wrap gap, §6.1) recorded only, NOT fixed.
 
 ---
 
@@ -248,25 +248,25 @@ Commit: `fix: Opt_10 incompatible assign (1 error)`
 
 ---
 
-### Task R-ACOPY: array-copy direct-assign fixture
+### Task R-ACOPY: array-copy direct-assign fixture (verify)
 
 **Files:**
-- Create: `repro/mi_matrix/emission_array_copy_xmod/{main.zig,mod_a.zig,mod_b.zig,NOTES.md}`
+- Verify: `repro/mi_matrix/emission_array_copy_xmod/` (created by A-ADD as the §5.1 array-copy live-RED shape — AMENDMENT 1 ruling (b): A-ADD writes all 4 live-RED shapes; R-ACOPY VERIFIES the array-copy fixture, it does NOT create its own)
 - Report: `.superpowers/sdd/task-RACOPY-r2r1-report.md`
 
-**Consumes:** the A-ANALYZE §5.1 finding (live RED: array-copy direct-assign bug — `emission_misc_xmod` fails on `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root: the array-copy `.assign`/`.store_local` path emits BOTH the bogus direct `dst = src;` line AND the correct copy loop `dst[_i] = src[_i];`, `c89_emit.zig`). **Produces:** RED fixture reproducing the exact array-copy direct-assign class.
+**Consumes:** the A-ADD array-copy fixture + the live misc residual (A-ANALYZE §5.1: `emission_misc_xmod` fails on `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root = the array-copy `.assign`/`.store_local` path emits BOTH the bogus direct `dst = src;` line AND the correct copy loop `dst[_i] = src[_i];`, `c89_emit.zig`). **Produces:** verified RED fixture reproducing the exact array-copy direct-assign class.
 
-- [ ] **Step 1: Identify the minimal trigger**
+- [ ] **Step 1: Confirm the A-ADD array-copy fixture is RED**
 
-From the probe shapes (if-stmt `pm1`, while `pm2`, switch-stmt `pm5` — all live RED), determine the minimal valid-Zig construct whose lowering emits the bogus `dst = src;` direct assign before the copy loop. Mirror the observed shape (e.g., `var fb: [N]u8; … fb = src;` array copy in a container).
+Re-run the A-ADD `emission_array_copy_xmod` fixture: `timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir <dir> <main.zig>` then `cd <dir> && gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c`. Expected: `error: assignment to expression with array type` at the direct-assign line (byte-identical class to the misc residual). If it is GREEN or fails differently, STOP and present.
 
-- [ ] **Step 2: Write the fixture + verify RED**
+- [ ] **Step 2: Confirm the NOTES.md pins the array-copy root cause**
 
-Full-graph 3+ modules where scale matters; RED must be `error: assignment to expression with array type` at the direct-assign line (byte-identical class to the misc residual; co-occurring `'zT_<n>' undeclared` may appear). NOTES.md: purpose, verbatim fixture, RED evidence, root-cause pin, expected post-fix.
+Verify NOTES.md states: root cause (the array-copy `.assign`/`.store_local` path emits both the bogus `dst = src;` line AND the correct copy loop), RED evidence, expected post-fix. Correct only if A-ADD's NOTES is materially wrong (minor wording) — otherwise leave verbatim.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit (only if the fixture needed correction)**
 
-Commit: `repro: self-compile 194-error fixture (array-copy direct assign)`
+If the fixture had to be corrected/re-verified to a byte-identical class, commit: `repro: self-compile 194-error fixture (array-copy direct assign)`. If it already matched A-ADD's committed state byte-identical, no commit — report only.
 
 ---
 
