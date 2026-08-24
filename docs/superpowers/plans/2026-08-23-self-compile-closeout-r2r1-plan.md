@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close out the 194-error self-compile plan, extend solved fixtures for analogous valid-Zig shapes, and fix the final 12 self-compile gcc errors (R2 `zT_<n>` undeclared ×11 + R1 Opt_10 ×1) via R/I/F.
+**Goal:** Close out the 194-error self-compile plan, extend solved fixtures for analogous valid-Zig shapes, fix the final 12 self-compile gcc errors (R2 `zT_<n>` undeclared ×11 + R1 Opt_10 ×1) via R/I/F, and fix the newly-surfaced array-copy direct-assign emission bug (R-ACOPY/I-ACOPY/F-ACOPY).
 
-**Architecture:** Ten-task sequence — GATE-CLOSE (docs) → A-ANALYZE (read-only) → A-ADD (fixtures) → R-R2/I-R2/F-R2 → R-R1/I-R1/F-R1 → GATE-FINAL. Soft gate: fixture GREEN + no regression is hard; self-compile re-count observational.
+**Architecture:** Eleven-task sequence — GATE-CLOSE (docs) → A-ANALYZE (read-only) → A-ADD (fixtures) → R-R2/I-R2/F-R2 → R-R1/I-R1/F-R1 → R-ACOPY/I-ACOPY/F-ACOPY (AMENDMENT 1) → GATE-FINAL. Soft gate: fixture GREEN + no regression is hard; self-compile re-count observational.
 
-**Tech Stack:** Z98 compiler (`sf/src/*.zig`), compiler under test `/tmp/fx_subfolder/zig1`, gcc -m32 -std=c89, 4 MD5 gates, matrix 21/21, corpus 303.
+**Tech Stack:** Z98 compiler (`sf/src/*.zig`), compiler under test `/tmp/fx_subfolder/zig1`, gcc -m32 -std=c89, 4 MD5 gates, matrix 21/21, corpus 310 (re-baselined, AMENDMENT 1).
 
 ## Global Constraints
 
@@ -19,6 +19,8 @@
 - **Z98 constraints** (AGENTS.md §1.3): no anytype/@Type; concrete maps; `@intCast` for i32↔usize; switch requires `else`.
 - **The plan is the ONLY authority.** STOP on any issue/confusion. Commit messages verbatim per task.
 - **Self-compile re-count recipe:** `bash scripts/self_compile/build_zig1_5.sh` then `cd /tmp/zig1_5/gen && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /workspace/znineeight/sf/src/include -c *.c 2>/tmp/emit_errs_<n>.txt`.
+
+> **AMENDMENT 1 (2026-08-24, operator rulings after A-ANALYZE):** (1) `emission_misc_xmod` is NOT solved — it fails on a NEW live RED class (array-copy direct-assign: `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root = the array-copy `.assign`/`.store_local` path emits BOTH the bogus `dst = src;` line AND the correct copy loop, `c89_emit.zig`). Operator ruling: **extend this plan with a new R/I/F task set — R-ACOPY / I-ACOPY / F-ACOPY** (added below, before GATE-FINAL) to reproduce, investigate, and fix this array-copy direct-assign bug. (2) `emission_pal_xmod` now classifies **green-guard** (front-end `error[20]` reject = correct rejection of the undeclared-identifier class; the class can never be a gcc-RED fixture again). (3) **Corpus re-baselined 303 → 310** (GATE-FINAL measures the true 310-dir corpus: +7 new 194-plan fixture dirs; their per-dir classification recorded in the final sweep). (4) **A-ADD scope:** write fixtures for the 4 verified-live RED shapes (§5.1) AND a representative set of expected-GREEN control cells grouped by family (§5.2), documenting each control as GREEN per A-ADD Step 2 — do NOT force a wrong class. Incidental out-of-plan live bug (optional-fn-ptr wrap gap, §6.1) recorded only, NOT fixed.
 
 ---
 
@@ -82,7 +84,7 @@ Report at `.superpowers/sdd/task-A-analyze-report.md`. No commit (read-only). If
 
 **Consumes:** A-ANALYZE report. **Produces:** committed RED fixtures for all ADD verdicts.
 
-- [ ] **Step 1: Write one fixture per ADD verdict**
+- [ ] **Step 1: Write one fixture per ADD verdict** (AMENDMENT 1 scope: the 4 verified-live RED shapes from A-ANALYZE §5.1 — array-copy direct-assign, orelse+labeled-stmt RHS, orelse+plain-block RHS, catch+labeled-stmt RHS — PLUS a representative set of expected-GREEN control cells grouped by family from §5.2; each control documented GREEN in NOTES.md, do NOT force a wrong class)
 
 Follow the established `emission_*_xmod` convention (full-graph 3+ modules where scale matters, `std.io.printInt` main, NOTES.md with purpose + verbatim fixture + RED evidence + root-cause pin + expected post-fix).
 
@@ -246,17 +248,84 @@ Commit: `fix: Opt_10 incompatible assign (1 error)`
 
 ---
 
+### Task R-ACOPY: array-copy direct-assign fixture
+
+**Files:**
+- Create: `repro/mi_matrix/emission_array_copy_xmod/{main.zig,mod_a.zig,mod_b.zig,NOTES.md}`
+- Report: `.superpowers/sdd/task-RACOPY-r2r1-report.md`
+
+**Consumes:** the A-ANALYZE §5.1 finding (live RED: array-copy direct-assign bug — `emission_misc_xmod` fails on `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root: the array-copy `.assign`/`.store_local` path emits BOTH the bogus direct `dst = src;` line AND the correct copy loop `dst[_i] = src[_i];`, `c89_emit.zig`). **Produces:** RED fixture reproducing the exact array-copy direct-assign class.
+
+- [ ] **Step 1: Identify the minimal trigger**
+
+From the probe shapes (if-stmt `pm1`, while `pm2`, switch-stmt `pm5` — all live RED), determine the minimal valid-Zig construct whose lowering emits the bogus `dst = src;` direct assign before the copy loop. Mirror the observed shape (e.g., `var fb: [N]u8; … fb = src;` array copy in a container).
+
+- [ ] **Step 2: Write the fixture + verify RED**
+
+Full-graph 3+ modules where scale matters; RED must be `error: assignment to expression with array type` at the direct-assign line (byte-identical class to the misc residual; co-occurring `'zT_<n>' undeclared` may appear). NOTES.md: purpose, verbatim fixture, RED evidence, root-cause pin, expected post-fix.
+
+- [ ] **Step 3: Commit**
+
+Commit: `repro: self-compile 194-error fixture (array-copy direct assign)`
+
+---
+
+### Task I-ACOPY: investigate array-copy direct-assign (read-only)
+
+**Files:**
+- Read: `sf/src/c89_emit.zig` (array-copy emission in `.assign`/`.store_local` — where `dst = src;` AND `dst[_i] = src[_i];` both emit), `sf/src/lower.zig` (array-copy lowering)
+- Create: `.superpowers/sdd/task-IACOPY-r2r1-report.md` (report, no commit)
+
+**Consumes:** R-ACOPY fixture + the live misc residual. **Produces:** pinned upstream fix design.
+
+- [ ] **Step 1: Trace the double emission**
+
+Determine where the direct `dst = src;` assignment is emitted in addition to the copy loop — identify the emitter site and why both forms are produced (a fall-through path, an unconditional direct-assign before a loop, etc.).
+
+- [ ] **Step 2: Pin the fix design**
+
+Name the exact site + change shape. Reason byte-identity: gates/corpus have no such array-copy direct-assign today (they're gcc-clean) → fix fires only on failing programs → no re-baseline expected.
+
+- [ ] **Step 3: STOP on fork if two valid fixes exist**
+
+If the fix has two valid resolutions with different byte-identity/correctness implications, present and STOP.
+
+- [ ] **Step 4: Write report**
+
+Report at `.superpowers/sdd/task-IACOPY-r2r1-report.md`. No commit.
+
+---
+
+### Task F-ACOPY: apply array-copy direct-assign fix
+
+**Files:**
+- Modify: the file(s) named by the I-ACOPY report
+- Report: `.superpowers/sdd/task-FACOPY-r2r1-report.md`
+
+**Consumes:** I-ACOPY report. **Produces:** ACOPY fixture GREEN + misc fixture GREEN + re-count.
+
+- [ ] **Step 1: Apply the fix** (per I-ACOPY, `edit`/`fastedit`)
+- [ ] **Step 2: Rebuild + reinstall std**
+- [ ] **Step 3: ACOPY fixture GREEN + misc fixture GREEN + prior fixtures still GREEN**
+- [ ] **Step 4: Re-count (observational)** — record array-copy class count (target 0) + full class split
+- [ ] **Step 5: Runtime-identity gate** — 4 MD5s + matrix 21/21
+- [ ] **Step 6: Commit**
+
+Commit: `fix: array-copy direct assign emits no bogus dst = src (array copy)`
+
+---
+
 ### Task GATE-FINAL: final sweep + reconciliation
 
 **Files:**
 - Modify: `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`
 - Report: `.superpowers/sdd/task-GATEFINAL-r2r1-report.md`
 
-**Consumes:** F-R2/F-R1 results. **Produces:** reconciled docs; milestone record if self-compile gcc-clean.
+**Consumes:** F-R2/F-R1/F-ACOPY results. **Produces:** reconciled docs; milestone record if self-compile gcc-clean.
 
 - [ ] **Step 1: Final gate sweep**
 
-4 MD5s byte-identical, matrix 21/21, corpus 303 unchanged, `test_analyzer_bin` "5 passed, 4 failed". Record final self-compile re-count.
+4 MD5s byte-identical, matrix 21/21, **corpus 310 (re-baselined from 303 — AMENDMENT 1: +7 new 194-plan fixture dirs; pal classifies green-guard via `error[20]` reject)**, `test_analyzer_bin` "5 passed, 4 failed". Record final self-compile re-count.
 
 - [ ] **Step 2: Update EXPECTED_FAIL.md**
 
