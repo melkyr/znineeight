@@ -156,6 +156,8 @@ pub fn resolveStmtTypes(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: 
         }
     }
     var cd = depth + @intCast(u32, 1);
-    if (node.child_0 != 0) { resolveStmtTypes(ct, module_id, node.child_0, cd); }
-    if (node.child_1 != 0) { resolveStmtTypes(ct, module_id, node.child_1, cd); }
+    if (node.kind != AstKind.builtin_call) {
+        if (node.child_0 != 0) { resolveStmtTypes(ct, module_id, node.child_0, cd); }
+        if (node.child_1 != 0) { resolveStmtTypes(ct, module_id, node.child_1, cd); }
+    }
 }
