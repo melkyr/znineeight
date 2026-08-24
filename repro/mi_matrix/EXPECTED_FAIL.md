@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v45 2026-08-24)
+# mi_matrix corpus — expected-fail manifest (v46 2026-08-24)
+
+## GATE — self-compile residual closeout R2/R1, final sweep + reconciliation (2026-08-24)
+
+Final gate sweep of the self-compile closeout plan
+(docs/superpowers/plans/2026-08-23-self-compile-closeout-r2r1-plan.md). Docs-only task — no
+`sf/src` changes (all fixes landed in the plan's prior F tasks). All gates re-verified with
+`/tmp/fx_subfolder/zig1` (rebuilt by F-ACOPY at HEAD `0af060d8`, canonical std reinstalled at
+`/tmp/fx_subfolder/lib/`), under the operator ruling **AMENDMENT 5** (`935374d9`) — record
+`plat_stubs_missing_xmod` truthfully, no new fix task:
+
+- **4 residual fixes landed (all controller-verified this plan):**
+  - **F-R2** (`143766e2`) — array-`.len` emits VOID instead of a bogus `unsigned int` value
+    (the R2 `zT_<n> undeclared` ×6 class).
+  - **F-ORELSEBLK** (`7a7f5928`) — orelse-block terminator fixed (the R2 orelse-block ×5
+    class). Fix A (labeled-stmt orelse/catch RHS → block_terminated guard) did NOT close
+    `emission_orelse_labeled_xmod` / `emission_catch_labeled_xmod` — recorded truthfully below.
+  - **F-R1** (`a8ec24f7`) — R1 `Opt_10` incompatible-assign closed (×1).
+  - **F-ACOPY** (`0af060d8`) — array-copy direct assign emits no bogus `dst = src` (the
+    AMENDMENT-1 array-copy live RED; `emission_misc_xmod` residual now GREEN).
+- **MAJOR MILESTONE — self-compile gcc-CLEAN (12→0):** `bash scripts/self_compile/build_zig1_5.sh`
+  → dump rc=0, 40 `.c` emitted, in-script gcc -c clean (warnings only). Independent re-count:
+  `cd /tmp/zig1_5/gen && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+  -Wno-implicit-function-declaration -I /workspace/znineeight/sf/src/include -c *.c
+  2>/tmp/emit_errs_final.txt` → gcc rc=0, **0 `: error:` lines, 40 files**. The 12 residuals
+  (R2 array-`.len`→VOID ×6, orelse-block terminator ×5, R1 Opt_10 ×1) are all closed. The
+  script's final LINK still fails `undefined reference to 'c_exit'` — the documented
+  pre-existing out-of-scope issue (build_zig1_5.sh never links `sf/src/c_exit.c`; the gcc -c
+  re-count gate is the authority for the milestone).
+- **Corpus (322 dirs): `OK=307 / FAIL=9 / CRASH=1 / ICE=0 / green-guards=5`** (307+9+1+5=322).
+  Corpus grew 310→322 (+10 A-ADD `emission_*_xmod` dirs + the 2 R-task dirs
+  `emission_temp_index_drift_xmod` [F-R2] + `emission_opt10_assign_xmod` [F-R1]). **Documented
+  FAIL=7 set unchanged** (byte-identical to the v45 baseline): `field_store_drop` (error[3048]) +
+  `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) +
+  `parsergap_slice_expr_xmod` (error[2000]+[3000], clean-reject) + `parsergap_specifier_xmod`
+  (error[3013]) + `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod`
+  (M1 hard-RED fixture, FAIL **by design**).
+- **FAIL +2 (A-ADD live-RED labeled shapes — recorded truthfully, out of this plan's fix
+  scope):** `emission_orelse_labeled_xmod` + `emission_catch_labeled_xmod` (the po1/pco1
+  labeled-stmt classes) remain RED: gcc rc=1 `error: incompatible types when assigning to type
+  'int' from type 'zT_…_Slice_zT_…_u'` at `zT_6 = prefix;` / `zT_4 = prefix;`. F-ORELSEBLK's
+  Fix A did NOT close them — separate live bugs, documented as out-of-scope.
+- **Green-guards = 5** = documented 4 (`eu_assign_incompat_payload` / `euvoid_val_catch` /
+  `field_access_optional` / `var_declared_void`, all error[3000], 0 `.c`) + **`emission_pal_xmod`
+  (error[20] reject = pal green-guard per AMENDMENT 1)**.
+- **CRASH = 1 — `plat_stubs_missing_xmod` (PRE-EXISTING CRASH — mis-recorded previously, now
+  corrected):** ASan SEGV in `resolveStmtTypes` (front_resolution.zig:131), 0 `.c`, dump rc=1.
+  Bisected NOT caused by this plan (crashes at plan-start HEAD `b9256f2e`; last-known-good ~Aug 18
+  `f4_fix_zig1`; suspected window = the silent-drop u32-widening `378c71fa`/`50ebbf82`,
+  unverified). Every prior gate sweep (voiddecl/widthbits/residual/GATE-CLOSE) mis-recorded it as
+  OK — the sweeps' "identical rc+stderr" comparisons masked a crash present in both reference and
+  new compilers. **Operator ruling (AMENDMENT 5, `935374d9`): record truthfully, no new fix task.**
+- **21-example matrix: 21/21 dump/gcc/link rc=0** (PASS=21, FAIL=0; 17 via main.zig + 4
+  single-file func_ptr_return/mandelbrot/quicksort/sort_strings). Runs: json_parser parses
+  test.json rc=0 from its dir; game_of_life renders the glider grid rc=0; rogue_mud boots
+  "Welcome to Rogue MUD!" rc=0; mud_server "MUD server listening on port 4000" (timeout-gated
+  server).
+- **4 MD5 gates byte-identical (no re-baseline):** gol `4afb203f…` + lisp `5f886646…`
+  (repo-root CWD) + json `d31e43b1…` + mud `a1d0dd55…` — all 4 match the v45 values.
+- **test_analyzer_bin PASS** (build_test.sh battery "5 passed, 4 failed" — unchanged baseline).
 
 ## GATE — self-compile 194-error plan closeout, final sweep + reconciliation (2026-08-24)
 
