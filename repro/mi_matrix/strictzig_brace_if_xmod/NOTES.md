@@ -1,4 +1,4 @@
-# strictzig_brace_if_xmod — migration gate fixture + byte-identity proof (M1)
+# strictzig_brace_if_xmod — migration gate fixture + byte-identity proof (M1) — GREEN-GUARD
 
 ## What it tests
 The invalid `if (cond) stmt; else stmt;` form (`;` before `else`), which is invalid in the Zig
@@ -48,8 +48,9 @@ if (kind == 0) { x = x + 1; } else { x = x - 1; }
 ⇒ M2's brace migration of the 3 sites emits byte-identical C ("no re-baseline" guarantee).
 
 ## Post-migration expectation
-The fixture can never be GREEN on its own: it IS the invalid form, so it is a hard-RED
-two-state fixture. The braced control is what the migration produces; M3 treats the fixture as
-an OK dir only via the braced form. The fixture flips FAIL→OK only if zig1 were ever to accept
-the invalid form (a regression). M3's exact expectation is recorded in the M3 task; not decided
-here.
+The fixture can never be GREEN on its own: it IS the invalid form. Per the oracle ruling
+(2026-08-24, out-of-scope residual closeout plan), real Zig rejects `if (cond) stmt; else stmt;`
+— so zig1's `error[2000]` rejection is CORRECT behavior. **Reclassified GREEN-GUARD** (correct
+rejection): the fixture is no longer counted as FAIL. The braced control is what the migration
+produced (migrated at HEAD `1585adf2`, 2026-08-18); the migration emits byte-identical C. The
+fixture flips green-guard→OK only if zig1 were ever to accept the invalid form (a regression).

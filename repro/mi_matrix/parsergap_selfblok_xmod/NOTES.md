@@ -1,4 +1,4 @@
-# parsergap_selfblok_xmod — RED: brace-less `if … ; else …` (self-compile blocker)
+# parsergap_selfblok_xmod — RED: brace-less `if … ; else …` (self-compile blocker) — GREEN-GUARD
 
 ## What it tests
 The construct that blocks self-compile — a **brace-less `if`** whose then-body is a
@@ -117,9 +117,11 @@ fine; brace-less else-after-if only works when the then-body is a `{…}` block.
 - Rejecting site: the statement loop sees `else` at statement-start → `error[2000]
   expected expression` + `error.UnexpectedToken`.
 
-## Post-fix expectation (input to I-SELFBLOK)
-`parserParseIfStmt` must not swallow the `;` before checking for `else`: peek for
-`kw_else` immediately after the brace-less then-expression (before the `;` consumption),
-or defer `;` absorption until after the else dispatch. After the fix: `if (c) z = 1;
-else z = 2;` parses as one if_stmt with else — frontend GREEN (rc=0, .c emitted), and
-the self-compile cascade at `type_resolver.zig:981` clears, unpinning the next blocker.
+## Post-fix expectation — SUPERSEDED by oracle ruling (2026-08-24)
+The pre-oracle plan expected a parser-leniency fix (make `parserParseIfStmt` not swallow the `;`
+before `else`). That expectation is SUPERSEDED: per the oracle ruling (out-of-scope residual
+closeout plan, oracle decision #2), real Zig REJECTS the brace-less `if (cond) stmt; else stmt;`
+form, so the parser must NOT be made lenient. **Reclassified GREEN-GUARD** (correct rejection):
+zig1's `error[2000]` rejection of this fixture is CORRECT. The fix was a SOURCE MIGRATION of the
+3 `sf/src` sites to the braced form (done at HEAD `1585adf2`, 2026-08-18) — the self-compile
+cascade at `type_resolver.zig:981`/`diagnostics.zig:295` is gone (frontend rc=0, 0 `error[2000]`).
