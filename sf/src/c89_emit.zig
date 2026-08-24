@@ -4469,13 +4469,50 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var vd2: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, vd2);
             } else {
-                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                bufferedWriterWrite(&emitter.writer, name);
-                var s: []const u8 = " = ";
-                bufferedWriterWrite(&emitter.writer, s);
-                bufferedWriterWrite(&emitter.writer, val);
-                var s2: []const u8 = ";\n";
-                bufferedWriterWrite(&emitter.writer, s2);
+                var is_arr: u8 = @intCast(u8, 0);
+                var arr_len: u32 = @intCast(u32, 0);
+                var tj_ca: usize = @intCast(usize, 0);
+                while (tj_ca < emitter.current_fn.hoisted_temps.len) : (tj_ca += @intCast(usize, 1)) {
+                    var ht_ca = emitter.current_fn.hoisted_temps.items[tj_ca];
+                    if (ht_ca.temp_id == sl.value) {
+                        var dty = emitter.registry.types_items[@intCast(usize, ht_ca.type_id)];
+                        if (dty.kind == type_mod.TypeKind.array_type) {
+                            is_arr = @intCast(u8, 1);
+                            var ap = emitter.registry.array_items[@intCast(usize, dty.payload_idx)];
+                            arr_len = ap.length;
+                        }
+                        break;
+                    }
+                }
+                if (is_arr == @intCast(u8, 1)) {
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    var loop_begin: []const u8 = "{\n";
+                    bufferedWriterWrite(&emitter.writer, loop_begin);
+                    var loop_decl: []const u8 = "    unsigned int _i = 0;\n";
+                    bufferedWriterWrite(&emitter.writer, loop_decl);
+                    var loop_cond: []const u8 = "    while (_i < ";
+                    bufferedWriterWrite(&emitter.writer, loop_cond);
+                    var alb: [20]u8 = undefined;
+                    var all = itoa_mod.itoa(arr_len, alb[0..]);
+                    var als: usize = @intCast(usize, 19) - @intCast(usize, all);
+                    bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
+                    var loop_body: []const u8 = ") {\n        ";
+                    bufferedWriterWrite(&emitter.writer, loop_body);
+                    bufferedWriterWrite(&emitter.writer, name);
+                    var lb: []const u8 = "[_i] = ";
+                    bufferedWriterWrite(&emitter.writer, lb);
+                    bufferedWriterWrite(&emitter.writer, val);
+                    var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
+                    bufferedWriterWrite(&emitter.writer, rb);
+                } else {
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    bufferedWriterWrite(&emitter.writer, name);
+                    var s: []const u8 = " = ";
+                    bufferedWriterWrite(&emitter.writer, s);
+                    bufferedWriterWrite(&emitter.writer, val);
+                    var s2: []const u8 = ";\n";
+                    bufferedWriterWrite(&emitter.writer, s2);
+                }
             }
         },
         .load_global => |lg| {
