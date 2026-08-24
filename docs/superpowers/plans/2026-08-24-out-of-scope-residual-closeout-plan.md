@@ -329,3 +329,33 @@ Seven pre-existing FAIL fixtures. Two collapse into one root (brace-less `if/els
 - **Self-compile:** frontend frontend-blocker (brace-less if) cleared; gcc -c stays 0-error; **LINK green** (`zig1_5_clean` + `zig1_5_asan` build) — new milestone.
 - **Oracle compliance:** `{x}` prints lowercase hex (`41` for 65); brace-less `if;else` stays a correct rejection; scalar-base slice and missing-comma are clean errors.
 - **Byte-identity:** all 4 MD5s unchanged unless a task explicitly receives operator approval for a runtime-identical re-baseline (only the temp-sentinel task is at risk; it must prove byte-identity before commit).
+
+---
+
+## AMENDMENT 1 — plat_stubs fix = Option B (kind-gated recursion)  [2026-08-24, operator ruling]
+
+Task 1.1 (I-PLATSTUBS) pinned the mechanism: `AstKind.builtin_call` stores its interned
+name string-id in `child_0` (`parser.zig:645`; `lower.zig:3169/3225` dispatch on
+`child_0 == name_id`), and `resolveStmtTypes` (`front_resolution.zig:159→133`)
+unconditionally recurses into `child_0`/`child_1` as node indices. The crash is
+path-dependent because module-path interning shifts the builtin string-ids by 1
+(27/28 vs 28/29), selecting different stale slots in the nodes array's spare capacity
+(≥ `len` but within capacity) → garbage-cascade → wild-index SEGV.
+
+I-PLATSTUBS escalated a plan Step-3 fork (candidates differ in byte-identity impact on
+the GREEN gol gate). **Operator RULED Option B — kind-gated recursion** (the
+semantically-correct root fix), NOT the bounds-guard Option A.
+
+Consequences for F-PLATSTUBS (Task 1.2):
+- Implement kind-gated recursion: in `resolveStmtTypes`, only recurse into `child_0`/
+  `child_1` for node kinds whose children ARE node indices; do NOT recurse into
+  `builtin_call.child_0` (a string id). Equivalently, skip the builtin-call callee
+  children (candidate (c) ≡ (b) here per the audit).
+- Because Option B changes traversal on all 4 gates (all have reachable builtin_calls
+  in fn bodies), F-PLATSTUBS **MUST gate-verify** the 4 MD5s (gol `4afb203f…`, lisp
+  `5f886646…` repo-root CWD, json `d31e43b1…`, mud `a1d0dd55…`) and the 21-fixture
+  matrix. If ANY gate MD5 changes, that is a byte-identity break on a currently-GREEN
+  program and REQUIRES a fresh operator runtime-identity re-baseline ruling BEFORE the
+  fix may be committed — do not re-baseline silently.
+- Fixture outcome: `plat_stubs_missing_xmod` compiles GREEN (no SEGV, both invocation
+  forms), CRASH→GREEN in the corpus.
