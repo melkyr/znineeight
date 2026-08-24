@@ -1,101 +1,73 @@
-# parsergap_strict_comma_xmod — RED: fn-call missing-comma `f(1 2)` SILENTLY accepted (A-F3)
+# parsergap_strict_comma_xmod — GREEN-GUARD: fn-call missing-comma `f(1 2)` correctly rejected (F-STRICTCOMMA)
 
 ## What it tests
-A fn-call argument list missing the separating comma is **silently accepted** and
-compiles into the same program as the valid 2-arg call:
+A fn-call argument list missing the separating comma must be a **clean parse error**,
+matching real Zig (which rejects `f(1 2)` — expected comma):
 
 ```zig
 var r1 = f(1 2);        // malformed — no comma between args
 ```
 
-The loop-top mirror at `parser.zig:401-407` advances the comma **optionally**
-(`parser.zig:405`: `if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);`),
-so after parsing argument `1` the parser never demands a `,` — it falls into the
-`while` loop, parses `2` as a second argument, and emits a normal 2-arg fn_call.
-The A-F3 diagnostic fix (F2) must make this a hard error. This RED baseline is the
-gate for F2 (restore strict comma diagnostics at the fn-call loop-top).
+Reclassified **GREEN-GUARD** (correct rejection, oracle-governed): real Zig's grammar
+requires a `,` between call arguments, so rejecting `f(1 2)` is correct compiler
+behavior — not a gap. 0 `.c` emitted, `error[2000]` diagnostic only, no ICE, no crash.
 
-## Measured baseline — RED (2026-08-17, `/tmp/fx_subfolder/zig1`, repo HEAD `c8d08939`)
-
-Run from the repro dir (CWD = repro dir; bare `@import("std")` resolves via the
-installed lib at `/tmp/fx_subfolder/lib`):
-
-```
-cd repro/mi_matrix/parsergap_strict_comma_xmod && timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 main.zig > /tmp/x.c 2>/tmp/x.err; echo rc=$?
-```
-
-- **rc=0** (SILENT — no diagnostic, no crash)
-- **`/tmp/x.err` is 0 bytes** (empty stderr)
-- **`/tmp/x.c` = 10495 bytes** (`.c` emitted — the malformed call fully compiles)
-- **gcc on the emitted C: rc=0** (links clean)
-- **run: rc=0, prints `3`** — `f(1 2)` behaves exactly like `f(1,2)`.
-
-```
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include /tmp/x.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/x   # gcc rc=0
-timeout 30 /tmp/x                                                                                                                          # prints: 3run rc=0
-```
-
-⇒ Full silent regression: malformed `f(1 2)` not only passes the frontend, it
-compiles AND runs and prints `3`. Classified **FAIL-by-silence** (a valid-looking
-frontend gap — must be classified FAIL, never OK).
-
-## Unterminated variant `f(1` — NOT silent today
-Second fixture variant (code kept here as a comment block; the file itself was not
-committed so the dir contains exactly `main.zig` + `NOTES.md`):
+## Fix (F-STRICTCOMMA, commit `7bb775ad` — restore strict comma/close diagnostics)
+The fn-call argument loop at `sf/src/parser.zig:417-423` (fn `parserParseFnCall`) now
+REQUIRES the comma between arguments instead of advancing it optionally:
 
 ```zig
-const std = @import("std");
-fn f(a: i32, b: i32) i32 { return a + b; }
-pub fn main() void {
-    var r1 = f(1;
-    std.io.printInt(r1);
+while (true) {
+    var arg = try parserParseExprPrec(self, Prec.none);
+    u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
+    if (parserPeek(self).kind == TokenKind.rparen) break;
+    _ = try parserExpect(self, TokenKind.comma);   // REQUIRE the comma between args
+    if (parserPeek(self).kind == TokenKind.rparen) break;
 }
+var rparen = try parserExpect(self, TokenKind.rparen);
 ```
 
-Run (same command shape, source at `/tmp/unterminated.zig`):
-`timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 /tmp/unterminated.zig > /tmp/u.c 2>/tmp/u.err; echo rc=$?`
+After each argument: if the next token is `)` the list ends (no comma required); otherwise
+the comma is demanded via `parserExpect` (missing comma → `error[2000] expected ',' but
+found <tok>`). The post-comma `)` break preserves the trailing-comma form (`f(1, 2,)`,
+`f(1, )`) — trailing commas are legal in real Zig and remain accepted.
 
-- **rc=2** (frontend error; no crash)
-- `/tmp/u.err`:
+## Verified behavior (2026-08-24, `/tmp/fx_subfolder/zig1`, rebuilt at HEAD `a9ea91f0`, canonical std reinstalled)
 
 ```
-/tmp/unterminated.zig:4:16: error[2000]: expected expression
+cd repro/mi_matrix/parsergap_strict_comma_xmod && timeout 60 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/fx main.zig
+```
+
+- **rc=2** (frontend error; no crash, no ICE)
+- **`/tmp/fx/*.c` = 0 files** (0 `.c` emitted)
+- stderr:
+
+```
+main.zig:4:17: error[2000]: expected ',' but found integer literal
 pub fn main() void {
-                ^
-/tmp/unterminated.zig:4:16: error[2000]: unexpected token
+                 ^
+main.zig:4:17: error[2000]: unexpected token
 pub fn main() void {
-                ^
-/tmp/unterminated.zig:6:0: error[2000]: expected expression
+                 ^
+main.zig:6:0: error[2000]: expected expression
     std.io.printInt(r1);
 ^
-/tmp/unterminated.zig:6:0: error[2000]: unexpected token
+main.zig:6:0: error[2000]: unexpected token
     std.io.printInt(r1);
 ^
 ```
 
-- **`/tmp/u.c` = 0 bytes** (no `.c` emitted)
+## Controls (must stay GREEN — the fix must not break them)
+- **Empty call `f()`**: dump rc=0, `.c` emitted, gcc -c rc=0.
+- **Single arg `f(1)`**: dump rc=0, `.c` emitted, gcc -c rc=0.
+- **Valid call `f(1, 2)`**: dump rc=0, `.c` emitted, gcc -c rc=0, link+run rc=0 prints `3`.
+- **Trailing comma `f(1, 2,)`**: dump rc=0, `.c` emitted, gcc -c rc=0 (trailing comma legal).
+- **Unterminated `f(1`**: rc=2, `error[2000]` cascade, 0 `.c` (unchanged).
 
-⇒ The unterminated case errors today (`error[2000]` cascade, rc=2). Only the
-**missing-comma** case is the silent regression.
-
-## Controls (must stay GREEN — the F2 fix must not break them)
-- **Valid call `f(1,2)`**: `var r1 = f(1,2);`
-  → **dump rc=0**, `.c` emitted (**10495 B**), gcc rc=0, run rc=0, prints `3`.
-- **Trailing comma `f(1,2,)`**: `var r1 = f(1,2,);`
-  → **dump rc=0**, `.c` emitted (**10495 B**), no stderr.
-- **Byte-identical proof**: the emitted `.c` for `f(1 2)`, `f(1,2)`, and `f(1,2,)`
-  are all byte-identical (`cmp` clean) — the parser literally drops the missing
-  comma and builds the same 2-arg call AST.
-
-## Expected post-fix behavior (per F2)
-- `f(1 2)` → **rc=2**, `error[2000] expected ','` (RED restored).
-- `f(1` → **rc=2** (error; already errors today — behavior must be preserved).
-- `f(1,2,)` → **rc=0**, stays GREEN (trailing comma legal).
-
-## Locus (for F2)
-`sf/src/parser.zig:401-407` — fn-call loop-top mirror. Line 405
-`if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);` makes the
-comma optional. F2 must require a `,` between args: after parsing an argument, if
-the next token is not `rparen` (and not an `eof`), demand `comma` and emit
-`error[2000] expected ','` otherwise — while still accepting the trailing comma
-(`f(1,2,)`) case per the GREEN control.
+## Historical RED baseline (2026-08-17, HEAD `c8d08939` — superseded by the fix)
+Before `7bb775ad` the loop advanced the comma OPTIONALLY
+(`if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);`), so `f(1 2)`
+was SILENTLY accepted and compiled to the same 2-arg call as `f(1, 2)` (dump rc=0, gcc
+rc=0, run prints `3`; the emitted `.c` for `f(1 2)`/`f(1,2)`/`f(1,2,)` were byte-identical).
+That silent-accept was the bug; the fix (F-STRICTCOMMA) makes the missing comma a hard
+error, and the fixture is now a correct-rejection green-guard.
