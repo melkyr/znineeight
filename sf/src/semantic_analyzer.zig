@@ -598,6 +598,14 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, pty);
             return pty;
         }
+    } else if (base_ty.kind == type_mod.TypeKind.array_type) {
+        var len_s: []const u8 = "len";
+        var len_id = interner_mod.stringInternerIntern(self.interner, len_s);
+        if (field_name_id == len_id) {
+            var faa_m: []const u8 = "FAA:USIZE\n"; pal_mod.markerWrite(faa_m);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_USIZE);
+            return type_mod.TYPE_USIZE;
+        }
     } else if (base_ty.kind == type_mod.TypeKind.error_set_type) {
         var es_mi2 = type_mod.typeRegistryErrorSetMemberIndex(self.registry, base_type_id, field_name_id);
         if (es_mi2 != @intCast(u32, 0xFFFFFFFF)) {

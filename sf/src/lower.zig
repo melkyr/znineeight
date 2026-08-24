@@ -2596,6 +2596,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     emitInst(self, LirInst{ .load_field = .{ .name_id = sp_nid, .base = base_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = tid } });
                 }
                 return tid;
+            } else if (kind == type_mod.TypeKind.array_type) {
+                var len_s: []const u8 = "len";
+                var len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, len_s);
+                if (field_name_id == len_id) {
+                    var ap = self.ctx.registry.array_items[@intCast(usize, ty.payload_idx)];
+                    var fam_m: []const u8 = "FAM:ALEN\n"; pal.markerWrite(fam_m);
+                    tid = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ap.length), .result = tid } });
+                }
+                return tid;
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
                 var gape_fkb: []const u8 = "GAPE:fkb\n"; pal.markerWrite(gape_fkb);
                 if (kind == type_mod.TypeKind.tagged_union_type) {
