@@ -144,6 +144,53 @@ temp), pre-existing, NOT caused by this plan. **Operator ruling (AMENDMENT 2): a
   re-count unchanged (no fixture classification change expected — this fixes a latent emission path).
 - [ ] **Step 7:** Commit: `git add <modified file(s)> && git commit -m "fix: module-level var arrays emitted as static globals (self-compile stack-overflow)"`.
 
+### Task 2.3: I/F-NULLWRAP (?*void extern-call result optional-wrap missing NULL-check)  [AMENDMENT 3]
+
+**Root (verified by the F-GLOBVAR gate, 2026-08-24):** after the GLOBVAR fix, the self-compiled binary still
+core-dumps rc=139 at startup (`fclose(NULL)` in `pal.fileExists`, `sf/src/pal.zig:49-59`, during import
+resolution). Cause: when zig1 wraps an extern-C-call result of type `?*void` (e.g. `fopen`) into an optional,
+it emits `has_value = 1` **unconditionally** BEFORE the call, then checks it (`pal_388A8A1B.c:168-171`:
+`zT_29.has_value = 1; zT_29.value = fopen(...); zT_30 = zT_29.has_value; if (zT_30) ...`). When `fopen`
+returns NULL the orelse (`return false`) never fires → `fclose(NULL)`. zig0 reference emits the NULL-check
+(`has_value = (result != NULL)`) correctly. This is an optional-wrap-of-extern-call-result missing-NULL-check
+emission bug, pre-existing, separate locus from GLOBVAR. **Operator ruling (AMENDMENT 3): add this fix task.**
+
+**Files:**
+- Read (I sub-step): `sf/src/lower.zig` (optional-wrap of call results; where `?*void` / `?T` call results get
+  their `.has_value` materialized), `sf/src/c89_emit.zig` (optional emission; `builtin_opt_*`/coerce paths),
+  reference emission `/tmp/fx_subfolder/pal.c` (zig0's correct `has_value = fopen(...) != NULL` shape),
+  self-compile emission `/tmp/zig1_5/gen/pal_388A8A1B.c:160-180`
+- Modify (F): the exact locus the I sub-step pins (likely `sf/src/lower.zig` or `sf/src/c89_emit.zig`)
+- Report (I sub-step): `.superpowers/sdd/task-NULLWRAP-report.md` (gitignored)
+- Test: `bash scripts/self_compile/build_zig1_5.sh` then run `/tmp/zig1_5/zig1_5_clean` on a real input
+
+**Interfaces:**
+- Consumes: the GLOBVAR fix (35ebe8e3); the verified NULL-wrap mechanism above.
+- Produces: extern-call `?*void` results emitted with a real NULL check (`has_value = result != NULL`);
+  self-compiled binary RUNS end-to-end.
+
+- [ ] **Step 1:** (Investigate, read-only) Pin where an extern-call result of optional type gets its
+  `has_value` materialized, and why it is hard-coded to `1` instead of a NULL/zero check. Compare with the
+  zig0 reference emission (`/tmp/fx_subfolder/pal.c`). Determine whether the bug is specific to `?*void`
+  (extern fn returning `?*void`) or general to all optional-wrapped call results; identify the correct
+  fix locus. Byte-identity risk: verify no currently-GREEN program (4 gates + matrix) wraps an extern-call
+  result in an optional with a NULL check that would change; if any GREEN program's emitted C would change,
+  STOP and report BLOCKED for an operator byte-identity ruling. Write the I report.
+- [ ] **Step 2:** Apply the fix per the I sub-step (single locus, Z98-conformant).
+- [ ] **Step 3:** Rebuild via `bash sf/scripts/build_release.sh` → `=== [release] Done ===`.
+- [ ] **Step 4:** Gate A — self-compiled binary RUNS end-to-end: `bash scripts/self_compile/build_zig1_5.sh`
+  (generous timeout), then `mkdir -p /tmp/nw_smoke && rm -f /tmp/nw_smoke/* && /tmp/zig1_5/zig1_5_clean
+  --dump-c89 --output-dir /tmp/nw_smoke repro/mi_matrix/emission_assign_xmod/main.zig` rc=0 AND a second,
+  more demanding run proving startup survives import resolution (e.g. dump `sf/src/main.zig` — or at minimum
+  a multi-module fixture that triggers `fileExists`), rc=0, no crash. Verify the emitted `pal_*.c` now has a
+  NULL check (`has_value = ... != NULL` or `if (fopen(...) == NULL) ...`) instead of unconditional `1`.
+- [ ] **Step 5:** Gate B — byte-identity: 4 MD5s (gol `4afb203f…`, lisp `5f886646…` repo-root CWD, json
+  `d31e43b1…`, mud `a1d0dd55…`) byte-identical; matrix 21/21. If ANY gate MD5 changes, report BLOCKED for an
+  operator runtime-identity ruling — do not re-baseline silently.
+- [ ] **Step 6:** Gate C — self-compile re-count (dump + `gcc -c` on `sf/src/main.zig`) stays 0 errors; corpus
+  re-count unchanged.
+- [ ] **Step 7:** Commit (only if gates clean): `git add <modified file(s)> && git commit -m "fix: optional wrap of extern-call result emits NULL check (self-compile fclose(NULL))"`.
+
 ---
 
 ## Phase 3 — labeled-statement orelse/catch RHS (po1/pco1)
@@ -422,3 +469,24 @@ so the self-compiled binary RUNS. Same gate discipline as every fix task: 4 MD5s
 byte-identical (else STOP for a runtime-identity ruling), matrix 21/21, self-compile
 re-count 0, self-compiled binary smoke rc=0. Milestone now reads: self-compile **LINK
 green AND self-compiled binary RUNS**.
+
+---
+
+## AMENDMENT 3 — new Task 2.3 I/F-NULLWRAP (?*void extern-call optional-wrap missing NULL-check)  [2026-08-24, operator ruling]
+
+After Task 2.2 (GLOBVAR) fixed the 256 MiB stack-local emission, the self-compiled
+binary still crashed rc=139 at startup: `fclose(NULL)` in `pal.fileExists`
+(`sf/src/pal.zig:49-59`) during import resolution. Root: zig1 emits `has_value = 1`
+**unconditionally** when wrapping an extern-C-call result of type `?*void` (fopen)
+into an optional (`pal_388A8A1B.c:168-171`), so the `orelse return false` never fires
+on a NULL result → `fclose(NULL)`. zig0 reference emits `has_value = result != NULL`
+correctly. Pre-existing, separate locus from GLOBVAR.
+
+**Operator RULED: add a fix task now** — Task 2.3 (I/F-NULLWRAP, inserted after
+Task 2.2 in Phase 2, executed before Phase 3). Same gate discipline as every fix task:
+4 MD5s byte-identical (else STOP for a runtime-identity ruling), matrix 21/21,
+self-compile re-count 0, and the self-compiled binary must RUN end-to-end (real-input
+dump, not `--help`, which the reference compiler also rejects).
+
+The Phase 2 milestone is thereby: self-compile **LINK green AND self-compiled binary
+RUNS** (via Tasks 2.1 + 2.2 + 2.3).
