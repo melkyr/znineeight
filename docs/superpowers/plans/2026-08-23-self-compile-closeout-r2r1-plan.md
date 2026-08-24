@@ -22,6 +22,8 @@
 
 > **AMENDMENT 1 (2026-08-24, operator rulings after A-ANALYZE):** (1) `emission_misc_xmod` is NOT solved — it fails on a NEW live RED class (array-copy direct-assign: `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root = the array-copy `.assign`/`.store_local` path emits BOTH the bogus `dst = src;` line AND the correct copy loop, `c89_emit.zig`). Operator ruling: **extend this plan with a new R/I/F task set — R-ACOPY / I-ACOPY / F-ACOPY** (added below, before GATE-FINAL) to reproduce, investigate, and fix this array-copy direct-assign bug. **Ruling (b) (2026-08-24): A-ADD writes ALL 4 live-RED shapes (incl. the array-copy fixture `emission_array_copy_xmod`); R-ACOPY is re-pointed to VERIFY that fixture, not create its own.** (2) `emission_pal_xmod` now classifies **green-guard** (front-end `error[20]` reject = correct rejection of the undeclared-identifier class; the class can never be a gcc-RED fixture again). (3) **Corpus re-baselined 303 → 310** (GATE-FINAL measures the true 310-dir corpus: +7 new 194-plan fixture dirs; their per-dir classification recorded in the final sweep). (4) **A-ADD scope:** write fixtures for the 4 verified-live RED shapes (§5.1) AND a representative set of expected-GREEN control cells grouped by family (§5.2), documenting each control as GREEN per A-ADD Step 2 — do NOT force a wrong class. Incidental out-of-plan live bug (optional-fn-ptr wrap gap, §6.1) recorded only, NOT fixed.
 
+> **AMENDMENT 2 (2026-08-24, operator ruling after R-R2):** R-R2 investigation FALSIFIED the plan's stated R2 mechanism. The 11 residual `zT_<n> undeclared` errors are TWO distinct root causes: **(a) comptime array `.len` inside `@intCast` → TYPE_VOID** (semantic_analyzer.zig slice-only `.len` branch :584-592; array base falls to :649 else; lowering allocates a never-written VOID temp; hoisted-decl emitter skips its C declaration `c89_emit.zig:3158`) — **c89_emit ×6** sites, reproduced by the committed `emission_temp_index_drift_xmod` fixture (RED verified, commit `751c36e6`); and **(b) orelse-block terminator** (`orelse { return null; }` — orelse else-branch emits `assign join_temp = null_val` unconditionally at `lower.zig:3584` BEFORE the `block_terminated` check :3586, unlike the catch arm :3536-3541) — **import_resolver ×2, main ×1, module_registry ×2** = 5 sites, already given a RED fixture `emission_orelse_block_xmod` in A-ADD. **RULING: I-R2/F-R2 re-scoped to the real array-`.len`→VOID mechanism (F-R2 commit msg `fix: array .len resolves to VOID temp (zT undeclared, 6 errors)`); a NEW I-ORELSEBLK/F-ORELSEBLK task pair added (after F-R2) for the orelse-block terminator (commit msg `fix: orelse block terminator emits no void temp assign (zT undeclared, 5 errors)`).**
+
 ---
 
 ### Task GATE-CLOSE: 194-plan docs closeout
@@ -98,43 +100,43 @@ Commit: `repro: emission fixture extension (analogous-shape variants)`
 
 ---
 
-### Task R-R2: zT temp-index drift fixture
+### Task R-R2: zT temp-index drift fixture (DONE — AMENDMENT 2 re-scope)
 
 **Files:**
-- Create: `repro/mi_matrix/emission_temp_index_drift_xmod/{main.zig,mod_a.zig,mod_b.zig,NOTES.md}`
+- Create: `repro/mi_matrix/emission_temp_index_drift_xmod/{main.zig,mod_a.zig,mod_b.zig,NOTES.md}` — DONE (commit `751c36e6`)
 - Report: `.superpowers/sdd/task-RR2-r2r1-report.md`
 
-**Consumes:** the verified R2 mechanism (cross-function hoisted-temp index drift, `zT_N` referenced in fn B but declared in fn A at `zT_N+1000`). **Produces:** RED fixture reproducing the exact `zT_<n> undeclared … did you mean zT_<n+1000>?` class.
+**Consumes:** the residual c89_emit zT-undeclared sites ×6. **Produces:** RED fixture reproducing the exact `zT_<n> undeclared … did you mean zT_<m>?` class. **AMENDMENT 2 (operator ruling, 2026-08-24): the plan's stated "cross-function hoisted-temp index drift" mechanism was FALSIFIED by investigation. The real mechanism is comptime array `.len` inside `@intCast` resolving to `TYPE_VOID` (semantic_analyzer.zig slice-only `.len` branch :584-592; array base → :649 else) → lowering allocates a never-written VOID temp → hoisted-decl emitter skips its C declaration (`c89_emit.zig:3158`) → the cast reference remains undeclared. The 11 residual R2 errors are TWO root causes: array-`.len`→VOID (c89_emit ×6, this fixture) + orelse-block terminator (import_resolver ×2, main ×1, module_registry ×2 — handled by new I-ORELSEBLK/F-ORELSEBLK). I-R2/F-R2 re-scoped accordingly.**
 
-- [ ] **Step 1: Identify the minimal trigger**
+- [x] **Step 1: Identify the minimal trigger**
 
-From the 11 residual sites (c89_emit ×6, import_resolver ×2, main ×1, module_registry ×2), determine the minimal Zig construct whose lowering produces a cross-function temp-index drift (two functions where fn B references a temp that fn A declares at an offset index). Mirror the observed shape (e.g., a function with a large hoisted-temp set whose index collides with a later function's reference).
+From the residual sites (c89_emit ×6), determine the minimal Zig construct whose lowering produces a referenced-but-never-declared `zT_<n>` temp. Mirror the observed shape (`@intCast(u32, <array>.len)` buffer-slicing).
 
-- [ ] **Step 2: Write the fixture + verify RED**
+- [x] **Step 2: Write the fixture + verify RED**
 
-Full-graph 3+ modules; RED must be `'zT_<n>' undeclared … did you mean 'zT_<m>'?` (m = n + offset), byte-identical class to the residual. NOTES.md: purpose, verbatim fixture, RED evidence, root-cause hypothesis (temp-index drift), expected post-fix.
+Full-graph 3+ modules; RED must be `'zT_<n>' undeclared … did you mean 'zT_<m>'?` (m = n + offset), byte-identical class to the residual. NOTES.md: purpose, verbatim fixture, RED evidence, root-cause pin (array-`.len`→VOID), expected post-fix.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Commit: `repro: self-compile 194-error fixture (zT temp-index drift)`
 
 ---
 
-### Task I-R2: investigate temp-index drift (read-only)
+### Task I-R2: investigate array-`.len`→VOID (read-only)
 
 **Files:**
-- Read: `sf/src/c89_emit.zig` (emitHoistedDecls + temp numbering/name emission), `sf/src/lower.zig` (nextTemp / hoisted_temps), `sf/src/lir.zig`
+- Read: `sf/src/semantic_analyzer.zig` (`.len` field-access resolution — slice branch :584-592, array base falls through to :649 else → TYPE_VOID), `sf/src/lower.zig` (temp alloc for void result ~:2568-2701), `sf/src/c89_emit.zig` (hoisted-decl VOID skip :3158)
 - Create: `.superpowers/sdd/task-IR2-r2r1-report.md` (report, no commit)
 
-**Consumes:** R-R2 fixture + the 11 residual sites. **Produces:** pinned upstream fix design.
+**Consumes:** R-R2 fixture + the 6 residual c89_emit sites. **Produces:** pinned upstream fix design.
 
-- [ ] **Step 1: Trace the drift**
+- [ ] **Step 1: Trace the array-`.len`→VOID leak**
 
-Determine where the hoisted-temp index/name for fn B's reference is computed vs where fn A's declaration is emitted — identify why fn B's reference `zT_N` doesn't match fn A's declared `zT_N+1000`. Check `nextTemp`/`hoisted_temps` reset-per-function semantics and the emitted-name derivation.
+Determine why comptime array `.len` inside `@intCast(u32, <array>.len)` resolves to `TYPE_VOID` (semantic analyzer has only a slice-`.len` branch at :584-592; an array base falls through to the final else :649). Confirm the lowering allocates a never-written VOID temp and the hoisted-decl emitter skips its C declaration (`c89_emit.zig:3158` `eff_type != 1`), leaving the `@intCast` reference undeclared.
 
 - [ ] **Step 2: Pin the fix design**
 
-Name the exact site + change shape. Reason byte-identity: gates/corpus have no such drift today (they're gcc-clean) → fix fires only on failing programs → no re-baseline expected.
+Name the exact site + change shape (likely add an array-`.len` branch in `semanticAnalyzerResolveFieldAccess` returning the array's length type). Reason byte-identity: gates/corpus have no such array-`.len`-in-cast today (they're gcc-clean) → fix fires only on failing programs → no re-baseline expected.
 
 - [ ] **Step 3: STOP on fork if two valid fixes exist**
 
@@ -146,7 +148,7 @@ Report at `.superpowers/sdd/task-IR2-r2r1-report.md`. No commit.
 
 ---
 
-### Task F-R2: apply temp-index drift fix
+### Task F-R2: apply array-`.len`→VOID fix
 
 **Files:**
 - Modify: the file(s) named by the I-R2 report
@@ -171,7 +173,7 @@ mkdir -p /tmp/fx_subfolder/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std
 
 - [ ] **Step 4: Re-count (observational)**
 
-`bash scripts/self_compile/build_zig1_5.sh` + gcc -c → record `zT_<n> undeclared` count (target 0; may be less/greater if new sites surface — record, don't chase beyond the plan). Record full class split.
+`bash scripts/self_compile/build_zig1_5.sh` + gcc -c → record `zT_<n> undeclared` count (target 0 for the array-`.len` class; the 5 orelse-block sites are tracked separately by I-ORELSEBLK/F-ORELSEBLK — see AMENDMENT 2). Record full class split.
 
 - [ ] **Step 5: Runtime-identity gate**
 
@@ -179,7 +181,52 @@ mkdir -p /tmp/fx_subfolder/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std
 
 - [ ] **Step 6: Commit**
 
-Commit: `fix: hoisted temp index drift (zT undeclared, 11 errors)`
+Commit: `fix: array .len resolves to VOID temp (zT undeclared, 6 errors)`
+
+---
+
+### Task I-ORELSEBLK: investigate orelse-block terminator (read-only) — AMENDMENT 2
+
+**Files:**
+- Read: `sf/src/lower.zig` (orelse_expr arm ~:3557-3609, the unconditional `assign join_temp = null_val` at :3584 before the `block_terminated` check :3586; catch_expr arm ~:3490 which checks block_terminated BEFORE the join assign :3536-3541), `sf/src/c89_emit.zig` (temp emission)
+- Create: `.superpowers/sdd/task-IORELSEBLK-r2r1-report.md` (report, no commit)
+
+**Consumes:** the 5 residual orelse-block sites (import_resolver ×2, main ×1, module_registry ×2) + the `emission_orelse_block_xmod` RED fixture (A-ADD). **Produces:** pinned upstream fix design.
+
+- [ ] **Step 1: Trace the orelse-block double assign**
+
+Confirm the mechanism: orelse else-branch emits `assign join_temp = null_val` unconditionally (`lower.zig:3584`) BEFORE checking `block_terminated` (`:3586`), so a terminated plain-block RHS (`orelse { return null; }`) yields a void temp that's referenced but never declared (`'zT_<n>' undeclared`). Compare against the catch arm (checks block_terminated first — GREEN) and the F-ORELSE direct-terminator guard (only handles direct return/continue/break RHS, not block RHS).
+
+- [ ] **Step 2: Pin the fix design**
+
+Name the exact site + change shape (mirror the catch arm's ordering or the F-ORELSE guard). Reason byte-identity: the 5 sites are gcc-invalid today → fix fires only on failing programs → no re-baseline expected.
+
+- [ ] **Step 3: STOP on fork if two valid fixes exist**
+
+If the fix has two valid resolutions with different byte-identity/correctness implications, present and STOP.
+
+- [ ] **Step 4: Write report**
+
+Report at `.superpowers/sdd/task-IORELSEBLK-r2r1-report.md`. No commit.
+
+---
+
+### Task F-ORELSEBLK: apply orelse-block terminator fix — AMENDMENT 2
+
+**Files:**
+- Modify: the file(s) named by the I-ORELSEBLK report
+- Report: `.superpowers/sdd/task-FORELSEBLK-r2r1-report.md`
+
+**Consumes:** I-ORELSEBLK report. **Produces:** `emission_orelse_block_xmod` GREEN + the 5 residual orelse-block sites closed + re-count.
+
+- [ ] **Step 1: Apply the fix** (per I-ORELSEBLK, `edit`/`fastedit`)
+- [ ] **Step 2: Rebuild + reinstall std**
+- [ ] **Step 3: `emission_orelse_block_xmod` GREEN + prior fixtures still GREEN**
+- [ ] **Step 4: Re-count (observational)** — record orelse-block `zT_<n> undeclared` count (target 0) + full class split
+- [ ] **Step 5: Runtime-identity gate** — 4 MD5s + matrix 21/21
+- [ ] **Step 6: Commit**
+
+Commit: `fix: orelse block terminator emits no void temp assign (zT undeclared, 5 errors)`
 
 ---
 
