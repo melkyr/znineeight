@@ -22,6 +22,8 @@
 
 > **AMENDMENT 1 (2026-08-24, operator rulings after A-ANALYZE):** (1) `emission_misc_xmod` is NOT solved — it fails on a NEW live RED class (array-copy direct-assign: `assignment to expression with array type` at `fb = src;` + co-occurring `'zT_<n>' undeclared`; root = the array-copy `.assign`/`.store_local` path emits BOTH the bogus `dst = src;` line AND the correct copy loop, `c89_emit.zig`). Operator ruling: **extend this plan with a new R/I/F task set — R-ACOPY / I-ACOPY / F-ACOPY** (added below, before GATE-FINAL) to reproduce, investigate, and fix this array-copy direct-assign bug. **Ruling (b) (2026-08-24): A-ADD writes ALL 4 live-RED shapes (incl. the array-copy fixture `emission_array_copy_xmod`); R-ACOPY is re-pointed to VERIFY that fixture, not create its own.** (2) `emission_pal_xmod` now classifies **green-guard** (front-end `error[20]` reject = correct rejection of the undeclared-identifier class; the class can never be a gcc-RED fixture again). (3) **Corpus re-baselined 303 → 310** (GATE-FINAL measures the true 310-dir corpus: +7 new 194-plan fixture dirs; their per-dir classification recorded in the final sweep). (4) **A-ADD scope:** write fixtures for the 4 verified-live RED shapes (§5.1) AND a representative set of expected-GREEN control cells grouped by family (§5.2), documenting each control as GREEN per A-ADD Step 2 — do NOT force a wrong class. Incidental out-of-plan live bug (optional-fn-ptr wrap gap, §6.1) recorded only, NOT fixed.
 
+> **AMENDMENT 3 (2026-08-24, operator ruling after I-ORELSEBLK review):** I-ORELSEBLK's report identified a genuine fix-design fork (Step 3 STOP trigger) — Fix A (mirror the catch arm: guard the orelse join materialize+assign on `block_terminated == 0` for ALL RHS) vs Fix B (scoped block-RHS-only guard). The implementer pinned Fix B without STOPping (reviewer-graded Critical); the fork was presented to the operator. **OPERATOR RULING: Fix A.** The catch arm (`lower.zig:3546-3550`) already holds the canonical correct pattern (flag check BEFORE the join assign); the orelse arm (`:3594` assigns unconditionally) is the out-of-sync sibling. Fix A restores symmetry, fires only on failing programs, ALSO closes the `orelse unreachable` first-param leak, and (reviewer-verified) changes zero baselines (no gate/corpus emits `orelse unreachable`; the removed dead line is overwritten on the ok path → runtime-identical). Fix B rejected as incomplete (ad-hoc kind-check, leaves orelse asymmetric with catch, leaves the `orelse unreachable` leak live). F-ORELSEBLK implements Fix A (commit msg `fix: orelse block terminator emits no void temp assign (zT undeclared, 5 errors)`).
+
 > **AMENDMENT 2 (2026-08-24, operator ruling after R-R2):** R-R2 investigation FALSIFIED the plan's stated R2 mechanism. The 11 residual `zT_<n> undeclared` errors are TWO distinct root causes: **(a) comptime array `.len` inside `@intCast` → TYPE_VOID** (semantic_analyzer.zig slice-only `.len` branch :584-592; array base falls to :649 else; lowering allocates a never-written VOID temp; hoisted-decl emitter skips its C declaration `c89_emit.zig:3158`) — **c89_emit ×6** sites, reproduced by the committed `emission_temp_index_drift_xmod` fixture (RED verified, commit `751c36e6`); and **(b) orelse-block terminator** (`orelse { return null; }` — orelse else-branch emits `assign join_temp = null_val` unconditionally at `lower.zig:3584` BEFORE the `block_terminated` check :3586, unlike the catch arm :3536-3541) — **import_resolver ×2, main ×1, module_registry ×2** = 5 sites, already given a RED fixture `emission_orelse_block_xmod` in A-ADD. **RULING: I-R2/F-R2 re-scoped to the real array-`.len`→VOID mechanism (F-R2 commit msg `fix: array .len resolves to VOID temp (zT undeclared, 6 errors)`); a NEW I-ORELSEBLK/F-ORELSEBLK task pair added (after F-R2) for the orelse-block terminator (commit msg `fix: orelse block terminator emits no void temp assign (zT undeclared, 5 errors)`).**
 
 ---
@@ -197,13 +199,13 @@ Commit: `fix: array .len resolves to VOID temp (zT undeclared, 6 errors)`
 
 Confirm the mechanism: orelse else-branch emits `assign join_temp = null_val` unconditionally (`lower.zig:3584`) BEFORE checking `block_terminated` (`:3586`), so a terminated plain-block RHS (`orelse { return null; }`) yields a void temp that's referenced but never declared (`'zT_<n>' undeclared`). Compare against the catch arm (checks block_terminated first — GREEN) and the F-ORELSE direct-terminator guard (only handles direct return/continue/break RHS, not block RHS).
 
-- [ ] **Step 2: Pin the fix design**
+- [ ] **Step 2: Pin the fix design** (AMENDMENT 3: operator ruled Fix A — mirror the catch arm's ordering: guard the join materialize+assign on `block_terminated == 0` for ALL RHS. Fix B, the block-RHS-only scoped guard, REJECTED as incomplete. Fix A also closes the `orelse unreachable` first-param leak; reviewer verified zero baselines change, runtime-identical.)
 
-Name the exact site + change shape (mirror the catch arm's ordering or the F-ORELSE guard). Reason byte-identity: the 5 sites are gcc-invalid today → fix fires only on failing programs → no re-baseline expected.
+Name the exact site + change shape. Reason byte-identity: the 5 sites are gcc-invalid today → fix fires only on failing programs → no re-baseline expected (Fix A additionally verified: no gate/corpus emits `orelse unreachable`).
 
-- [ ] **Step 3: STOP on fork if two valid fixes exist**
+- [x] **Step 3: STOP on fork if two valid fixes exist**
 
-If the fix has two valid resolutions with different byte-identity/correctness implications, present and STOP.
+Two valid fixes (Fix A catch-arm mirror, Fix B scoped block guard) with different byte-identity implications were identified and PRESENTED to the operator; operator ruled **Fix A** (AMENDMENT 3, 2026-08-24).
 
 - [ ] **Step 4: Write report**
 
@@ -211,15 +213,15 @@ Report at `.superpowers/sdd/task-IORELSEBLK-r2r1-report.md`. No commit.
 
 ---
 
-### Task F-ORELSEBLK: apply orelse-block terminator fix — AMENDMENT 2
+### Task F-ORELSEBLK: apply orelse-block terminator fix — AMENDMENT 2/3
 
 **Files:**
-- Modify: the file(s) named by the I-ORELSEBLK report
+- Modify: `sf/src/lower.zig` (orelse_expr arm — Fix A: mirror the catch arm's ordering; guard the join materialize+assign on `block_terminated == 0` for ALL RHS)
 - Report: `.superpowers/sdd/task-FORELSEBLK-r2r1-report.md`
 
-**Consumes:** I-ORELSEBLK report. **Produces:** `emission_orelse_block_xmod` GREEN + the 5 residual orelse-block sites closed + re-count.
+**Consumes:** I-ORELSEBLK report. **Produces:** `emission_orelse_block_xmod` GREEN + the 5 residual orelse-block sites closed + re-count. **AMENDMENT 3 (operator ruling, 2026-08-24): Fix A is the pinned design** — mirror the catch arm's ordering: the join-assign must be emitted only when `block_terminated == 0` (catch arm at `lower.zig:3546-3550` checks the flag BEFORE materialize/assign; orelse arm currently assigns unconditionally at `:3594` then checks at `:3596`). Fix A also closes the `orelse unreachable` first-param leak. Byte-identity (reviewer-verified): no gate/corpus baseline emits `orelse unreachable`; the removed dead line is overwritten on the ok path → runtime-identical → zero baselines change, no re-baseline. Fix B (scoped block-RHS-only guard) REJECTED by operator as incomplete.
 
-- [ ] **Step 1: Apply the fix** (per I-ORELSEBLK, `edit`/`fastedit`)
+- [ ] **Step 1: Apply the fix** (per I-ORELSEBLK Fix A, `edit`/`fastedit`)
 - [ ] **Step 2: Rebuild + reinstall std**
 - [ ] **Step 3: `emission_orelse_block_xmod` GREEN + prior fixtures still GREEN**
 - [ ] **Step 4: Re-count (observational)** — record orelse-block `zT_<n> undeclared` count (target 0) + full class split
