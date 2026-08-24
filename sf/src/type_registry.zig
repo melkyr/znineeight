@@ -834,6 +834,27 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         if (tgt.kind == TypeKind.optional_type) return true;
         if (tgt.kind == TypeKind.fn_type) return true;
     }
+    if (src.kind == TypeKind.fn_type and tgt.kind == TypeKind.ptr_type) {
+        var tpp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        var bt = self.types_items[@intCast(usize, tpp.base)];
+        if (bt.kind == TypeKind.fn_type) {
+            var src_f: FnPayload = self.fn_items[@intCast(usize, src.payload_idx)];
+            var tgt_f: FnPayload = self.fn_items[@intCast(usize, bt.payload_idx)];
+            if (src_f.return_type == tgt_f.return_type
+                and src_f.params_count == tgt_f.params_count
+                and src_f.is_extern == tgt_f.is_extern
+                and (src_f.flags_packed & @intCast(u8, 1)) == (tgt_f.flags_packed & @intCast(u8, 1)))
+            {
+                var ok: bool = true;
+                var fi: u16 = 0;
+                while (fi < src_f.params_count) : (fi += 1) {
+                    if (self.xt_items[@intCast(usize, src_f.params_start + @as(u32, fi))]
+                        != self.xt_items[@intCast(usize, tgt_f.params_start + @as(u32, fi))]) { ok = false; break; }
+                }
+                if (ok) return true;
+            }
+        }
+    }
     if (tgt.kind == TypeKind.optional_type) {
         var opt: OptionalPayload = self.opt_items[@intCast(usize, tgt.payload_idx)];
         if (typeRegistryIsAssignable(self, source, opt.payload)) return true;
