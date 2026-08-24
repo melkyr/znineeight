@@ -1,14 +1,10 @@
-# parsergap_slice_expr_xmod — error[3043] unsupported slice_expr base ICE repro  [R-ICE, 2026-08-19]
+# parsergap_slice_expr_xmod — GREEN-GUARD: scalar-base slice `n[1..]` correctly rejected (F-REJECT)
 
-## Purpose
-Task R-ICE of the VOID-decl family plan (docs/superpowers/plans/2026-08-18-voiddecl-family-plan.md,
-lines 415-417). Durable RED repro of the `error[3043]: internal: unsupported slice_expr
-form/base` ICE at `sf/src/lower.zig:722-739` (`iceSliceUnsupported`). This is the self-compile
-blocker exposed after F1+F2 cleared all `error[3000]` VOID-decl errors (recorded at self-compile
-as node 172203). F-ICE must turn this RED fixture GREEN.
+## What it tests
+Slicing a **scalar** base with an open-ended `[a..]` form must be a **clean frontend
+diagnostic**, not an internal-compiler error. Real Zig rejects it: `var n: u32 = 7;
+var s = n[1..];` is a compile-time type error (expected array/slice/pointer, found u32).
 
-## Fixture
-`main.zig` — bare `@import("std")`, Z98 dialect (no anytype/@Type):
 ```zig
 const std = @import("std");
 
@@ -19,57 +15,55 @@ pub fn main() void {
 }
 ```
 
-## Why this ICEs (lower.zig:3849-3921, slice_expr lowering)
-The lowering supports only TWO base classes:
-- **slice_type** base (`remaining[cut..]`, `data[0..len]`) → loads ptr+len fields, then computes
-  ptr+start / len-start for the open-ended form.
-- **array_type** base (`buf[0..]`, `buf[1..]`, `buf[0..2]`) → ptr_cast + int_const len.
+Reclassified **GREEN-GUARD** (correct rejection, oracle-governed): 0 `.c` emitted,
+`error[2000]` diagnostic only (plus two downstream cascades from `s` resolving to VOID),
+no ICE, no crash.
 
-For an open-ended form `base[start..]` (`node.child_1 != 0`, `node.child_2 == 0`) the len is taken
-from `se_slice_len_box`, which is only set when the base type is slice/array. A **scalar** base
-(here `u32`) sets no len box, the `node.child_1 != 0` branch cannot complete the `make_slice`, and
-the function falls through to `iceSliceUnsupported` (lower.zig:3919-3921) → `error[3043]` via
-`@enumToInt(ERR_9001_ICE)`, `flushAndExit(3)`.
+## Fix (F-REJECT, commit `838935ce` — clean-reject non-sliceable slice base)
+`sema` now rejects a slice base whose type is not array / slice / many-pointer / pointer
+before lowering is reached (`sf/src/semantic_analyzer.zig:2168-2173`,
+`semanticAnalyzerResolveSliceExpr`). The lowering `iceSliceUnsupported` fall-through
+(`sf/src/lower.zig:4145` / `:820-837`, `error[9001]` "internal: unsupported slice_expr
+form/base") is therefore unreachable for scalar/unsupported bases and remains only as a
+defensive backstop for genuine internal bugs. This was the voiddecl-family F-REJECT task
+(2026-08-20); Task 5.4 of the residual closeout plan verified and reclassified the fixture.
 
-The `[a..b]` two-bound form is exempt (it computes `len = end - start` directly, so it never
-reaches the ICE). Only the open-ended `[a..]`/`[0..]` forms on a non-array/non-slice base (or an
-undefined base, or a missing resolved-type entry) hit this path.
-
-## RED baseline (2026-08-19, /tmp/fx_subfolder/zig1, run FROM fixture dir)
+## Measured baseline — GREEN-GUARD (2026-08-24, `/tmp/fx_subfolder/zig1` rebuilt at HEAD `3000e96b`)
+Run from the repro dir (CWD = repro dir; bare `@import("std")` resolves via the
+installed std lib):
 ```
-timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/rice/out main.zig
+mkdir -p /tmp/rice && timeout 60 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir /tmp/rice main.zig
 ```
-- **dump rc=3** (flushAndExit exit code 3).
+- **dump rc=2** (clean frontend rejection, exit code 2 — no flushAndExit(3)).
 - stderr (verbatim):
 ```
-error[3043]: internal: unsupported slice_expr form/base (node 9)
-```
-- **0 .c files emitted** (`/tmp/rice/out` empty). Frontend-valid program (parses + passes sema +
-  analyzers); the ICE fires in the lowering phase. RED.
-
-## GREEN control (NOT committed — kept in /tmp/rice)
-Same `[a..]` open-ended form, but on a SUPPORTED array base (only the base type differs):
-```zig
+main.zig:1:9: error[2000]: cannot slice base type: expected array, slice, or many-pointer
 const std = @import("std");
+         ^
+main.zig:5:4: error[3000]: cannot declare variable of type void
+    var n: u32 = 7;
+    ^^^^^^^^^^^^^^^
+main.zig:6:34: error[20]: identifier 's' is not declared or imported in this module
+    var s = n[1..];
+                                  ^
+```
+- **0 .c files emitted** (`/tmp/rice` empty). No `error[3043]`, no `error[9001]`, no ICE,
+  no crash.
+- The two trailing errors are the standard downstream cascade: because the slice resolves
+  to VOID, `var s = ...` is a void-decl (`error[3000]`) and `s` never registers
+  (`error[20]`). This matches the sibling green-guard fixtures' cascade class.
+- Note: the `error[2000]` span points at `main.zig:1:9` (the `@import` region) — the
+  F-REJECT guard passes the AST node index rather than the node's source span. Cosmetic
+  (pre-existing, tracked in the residual closeout GATE-FINAL reconciliation).
 
-pub fn main() void {
-    var buf = [3]u8{ 1, 2, 3 };
-    var s = buf[1..];
-    std.io.printInt(@intCast(i32, s.len));
-}
-```
-```
-dump rc=0 | gcc rc=0 | run rc=0 | stdout: "2"   ✓ GREEN
-```
-Also verified supported: array `buf[0..2]` (two-bound, prints `2`) and slice base
-`rem = rem[cut..]` (open-ended slice-of-slice, prints `3`). This pins the class to the
-**base type**, not the `[a..]` form itself.
+## GREEN controls (supported bases unchanged, verified 2026-08-24)
+Same `[a..]`/`[a..b]` forms on SUPPORTED bases all still compile and run correctly
+(dump rc=0 | gcc rc=0 | run rc=0):
+- array open-ended `var s = buf[1..];` → stdout `2`
+- array two-bound `var s = buf[0..2];` → stdout `2`
+- slice-of-slice open-ended `rem = rem[cut..];` (cut=1 over a 5-len slice) → stdout `3`
 
-## Post-F-ICE expectation
-After the slice_expr lowering gap is fixed (per I-ICE/F-ICE), this fixture compiles GREEN: the
-scalar-base open-ended slice no longer falls through to `iceSliceUnsupported`, `.c` is emitted,
-and the run prints `6` (`7 - 1` = slice length). The ICE path at lower.zig:722-739 must not fire
-for any base form. Same fixture, same recipe.
+This pins the rejection class to the **base type** (scalar), not the `[a..]` form itself.
 
 ## Recipe
 ```bash
@@ -81,3 +75,5 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign \
   /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/rice/out/x
 /tmp/rice/out/x
 ```
+Expected: dump rc=2, clean `error[2000]` (0 `.c` → the gcc/link steps are not reached for
+the fixture itself; the GREEN controls above use the same recipe and DO link/run).
