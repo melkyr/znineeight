@@ -156,10 +156,10 @@ const GLOBVAR_MAX_STACK_ARRAY_BYTES: u64 = 2097152;
 
 fn globvarTypeScalarSize(emitter: *C89Emitter, tid: u32) u64 {
     if (tid == type_mod.TYPE_U8 or tid == type_mod.TYPE_I8 or tid == type_mod.TYPE_BOOL or tid == type_mod.TYPE_C_CHAR) return @intCast(u64, 1);
-    if (tid == type_mod.TYPE_U16) return @intCast(u64, 2);
+    if (tid == type_mod.TYPE_U16 or tid == type_mod.TYPE_I16) return @intCast(u64, 2);
     if (tid == type_mod.TYPE_U32 or tid == type_mod.TYPE_I32 or tid == type_mod.TYPE_F32 or tid == type_mod.TYPE_USIZE or tid == type_mod.TYPE_ISIZE) return @intCast(u64, 4);
     if (tid == type_mod.TYPE_U64 or tid == type_mod.TYPE_I64 or tid == type_mod.TYPE_F64) return @intCast(u64, 8);
-    if (@intCast(usize, tid) >= emitter.registry.types_len) return @intCast(u64, 0);
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return @intCast(u64, 1);
     var gv_ty = emitter.registry.types_items[@intCast(usize, tid)];
     var gv_k = gv_ty.kind;
     if (gv_k == type_mod.TypeKind.ptr_type or gv_k == type_mod.TypeKind.many_ptr_type or gv_k == type_mod.TypeKind.slice_type or gv_k == type_mod.TypeKind.fn_type) return @intCast(u64, 4);
@@ -167,7 +167,8 @@ fn globvarTypeScalarSize(emitter: *C89Emitter, tid: u32) u64 {
         var gv_ap = emitter.registry.array_items[@intCast(usize, gv_ty.payload_idx)];
         return @intCast(u64, gv_ap.length) * globvarTypeScalarSize(emitter, gv_ap.elem);
     }
-    return @intCast(u64, 0);
+    if (gv_ty.size != @intCast(u32, 0)) return @intCast(u64, gv_ty.size);
+    return @intCast(u64, 1);
 }
 
 fn isLargeModuleVarArrayType(emitter: *C89Emitter, tid: u32) bool {
