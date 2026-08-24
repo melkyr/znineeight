@@ -146,6 +146,38 @@ fn isBasePtrToArray(emitter: *C89Emitter, base_temp: u32) u8 {
     return @intCast(u8, 0);
 }
 
+// I/F-GLOBVAR: a module-level `var` array must never be lowered to a stack temp that
+// copies the whole global. When the emitted C89 array temp would exceed this many bytes,
+// the load_global result temp is aliased straight to the global (resolveTempName -> global
+// name) and neither the stack declaration nor the dead copy loop is emitted. 2 MiB is a safe
+// ceiling for any single stack frame; the only currently-GREEN programs carrying module-level
+// var arrays (mud [2]Room, lisp [131072]u64) stay below it, so byte-identity is preserved.
+const GLOBVAR_MAX_STACK_ARRAY_BYTES: u64 = 2097152;
+
+fn globvarTypeScalarSize(emitter: *C89Emitter, tid: u32) u64 {
+    if (tid == type_mod.TYPE_U8 or tid == type_mod.TYPE_I8 or tid == type_mod.TYPE_BOOL or tid == type_mod.TYPE_C_CHAR) return @intCast(u64, 1);
+    if (tid == type_mod.TYPE_U16) return @intCast(u64, 2);
+    if (tid == type_mod.TYPE_U32 or tid == type_mod.TYPE_I32 or tid == type_mod.TYPE_F32 or tid == type_mod.TYPE_USIZE or tid == type_mod.TYPE_ISIZE) return @intCast(u64, 4);
+    if (tid == type_mod.TYPE_U64 or tid == type_mod.TYPE_I64 or tid == type_mod.TYPE_F64) return @intCast(u64, 8);
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return @intCast(u64, 0);
+    var gv_ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var gv_k = gv_ty.kind;
+    if (gv_k == type_mod.TypeKind.ptr_type or gv_k == type_mod.TypeKind.many_ptr_type or gv_k == type_mod.TypeKind.slice_type or gv_k == type_mod.TypeKind.fn_type) return @intCast(u64, 4);
+    if (gv_k == type_mod.TypeKind.array_type) {
+        var gv_ap = emitter.registry.array_items[@intCast(usize, gv_ty.payload_idx)];
+        return @intCast(u64, gv_ap.length) * globvarTypeScalarSize(emitter, gv_ap.elem);
+    }
+    return @intCast(u64, 0);
+}
+
+fn isLargeModuleVarArrayType(emitter: *C89Emitter, tid: u32) bool {
+    if (tid == type_mod.TYPE_UNDEFINED) return false;
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return false;
+    var gv_ty = emitter.registry.types_items[@intCast(usize, tid)];
+    if (gv_ty.kind != type_mod.TypeKind.array_type) return false;
+    return globvarTypeScalarSize(emitter, tid) > GLOBVAR_MAX_STACK_ARRAY_BYTES;
+}
+
 /// Emit indexed access in C89: `base[idx]` or `(*base)[idx]` depending on whether base is ptr-to-array.
 /// kind: 0 = load (emit result = X;), 1 = assign (emit X = src;)
 fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_or_src: []const u8, kind: u8) void {
@@ -2957,6 +2989,17 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
+                .load_global => |lg2| {
+                    if (lg2.result < max_temp) {
+                        var lg2_dp = tid_to_pos[@intCast(usize, lg2.result)];
+                        if (lg2_dp != @intCast(u32, 0xFFFFFFFF)) {
+                            var lg2_ht = lir_fn.hoisted_temps.items[@intCast(usize, lg2_dp)];
+                            if (isLargeModuleVarArrayType(emitter, lg2_ht.type_id)) {
+                                written_flag[@intCast(usize, lg2_dp)] = @intCast(u8, 3);
+                            }
+                        }
+                    }
+                },
                 .load_field => |lf| {
                     if (lf.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, lf.result)];
@@ -3119,6 +3162,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
      while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
          var td = lir_fn.hoisted_temps.items[i];
          if (td.temp_id < @intCast(u32, lir_fn.params.len)) { continue; }
+         if (written_flag[@intCast(usize, i)] == @intCast(u8, 3)) { continue; }
         var eff_type: u32 = td.type_id;
         var wf2 = written_flag[@intCast(usize, i)];
          if (td.type_id == type_mod.TYPE_UNDEFINED or td.type_id == type_mod.TYPE_VOID) {
@@ -4537,6 +4581,10 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 }
             }
             if (lg_is_arr == @intCast(u8, 1)) {
+                if (isLargeModuleVarArrayType(emitter, lg_tid)) {
+                    // I/F-GLOBVAR: alias the temp to the global; no stack copy, no stack decl.
+                    // Every consumer resolves this temp to the global via temp_global_map.
+                } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var loop_begin: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < ";
                 bufferedWriterWrite(&emitter.writer, loop_begin);
@@ -4552,6 +4600,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 bufferedWriterWrite(&emitter.writer, gname);
                 var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
                 bufferedWriterWrite(&emitter.writer, rb);
+                }
             } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, result);
