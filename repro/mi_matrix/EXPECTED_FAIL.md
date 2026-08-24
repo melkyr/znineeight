@@ -1,4 +1,38 @@
-# mi_matrix corpus — expected-fail manifest (v44 2026-08-22)
+# mi_matrix corpus — expected-fail manifest (v45 2026-08-24)
+
+## GATE — self-compile 194-error plan closeout, final sweep + reconciliation (2026-08-24)
+
+Final gate sweep of the self-compile 194-error plan
+(docs/superpowers/plans/2026-08-22-self-compile-194-closeout-plan.md). Docs-only task — no
+`sf/src` changes (all fixes landed in the plan's prior F tasks). Self-compile re-count is
+observational only (soft gate) — per-F fixture GREEN (gcc -c rc=0) was the hard gate;
+runtime-identity governs:
+
+- **5 fixes landed + AMENDMENTs 4/5 (all controller-verified this plan):**
+  - **F-MIGRATE** (`1a06716b` + `df9c3017`) — bare `pal` → `pal_mod` migration (spec-compliant
+    module alias) + undeclared-identifier diagnostic instead of silent VOID emission (`pal`
+    class ×5 → 0).
+  - **F-A** (`6b44d7a3`) — LirInst tag-emission emits the variant's declared tag constant
+    (`incompatible types when assigning` class, 48 errors).
+  - **F-B** (`6d4892bf` + `56a80136`) — hoisted-local disambiguation by type (name-keyed
+    conflation; 108 errors).
+  - **F-ORELSE** (`f8e3d914`) — orelse return/continue emits the orelse value, not the first
+    param (6 errors).
+  - **F-C** (`cb378f17`) — no-member + misc emission classes (8 + 5 errors).
+  - AMENDMENTs 4 (`f5ab3bc3`, slice-argv main support) + 5 (`05ea274d`, canonical many-pointer
+    main + fixture fix) — docs commits.
+- **Self-compile residual state (194-plan FINAL):** NOT buildable. `timeout 120
+  /tmp/fx_subfolder/zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig` →
+  **12 remaining gcc errors** = **R2 `zT_<n>` undeclared ×11 + R1 `Opt_10` assign ×1**
+  (11+1=12) — the 194-plan's residual, deferred to the R2/R1 implementation plan →
+  **FORWARD: docs/superpowers/plans/2026-08-23-self-compile-closeout-r2r1-plan.md.**
+- **Corpus (310 dirs):** 303 → 310 (+7 emission-fixture dirs from this plan's R tasks:
+  `emission_assign_xmod`, `emission_zT_undeclared_xmod`, `emission_request_member_xmod`,
+  `emission_no_member_xmod`, `emission_pal_xmod`, `emission_misc_xmod`, `emission_orelse_xmod`).
+- **4 MD5 gates:** json **`9720478c…` → `d31e43b19f752e40b9fd4b8885b13600` RE-BASELINED**
+  (operator-approved during F-ORELSE — runtime-identical; the orelse fix repairs the
+  semantically-broken null path); gol `4afb203f…` + lisp `5f886646…` (repo-root CWD) + mud
+  `a1d0dd55…` unchanged.
 
 ## GATE — self-compile residual closeout, final sweep + reconciliation (2026-08-22)
 
