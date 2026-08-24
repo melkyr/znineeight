@@ -10,8 +10,8 @@ timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir "$OUT/gen" sf/src/mai
 cd "$OUT/gen"
 gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
     -I "$ROOT/sf/src/include" -c *.c
-gcc -m32 -O0 -fsanitize=address *.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" \
+gcc -m32 -O0 -fsanitize=address *.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" \
     -o "$OUT/zig1_5_asan"
-gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" \
+gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" \
     -o "$OUT/zig1_5_clean"
 echo "=== [zig1_5] Done: $OUT ==="
