@@ -571,7 +571,7 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, arg_ec: 
                         var spec_c = fmt[spec_i];
                         if (spec_c != @intCast(u8, '}')) {
                             spec_fmt = spec_c;
-                            if (spec_c != @intCast(u8, 'd') and spec_c != @intCast(u8, 'c') and spec_c != @intCast(u8, 's')) {
+                            if (spec_c != @intCast(u8, 'd') and spec_c != @intCast(u8, 'c') and spec_c != @intCast(u8, 's') and spec_c != @intCast(u8, 'x')) {
                                 var fn_node = self.ctx.store.nodes.items[@intCast(usize, fmt_node_idx)];
                                 var isp = fn_node.span_start;
                                 var iep = isp + @intCast(u32, fn_node.span_len);

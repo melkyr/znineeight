@@ -3773,13 +3773,28 @@ fn isBootstrapHelperDefined(fn_name: []const u8) bool {
 
 fn getPrintFnName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
-    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "std_print_u32"; return s; }
-    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "std_print_i64"; return s; }
-    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "std_print_u64"; return s; }
+    var is_hex: u8 = if (fmt == @intCast(u8, 'x')) @intCast(u8, 1) else @intCast(u8, 0);
+    if (ty.kind == TypeKind.u32_type) {
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_u32"; return h; }
+        { var s: []const u8 = "std_print_u32"; return s; }
+    }
+    if (ty.kind == TypeKind.i32_type) {
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_i32"; return h; }
+        { var s: []const u8 = "std_print_i32"; return s; }
+    }
+    if (ty.kind == TypeKind.i64_type) {
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_i64"; return h; }
+        { var s: []const u8 = "std_print_i64"; return s; }
+    }
+    if (ty.kind == TypeKind.u64_type) {
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_u64"; return h; }
+        { var s: []const u8 = "std_print_u64"; return s; }
+    }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "std_print_f64"; return s; }
     if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "std_print_bool"; return s; }
     if (ty.kind == TypeKind.u8_type) {
         if (fmt == @intCast(u8, 'c')) { var s: []const u8 = "std_print_char"; return s; }
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_u32"; return h; }
         { var s: []const u8 = "std_print_u32"; return s; }
     }
     if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "std_print_str"; return s; }
