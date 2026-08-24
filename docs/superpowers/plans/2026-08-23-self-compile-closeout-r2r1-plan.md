@@ -24,6 +24,8 @@
 
 > **AMENDMENT 3 (2026-08-24, operator ruling after I-ORELSEBLK review):** I-ORELSEBLK's report identified a genuine fix-design fork (Step 3 STOP trigger) — Fix A (mirror the catch arm: guard the orelse join materialize+assign on `block_terminated == 0` for ALL RHS) vs Fix B (scoped block-RHS-only guard). The implementer pinned Fix B without STOPping (reviewer-graded Critical); the fork was presented to the operator. **OPERATOR RULING: Fix A.** The catch arm (`lower.zig:3546-3550`) already holds the canonical correct pattern (flag check BEFORE the join assign); the orelse arm (`:3594` assigns unconditionally) is the out-of-sync sibling. Fix A restores symmetry, fires only on failing programs, ALSO closes the `orelse unreachable` first-param leak, and (reviewer-verified) changes zero baselines (no gate/corpus emits `orelse unreachable`; the removed dead line is overwritten on the ok path → runtime-identical). Fix B rejected as incomplete (ad-hoc kind-check, leaves orelse asymmetric with catch, leaves the `orelse unreachable` leak live). F-ORELSEBLK implements Fix A (commit msg `fix: orelse block terminator emits no void temp assign (zT undeclared, 5 errors)`).
 
+> **AMENDMENT 4 (2026-08-24, operator ruling after I-R1):** I-R1 traced the single Opt_10 residual (`incompatible types … unsigned int ← Opt_10` at `zT_970 = rt;`) to a **scope-depth mismatch in the `if_expr` handler**: `bindOptionalCapture` registers the capture at `scope_depth+1` (lower.zig:1458/1460), but the if_expr then/else branches are lowered at the current depth (:3672/:3679, no push — unlike `if_stmt` which pushes via `lowerStmtBody`), so the then-branch ident resolves to the OUTER same-named local (e.g. `var rt: Opt_10` at :1501) instead of the capture payload. The fix fork: **Option A** (push `scope_depth += 1` after `bindOptionalCapture`, pop after `lowerExpr(node.child_1)` — mirror if_stmt; fires on ALL if_expr captures incl. 2 currently-GREEN corpus dirs `parsergap_value_if_xmod`/`_cross` with runtime-identical byte changes, no recorded baseline change) vs **narrow conditional-visibility** (3-locus, fires only on colliding captures, parsergap dirs byte-identical, but ad-hoc + leaves a latent class). **OPERATOR RULING: Option A** (the upstream-correct if_expr/if_stmt symmetry fix; the only fix that resolves the self-compile residual since the self-compile's capture is not renamed and needs findLocalTemp visibility). F-R1 implements Option A (commit msg `fix: Opt_10 incompatible assign (1 error)`).
+
 > **AMENDMENT 2 (2026-08-24, operator ruling after R-R2):** R-R2 investigation FALSIFIED the plan's stated R2 mechanism. The 11 residual `zT_<n> undeclared` errors are TWO distinct root causes: **(a) comptime array `.len` inside `@intCast` → TYPE_VOID** (semantic_analyzer.zig slice-only `.len` branch :584-592; array base falls to :649 else; lowering allocates a never-written VOID temp; hoisted-decl emitter skips its C declaration `c89_emit.zig:3158`) — **c89_emit ×6** sites, reproduced by the committed `emission_temp_index_drift_xmod` fixture (RED verified, commit `751c36e6`); and **(b) orelse-block terminator** (`orelse { return null; }` — orelse else-branch emits `assign join_temp = null_val` unconditionally at `lower.zig:3584` BEFORE the `block_terminated` check :3586, unlike the catch arm :3536-3541) — **import_resolver ×2, main ×1, module_registry ×2** = 5 sites, already given a RED fixture `emission_orelse_block_xmod` in A-ADD. **RULING: I-R2/F-R2 re-scoped to the real array-`.len`→VOID mechanism (F-R2 commit msg `fix: array .len resolves to VOID temp (zT undeclared, 6 errors)`); a NEW I-ORELSEBLK/F-ORELSEBLK task pair added (after F-R2) for the orelse-block terminator (commit msg `fix: orelse block terminator emits no void temp assign (zT undeclared, 5 errors)`).**
 
 ---
@@ -272,21 +274,23 @@ Name the exact site + change shape; reason byte-identity (gcc-clean gates unaffe
 
 - [ ] **Step 3: STOP on fork if two valid fixes exist**
 
+Two valid fixes with different byte-identity implications (Option A scope-push vs narrow conditional-visibility) were identified and PRESENTED to the operator; operator ruled **Option A** (AMENDMENT 4, 2026-08-24).
+
 - [ ] **Step 4: Write report**
 
 Report at `.superpowers/sdd/task-IR1-r2r1-report.md`. No commit.
 
 ---
 
-### Task F-R1: apply Opt_10 fix
+### Task F-R1: apply Opt_10 fix — AMENDMENT 4
 
 **Files:**
-- Modify: the file(s) named by the I-R1 report
+- Modify: `sf/src/lower.zig` (if_expr arm — Option A: scope-push mirroring if_stmt; push `scope_depth += 1` after `bindOptionalCapture`, pop after lowering then-branch)
 - Report: `.superpowers/sdd/task-FR1-r2r1-report.md`
 
-**Consumes:** I-R1 report. **Produces:** R1 fixture GREEN + re-count.
+**Consumes:** I-R1 report. **Produces:** R1 fixture GREEN + re-count. **AMENDMENT 4 (operator ruling, 2026-08-24): Option A is the pinned design** — the if_expr optional-capture scope bug (`bindOptionalCapture` registers at `scope_depth+1`; if_expr branches lowered at current depth → then-branch ident resolves to the outer same-named local instead of the capture payload → Opt_10 assigned into u32 temp). Push `scope_depth += 1` after `bindOptionalCapture`, pop after `lowerExpr(node.child_1)` (mirror if_stmt/lowerStmtBody). Fires on all if_expr captures incl. 2 currently-GREEN corpus dirs (`parsergap_value_if_xmod`, `parsergap_value_if_xmod_cross`) — runtime-identical byte changes, no recorded baseline change (4 gate MD5s + matrix + OK-classification unchanged). Only fix that resolves the self-compile residual (capture not renamed → needs findLocalTemp visibility).
 
-- [ ] **Step 1: Apply the fix** (per I-R1, `edit`/`fastedit`)
+- [ ] **Step 1: Apply the fix** (per I-R1 Option A, `edit`/`fastedit`)
 - [ ] **Step 2: Rebuild + reinstall std**
 - [ ] **Step 3: R1 fixture GREEN + prior fixtures still GREEN**
 - [ ] **Step 4: Re-count (observational)** — record `incompatible types … Opt_10` count (target 0) + full class split
