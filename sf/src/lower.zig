@@ -3669,9 +3669,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 bindOptionalCapture(self, @intCast(u32, node.payload), orig_cond_temp);
             }
         }
+        self.scope_depth += @intCast(u32, 1);
         var then_val = lowerExpr(self, node.child_1);
         then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
+        self.scope_depth -= @intCast(u32, 1);
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
