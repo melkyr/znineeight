@@ -490,3 +490,32 @@ dump, not `--help`, which the reference compiler also rejects).
 
 The Phase 2 milestone is thereby: self-compile **LINK green AND self-compiled binary
 RUNS** (via Tasks 2.1 + 2.2 + 2.3).
+
+---
+
+## AMENDMENT 4 — NULLWRAP applied + json re-baseline + self-emission gap residual  [2026-08-24, operator rulings]
+
+Task 2.3 (F-NULLWRAP) was BLOCKED on a byte-identity break: the fix (emit `has_value =
+result != 0` for optional-wrapped extern-call results instead of unconditional `1`) is
+correct and general (`.call_direct` need_wrap, `c89_emit.zig:5503-5549`), but json_parser
+wraps `fopen(...) ?*File` with `orelse return error.OpenFailed` and had the SAME latent
+bug, so its emitted C changes.
+
+**Ruling 1 (json re-baseline):** operator APPROVED the fix + json gate re-baseline. The
+change is runtime-identical on every program's normal path (fopen succeeds → has_value=1
+either way) and repairs the NULL path (orelse fires; latent NULL-crash fixed). gol/lisp/mud
+byte-identical. **json re-baselined: `d31e43b19f752e40b9fd4b8885b13600` →
+`089e4f046464ce3882aa2b2c4e585013`** (recorded in QUICK_REF.md, commit a6fe169b + docs).
+`089e4f046464ce3882aa2b2c4e585013` is the authoritative json hash for all remaining gates.
+
+**Ruling 2 (self-emission gap deferred):** a THIRD pre-existing blocker surfaced during
+Gate A — the self-compiled binary now RUNS (crash fixed) but misparses basic operators
+(`1 + 1`, `y = 5`, `x.len`, `y == 0`) → 27,664 `error[2000]` parse errors self-dumping
+`sf/src/main.zig`. Proven independent of NULLWRAP (parser.c/lexer.c/token.c/ast.c
+byte-identical pre/post). This is a **self-emission fidelity gap** (zig1 mis-emits its own
+parser/lexer), potentially deep, NOT a single-locus fix. Operator ruled: **defer** — record
+as a new major out-of-scope residual requiring its own dedicated R/I/F plan.
+
+Phase 2 milestone (amended): self-compile **LINK green, self-compiled binary RUNS
+(crash-free)**; the deeper self-emission fidelity gap is a recorded deferred residual and
+does NOT block Phases 3-5, which do not depend on the self-compiled binary running.

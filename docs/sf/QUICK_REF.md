@@ -334,7 +334,19 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 | `examples/z98/mud_server/main.zig` | `a1d0dd55aada9c3fd904ae33f54de32e` |
 | `examples/z98/game_of_life/main.zig` | `4afb203fdde7a880ec6e7aed32543691` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `5f886646b164a70c52bf042eb54bda78` |
-| `examples/z98/json_parser/main.zig` | `d31e43b19f752e40b9fd4b8885b13600` |
+| `examples/z98/json_parser/main.zig` | `089e4f046464ce3882aa2b2c4e585013` |
+
+- **Out-of-scope residual closeout json re-baseline (2026-08-24, NULLWRAP fix, operator ruling):** the
+  `.call_direct` need_wrap path now emits `result.has_value = result.value != 0` instead of unconditional
+  `1` for optional-wrapped extern-call results (`c89_emit.zig`, commit a6fe169b). json_parser wraps
+  `fopen(...) ?*File` with `orelse return error.OpenFailed` and had the same latent bug (unconditional
+  has_value=1 → NULL file proceeds, latent crash); its emitted C changes. gol/lisp/mud UNCHANGED
+  (byte-identical). Runtime-identity: the change is byte-identical on every program's normal path
+  (fopen succeeds → has_value=1 either way) and repairs the NULL path (orelse now fires). Operator approved
+  the re-baseline (plan AMENDMENT 4). json old→new: `d31e43b19f752e40b9fd4b8885b13600` →
+  `089e4f046464ce3882aa2b2c4e585013`. Self-compiled binary: crash FIXED (runs), but a separate pre-existing
+  self-emission fidelity gap remains (self-compiled compiler misparses basic operators; recorded as residual,
+  deferred).
 
 - **Self-compile residual closeout gol/lisp re-baseline (2026-08-22, runtime-priority override):** the
   documented gol `9cf758d9…` / lisp `88dcb7f9…` baselines predated the F-attempt emission changes (the
