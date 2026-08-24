@@ -99,6 +99,51 @@ Every task implicitly includes this section:
 - [ ] **Step 5:** Byte-identity: this change is build-script-only, so all 4 MD5s are trivially unchanged. Note this in the report; no emission re-run required.
 - [ ] **Step 6:** Commit: `git add scripts/self_compile/build_zig1_5.sh && git commit -m "fix: self-compile link c_exit.c (undefined reference to c_exit)"`.
 
+### Task 2.2: I/F-GLOBVAR (global-var emitted as stack local — self-compiled binary stack-overflow)  [AMENDMENT 2]
+
+**Root (verified by the F-CEXIT smoke test, 2026-08-24):** after the c_exit link fix, the self-compiled
+binary (`/tmp/zig1_5/zig1_5_clean` / `_asan`) core-dumps at startup: `AddressSanitizer: stack-overflow in
+zF_90E832C7_initCompilerAlloc`. Cause: the module-level global `var memory_pool_buf: [POOL_SIZE]u8 = undefined`
+(`sf/src/allocator.zig:184-186`, `POOL_SIZE = 268435456`) is emitted by zig1 as a **function-local temp**
+(`zT_5B44B793_Arr_unsigned_char_2 zT_1;` = 256 MiB on the stack, `allocator_E75B7A0B.c:863`) instead of a
+static global. zig0 (reference) emits it correctly: `static unsigned char zV_..._memory_pool_buf[268435456];`
+(`/tmp/fx_subfolder/allocator.c:17`). This is a global-var emission bug (module-level `var` lowered to a stack
+temp), pre-existing, NOT caused by this plan. **Operator ruling (AMENDMENT 2): add this fix task to the plan.**
+
+**Files:**
+- Read (I sub-step): `sf/src/lower.zig` (module-var → decl_local / addLocalDecl path; how module-level `var`
+  gets a temp), `sf/src/c89_emit.zig` (global/static emission; `zV_`/`zG_` prefix handling), reference
+  emission `/tmp/fx_subfolder/allocator.c:16-17`, self-compile emission
+  `/tmp/zig1_5/gen/allocator_E75B7A0B.c:860-870`
+- Modify (F): the exact locus the I sub-step pins (likely `sf/src/lower.zig` or `sf/src/c89_emit.zig`)
+- Report (I sub-step): `.superpowers/sdd/task-GLOBVAR-report.md` (gitignored)
+- Test: `bash scripts/self_compile/build_zig1_5.sh` then run `/tmp/zig1_5/zig1_5_clean` on a trivial input
+
+**Interfaces:**
+- Consumes: the F-CEXIT link fix (aa552f5d); the verified stack-overflow root above.
+- Produces: module-level `var` arrays emitted as static globals; self-compiled binary RUNS.
+
+- [ ] **Step 1:** (Investigate, read-only) Pin exactly where a module-level `var` (e.g. `memory_pool_buf`)
+  gets lowered to a stack temp. Trace `sf/src/allocator.zig:185` through lowering + emission; compare with
+  how zig0 emits the same global (static global `zV_...`). Determine whether ALL module-level `var`s are
+  wrongly stack-local or only array-typed ones; identify the correct emission path (static/global storage,
+  `zV_`/`zG_` naming). Verify against the 4 gates + matrix whether any currently-GREEN program has a
+  module-level `var` whose emission would change (byte-identity risk). Write the I report.
+- [ ] **Step 2:** Apply the fix per the I sub-step (single locus, Z98-conformant).
+- [ ] **Step 3:** Rebuild via `bash sf/scripts/build_release.sh` → `=== [release] Done ===`.
+- [ ] **Step 4:** Gate — self-compiled binary RUNS: `bash scripts/self_compile/build_zig1_5.sh`, then
+  `/tmp/zig1_5/zig1_5_clean --help` rc=0 (no stack-overflow), then
+  `/tmp/zig1_5/zig1_5_clean --dump-c89 --output-dir /tmp/gv_smoke repro/mi_matrix/emission_assign_xmod/main.zig`
+  rc=0 with `.c` emitted. Verify `memory_pool_buf` is now a static global in the self-compile emission
+  (grep `static.*memory_pool_buf` in `/tmp/zig1_5/gen/*.c` or equivalent).
+- [ ] **Step 5:** Gate — byte-identity: 4 MD5s (gol `4afb203f…`, lisp `5f886646…` repo-root CWD, json
+  `d31e43b1…`, mud `a1d0dd55…`) byte-identical; matrix 21/21. If ANY gate MD5 changes, that is a
+  byte-identity break on a currently-GREEN program — **DO NOT re-baseline silently; report BLOCKED for an
+  operator runtime-identity ruling.**
+- [ ] **Step 6:** Gate — self-compile re-count (dump + `gcc -c` on `sf/src/main.zig`) stays 0 errors; corpus
+  re-count unchanged (no fixture classification change expected — this fixes a latent emission path).
+- [ ] **Step 7:** Commit: `git add <modified file(s)> && git commit -m "fix: module-level var arrays emitted as static globals (self-compile stack-overflow)"`.
+
 ---
 
 ## Phase 3 — labeled-statement orelse/catch RHS (po1/pco1)
@@ -326,7 +371,7 @@ Seven pre-existing FAIL fixtures. Two collapse into one root (brace-less `if/els
 ## Expected Final State
 
 - **Corpus:** `plat_stubs_missing_xmod` GREEN (CRASH→GREEN); `emission_orelse_labeled_xmod` + `emission_catch_labeled_xmod` GREEN; `emission_opt_fptr_wrap_xmod` GREEN (new); `parsergap_specifier_xmod` GREEN; `field_store_drop` GREEN; `strictzig_brace_if_xmod`/`parsergap_selfblok_xmod`/`parsergap_strict_comma_xmod`/`parsergap_slice_expr_xmod` → green-guards; `self_embed_optional_cycle` per operator ruling. FAIL count drops from 9 to 0 (or to whatever the self-cycle ruling yields); CRASH count 1→0.
-- **Self-compile:** frontend frontend-blocker (brace-less if) cleared; gcc -c stays 0-error; **LINK green** (`zig1_5_clean` + `zig1_5_asan` build) — new milestone.
+- **Self-compile:** frontend frontend-blocker (brace-less if) cleared; gcc -c stays 0-error; **LINK green** and **self-compiled binary RUNS** (`zig1_5_clean` + `zig1_5_asan` build, smoke rc=0) — new milestones (link via Task 2.1, run via Task 2.2 global-var fix).
 - **Oracle compliance:** `{x}` prints lowercase hex (`41` for 65); brace-less `if;else` stays a correct rejection; scalar-base slice and missing-comma are clean errors.
 - **Byte-identity:** all 4 MD5s unchanged unless a task explicitly receives operator approval for a runtime-identical re-baseline (only the temp-sentinel task is at risk; it must prove byte-identity before commit).
 
@@ -359,3 +404,21 @@ Consequences for F-PLATSTUBS (Task 1.2):
   fix may be committed — do not re-baseline silently.
 - Fixture outcome: `plat_stubs_missing_xmod` compiles GREEN (no SEGV, both invocation
   forms), CRASH→GREEN in the corpus.
+
+---
+
+## AMENDMENT 2 — new Task 2.2 F-GLOBVAR (global-var emitted as stack local)  [2026-08-24, operator ruling]
+
+The F-CEXIT smoke test revealed a pre-existing emission bug blocking the self-compiled
+binary from running: module-level `var memory_pool_buf: [268435456]u8`
+(`sf/src/allocator.zig:184-186`) is emitted by zig1 as a **function-local temp**
+(256 MiB stack array in `initCompilerAlloc`) instead of a static global; zig0 emits it
+as `static unsigned char zV_..._memory_pool_buf[268435456];` and runs fine. This is a
+global-var emission bug, NOT caused by this plan, NOT in the original scope.
+
+**Operator RULED: add a fix task now** — Task 2.2 (I/F-GLOBVAR, inserted after Task 2.1
+in Phase 2, executed before Phase 3). It fixes the global-var-as-stack-local emission
+so the self-compiled binary RUNS. Same gate discipline as every fix task: 4 MD5s
+byte-identical (else STOP for a runtime-identity ruling), matrix 21/21, self-compile
+re-count 0, self-compiled binary smoke rc=0. Milestone now reads: self-compile **LINK
+green AND self-compiled binary RUNS**.
