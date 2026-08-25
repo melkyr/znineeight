@@ -519,3 +519,30 @@ as a new major out-of-scope residual requiring its own dedicated R/I/F plan.
 Phase 2 milestone (amended): self-compile **LINK green, self-compiled binary RUNS
 (crash-free)**; the deeper self-emission fidelity gap is a recorded deferred residual and
 does NOT block Phases 3-5, which do not depend on the self-compiled binary running.
+
+---
+
+## AMENDMENT 5 — field_store_drop fixture corrected + reclassified OK  [2026-08-24, operator ruling]
+
+During Task 5.5 (I/F-FIELDSTORE) dispatch the operator asked to correct the fixture's
+bare `@import("pal")` to the canonical `@import("pal.zig")` form. Investigation found the
+fixture had TWO stale dependencies masking its documented temp-0 sentinel target:
+1. `main.zig:1` bare `@import("pal")` → `error[3048]` at import resolution (a user program
+   cannot import the compiler-internal `pal` module by bare name). Corrected to
+   `@import("pal.zig")` + a bundled self-contained `pal.zig` stub providing `stderr_write`
+   (via the `@stderrWrite` builtin) — the canonical fixture pattern (cf. `emission_pal_xmod`).
+2. `__bootstrap_print_int(...)` — a bare extern removed from the runtime (F4). Corrected to
+   `std.io.printInt(...)` (the canonical fixture sink).
+
+**Result (operator ruling):** `field_store_drop` is now GREEN (dump/gcc/link/run rc=0;
+stdout `2030`, stderr `OK`). The emitted `store()` shows direct `t.s = s; t.b = b; t.c = c;`
+— the temp-0 sentinel extra-copy symptom is GONE. **The temp-sentinel bug is superseded by
+later compiler fixes; Task 5.5's code fix is MOOT — no `sf/src` change needed.**
+Reclassified **FAIL → OK** (fixture NOTES.md + QUICK_REF current-state note; commit
+`3ef2e8c8`). Corpus: 323 dirs = OK 313 / FAIL 1 / ICE 0 / CRASH 0 / GREEN 9.
+
+**Remaining FAIL=1** = `self_embed_optional_cycle` (error[24], the genuine deferred design
+gap — Z98's optional-by-value cannot break a self-referential struct cycle; real Zig accepts
+it because its optional is pointer-like). Handled by Task 5.6's decision-gate: operator may
+rule to (a) attempt an optional-layout fix (large blast radius, byte-identity risk) or
+(b) record it as an accepted deferral (the plan's default) and proceed to GATE-FINAL.
