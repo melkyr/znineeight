@@ -1,4 +1,83 @@
-# mi_matrix corpus — expected-fail manifest (v46 2026-08-24)
+# mi_matrix corpus — expected-fail manifest (v47 2026-08-25)
+
+## GATE — out-of-scope residual closeout, FINAL sweep + reconciliation (2026-08-25)
+
+Final gate sweep of the out-of-scope residual closeout plan
+(docs/superpowers/plans/2026-08-24-out-of-scope-residual-closeout-plan.md, AMENDMENTs 1-6),
+at HEAD `ec306847`, measured with `/tmp/fx_subfolder/zig1` (rebuilt at the last sf/src code
+commit `a9ea91f0`; canonical std reinstalled at `/tmp/fx_subfolder/lib/`). Docs-only task —
+no `sf/src`, fixture, or script change in this gate. **This is the plan-complete closeout:
+the entire FAIL=9 residual set is closed (FAIL → OK or → green-guard), FAIL 9→0, CRASH 1→0.**
+
+### Corpus (323 dirs): `OK=313 / FAIL=0 / ICE=0 / CRASH=0 / green-guards=10` (313+0+0+0+10=323)
+
+Corpus grew 322→323 (+1: the R-OPTFPTR fixture `emission_opt_fptr_wrap_xmod`). Full sweep
+(per-dir dump + per-file `gcc -c`) classifies OK=313, FAIL=0, ICE=0, CRASH=0; the 10
+green-guards = 5 auto-detected error[3000] rejections + 5 manual clean-rejections
+(error[2000]/[24]/[20], 0 `.c`, no ICE/crash) reclassified by oracle rulings. **Every
+fixture that changed classification this plan:**
+
+| fixture | old | new | mechanism / SHA |
+|---|---|---|---|
+| `plat_stubs_missing_xmod` | CRASH | **OK** | ASan SEGV gone — F-PLATSTUBS `7d1b512d` (kind-gated recursion, Option B) |
+| `emission_orelse_labeled_xmod` | FAIL | **OK** | F-LABELED `2cbf1fd3` (labeled_stmt orelse RHS no first-param leak) |
+| `emission_catch_labeled_xmod` | FAIL | **OK** | F-LABELED `2cbf1fd3` (labeled_stmt catch RHS) |
+| `emission_opt_fptr_wrap_xmod` | — | **OK** | new fixture (R `70af559c`) — F-OPTFPTR `53b9f1b6` (optional fn-ptr wrap) |
+| `parsergap_specifier_xmod` | FAIL | **OK** | F-SPECIFIER `a9ea91f0` ({x} = lowercase hex, no prefix) |
+| `field_store_drop` | FAIL | **OK** | fixture corrected `3ef2e8c8` (canonical `pal.zig` import + `std.io.printInt`; temp-0 sentinel superseded — Task 5.5 code fix MOOT) |
+| `strictzig_brace_if_xmod` | FAIL | **GREEN** | brace-less `if;else` correct rejection (oracle); green-guard |
+| `parsergap_selfblok_xmod` | FAIL | **GREEN** | brace-less `if;else` correct rejection (oracle); green-guard |
+| `parsergap_strict_comma_xmod` | FAIL | **GREEN** | missing call-arg comma clean `error[2000]` (oracle); green-guard |
+| `parsergap_slice_expr_xmod` | FAIL | **GREEN** | scalar-base slice clean reject `error[2000]`, no `error[3043]` ICE; green-guard |
+| `self_embed_optional_cycle` | FAIL | **GREEN** | `error[24]` circular-type is CORRECT per AMENDMENT 6 (real Zig rejects `?X` value self-reference); green-guard |
+| `emission_pal_xmod` | GREEN | **GREEN** | unchanged (pal green-guard, `error[20]`) |
+
+Green-guard set (10) = `eu_assign_incompat_payload`, `euvoid_val_catch`,
+`field_access_optional`, `var_declared_void` (error[3000]) + `parsergap_slice_expr_xmod`
+(error[3000]) + `strictzig_brace_if_xmod`, `parsergap_selfblok_xmod`,
+`parsergap_strict_comma_xmod` (error[2000]) + `self_embed_optional_cycle` (error[24]) +
+`emission_pal_xmod` (error[20]).
+
+### Oracle rulings (authoritative, recorded this plan)
+
+- **`{x}` format specifier** = lowercase hex, no `0x` prefix (langref `0x{x}`). Z98
+  `std.io.print("{x}\n", .{65})` prints **`41`** (F-SPECIFIER `a9ea91f0`; run-verified).
+- **Brace-less `if (cond) stmt; else stmt;`** is correctly REJECTED (real-Zig grammar takes
+  the `SEMICOLON` first → dangling `else`). The fix was migrating the 3 sf/src sites
+  (type_resolver.zig:980-981/:987-990, diagnostics.zig:295-296) to braced form
+  (F-BRACEMIG `22006588`); the fixtures are green-guards, not leniency.
+- **`?*X` optional-POINTER** is the real-Zig self-reference pattern (pointer-sized, null=0;
+  langref linked-list `prev: ?*Node, next: ?*Node`). Optional **VALUE** `?X` embeds by value →
+  infinite-size → real Zig rejects. Z98's `error[24]` for `next: ?X` is therefore CORRECT
+  (AMENDMENT 6, `ec306847`). Open question (not a blocker): whether Z98 supports `?*X`
+  optional-pointer self-reference.
+
+### json gate re-baseline (AMENDMENT 4, authoritative)
+
+`d31e43b1…` → **`089e4f046464ce3882aa2b2c4e585013`** — the NULLWRAP fix (F-NULLWRAP
+`a6fe169b`: optional-wrapped extern-call results emit `has_value = result != 0`) changes
+json_parser's emitted C (same latent `fopen ?*File` NULL bug repaired). Runtime-identical on
+every normal path (fopen succeeds → has_value=1 either way), repairs the NULL path (orelse
+now fires). gol/lisp/mud byte-identical. **`089e4f04…` is the json hash for all future gates.**
+
+### Deferred residuals (recorded, NOT fixed — do not regress-gate on these)
+
+1. **Self-emission fidelity gap:** the self-compiled binary RUNS crash-free but misparses
+   basic operators (`1 + 1`, `y = 5`, `x.len`, `y == 0`) → mass `error[2000]` self-dumping
+   `sf/src/main.zig` (proven independent of NULLWRAP: parser.c/lexer.c/token.c/ast.c
+   byte-identical pre/post). Requires its own dedicated R/I/F plan.
+2. **`?*X` optional-pointer self-reference support:** open question, not a blocker.
+
+### Milestone statement
+
+Self-compile: **gcc-CLEAN AND LINK-green AND self-compiled binary RUNS crash-free** —
+`bash scripts/self_compile/build_zig1_5.sh` → dump rc=0, 40 `.c`, in-script `gcc -c` clean
+(0 `: error:` lines), BOTH `zig1_5_clean` + `zig1_5_asan` link rc=0 (c_exit linked via
+`aa552f5d`), and the self-compiled binary runs on real input (crash-free rc=2 = the
+misparse of the deferred self-emission gap, NOT a regression). `test_analyzer_bin` PASS
+(rc=0, "Analyzer tests passed."). 21-example matrix **21/21** dump/gcc/link rc=0.
+4 MD5 gates byte-identical: gol `4afb203f…`, lisp `5f886646…` (repo-root CWD), json
+`089e4f04…`, mud `a1d0dd55…`.
 
 ## GATE — self-compile residual closeout R2/R1, final sweep + reconciliation (2026-08-24)
 

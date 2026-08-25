@@ -572,3 +572,15 @@ is closed (FAIL → OK or → green-guard).
 `?*X` optional-POINTER self-reference pattern. If that is broken, it is a legitimate future
 fix (a program using `next: ?*X` should compile); it is NOT the current fixture's concern.
 Task 5.6 is closed as the green-guard reclassification. NEXT: GATE-FINAL.
+
+== PLAN COMPLETE ==
+GATE-FINAL executed 2026-08-25 at HEAD `ec306847`: 4 MD5 gates byte-identical (gol
+`4afb203f…`, lisp `5f886646…` repo-root CWD, json `089e4f04…` [AMENDMENT-4 authoritative
+re-baseline], mud `a1d0dd55…`); 21-example matrix 21/21 dump/gcc/link rc=0; corpus 323 dirs
+= OK 313 / FAIL 0 / ICE 0 / CRASH 0 / GREEN 10; self-compile gcc-CLEAN + LINK-green (both
+`zig1_5_clean` + `zig1_5_asan` rc=0) + self-compiled binary RUNS crash-free (rc=2 misparse
+= recorded deferred self-emission fidelity gap, NOT a regression); test_analyzer_bin PASS.
+Deferred residuals recorded: (1) self-emission fidelity gap (own R/I/F plan needed),
+(2) `?*X` optional-pointer self-reference (open question). Docs reconciled: EXPECTED_FAIL
+v46→v47, QUICK_REF authoritative baseline, this plan annotated. Commit `docs: out-of-scope
+residual closeout GATE + reconciliation`.
