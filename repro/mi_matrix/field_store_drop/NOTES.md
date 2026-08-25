@@ -1,4 +1,4 @@
-# Field Store Drop Bug - RED Repro
+# Field Store Drop Bug - GREEN (OK) — superseded; fixture corrected 2026-08-24
 
 ## Bug Description
 
@@ -52,3 +52,31 @@ These prevent the binary from compiling and running.
 
 Three overlapping sentinels on the same value (0) cause this class of bugs.
 Fix: either start `nextTemp` at 1, or use a different sentinel for `findLocalTemp`.
+
+## Reclassification — GREEN (OK), 2026-08-24 (out-of-scope residual closeout plan)
+
+At plan-start the fixture failed with `error[3048]: could not resolve imported file 'pal'`
+— its line 1 was the bare `const pal = @import("pal")` (no `.zig`), which the import
+resolver treats as a literal filename and cannot resolve (a user program cannot import the
+compiler-internal `pal` module by bare name). This masked the documented temp-0 sentinel
+target before lowering ever ran.
+
+Corrected per the canonical fixture pattern (cf. `emission_pal_xmod`, which bundles its own
+`pal.zig` stub):
+1. `main.zig`: `@import("pal")` → `@import("pal.zig")`; added `const std = @import("std");`.
+2. New bundled `pal.zig` stub providing `stderr_write` (via the `@stderrWrite` builtin).
+3. `main.zig`: `__bootstrap_print_int(x.b/x.c)` → `std.io.printInt(x.b/x.c)` — the bare
+   `__bootstrap_print_int` extern was removed from the runtime (F4), so it was the second
+   stale dependency masking the fixture.
+
+Current state: dump rc=0, gcc -c rc=0, link rc=0, run rc=0 — stdout `2030`, stderr `OK`.
+The emitted `store()` shows clean direct stores:
+```c
+t.s = s;   // first param direct — NO intermediate load_local copy
+t.b = b;
+t.c = c;
+```
+The documented temp-0 sentinel extra-copy symptom is GONE — the findLocalTemp/nextTemp
+sentinel collision has been superseded by later compiler fixes. **Reclassified FAIL → OK**
+(GREEN). Task 5.5 of the out-of-scope plan (fix the sentinel bug) is moot; no compiler
+change needed.

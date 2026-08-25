@@ -1,4 +1,5 @@
-const pal = @import("pal");
+const std = @import("std");
+const pal = @import("pal.zig");
 
 const AggTri = struct {
     s: []const u8,
@@ -19,8 +20,8 @@ pub fn main() void {
     var x = store(msg, 20, 30);
     pal.stderr_write(x.s);
     pal.stderr_write("\n");
-    __bootstrap_print_int(x.b);
+    std.io.printInt(x.b);
     pal.stderr_write("\n");
-    __bootstrap_print_int(x.c);
+    std.io.printInt(x.c);
     pal.stderr_write("\n");
 }
