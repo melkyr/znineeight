@@ -40,11 +40,23 @@ fn shapeC() u32 {
     return total;
 }
 
+fn shapeALit() u32 {
+    var a: u32 = 0;
+    blk: {
+        a = 1;
+        break :blk;
+        a = 2;
+    }
+    return a;
+}
+
 pub fn main() void {
     std.io.printInt(@intCast(i32, shapeA()));
     std.io.print("\n");
     std.io.printInt(@intCast(i32, shapeB()));
     std.io.print("\n");
     std.io.printInt(@intCast(i32, shapeC()));
+    std.io.print("\n");
+    std.io.printInt(@intCast(i32, shapeALit()));
     std.io.print("\n");
 }

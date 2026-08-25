@@ -1,4 +1,4 @@
-# emission_labeled_ctrl_xmod — GREEN runtime-correctness fixtures for labeled-statement control flow (A/B/C)
+# emission_labeled_ctrl_xmod — GREEN runtime-correctness fixtures for labeled-statement control flow (A/B/C + literal-A)
 
 Task 5 R-LABELED (2026-08-25), AMENDMENT 7 of the Self-Hosted zig1_5
 Investigation Plan (`docs/superpowers/plans/2026-08-25-self-hosted-zig15-investigation-plan.md`).
@@ -14,11 +14,14 @@ link `sf/src/include/zig_runtime.c` + `sf/src/include/zig_pal.c`, run.
 ## Purpose
 
 Runtime-correctness coverage for labeled-statement control flow (the R-LABELED
-rung of the post-fix R-ladder). Three shapes in one build, each printing an
+rung of the post-fix R-ladder). Four shapes in one build, each printing an
 expected value through `std.io.printInt`:
 - **A** — labeled block `blk: { … }` containing a labeled loop whose `break :loop`
   escapes the loop; the value AFTER the block is printed (control resumes after
   the labeled block correctly).
+- **literal-A** — the LITERAL `blk: { a = 1; break :blk; a = 2; }` shape:
+  `break :blk` must exit the block directly (skip `a = 2`), printing `1`. This is
+  the shape that was silently dropped pre-fix (see AMENDMENT-1 note below).
 - **B** — labeled while with BOTH `break :loop` AND `continue :loop`, printing
   the loop iteration count.
 - **C** — labeled statements (`break :loop` / `continue :loop`) nested inside the
@@ -70,12 +73,24 @@ fn shapeC() u32 {
     return total;
 }
 
+fn shapeALit() u32 {
+    var a: u32 = 0;
+    blk: {
+        a = 1;
+        break :blk;
+        a = 2;
+    }
+    return a;
+}
+
 pub fn main() void {
     std.io.printInt(@intCast(i32, shapeA()));
     std.io.print("\n");
     std.io.printInt(@intCast(i32, shapeB()));
     std.io.print("\n");
     std.io.printInt(@intCast(i32, shapeC()));
+    std.io.print("\n");
+    std.io.printInt(@intCast(i32, shapeALit()));
     std.io.print("\n");
 }
 ```
@@ -99,11 +114,13 @@ $ /tmp/fx_abc2/bin
 3
 6
 10
+1
 run rc=0
 ```
 
 Expected per shape: A → `3` (labeled loop breaks at a==3; control resumes after
-the labeled block), B → `6` (continue at i==3 skips one `count` increment,
+the labeled block), literal-A → `1` (break :blk exits the block, `a = 2`
+skipped), B → `6` (continue at i==3 skips one `count` increment,
 break at i==7 exits; count++ fires at i∈{0,1,2,4,5,6} = 6), C → `10`
 (idx 0 → plus prong `continue :loop`; idx 1 → minus prong `total += 10`;
 idx 2 → star prong `break :loop`). Output matches exactly.
@@ -121,9 +138,12 @@ continue-expr block (`i = i + 1; goto z_bb_1;`) — correct continue semantics;
 - **A** → labeled BLOCK (`blk: { … }`, parser `parserParseLabeledStmt` —
   parser.zig:1329-1337) as a transparent prefix over a labeled loop; verifies
   the block lowers, the inner `break :loop` escapes the loop, and control
-  continues AFTER the block (the printed value is read post-block). The literal
-  Zig shape `blk: { break :blk; }` (direct block escape) is NOT supported by the
-  dialect — see dialect-adaptation note below.
+  continues AFTER the block (the printed value is read post-block).
+- **literal-A** → the literal Zig shape `blk: { a = 1; break :blk; a = 2; }`
+  (direct block escape via `break :blk`). This is the F-LABELBREAK (A1a) fix
+  target: `break :blk` resolves to the labeled-block exit BB pushed by the
+  labeled_stmt block-body entry (`LoopInfo{ .is_loop = 0 }`), jumps there, and
+  `a = 2` is skipped → prints `1`. See AMENDMENT-1 note below.
 - **B** → labeled while with BOTH `break :loop` and `continue :loop`
   (`loop: while (cond) : (inc) { … }` — label registered in the loop-stack at
   lower.zig:4602-4604; break → exit_bb, continue → header_bb at
@@ -134,32 +154,36 @@ continue-expr block (`i = i + 1; goto z_bb_1;`) — correct continue semantics;
   applied to a qualified enum switch inside a labeled while). Also covers the
   qualified-literal case-label path (Task 2 fix) combined with label targets.
 
-## Dialect-adaptation notes (shape A)
+## F-LABELBREAK fix (Task A2, AMENDMENT 1) — literal-A now GREEN
 
-The brief's literal A shape — `blk: { … break :blk … }`, control escaping the
-BLOCK directly — is **genuinely unsupported by the dialect**: the labeled-break
-lowering (`lower.zig:5018-5037`) resolves labels ONLY against `loop_stack`
-(entries pushed for `while_stmt`/`for_stmt` at lower.zig:4602-4604/4702-4703/
-4756-4757); a labeled_stmt wrapping a plain block pushes NO entry, so
-`break :blk` silently returns at `lower.zig:5019` (`loop_stack.len == 0`) or
-`:5037` (`exit_target == 0`) and the break is DROPPED.
+Pre-fix, `break :blk` on a plain labeled block was **silently dropped**: the
+labeled-break lowering (`lower.zig:5018-5037`) resolved labels ONLY against
+`loop_stack`, and a labeled_stmt wrapping a plain block pushed NO entry, so
+`break :blk` silently returned at `:5019`/`:5037` and the break was DROPPED
+(measured RED: printed `2`, expected `1`).
 
-Measured RED on the literal form (2026-08-25, /tmp/fx_subfolder/zig1):
-```zig
-var a: u32 = 0;
-blk: {
-    a = 1;
-    break :blk;
-    a = 2;
-}
-std.io.printInt(@intCast(i32, a));
-```
-dump rc=0, gcc rc=0, link rc=0, run prints **`2`** (expected `1` — the break is
-silently dropped, `a = 2` executes). Per the brief's adaptation rule this shape
-was NOT forced: shape A uses the closest SUPPORTED form (labeled block as a
-transparent prefix over a labeled loop, with the value printed after the block),
-and the block-direct-`break :blk` silent-drop is recorded as an out-of-scope
-fidelity-gap residual (lower.zig:5018-5069 loop-stack-only label resolution).
+Post-fix (A1a, applied in Task A2 F-LABELBREAK, commit below): `labeled_stmt`
+lowering (`lower.zig:4442-4461`) now pushes a breakable loop-stack entry when
+`child_0.kind == AstKind.block` (`LoopInfo{ header_bb = exit_bb, exit_bb =
+block-exit BB, scope_depth = self.scope_depth, label_id = current_label,
+is_loop = 0 }`), lowers the block body between push/pop, and emits a fall-through
+`jump exit_bb` if the body is not self-terminating. `break :blk` resolves the
+block entry via the existing label scan (jump to its `exit_bb`); `continue`
+skips `is_loop == 0` entries (continue-on-block stays invalid / silent-fallthrough
+as before). `LoopInfo` gained `is_loop: u8` (1 = real while/for loop, 0 =
+labeled-block entry). Measured: the literal shape now prints **`1`**, rc=0.
+
+**AMENDMENT 1 dead-code note:** because the block-body push is unconditional on
+`child_0.kind == AstKind.block` (operator ruling `ebb01f59`, "no guard
+refinement"), expression-position labeled blocks in the GREEN corpus whose body
+self-terminates (e.g. `orelse blk: { return null; }` in
+`emission_orelse_labeled_xmod` / `emission_catch_labeled_xmod`) now leave an
+extra DEAD `z_bb_N` block behind: the block-exit BB is created and set as
+`current_bb` even though the body's `return` fires first, so each affected
+function emits an orphan, never-referenced `z_bb_N:` label with no body. Runtime
+is correct; the extra block is dead code — ACCEPTED per AMENDMENT 1. Those two
+fixtures' emitted BYTES change (re-baseline-default, NOT a gate violation); A2
+verifies they still RUN correctly (prints `0` / `7`).
 
 ## No GREEN impact
 

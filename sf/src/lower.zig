@@ -75,6 +75,7 @@ pub const LoopInfo = struct {
     exit_bb: u32,
     scope_depth: u32,
     label_id: u32,
+    is_loop: u8,
 };
 
 pub const SwitchInfo = struct {
@@ -4442,7 +4443,20 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var saved_label = self.current_label;
         self.current_label = @intCast(u32, node.payload);
         if (node.child_0 != @intCast(u32, 0)) {
-            lowerStmt(self, node.child_0);
+            var ls_child = self.ctx.store.nodes.items[@intCast(usize, node.child_0)];
+            if (ls_child.kind == AstKind.block) {
+                var ls_exit_bb = createBlock(self);
+                var ls_loop_info = LoopInfo{ .header_bb = ls_exit_bb, .exit_bb = ls_exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 0) };
+                loopInfoArrayListAppend(&self.loop_stack, ls_loop_info);
+                lowerStmt(self, node.child_0);
+                if (self.block_terminated == @intCast(u8, 0)) {
+                    emitInst(self, LirInst{ .jump = ls_exit_bb });
+                }
+                self.current_bb = ls_exit_bb;
+                self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+            } else {
+                lowerStmt(self, node.child_0);
+            }
         }
         self.current_label = saved_label;
     } else if (node.kind == AstKind.defer_stmt) {
@@ -4600,6 +4614,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             .exit_bb = exit_bb,
             .scope_depth = self.scope_depth,
             .label_id = self.current_label,
+            .is_loop = @intCast(u8, 1),
         };
         loopInfoArrayListAppend(&self.loop_stack, loop_info);
         emitInst(self, LirInst{ .jump = cond_bb });
@@ -4699,7 +4714,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label };
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
             loopInfoArrayListAppend(&self.loop_stack, loop_info);
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = cond_bb;
@@ -4753,7 +4768,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label };
+            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
             loopInfoArrayListAppend(&self.loop_stack, loop_info);
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = cond_bb;
@@ -5047,17 +5062,26 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var header_target: u32 = @intCast(u32, 0);
         var cont_scope: u32 = @intCast(u32, 0);
         if (label_id == @intCast(u32, 0)) {
-            var li = self.loop_stack.items[self.loop_stack.len - @intCast(usize, 1)];
-            header_target = li.header_bb;
-            cont_scope = li.scope_depth + @intCast(u32, 1);
+            var si: usize = self.loop_stack.len;
+            while (si > @intCast(usize, 0)) : (si -= @intCast(usize, 1)) {
+                var li = self.loop_stack.items[si - @intCast(usize, 1)];
+                if (li.is_loop != @intCast(u8, 0)) {
+                    header_target = li.header_bb;
+                    cont_scope = li.scope_depth + @intCast(u32, 1);
+                    break;
+                }
+            }
+            if (header_target == @intCast(u32, 0)) { return; }
         } else {
             var si: usize = self.loop_stack.len;
             while (si > @intCast(usize, 0)) : (si -= @intCast(usize, 1)) {
                 var li = self.loop_stack.items[si - @intCast(usize, 1)];
-                if (li.label_id == label_id) {
-                    header_target = li.header_bb;
-                    cont_scope = li.scope_depth + @intCast(u32, 1);
-                    break;
+                if (li.is_loop != @intCast(u8, 0)) {
+                    if (li.label_id == label_id) {
+                        header_target = li.header_bb;
+                        cont_scope = li.scope_depth + @intCast(u32, 1);
+                        break;
+                    }
                 }
             }
             if (header_target == @intCast(u32, 0)) { return; }
