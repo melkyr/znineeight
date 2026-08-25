@@ -3966,6 +3966,39 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev3) |v| { cval3 = @intCast(u64, v); }
                     case_val = cval3;
+                } else if (case_node.kind == AstKind.field_access) {
+                    var fa_name_id: u32 = @intCast(u32, case_node.payload);
+                    var fa_found: bool = false;
+                    if (cond_ty_id) |ct| {
+                        var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+                        if (ct_ty.kind == type_mod.TypeKind.enum_type) {
+                            var ep = self.ctx.registry.en_items[@intCast(usize, ct_ty.payload_idx)];
+                            var estart: usize = @intCast(usize, ep.members_start);
+                            var ecount: usize = @intCast(usize, ep.members_count);
+                            var ei: usize = 0;
+                            while (ei < ecount) : (ei += 1) {
+                                var member = self.ctx.registry.em_items[estart + ei];
+                                if (member.name_id == fa_name_id) {
+                                    case_val = @intCast(u64, member.value);
+                                    fa_found = true;
+                                    break;
+                                }
+                            }
+                        } else if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                            var tp = self.ctx.registry.tu_items[@intCast(usize, ct_ty.payload_idx)];
+                            var fstart: usize = @intCast(usize, tp.fields_start);
+                            var fcount: usize = @intCast(usize, tp.fields_count);
+                            var fi: usize = 0;
+                            while (fi < fcount) : (fi += 1) {
+                                if (self.ctx.registry.fe_items[fstart + fi].name_id == fa_name_id) {
+                                    case_val = @intCast(u64, fi);
+                                    fa_found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!fa_found) { continue; } // base ident not verified against cond enum type: conservative continue fallback
                 } else {
                     continue;
                 }
@@ -4797,6 +4830,39 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
                     if (cev3) |v| { cval3 = @intCast(u64, v); }
                     case_val = cval3;
+                } else if (case_node.kind == AstKind.field_access) {
+                    var fa_name_id: u32 = @intCast(u32, case_node.payload);
+                    var fa_found: bool = false;
+                    if (cond_ty_id) |ct| {
+                        var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+                        if (ct_ty.kind == type_mod.TypeKind.enum_type) {
+                            var ep = self.ctx.registry.en_items[@intCast(usize, ct_ty.payload_idx)];
+                            var estart: usize = @intCast(usize, ep.members_start);
+                            var ecount: usize = @intCast(usize, ep.members_count);
+                            var ei: usize = 0;
+                            while (ei < ecount) : (ei += 1) {
+                                var member = self.ctx.registry.em_items[estart + ei];
+                                if (member.name_id == fa_name_id) {
+                                    case_val = @intCast(u64, member.value);
+                                    fa_found = true;
+                                    break;
+                                }
+                            }
+                        } else if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                            var tp = self.ctx.registry.tu_items[@intCast(usize, ct_ty.payload_idx)];
+                            var fstart: usize = @intCast(usize, tp.fields_start);
+                            var fcount: usize = @intCast(usize, tp.fields_count);
+                            var fi: usize = 0;
+                            while (fi < fcount) : (fi += 1) {
+                                if (self.ctx.registry.fe_items[fstart + fi].name_id == fa_name_id) {
+                                    case_val = @intCast(u64, fi);
+                                    fa_found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!fa_found) { continue; } // base ident not verified against cond enum type: conservative continue fallback
                 } else {
                     continue;
                 }
