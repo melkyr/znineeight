@@ -145,28 +145,56 @@ Report: ASan capture, emission diff evidence, source anchor, pinned F locus (or 
 
 ---
 
-### Task B3: F-LOWERCRASH — apply the pinned fix
+### Task B3a: F-EMITMAP — growable fl_temps (F2 crash fix)
 
 **Files:**
-- Modify: the pinned `sf/src/*.zig` locus from B2 (single file/locus)
+- Modify: `sf/src/c89_emit.zig` (fl_temps/fl_name_ids growable + name-dedup fix)
 - Fixture: `repro/mi_matrix/emission_lower_crash_xmod` RED→GREEN
-- Commit: `fix: self-emitted <construct> produces stale resolved-type id (self-compile SEGV)` (adjust wording to the actual locus)
+- Commit: `fix: growable fl_temps map for capture locals (self-compile SEGV)`
 
 **Interfaces:**
-- Consumes: B2 pinned locus.
-- Produces: self-compiled `zig1_5` runs the B1 fixture rc=0; 4 MD5s byte-identical; self-compile re-count 0.
+- Consumes: B2 F2 finding (capture value unwrapped to temp; name-based read of never-assigned named local because fl_temps capped at [128] + name-deduped).
+- Produces: self-compiled `zig1_5` runs B1 fixture rc=0; 4 MD5s byte-identical.
 
 - [ ] **Step 1: Apply the fix**
 
-Per B2's pinned locus, modify the single `sf/src` file. Z98-clean. Do NOT chase additional defects if the B2 STOP applied.
+In `sf/src/c89_emit.zig`: replace the fixed `fl_temps: [128]u32` / `fl_name_ids: [128]u32` / `fl_count: u32` (struct ~:548-550, init ~:582-584) with a growable structure (dynamic arrays via `sandAlloc`/grow, following the emitter's existing grow pattern), and drop the `if (local_count < 128)` cap at `:2690` and `:2711`. Fix the name-dedup guard (`:2712-2716`): the same name may legitimately be re-declared at different scopes (capture shadowing) — each `decl_local` must register its own temp→name entry rather than being skipped when the name already exists. Keep `resolveTempName` (`:3822-3830`) semantics (find by temp_id, return the mangled name). Z98-clean.
 
 - [ ] **Step 2: Gate verification**
 
-Rebuild `/tmp/fx_subfolder/zig1` (reinstall std into `/tmp/fx_subfolder/lib`). Rebuild self-compiled `zig1_5` via `scripts/self_compile/build_zig1_5.sh`. Run B1 fixture via BOTH reference (rc=0) and self-compiled (now rc=0). 4 MD5s byte-identical; matrix 21/21; self-compile re-count 0 errors; corpus re-count unchanged.
+Rebuild `/tmp/fx_subfolder/zig1` (reinstall std into `/tmp/fx_subfolder/lib`). Rebuild self-compiled `zig1_5` via `scripts/self_compile/build_zig1_5.sh`. Run B1 fixture via BOTH reference (rc=0) and self-compiled (now rc=0, no SEGV). 4 MD5s byte-identical (gol `4afb203fdde7a880ec6e7aed32543691`, lisp `5f886646b164a70c52bf042eb54bda78` repo-root CWD, json `089e4f046464ce3882aa2b2c4e585013`, mud `a1d0dd55aada9c3fd904ae33f54de32e`); matrix 21/21; self-compile re-count 0 errors.
 
 - [ ] **Step 3: Commit + report + ledger + memory**
 
 Commit with verbatim message. Report: fix summary, gate evidence (esp. self-compiled now rc=0), commit. Ledger + mnemoria.
+
+---
+
+### Task B3b: F-SCOPERES — architectural lexical scope chain (F1 fix)
+
+**Files:**
+- Modify: `sf/src/lower.zig` (scope-chain name resolution)
+- Commit: `fix: lexical scope-chain local resolution (stale sibling capture)`
+
+**Interfaces:**
+- Consumes: B2 F1 finding (LDS loop forward-scan max-numeric-scope picks a stale sibling binding over the lexically-enclosing one; `findLocalTemp` backward scan returns the correct one).
+- Produces: `findLocalTemp` and the LDS loop agree; re-captured names resolve to the lexically-enclosing binding; 4 MD5s byte-identical.
+
+- [ ] **Step 1: Design the scope chain**
+
+Add a real lexical scope identity: a parent-pointer scope node (or per-scope decl list). Each `addLocalDecl`/`addLocalDeclRenamed` records which scope node it belongs to; scope push/pop (`scope_depth += 1`/`-= 1` at block/while/for/labeled_stmt/swt_prong entry/exit) maintains the chain. Resolution walks the enclosing-scope chain outward (innermost first), returning the first binding whose scope is an ancestor of the current point — replacing BOTH the LDS forward-scan max-scope loop (`lower.zig:2288-2317`) and the `findLocalTemp` backward-scan (`:1309-1317`) with one shared resolver that returns `{temp, kind, tid}`. Do NOT change emission semantics for programs that currently resolve correctly (GREEN gates byte-identical).
+
+- [ ] **Step 2: Apply the fix**
+
+Modify `sf/src/lower.zig` per the design. Keep the `arr_kind`/`arr_tid`/`arr_temp` side effects the LDS loop currently produces (used downstream at `:2339-2343` array/slice/TU/struct checks). Z98-clean; no anytype/@Type; `@intCast` for casts.
+
+- [ ] **Step 3: Gate verification**
+
+Rebuild `/tmp/fx_subfolder/zig1` (reinstall std). Rebuild self-compiled `zig1_5`. Run B1 fixture via both reference and self-compiled rc=0 (post-B3a). 4 MD5s byte-identical; matrix 21/21; self-compile re-count 0 errors; corpus re-count unchanged.
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit with verbatim message. Report: scope-chain design, fix summary, gate evidence, commit. Ledger + mnemoria.
 
 ---
 
@@ -196,7 +224,7 @@ Commit with verbatim message. Report + ledger + mnemoria.
 
 ## Self-Review (controller, before execution)
 
-- **Spec coverage:** Phase A → Tasks A1-A2; Phase B → Tasks B1-B3; both → GATE-FINAL. All acceptance criteria covered.
+- **Spec coverage:** Phase A → Tasks A1-A2; Phase B → Tasks B1-B2 + B3a/B3b (AMENDMENT 2); both → GATE-FINAL. All acceptance criteria covered.
 - **Placeholder scan:** all steps carry exact commands/expected output; no TBD.
 - **Type consistency:** artifact paths stable (`/tmp/fx_subfolder/zig1`, `/tmp/zig1_5/zig1_5_clean`, `/tmp/ref_zig1.c`); fixture dirs per convention.
 
@@ -214,3 +242,22 @@ Commit with verbatim message. Report + ledger + mnemoria.
 3. **Byte-identity scope re-stated:** the 4 MD5 gates (gol `4afb203f…`, lisp `5f886646…` repo-root CWD, json `089e4f04…`, mud `a1d0dd55…`) MUST remain byte-identical — none uses expression-position labeled blocks, so A1a does not affect them. The two GREEN corpus fixtures' emitted bytes MAY change (runtime-identical); they are runtime-correctness fixtures, and a byte change there is a re-baseline-default case, NOT a gate violation.
 4. **A2 (F-LABELBREAK) verifies** `emission_orelse_labeled_xmod` + `emission_catch_labeled_xmod` still RUN correctly (prints 0 / 7) after the fix; their emitted-byte change is expected and accepted per this ruling.
 5. **GATE-FINAL** records this ruling + any corpus byte-change in the reconciliation.
+
+---
+
+## AMENDMENT 2 (2026-08-25, operator-ruled) — B3 split into B3a (F2 emit-map) + B3b (F1 scope-chain)
+
+**Context:** Task B2 (I-LOWERCRASH) STOP-presented a BROAD class (2 independent self-emission defects). The plan's premise ("resolved_types corrupt; crash at lower.zig:2262-2269") was corrected by B2's triple-verified findings:
+
+- **resolved_types is healthy.** The stale value is the emitted code's *variable* (temp vs name), not the type table.
+- **Crash site is lower.zig:2136** (`s->kind`, s=0x1 uninitialized), not `:2269` (B1 attribution stale).
+- **F2 (crash driver, c89_emit):** capture values unwrap to temps (`bindOptionalCapture` lower.zig:1437-1440/:1463), but name-based field access (`c89_emit.zig:4677` load_field / `:4339` assign, name-preferred) reads the named C local. The `fl_temps` temp→name map is capped `[128]` (`c89_emit.zig:550`, guard `:2690`/`:2711`) and name-deduped (`:2712-2716`); lowerExprImpl exceeds 128 decl_locals, so `s`/`sym`/`c0_rt` never register → `resolveTempName` returns the raw temp, the named local stays unassigned → SEGV. Reference emits `s = opt_tmp_41.value;` correctly.
+- **F1 (latent, lower.zig):** the ident-path LDS loop (`:2288-2317`) forward-scans with `>=` max-numeric-scope selection, picking a stale sibling-scope binding (`t`→3065, sibling branch scope 3) over the lexically-enclosing `:2267` capture (4037, scope 2). `findLocalTemp` (`:1309-1317`) backward-scans first-match `scope <= current` → 4037 (correct). The two lookups disagree; numeric scope_depth cannot distinguish sibling scopes (they share a depth number).
+
+**Operator rulings (verbatim intent):** "for F2, it think option b) could be the best. for F1 that kind of nonsense seems like trying and hoping isn't something like topo sort that sort this out once and for all?" → answers: **F1 = architectural (scope chain)**, **order = B3a (F2) first, then B3b (F1)**.
+
+**Consequences:**
+1. **Task B3 replaced by B3a + B3b** (above). B3a = F2 architectural fix (growable `fl_temps`/`fl_name_ids`, drop the 128 cap + name-dedup). B3b = F1 architectural lexical scope chain (parent-pointer scope nodes; resolution walks the enclosing-scope chain; replaces both the LDS loop and `findLocalTemp` with one shared resolver returning `{temp, kind, tid}`).
+2. **B3a first, then B3b** (both required: B3a alone stops the crash; B3b alone restores byte-correct scope resolution — fixing only one still fails byte-identity on re-captured-name programs).
+3. **Byte-identity gates stay authoritative** (gol `4afb203f…`, lisp `5f886646…` repo-root CWD, json `089e4f04…`, mud `a1d0dd55…`). B3a is expected to be byte-identical on all gates (none exceed 128 locals — small examples). B3b MUST be byte-identical on all gates (correctly-resolving programs unchanged).
+4. **GATE-FINAL** records both fixes, the AMENDMENT-2 split, and re-verifies self-compiled binary runs std-importing programs rc=0.
