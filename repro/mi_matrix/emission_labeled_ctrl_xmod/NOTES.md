@@ -162,7 +162,7 @@ labeled-break lowering (`lower.zig:5018-5037`) resolved labels ONLY against
 `break :blk` silently returned at `:5019`/`:5037` and the break was DROPPED
 (measured RED: printed `2`, expected `1`).
 
-Post-fix (A1a, applied in Task A2 F-LABELBREAK, commit below): `labeled_stmt`
+Post-fix (A1a, applied in Task A2 F-LABELBREAK, commit `ee092e3b`): `labeled_stmt`
 lowering (`lower.zig:4442-4461`) now pushes a breakable loop-stack entry when
 `child_0.kind == AstKind.block` (`LoopInfo{ header_bb = exit_bb, exit_bb =
 block-exit BB, scope_depth = self.scope_depth, label_id = current_label,
