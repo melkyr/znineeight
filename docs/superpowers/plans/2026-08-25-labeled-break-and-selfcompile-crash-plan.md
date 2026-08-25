@@ -199,3 +199,18 @@ Commit with verbatim message. Report + ledger + mnemoria.
 - **Spec coverage:** Phase A → Tasks A1-A2; Phase B → Tasks B1-B3; both → GATE-FINAL. All acceptance criteria covered.
 - **Placeholder scan:** all steps carry exact commands/expected output; no TBD.
 - **Type consistency:** artifact paths stable (`/tmp/fx_subfolder/zig1`, `/tmp/zig1_5/zig1_5_clean`, `/tmp/ref_zig1.c`); fixture dirs per convention.
+
+---
+
+## AMENDMENT 1 (2026-08-25, operator-ruled) — A1a guard accepted AS-IS; no refinement
+
+**Context:** Task A1 (I-LABELBREAK) review surfaced an Important byte-identity concern: A1a's guard (`labeled_stmt` with `child_0.kind == AstKind.block` → push breakable loop_stack entry) ALSO fires on expression-position labeled blocks, which appear in the GREEN corpus fixtures `emission_orelse_labeled_xmod` and `emission_catch_labeled_xmod` (F-LABELED `2cbf1fd3`). Under A1a those emit an extra dead `z_bb_N` block (push + epilogue even though `return null` fires first); runtime stays correct but their emitted bytes change. Three guard-refinement options (R1 only-push-when-labeled-break-present / R2 skip-when-body-self-terminates / R3 exclude-expression-position) were presented.
+
+**Operator ruling (verbatim intent):** "none makes sense, if the dead code its dead but runtime is correct i don't see a need to refine futher if harmless. so ammend and stop."
+
+**Consequence:**
+1. **A1a applied as specified** — NO guard refinement. The labeled_stmt block-body push stays unconditional on `child_0.kind == AstKind.block`.
+2. **Dead-code emission is ACCEPTED** where the body self-terminates: the extra block is dead, runtime is correct, and per the operator's ruling this is harmless — no further refinement.
+3. **Byte-identity scope re-stated:** the 4 MD5 gates (gol `4afb203f…`, lisp `5f886646…` repo-root CWD, json `089e4f04…`, mud `a1d0dd55…`) MUST remain byte-identical — none uses expression-position labeled blocks, so A1a does not affect them. The two GREEN corpus fixtures' emitted bytes MAY change (runtime-identical); they are runtime-correctness fixtures, and a byte change there is a re-baseline-default case, NOT a gate violation.
+4. **A2 (F-LABELBREAK) verifies** `emission_orelse_labeled_xmod` + `emission_catch_labeled_xmod` still RUN correctly (prints 0 / 7) after the fix; their emitted-byte change is expected and accepted per this ruling.
+5. **GATE-FINAL** records this ruling + any corpus byte-change in the reconciliation.
