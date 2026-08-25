@@ -546,3 +546,29 @@ gap — Z98's optional-by-value cannot break a self-referential struct cycle; re
 it because its optional is pointer-like). Handled by Task 5.6's decision-gate: operator may
 rule to (a) attempt an optional-layout fix (large blast radius, byte-identity risk) or
 (b) record it as an accepted deferral (the plan's default) and proceed to GATE-FINAL.
+
+---
+
+## AMENDMENT 6 — self_embed_optional_cycle oracle corrected → GREEN-GUARD  [2026-08-24, operator ruling]
+
+The plan's Task 5.6 oracle ("real Zig accepts `next: ?X` — optional breaks the cycle") was
+**WRONG and is corrected here**. The Zig language reference shows:
+- **Optional POINTERS** (`?*X`) are the self-reference mechanism: "secretly compiles down to a
+  normal pointer, since we know we can use 0 as the null value" — pointer-sized. The langref's
+  linked-list example uses `prev: ?*Node, next: ?*Node`.
+- An optional **VALUE** `?X` embeds `X` by value → `struct X { next: ?X }` is infinite-size,
+  which real Zig rejects (the "type depends on itself" error).
+
+**Therefore Z98's `error[24]: circular type dependency` for `next: ?X` is CORRECT behavior.**
+`self_embed_optional_cycle` is reclassified **FAIL → GREEN-GUARD** (a correct rejection, like
+`strictzig_brace_if_xmod` / `parsergap_slice_expr_xmod` etc.). NO compiler fix is made — the
+earlier operator ruling "continue with (a)" (make Z98 accept `?X` self-reference) is REVERSED
+because it would diverge from real Zig by accepting an invalid infinite-size type.
+
+**Corpus now 323 dirs: OK=313 FAIL=0 ICE=0 CRASH=0 GREEN=10.** The entire FAIL=9 residual set
+is closed (FAIL → OK or → green-guard).
+
+**Recorded separately (open question, not a blocker):** whether Z98 supports the real-Zig
+`?*X` optional-POINTER self-reference pattern. If that is broken, it is a legitimate future
+fix (a program using `next: ?*X` should compile); it is NOT the current fixture's concern.
+Task 5.6 is closed as the green-guard reclassification. NEXT: GATE-FINAL.
