@@ -106,7 +106,7 @@ Report: divergent construct, exact C lines both sides, Zig source anchor, candid
 
 ---
 
-### Task 3: R-LEXER — minimal repro fixture
+### Task 3: R-LEXER — minimal repro fixture  [SUPERSEDED BY AMENDMENT 7 — see R-ladder below]
 
 **Files:**
 - Create: `repro/mi_matrix/emission_lexer_switch_xmod/{main.zig,mod_a.zig,NOTES.md}` (per fixture convention)
@@ -143,7 +143,7 @@ Commit `repro: lexer operator-switch mis-emission fixture`. Report: status, comm
 
 ---
 
-### Task 4: I-LEXER-TRACE — instrument, confirm, trace to emission site
+### Task 4: I-LEXER-TRACE — instrument, confirm, trace to emission site  [SUPERSEDED BY AMENDMENT 7 → I-ENUMTRACE]
 
 **Files:**
 - Run (temp only, NOT repo): `/tmp/lexer_trace.c`, `/tmp/lexer_trace_bin`
@@ -269,3 +269,117 @@ Report: dependency map (Task 5), delta table (Task 6), full `sf/src_sh/` file li
 - **Spec coverage:** Part 1 (fidelity gap) → Tasks 1-4; Part 2 (self-containment) → Tasks 5-7. All acceptance criteria covered.
 - **Placeholder scan:** all steps carry exact commands/expected output; no TBD.
 - **Type consistency:** artifact paths stable across tasks (`/tmp/ref_zig1.c`, `/tmp/zig1_5/gen/lexer_*.c`); fixture dir named per convention `emission_lexer_switch_xmod`.
+
+---
+
+## AMENDMENT 7 (2026-08-25, operator-ruled) — Task 3 re-scoped to enum-switch R-ladder; Task 4 re-scoped to the drop
+
+**Context (triple-verified by Task 2 review):** the lexer is CLEAN. The real mis-emission is the **enum-value stmt-switch case-label drop**: zig1 emits `switch (x) { default: goto z_bb_N; }` (0 `case` labels) for switches over enum-typed discriminants whose case values are qualified enum literals (`TokenKind.plus =>`). Confirmed at `parserAddBinary` (parser_61A67AF1.c:1992, 0 vs 45 cases), `registerDecl` ×3 (symbol_registrator_757C4BC5.c:2165/2308/2689), `nodeHasExtraChildren` (ast_2FA12982.c:2193). Suspected locus: `lower.zig:3946-3976` case collection (only int/char/enum/error-literal collected; `else { continue; }` at :3969-3971 drops `field_access` case items — the node shape `parserParseExprPrec` yields for qualified labels `TokenKind.plus`, cf. `enum_literal` only from `parserParseEnumLiteral` parser.zig:765) → `c89_emit.zig:5668-5709` emits exactly `cases_count` labels.
+
+**Operator ruling (Option A + ladder):** build the minimal repro as a **ladder of R rungs that add one structural element to the graph at a time until the FIRST RED appears** — so nothing beyond the needed minimum is added. The first RED rung is the committed fixture; later rungs are not executed.
+
+**Fixture source runs through the working reference compiler:** `/tmp/fx_subfolder/zig1 --dump-c89` then `gcc -m32 -std=c89 -c` inside the output dir (absolute `-I /workspace/znineeight/sf/src/include`), link `zig_runtime.c` + `zig_pal.c`. Since `zig1` (built by zig0) parses `+` correctly but its OWN emission shows the drop, rung verdict is: **GREEN** = emitted C carries the case labels AND the run prints the expected value; **RED** = emitted C shows the 0-case `switch { default: goto z_bb_N; }` form AND/OR the run prints a wrong value.
+
+### Rung R1 — just the enum + qualified-literal switch (single module, local enum, local discriminant)
+
+Shape mirrors the failing `parserAddBinary` case-label form exactly (qualified `Kind.plus =>`), minimal otherwise. If RED here, the drop is the qualified-enum-literal label alone → commit R1, stop.
+
+```zig
+const std = @import("std.zig");
+const Kind = enum(u16) { plus, minus, star };
+fn pick(k: Kind) u32 {
+    var r: u32 = 0;
+    switch (k) {
+        Kind.plus => r = 1,
+        Kind.minus => r = 2,
+        Kind.star => r = 3,
+        else => {},
+    }
+    return r;
+}
+pub fn main() void {
+    std.io.printInt(pick(Kind.minus));
+}
+```
+Expected if GREEN: run prints `2`. RED: run prints `0` (all prongs unreachable) and emitted C shows 0 `case` labels.
+
+### Rung R2 — struct-field discriminant
+
+R1 but discriminant is `tok.kind` where `tok` is a struct parameter (mirrors `parserAddBinary(self, tok, lhs, rhs)` / `tok.kind`):
+
+```zig
+const std = @import("std.zig");
+const Kind = enum(u16) { plus, minus, star };
+const Tok = struct { kind: Kind };
+fn pick(tok: Tok) u32 {
+    var r: u32 = 0;
+    switch (tok.kind) {
+        Kind.plus => r = 1,
+        Kind.minus => r = 2,
+        Kind.star => r = 3,
+        else => {},
+    }
+    return r;
+}
+pub fn main() void {
+    var t: Tok = undefined;
+    t.kind = Kind.minus;
+    std.io.printInt(pick(t));
+}
+```
+If RED here → struct-field discriminant required; commit R2, stop.
+
+### Rung R3 — cross-module enum
+
+Enum `Kind` declared in `mod_a.zig`, switch in `mod_b.zig`, `main` imports both (mirrors `TokenKind` in token.zig consumed by parser.zig):
+
+```zig
+// mod_a.zig
+const std = @import("std.zig");
+pub const Kind = enum(u16) { plus, minus, star };
+```
+```zig
+// mod_b.zig
+const std = @import("std.zig");
+const a = @import("mod_a.zig");
+pub fn pick(k: a.Kind) u32 {
+    var r: u32 = 0;
+    switch (k) {
+        a.Kind.plus => r = 1,
+        a.Kind.minus => r = 2,
+        a.Kind.star => r = 3,
+        else => {},
+    }
+    return r;
+}
+```
+```zig
+// main.zig
+const std = @import("std.zig");
+const a = @import("mod_a.zig");
+const b = @import("mod_b.zig");
+pub fn main() void {
+    std.io.printInt(b.pick(a.Kind.minus));
+}
+```
+If RED here → cross-module import required; commit R3 (3-module fixture), stop.
+
+### Rung R4 — large enum + ~45-case switch
+
+R3 + enum grown to ~92 members (TokenKind arity) and switch carrying ~45 qualified cases (parserAddBinary count). If RED here → arity/count matters; commit, stop.
+
+### Rung R5 — exact failing shape
+
+R4 + case bodies as blocks (`{ x = ...; found = 1; }`), a second enum (AstKind-like) assigned, a `found` flag, and an error path — the full `parserAddBinary` skeleton minus the parser. If STILL GREEN at R5, STOP and escalate (the isolated shape does not reproduce; something else in the graph is required).
+
+**Commit:** only the first RED rung is committed as `repro/mi_matrix/emission_enum_switch_xmod/` (main.zig + mod_a.zig/mod_b.zig only if the rung is multi-module + NOTES.md), message `repro: enum stmt-switch case-label drop fixture (minimal)`. NOTES.md per convention: purpose / verbatim source / RED evidence (exact 0-case emitted-C excerpt + run output) / root-cause pin (from Task 2) / which rung stopped the ladder. Temp ladder sources live in `/tmp/ladder_rN.zig` only — not the repo.
+
+**No GREEN impact:** fixture is new-only; 4 MD5 gates unchanged (spot-check gol if in doubt).
+
+### Task 4 (I-LEXER-TRACE) re-scoped → I-ENUMTRACE
+
+Target the enum-switch drop instead of the lexer:
+- Instrument a temp copy of the RED fixture's emitted C (or the emitted `parser_*.c` from `/tmp/zig1_5/gen/`): `fprintf(stderr, "disc=%u\n", disc)` at the switch entry and in each prong block of a copy where case labels ARE present (zig0's `/tmp/ref_zig1.c` `parserAddBinary`), plus a `fprintf` in the `default` path — TEMP only, never the repo.
+- Recompile + run on the minimal input; confirm the 0-case-switch binary takes `default` for `Kind.minus` (disc=1) while the case-labeled reference emits the correct value.
+- Trace to emission site: confirm `sf/src/lower.zig:3946-3976` (`else { continue; }` at :3969-3971 dropping the `field_access` case items) feeding `sf/src/c89_emit.zig:5668-5709` (`cases_count` label emission), record `file:line` + emission pattern.
+- Written finding: mechanism (source construct → wrong C → wrong runtime), emission site `file:line`, repro (fixture path + minimal input), recommended fix locus (for a later F-session). Ledger + memory entries.
