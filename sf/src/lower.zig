@@ -4817,10 +4817,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (pattern.kind == AstKind.range_exclusive or pattern.kind == AstKind.range_inclusive) {
                 var start_temp = lowerExpr(self, pattern.child_0);
                 var cap_type = if (pat_type) |pt| pt else type_mod.TYPE_U32;
+                var end_temp = lowerExpr(self, pattern.child_1);
                 if (node.payload != 0) {
                     var fcapr = maybeDisambiguateCapture(self, @intCast(u32, node.payload), cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
                 }
-                var end_temp = lowerExpr(self, pattern.child_1);
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
