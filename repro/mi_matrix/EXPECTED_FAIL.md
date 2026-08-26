@@ -1,4 +1,111 @@
-# mi_matrix corpus — expected-fail manifest (v47 2026-08-25)
+# mi_matrix corpus — expected-fail manifest (v48 2026-08-26)
+
+## GATE — labeled-block break + self-compiled lowering crash plan, FINAL sweep + reconciliation (2026-08-26)
+
+Final gate sweep of the labeled-break + self-compile crash plan
+(docs/superpowers/plans/2026-08-25-labeled-break-and-selfcompile-crash-plan.md, AMENDMENTs 1-3),
+at HEAD `a7a207f7`, measured with `/tmp/fx_subfolder/zig1` (rebuilt at the last sf/src code
+commit `a7a207f7`; canonical std reinstalled at `/tmp/fx_subfolder/lib/`). Docs-only task — no
+`sf/src`, fixture, or script change in this gate. **This is the plan-complete closeout: the
+labeled-block break (Phase A) and the self-compiled lowering crash (Phase B) are both CLOSED.**
+
+### Phase A — labeled-block break (A2 F-LABELBREAK `ee092e3b` + docs `e18a424f`)
+
+`break :blk` on a labeled block now resolves to a block-exit jump instead of being silently dropped.
+Mechanism (A1a per AMENDMENT 1): `LoopInfo` gains `is_loop: u8`; `labeled_stmt` with a block body
+creates an exit BB and pushes a breakable loop_stack entry (`is_loop=0`); `break` resolves the
+labeled entry → jump to the block exit; `continue` skips `is_loop==0` entries in both the
+unlabeled-innermost and the labeled scans. Fixture `emission_labeled_ctrl_xmod` prints
+`3\n6\n10\n1` (the literal shape-A `blk: { var a = 1; break :blk; a = 2; }` now prints `1`).
+`emission_orelse_labeled_xmod` + `emission_catch_labeled_xmod` still RUN correctly (prints `0` / `7`);
+their emitted bytes gained a dead orphan `z_bb_N` block — the ACCEPTED AMENDMENT-1 dead-code
+emission (runtime-identical, re-baseline-default, NOT a gate violation).
+
+### Phase B — self-compiled lowering crash (B3a F2 `ea6882ac` + B3b F1 `a7a207f7`)
+
+The self-compiled zig1_5 SEGV (F2, the crash) and the latent stale-sibling-capture (F1) are CLOSED
+(AMENDMENT 2 split, operator-ruled B3a-then-B3b):
+- **F2 (crash driver, c89_emit) — B3a F-EMITMAP `ea6882ac`:** the `fl_temps`/`fl_name_ids`
+  temp→name map is now growable (was fixed `[128]`), both 128-caps dropped, and the name-dedup
+  removed so each `decl_local` registers its OWN temp→name entry (capture shadowing). Self-compiled
+  zig1_5 now runs the B1 fixture `emission_lower_crash_xmod` rc=0 (prints 3); reference rc=0.
+  **F2 crash CLOSED.**
+- **F1 (latent, lower) — B3b F-SCOPERES `a7a207f7`:** architectural lexical scope chain
+  (parent-pointer scope nodes); one shared resolver walks the enclosing-scope chain innermost-first,
+  replacing BOTH the LDS forward-scan max-scope loop (`lower.zig:2288-2317`) and the `findLocalTemp`
+  backward-scan (`:1309-1317`); re-captured names resolve to the lexically-enclosing binding.
+  **F1 CLOSED.**
+
+### gol/lisp MD5 re-baseline (AMENDMENT 3, operator ruling A — AUTHORITATIVE)
+
+The pin-mandated fl_temps dedup-removal necessarily changes emitted bytes for any function that
+re-declares a name (gol `main` re-declares `var x` in two sibling while-loops; lisp re-uses capture
+names). Per operator ruling A, **gol + lisp are RE-BASELINED** (runtime-identical verified: gol
+glider grid + lisp REPL outputs diff-clean pristine-vs-candidate, both rc=0). New authoritative
+hashes: gol `eed963e0640a073ed4eebb292f136e05` (old `4afb203f…`), lisp
+`c3c5847798e4553b2e34950e085bb6c6` (old `5f886646…`). json `089e4f04…` + mud `a1d0dd55…`
+UNCHANGED. The MD5 table in docs/sf/QUICK_REF.md carries the re-baseline note.
+
+### Corpus (328 dirs): `OK=318 / FAIL=0 / ICE=0 / CRASH=0 / green-guards=10` (318+0+0+0+10=328)
+
+Corpus grew 323→328 (+5): `emission_enum_switch_xmod` (b9bc3f1d) + `emission_enum_ext_xmod`
+(f83912f6) + `emission_tu_switch_xmod` (ba3f0f70) + `emission_labeled_ctrl_xmod` (ac0b7e43) [prior
+enum-switch/labeled fidelity-gap plan] + `emission_lower_crash_xmod` (22e0bc6f, this plan's B1).
+Full sweep (per-dir dump + per-file `gcc -c`, `/tmp/fx_subfolder/zig1`) classifies **OK=318,
+FAIL=0, ICE=0, CRASH=0**; the 10 green-guards unchanged (`eu_assign_incompat_payload` /
+`euvoid_val_catch` / `field_access_optional` / `var_declared_void` / `parsergap_slice_expr_xmod`
+error[3000]; `strictzig_brace_if_xmod` / `parsergap_selfblok_xmod` / `parsergap_strict_comma_xmod`
+error[2000]; `self_embed_optional_cycle` error[24]; `emission_pal_xmod` error[20]). All 5 new dirs
+classify OK. **No regression.**
+
+### 21-example matrix + 4 MD5 gates
+
+21-example matrix **21/21** dump/gcc/link rc=0. 4 MD5 gates byte-identical at the AMENDMENT-3
+hashes (repo-root CWD): gol `eed963e0640a073ed4eebb292f136e05` / lisp
+`c3c5847798e4553b2e34950e085bb6c6` / json `089e4f046464ce3882aa2b2c4e585013` / mud
+`a1d0dd55aada9c3fd904ae33f54de32e`.
+
+### Self-compile re-count + self-compiled binary
+
+`bash scripts/self_compile/build_zig1_5.sh` → dump rc=0, 40 `.c`, in-script gcc -c clean;
+independent re-count (`cd /tmp/zig1_5/gen && gcc -c *.c`) → **0 `: error:` lines, 40 files**.
+Self-compiled `/tmp/zig1_5/zig1_5_clean` runs the B1 fixture `emission_lower_crash_xmod` rc=0
+(prints 3, main_3DF5832C.c byte-identical to reference) AND the std-importing real program
+`days_in_month` rc=0 with output BYTE-IDENTICAL to reference (all 12 month-day counts). `fibonacci`
+runs rc=0 (output differs — see residual R-1).
+
+### Deferred residuals (recorded, NOT fixed — do not regress-gate on these)
+
+1. **Self-emission operator-associativity gap (R-1 — pre-existing, newly observable):** the
+   self-compiled zig1_5 mis-parses SAME-PRECEDENCE left-associative operator chains — `a - b - c` →
+   `a - (b - c)`, `a - b + c` → `a - (b + c)`, `a / b / c` → `a / (b / c)` — i.e. every binary op
+   behaves right-associative for the second operator's RHS (self-emission defect; likely
+   `OpInfo.right_assoc` mis-read, mechanism not fully traced — out of scope). Impact: any program
+   compiled BY the self-compiled binary that uses a same-precedence chain mis-computes; concretely
+   breaks `printInt`'s digit reversal (`std_io.zig:48` `out[pos] = tmp[len - 1 - k]`), so
+   self-compiled-emitted binaries print wrong multi-digit integers via `printInt` (fibonacci prints
+   `5\0` not `55`, rc=0). **Pre-existing, NOT this plan's regression:** the self-compile emission
+   is byte-identical between pre-B3 HEAD `ee092e3b` and current `a7a207f7` (all 40 emitted modules
+   diff-clean — A2/B3a/B3b did not change it); the defect was masked until the B3a crash fix let the
+   self-compiled binary actually run std-importing programs. Same deferred class as the documented
+   self-emission fidelity gap. Programs without same-precedence chains (B1 fixture `1 + 2`,
+   `days_in_month` print-`{}` path) run byte-correct. Requires its own R/I/F plan.
+2. **`pending_scope` single-slot non-nest-safety (I-1, B3b review IMPORTANT — documented, NOT
+   fixed):** `pending_scope` in lower.zig is a single slot, not nest-safe. A capture inside a
+   for-range END expr (`for (0..if (rt) |x| x else 0) |t|`) reuses + consumes the loop capture's
+   pending scope, orphaning `t` from the scope chain — the resolver falls through to a raw
+   `load_local`. Runtime stays CORRECT (emitted `zT = t; total + zT` vs control `total + t`); no
+   gate/corpus fixture triggers it. A naive reorder of the pending-scope sites risks MD5
+   temp-ordering — recorded for a follow-up F-task, NOT fixed.
+
+### Milestone statement
+
+Phase A (labeled-block break) + Phase B (self-compiled lowering crash) CLOSED. F2 crash CLOSED
+(self-compiled zig1_5 runs the B1 fixture rc=0, prints 3). F1 scope-chain CLOSED. gol/lisp MD5
+RE-BASELINED per AMENDMENT 3. Self-compile gcc-CLEAN (0 errors); the self-compiled binary RUNS
+std-importing programs rc=0. 21-example matrix 21/21. Corpus 328 dirs `OK=318 / FAIL=0 / ICE=0 /
+CRASH=0 / GREEN=10`. Residuals: R-1 self-emission associativity gap + I-1 `pending_scope`
+nest-safety (both pre-existing / documented, NOT fixed).
 
 ## GATE — out-of-scope residual closeout, FINAL sweep + reconciliation (2026-08-25)
 
