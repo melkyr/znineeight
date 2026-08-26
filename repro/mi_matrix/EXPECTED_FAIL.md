@@ -1,4 +1,74 @@
-# mi_matrix corpus — expected-fail manifest (v48 2026-08-26)
+# mi_matrix corpus — expected-fail manifest (v49 2026-08-26)
+
+## GATE — assoc-chain misparse + pending_scope nest-safety plan, FINAL sweep + reconciliation (2026-08-26)
+
+Final gate sweep of the assoc-chain misparse + pending_scope plan
+(docs/superpowers/plans/2026-08-26-assoc-misparse-pendingscope-plan.md, AMENDMENT 4),
+at HEAD `0b9c8ef6`, measured with `/tmp/fx_subfolder/zig1` (rebuilt at HEAD `0b9c8ef6`;
+canonical std reinstalled at `/tmp/fx_subfolder/lib/`). Docs-only task — no `sf/src`,
+fixture, or script change in this gate. **This is the plan-complete closeout: residual R-1
+(self-emission operator-associativity gap) and residual I-1 (`pending_scope` nest-safety)
+are BOTH CLOSED.**
+
+### Residual R-1 CLOSED — self-emission operator-associativity gap (F-ASSOC `9574208d`)
+
+The v48 hypothesis ("likely `OpInfo.right_assoc` mis-read") was **WRONG**. I-ASSOC traced the
+reversal to a single self-emission fidelity gap: **`@intToEnum` lowering** (`sf/src/parser.zig:1896-1898`
+`precFromInt(v: u8) Prec { return @intToEnum(Prec, v); }` — the only `@intToEnum` in sf/src) fell
+through the cast block at `sf/src/lower.zig:3510-3542` (which had branches for `@intCast`/`@intToFloat`/
+`@ptrCast`/`@intToPtr` but NO `@inttoEnum`) → emitted `return zT_1;` (declared temp, never assigned) →
+`next_min = precFromInt(precToInt(info.prec) + 1)` fed uninitialized garbage into the precedence-climbing
+RHS parse → every binary op behaved right-associative for the second operator's RHS. F-ASSOC `9574208d`
+(ONLY `sf/src/lower.zig`, 9 insertions): new `inttoenum_name_id` registered in `lowererInit`
+(lower.zig:443-444/:518) + new `inttoEnum` branch in the cast block (lower.zig:3542-3546) emitting a
+`LirInst.int_cast` (`is_checked=0`, no range-check) → self-emitted `precFromInt` is now
+`zT_1 = (zT_2B10107F_Prec)v;`. RED fixture `emission_assoc_chain_xmod` (40485a1d) now GREEN:
+self-compiled `/tmp/zig1_5/zig1_5_clean` prints `3 5 0 6 24 55 321` (was `9 2\0 0 6 2\0 5\0 3\0\0`;
+reference unchanged `3 5 0 6 24 55 321`). fibonacci `5\0`-class corruption gone. **R-1 CLOSED.**
+
+### Residual I-1 CLOSED — `pending_scope` single-slot non-nest-safety (F-PENDSCOPE `0b9c8ef6`)
+
+I-1 (B3b-review IMPORTANT: a capture inside a for-range END expr, `for (0..if (rt) |x| x else 0) |t|`,
+reused + consumed the loop capture's single-slot pending scope, orphaning `t` to a `load_local` fallback)
+is fixed by **AMENDMENT 4 option (c) — reorder the for-range lowering**: the capture-add block
+(`maybeDisambiguateCapture` + `addLocalDecl` + `decl_local` for `t`) moved from BEFORE the end-expr
+lower to AFTER it (`sf/src/lower.zig:4821-4823` → 4818-4823). This eliminates the pending-scope window
+entirely (no stack, no fresh/reuse selector, no boundary low-watermark — the operator-ruled design over
+the patchy LIFO-stack; see task-PENDSCOPE-report.md). I-1 repro now emits `total + t` DIRECT capture use
+(no `zT = t` load_local); the capture-less end-expr shape (`for (0..if (rt) 1 else 0) |t|`) is fixed too.
+for-slice captures (`:4891/:4892`) untouched. Byte-neutral for the 4 gates (gol/lisp/mud have no
+for-loops; json uses only for-slice) — no re-baseline. **I-1 CLOSED.**
+
+### Corpus (329 dirs): `OK=319 / FAIL=0 / ICE=0 / CRASH=0 / green-guards=10` (319+0+0+0+10=329)
+
+Corpus grew 328→329 (+1: this plan's R fixture `emission_assoc_chain_xmod`, 40485a1d — classifies
+**OK**, 4 `.c`, gcc clean). Full sweep (per-dir dump + per-file `gcc -c`) classifies OK=319, FAIL=0,
+ICE=0, CRASH=0; the 10 green-guards UNCHANGED (`eu_assign_incompat_payload` / `euvoid_val_catch` /
+`field_access_optional` / `var_declared_void` error[3000]; `parsergap_slice_expr_xmod` /
+`strictzig_brace_if_xmod` / `parsergap_selfblok_xmod` / `parsergap_strict_comma_xmod` error[2000];
+`self_embed_optional_cycle` error[24]; `emission_pal_xmod` error[20]). **No new FAIL/ICE/CRASH vs the
+328-dir baseline.**
+
+### 21-example matrix + 4 MD5 gates
+
+21-example matrix **21/21** dump/gcc/link rc=0. 4 MD5 gates byte-identical (repo-root CWD): gol
+`eed963e0640a073ed4eebb292f136e05` / lisp `c3c5847798e4553b2e34950e085bb6c6` / json
+`089e4f046464ce3882aa2b2c4e585013` / mud `a1d0dd55aada9c3fd904ae33f54de32e`.
+
+### Self-compile re-count + self-compiled binary
+
+`/tmp/fx_subfolder/zig1 --markers --dump-c89 --output-dir /tmp/gf_sc sf/src/main.zig` → **rc=0, 40
+`.c`, 0 `error[`, 0 PANIC**. Self-compiled `/tmp/zig1_5/zig1_5_clean` (rebuilt via
+`scripts/self_compile/build_zig1_5.sh`): R-ASSOC fixture `emission_assoc_chain_xmod` → dump/gcc/link/run
+rc=0 prints **`3 5 0 6 24 55 321`** (matches reference — the self-emission fidelity gap is closed); real
+std-importing program `emission_lower_crash_xmod` → dump/link/run rc=0 prints **3**.
+
+### Milestone statement
+
+Residual R-1 (self-emission operator-associativity gap) + residual I-1 (`pending_scope` nest-safety)
+BOTH CLOSED. Self-compiled zig1_5 now parses left-assoc chains correctly and runs std-importing programs
+rc=0. 4 MD5 gates byte-identical (no re-baseline). 21-example matrix 21/21. Corpus 329 dirs `OK=319 /
+FAIL=0 / ICE=0 / CRASH=0 / GREEN=10`. No residual remains from the assoc-chain / pending_scope plan.
 
 ## GATE — labeled-block break + self-compiled lowering crash plan, FINAL sweep + reconciliation (2026-08-26)
 
