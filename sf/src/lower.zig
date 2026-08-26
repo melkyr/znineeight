@@ -251,6 +251,99 @@ pub fn switchInfoArrayListGetSlice(self: *SwitchInfoArrayList) []SwitchInfo {
     return self.items[0..self.len];
 }
 
+pub const ScopeNode = struct {
+    parent: u32,
+};
+
+pub const ScopeNodeArrayList = struct {
+    items: [*]ScopeNode,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn scopeNodeArrayListInit(allocator: *Sand) ScopeNodeArrayList {
+    return ScopeNodeArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn scopeNodeArrayListEnsureCapacity(self: *ScopeNodeArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    if (self.capacity > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
+            @ptrCast([*]u8, self.items),
+            self.capacity * @sizeOf(ScopeNode),
+            new_cap * @sizeOf(ScopeNode),
+            @intCast(usize, 4));
+        if (grown != null) {
+            self.capacity = new_cap;
+            return;
+        }
+    }
+    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(ScopeNode) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]ScopeNode, raw);
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn scopeNodeArrayListAppend(self: *ScopeNodeArrayList, value: ScopeNode) void {
+    scopeNodeArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn pushScope(self: *LirLowerer) u32 {
+    scopeNodeArrayListAppend(&self.scope_nodes, ScopeNode{ .parent = self.cur_scope });
+    self.cur_scope = @intCast(u32, self.scope_nodes.len - @intCast(usize, 1));
+    return self.cur_scope;
+}
+
+pub fn createChildScope(self: *LirLowerer) u32 {
+    scopeNodeArrayListAppend(&self.scope_nodes, ScopeNode{ .parent = self.cur_scope });
+    return @intCast(u32, self.scope_nodes.len - @intCast(usize, 1));
+}
+
+pub fn scopeNodeForDepth(self: *LirLowerer, at_depth: u32) u32 {
+    if (at_depth > self.scope_depth) {
+        if (self.pending_scope == TEMP_NONE) {
+            self.pending_scope = createChildScope(self);
+        }
+        return self.pending_scope;
+    }
+    return self.cur_scope;
+}
+
+pub fn pushScopeDepth(self: *LirLowerer) void {
+    self.scope_depth += @intCast(u32, 1);
+    if (self.pending_scope != TEMP_NONE) {
+        self.cur_scope = self.pending_scope;
+        self.pending_scope = TEMP_NONE;
+    } else {
+        _ = pushScope(self);
+    }
+}
+
+pub fn popScopeDepth(self: *LirLowerer) void {
+    self.scope_depth -= @intCast(u32, 1);
+    self.cur_scope = self.scope_nodes.items[@intCast(usize, self.cur_scope)].parent;
+}
+
+pub const LocalBinding = struct {
+    temp: u32,
+    kind: u8,
+    tid: u32,
+};
+
 fn dbgPrintU32(val: u32) void {
     var buf: [20]u8 = undefined;
     var len = itoa_mod.itoa(val, buf[0..]);
@@ -313,10 +406,14 @@ pub const LirLowerer = struct {
     local_decl_kinds: [*]u8,
     local_decl_is_capture: [*]u8,
     local_decl_scopes: [*]u32,
+    local_decl_scope_nodes: [*]u32,
     local_decl_fn: [*]u32,
     local_decl_cap: usize,
     local_decl_name_map: hash_mod.U32ToU32Map,
     local_decl_count: usize,
+    scope_nodes: ScopeNodeArrayList,
+    cur_scope: u32,
+    pending_scope: u32,
     fn_seq: u32,
     _fn_ret_type: u32,
     _ctx_node_idx: u32,
@@ -394,7 +491,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var socket_fd_isset_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_fd_isset_s);
     var socket_close_s: []const u8 = "@socketClose";
     var socket_close_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_close_s);
-    return LirLowerer{
+    var lowerer = LirLowerer{
         .ctx = ctx,
         .func = undefined,
         .current_bb = @intCast(u32, 0),
@@ -448,10 +545,14 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .local_decl_kinds = @ptrCast([*]u8, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 1), @intCast(usize, 4)) catch unreachable),
         .local_decl_is_capture = @ptrCast([*]u8, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 1), @intCast(usize, 4)) catch unreachable),
         .local_decl_scopes = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
+        .local_decl_scope_nodes = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_cap = @intCast(usize, 64),
         .local_decl_name_map = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 64)),
         .local_decl_count = @intCast(usize, 0),
+        .scope_nodes = scopeNodeArrayListInit(alloc),
+        .cur_scope = @intCast(u32, 0),
+        .pending_scope = TEMP_NONE,
         .fn_seq = @intCast(u32, 0),
         ._fn_ret_type = @intCast(u32, 0),
         ._ctx_node_idx = @intCast(u32, 0),
@@ -461,6 +562,9 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .current_label = @intCast(u32, 0),
 
     };
+    scopeNodeArrayListAppend(&lowerer.scope_nodes, ScopeNode{ .parent = TEMP_NONE });
+    lowerer.cur_scope = @intCast(u32, 0);
+    return lowerer;
 }
 
 fn markTerminated(blocks: *lir_mod.BasicBlockArrayList, bb_id: u32) void {
@@ -645,6 +749,7 @@ fn growLocalDecls(self: *LirLowerer) void {
     var raw_kinds = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_is_capture = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 1) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_scopes = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_scope_nodes = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_fn = alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var ndst = @ptrCast([*]u32, raw_names);
     var ssdst = @ptrCast([*]u32, raw_src_names);
@@ -653,6 +758,7 @@ fn growLocalDecls(self: *LirLowerer) void {
     var kdst = @ptrCast([*]u8, raw_kinds);
     var icdst = @ptrCast([*]u8, raw_is_capture);
     var sdst = @ptrCast([*]u32, raw_scopes);
+    var sndst = @ptrCast([*]u32, raw_scope_nodes);
     var fdst = @ptrCast([*]u32, raw_fn);
     if (self.local_decl_count > @intCast(usize, 0)) {
         var ci: usize = 0;
@@ -664,6 +770,7 @@ fn growLocalDecls(self: *LirLowerer) void {
             kdst[ci] = self.local_decl_kinds[ci];
             icdst[ci] = self.local_decl_is_capture[ci];
             sdst[ci] = self.local_decl_scopes[ci];
+            sndst[ci] = self.local_decl_scope_nodes[ci];
             fdst[ci] = self.local_decl_fn[ci];
         }
     }
@@ -674,6 +781,7 @@ fn growLocalDecls(self: *LirLowerer) void {
     self.local_decl_kinds = kdst;
     self.local_decl_is_capture = icdst;
     self.local_decl_scopes = sdst;
+    self.local_decl_scope_nodes = sndst;
     self.local_decl_fn = fdst;
     self.local_decl_cap = new_cap;
 }
@@ -687,6 +795,7 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_dep
     self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
     self.local_decl_is_capture[self.local_decl_count] = is_capture;
     self.local_decl_scopes[self.local_decl_count] = at_depth;
+    self.local_decl_scope_nodes[self.local_decl_count] = scopeNodeForDepth(self, at_depth);
     self.local_decl_fn[self.local_decl_count] = self.fn_seq;
     self.local_decl_count += @intCast(usize, 1);
     var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
@@ -712,6 +821,7 @@ fn addLocalDeclRenamed(self: *LirLowerer, src_name: u32, name_id: u32, type_id: 
     self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
     self.local_decl_is_capture[self.local_decl_count] = is_capture;
     self.local_decl_scopes[self.local_decl_count] = at_depth;
+    self.local_decl_scope_nodes[self.local_decl_count] = scopeNodeForDepth(self, at_depth);
     self.local_decl_fn[self.local_decl_count] = self.fn_seq;
     self.local_decl_count += @intCast(usize, 1);
     var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
@@ -1306,13 +1416,25 @@ fn nameMapGet(self: *LirLowerer, temp_id: u32) u32 {
     return TEMP_NONE;
 }
 
-fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
+fn resolveLocal(self: *LirLowerer, name_id: u32) ?LocalBinding {
     if (self.local_decl_count == @intCast(usize, 0)) return null;
-    var li: usize = self.local_decl_count;
-    while (li > @intCast(usize, 0)) {
-        li -= @intCast(usize, 1);
-        if (self.local_decl_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) { return self.local_decl_temps[li]; }
+    var scope: u32 = self.cur_scope;
+    while (scope != TEMP_NONE) {
+        var li: usize = self.local_decl_count;
+        while (li > @intCast(usize, 0)) {
+            li -= @intCast(usize, 1);
+            if (self.local_decl_scope_nodes[li] == scope and self.local_decl_names[li] == name_id) {
+                return LocalBinding{ .temp = self.local_decl_temps[li], .kind = self.local_decl_kinds[li], .tid = self.local_decl_types[li] };
+            }
+        }
+        scope = self.scope_nodes.items[@intCast(usize, scope)].parent;
     }
+    return null;
+}
+
+fn findLocalTemp(self: *LirLowerer, name_id: u32) ?u32 {
+    var result = resolveLocal(self, name_id);
+    if (result) |b| return b.temp;
     return null;
 }
 
@@ -2253,7 +2375,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var ptype: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
         var arr_temp: u32 = TEMP_NONE;
-        if (findLocalTemp(self, name_id)) |fnd| { arr_temp = fnd; }
+        var loc_binding = resolveLocal(self, name_id);
+        if (loc_binding) |lb| { arr_temp = lb.temp; }
+
         var fnd_m: []const u8 = "FND:n"; pal.markerWrite(fnd_m);
         var fnd_nb: [10]u8 = undefined; var fnd_nl = itoa_mod.itoa(name_id, fnd_nb[0..]); var fnd_ns: usize = @intCast(usize, 9) - @intCast(usize, fnd_nl); pal.markerWrite(fnd_nb[fnd_ns..@intCast(usize, 9)]);
         var fnd_rm: []const u8 = "r"; pal.markerWrite(fnd_rm);
@@ -2285,37 +2409,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var arr_kind: u8 = @intCast(u8, 0);
         var arr_tid: u32 = @intCast(u32, 0);
-        {
-            var li: usize = @intCast(usize, 0);
-            var lds_found: u8 = @intCast(u8, 0);
-            var lds_best: usize = @intCast(usize, 0);
-            var lds_best_scope: u32 = @intCast(u32, 0);
-            while (li < self.local_decl_count) : (li += @intCast(usize, 1)) {
-                if (self.local_decl_names[li] == name_id and self.local_decl_scopes[li] <= self.scope_depth) {
-                    if (lds_found == @intCast(u8, 0) or self.local_decl_scopes[li] >= lds_best_scope) {
-                        lds_best = li;
-                        lds_best_scope = self.local_decl_scopes[li];
-                        lds_found = @intCast(u8, 1);
-                    }
-                }
-            }
-            if (lds_found != @intCast(u8, 0)) {
-                li = lds_best;
-                arr_temp = self.local_decl_temps[li];
-                arr_kind = self.local_decl_kinds[li];
-                arr_tid = self.local_decl_types[li];
-                var lds_m: []const u8 = "LDS:n"; pal.markerWrite(lds_m);
-                var lds_nb: [10]u8 = undefined; var lds_nl = itoa_mod.itoa(name_id, lds_nb[0..]); var lds_ns: usize = @intCast(usize, 9) - @intCast(usize, lds_nl); pal.markerWrite(lds_nb[lds_ns..@intCast(usize, 9)]);
-                var lds_tm: []const u8 = "t"; pal.markerWrite(lds_tm);
-                var lds_tb: [10]u8 = undefined; var lds_tl = itoa_mod.itoa(self.local_decl_types[li], lds_tb[0..]); var lds_ts: usize = @intCast(usize, 9) - @intCast(usize, lds_tl); pal.markerWrite(lds_tb[lds_ts..@intCast(usize, 9)]);
-                var lds_rm: []const u8 = "r"; pal.markerWrite(lds_rm);
-                var lds_rb: [10]u8 = undefined; var lds_rl = itoa_mod.itoa(self.local_decl_temps[li], lds_rb[0..]); var lds_rs: usize = @intCast(usize, 9) - @intCast(usize, lds_rl); pal.markerWrite(lds_rb[lds_rs..@intCast(usize, 9)]);
-                var lds_km: []const u8 = "k"; pal.markerWrite(lds_km);
-                var lds_kb: [10]u8 = undefined; var lds_kl = itoa_mod.itoa(@intCast(u32, self.local_decl_kinds[li]), lds_kb[0..]); var lds_ks: usize = @intCast(usize, 9) - @intCast(usize, lds_kl); pal.markerWrite(lds_kb[lds_ks..@intCast(usize, 9)]);
-                var lds_nl2: []const u8 = "\n"; pal.markerWrite(lds_nl2);
-                if (arr_tid == type_mod.TYPE_VOID) { var vflb_m: []const u8 = "VFLOW:iTV\n"; pal.markerWrite(vflb_m); }
-            }
-         }
+        if (loc_binding) |lb| {
+            arr_kind = lb.kind;
+            arr_tid = lb.tid;
+        }
+        if (arr_tid == type_mod.TYPE_VOID) { var vflb_m: []const u8 = "VFLOW:iTV\n"; pal.markerWrite(vflb_m); }
+
          var a3r_m: []const u8 = "A3R:r"; pal.markerWrite(a3r_m);
          var a3r_rb: [10]u8 = undefined; var a3r_rl = itoa_mod.itoa(arr_temp, a3r_rb[0..]); var a3r_rs: usize = @intCast(usize, 9) - @intCast(usize, a3r_rl); pal.markerWrite(a3r_rb[a3r_rs..@intCast(usize, 9)]);
          var a3r_km: []const u8 = "k"; pal.markerWrite(a3r_km);
@@ -3670,11 +3769,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 bindOptionalCapture(self, @intCast(u32, node.payload), orig_cond_temp);
             }
         }
-        self.scope_depth += @intCast(u32, 1);
+        pushScopeDepth(self);
         var then_val = lowerExpr(self, node.child_1);
         then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
-        self.scope_depth -= @intCast(u32, 1);
+        popScopeDepth(self);
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
@@ -4072,13 +4171,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var body_node = store.nodes.items[@intCast(usize, prong_node.child_0)];
             var prong_val: u32 = @intCast(u32, 0);
             if (body_node.kind == AstKind.block) {
-                self.scope_depth += @intCast(u32, 1);
+                pushScopeDepth(self);
                 var block_ec = ast_mod.astStoreGetExtraChildren(store, body_node.payload);
                 var bj: usize = 0;
                 while (bj < block_ec.len) : (bj += 1) {
                     lowerStmt(self, block_ec[bj]);
                 }
-                self.scope_depth -= @intCast(u32, 1);
+                popScopeDepth(self);
                 prong_val = @intCast(u32, 0);
             } else {
                 prong_val = lowerExpr(self, prong_node.child_0);
@@ -4087,6 +4186,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (body_node.kind == AstKind.error_literal) { sw_int = SrcIntent.error_src; }
                 prong_val = materializeInto(self, prong_val, result_tid, sw_int);
             }
+            self.pending_scope = TEMP_NONE;
+
             var swp_m: []const u8 = "SWP:p"; pal.markerWrite(swp_m);
             var swp_pb: [10]u8 = undefined; var swp_pl = itoa_mod.itoa(prong_val, swp_pb[0..]); var swp_ps: usize = @intCast(usize, 9) - @intCast(usize, swp_pl); pal.markerWrite(swp_pb[swp_ps..@intCast(usize, 9)]);
             var swp_rb: [10]u8 = undefined; var swp_rl = itoa_mod.itoa(result_temp, swp_rb[0..]); var swp_rs: usize = @intCast(usize, 9) - @intCast(usize, swp_rl); pal.markerWrite(swp_rb[swp_rs..@intCast(usize, 9)]);
@@ -4330,7 +4431,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var blk_last = blk_ec[blk_ec.len - 1];
             var blk_last_nd = self.ctx.store.nodes.items[@intCast(usize, blk_last)];
             if (!lowerIsNoValueStmtKind(blk_last_nd.kind)) {
-                self.scope_depth += @intCast(u32, 1);
+                pushScopeDepth(self);
                 var blj: usize = 0;
                 while (blj < blk_ec.len - 1) : (blj += 1) {
                     self.block_terminated = @intCast(u8, 0);
@@ -4339,7 +4440,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 self.block_terminated = @intCast(u8, 0);
                 var blk_val = lowerExpr(self, blk_last);
                 expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
-                self.scope_depth -= @intCast(u32, 1);
+                popScopeDepth(self);
                 return blk_val;
             }
         }
@@ -4398,7 +4499,7 @@ fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
 }
 
 fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
-    self.scope_depth += @intCast(u32, 1);
+    pushScopeDepth(self);
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.block) {
         var ec = ast_mod.astStoreGetExtraChildren(self.ctx.store, node.payload);
@@ -4417,7 +4518,7 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
         lowerStmt(self, node_idx);
     }
     expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
-    self.scope_depth -= @intCast(u32, 1);
+    popScopeDepth(self);
 }
 
 pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
@@ -4431,14 +4532,14 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     var node = self.ctx.store.nodes.items[@intCast(usize, node_idx)];
     var store = self.ctx.store;
     if (node.kind == AstKind.block) {
-        self.scope_depth += @intCast(u32, 1);
+        pushScopeDepth(self);
         var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
         var i: usize = 0;
         while (i < ec.len) : (i += 1) {
             lowerStmt(self, ec[i]);
         }
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
-        self.scope_depth -= @intCast(u32, 1);
+        popScopeDepth(self);
     } else if (node.kind == AstKind.labeled_stmt) {
         var saved_label = self.current_label;
         self.current_label = @intCast(u32, node.payload);
@@ -5862,6 +5963,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     self.current_bb = createBlock(self);
     emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });
     self.scope_depth = @intCast(u32, 0);
+    self.cur_scope = @intCast(u32, 0);
     self.temp_counter = @intCast(u32, proto.params_count);
     var body = node.child_0;
     if (body != 0) {
@@ -5910,6 +6012,7 @@ pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFu
     self.current_bb = createBlock(self);
     emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });
     self.scope_depth = @intCast(u32, 0);
+    self.cur_scope = @intCast(u32, 0);
     self.temp_counter = @intCast(u32, 0);
     var di: usize = @intCast(usize, 0);
     while (di < decls.len) : (di += @intCast(usize, 1)) {
