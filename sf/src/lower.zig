@@ -2781,6 +2781,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = tid } });
                         return tid;
                     }
+                    var tag_s: []const u8 = "tag";
+                    var tag_id = si_mod.stringInternerIntern(self.ctx.registry.interner, tag_s);
+                    if (field_name_id == tag_id) {
+                        var gape_ftg: []const u8 = "GAPE:ftg\n"; pal.markerWrite(gape_ftg);
+                        var sf_nid = nameMapGet(self, base_temp);
+                        emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tid } });
+                        return tid;
+                    }
                 } else {
                 var fields: []FieldEntry = undefined;
                 if (kind == type_mod.TypeKind.union_type) {
