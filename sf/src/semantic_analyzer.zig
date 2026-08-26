@@ -57,6 +57,7 @@ pub const SemanticAnalyzer = struct {
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
     inttoenum_name_id: u32,
+    as_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
     putchar_name_id: u32,
@@ -100,6 +101,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var if_id = interner_mod.stringInternerIntern(interner, if_s);
     var ie_s: []const u8 = "@intToEnum";
     var ie_id = interner_mod.stringInternerIntern(interner, ie_s);
+    var as_s: []const u8 = "@as";
+    var as_id = interner_mod.stringInternerIntern(interner, as_s);
     var so_s: []const u8 = "@sizeOf";
     var so_id = interner_mod.stringInternerIntern(interner, so_s);
     var ao_s: []const u8 = "@alignOf";
@@ -184,6 +187,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .floatcast_name_id = fc_id,
         .inttofloat_name_id = if_id,
         .inttoenum_name_id = ie_id,
+        .as_name_id = as_id,
         .size_of_name_id = so_id,
         .align_of_name_id = ao_id,
         .putchar_name_id = pc2_id,
@@ -218,6 +222,7 @@ fn semanticAnalyzerIsTypeValueCast(self: *SemanticAnalyzer, name_id: u32) bool {
     if (name_id == self.floatcast_name_id) return true;
     if (name_id == self.inttofloat_name_id) return true;
     if (name_id == self.inttoenum_name_id) return true;
+    if (name_id == self.as_name_id) return true;
     return false;
 }
 
