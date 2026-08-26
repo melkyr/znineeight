@@ -334,9 +334,21 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 | Entry Path | Reference md5 | [updated: 2026-08-22 — self-compile residual closeout GATE: gol/lisp RE-BASELINED to the current byte values (F-attempt emission changes); json/mud unchanged] |
 |---|---|---|
 | `examples/z98/mud_server/main.zig` | `a1d0dd55aada9c3fd904ae33f54de32e` |
-| `examples/z98/game_of_life/main.zig` | `4afb203fdde7a880ec6e7aed32543691` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `5f886646b164a70c52bf042eb54bda78` |
+| `examples/z98/game_of_life/main.zig` | `eed963e0640a073ed4eebb292f136e05` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `c3c5847798e4553b2e34950e085bb6c6` |
 | `examples/z98/json_parser/main.zig` | `089e4f046464ce3882aa2b2c4e585013` |
+
+- **Labeled-break plan B3a gol/lisp re-baseline (2026-08-26, F-EMITMAP fix, operator ruling A):** the
+  growable `fl_temps` map (`c89_emit.zig`, commit ea6882ac) removes the name-dedup so each `decl_local`
+  registers its own temp→name entry (capture shadowing). gol's `main` re-declares `var x` in two sibling
+  while-loops and lisp re-uses capture names, so their emitted bytes change (2nd `x` now resolves to mangled
+  `x` instead of raw `zT_274`). Runtime-identical VERIFIED (gol glider grid + lisp REPL outputs diff-clean
+  pristine-vs-candidate, both rc=0). json/mud UNCHANGED. Operator approved re-baseline (plan AMENDMENT 3,
+  option A). gol old→new: `4afb203fdde7a880ec6e7aed32543691` → `eed963e0640a073ed4eebb292f136e05`;
+  lisp old→new: `5f886646b164a70c52bf042eb54bda78` → `c3c5847798e4553b2e34950e085bb6c6`. This fix also
+  closes the **self-compiled zig1_5 lowering SEGV** (F2): captures beyond the old `[128]` cap no longer
+  strand the value in a temp (self-compiled binary now runs the B1 fixture `emission_lower_crash_xmod`
+  rc=0, prints 3).
 
 - **Out-of-scope residual closeout json re-baseline (2026-08-24, NULLWRAP fix, operator ruling):** the
   `.call_direct` need_wrap path now emits `result.has_value = result.value != 0` instead of unconditional

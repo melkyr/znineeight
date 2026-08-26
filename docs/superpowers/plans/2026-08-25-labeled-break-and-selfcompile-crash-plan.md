@@ -261,3 +261,17 @@ Commit with verbatim message. Report + ledger + mnemoria.
 2. **B3a first, then B3b** (both required: B3a alone stops the crash; B3b alone restores byte-correct scope resolution — fixing only one still fails byte-identity on re-captured-name programs).
 3. **Byte-identity gates stay authoritative** (gol `4afb203f…`, lisp `5f886646…` repo-root CWD, json `089e4f04…`, mud `a1d0dd55…`). B3a is expected to be byte-identical on all gates (none exceed 128 locals — small examples). B3b MUST be byte-identical on all gates (correctly-resolving programs unchanged).
 4. **GATE-FINAL** records both fixes, the AMENDMENT-2 split, and re-verifies self-compiled binary runs std-importing programs rc=0.
+
+---
+
+## AMENDMENT 3 (2026-08-26, operator-ruled option A) — gol/lisp MD5 re-baseline for B3a (F-EMITMAP)
+
+**Context:** B3a (F-EMITMAP, commit `ea6882ac`) verified the F2 fix (growable fl_temps, dedup removed) stops the self-compiled SEGV AND satisfies every gate EXCEPT gol/lisp MD5 byte-identity. Root cause = a plan-internal contradiction: the B3a pin MANDATES removing the fl_temps name-dedup (each decl_local registers its own temp→name entry, capture shadowing), which NECESSARILY changes emitted bytes for any function that re-declares a name — gol's `main` re-declares `var x` in two sibling while-loops (main.zig:95/:114), so the 2nd `x` now resolves to mangled `x` instead of raw `zT_274`. AMENDMENT 2 con.3 declared gol/lisp authoritative AND said "B3a expected byte-identical (none exceed 128 locals)" — the author accounted only for the growable-array effect, not the dedup-removal effect. Both requirements cannot hold.
+
+**Operator ruling (verbatim):** "A" (re-baseline gol + lisp).
+
+**Consequences (binding):**
+1. **gol + lisp MD5 gates RE-BASELINED** (runtime-identical, verified: gol glider grid + lisp REPL outputs diff-clean pristine-vs-candidate, both rc=0). New authoritative hashes: gol `eed963e0640a073ed4eebb292f136e05` (old `4afb203fdde7a880ec6e7aed32543691`), lisp `c3c5847798e4553b2e34950e085bb6c6` (old `5f886646b164a70c52bf042eb54bda78`). json `089e4f04…` + mud `a1d0dd55…` UNCHANGED. QUICK_REF MD5 table + re-baseline note updated.
+2. **B3a candidate committed as-is** (`ea6882ac`), pin-faithful, no deviation.
+3. **F2 crash CLOSED:** self-compiled zig1_5 runs B1 fixture `emission_lower_crash_xmod` rc=0 (prints 3), reference rc=0. Matrix 21/21. Self-compile re-count 0 errors.
+4. **GATE-FINAL** records this ruling + the gol/lisp re-baseline in the reconciliation.
