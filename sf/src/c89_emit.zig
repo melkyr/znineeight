@@ -545,9 +545,9 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
       dedup_names: [*]u32,
       dedup_cap: u32,
      dedup_count: u32,
-     fl_name_ids: [128]u32,
-      fl_temps: [128]u32,
-       fl_count: u32,
+      fl_name_ids: [*]u32,
+       fl_temps: [*]u32,
+        fl_count: u32,
       temp_global_map: U32ToU32Map,
       ts_ref_set: U32ToU32Map,
       global_decls: [*]lir_mod.ModuleGlobalDecl,
@@ -579,9 +579,9 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
           .dedup_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
           .dedup_cap = @intCast(u32, 128),
           .dedup_count = @intCast(u32, 0),
-           .fl_name_ids = undefined,
-           .fl_temps = undefined,
-           .fl_count = @intCast(u32, 0),
+            .fl_name_ids = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
+            .fl_temps = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
+            .fl_count = @intCast(u32, 0),
            .temp_global_map = hash_mod.u32ToU32MapInit(alloc),
            .ts_ref_set = hash_mod.u32ToU32MapInit(alloc),
            .global_decls = undefined,
@@ -2682,19 +2682,37 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     emitter.d4_wtype = written_type;
     emitter.d4_wflag = written_flag;
     emitter.d4_t2p = tid_to_pos;
-    var local_name_ids: [128]u32 = undefined;
-    var local_types: [128]u32 = undefined;
+    var local_name_ids = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+    var local_types = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+    var local_cap: u32 = @intCast(u32, 128);
     var local_count: u32 = @intCast(u32, 0);
     var pi: usize = @intCast(usize, 0);
     while (pi < lir_fn.params.len) : (pi += @intCast(usize, 1)) {
-        if (local_count < @intCast(u32, 128)) {
-            var p = lir_fn.params.items[pi];
-            local_name_ids[@intCast(usize, local_count)] = p.name_id;
-            local_types[@intCast(usize, local_count)] = p.type_id;
-            emitter.fl_temps[@intCast(usize, local_count)] = p.temp_id;
-            emitter.fl_name_ids[@intCast(usize, local_count)] = p.name_id;
-            local_count += @intCast(u32, 1);
+        if (local_count >= local_cap) {
+            var n_cap: u32 = local_cap * @intCast(u32, 2);
+            var n_ni = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+            var n_nt = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+            var n_ft = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+            var n_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+            var gi: u32 = @intCast(u32, 0);
+            while (gi < local_count) : (gi += @intCast(u32, 1)) {
+                n_ni[@intCast(usize, gi)] = local_name_ids[@intCast(usize, gi)];
+                n_nt[@intCast(usize, gi)] = local_types[@intCast(usize, gi)];
+                n_ft[@intCast(usize, gi)] = emitter.fl_temps[@intCast(usize, gi)];
+                n_fn[@intCast(usize, gi)] = emitter.fl_name_ids[@intCast(usize, gi)];
+            }
+            local_name_ids = n_ni;
+            local_types = n_nt;
+            emitter.fl_temps = n_ft;
+            emitter.fl_name_ids = n_fn;
+            local_cap = n_cap;
         }
+        var p = lir_fn.params.items[pi];
+        local_name_ids[@intCast(usize, local_count)] = p.name_id;
+        local_types[@intCast(usize, local_count)] = p.type_id;
+        emitter.fl_temps[@intCast(usize, local_count)] = p.temp_id;
+        emitter.fl_name_ids[@intCast(usize, local_count)] = p.name_id;
+        local_count += @intCast(u32, 1);
     }
     emitter.fl_count = local_count;
     var p0m: []const u8 = "P0:lc="; pal.markerWrite(p0m);
@@ -2708,31 +2726,40 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var dinst = dbb.insts.items[dii];
             switch (dinst) {
                 .decl_local => |dl| {
-                    if (local_count < @intCast(u32, 128)) {
-                        var ldup: u8 = @intCast(u8, 0);
-                        var ldi: u32 = @intCast(u32, 0);
-                        while (ldi < local_count) : (ldi += @intCast(u32, 1)) {
-                            if (local_name_ids[@intCast(usize, ldi)] == dl.name_id) { ldup = @intCast(u8, 1); break; }
+                    if (local_count >= local_cap) {
+                        var n_cap: u32 = local_cap * @intCast(u32, 2);
+                        var n_ni = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var n_nt = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var n_ft = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var n_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var gi: u32 = @intCast(u32, 0);
+                        while (gi < local_count) : (gi += @intCast(u32, 1)) {
+                            n_ni[@intCast(usize, gi)] = local_name_ids[@intCast(usize, gi)];
+                            n_nt[@intCast(usize, gi)] = local_types[@intCast(usize, gi)];
+                            n_ft[@intCast(usize, gi)] = emitter.fl_temps[@intCast(usize, gi)];
+                            n_fn[@intCast(usize, gi)] = emitter.fl_name_ids[@intCast(usize, gi)];
                         }
-                         if (ldup == @intCast(u8, 0)) {
-                             var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
-                             var p1tb: [20]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 19) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 19)]);
-                             var p1tn: []const u8 = "T"; pal.markerWrite(p1tn);
-                             var p1db: [20]u8 = undefined; var p1dl = itoa_mod.itoa(dl.type_id, p1db[0..]); var p1ds: usize = @intCast(usize, 19) - @intCast(usize, p1dl); pal.markerWrite(p1db[p1ds..@intCast(usize, 19)]);
-                             var p1nn: []const u8 = "N"; pal.markerWrite(p1nn);
-                             var p1nb: [20]u8 = undefined; var p1nl2 = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 19) - @intCast(usize, p1nl2); pal.markerWrite(p1nb[p1ns..@intCast(usize, 19)]);
-                             var p1nl: []const u8 = "\n"; pal.markerWrite(p1nl);
-                            local_name_ids[@intCast(usize, local_count)] = dl.name_id;
-                            local_types[@intCast(usize, local_count)] = dl.type_id;
-                            emitter.fl_temps[@intCast(usize, local_count)] = dl.temp;
-                            emitter.fl_name_ids[@intCast(usize, local_count)] = dl.name_id;
-                            emitter.fl_count = local_count + @intCast(u32, 1);
-                            local_count += @intCast(u32, 1);
-                          } else {
-                              // nothing added for duplicates
-                          }
+                        local_name_ids = n_ni;
+                        local_types = n_nt;
+                        emitter.fl_temps = n_ft;
+                        emitter.fl_name_ids = n_fn;
+                        local_cap = n_cap;
                     }
+                     var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
+                     var p1tb: [20]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 19) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 19)]);
+                     var p1tn: []const u8 = "T"; pal.markerWrite(p1tn);
+                     var p1db: [20]u8 = undefined; var p1dl = itoa_mod.itoa(dl.type_id, p1db[0..]); var p1ds: usize = @intCast(usize, 19) - @intCast(usize, p1dl); pal.markerWrite(p1db[p1ds..@intCast(usize, 19)]);
+                     var p1nn: []const u8 = "N"; pal.markerWrite(p1nn);
+                     var p1nb: [20]u8 = undefined; var p1nl2 = itoa_mod.itoa(dl.name_id, p1nb[0..]); var p1ns: usize = @intCast(usize, 19) - @intCast(usize, p1nl2); pal.markerWrite(p1nb[p1ns..@intCast(usize, 19)]);
+                     var p1nl: []const u8 = "\n"; pal.markerWrite(p1nl);
+                    local_name_ids[@intCast(usize, local_count)] = dl.name_id;
+                    local_types[@intCast(usize, local_count)] = dl.type_id;
+                    emitter.fl_temps[@intCast(usize, local_count)] = dl.temp;
+                    emitter.fl_name_ids[@intCast(usize, local_count)] = dl.name_id;
+                    emitter.fl_count = local_count + @intCast(u32, 1);
+                    local_count += @intCast(u32, 1);
                 },
+
                 .tail_call => {},
                 .va_start => {},
                 .va_arg => {},
