@@ -373,6 +373,7 @@ pub const LirLowerer = struct {
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
     enumtoint_name_id: u32,
+    inttoenum_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
     cvastart_name_id: u32,
@@ -439,6 +440,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var itp_id = si_mod.stringInternerIntern(ctx.registry.interner, itp_s);
     var eit_s: []const u8 = "@enumToInt";
     var eit_id = si_mod.stringInternerIntern(ctx.registry.interner, eit_s);
+    var ite_s: []const u8 = "@intToEnum";
+    var ite_id = si_mod.stringInternerIntern(ctx.registry.interner, ite_s);
     var sizeof_s: []const u8 = "@sizeOf";
     var sizeof_id = si_mod.stringInternerIntern(ctx.registry.interner, sizeof_s);
     var alignof_s: []const u8 = "@alignOf";
@@ -512,6 +515,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .ptrtoint_name_id = ptin_id,
          .inttoptr_name_id = itp_id,
          .enumtoint_name_id = eit_id,
+         .inttoenum_name_id = ite_id,
          .size_of_name_id = sizeof_id,
          .align_of_name_id = alignof_id,
          .cvastart_name_id = cvastart_id,
@@ -3537,6 +3541,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } else if (node.child_0 == self.inttoptr_name_id) {
             emitInst(self, LirInst{ .int_to_ptr = .{
                 .value = val_temp, .target = t_target, .result = result,
+            } });
+        } else if (node.child_0 == self.inttoenum_name_id) {
+            emitInst(self, LirInst{ .int_cast = .{
+                .value = val_temp, .target = t_target, .result = result,
+                .is_checked = @intCast(u8, 0),
             } });
         }
         return result;
