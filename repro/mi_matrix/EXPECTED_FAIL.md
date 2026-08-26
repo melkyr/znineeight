@@ -1,4 +1,94 @@
-# mi_matrix corpus — expected-fail manifest (v49 2026-08-26)
+# mi_matrix corpus — expected-fail manifest (v50 2026-08-26)
+
+## GATE — @as + TCO self-emission plan, FINAL sweep + reconciliation (2026-08-26)
+
+Final gate sweep of the @as + TCO self-emission plan
+(docs/superpowers/plans/2026-08-26-as-tco-selfcompile-plan.md),
+at HEAD `dd83723f`, measured with `/tmp/fx_subfolder/zig1` (rebuilt at HEAD `dd83723f`;
+canonical std reinstalled at `/tmp/fx_subfolder/lib/`). Docs-only task — no `sf/src`,
+fixture, or script change in this gate. **This is the plan-complete closeout: residual
+A+B (the `@as` cast builtin, ONE shared root cause) and residual C (the TCO
+self-recursion back-edge) are BOTH CLOSED.**
+
+### Residual A+B CLOSED — `@as` cast builtin unhandled in self-emission (F-AS `50be26f5`)
+
+A (missing fn-ptr typedefs — the 4 `_FN_`/`_FP_` GCC_FAIL dirs) and B (`fn_ptr_struct_field`
+compiler SEGV) share ONE root cause: `@as` had no lowering branch. The flag read
+`if ((ty.flags & @as(u32, 1)) != @as(u32, 0))` at `sf/src/c89_emit.zig:736` fell through →
+uninitialized temp → non-deterministic `'P'`/`'N'` cname char per `getCTypeName` call → the
+var-decl references a `_FN_*` name whose `_FP_*` typedef body was emitted under a different
+name → gcc `unknown type name 'zT_…_FN_…'` (observed BOTH directions: P-body/N-ref in 5
+fixtures, N-body/P-ref in `inferred_errorset_fnptr`); and the `@as(u32, fi)` addend at
+`sf/src/type_registry.zig:851-852` produced NO emitted instruction → uninitialized index
+into `self.xt_items` → READ SEGV in `typeRegistryIsAssignable` (3/3 rc=139 reproducible).
+F-AS `50be26f5` (ONLY `semantic_analyzer.zig` + `lower.zig`, 8 insertions): the `@as`
+name_id is interned in both lowerer/sema init, `semanticAnalyzerIsTypeValueCast`
+recognizes it, and the lowerer cast branch emits `LirInst.int_cast` (`is_checked=0`) —
+mirrors the F-ASSOC `@intToEnum` precedent. All 6 A-fixtures
+(`emission_void_call_xmod` / `emission_void_call_control_xmod` / `func_ptr_return_type` /
+`inferred_errorset_fnptr` / `quicksort` / `func_ptr_return`) now dump/gcc/link/run rc=0
+under self-compiled zig1_5 with run output matching the reference. **This SUPERSEDES the
+stale "expected gcc error (class 5, `void value not ignored`)" RED snapshot in
+`emission_void_call_xmod/NOTES.md`** — the void fn-ptr statement call now emits `f();`
+with no assignment, gcc `-c` rc=0 (historical snapshot retained, not rewritten).
+`fn_ptr_struct_field` SEGV → dump rc=0 (no SEGV), run rc=0 (empty output, as reference).
+**A+B CLOSED.**
+
+### Residual C CLOSED — TCO self-recursion back-edge (F-C `dd83723f`)
+
+The `tco_return_try` / `tco_defer` / `tco_factorial` self-emitted recursion ran with the
+recursive call dropped (no back-edge → wrong counts). Root cause: the tagged-union `.tag`
+field READ had no lowering case in `field_access` (`sf/src/lower.zig`) — the result temp
+was reserved at `:2676` but never filled for `.tag` reads. F-C `dd83723f` (ONLY
+`sf/src/lower.zig`, +8): a `.tag` case in the tagged_union branch (after the variant-name
+loop + `.payload` case) interns "tag", looks up the base's name_id, emits
+`load_field { field_id = TU_FIELD_TAG (=0), result = tid }`, returns tid — mirrors the
+`.payload` sibling and the store-side tag pattern. Self-emitted emissions now contain the
+TCO back-edge `goto z_bb_0;` inside the recursive fn. `tco_return_try` rc 139→0
+(`count(10)=10\ncount(100000)=100000`, byte-equal ref); `tco_defer` 2 `D` byte-equal ref;
+`tco_factorial` unchanged. **C CLOSED.**
+
+### Corpus (329 dirs): `OK=319 / FAIL=0 / ICE=0 / CRASH=0 / green-guards=10` (319+0+0+0+10=329)
+
+Full sweep (per-dir dump + per-file `gcc -c`, measured at HEAD `dd83723f`) classifies
+OK=319, FAIL=0, ICE=0, CRASH=0; the 10 green-guards UNCHANGED (`eu_assign_incompat_payload`
+/ `euvoid_val_catch` / `field_access_optional` / `var_declared_void` error[3000];
+`parsergap_slice_expr_xmod` / `strictzig_brace_if_xmod` / `parsergap_selfblok_xmod` /
+`parsergap_strict_comma_xmod` error[2000]; `self_embed_optional_cycle` error[24];
+`emission_pal_xmod` error[20]). **No new FAIL/ICE/CRASH vs the 329-dir baseline.**
+
+### 21-example matrix + 4 MD5 gates
+
+21-example matrix **21/21** dump/gcc/link rc=0. 4 MD5 gates byte-identical (repo-root
+CWD): gol `eed963e0640a073ed4eebb292f136e05` / lisp `c3c5847798e4553b2e34950e085bb6c6` /
+json `089e4f046464ce3882aa2b2c4e585013` / mud `a1d0dd55aada9c3fd904ae33f54de32e` (F-AS
+and F-C are byte-neutral for the 4 gates — no re-baseline).
+
+### Runtime sweep (self-compiled zig1_5 vs reference) + self-compile
+
+Full runtime sweep of 403 programs (repro top-level 53 + mi_matrix 329 + z98 21) with
+`/tmp/zig1_5/zig1_5_clean` vs `/tmp/fx_subfolder/zig1`: **333 RUN_OK** (rc+output match
+ref) + **2 non-deterministic-garbage dirs** (`voiddecl_payload_xmod`,
+`emission_void_temp_enum_xmod` — output unstable by design, NOT a bug) + **10 DUMP_FAIL**
+(= the 10 green-guards, both compilers identical) + **56 LINK_FAIL** (extern-fn-dependent;
+reference fails to link identically — not a regression) + **2 RUN_TIMEOUT** (mud_server +
+rogue_mud, both compilers; mud_server boots "MUD server listening on port 4000").
+Expected-change fixtures ALL RUN_OK with output matching ref: `emission_void_call_xmod` /
+`emission_void_call_control_xmod` / `func_ptr_return_type` (`15`) /
+`inferred_errorset_fnptr` / `fn_ptr_struct_field` (was SEGV, rc=0) / `quicksort` (asc/desc
+sorted) / `func_ptr_return` (`10+5=15`) / `tco_return_try` rc=0
+(`count(100000)=100000`) / `tco_defer` (2 `D`) / `tco_factorial`. Self-compile:
+`build_zig1_5.sh` → **40 `.c`, 0 `error[`, 0 PANIC**; rebuilt `zig1_5_clean` runs the
+R-A/R-B/C fixtures green — `func_ptr_return_type` (`15`), `fn_ptr_struct_field` (rc=0),
+`tco_return_try` (rc=0) — all matching reference.
+
+### Milestone statement
+
+Residual A+B (`@as` cast builtin: fn-ptr `_FP_`/`_FN_` cname mismatch + `typeRegistryIsAssignable`
+SEGV) + residual C (TCO back-edge: tagged-union `.tag` field_read lowering) BOTH CLOSED.
+4 MD5 gates byte-identical (no re-baseline). 21-example matrix 21/21. Corpus 329 dirs
+`OK=319 / FAIL=0 / ICE=0 / CRASH=0 / GREEN=10`. No residual remains from the @as + TCO
+self-emission plan.
 
 ## GATE — assoc-chain misparse + pending_scope nest-safety plan, FINAL sweep + reconciliation (2026-08-26)
 
