@@ -2688,6 +2688,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var raw_lp = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var raw_pp = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var raw_nd = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
+    var raw_wa = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var tid_to_pos = @ptrCast([*]u32, raw_t2p);
     var written_type = @ptrCast([*]u32, raw_wt);
     var written_flag = @ptrCast([*]u8, raw_wf);
@@ -2696,6 +2697,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var local_arr = @ptrCast([*]u8, raw_lp);
     var protected_arr = @ptrCast([*]u8, raw_pp);
     var no_decl_arr = @ptrCast([*]u8, raw_nd);
+    var written_arr = @ptrCast([*]u8, raw_wa);
     var tp: u32 = 0;
     while (tp < max_temp) : (tp += @intCast(u32, 1)) {
         tid_to_pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
@@ -2706,6 +2708,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         local_arr[@intCast(usize, tp)] = @intCast(u8, 0);
         protected_arr[@intCast(usize, tp)] = @intCast(u8, 0);
         no_decl_arr[@intCast(usize, tp)] = @intCast(u8, 0);
+        written_arr[@intCast(usize, tp)] = @intCast(u8, 0);
     }
     hti = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
@@ -3241,6 +3244,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     emitter.d4_max_temp = max_temp;
     emitter.d4_local = local_arr;
     emitter.d4_nodecl = no_decl_arr;
+    dceMarkAllWritten(lir_fn, max_temp, tid_to_pos, written_arr);
     var d4p: []const u8 = "D4:"; pal.markerWrite(d4p);
     var di: usize = @intCast(usize, 0);
     var had: u8 = 0;
@@ -3342,8 +3346,18 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var sp: []const u8 = " ";
         bufferedWriterWrite(&emitter.writer, sp);
          bufferedWriterWrite(&emitter.writer, tn);
-         var sm: []const u8 = ";\n";
-        bufferedWriterWrite(&emitter.writer, sm);
+         if (written_arr[@intCast(usize, i)] == @intCast(u8, 0)) {
+             if (retTypeIsScalarC(emitter.registry, eff_type) == @intCast(u8, 1)) {
+                 var sm: []const u8 = " = 0;\n";
+                 bufferedWriterWrite(&emitter.writer, sm);
+             } else {
+                 var sm: []const u8 = " = {0};\n";
+                 bufferedWriterWrite(&emitter.writer, sm);
+             }
+         } else {
+             var sm: []const u8 = ";\n";
+             bufferedWriterWrite(&emitter.writer, sm);
+         }
         } else {
             var mtp_m: []const u8 = "MTP:ti"; pal.markerWrite(mtp_m);
             var mtp_tb: [10]u8 = undefined; var mtp_tl = itoa_mod.itoa(td.temp_id, mtp_tb[0..]); var mtp_ts: usize = @intCast(usize, 9) - @intCast(usize, mtp_tl); pal.markerWrite(mtp_tb[mtp_ts..@intCast(usize, 9)]);
@@ -3351,6 +3365,21 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var mtp_nl: []const u8 = " "; pal.markerWrite(mtp_nl);
         }
     }
+}
+
+fn arrLoopDeclSigned(len: u32) []const u8 {
+    if (len == @intCast(u32, 0)) { var s: []const u8 = "    int _i = 0;\n"; return s; }
+    var s: []const u8 = "    unsigned int _i = 0;\n"; return s;
+}
+
+fn arrLoopDeclSignedK(len: u32) []const u8 {
+    if (len == @intCast(u32, 0)) { var s: []const u8 = "    int _k = 0;\n"; return s; }
+    var s: []const u8 = "    unsigned int _k = 0;\n"; return s;
+}
+
+fn arrLoopDeclOpenSigned(len: u32) []const u8 {
+    if (len == @intCast(u32, 0)) { var s: []const u8 = "{\n    int _i = 0;\n    while (_i < "; return s; }
+    var s: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < "; return s;
 }
 
 fn getBinOpStr(op: u8) []const u8 {
@@ -3424,6 +3453,19 @@ fn typeIsIntKind(reg: *TypeRegistry, tid: u32) u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     var k = ty.kind;
     if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.c_char_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
+fn retTypeIsScalarC(reg: *TypeRegistry, tid: u32) u8 {
+    if (tid == type_mod.TYPE_VOID or tid == type_mod.TYPE_UNDEFINED or tid == @intCast(u32, 0)) { return @intCast(u8, 0); }
+    var rv_k = reg.types_items[@intCast(usize, tid)].kind;
+    if (rv_k == TypeKind.i8_type or rv_k == TypeKind.i16_type or rv_k == TypeKind.i32_type or rv_k == TypeKind.i64_type or
+        rv_k == TypeKind.isize_type or rv_k == TypeKind.u8_type or rv_k == TypeKind.u16_type or rv_k == TypeKind.u32_type or
+        rv_k == TypeKind.u64_type or rv_k == TypeKind.usize_type or rv_k == TypeKind.c_char_type or
+        rv_k == TypeKind.f32_type or rv_k == TypeKind.f64_type or rv_k == TypeKind.bool_type or
+        rv_k == TypeKind.enum_type or rv_k == TypeKind.error_set_type or rv_k == TypeKind.ptr_type or
+        rv_k == TypeKind.many_ptr_type or rv_k == TypeKind.fn_type or rv_k == TypeKind.null_type or
+        rv_k == TypeKind.integer_literal_type) { return @intCast(u8, 1); }
     return @intCast(u8, 0);
 }
 
@@ -4517,8 +4559,21 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         .nop => {},
         .ret_void => {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            var s: []const u8 = "return;\n";
-            bufferedWriterWrite(&emitter.writer, s);
+            var rv_rt = emitter.current_fn.return_type;
+            if (rv_rt == type_mod.TYPE_VOID or rv_rt == type_mod.TYPE_UNDEFINED or rv_rt == @intCast(u32, 0)) {
+                var s: []const u8 = "return;\n";
+                bufferedWriterWrite(&emitter.writer, s);
+            } else if (retTypeIsScalarC(emitter.registry, rv_rt) == @intCast(u8, 1)) {
+                var s: []const u8 = "return 0;\n";
+                bufferedWriterWrite(&emitter.writer, s);
+            } else {
+                var s0: []const u8 = "return (";
+                bufferedWriterWrite(&emitter.writer, s0);
+                var rv_cn = getCTypeName(emitter.registry, emitter.mangler, rv_rt);
+                bufferedWriterWrite(&emitter.writer, rv_cn);
+                var s1: []const u8 = "){0};\n";
+                bufferedWriterWrite(&emitter.writer, s1);
+            }
         },
         .loop_header => |hdr| {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -4578,8 +4633,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var loop_begin: []const u8 = "{\n";
                 bufferedWriterWrite(&emitter.writer, loop_begin);
-                var loop_decl: []const u8 = "    unsigned int _i = 0;\n";
-                bufferedWriterWrite(&emitter.writer, loop_decl);
+                var as_zi = arrLoopDeclSigned(arr_len);
+                bufferedWriterWrite(&emitter.writer, as_zi);
                 var loop_cond: []const u8 = "    while (_i < ";
                 bufferedWriterWrite(&emitter.writer, loop_cond);
                 var alb: [20]u8 = undefined;
@@ -4722,8 +4777,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
             if (ll_is_arr == @intCast(u8, 1)) {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                var loop_begin: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < ";
-                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var ll_zi = arrLoopDeclOpenSigned(ll_arr_len);
+                bufferedWriterWrite(&emitter.writer, ll_zi);
                 var alb: [20]u8 = undefined;
                 var all = itoa_mod.itoa(ll_arr_len, alb[0..]);
                 var als: usize = @intCast(usize, 19) - @intCast(usize, all);
@@ -4786,8 +4841,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                     var loop_begin: []const u8 = "{\n";
                     bufferedWriterWrite(&emitter.writer, loop_begin);
-                    var loop_decl: []const u8 = "    unsigned int _i = 0;\n";
-                    bufferedWriterWrite(&emitter.writer, loop_decl);
+                    var stl_zi = arrLoopDeclSigned(arr_len);
+                    bufferedWriterWrite(&emitter.writer, stl_zi);
                     var loop_cond: []const u8 = "    while (_i < ";
                     bufferedWriterWrite(&emitter.writer, loop_cond);
                     var alb: [20]u8 = undefined;
@@ -4873,8 +4928,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
             if (sg_is_arr == @intCast(u8, 1)) {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                var loop_begin: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < ";
-                bufferedWriterWrite(&emitter.writer, loop_begin);
+                var sg_zi = arrLoopDeclOpenSigned(sg_arr_len);
+                bufferedWriterWrite(&emitter.writer, sg_zi);
                 var alb: [20]u8 = undefined;
                 var all = itoa_mod.itoa(sg_arr_len, alb[0..]);
                 var als: usize = @intCast(usize, 19) - @intCast(usize, all);
@@ -5692,8 +5747,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                  var loop_begin: []const u8 = "{\n";
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  bufferedWriterWrite(&emitter.writer, loop_begin);
-                 var loop_decl: []const u8 = "    unsigned int _i = 0;\n";
-                 bufferedWriterWrite(&emitter.writer, loop_decl);
+                 var uap_zi = arrLoopDeclSigned(uap.length);
+                 bufferedWriterWrite(&emitter.writer, uap_zi);
                  var loop_cond: []const u8 = "    while (_i < ";
                  bufferedWriterWrite(&emitter.writer, loop_cond);
                  var alb: [20]u8 = undefined; var all = itoa_mod.itoa(uap.length, alb[0..]); var als: usize = @intCast(usize, 19) - @intCast(usize, all); bufferedWriterWrite(&emitter.writer, alb[als..@intCast(usize, 19)]);
@@ -5715,9 +5770,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                           var sfe = emitter.registry.fe_items[@intCast(usize, st.fields_start) + sfi];
                           var sfety = emitter.registry.types_items[@intCast(usize, sfe.type_id)];
                           if (sfety.kind == type_mod.TypeKind.array_type) {
-                              var sfap = emitter.registry.array_items[@intCast(usize, sfety.payload_idx)];
-                              var slpb: []const u8 = "    unsigned int _k = 0;\n";
-                              bufferedWriterWrite(&emitter.writer, slpb);
+                               var sfap = emitter.registry.array_items[@intCast(usize, sfety.payload_idx)];
+                               var slpb = arrLoopDeclSignedK(sfap.length);
+                               bufferedWriterWrite(&emitter.writer, slpb);
                               var slpw: []const u8 = "    while (_k < ";
                               bufferedWriterWrite(&emitter.writer, slpw);
                               var slpab: [20]u8 = undefined; var slpal = itoa_mod.itoa(sfap.length, slpab[0..]); var slpas: usize = @intCast(usize, 19) - @intCast(usize, slpal); bufferedWriterWrite(&emitter.writer, slpab[slpas..@intCast(usize, 19)]);
@@ -6794,6 +6849,26 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .builtin_socket_close => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.sock); },
                 .load_global => |lg| { dceNoDeclPos(max_temp, tid_to_pos, no_decl_arr, lg.result); },
                 else => {},
+            }
+        }
+    }
+}
+
+fn dceMarkAllWritten(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, written_arr: [*]u8) void {
+    var bi: usize = @intCast(usize, 0);
+    while (bi < lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
+        var bb = &lir_fn.blocks.items[bi];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            var inst = bb.insts.items[ii];
+            switch (inst) {
+                .set_optional_null => {},
+                else => {
+                    var rp = dceResultPos(max_temp, tid_to_pos, inst);
+                    if (rp != @intCast(u32, 0xFFFFFFFF)) {
+                        written_arr[@intCast(usize, rp)] = @intCast(u8, 1);
+                    }
+                },
             }
         }
     }
