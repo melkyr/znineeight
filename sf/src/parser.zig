@@ -49,6 +49,7 @@ pub const Parser = struct {
     catch_capture: u32,
     expr_depth: u32,
     module_reg: ?*ModuleRegistry,
+    import_scratch: ?*Sand,
     current_module_id: u32,
     file_id: u32,
 };
@@ -78,6 +79,7 @@ pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, i
         .expr_depth = @intCast(u32, 0),
         .builtin_import_id = import_id,
         .module_reg = null,
+        .import_scratch = null,
         .current_module_id = @intCast(u32, 0),
         .file_id = @intCast(u32, 0),
     };
@@ -87,6 +89,10 @@ pub fn parserSetModuleContext(self: *Parser, reg: *ModuleRegistry, mod_id: u32) 
     self.module_reg = reg;
     self.current_module_id = mod_id;
     self.file_id = reg.modules.items[mod_id].source_file_id;
+}
+
+pub fn parserSetImportScratch(self: *Parser, scratch: *Sand) void {
+    self.import_scratch = scratch;
 }
 
 pub fn parserTokenText(self: *Parser, tok: ParseToken) []const u8 {
@@ -670,11 +676,11 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
     if (self.module_reg) |reg| {
-        var scratch_arena: alloc_mod.GrowableSand = undefined;
-        var scratch_name: []const u8 = "import_scratch";
-        alloc_mod.growableSandInit(&scratch_arena, alloc_mod.poolPtr(), 256, scratch_name);
-        var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, &scratch_arena.view);
-        _ = resolved;
+        if (self.import_scratch) |is| {
+            alloc_mod.sandReset(is);
+            var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, is);
+            _ = resolved;
+        }
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
         bi_tok.span_start, end_pos, 0, 0, 0, path_id);

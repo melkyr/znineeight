@@ -73,7 +73,7 @@ fn moduleScanDiscover(reg: *mr_mod.ModuleRegistry, scratch: *Sand) usize {
     return total_tokens;
 }
 
-fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore, p_arena: *Sand) ?u32 {
+fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore, p_arena: *Sand, import_scratch: *Sand) ?u32 {
     var path_s = interner_mod.stringInternerGet(reg.interner, reg.modules.items[mod_id].path_id);
     var file_id = sm_mod.sourceManagerAddFile(reg.source_man, path_s, content);
     reg.modules.items[mod_id].source_file_id = file_id;
@@ -98,6 +98,7 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
     }
     var p = parser_mod.parserInit(tok_items[0..tok_len], content, shared_store, reg.interner, reg.diag, p_arena);
     parser_mod.parserSetModuleContext(&p, reg, mod_id);
+    parser_mod.parserSetImportScratch(&p, import_scratch);
     var ecb0: u32 = @intCast(u32, 0); var ecb1: u32 = @intCast(u32, 0); var ecb2: u32 = @intCast(u32, 0); var ecb3: u32 = @intCast(u32, 0); var ecb4: u32 = @intCast(u32, 0); var ecb5: u32 = @intCast(u32, 0);
     if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { ecb0 = shared_store.extra_children.items[@intCast(usize, 0)]; }
     if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { ecb1 = shared_store.extra_children.items[@intCast(usize, 1)]; }
@@ -134,6 +135,10 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
     var parser_name: []const u8 = "parser";
     alloc_mod.growableSandInit(&parser_arena, alloc_mod.poolPtr(), 4096, parser_name);
 
+    var import_scratch_gs: alloc_mod.GrowableSand = undefined;
+    var import_scratch_name: []const u8 = "import_scratch";
+    alloc_mod.growableSandInit(&import_scratch_gs, alloc_mod.poolPtr(), 256, import_scratch_name);
+
     // Pre-size the AST store nodes/extra_children from the import-closure token count
     // (token-count heuristic: ~0.6 nodes / ~0.25 extra-children entries per token)
     // so the arrays land near their final size in a single allocation. This eliminates
@@ -168,7 +173,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
                 continue;
             };
 
-            var ast_root = moduleRegistryParseModule(reg, mod_id, content, module_arena, scratch, shared_store, &parser_arena.view) orelse {
+            var ast_root = moduleRegistryParseModule(reg, mod_id, content, module_arena, scratch, shared_store, &parser_arena.view, &import_scratch_gs.view) orelse {
                 entry.state = mr_mod.ModuleState.failed;
                 reg.modules.items[mod_id] = entry;
                 continue;
