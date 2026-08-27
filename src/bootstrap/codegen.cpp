@@ -1632,6 +1632,44 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     }
 }
 
+/* Returns true if emitLocalVarDecl() would actually emit a C declaration for this
+ * var decl node. Mirrors the skip paths at the top of emitLocalVarDecl()
+ * (TYPE_TYPE/TYPE_MODULE locals, @import / module-typed initializers, type-expression
+ * consts, and the `const X = mod.Y` / `@import("m").Y` module-const pattern), so the
+ * dead-local void-cast pass never emits `(void)X;` for a name that got no declaration. */
+static bool varDeclEmitsCDeclaration(const ASTNode* node, SymbolTable& symbols) {
+    if (!node || node->type != NODE_VAR_DECL) return true;
+    const ASTVarDeclNode* decl = node->as.var_decl;
+    if (node->resolved_type &&
+        (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return false;
+    }
+    if (decl->initializer) {
+        if (decl->initializer->type == NODE_IMPORT_STMT ||
+            (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
+            return false;
+        }
+        if (decl->is_const && isTypeExpression(decl->initializer, symbols)) {
+            return false;
+        }
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return false;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return false;
+                    if (sym->kind == SYMBOL_MODULE) return false;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
@@ -2193,19 +2231,20 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             endStmt();
         }
 
+        for (size_t i = 0; i < node->statements->length(); ++i) {
+            ASTNode* stmt = (*node->statements)[i];
+            if (stmt->type == NODE_VAR_DECL) {
+                emitLocalVarDecl(stmt, false);
+            }
+        }
+
+        /* (void)param; casts must follow every C declaration in this block (strict C90). */
         if (label_id == -1 && defer_stack_.length() == 1) {
             for (size_t ui = 0; ui < unused_param_names_.length(); ++ui) {
                 writeIndent();
                 writeString("(void)");
                 writeString(unused_param_names_[ui]);
                 endStmt();
-            }
-        }
-
-        for (size_t i = 0; i < node->statements->length(); ++i) {
-            ASTNode* stmt = (*node->statements)[i];
-            if (stmt->type == NODE_VAR_DECL) {
-                emitLocalVarDecl(stmt, false);
             }
         }
 
@@ -2243,7 +2282,8 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
         { /* always emit void casts; unreachable after returns is harmless */ 
             for (size_t i = 0; i < node->statements->length(); ++i) {
                 ASTNode* stmt = (*node->statements)[i];
-                if (stmt->type == NODE_VAR_DECL && stmt->as.var_decl->name && isVarDeclDead(stmt->as.var_decl)) {
+                if (stmt->type == NODE_VAR_DECL && stmt->as.var_decl->name && isVarDeclDead(stmt->as.var_decl) &&
+                    varDeclEmitsCDeclaration(stmt, unit_.getSymbolTable(module_name_))) {
                     const char* vn = NULL;
                     if (stmt->as.var_decl->symbol) {
                         vn = var_alloc_.allocate(stmt->as.var_decl->symbol);
@@ -2373,7 +2413,8 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
         { /* always emit void casts; unreachable after returns is harmless */ 
             for (size_t i = 0; i < node->statements->length(); ++i) {
                 ASTNode* stmt = (*node->statements)[i];
-                if (stmt->type == NODE_VAR_DECL && stmt->as.var_decl->name && isVarDeclDead(stmt->as.var_decl)) {
+                if (stmt->type == NODE_VAR_DECL && stmt->as.var_decl->name && isVarDeclDead(stmt->as.var_decl) &&
+                    varDeclEmitsCDeclaration(stmt, unit_.getSymbolTable(module_name_))) {
                     const char* vn = NULL;
                     if (stmt->as.var_decl->symbol) {
                         vn = var_alloc_.allocate(stmt->as.var_decl->symbol);
