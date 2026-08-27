@@ -6,12 +6,14 @@
 
 **Architecture:** Phase 1 allocation strategy (items 0/3/4a — the ~58 MiB of the pool gap, zero code migration); Phase 2 the `-O2`/`-O3` warning classes (zero-length array, maybe-uninit, shift-parens, benign tail → 0 warnings); Phase 3 struct migrations (items 1/2/5 — AstNode/LirInst/side-arrays, the ~3.6 MB live tail); Phase 4 markers + spill-reserve + GATE. Every emission-affecting task guards runtime via a golden sample captured from the reference zig1.
 
+**AMENDMENT 5 (operator-ruled 2026-08-26):** the W-1..W-4 series landed on the **bootstrap** (the reference `/tmp/fx_subfolder/*.c` is emitted by `zig0`/`codegen.cpp`), but the TRUE objective is the **self-hosted** compiler — `zig1_5`'s own emitted C (`c89_emit.zig` → `/tmp/zig1_5/gen/*.c`). A new **W2 series** (W2-I investigation + W2-1..4 fixes) is added, scoped to **`sf/src/c89_emit.zig` ONLY** (do NOT touch the bootstrap), to reach **0 warnings on `gen/*.c`** at `-Wall -Wextra -O3`. W-4 as committed (`a3fd9a2b`) covers the reference (bootstrapped) build only; its c89_emit.zig part is superseded by the W2 series. The `undefined`-init warnings are fixed at the **emitter** (emit `= 0` for `undefined` locals — safe, reads of undefined are UB) so users never have to initialize defensively. The 4 MD5 gates WILL be re-baselined by the W2 fixes (c89_emit.zig changes zig1's emission of user programs) with golden runtime-equality as the evidence (operator pre-authorized).
+
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
 ## Global Constraints
 
 - **Golden-sample runtime protocol (operator-mandated):** at the start of every emission-affecting F task, capture the golden sample with the reference zig1 — its `--dump-c89` emission + compiled/run stdout+rc for the 4 gates (`examples/z98/{game_of_life,lisp_interpreter_curr,json_parser,mud_server}/main.zig`) and the runtime fixture set (`emission_assoc_chain_xmod`, `tco_return_try`, `tco_defer`, `tco_factorial`, `fn_ptr_struct_field`, `quicksort`, `func_ptr_return`, `hello`, `emission_lower_crash_xmod`) — into `/tmp/golden_<TASK>/` (gitignored). Runtime MUST match this golden sample; byte-identity may be re-baselined with evidence, never guessed.
-- **Warning-clean target:** `-Wall -Wextra -O3` on the emitted compiler C AND `zig1_5`'s emitted C → **0 warnings, 0 errors**. Rebuild check: `gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <repo>/sf/src/include`.
+- **Warning-clean target:** `-Wall -Wextra -O3` → **0 warnings, 0 errors** on BOTH the reference build's C (`/tmp/fx_subfolder/*.c`, W-4, done `a3fd9a2b`) AND the self-compiled `gen/*.c` (W2 series). Rebuild check: `gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <repo>/sf/src/include`.
 - **4 MD5 byte-identity gates** (gol `eed963e0640a073ed4eebb292f136e05`, lisp `c3c5847798e4553b2e34950e085bb6c6` repo-root CWD, json `089e4f046464ce3882aa2b2c4e585013`, mud `a1d0dd55aada9c3fd904ae33f54de32e`): keep byte-identical OR re-baseline with golden-sample runtime evidence (operator-ruled; emitter fixes W-1/W-2/W-4 are emission-affecting by design).
 - **Hard target frame:** self-compile pool ≤ 16,384 K (`pool=` from `--track-memory --markers`); never OOM a 32 MB physical P3/P4 Win98 host. zig0 dialect binding (no packed/bitfield/anytype/@Type); custom u32/u64+shift encoding allowed.
 - Compiler under test `/tmp/fx_subfolder/zig1`; rebuild `timeout 900 bash sf/scripts/build_release.sh` (repo root, gate `=== [release] Done ===`, reinstall std lib after wipe); self-compile `timeout 900 bash scripts/self_compile/build_zig1_5.sh`. `timeout 120` on all compiler/binary invocations.
@@ -215,15 +217,17 @@ Commit verbatim. Report per-site fix + verdict. Ledger + mnemoria (bugfix).
 
 ---
 
-### Task W-4: Benign-tail emitter cleanup → warning-clean build
+### Task W-4: Benign-tail emitter cleanup → warning-clean build (REFERENCE build)
+
+> **AMENDMENT 5 scope note:** as executed, this task covers the **reference (bootstrap-emitted) build** only — the plan's gate "0 warnings on `zig1_5`'s emitted C" was met only for `/tmp/fx_subfolder/*.c` (committed `a3fd9a2b`, via `codegen.cpp`/`cbackend.cpp`). The `c89_emit.zig` (self-compile, `gen/*.c`) warning-clean work is the **W2 series** below. The reference build must REMAIN 0-warning at `-Wall -Wextra -O3`.
 
 **Files:**
-- Modify: `sf/src/c89_emit.zig` (dead-store temps, unused labels, duplicate const, C90 constants, string-init, unused statics)
+- Modify: `src/bootstrap/codegen.cpp` (+ `codegen.hpp`/`cbackend.cpp` as needed), `sf/src/parser.zig` (1-line `member_buf` defensive init per operator ruling)
 - Commit: `fix: warning-clean C89 emission at -Wall -Wextra -O3`
 
 **Interfaces:**
-- Consumes: the benign-warning classes (unused `_`/`__1` temps, `__loop_0_end` labels, unused params/statics, duplicate `const`, ISO C90 decimal constants, string-literal pointer init).
-- Produces: **0 warnings** at `-Wall -Wextra -O3` on both the compiler's emitted C and `zig1_5`'s emitted C.
+- Consumes: the benign-warning classes (unused `_`/`__1` temps, `__loop_0_end` labels, unused params/statics, duplicate `const`, ISO C90 decimal constants, string-literal pointer init) as they appear in the reference `/tmp/fx_subfolder/*.c`.
+- Produces: **0 warnings** at `-Wall -Wextra -O3` on the reference build's emitted C. (Self-compile `gen/*.c` 0-warning is the W2 series' deliverable.)
 
 - [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
 
@@ -252,6 +256,146 @@ Rebuild zig1 + zig1_5. `gcc -m32 -std=c89 -O3 -Wall -Wextra …` on emitted comp
 - [ ] **Step 6: Commit + report + ledger + memory**
 
 Commit verbatim. Report warning-count before/after (128-129 → 0) + per-class evidence. Ledger + mnemoria (pattern).
+
+---
+
+### Task W2-I: Self-compile warning census + fix mapping (read-only)
+
+> **AMENDMENT 5:** this is the TRUE objective — warning-clean for the SELF-HOSTED compiler's emitted C (`zig1_5` → `/tmp/zig1_5/gen/*.c`, emitted by `c89_emit.zig`).
+
+**Files:**
+- Report: `.superpowers/sdd/task-MEMREFACTOR-report.md` (append)
+
+**Interfaces:**
+- Consumes: `-Wall -Wextra -O3` measurement of `/tmp/zig1_5/gen/*.c` at HEAD `a3fd9a2b` (~17,788 warnings: unused-temp-decls ~13,621; sign-compare ~265; int-conversion ~98; uninitialized ~71; return-type ~14; type-limits ~7 + tail).
+- Produces: per-class census with exact counts, the `c89_emit.zig` emission site for each class, and the fix approach (suppress / cast / init / restructure); feeds W2-1..4.
+
+- [ ] **Step 1: Rebuild + measure**
+
+Rebuild zig1 + zig1_5 from HEAD `a3fd9a2b` (clean tree). `gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -fsyntax-only /tmp/zig1_5/gen/*.c 2> /tmp/w2.log; wc -l < /tmp/w2.log`; `grep -oE 'warning: [^[]*' /tmp/w2.log | sort | uniq -c | sort -rn` for the full class histogram.
+
+- [ ] **Step 2: Map each class to its `c89_emit.zig` emission site**
+
+For each warning class, trace the emitted pattern back to the `c89_emit.zig` code that produces it (declaration, expression, cast, label, comparison emission). Record `file:line` per class. Determine whether the fix is emitter-level (in `c89_emit.zig`) for every class — if any class can ONLY be fixed in the Zig source (`sf/src/*.zig`), flag it and classify (STOP-present if a source touch would be required — the operator ruled the `undefined` case is emitter-level).
+
+- [ ] **Step 3: Fix-mapping table + report**
+
+Table: class | count | emitted pattern | c89_emit.zig site | fix approach | task owner (W2-1/2/3/4). Ledger + mnemoria (discovery). Read-only: no source changes, no commit.
+
+---
+
+### Task W2-1: Dead-result-temp suppression (emitter)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (discarded-expression result temps)
+- Commit: `fix: emit (void) for discarded expression results (kill unused-temp-decls)`
+
+**Interfaces:**
+- Consumes: W2-I mapping (the ~13,621 unused-temp-decls — the dominant class).
+- Produces: gen/ unused-temp-decls eliminated (the bulk of the 17,788 → near-0).
+
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
+
+Capture `/tmp/golden_W2_1/` (4 gate emissions + md5s; 9 runtime fixtures).
+
+- [ ] **Step 2: Fix the emission**
+
+When a Zig expression's result is discarded (statement context), do NOT emit an unused result-temp declaration + dead store — emit `(void)expr;` (or suppress the temp entirely when the expression has no side effects). This is the c89_emit.zig analogue of the codegen.cpp DCE (read how codegen.cpp solved it; port the principle WITHOUT touching the bootstrap). Keep it general (fixes all programs, not just the compiler). Z98-clean.
+
+- [ ] **Step 3: Verify**
+
+Rebuild zig1 + zig1_5. gen/ warning count drops by the unused-temp-decls class (measure before/after). `-Wall -Wextra -O3` on gen/: the unused-temp-decls class = 0. Golden runtime 9/9 byte-identical; 4 MD5 re-baselined with golden evidence (record old→new); self-compile 40 `.c`/0 errors; reference build still 0-warning.
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit verbatim. Report before/after counts + re-baseline evidence. Ledger + mnemoria (bugfix).
+
+---
+
+### Task W2-2: sign-compare + int-conversion casts (emitter)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (comparison/pointer-cast emission)
+- Commit: `fix: emit correct signedness + pointer casts (no -Wsign-compare / -Wint-conversion)`
+
+**Interfaces:**
+- Consumes: W2-I mapping (~265 sign-compare + ~98 int-conversion).
+- Produces: those classes = 0 in gen/ at `-Wall -Wextra -O3`.
+
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
+
+Capture `/tmp/golden_W2_2/`.
+
+- [ ] **Step 2: Fix the emission**
+
+For sign-compare: emit the correct signedness cast on one operand of mixed-sign comparisons. For int-conversion: emit an explicit cast where a pointer/int or int/pointer conversion is intended (or suppress the erroneous one — verify the Zig source intends it). Emitter-level, general. Z98-clean.
+
+- [ ] **Step 3: Verify**
+
+Rebuild. gen/ sign-compare + int-conversion classes = 0. Golden runtime 9/9; 4 MD5 re-baseline with evidence; self-compile 0 errors; reference build still 0-warning.
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit verbatim. Ledger + mnemoria (bugfix).
+
+---
+
+### Task W2-3: undefined-init + return-type + type-limits (emitter)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (local-decl + return emission)
+- Commit: `fix: init undefined locals to 0 + correct return types (no -Wmaybe-uninitialized/-Wreturn-type/-Wtype-limits)`
+
+**Interfaces:**
+- Consumes: W2-I mapping (~71 uninitialized; ~14 return-type; ~7 type-limits).
+- Produces: those classes = 0 in gen/ at `-Wall -Wextra -O3`.
+
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
+
+Capture `/tmp/golden_W2_3/`.
+
+- [ ] **Step 2: Fix the emission**
+
+- `undefined` locals: emit `= 0` (or the zero value of the type) for a local whose Zig source initializer is `undefined` — operator-ruled EMITTER-level so users never have to initialize defensively; reads of undefined are UB so `0` is safe. General (all programs).
+- return-type: emit correct return statements / explicit `return 0` for non-void-returning paths gcc sees as falling off.
+- type-limits: avoid comparisons/ops that gcc proves always-true/overflow (emitter-level adjustments; verify semantics).
+Z98-clean.
+
+- [ ] **Step 3: Verify**
+
+Rebuild. gen/ uninitialized + return-type + type-limits classes = 0. Golden runtime 9/9; 4 MD5 re-baseline with evidence; self-compile 0 errors; reference build still 0-warning.
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit verbatim. Ledger + mnemoria (bugfix).
+
+---
+
+### Task W2-4: Residual tail → 0 warnings on gen/ (emitter) + GATE
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (residual classes)
+- Commit: `fix: warning-clean self-emission at -Wall -Wextra -O3 (gen 0 warnings)`
+
+**Interfaces:**
+- Consumes: W2-1..3 results + W2-I residual mapping.
+- Produces: **0 warnings, 0 errors** on `/tmp/zig1_5/gen/*.c` at `-Wall -Wextra -O3` (only the 3 structural `-Wno-*` allowed).
+
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
+
+Capture `/tmp/golden_W2_4/`.
+
+- [ ] **Step 2: Eliminate the residual tail**
+
+Address every remaining gen/ warning class to reach 0 (misc, `main`, leftover duplicates, etc.). Iterate: rebuild zig1 + zig1_5 → measure gen/ → fix → until 0 warnings.
+
+- [ ] **Step 3: Full gate**
+
+gen/ 0 warnings + 0 errors at `-Wall -Wextra -O3`; golden runtime 9/9 byte-identical; corpus sweep (zig1_5 vs zig1: 0 asymmetric/new failures); self-compile 40 `.c`/0 errors; 4 MD5 re-baselined with golden evidence; **reference build still 0-warning**.
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit verbatim. Report gen/ before/after (17,788 → 0) + re-baseline evidence. Ledger + mnemoria (pattern).
 
 ---
 
@@ -422,7 +566,7 @@ Pool ≤16,384 K; golden runtime matches; 4 MD5 keep-or-re-baseline. Commit verb
 
 - [ ] **Step 2: Warning-clean confirmation**
 
-`-Wall -Wextra -O3` on emitted compiler C + zig1_5 emitted C: 0 warnings, 0 errors. Report counts.
+`-Wall -Wextra -O3` on emitted compiler C (reference) AND zig1_5 emitted C (`gen/*.c`): **0 warnings, 0 errors** on BOTH. Report counts (reference via W-4; gen via W2-1..4).
 
 - [ ] **Step 3: Reconcile docs**
 
