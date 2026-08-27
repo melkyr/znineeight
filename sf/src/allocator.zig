@@ -53,7 +53,7 @@ pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
             return result;
         }
         if (sand.growable) |gs| {
-            if (growableSandGrow(gs, sand)) {
+            if (growableSandGrow(gs, sand, size)) {
                 continue; // retry in the new segment
             }
         }
@@ -105,7 +105,7 @@ pub fn growableSandInit(gs: *GrowableSand, backing: *Sand, first_size: usize, na
     gs.view.growable = gs; // MUST be set AFTER assignment (points at caller's final location)
 }
 
-fn growableSandGrow(gs: *GrowableSand, view: *Sand) bool {
+fn growableSandGrow(gs: *GrowableSand, view: *Sand, size: usize) bool {
     if (gs.last.next) |next| {
         // chain already has this size (post-reset reuse) — no warning
         gs.last = next;
@@ -115,7 +115,10 @@ fn growableSandGrow(gs: *GrowableSand, view: *Sand) bool {
         return true;
     }
     var old_size: usize = gs.last.size;
-    var new_size: usize = gs.last.size * 2; // 4→8→16→32 KB…
+    var new_size: usize = gs.last.size * 2; // capped doubling 4→8→16→…→2 MiB
+    var max_segment: usize = @intCast(usize, 2 * 1024 * 1024);
+    if (new_size > max_segment) new_size = max_segment;
+    if (size > new_size) new_size = size; // exact-fit final segment to the requested size
     var raw = sandAlloc(gs.backing, new_size, 4) catch return false;
     var seg_raw = sandAlloc(gs.backing, @intCast(usize, @sizeOf(SandSegment)), 4) catch return false;
     var node = @ptrCast(*SandSegment, seg_raw);
