@@ -3158,11 +3158,36 @@ void C89Emitter::emitBinaryOp(const ASTBinaryOpNode& node) {
         return;
     }
 
+    bool is_shift = (node.op == TOKEN_LARROW2 || node.op == TOKEN_RARROW2);
+    bool left_paren = is_shift && isCompoundShiftOperand(node.left);
+    bool right_paren = is_shift && isCompoundShiftOperand(node.right);
+    if (left_paren) writeString("(");
     emitExpression(node.left);
+    if (left_paren) writeString(")");
     writeString(" ");
     writeString(getTokenSpelling(node.op));
     writeString(" ");
+    if (right_paren) writeString("(");
     emitExpression(node.right);
+    if (right_paren) writeString(")");
+}
+
+bool C89Emitter::isCompoundShiftOperand(const ASTNode* node) const {
+    if (!node) return false;
+    switch (node->type) {
+        case NODE_BINARY_OP:
+        case NODE_IF_EXPR:
+        case NODE_SWITCH_EXPR:
+            return true;
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+            return isCompoundShiftOperand(node->as.numeric_cast->expr);
+        case NODE_PTR_CAST:
+            return isCompoundShiftOperand(node->as.ptr_cast->expr);
+        default:
+            return false;
+    }
 }
 
 void C89Emitter::emitCast(const ASTNode* node) {

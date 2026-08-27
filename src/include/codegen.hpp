@@ -363,6 +363,13 @@ public:
     bool requiresParentheses(const ASTNode* node) const;
 
     /**
+     * @brief Returns true if the node is a compound expression (binary/ternary,
+     *        or a cast wrapping one) that must be parenthesized when used as an
+     *        operand of a C shift (<< / >>), which binds tighter than arithmetic.
+     */
+    bool isCompoundShiftOperand(const ASTNode* node) const;
+
+    /**
      * @brief Returns true if the cast from src to dest is a safe widening conversion.
      */
     bool isSafeWidening(Type* src, Type* dest) const;

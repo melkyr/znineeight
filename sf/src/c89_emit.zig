@@ -3275,6 +3275,20 @@ fn getUnOpStr(op: u8) []const u8 {
     else { var s: []const u8 = "~"; return s; }
 }
 
+fn isAtomicCOperand(s: []const u8) bool {
+    if (s.len == @intCast(usize, 0)) return false;
+    var i: usize = @intCast(usize, 0);
+    while (i < s.len) : (i += @intCast(usize, 1)) {
+        var c: u8 = s[i];
+        var is_id_ch: bool = (c >= @intCast(u8, 'a') and c <= @intCast(u8, 'z')) or
+            (c >= @intCast(u8, 'A') and c <= @intCast(u8, 'Z')) or
+            (c >= @intCast(u8, '0') and c <= @intCast(u8, '9')) or
+            (c == @intCast(u8, '_'));
+        if (!is_id_ch) return false;
+    }
+    return true;
+}
+
 fn getUnsignedCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.u8_type or ty.kind == TypeKind.c_char_type) { var s: []const u8 = "unsigned char"; return s; }
@@ -5141,6 +5155,12 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 }
             }
             var op_str = getBinOpStr(b.op);
+            var is_shift_op: u8 = @intCast(u8, 0);
+            if (b.op == @intCast(u8, 8) or b.op == @intCast(u8, 9)) { is_shift_op = @intCast(u8, 1); }
+            var lhs_paren: u8 = @intCast(u8, 0);
+            if (is_shift_op != @intCast(u8, 0) and !isAtomicCOperand(lhs)) { lhs_paren = @intCast(u8, 1); }
+            var rhs_paren: u8 = @intCast(u8, 0);
+            if (is_shift_op != @intCast(u8, 0) and !isAtomicCOperand(rhs)) { rhs_paren = @intCast(u8, 1); }
             var bnr_m: []const u8 = "BNR:r"; pal.markerWrite(bnr_m);
             var bnr_rb: [10]u8 = undefined; var bnr_rl = itoa_mod.itoa(@intCast(u32, result.len), bnr_rb[0..]); var bnr_rs: usize = @intCast(usize, 9) - @intCast(usize, bnr_rl); pal.markerWrite(bnr_rb[bnr_rs..@intCast(usize, 9)]);
             var bnr_lm: []const u8 = "l"; pal.markerWrite(bnr_lm);
@@ -5152,19 +5172,35 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
+            if (lhs_paren != @intCast(u8, 0)) {
+                var lp: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, lp);
+            }
             bufferedWriterWrite(&emitter.writer, lhs);
             if (lhs_is_tag != @intCast(u8, 0)) {
                 var tag_s: []const u8 = ".tag";
                 bufferedWriterWrite(&emitter.writer, tag_s);
             }
+            if (lhs_paren != @intCast(u8, 0)) {
+                var rp: []const u8 = ")";
+                bufferedWriterWrite(&emitter.writer, rp);
+            }
             var sp: []const u8 = " ";
             bufferedWriterWrite(&emitter.writer, sp);
             bufferedWriterWrite(&emitter.writer, op_str);
             bufferedWriterWrite(&emitter.writer, sp);
+            if (rhs_paren != @intCast(u8, 0)) {
+                var rp2: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, rp2);
+            }
             bufferedWriterWrite(&emitter.writer, rhs);
             if (rhs_is_tag != @intCast(u8, 0)) {
                 var tag_s: []const u8 = ".tag";
                 bufferedWriterWrite(&emitter.writer, tag_s);
+            }
+            if (rhs_paren != @intCast(u8, 0)) {
+                var rp3: []const u8 = ")";
+                bufferedWriterWrite(&emitter.writer, rp3);
             }
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
