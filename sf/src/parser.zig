@@ -1103,7 +1103,7 @@ fn parserParseErrorSetDecl(self: *Parser) ParserError!u32 {
 
 fn parserParseErrorSetDeclBody(self: *Parser, kw: Token) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.lbrace);
-    var member_buf: [*]u32 = undefined;
+    var member_buf: [*]u32 = null;
     var member_count: usize = 0;
     var member_cap: usize = @intCast(usize, 0);
     while (parserPeek(self).kind != TokenKind.rbrace) {

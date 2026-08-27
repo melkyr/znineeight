@@ -108,6 +108,13 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
     DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
+    // Pass 0: Pre-scan for cross-references (dead-local read marking + function references).
+    // This must run before any function prototype/definition emission so the "static" decision
+    // (emit static only when the function is referenced) and dead-local elimination are correct.
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        emitter.markReadNames((*stmts)[i], false);
+    }
+
     // Pass 1: Special types (slices, error unions, optionals)
     // These are emitted BEFORE structs to ensure they are available for recursive dependencies.
     // They will now correctly forward-declare any structs they depend on.
