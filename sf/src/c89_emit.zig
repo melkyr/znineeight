@@ -1635,7 +1635,8 @@ fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
     bufferedWriterWrite(&emitter.writer, aname);
     var a2: []const u8 = "["; bufferedWriterWrite(&emitter.writer, a2);
     var buf: [16]u8 = undefined;
-    var al = itoa_mod.itoa(ap.length, buf[0..]);
+    var decl_len = if (ap.length == @intCast(u32, 0)) @intCast(u32, 1) else ap.length;
+    var al = itoa_mod.itoa(decl_len, buf[0..]);
     var astart: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, al);
     bufferedWriterWrite(&emitter.writer, buf[astart..@intCast(usize, 16) - @intCast(usize, 1)]);
     var a3: []const u8 = "];\n"; bufferedWriterWrite(&emitter.writer, a3);

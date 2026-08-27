@@ -266,7 +266,7 @@ void C89Emitter::emitTypeSuffix(Type* type) {
         case TYPE_ARRAY: {
             char buf[32];
             writeString("[");
-            plat_u64_to_string(type->as.array.size, buf, sizeof(buf));
+            plat_u64_to_string(type->as.array.size == 0 ? 1 : type->as.array.size, buf, sizeof(buf));
             writeString(buf);
             writeString("]");
             emitTypeSuffix(type->as.array.element_type);
