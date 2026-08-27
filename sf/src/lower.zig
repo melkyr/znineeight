@@ -1550,7 +1550,7 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         pre_cap_type = opt_pay;
     } else if (ct.kind == type_mod.TypeKind.tagged_union_type) {
         var tp = self.ctx.registry.tu_items[@intCast(usize, ct.payload_idx)];
-        var payload_tid: u32 = undefined;
+        var payload_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
         var fi: usize = 0;
         while (fi < @intCast(usize, tp.fields_count)) : (fi += 1) {
             var fe = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + fi];
@@ -1570,7 +1570,7 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         cap_temp = unwrapped;
     } else if (ct.kind == type_mod.TypeKind.tagged_union_type) {
         var tp = self.ctx.registry.tu_items[@intCast(usize, ct.payload_idx)];
-        var payload_tid: u32 = undefined;
+        var payload_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
         var fi: usize = 0;
         while (fi < @intCast(usize, tp.fields_count)) : (fi += 1) {
             var fe = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + fi];
