@@ -214,16 +214,18 @@ pub fn initCompilerAlloc() CompilerAlloc {
 }
 
 pub fn checkCombinedPeak(alloc: *CompilerAlloc) void {
-    _ = alloc;
     var pool_kb: usize = pool.peak / @intCast(usize, 1024);
     var limit_kb: usize = POOL_SIZE / @intCast(usize, 1024);
+    if (alloc.max_mem != 0) {
+        limit_kb = @intCast(usize, alloc.max_mem);
+    }
     if (pool_kb > limit_kb) {
         var mm: []const u8 = "memory limit exceeded: pool limit="; pal.stderr_write(mm);
         printUsize(limit_kb);
         var p: []const u8 = "K pool="; pal.stderr_write(p);
         printUsize(pool_kb);
         var t: []const u8 = "K\n"; pal.stderr_write(t);
-        pal.exit(1);
+        panic_mod.panicHandler("out of memory", "allocator.zig", 28);
     }
 }
 
