@@ -551,11 +551,14 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
      d4_wtype: [*]u32,
      d4_wflag: [*]u8,
      d4_t2p: [*]u32,
-     d4_dead: [*]u8,
-     d4_max_temp: u32,
-     d4_local: [*]u8,
-     d4_nodecl: [*]u8,
-     dl_hoisted: u8,
+      d4_dead: [*]u8,
+      d4_max_temp: u32,
+      d4_local: [*]u8,
+      d4_nodecl: [*]u8,
+      d4_lread: [*]u8,
+      bb_used: [*]u8,
+      bb_used_count: u32,
+      dl_hoisted: u8,
      emitted_type_set: U32ToU32Map,
      fwd_decl_set: U32ToU32Map,
      pointer_only_map: U32ToU32Map,
@@ -593,6 +596,9 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_max_temp = @intCast(u32, 0),
          .d4_local = undefined,
          .d4_nodecl = undefined,
+         .d4_lread = undefined,
+         .bb_used = undefined,
+         .bb_used_count = @intCast(u32, 0),
          .dl_hoisted = @intCast(u8, 0),
          .emitted_type_set = hash_mod.u32ToU32MapInitCap(alloc, reg.types_len),
          .fwd_decl_set = hash_mod.u32ToU32MapInitCap(alloc, reg.types_len),
@@ -2504,13 +2510,40 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
         var wfn_name = interner_mod.stringInternerGet(emitter.interner, wfn_mid);
         var wrty = emitter.registry.types_items[@intCast(usize, func.return_type)];
         var wsig0: []const u8 = "int main(void) {\n";
-        var wsig1: []const u8 = "int main(int argc, unsigned char** argv) {\n";
+        var wsig1: []const u8 = "int main(int argc, char** argv) {\n";
         var wcall0: []const u8 = "();\n";
-        var wcall1: []const u8 = "(argc, argv);\n";
         var wsig: []const u8 = wsig0;
         var wcall: []const u8 = wcall0;
+        var w_argv_cast: []const u8 = "argv";
         if (func.params.len > @intCast(usize, 0)) {
             wsig = wsig1;
+            if (func.params.len > @intCast(usize, 1) and func.params.items[@intCast(usize, 1)].type_id != @intCast(u32, 0)) {
+                var wac = getCTypeName(emitter.registry, emitter.mangler, func.params.items[@intCast(usize, 1)].type_id);
+                var wc_buf: [128]u8 = undefined;
+                var wci: usize = @intCast(usize, 0);
+                wc_buf[0] = @intCast(u8, '(');
+                wci += @intCast(usize, 1);
+                var wcj: usize = @intCast(usize, 0);
+                while (wcj < wac.len and wci + @intCast(usize, 1) < @intCast(usize, 126)) : (wcj += @intCast(usize, 1)) { wc_buf[wci] = wac[wcj]; wci += @intCast(usize, 1); }
+                wc_buf[wci] = @intCast(u8, ')'); wci += @intCast(usize, 1);
+                wc_buf[wci] = @intCast(u8, 'a'); wci += @intCast(usize, 1);
+                wc_buf[wci] = @intCast(u8, 'r'); wci += @intCast(usize, 1);
+                wc_buf[wci] = @intCast(u8, 'g'); wci += @intCast(usize, 1);
+                wc_buf[wci] = @intCast(u8, 'v'); wci += @intCast(usize, 1);
+                var wc_mid = interner_mod.stringInternerIntern(emitter.interner, wc_buf[0..wci]);
+                w_argv_cast = interner_mod.stringInternerGet(emitter.interner, wc_mid);
+            }
+            var wc1_buf: [256]u8 = undefined;
+            var wc1i: usize = @intCast(usize, 0);
+            var wc1pre: [7]u8 = [7]u8{ '(', 'a', 'r', 'g', 'c', ',', ' ' };
+            while (wc1i < @intCast(usize, 7)) : (wc1i += @intCast(usize, 1)) { wc1_buf[wc1i] = wc1pre[wc1i]; }
+            var wc1j: usize = @intCast(usize, 0);
+            while (wc1j < w_argv_cast.len and wc1i + @intCast(usize, 1) < @intCast(usize, 250)) : (wc1j += @intCast(usize, 1)) { wc1_buf[wc1i] = w_argv_cast[wc1j]; wc1i += @intCast(usize, 1); }
+            wc1_buf[wc1i] = @intCast(u8, ')'); wc1i += @intCast(usize, 1);
+            wc1_buf[wc1i] = @intCast(u8, ';'); wc1i += @intCast(usize, 1);
+            wc1_buf[wc1i] = @intCast(u8, '\n'); wc1i += @intCast(usize, 1);
+            var wc1_mid = interner_mod.stringInternerIntern(emitter.interner, wc1_buf[0..wc1i]);
+            var wcall1: []const u8 = interner_mod.stringInternerGet(emitter.interner, wc1_mid);
             wcall = wcall1;
         }
         bufferedWriterWrite(&emitter.writer, wsig);
@@ -3189,6 +3222,94 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         }
     }
     dceMarkAllReads(lir_fn, max_temp, tid_to_pos, read_count, protected_arr, no_decl_arr, emitter.registry);
+    var raw_lr = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, local_count) * @intCast(usize, 1), @intCast(usize, 1)) catch unreachable;
+    var local_read_arr = @ptrCast([*]u8, raw_lr);
+    var lrz: u32 = @intCast(u32, 0);
+    while (lrz < local_count) : (lrz += @intCast(u32, 1)) { local_read_arr[@intCast(usize, lrz)] = @intCast(u8, 0); }
+    var lrp: u32 = @intCast(u32, 0);
+    while (lrp < local_count) : (lrp += @intCast(u32, 1)) {
+        var lrt = emitter.fl_temps[@intCast(usize, lrp)];
+        if (lrt < max_temp) {
+            var lrpos = tid_to_pos[@intCast(usize, lrt)];
+            if (lrpos != @intCast(u32, 0xFFFFFFFF) and lrpos < @intCast(u32, lir_fn.hoisted_temps.len)) {
+                if (read_count[@intCast(usize, lrpos)] > @intCast(u32, 0)) { local_read_arr[@intCast(usize, lrp)] = @intCast(u8, 1); }
+            }
+        }
+    }
+    var lrb_idx: usize = @intCast(usize, 0);
+    while (lrb_idx < lir_fn.blocks.len) : (lrb_idx += @intCast(usize, 1)) {
+        var lrbb = &lir_fn.blocks.items[lrb_idx];
+        var lrii: usize = @intCast(usize, 0);
+        while (lrii < lrbb.insts.len) : (lrii += @intCast(usize, 1)) {
+            var lrinst = lrbb.insts.items[lrii];
+            var lr_nid: u32 = @intCast(u32, 0xFFFFFFFF);
+            switch (lrinst) {
+                .load_local => |ll| { lr_nid = ll.name_id; },
+                .load_field => |lf| { if (lf.name_id != @intCast(u32, 0)) { lr_nid = lf.name_id; } },
+                .assign_field => |af| { if (af.name_id != @intCast(u32, 0)) { lr_nid = af.name_id; } },
+                .store_field => |sf| { if (sf.name_id != @intCast(u32, 0)) { lr_nid = sf.name_id; } },
+                .load_index => |li| { if (li.name_id != @intCast(u32, 0)) { lr_nid = li.name_id; } },
+                .assign_index => |ai| { if (ai.name_id != @intCast(u32, 0)) { lr_nid = ai.name_id; } },
+                else => {},
+            }
+            if (lr_nid != @intCast(u32, 0xFFFFFFFF)) {
+                var lrm: u32 = @intCast(u32, 0);
+                while (lrm < local_count) : (lrm += @intCast(u32, 1)) {
+                    if (emitter.fl_name_ids[@intCast(usize, lrm)] == lr_nid) { local_read_arr[@intCast(usize, lrm)] = @intCast(u8, 1); }
+                }
+            }
+        }
+    }
+    var dbg_li: u32 = @intCast(u32, 0);
+    while (dbg_li < local_count) : (dbg_li += @intCast(u32, 1)) {
+        if (local_read_arr[@intCast(usize, dbg_li)] == @intCast(u8, 0) and dbg_li >= @intCast(u32, lir_fn.params.len)) {
+            var dbg_nm = mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, dbg_li)]);
+            var dbg_m: []const u8 = "DBGDEAD:"; pal.markerWrite(dbg_m);
+            pal.markerWrite(dbg_nm);
+            var dbg_t: []const u8 = " t="; pal.markerWrite(dbg_t);
+            var dbg_tb: [10]u8 = undefined;
+            var dbg_tl = itoa_mod.itoa(emitter.fl_temps[@intCast(usize, dbg_li)], dbg_tb[0..]);
+            var dbg_ti = @intCast(u32, 9) - dbg_tl;
+            var dbg_ts: usize = @intCast(usize, dbg_ti);
+            var dbg_te: usize = @intCast(usize, 9);
+            pal.markerWrite(dbg_tb[dbg_ts..dbg_te]);
+            var dbg_r: []const u8 = " rc="; pal.markerWrite(dbg_r);
+            var dbg_rcb: [10]u8 = undefined;
+            var dbg_lt = emitter.fl_temps[@intCast(usize, dbg_li)];
+            if (dbg_lt < max_temp) {
+                var dbg_lp = tid_to_pos[@intCast(usize, dbg_lt)];
+                if (dbg_lp != @intCast(u32, 0xFFFFFFFF) and dbg_lp < @intCast(u32, lir_fn.hoisted_temps.len)) {
+                    var dbg_rc = read_count[@intCast(usize, dbg_lp)];
+                    var dbg_rcl = itoa_mod.itoa(dbg_rc, dbg_rcb[0..]);
+                    var dbg_rci = @intCast(u32, 9) - dbg_rcl;
+                    var dbg_rcs: usize = @intCast(usize, dbg_rci);
+                    var dbg_rce: usize = @intCast(usize, 9);
+                    pal.markerWrite(dbg_rcb[dbg_rcs..dbg_rce]);
+                } else {
+                    var dbg_m2: []const u8 = "NOTMP"; pal.markerWrite(dbg_m2);
+                }
+            } else {
+                var dbg_m3: []const u8 = "OOR"; pal.markerWrite(dbg_m3);
+            }
+            var dbg_nl: []const u8 = "\n"; pal.markerWrite(dbg_nl);
+        }
+    }
+    var raw_ld = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, lir_fn.hoisted_temps.len) * @intCast(usize, 1), @intCast(usize, 1)) catch unreachable;
+    var ldead_arr = @ptrCast([*]u8, raw_ld);
+    var ldz: usize = @intCast(usize, 0);
+    while (ldz < lir_fn.hoisted_temps.len) : (ldz += @intCast(usize, 1)) { ldead_arr[ldz] = @intCast(u8, 0); }
+    var ldp: u32 = @intCast(u32, 0);
+    while (ldp < local_count) : (ldp += @intCast(u32, 1)) {
+        if (local_read_arr[@intCast(usize, ldp)] == @intCast(u8, 0) and ldp >= @intCast(u32, lir_fn.params.len)) {
+            var ldlt = emitter.fl_temps[@intCast(usize, ldp)];
+            if (ldlt < max_temp) {
+                var ldpos = tid_to_pos[@intCast(usize, ldlt)];
+                if (ldpos != @intCast(u32, 0xFFFFFFFF) and ldpos < @intCast(u32, lir_fn.hoisted_temps.len)) {
+                    ldead_arr[ldpos] = @intCast(u8, 1);
+                }
+            }
+        }
+    }
     var dce_changed: u8 = @intCast(u8, 1);
     while (dce_changed == @intCast(u8, 1)) {
         dce_changed = @intCast(u8, 0);
@@ -3200,7 +3321,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                 var inst2 = bb2.insts.items[ii2];
                 var dce_rp = dceResultPos(max_temp, tid_to_pos, inst2);
                 if (dce_rp != @intCast(u32, 0xFFFFFFFF)) {
-                    if (local_arr[@intCast(usize, dce_rp)] == @intCast(u8, 0)) {
+                    if (local_arr[@intCast(usize, dce_rp)] == @intCast(u8, 0) or ldead_arr[@intCast(usize, dce_rp)] != @intCast(u8, 0)) {
                         if (dead_arr[@intCast(usize, dce_rp)] == @intCast(u8, 0)) {
                             if (read_count[@intCast(usize, dce_rp)] == @intCast(u32, 0)) {
                                 dceReleaseOperands(max_temp, tid_to_pos, read_count, inst2);
@@ -3219,7 +3340,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                 var inst3 = bb3.insts.items[ii3];
                 var dce_rp3 = dceResultPos(max_temp, tid_to_pos, inst3);
                 if (dce_rp3 != @intCast(u32, 0xFFFFFFFF)) {
-                    if (local_arr[@intCast(usize, dce_rp3)] == @intCast(u8, 0)) {
+                    if (local_arr[@intCast(usize, dce_rp3)] == @intCast(u8, 0) or ldead_arr[@intCast(usize, dce_rp3)] != @intCast(u8, 0)) {
                         if (read_count[@intCast(usize, dce_rp3)] == @intCast(u32, 0)) {
                             dead_arr[@intCast(usize, dce_rp3)] = @intCast(u8, 1);
                         }
@@ -3232,7 +3353,10 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     while (dd_idx < lir_fn.hoisted_temps.len) : (dd_idx += @intCast(usize, 1)) {
         var dd_td = lir_fn.hoisted_temps.items[dd_idx];
         if (dd_td.temp_id < @intCast(u32, lir_fn.params.len)) { dead_arr[dd_idx] = @intCast(u8, 0); continue; }
-        if (local_arr[dd_idx] != @intCast(u8, 0)) { dead_arr[dd_idx] = @intCast(u8, 0); continue; }
+        if (local_arr[dd_idx] != @intCast(u8, 0)) {
+            if (ldead_arr[dd_idx] != @intCast(u8, 0)) { dead_arr[dd_idx] = @intCast(u8, 1); } else { dead_arr[dd_idx] = @intCast(u8, 0); }
+            continue;
+        }
         if (protected_arr[dd_idx] != @intCast(u8, 0)) { dead_arr[dd_idx] = @intCast(u8, 0); continue; }
         if (read_count[dd_idx] == @intCast(u32, 0)) {
             dead_arr[dd_idx] = @intCast(u8, 1);
@@ -3244,6 +3368,35 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     emitter.d4_max_temp = max_temp;
     emitter.d4_local = local_arr;
     emitter.d4_nodecl = no_decl_arr;
+    emitter.d4_lread = local_read_arr;
+    var dbg2_li: usize = @intCast(usize, 0);
+    while (dbg2_li < lir_fn.hoisted_temps.len) : (dbg2_li += @intCast(usize, 1)) {
+        var dbg2_td = lir_fn.hoisted_temps.items[dbg2_li];
+        if (dbg2_td.temp_id == @intCast(u32, 4779)) {
+            var dbg2_m: []const u8 = "DBG4779:dead="; pal.markerWrite(dbg2_m);
+            var dbg2_b: [10]u8 = undefined;
+            var dbg2_l = itoa_mod.itoa(dead_arr[dbg2_li], dbg2_b[0..]);
+            var dbg2_i = @intCast(u32, 9) - dbg2_l;
+            var dbg2_s: usize = @intCast(usize, dbg2_i);
+            var dbg2_e: usize = @intCast(usize, 9);
+            pal.markerWrite(dbg2_b[dbg2_s..dbg2_e]);
+            var dbg2_r: []const u8 = " rc="; pal.markerWrite(dbg2_r);
+            var dbg2_rb: [10]u8 = undefined;
+            var dbg2_rl = itoa_mod.itoa(read_count[dbg2_li], dbg2_rb[0..]);
+            var dbg2_ri = @intCast(u32, 9) - dbg2_rl;
+            var dbg2_rs: usize = @intCast(usize, dbg2_ri);
+            var dbg2_re: usize = @intCast(usize, 9);
+            pal.markerWrite(dbg2_rb[dbg2_rs..dbg2_re]);
+            var dbg2_l2: []const u8 = " local="; pal.markerWrite(dbg2_l2);
+            var dbg2_lb: [10]u8 = undefined;
+            var dbg2_ll = itoa_mod.itoa(local_arr[dbg2_li], dbg2_lb[0..]);
+            var dbg2_li2 = @intCast(u32, 9) - dbg2_ll;
+            var dbg2_ls: usize = @intCast(usize, dbg2_li2);
+            var dbg2_le: usize = @intCast(usize, 9);
+            pal.markerWrite(dbg2_lb[dbg2_ls..dbg2_le]);
+            var dbg2_nl: []const u8 = "\n"; pal.markerWrite(dbg2_nl);
+        }
+    }
     dceMarkAllWritten(lir_fn, max_temp, tid_to_pos, written_arr);
     var d4p: []const u8 = "D4:"; pal.markerWrite(d4p);
     var di: usize = @intCast(usize, 0);
@@ -3318,7 +3471,26 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                   var vfeh_m: []const u8 = "VFLOW:ehdv\n"; pal.markerWrite(vfeh_m);
               }
          } else {
-             if (wf2 == @intCast(u8, 1)) { var wt2 = written_type[@intCast(usize, i)]; }
+             if (wf2 == @intCast(u8, 1)) {
+                 var wt2 = written_type[@intCast(usize, i)];
+                 if (wt2 != @intCast(u32, 0xFFFFFFFF) and wt2 != type_mod.TYPE_VOID) {
+                     var raw_ty = emitter.registry.types_items[@intCast(usize, td.type_id)];
+                     if (raw_ty.kind == type_mod.TypeKind.ptr_type or raw_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                         var wt2_ty = emitter.registry.types_items[@intCast(usize, wt2)];
+                         if (wt2_ty.kind == type_mod.TypeKind.fn_type) {
+                             eff_type = wt2;
+                             var dbf_m: []const u8 = "DBGFNPTR:t"; pal.markerWrite(dbf_m);
+                             var dbf_b: [10]u8 = undefined;
+                             var dbf_l = itoa_mod.itoa(td.temp_id, dbf_b[0..]);
+                             var dbf_i = @intCast(u32, 9) - dbf_l;
+                             var dbf_s: usize = @intCast(usize, dbf_i);
+                             var dbf_e: usize = @intCast(usize, 9);
+                             pal.markerWrite(dbf_b[dbf_s..dbf_e]);
+                             var dbf_nl: []const u8 = "\n"; pal.markerWrite(dbf_nl);
+                         }
+                     }
+                 }
+             }
               if (td.type_id == @intCast(u32, 1)) {
                   var instb_eh_m: []const u8 = "INSTB:ehd\n"; pal.markerWrite(instb_eh_m);
                   var vfeh_m: []const u8 = "VFLOW:ehdd\n"; pal.markerWrite(vfeh_m);
@@ -3412,6 +3584,17 @@ fn getUnOpStr(op: u8) []const u8 {
     else { var s: []const u8 = "~"; return s; }
 }
 
+fn intLitSuffixUns(v: u64) []const u8 {
+    if (v <= @intCast(u64, 2147483647)) { var s: []const u8 = ""; return s; }
+    if (v <= @intCast(u64, 4294967295)) { var s: []const u8 = "u"; return s; }
+    var s: []const u8 = "ULL"; return s;
+}
+
+fn intLitSuffixNeg(v: u64) []const u8 {
+    if (v <= @intCast(u64, 2147483647)) { var s: []const u8 = ""; return s; }
+    var s: []const u8 = "LL"; return s;
+}
+
 fn isAtomicCOperand(s: []const u8) bool {
     if (s.len == @intCast(usize, 0)) return false;
     var i: usize = @intCast(usize, 0);
@@ -3474,6 +3657,27 @@ fn typeIsPtrKind(reg: *TypeRegistry, tid: u32) u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     var k = ty.kind;
     if (k == TypeKind.ptr_type or k == TypeKind.many_ptr_type) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
+fn isLocalPosUsed(emitter: *C89Emitter, pos: u32) u8 {
+    if (pos >= emitter.fl_count) { return @intCast(u8, 1); }
+    if (emitter.d4_lread[@intCast(usize, pos)] == @intCast(u8, 0)) { return @intCast(u8, 0); }
+    return @intCast(u8, 1);
+}
+
+fn isDeadLocalName(emitter: *C89Emitter, name_id: u32) u8 {
+    if (name_id == @intCast(u32, 0)) { return @intCast(u8, 0); }
+    var li: u32 = @intCast(u32, 0);
+    var any_matched: u8 = @intCast(u8, 0);
+    while (li < emitter.fl_count) : (li += @intCast(u32, 1)) {
+        if (emitter.fl_name_ids[@intCast(usize, li)] == name_id) {
+            any_matched = @intCast(u8, 1);
+            if (li < @intCast(u32, emitter.current_fn.params.len)) { return @intCast(u8, 0); }
+            if (emitter.d4_lread[@intCast(usize, li)] != @intCast(u8, 0)) { return @intCast(u8, 0); }
+        }
+    }
+    if (any_matched != @intCast(u8, 0)) { return @intCast(u8, 1); }
     return @intCast(u8, 0);
 }
 
@@ -4576,9 +4780,11 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
         },
         .loop_header => |hdr| {
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            var label_s: []const u8 = "z_bb_0:\n";
-            bufferedWriterWrite(&emitter.writer, label_s);
+            if (emitter.bb_used_count > @intCast(u32, 0) and emitter.bb_used[@intCast(usize, 0)] != @intCast(u8, 0)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var label_s: []const u8 = "z_bb_0:\n";
+                bufferedWriterWrite(&emitter.writer, label_s);
+            }
         },
         .label => {},
 
@@ -4614,6 +4820,18 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var src = resolveTempName(emitter, a.src);
             var rfli: u32 = emitter.fl_count;
             while (rfli > @intCast(u32, 0)) { rfli = rfli - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { dst = mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rfli)]); break; } }
+            var as_dname: u32 = @intCast(u32, 0);
+            if (a.name_id != @intCast(u32, 0)) { as_dname = a.name_id; }
+            else if (rfli < emitter.fl_count and emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { as_dname = emitter.fl_name_ids[@intCast(usize, rfli)]; }
+            if (as_dname != @intCast(u32, 0) and isDeadLocalName(emitter, as_dname) != @intCast(u8, 0)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var vd: []const u8 = "(void)";
+                bufferedWriterWrite(&emitter.writer, vd);
+                bufferedWriterWrite(&emitter.writer, src);
+                var vd2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, vd2);
+                return;
+            }
             var is_arr: u8 = @intCast(u8, 0);
             var arr_len: u32 = @intCast(u32, 0);
             var tj_ca: usize = @intCast(usize, 0);
@@ -4814,7 +5032,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var stln_c: []const u8 = "="; pal.markerWrite(stln_c);
             pal.markerWrite(val);
             var stln_nl: []const u8 = "\n"; pal.markerWrite(stln_nl);
-            if (name.len == @intCast(usize, 1) and name[0] == '_') {
+            if (name.len == @intCast(usize, 1) and name[0] == '_' or isDeadLocalName(emitter, sl.name_id) != @intCast(u8, 0)) {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var vd: []const u8 = "(void)";
                 bufferedWriterWrite(&emitter.writer, vd);
@@ -5617,6 +5835,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     var is_start: usize = @intCast(usize, is_idx);
                     var is_end: usize = @intCast(usize, 31);
                     bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+                    var nsuf = intLitSuffixNeg(magnitude);
+                    bufferedWriterWrite(&emitter.writer, nsuf);
                 }
             }
             if (neg_magnitude == @intCast(u8, 0)) {
@@ -5625,6 +5845,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var is_start: usize = @intCast(usize, is_idx);
                 var is_end: usize = @intCast(usize, 31);
                 bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+                var usuf = intLitSuffixUns(ic.value);
+                bufferedWriterWrite(&emitter.writer, usuf);
             }
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
@@ -6979,6 +7201,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                             if (emitter.dedup_names[@intCast(usize, dl_lc)] == dl.name_id) { dl_is_dup = @intCast(u8, 1); break; }
                         }
                         if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.markerWrite(da); continue; }
+                        if (isDeadLocalName(emitter, dl.name_id) != @intCast(u8, 0)) { var dld: []const u8 = "DLD:s\n"; pal.markerWrite(dld); continue; }
                         if (emitter.dedup_count >= emitter.dedup_cap) {
                             var nb = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, emitter.dedup_cap * @intCast(u32, 2)) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
                             var ci: u32 = @intCast(u32, 0);
@@ -7026,21 +7249,69 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
         }
         emitter.dl_hoisted = @intCast(u8, 1);
     }
+    var bb_used_cap: u32 = @intCast(u32, 1);
+    var bbcap_idx: usize = @intCast(usize, 0);
+    while (bbcap_idx < lir_fn.blocks.len) : (bbcap_idx += @intCast(usize, 1)) {
+        var bbcap = &lir_fn.blocks.items[bbcap_idx];
+        if (bbcap.id >= bb_used_cap) { bb_used_cap = bbcap.id + @intCast(u32, 1); }
+    }
+    var raw_bu = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, bb_used_cap) * @intCast(usize, 1), @intCast(usize, 1)) catch unreachable;
+    var bb_used_arr = @ptrCast([*]u8, raw_bu);
+    var bu_z: u32 = @intCast(u32, 0);
+    while (bu_z < bb_used_cap) : (bu_z += @intCast(u32, 1)) { bb_used_arr[@intCast(usize, bu_z)] = @intCast(u8, 0); }
+    var bu_idx: usize = @intCast(usize, 0);
+    while (bu_idx < lir_fn.blocks.len) : (bu_idx += @intCast(usize, 1)) {
+        var bub = &lir_fn.blocks.items[bu_idx];
+        var bu_ii: usize = @intCast(usize, 0);
+        while (bu_ii < bub.insts.len) : (bu_ii += @intCast(usize, 1)) {
+            var buinst = bub.insts.items[bu_ii];
+            switch (buinst) {
+                .jump => |jb| { if (jb < bb_used_cap) { bb_used_arr[@intCast(usize, jb)] = @intCast(u8, 1); } },
+                .branch => |br| { if (br.then_bb < bb_used_cap) { bb_used_arr[@intCast(usize, br.then_bb)] = @intCast(u8, 1); } if (br.else_bb < bb_used_cap) { bb_used_arr[@intCast(usize, br.else_bb)] = @intCast(u8, 1); } },
+                .switch_br => |sw| {
+                    var swi: u32 = sw.cases_start;
+                    var swend = sw.cases_start + sw.cases_count;
+                    while (swi < swend) : (swi += @intCast(u32, 1)) {
+                        var swc = emitter.switch_cases.items[@intCast(usize, swi)];
+                        if (swc.target_bb < bb_used_cap) { bb_used_arr[@intCast(usize, swc.target_bb)] = @intCast(u8, 1); }
+                    }
+                    if (sw.else_bb < bb_used_cap) { bb_used_arr[@intCast(usize, sw.else_bb)] = @intCast(u8, 1); }
+                },
+                else => {},
+            }
+        }
+    }
+    emitter.bb_used = bb_used_arr;
+    emitter.bb_used_count = bb_used_cap;
+    var upi: u32 = @intCast(u32, 0);
+    while (upi < @intCast(u32, lir_fn.params.len)) : (upi += @intCast(u32, 1)) {
+        if (isLocalPosUsed(emitter, upi) == @intCast(u8, 0)) {
+            var up_name = mangleLocalName(emitter.mangler, emitter.interner, lir_fn.params.items[@intCast(usize, upi)].name_id);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var up0: []const u8 = "(void)";
+            bufferedWriterWrite(&emitter.writer, up0);
+            bufferedWriterWrite(&emitter.writer, up_name);
+            var up1: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, up1);
+        }
+    }
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
         var bb = &lir_fn.blocks.items[bb_idx];
         if (bb.id > @intCast(u32, 0)) {
-            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            var l1: []const u8 = "z_bb_";
-            bufferedWriterWrite(&emitter.writer, l1);
-            var nb: [16]u8 = undefined;
-            var nl = itoa_mod.itoa(bb.id, nb[0..]);
-            var ns = @intCast(u32, @intCast(u32, 15) - nl);
-            var si: usize = @intCast(usize, ns);
-            var ei: usize = @intCast(usize, 15);
-            bufferedWriterWrite(&emitter.writer, nb[si..ei]);
-            var l2: []const u8 = ":\n";
-            bufferedWriterWrite(&emitter.writer, l2);
+            if (bb.id < bb_used_cap and bb_used_arr[@intCast(usize, bb.id)] != @intCast(u8, 0)) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var l1: []const u8 = "z_bb_";
+                bufferedWriterWrite(&emitter.writer, l1);
+                var nb: [16]u8 = undefined;
+                var nl = itoa_mod.itoa(bb.id, nb[0..]);
+                var ns = @intCast(u32, @intCast(u32, 15) - nl);
+                var si: usize = @intCast(usize, ns);
+                var ei: usize = @intCast(usize, 15);
+                bufferedWriterWrite(&emitter.writer, nb[si..ei]);
+                var l2: []const u8 = ":\n";
+                bufferedWriterWrite(&emitter.writer, l2);
+            }
         }
         var inst_idx: usize = @intCast(usize, 0);
         while (inst_idx < bb.insts.len) : (inst_idx += @intCast(usize, 1)) {
