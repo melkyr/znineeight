@@ -407,8 +407,8 @@ Commit verbatim. Report gen/ before/after (17,788 → 0) + re-baseline evidence.
 ### Task M1: AstNode 32→24 B (roadmap item 1)
 
 **Files:**
-- Modify: `sf/src/ast.zig` (AstNode layout :116-128; payload u64→u32; child_2 → side table) + all readers/writers (75 `astStoreGetExtraChildren` reader sites across 12 files; 16 `astStoreAddExtraChildren` writer sites in parser.zig; 43 child_2 sites)
-- Commit: `refactor: AstNode 32->24B (payload u32 + child_2 side table)`
+- Modify: `sf/src/ast.zig` (AstNode layout :116-128; drop payload u64 → side tables for extra-children ranges + literal values) + all readers/writers (75 `astStoreGetExtraChildren` reader sites across 12 files; 16 `astStoreAddExtraChildren` writer sites in parser.zig; 43 payload/child_2 sites)
+- Commit: `refactor: AstNode 32->24B (payload moved to side tables)`
 
 **Interfaces:**
 - Consumes: I-1/I-3 (layout + writer/reader split; parser.zig:1447-1448 sole direct packed-range reader).
