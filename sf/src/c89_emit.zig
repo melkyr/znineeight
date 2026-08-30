@@ -2897,7 +2897,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     if (ic.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ic.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
-                            written_type[@intCast(usize, dp)] = type_mod.TYPE_U32;
+                            written_type[@intCast(usize, dp)] = intConstTypeForValue(emitter.registry, ic.value, lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id);
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
                         }
                     }
@@ -3246,10 +3246,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             switch (lrinst) {
                 .load_local => |ll| { lr_nid = ll.name_id; },
                 .load_field => |lf| { if (lf.name_id != @intCast(u32, 0)) { lr_nid = lf.name_id; } },
-                .assign_field => |af| { if (af.name_id != @intCast(u32, 0)) { lr_nid = af.name_id; } },
-                .store_field => |sf| { if (sf.name_id != @intCast(u32, 0)) { lr_nid = sf.name_id; } },
                 .load_index => |li| { if (li.name_id != @intCast(u32, 0)) { lr_nid = li.name_id; } },
-                .assign_index => |ai| { if (ai.name_id != @intCast(u32, 0)) { lr_nid = ai.name_id; } },
                 else => {},
             }
             if (lr_nid != @intCast(u32, 0xFFFFFFFF)) {
@@ -3310,43 +3307,41 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             }
         }
     }
+    var bb_inst_total: u32 = @intCast(u32, 0);
+    var bbb_idx: usize = @intCast(usize, 0);
+    while (bbb_idx < lir_fn.blocks.len) : (bbb_idx += @intCast(usize, 1)) {
+        bb_inst_total += @intCast(u32, lir_fn.blocks.items[bbb_idx].insts.len);
+    }
+    var raw_rel = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, bb_inst_total) * @intCast(usize, 1), @intCast(usize, 1)) catch unreachable;
+    var rel_arr = @ptrCast([*]u8, raw_rel);
+    var rel_z: u32 = @intCast(u32, 0);
+    while (rel_z < bb_inst_total) : (rel_z += @intCast(u32, 1)) { rel_arr[@intCast(usize, rel_z)] = @intCast(u8, 0); }
     var dce_changed: u8 = @intCast(u8, 1);
     while (dce_changed == @intCast(u8, 1)) {
         dce_changed = @intCast(u8, 0);
         var bb_idx2: usize = @intCast(usize, 0);
+        var rel_base: u32 = @intCast(u32, 0);
         while (bb_idx2 < lir_fn.blocks.len) : (bb_idx2 += @intCast(usize, 1)) {
             var bb2 = &lir_fn.blocks.items[bb_idx2];
             var ii2: usize = @intCast(usize, 0);
             while (ii2 < bb2.insts.len) : (ii2 += @intCast(usize, 1)) {
+                var rel_idx = rel_base + @intCast(u32, ii2);
                 var inst2 = bb2.insts.items[ii2];
-                var dce_rp = dceResultPos(max_temp, tid_to_pos, inst2);
-                if (dce_rp != @intCast(u32, 0xFFFFFFFF)) {
-                    if (local_arr[@intCast(usize, dce_rp)] == @intCast(u8, 0) or ldead_arr[@intCast(usize, dce_rp)] != @intCast(u8, 0)) {
-                        if (dead_arr[@intCast(usize, dce_rp)] == @intCast(u8, 0)) {
+                if (rel_arr[@intCast(usize, rel_idx)] == @intCast(u8, 0)) {
+                    var dce_rp = dceResultPos(max_temp, tid_to_pos, inst2);
+                    if (dce_rp != @intCast(u32, 0xFFFFFFFF)) {
+                        if (local_arr[@intCast(usize, dce_rp)] == @intCast(u8, 0) or ldead_arr[@intCast(usize, dce_rp)] != @intCast(u8, 0)) {
                             if (read_count[@intCast(usize, dce_rp)] == @intCast(u32, 0)) {
+                                dead_arr[@intCast(usize, dce_rp)] = @intCast(u8, 1);
                                 dceReleaseOperands(max_temp, tid_to_pos, read_count, inst2);
+                                rel_arr[@intCast(usize, rel_idx)] = @intCast(u8, 1);
                                 dce_changed = @intCast(u8, 1);
                             }
                         }
                     }
                 }
             }
-        }
-        var bb_idx3: usize = @intCast(usize, 0);
-        while (bb_idx3 < lir_fn.blocks.len) : (bb_idx3 += @intCast(usize, 1)) {
-            var bb3 = &lir_fn.blocks.items[bb_idx3];
-            var ii3: usize = @intCast(usize, 0);
-            while (ii3 < bb3.insts.len) : (ii3 += @intCast(usize, 1)) {
-                var inst3 = bb3.insts.items[ii3];
-                var dce_rp3 = dceResultPos(max_temp, tid_to_pos, inst3);
-                if (dce_rp3 != @intCast(u32, 0xFFFFFFFF)) {
-                    if (local_arr[@intCast(usize, dce_rp3)] == @intCast(u8, 0) or ldead_arr[@intCast(usize, dce_rp3)] != @intCast(u8, 0)) {
-                        if (read_count[@intCast(usize, dce_rp3)] == @intCast(u32, 0)) {
-                            dead_arr[@intCast(usize, dce_rp3)] = @intCast(u8, 1);
-                        }
-                    }
-                }
-            }
+            rel_base += @intCast(u32, bb2.insts.len);
         }
     }
     var dd_idx: usize = @intCast(usize, 0);
@@ -3459,7 +3454,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
          if (emitter.d4_nodecl[@intCast(usize, i)] == @intCast(u8, 1)) { continue; }
         var eff_type: u32 = td.type_id;
         var wf2 = written_flag[@intCast(usize, i)];
-         if (td.type_id == type_mod.TYPE_UNDEFINED or td.type_id == type_mod.TYPE_VOID) {
+         if (td.type_id == type_mod.TYPE_UNDEFINED or td.type_id == type_mod.TYPE_VOID or td.type_id == type_mod.TYPE_INT_LIT) {
                  if (wf2 == @intCast(u8, 1)) {
                      var wt = written_type[@intCast(usize, i)];
                      if (wt != @intCast(u32, 0xFFFFFFFF) and wt != type_mod.TYPE_VOID) {
@@ -3487,6 +3482,20 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                              var dbf_e: usize = @intCast(usize, 9);
                              pal.markerWrite(dbf_b[dbf_s..dbf_e]);
                              var dbf_nl: []const u8 = "\n"; pal.markerWrite(dbf_nl);
+                         } else if (wt2_ty.kind == type_mod.TypeKind.ptr_type or wt2_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                             var wt2_pp = emitter.registry.ptr_items[@intCast(usize, wt2_ty.payload_idx)];
+                             var wt2_bt = emitter.registry.types_items[@intCast(usize, wt2_pp.base)];
+                             if (wt2_bt.kind == type_mod.TypeKind.fn_type) {
+                                 eff_type = wt2;
+                                 var dbf2_m: []const u8 = "DBGFNPTR2:t"; pal.markerWrite(dbf2_m);
+                                 var dbf2_b: [10]u8 = undefined;
+                                 var dbf2_l = itoa_mod.itoa(td.temp_id, dbf2_b[0..]);
+                                 var dbf2_i = @intCast(u32, 9) - dbf2_l;
+                                 var dbf2_s: usize = @intCast(usize, dbf2_i);
+                                 var dbf2_e: usize = @intCast(usize, 9);
+                                 pal.markerWrite(dbf2_b[dbf2_s..dbf2_e]);
+                                 var dbf2_nl: []const u8 = "\n"; pal.markerWrite(dbf2_nl);
+                             }
                          }
                      }
                  }
@@ -3593,6 +3602,17 @@ fn intLitSuffixUns(v: u64) []const u8 {
 fn intLitSuffixNeg(v: u64) []const u8 {
     if (v <= @intCast(u64, 2147483647)) { var s: []const u8 = ""; return s; }
     var s: []const u8 = "LL"; return s;
+}
+
+fn intConstTypeForValue(reg: *TypeRegistry, v: u64, hoisted_tid: u32) u32 {
+    var hty = reg.types_items[@intCast(usize, hoisted_tid)];
+    if (hty.kind == type_mod.TypeKind.integer_literal_type) {
+        if (v <= @intCast(u64, 2147483647)) { return type_mod.TYPE_I32; }
+        if (v <= @intCast(u64, 4294967295)) { return type_mod.TYPE_U32; }
+        return type_mod.TYPE_U64;
+    }
+    if (hoisted_tid == type_mod.TYPE_UNDEFINED) { return type_mod.TYPE_USIZE; }
+    return hoisted_tid;
 }
 
 fn isAtomicCOperand(s: []const u8) bool {
@@ -5032,7 +5052,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var stln_c: []const u8 = "="; pal.markerWrite(stln_c);
             pal.markerWrite(val);
             var stln_nl: []const u8 = "\n"; pal.markerWrite(stln_nl);
-            if (name.len == @intCast(usize, 1) and name[0] == '_' or isDeadLocalName(emitter, sl.name_id) != @intCast(u8, 0)) {
+            if ((name.len == @intCast(usize, 1) and name[0] == '_') or isDeadLocalName(emitter, sl.name_id) != @intCast(u8, 0)) {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var vd: []const u8 = "(void)";
                 bufferedWriterWrite(&emitter.writer, vd);
@@ -5782,21 +5802,24 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             temp_type_id = type_mod.TYPE_USIZE;
             var is_signed: u8 = @intCast(u8, 0);
             var width_bits: u32 = @intCast(u32, 32);
+            var ht_found_tid: u32 = @intCast(u32, 0);
+            ht_found_tid = type_mod.TYPE_USIZE;
             var tu_fi: usize = @intCast(usize, 0);
             while (tu_fi < emitter.current_fn.hoisted_temps.len) : (tu_fi += @intCast(usize, 1)) {
                 var ht = emitter.current_fn.hoisted_temps.items[tu_fi];
                 if (ht.temp_id == ic.result and ht.type_id != type_mod.TYPE_UNDEFINED) {
-                    var bty = emitter.registry.types_items[@intCast(usize, ht.type_id)];
-                    temp_type_id = ht.type_id;
-                    if (bty.kind == type_mod.TypeKind.i8_type or bty.kind == type_mod.TypeKind.i16_type or bty.kind == type_mod.TypeKind.i32_type or bty.kind == type_mod.TypeKind.i64_type or bty.kind == type_mod.TypeKind.isize_type) {
-                        is_signed = @intCast(u8, 1);
-                    }
-                    width_bits = @intCast(u32, bty.size * @intCast(u32, 8));
-                    if (bty.kind == type_mod.TypeKind.tagged_union_type) {
-                        is_tagged_union = @intCast(u8, 1);
-                    }
+                    ht_found_tid = ht.type_id;
                     break;
                 }
+            }
+            temp_type_id = intConstTypeForValue(emitter.registry, ic.value, ht_found_tid);
+            var ict_bty = emitter.registry.types_items[@intCast(usize, temp_type_id)];
+            if (ict_bty.kind == type_mod.TypeKind.i8_type or ict_bty.kind == type_mod.TypeKind.i16_type or ict_bty.kind == type_mod.TypeKind.i32_type or ict_bty.kind == type_mod.TypeKind.i64_type or ict_bty.kind == type_mod.TypeKind.isize_type) {
+                is_signed = @intCast(u8, 1);
+            }
+            width_bits = @intCast(u32, ict_bty.size * @intCast(u32, 8));
+            if (ict_bty.kind == type_mod.TypeKind.tagged_union_type) {
+                is_tagged_union = @intCast(u8, 1);
             }
             if (is_tagged_union != @intCast(u8, 0)) {
                 var tag_dot: []const u8 = ".tag = ";
