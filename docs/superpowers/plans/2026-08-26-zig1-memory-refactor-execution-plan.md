@@ -6,7 +6,12 @@
 
 **Architecture:** Phase 1 allocation strategy (items 0/3/4a — the ~58 MiB of the pool gap, zero code migration); Phase 2 the `-O2`/`-O3` warning classes (zero-length array, maybe-uninit, shift-parens, benign tail → 0 warnings); Phase 3 struct migrations (items 1/2/5 — AstNode/LirInst/side-arrays, the ~3.6 MB live tail); Phase 4 markers + spill-reserve + GATE. Every emission-affecting task guards runtime via a golden sample captured from the reference zig1.
 
-**AMENDMENT 5 (operator-ruled 2026-08-26):** the W-1..W-4 series landed on the **bootstrap** (the reference `/tmp/fx_subfolder/*.c` is emitted by `zig0`/`codegen.cpp`), but the TRUE objective is the **self-hosted** compiler — `zig1_5`'s own emitted C (`c89_emit.zig` → `/tmp/zig1_5/gen/*.c`). A new **W2 series** (W2-I investigation + W2-1..4 fixes) is added, scoped to **`sf/src/c89_emit.zig` ONLY** (do NOT touch the bootstrap), to reach **0 warnings on `gen/*.c`** at `-Wall -Wextra -O3`. W-4 as committed (`a3fd9a2b`) covers the reference (bootstrapped) build only; its c89_emit.zig part is superseded by the W2 series. The `undefined`-init warnings are fixed at the **emitter** (emit `= 0` for `undefined` locals — safe, reads of undefined are UB) so users never have to initialize defensively. The 4 MD5 gates WILL be re-baselined by the W2 fixes (c89_emit.zig changes zig1's emission of user programs) with golden runtime-equality as the evidence (operator pre-authorized).
+**AMENDMENT 5 (operator-ruled 2026-08-26):** the W-1..W-4 series landed on the **bootstrap** (the reference `/tmp/fx_subfolder/*.c` is emitted by `zig0`/`codegen.cpp`), but the TRUE objective is the **self-hosted** compiler — `zig1_5`'s own emitted C (`c89_emit.zig` → `/tmp/zig1_5/gen/*.c`). A new **W2 series** (W2-I investigation + W2-1..4 fixes) is added, scoped to **`sf/src/c89_emit.zig` ONLY** (do NOT touch the bootstrap), to reach **0 warnings on `gen/*.c`** at `-Wall -Wextra -O3`. W-4 as committed (`a3fd9a2b`) covers the reference (bootstrapped) build only; its c89_emit.zig part is superseded by the W2 series. The `undefined`-init warnings are fixed at the **emitter** (emit `= 0` for `undefined` locals — safe, reads of undefined are UB) so users never have to initialize defensively. The 4 MD5 gates WILL be re-baselined by the W2 fixes (c89_emit.zig changes zig1's emission of user programs) with golden runtime-equality as the evidence (operator pre-authorized). **AMENDMENT 5 status (2026-08-26, W2 series COMPLETE):** self-hosted emission warning-clean, 17,788 → 0 (W2-1 `c45f7333`, W2-2 `582cab3b`, W2-3 `3c668094`, W2-4 `39982678`+`4a5cf580`). 4 MD5 gates re-baselined to gol `b335d894`, lisp `93946438`, json `76056b97`, mud `4591fef0` (golden runtime-equality evidence).
+
+**AMENDMENT 6 (operator-ruled 2026-08-26, migration discipline + post-M6 evaluation):**
+1. **Widening provenance (verified — do NOT shrink indices).** The current u32/u64 widths are deliberate overflow fixes, NOT bloat: `50ebbf82` (AstNode `payload u32→u64` + `FnProto.params_start u16→u32` — extra-children start index overflowed u16; self-compile has ~69,026 extra-children > 65,535), `378c71fa` (type-registry index starts u16→u32), `7ab3b519` (`span_len u16→u32`). M1/M2/M5 reclaim **waste** (the 8-byte u64 payload holding a u32 index; `child_2` for ~10/112 kinds) via **side tables** — every index field stays **u32**, never shrunk back to u16.
+2. **A first, B gated after M6 (operator m0694).** Execute M1/M2/M5 as the quick-win (different-indices) versions only, to validate no issues. The "clever" 16-B AstNode compaction (span out-of-line + child_2 side table + payload u32) is NOT in M1/M5 — it becomes a new read-only **I-COMPACT task after M6**, with a go/no-go against the measured pool after A+M6.
+3. **Padding caution (operator m0699).** The AstNode 2-byte padding may be structural (zig0/C89 alignment quirks). **Padding-squeezing is the LAST step** — never force-reorder fields or squeeze padding to hit a size target; that is how a mess starts. M1/M2/M5 must not depend on padding elimination for their size target; report the actual emitted `sizeof` after each migration.
 
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
@@ -14,7 +19,7 @@
 
 - **Golden-sample runtime protocol (operator-mandated):** at the start of every emission-affecting F task, capture the golden sample with the reference zig1 — its `--dump-c89` emission + compiled/run stdout+rc for the 4 gates (`examples/z98/{game_of_life,lisp_interpreter_curr,json_parser,mud_server}/main.zig`) and the runtime fixture set (`emission_assoc_chain_xmod`, `tco_return_try`, `tco_defer`, `tco_factorial`, `fn_ptr_struct_field`, `quicksort`, `func_ptr_return`, `hello`, `emission_lower_crash_xmod`) — into `/tmp/golden_<TASK>/` (gitignored). Runtime MUST match this golden sample; byte-identity may be re-baselined with evidence, never guessed.
 - **Warning-clean target:** `-Wall -Wextra -O3` → **0 warnings, 0 errors** on BOTH the reference build's C (`/tmp/fx_subfolder/*.c`, W-4, done `a3fd9a2b`) AND the self-compiled `gen/*.c` (W2 series). Rebuild check: `gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <repo>/sf/src/include`.
-- **4 MD5 byte-identity gates** (gol `eed963e0640a073ed4eebb292f136e05`, lisp `c3c5847798e4553b2e34950e085bb6c6` repo-root CWD, json `089e4f046464ce3882aa2b2c4e585013`, mud `a1d0dd55aada9c3fd904ae33f54de32e`): keep byte-identical OR re-baseline with golden-sample runtime evidence (operator-ruled; emitter fixes W-1/W-2/W-4 are emission-affecting by design).
+- **4 MD5 byte-identity gates** (CURRENT post-W2 re-baseline values: gol `b335d894`, lisp `93946438`, json `76056b97`, mud `4591fef0` — full hashes in task-MEMREFACTOR-report.md): keep byte-identical OR re-baseline with golden-sample runtime evidence (operator-ruled; emitter/struct changes are emission-affecting by design).
 - **Hard target frame:** self-compile pool ≤ 16,384 K (`pool=` from `--track-memory --markers`); never OOM a 32 MB physical P3/P4 Win98 host. zig0 dialect binding (no packed/bitfield/anytype/@Type); custom u32/u64+shift encoding allowed.
 - Compiler under test `/tmp/fx_subfolder/zig1`; rebuild `timeout 900 bash sf/scripts/build_release.sh` (repo root, gate `=== [release] Done ===`, reinstall std lib after wipe); self-compile `timeout 900 bash scripts/self_compile/build_zig1_5.sh`. `timeout 120` on all compiler/binary invocations.
 - Z98 dialect for any new/changed `.zig` (no anytype/@Type, `@intCast`, switch needs `else`, no method syntax, no pointer captures).
@@ -415,7 +420,7 @@ Capture `/tmp/golden_M1/` (4 gates + fixture set run outputs).
 
 - [ ] **Step 2: Design the 24 B layout**
 
-Per I-1: `kind u8, flags u8, pad2, span_len u32, span_start u32, child_0 u32, child_1 u32, child_2 u32` (drop payload u64→ reuse a spare u32 or fold into child_2; keep `extra_children` via a parallel array/side table — see ast.zig:433-454 pool pattern). Preserve the `start<<32|count` range semantics via a side-table range. Confirm every `payload` read site (u32 low-word consumers) is compatible.
+Per I-1/AMENDMENT 6: `kind u8, flags u8, pad2, span_len u32, span_start u32, child_0 u32, child_1 u32, child_2 u32` = 24 B — **drop `payload u64` entirely** (its content moves to a side table: extra-children ranges `(start u32, count)` and the literal/int/string values). **Padding discipline (AMENDMENT 6, operator m0699):** keep the `pad2` as-is — do NOT reorder fields or squeeze padding to hit the target (the padding may be structural under zig0/C89 alignment); padding elimination is the LAST step, out of scope here. **Indices stay u32** (span_len/span_start/child_0/1/2 were deliberately widened; never shrink back to u16). Keep `extra_children` via a parallel array/side table — see ast.zig:433-454 pool pattern. Preserve the `start<<32|count` range semantics via the side table (start stays u32 — 69,026 > 65,535). Confirm every `payload` read site (u32 low-word consumers) is compatible.
 
 - [ ] **Step 3: Apply the migration**
 
@@ -447,7 +452,7 @@ Capture `/tmp/golden_M2/`.
 
 - [ ] **Step 2: Design the 20 B layout**
 
-Reduce every variant's payload ≤12 B; move the wide operands (callee, module_id, args, return_type, is_indirect, is_extern for call/tail_call) into a side table (per-fn, relocated with `lirFunctionRelocateToModule` — see I-3 Concern 2 re pointer stability). Keep the `switch(inst)` dispatch working via the 4 B tag.
+Reduce every variant's payload ≤12 B; move the wide operands (callee, module_id, args, return_type, is_indirect, is_extern for call/tail_call) into a side table (per-fn, relocated with `lirFunctionRelocateToModule` — see I-3 Concern 2 re pointer stability). Keep the `switch(inst)` dispatch working via the 4 B tag. **Padding/alignment discipline (AMENDMENT 6):** the u64 `int_const`/`float_const`/`enum_const` values stay u64 (genuine 8-byte values); do NOT realign variants or squeeze union padding to hit exactly 20 B — if the natural 4-aligned layout lands at 20 B, keep it; if it lands elsewhere, report the actual sizeof rather than forcing reordering. Operand indices stay u32.
 
 - [ ] **Step 3: Apply the migration**
 
@@ -479,11 +484,11 @@ Capture `/tmp/golden_M5/`.
 
 - [ ] **Step 2: Token value union → plain u32**
 
-token.zig: replace the `union { u64; f64; u32 } value` with a plain `u32` value (the `u64`/`f64` token payloads are not needed at runtime token scope — verify every `value` read site first). 20 → 16 B. NOT packed (zig0 can't).
+token.zig: replace the `union { u64; f64; u32 } value` with a plain `u32` value (the `u64`/`f64` token payloads are not needed at runtime token scope — verify every `value` read site first). 20 → 16 B. NOT packed (zig0 can't). **Padding/alignment discipline (AMENDMENT 6):** if removing the union drops Token to 16 B naturally, keep it; do NOT reorder Token's fields to squeeze padding — report the actual sizeof if alignment keeps it higher.
 
-- [ ] **Step 3: AST side arrays**
+- [ ] **Step 3: AST side arrays (quick-win scope only)**
 
-Move the rarely-used node fields (child_2 / extra payloads) out of AstNode into parallel arrays via the ast.zig:433-454 pool pattern, reusing M1's side-table machinery. Z98-clean.
+Reuse M1's side-table machinery for the extra-children / literal-value data already moved out of the payload. **Scope (AMENDMENT 6, operator m0694):** the clever compaction — moving `child_2` (10/112 kinds) and `span_start`/`span_len` out-of-line — is **I-COMPACT's** job (B, gated after M6), NOT M5's. M5 stays the quick win (different-indices) only. Z98-clean.
 
 - [ ] **Step 4: Verify**
 
@@ -550,6 +555,35 @@ Pool ≤16,384 K; golden runtime matches; 4 MD5 keep-or-re-baseline. Commit verb
 
 ---
 
+### Task I-COMPACT: clever 16-B AstNode compaction evaluation (read-only, gated after M6)
+
+> **AMENDMENT 6 (operator m0694):** after A (M1/M2/M5 quick wins) and M6, evaluate whether the remaining memory need justifies the "clever" ~16-B AstNode compaction (span out-of-line + child_2 side table + payload u32). Go/no-go recommendation only — no `sf/src` changes, no commit.
+
+**Files:**
+- Report: `.superpowers/sdd/task-MEMREFACTOR-report.md` (append `## I-COMPACT` section)
+
+**Interfaces:**
+- Consumes: measured `pool=`/`total=` after M1/M2/M5 (+M6 if not skipped); I-1/I-3 layout data; the span-read census (404 `.span_start` + 334 `.span_len` non-ast.zig read sites across parser/lower/semantic_analyzer/analyzer/diagnostics).
+- Produces: go/no-go recommendation for a future B execution, with the quantified remaining gap and the ~16 B layout design + migration cost (≈700 span-read sites + diagnostics-path impact).
+
+- [ ] **Step 1: Measure the post-A+M6 state**
+
+`--track-memory --markers` self-compile: `pool=` and `total=` after M1/M2/M5 (+M6 result). Record the gap to the 16,384 K target.
+
+- [ ] **Step 2: Quantify the B opportunity**
+
+From the I-1 census: AstNode 32→16 B = half the AST memory (5.76 MB → ~2.9 MB at current node counts, scaled to post-migration counts). Break down: span out-of-line (8 B — the biggest chunk, read 404+334 sites, ~all for diagnostics/error location), child_2 side table (4 B — 10/112 kinds, 43 sites), payload u32 (already M1). Verify by reading whether span reads are error-path-only or hot-path (sample lower.zig/analyzer.zig span reads).
+
+- [ ] **Step 3: Design the ~16 B layout + migration cost**
+
+`kind u8, flags u8, pad2, child_0 u32, child_1 u32, payload u32` = 16 B, with `span_start`/`span_len` and `child_2` in parallel side arrays (ast.zig:433-454 pool pattern). Enumerate the migration: the ~700 span-read sites → accessor `astStoreSpanOf(node)`, the 43 child_2 sites, and the diagnostics/recovery paths that consume spans. Note padding discipline (AMENDMENT 6): keep `pad2`; never force-reorder.
+
+- [ ] **Step 4: Go/no-go + report**
+
+Go/no-go: recommend B ONLY if the post-A+M6 gap to ≤16 MiB is not closed by A+M6 and B's ~2.9 MB AST reduction is the decisive lever; otherwise recommend against (record the closing measurement). If no-go, note what WOULD justify revisiting. Report: measured state, B opportunity table, layout + migration cost, go/no-go. Ledger + mnemoria (decision). Read-only: no source changes, no commit.
+
+---
+
 ### Task GATE: Full sweep + reconciliation
 
 **Files:**
@@ -557,12 +591,12 @@ Pool ≤16,384 K; golden runtime matches; 4 MD5 keep-or-re-baseline. Commit verb
 - Commit: `docs: memory refactor execution GATE + reconciliation`
 
 **Interfaces:**
-- Consumes: all prior tasks; golden samples; roadmap + report.
+- Consumes: all prior tasks (incl. I-COMPACT's go/no-go); golden samples; roadmap + report.
 - Produces: measured GATE evidence; roadmap status updated; acceptance confirmed.
 
 - [ ] **Step 1: Full gate battery**
 
-4 MD5 (keep-or-re-baseline with golden evidence); matrix 21/21; corpus 329 + examples z98 21 runtime sweep vs **golden sample** (RUNTIME must match everywhere; byte-identity diffs documented); self-compile 0 errors; `--track-memory` self-compile `pool=` ≤ 16,384 K (or documented spill-reserve).
+4 MD5 (keep-or-re-baseline with golden evidence); matrix 21/21; full corpus sweep vs **golden sample** (RUNTIME must match everywhere; byte-identity diffs documented) — 405 dirs = 330 mi_matrix (incl. W2-1 fixture `emission_global_alias_xmod`) + 21 z98 + 54 top-level repro; self-compile 0 errors; `--track-memory` self-compile `pool=` ≤ 16,384 K (or documented spill-reserve + I-COMPACT verdict).
 
 - [ ] **Step 2: Warning-clean confirmation**
 
