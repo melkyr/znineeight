@@ -248,25 +248,25 @@ fn runCompiler(ctx: *CompilerContext) void {
         var type_db_kb: u32 = @intCast(u32, ctx.typereg.types_alloc.peak / @intCast(usize, 1024));
         var total: u32 = perm_kb + mod_kb + scr_kb;
         var msg1: []const u8 = "track-memory: perm=";
-        pal.markerWrite(msg1);
+        pal.measureMarkerWrite(msg1);
         writeU32(perm_kb);
         var msg2: []const u8 = "K mod=";
-        pal.markerWrite(msg2);
+        pal.measureMarkerWrite(msg2);
         writeU32(mod_kb);
         var msg3: []const u8 = "K scr=";
-        pal.markerWrite(msg3);
+        pal.measureMarkerWrite(msg3);
         writeU32(scr_kb);
         var msg3b: []const u8 = "K pool=";
-        pal.markerWrite(msg3b);
+        pal.measureMarkerWrite(msg3b);
         writeU32(pool_kb);
         var msg3c: []const u8 = "K type_db=";
-        pal.markerWrite(msg3c);
+        pal.measureMarkerWrite(msg3c);
         writeU32(type_db_kb);
         var msg4: []const u8 = "K total=";
-        pal.markerWrite(msg4);
+        pal.measureMarkerWrite(msg4);
         writeU32(total);
         var msg5: []const u8 = "K\n";
-        pal.markerWrite(msg5);
+        pal.measureMarkerWrite(msg5);
     }
     diag_mod.diagnosticCollectorPrintAll(ctx.diag);
 }
@@ -1054,7 +1054,7 @@ fn writeU32(val: usize) void {
     if (v == 0) {
         buf[15] = 48;
         var s = buf[15..16];
-        pal.markerWrite(s);
+        pal.measureMarkerWrite(s);
         return;
     }
     while (v > 0 and i > 0) {
@@ -1063,7 +1063,7 @@ fn writeU32(val: usize) void {
         v = v / 10;
     }
     var s = buf[i..16];
-    pal.markerWrite(s);
+    pal.measureMarkerWrite(s);
 }
 
 fn printUsage() void {

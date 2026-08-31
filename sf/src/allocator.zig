@@ -135,23 +135,23 @@ fn growableSandGrow(gs: *GrowableSand, view: *Sand, size: usize) bool {
 pub fn arenaGrew(name: []const u8, old_size: usize, new_size: usize) void {
     if (!pal.isMarkersEnabled()) return;
     var p0: []const u8 = "arena ";
-    pal.markerWrite(p0);
-    pal.markerWrite(name);
+    pal.measureMarkerWrite(p0);
+    pal.measureMarkerWrite(name);
     var p1: []const u8 = ": grew ";
-    pal.markerWrite(p1);
+    pal.measureMarkerWrite(p1);
     writeUsizeExact(old_size);
     var p2: []const u8 = " -> ";
-    pal.markerWrite(p2);
+    pal.measureMarkerWrite(p2);
     writeUsizeExact(new_size);
     var p3: []const u8 = "\n";
-    pal.markerWrite(p3);
+    pal.measureMarkerWrite(p3);
 }
 
 fn writeUsizeExact(val: usize) void {
     var buf: [16]u8 = undefined;
     var len = itoa_mod.itoa(@intCast(u32, val), buf[0..]);
     var start: usize = @intCast(usize, 16) - @intCast(usize, len) - @intCast(usize, 1);
-    pal.markerWrite(buf[start..@intCast(usize, 15)]);
+    pal.measureMarkerWrite(buf[start..@intCast(usize, 15)]);
 }
 
 pub fn sandResetPeak(sand: *Sand) void {

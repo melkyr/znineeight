@@ -576,10 +576,10 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
 }
 
 fn markTerminated(blocks: *lir_mod.BasicBlockArrayList, bb_id: u32) void {
-    var ms: []const u8 = "MT"; pal.markerWrite(ms);
+    var ms: []const u8 = "MT"; pal.measureMarkerWrite(ms);
     var b = &blocks.items[@intCast(usize, bb_id)];
     b.is_terminated = @intCast(u8, 1);
-    var me: []const u8 = "\n"; pal.markerWrite(me);
+    var me: []const u8 = "\n"; pal.measureMarkerWrite(me);
 }
 
 pub fn emitInst(self: *LirLowerer, inst: LirInst) void {

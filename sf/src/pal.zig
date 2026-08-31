@@ -125,36 +125,79 @@ pub fn isMarkersEnabled() bool {
     return g_markers_enabled != 0;
 }
 
+// compile-time-disabled debug-flood gate: per-node/per-inst debug traces
+// (pal.markerWrite* below) emit nothing while 0. The ~30 measurement markers
+// (pal.measureMarkerWrite*) stay live so --markers / --track-memory keep working.
+pub const g_markers_debug: u32 = 0;
+
 const itoa_mod = @import("util/itoa.zig");
 
 pub fn markerWrite(msg: []const u8) void {
+    if (g_markers_debug != @intCast(u32, 0)) {
+        if (g_markers_enabled != @intCast(u32, 0)) {
+            stderr_write(msg);
+        }
+    }
+}
+
+pub fn markerWriteInt(prefix: []const u8, value: u32) void {
+    if (g_markers_debug != @intCast(u32, 0)) {
+        if (g_markers_enabled != @intCast(u32, 0)) {
+            var s_p: []const u8 = prefix;
+            markerWrite(s_p);
+            var buf: [12]u8 = undefined;
+            var vlen = itoa_mod.itoa(value, buf[0..]);
+            var start: usize = @intCast(usize, 12) - @intCast(usize, vlen) - @intCast(usize, 1);
+            markerWrite(buf[start..@intCast(usize, 11)]);
+            var s_nl: []const u8 = "\n";
+            markerWrite(s_nl);
+        }
+    }
+}
+
+pub fn markerWriteInt64(prefix: []const u8, value: u64) void {
+    if (g_markers_debug != @intCast(u32, 0)) {
+        if (g_markers_enabled != @intCast(u32, 0)) {
+            var s_p: []const u8 = prefix;
+            markerWrite(s_p);
+            var buf: [24]u8 = undefined;
+            var vlen = itoa_mod.itoa64(value, buf[0..]);
+            var start: usize = @intCast(usize, 24) - @intCast(usize, vlen) - @intCast(usize, 1);
+            markerWrite(buf[start..@intCast(usize, 23)]);
+            var s_nl: []const u8 = "\n";
+            markerWrite(s_nl);
+        }
+    }
+}
+
+pub fn measureMarkerWrite(msg: []const u8) void {
     if (g_markers_enabled != @intCast(u32, 0)) {
         stderr_write(msg);
     }
 }
 
-pub fn markerWriteInt(prefix: []const u8, value: u32) void {
+pub fn measureMarkerWriteInt(prefix: []const u8, value: u32) void {
     if (g_markers_enabled != @intCast(u32, 0)) {
         var s_p: []const u8 = prefix;
-        markerWrite(s_p);
+        measureMarkerWrite(s_p);
         var buf: [12]u8 = undefined;
         var vlen = itoa_mod.itoa(value, buf[0..]);
         var start: usize = @intCast(usize, 12) - @intCast(usize, vlen) - @intCast(usize, 1);
-        markerWrite(buf[start..@intCast(usize, 11)]);
+        measureMarkerWrite(buf[start..@intCast(usize, 11)]);
         var s_nl: []const u8 = "\n";
-        markerWrite(s_nl);
+        measureMarkerWrite(s_nl);
     }
 }
 
-pub fn markerWriteInt64(prefix: []const u8, value: u64) void {
+pub fn measureMarkerWriteInt64(prefix: []const u8, value: u64) void {
     if (g_markers_enabled != @intCast(u32, 0)) {
         var s_p: []const u8 = prefix;
-        markerWrite(s_p);
+        measureMarkerWrite(s_p);
         var buf: [24]u8 = undefined;
         var vlen = itoa_mod.itoa64(value, buf[0..]);
         var start: usize = @intCast(usize, 24) - @intCast(usize, vlen) - @intCast(usize, 1);
-        markerWrite(buf[start..@intCast(usize, 23)]);
+        measureMarkerWrite(buf[start..@intCast(usize, 23)]);
         var s_nl: []const u8 = "\n";
-        markerWrite(s_nl);
+        measureMarkerWrite(s_nl);
     }
 }

@@ -45,7 +45,7 @@ pub fn bufferedWriterFlush(self: *BufferedWriter) void {
     var fp_m: []const u8 = "FL:p"; pal.markerWriteInt(fp_m, @intCast(u32, self.pos));
     pal.fileWrite(self.fd, self.buf[0..self.pos]);
     self.pos = @intCast(usize, 0);
-    var fe_m: []const u8 = "FE:p"; pal.markerWriteInt(fe_m, @intCast(u32, self.pos));
+    var fe_m: []const u8 = "FE:p"; pal.measureMarkerWriteInt(fe_m, @intCast(u32, self.pos));
 }
 
  pub fn bufferedWriterWrite(self: *BufferedWriter, data: []const u8) void {
@@ -1404,13 +1404,13 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         var ty = reg.types_items[@intCast(usize, tid)];
         var e2m: []const u8 = "E2B:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nm: []const u8 = "n"; pal.markerWrite(e2nm); var e2nb: [10]u8 = undefined; var e2nl3 = itoa_mod.itoa(ty.name_id, e2nb[0..]); var e2ns: usize = @intCast(usize, 9) - @intCast(usize, e2nl3); pal.markerWrite(e2nb[e2ns..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
         if (ty.kind == TypeKind.tagged_union_type) {
-            var d2m: []const u8 = "D2:t"; pal.markerWrite(d2m);
-            var d2b: [20]u8 = undefined; var d2l = itoa_mod.itoa(tid, d2b[0..]); var d2s: usize = @intCast(usize, 19) - @intCast(usize, d2l); pal.markerWrite(d2b[d2s..@intCast(usize, 19)]);
-            var d2nn: []const u8 = "n"; pal.markerWrite(d2nn);
-            var d2nb: [20]u8 = undefined; var d2nl = itoa_mod.itoa(ty.name_id, d2nb[0..]); var d2ns: usize = @intCast(usize, 19) - @intCast(usize, d2nl); pal.markerWrite(d2nb[d2ns..@intCast(usize, 19)]);
-            var d2mm: []const u8 = "m"; pal.markerWrite(d2mm);
-            var d2mb: [20]u8 = undefined; var d2ml = itoa_mod.itoa(ty.module_id, d2mb[0..]); var d2ms: usize = @intCast(usize, 19) - @intCast(usize, d2ml); pal.markerWrite(d2mb[d2ms..@intCast(usize, 19)]);
-            var d2nl2: []const u8 = "\n"; pal.markerWrite(d2nl2);
+            var d2m: []const u8 = "D2:t"; pal.measureMarkerWrite(d2m);
+            var d2b: [20]u8 = undefined; var d2l = itoa_mod.itoa(tid, d2b[0..]); var d2s: usize = @intCast(usize, 19) - @intCast(usize, d2l); pal.measureMarkerWrite(d2b[d2s..@intCast(usize, 19)]);
+            var d2nn: []const u8 = "n"; pal.measureMarkerWrite(d2nn);
+            var d2nb: [20]u8 = undefined; var d2nl = itoa_mod.itoa(ty.name_id, d2nb[0..]); var d2ns: usize = @intCast(usize, 19) - @intCast(usize, d2nl); pal.measureMarkerWrite(d2nb[d2ns..@intCast(usize, 19)]);
+            var d2mm: []const u8 = "m"; pal.measureMarkerWrite(d2mm);
+            var d2mb: [20]u8 = undefined; var d2ml = itoa_mod.itoa(ty.module_id, d2mb[0..]); var d2ms: usize = @intCast(usize, 19) - @intCast(usize, d2ml); pal.measureMarkerWrite(d2mb[d2ms..@intCast(usize, 19)]);
+            var d2nl2: []const u8 = "\n"; pal.measureMarkerWrite(d2nl2);
         }
         if (ty.kind == TypeKind.void_type) { var vfs_m: []const u8 = "VFLOW:spv\n"; pal.markerWrite(vfs_m); continue; }
         if (ty.kind == TypeKind.bool_type) continue;
@@ -1593,11 +1593,11 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var i: usize = @intCast(usize, 0);
     while (i < fcount) : (i += @intCast(usize, 1)) {
         var fe = reg.fe_items[fstart + i];
-        var fe_m: []const u8 = "FE:"; pal.markerWrite(fe_m);
-        var fe_nb: [10]u8 = undefined; var fe_nl = itoa_mod.itoa(fe.name_id, fe_nb[0..]); var fe_ns: usize = @intCast(usize, 9) - @intCast(usize, fe_nl); pal.markerWrite(fe_nb[fe_ns..@intCast(usize, 9)]);
-        var fe_c: []const u8 = ":"; pal.markerWrite(fe_c);
-        var fe_tb: [10]u8 = undefined; var fe_tl = itoa_mod.itoa(fe.type_id, fe_tb[0..]); var fe_ts: usize = @intCast(usize, 9) - @intCast(usize, fe_tl); pal.markerWrite(fe_tb[fe_ts..@intCast(usize, 9)]);
-        var fe_nl2: []const u8 = "\n"; pal.markerWrite(fe_nl2);
+        var fe_m: []const u8 = "FE:"; pal.measureMarkerWrite(fe_m);
+        var fe_nb: [10]u8 = undefined; var fe_nl = itoa_mod.itoa(fe.name_id, fe_nb[0..]); var fe_ns: usize = @intCast(usize, 9) - @intCast(usize, fe_nl); pal.measureMarkerWrite(fe_nb[fe_ns..@intCast(usize, 9)]);
+        var fe_c: []const u8 = ":"; pal.measureMarkerWrite(fe_c);
+        var fe_tb: [10]u8 = undefined; var fe_tl = itoa_mod.itoa(fe.type_id, fe_tb[0..]); var fe_ts: usize = @intCast(usize, 9) - @intCast(usize, fe_tl); pal.measureMarkerWrite(fe_tb[fe_ts..@intCast(usize, 9)]);
+        var fe_nl2: []const u8 = "\n"; pal.measureMarkerWrite(fe_nl2);
         var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
         var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
         if (fe.type_id != type_mod.TYPE_VOID) {
@@ -1959,7 +1959,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     if (orig.len == @intCast(usize, 4)) {
         if (orig[0] == 'm' and orig[1] == 'a' and orig[2] == 'i' and orig[3] == 'n') is_main = @intCast(u8, 1);
     }
-     var fwdm: []const u8 = "FWD:n="; pal.markerWrite(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.markerWrite(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.markerWrite(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.markerWrite(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "\n"; pal.markerWrite(fwdnl2);
+     var fwdm: []const u8 = "FWD:n="; pal.measureMarkerWrite(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.measureMarkerWrite(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.measureMarkerWrite(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.measureMarkerWrite(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "\n"; pal.measureMarkerWrite(fwdnl2);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
      if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
@@ -2791,9 +2791,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         local_count += @intCast(u32, 1);
     }
     emitter.fl_count = local_count;
-    var p0m: []const u8 = "P0:lc="; pal.markerWrite(p0m);
-    var p0mb: [10]u8 = undefined; var p0ml = itoa_mod.itoa(local_count, p0mb[0..]); var p0ms: usize = @intCast(usize, 9) - @intCast(usize, p0ml); pal.markerWrite(p0mb[p0ms..@intCast(usize, 9)]);
-    var p0nl: []const u8 = "\n"; pal.markerWrite(p0nl);
+    var p0m: []const u8 = "P0:lc="; pal.measureMarkerWrite(p0m);
+    var p0mb: [10]u8 = undefined; var p0ml = itoa_mod.itoa(local_count, p0mb[0..]); var p0ms: usize = @intCast(usize, 9) - @intCast(usize, p0ml); pal.measureMarkerWrite(p0mb[p0ms..@intCast(usize, 9)]);
+    var p0nl: []const u8 = "\n"; pal.measureMarkerWrite(p0nl);
     var dbi: usize = @intCast(usize, 0);
     while (dbi < lir_fn.blocks.len) : (dbi += @intCast(usize, 1)) {
         var dbb = &lir_fn.blocks.items[dbi];
@@ -5901,9 +5901,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s);
             var dx2_buf: [64]u8 = undefined;
             var dx2 = format_mod.formatF64(fc.value, dx2_buf[0..], 64);
-            var dx2s: []const u8 = "D2:"; pal.markerWrite(dx2s);
-            pal.markerWrite(dx2);
-            var dx2n: []const u8 = "\n"; pal.markerWrite(dx2n);
+            var dx2s: []const u8 = "D2:"; pal.measureMarkerWrite(dx2s);
+            pal.measureMarkerWrite(dx2);
+            var dx2n: []const u8 = "\n"; pal.measureMarkerWrite(dx2n);
             var buf: [64]u8 = undefined;
             var fb = format_mod.formatF64(fc.value, buf[0..], 64);
             bufferedWriterWrite(&emitter.writer, fb);

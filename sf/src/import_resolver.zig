@@ -184,9 +184,9 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
 
             var root = shared_store.nodes.items[@intCast(usize, ast_root)];
             if (root.kind == AstKind.module_root) {
-                var p1: []const u8 = "IRP:m"; pal_mod.markerWriteInt(p1, mod_id);
-                var p2: []const u8 = "IRP:n"; pal_mod.markerWriteInt(p2, ast_root);
-                var p3: []const u8 = "IRP:p"; pal_mod.markerWriteInt(p3, @intCast(u32, ast_mod.astStoreNodePayloadPacked(shared_store, ast_root, root.kind) & @intCast(u64, 0xFFFFFFFF)));
+                var p1: []const u8 = "IRP:m"; pal_mod.measureMarkerWriteInt(p1, mod_id);
+                var p2: []const u8 = "IRP:n"; pal_mod.measureMarkerWriteInt(p2, ast_root);
+                var p3: []const u8 = "IRP:p"; pal_mod.measureMarkerWriteInt(p3, @intCast(u32, ast_mod.astStoreNodePayloadPacked(shared_store, ast_root, root.kind) & @intCast(u64, 0xFFFFFFFF)));
                 var decls = ast_mod.astStoreNodeExtraChildren(shared_store, ast_root);
                 var p4: []const u8 = "IRD:c"; pal_mod.markerWriteInt(p4, @intCast(u32, decls.len));
                 var di2: usize = @intCast(usize, 0);
@@ -229,7 +229,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             }
         }
     }
-    var n1: []const u8 = "IRN:n"; pal_mod.markerWriteInt(n1, @intCast(u32, shared_store.nodes.len));
-    var n2: []const u8 = "IRE:x"; pal_mod.markerWriteInt(n2, @intCast(u32, shared_store.extra_children.len));
+    var n1: []const u8 = "IRN:n"; pal_mod.measureMarkerWriteInt(n1, @intCast(u32, shared_store.nodes.len));
+    var n2: []const u8 = "IRE:x"; pal_mod.measureMarkerWriteInt(n2, @intCast(u32, shared_store.extra_children.len));
     var nl2: []const u8 = "\n"; pal_mod.markerWrite(nl2);
 }

@@ -184,18 +184,18 @@ fn typeRegistryAppend(self: *TypeRegistry, t: Type) u32 {
     var dc_k: [20]u8 = undefined;
     var dc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(t.kind)), dc_k[0..]);
     var dc_ks: usize = @intCast(usize, 19) - @intCast(usize, dc_kl);
-    var dcm: []const u8 = "DC:k"; pal_mod.markerWrite(dcm); pal_mod.markerWrite(dc_k[dc_ks..@intCast(usize, 19)]);
+    var dcm: []const u8 = "DC:k"; pal_mod.measureMarkerWrite(dcm); pal_mod.measureMarkerWrite(dc_k[dc_ks..@intCast(usize, 19)]);
     var dc_n: [20]u8 = undefined;
     var dc_nl = itoa_mod.itoa(t.name_id, dc_n[0..]);
     var dc_ns: usize = @intCast(usize, 19) - @intCast(usize, dc_nl);
-    var dcn: []const u8 = "n"; pal_mod.markerWrite(dcn); pal_mod.markerWrite(dc_n[dc_ns..@intCast(usize, 19)]);
+    var dcn: []const u8 = "n"; pal_mod.measureMarkerWrite(dcn); pal_mod.measureMarkerWrite(dc_n[dc_ns..@intCast(usize, 19)]);
     var dc_i: [20]u8 = undefined;
     var dc_il = itoa_mod.itoa(id, dc_i[0..]);
     var dc_is: usize = @intCast(usize, 19) - @intCast(usize, dc_il);
-    var dci: []const u8 = "t"; pal_mod.markerWrite(dci); pal_mod.markerWrite(dc_i[dc_is..@intCast(usize, 19)]);
-    var dcnl: []const u8 = "\n"; pal_mod.markerWrite(dcnl);
+    var dci: []const u8 = "t"; pal_mod.measureMarkerWrite(dci); pal_mod.measureMarkerWrite(dc_i[dc_is..@intCast(usize, 19)]);
+    var dcnl: []const u8 = "\n"; pal_mod.measureMarkerWrite(dcnl);
     if (t.kind == TypeKind.struct_type) {
-        var xs: []const u8 = "X:"; pal_mod.markerWriteInt(xs, id);
+        var xs: []const u8 = "X:"; pal_mod.measureMarkerWriteInt(xs, id);
     }
     return id;
 }

@@ -122,7 +122,7 @@ pub fn stringInternerIntern(self: *StringInterner, text: []const u8) u32 {
         idx = entry.next;
     }
     var new_idx = self.entries_len;
-    var innw_m: []const u8 = "INT:new"; pal.markerWriteInt(innw_m, @intCast(u32, new_idx));
+    var innw_m: []const u8 = "INT:new"; pal.measureMarkerWriteInt(innw_m, @intCast(u32, new_idx));
     var copied = stringInternerCopyToArena(self, text);
     appendEntry(&self.entries_items, &self.entries_len, &self.entries_capacity, self.entries_allocator, InternEntry{
         .text = copied[0..text.len],
