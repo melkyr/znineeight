@@ -25,6 +25,7 @@ const sym_reg = @import("symbol_registrator.zig");
 const lir_mod = @import("lir.zig");
 const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
+const lir_stream_mod = @import("lir_stream.zig");
 
 pub const BufferedWriter = struct {
     buf: [4096]u8,
@@ -548,6 +549,11 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
      switch_cases: *SwitchCaseArrayList,
      call_args: *U32ArrayList,
      current_fn: *LirFunction,
+     spill: *lir_stream_mod.LirStream,
+     fn_slots: [*]lir_mod.LirSlot,
+     fn_slots_start: usize,
+     fn_slots_len: usize,
+     spill_arena: *Sand,
      d4_wtype: [*]u32,
      d4_wflag: [*]u8,
      d4_t2p: [*]u32,
@@ -589,6 +595,11 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .switch_cases = sc,
          .call_args = ca,
          .current_fn = undefined,
+         .spill = undefined,
+         .fn_slots = undefined,
+         .fn_slots_start = @intCast(usize, 0),
+         .fn_slots_len = @intCast(usize, 0),
+         .spill_arena = undefined,
          .d4_wtype = undefined,
          .d4_wflag = undefined,
          .d4_t2p = undefined,
@@ -2062,10 +2073,14 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, rp);
 }
 
-fn moduleHasVaInsts(fns: []LirFunction) u8 {
+fn faultIn(emitter: *C89Emitter, idx: usize) LirFunction {
+    return lir_stream_mod.lirStreamReadFunction(emitter.spill, emitter.fn_slots[emitter.fn_slots_start + idx], emitter.spill_arena);
+}
+
+fn moduleHasVaInsts(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
-    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
-        var vf = &fns[vi];
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
         var vbi: usize = @intCast(usize, 0);
         while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
             var vbb = &vf.blocks.items[vbi];
@@ -2083,17 +2098,17 @@ fn moduleHasVaInsts(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
-fn emitStdargInclude(emitter: *C89Emitter, fns: []LirFunction) void {
-    if (moduleHasVaInsts(fns) != @intCast(u8, 0)) {
+fn emitStdargInclude(emitter: *C89Emitter) void {
+    if (moduleHasVaInsts(emitter) != @intCast(u8, 0)) {
         var va_inc: []const u8 = "#include <stdarg.h>\n";
         bufferedWriterWrite(&emitter.writer, va_inc);
     }
 }
 
-fn moduleHasStdioBuiltin(fns: []LirFunction) u8 {
+fn moduleHasStdioBuiltin(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
-    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
-        var vf = &fns[vi];
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
         var vbi: usize = @intCast(usize, 0);
         while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
             var vbb = &vf.blocks.items[vbi];
@@ -2112,10 +2127,10 @@ fn moduleHasStdioBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
-fn moduleHasExitBuiltin(fns: []LirFunction) u8 {
+fn moduleHasExitBuiltin(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
-    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
-        var vf = &fns[vi];
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
         var vbi: usize = @intCast(usize, 0);
         while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
             var vbb = &vf.blocks.items[vbi];
@@ -2131,10 +2146,10 @@ fn moduleHasExitBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
-fn moduleHasSleepBuiltin(fns: []LirFunction) u8 {
+fn moduleHasSleepBuiltin(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
-    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
-        var vf = &fns[vi];
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
         var vbi: usize = @intCast(usize, 0);
         while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
             var vbb = &vf.blocks.items[vbi];
@@ -2150,10 +2165,10 @@ fn moduleHasSleepBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
-fn moduleHasConsoleBuiltin(fns: []LirFunction) u8 {
+fn moduleHasConsoleBuiltin(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
-    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
-        var vf = &fns[vi];
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
         var vbi: usize = @intCast(usize, 0);
         while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
             var vbb = &vf.blocks.items[vbi];
@@ -2171,10 +2186,10 @@ fn moduleHasConsoleBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
-fn moduleHasNetBuiltin(fns: []LirFunction) u8 {
+fn moduleHasNetBuiltin(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
-    while (vi < fns.len) : (vi += @intCast(usize, 1)) {
-        var vf = &fns[vi];
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
         var vbi: usize = @intCast(usize, 0);
         while (vbi < vf.blocks.len) : (vbi += @intCast(usize, 1)) {
             var vbb = &vf.blocks.items[vbi];
@@ -2200,37 +2215,37 @@ fn moduleHasNetBuiltin(fns: []LirFunction) u8 {
     return @intCast(u8, 0);
 }
 
-fn emitBuiltinIncludes(emitter: *C89Emitter, fns: []LirFunction) void {
-    if (moduleHasStdioBuiltin(fns) != @intCast(u8, 0)) {
+fn emitBuiltinIncludes(emitter: *C89Emitter) void {
+    if (moduleHasStdioBuiltin(emitter) != @intCast(u8, 0)) {
         var stdio_inc: []const u8 = "#include <stdio.h>\n";
         bufferedWriterWrite(&emitter.writer, stdio_inc);
     }
-    if (moduleHasExitBuiltin(fns) != @intCast(u8, 0)) {
+    if (moduleHasExitBuiltin(emitter) != @intCast(u8, 0)) {
         var stdlib_inc: []const u8 = "#include <stdlib.h>\n";
         bufferedWriterWrite(&emitter.writer, stdlib_inc);
     }
-    if (moduleHasSleepBuiltin(fns) != @intCast(u8, 0)) {
+    if (moduleHasSleepBuiltin(emitter) != @intCast(u8, 0)) {
         var swin: []const u8 = "#ifdef _WIN32\n#include <windows.h>\n#else\n#include <unistd.h>\n#endif\n";
         bufferedWriterWrite(&emitter.writer, swin);
     }
-    if (moduleHasConsoleBuiltin(fns) != @intCast(u8, 0)) {
+    if (moduleHasConsoleBuiltin(emitter) != @intCast(u8, 0)) {
         var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
         bufferedWriterWrite(&emitter.writer, cwin);
     }
-    if (moduleHasNetBuiltin(fns) != @intCast(u8, 0)) {
+    if (moduleHasNetBuiltin(emitter) != @intCast(u8, 0)) {
         var swin: []const u8 = "#ifdef _WIN32\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winsock.h>\n#pragma comment(lib, \"wsock32.lib\")\n#else\n#include <sys/socket.h>\n#include <netinet/in.h>\n#include <arpa/inet.h>\n#include <sys/select.h>\n#include <unistd.h>\n#include <fcntl.h>\n#endif\n#include <string.h>\n";
         bufferedWriterWrite(&emitter.writer, swin);
     }
 }
 
-fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32) void {
+fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, c_includes: []u32) void {
     var s1: []const u8 = "/* Module: ";
     bufferedWriterWrite(&emitter.writer, s1);
     bufferedWriterWrite(&emitter.writer, name);
     var s2: []const u8 = " */\n#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
     bufferedWriterWrite(&emitter.writer, s2);
-    emitStdargInclude(emitter, fns);
-    emitBuiltinIncludes(emitter, fns);
+    emitStdargInclude(emitter);
+    emitBuiltinIncludes(emitter);
     var ci: usize = @intCast(usize, 0);
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
@@ -2253,9 +2268,10 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, 
     var s3: []const u8 = "\n/* Forward declarations */\n";
     bufferedWriterWrite(&emitter.writer, s3);
     var i: usize = @intCast(usize, 0);
-    while (i < fns.len) : (i += @intCast(usize, 1)) {
-        if (fns[i].is_extern == @intCast(u8, 0) or fns[i].is_variadic != @intCast(u8, 0)) {
-            emitFunctionForwardDecl(emitter, fns[i]);
+    while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        var f = faultIn(emitter, i);
+        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
+            emitFunctionForwardDecl(emitter, f);
         }
     }
     var nl: []const u8 = "\n";
@@ -2310,7 +2326,7 @@ pub fn moduleQualifiedName(emitter: *C89Emitter, module_id: u32) []const u8 {
     return interner_mod.stringInternerGet(emitter.interner, qid);
 }
 
-pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction, c_includes: []u32, dep_mod_ids: []u32, sorted: [*]u32) void {
+pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, c_includes: []u32, dep_mod_ids: []u32, sorted: [*]u32) void {
     var gname: [128]u8 = undefined;
     var gn: usize = @intCast(usize, 0);
     var g_i: usize = @intCast(usize, 0);
@@ -2332,7 +2348,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var m2: []const u8 = "_H\n\n"; bufferedWriterWrite(&emitter.writer, m2);
     var h0: []const u8 = "#include \"zig_compat.h\"\n#include \"zig_special_types.h\"\n";
     bufferedWriterWrite(&emitter.writer, h0);
-    emitStdargInclude(emitter, fns);
+    emitStdargInclude(emitter);
     var ci: usize = @intCast(usize, 0);
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
@@ -2400,9 +2416,10 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var fwd0: []const u8 = "/* Forward declarations */\n";
     bufferedWriterWrite(&emitter.writer, fwd0);
     var fi: usize = @intCast(usize, 0);
-    while (fi < fns.len) : (fi += @intCast(usize, 1)) {
-        if (fns[fi].is_extern == @intCast(u8, 0) or fns[fi].is_variadic != @intCast(u8, 0)) {
-            emitFunctionForwardDecl(emitter, fns[fi]);
+    while (fi < emitter.fn_slots_len) : (fi += @intCast(usize, 1)) {
+        var f = faultIn(emitter, fi);
+        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
+            emitFunctionForwardDecl(emitter, f);
         }
     }
     var gd0: []const u8 = "/* Storage globals (extern decls) */\n";
@@ -2467,7 +2484,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     bufferedWriterWrite(&emitter.writer, e1);
 }
 
-pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_includes: []u32, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
+pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
     var poi: u32 = @intCast(u32, 0);
     while (poi < ptr_only_len) : (poi += 1) {
         hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ptr_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
@@ -2475,11 +2492,11 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, fns: []LirFunction, c_
     var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
     emitErrorCodePrologue(emitter);
     emitSpecialTypes(emitter, emitter.registry, sorted);
-    emitModuleHeader(emitter, name, fns, c_includes);
+    emitModuleHeader(emitter, name, c_includes);
     emitGlobalDecls(emitter, @intCast(u32, 0), @intCast(u8, 1));
     var i: usize = @intCast(usize, 0);
-    while (i < fns.len) : (i += @intCast(usize, 1)) {
-        var func = fns[i];
+    while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        var func = faultIn(emitter, i);
         emitter.switch_cases = &func.switch_cases;
         if (func.is_extern == @intCast(u8, 0)) {
             emitFunctionSignature(emitter, &func);
@@ -2662,27 +2679,28 @@ fn emitModuleInitCalls(emitter: *C89Emitter) void {
     }
 }
 
-pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8, fns: []LirFunction) void {
+pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8) void {
     var h0: []const u8 = "#include \"";
     bufferedWriterWrite(&emitter.writer, h0);
     bufferedWriterWrite(&emitter.writer, mod_name);
     var h1: []const u8 = ".h\"\n";
     bufferedWriterWrite(&emitter.writer, h1);
-    emitStdargInclude(emitter, fns);
-    emitBuiltinIncludes(emitter, fns);
+    emitStdargInclude(emitter);
+    emitBuiltinIncludes(emitter);
     emitGlobalDecls(emitter, module_id, @intCast(u8, 0));
     var i: usize = @intCast(usize, 0);
-    while (i < fns.len) : (i += @intCast(usize, 1)) {
-        if (fns[i].is_extern != @intCast(u8, 0)) continue;
-        emitter.switch_cases = &fns[i].switch_cases;
-        emitFunctionSignature(emitter, &fns[i]);
-        emitHoistedDecls(emitter, &fns[i]);
+    while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        var f = faultIn(emitter, i);
+        if (f.is_extern != @intCast(u8, 0)) continue;
+        emitter.switch_cases = &f.switch_cases;
+        emitFunctionSignature(emitter, &f);
+        emitHoistedDecls(emitter, &f);
         emitter.dl_hoisted = @intCast(u8, 0);
-        emitFunctionBody(emitter, &fns[i]);
-        if (module_id == @intCast(u32, 0) and fns[i].is_pub == @intCast(u8, 1)) {
-            var wmn = interner_mod.stringInternerGet(emitter.interner, fns[i].name_id);
+        emitFunctionBody(emitter, &f);
+        if (module_id == @intCast(u32, 0) and f.is_pub == @intCast(u8, 1)) {
+            var wmn = interner_mod.stringInternerGet(emitter.interner, f.name_id);
             if (wmn.len == @intCast(usize, 4) and wmn[0] == 'm' and wmn[1] == 'a' and wmn[2] == 'i' and wmn[3] == 'n') {
-                emitMainWrapper(emitter, fns[i]);
+                emitMainWrapper(emitter, f);
             }
         }
     }

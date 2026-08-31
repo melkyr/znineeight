@@ -30,7 +30,8 @@ const lower_mod = @import("lower.zig");
 const SemanticContext = lower_mod.SemanticContext;
 const LirLowerer = lower_mod.LirLowerer;
 const lir_mod = @import("lir.zig");
-const LirFunctionArrayList = lir_mod.LirFunctionArrayList;
+const LirSlotArrayList = lir_mod.LirSlotArrayList;
+const lir_stream = @import("lir_stream.zig");
 const resolved_type_table = @import("resolved_type_table.zig");
 const hash_mod = @import("util/hash.zig");
 const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
@@ -101,7 +102,8 @@ pub const CompilerContext = struct {
     coercion_table: *CoercionTable,
     // KEPT (unwired) — cross-phase type dependency graph per TYPE_SYSTEM_p2.md §2.4. Currently not populated in pipeline; live DepGraphs are scratch-local per phase (see 09_pipeline_orchestration.md).
     dep_graph: *symbol_registrator.DepGraph,
-    lir_fns: LirFunctionArrayList,
+    lir_slots: LirSlotArrayList,
+    lir_stream: lir_stream.LirStream,
     enum_value_table: hash_mod.U32ToU32Map,
     error_code_registry: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
@@ -163,7 +165,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
-    var lir_fns = lir_mod.lirFunctionArrayListInit(&compiler_alloc.module);
+    var lir_slots = lir_mod.lirSlotArrayListInit(&compiler_alloc.module);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
     var error_code_registry = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
@@ -184,7 +186,8 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .resolved_types = &resolved_types,
         .coercion_table = &coercion_table,
         .dep_graph = &dep_graph,
-        .lir_fns = lir_fns,
+        .lir_slots = lir_slots,
+        .lir_stream = lir_stream.lirStreamInit(),
         .enum_value_table = enum_value_table,
         .error_code_registry = error_code_registry,
         .call_arg_types = call_arg_types,
@@ -519,7 +522,22 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     pal.markerWrite(le_buf[le_start..@intCast(usize, 19)]);
     var lnl: []const u8 = "\n"; pal.markerWrite(lnl);
     alloc_mod.sandReset(&ctx.alloc.scratch);
-    ctx.lir_fns.len = @intCast(usize, 0);
+    ctx.lir_slots.len = @intCast(usize, 0);
+    var spill_path: [512]u8 = undefined;
+    var sp_len: usize = @intCast(usize, 0);
+    if (ctx.cli.output_dir_set) {
+        var od = ctx.cli.output_dir;
+        var oi: usize = @intCast(usize, 0);
+        while (oi < od.len and sp_len < @intCast(usize, 511)) : (oi += @intCast(usize, 1)) { spill_path[sp_len] = od[oi]; sp_len += @intCast(usize, 1); }
+        spill_path[sp_len] = @intCast(u8, '/'); sp_len += @intCast(usize, 1);
+    } else {
+        spill_path[sp_len] = @intCast(u8, '.'); sp_len += @intCast(usize, 1);
+        spill_path[sp_len] = @intCast(u8, '/'); sp_len += @intCast(usize, 1);
+    }
+    var tmp_name: []const u8 = ".zig1_lir.tmp";
+    var ti: usize = @intCast(usize, 0);
+    while (ti < tmp_name.len and sp_len < @intCast(usize, 511)) : (ti += @intCast(usize, 1)) { spill_path[sp_len] = tmp_name[ti]; sp_len += @intCast(usize, 1); }
+    lir_stream.lirStreamBeginWrite(&ctx.lir_stream, spill_path[0..sp_len]);
     var sem_ctx: SemanticContext = SemanticContext{
         .store = ctx.store,
         .registry = ctx.typereg,
@@ -578,8 +596,8 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
-                        var lf_mod = lir_mod.lirFunctionRelocateToModule(lf, &ctx.alloc.module);
-                        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, lf_mod);
+                        var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
+                        lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
                         alloc_mod.sandReset(&ctx.alloc.scratch);
                     } else {
                 if (decl.kind == AstKind.var_decl) {
@@ -634,8 +652,8 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
         var imf = lower_mod.lowerModuleInit(&ilowerer, decls, mods[mi].id);
-        var imf_mod = lir_mod.lirFunctionRelocateToModule(imf, &ctx.alloc.module);
-        lir_mod.lirFunctionArrayListAppend(&ctx.lir_fns, imf_mod);
+        var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
+        lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
         alloc_mod.sandReset(&ctx.alloc.scratch);
     }
     var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
@@ -660,6 +678,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
 }
         }
     }
+    lir_stream.lirStreamFinishWrite(&ctx.lir_stream);
 }
 
 fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
@@ -681,7 +700,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89) return;
     var mangler: c89_mod.NameMangler = undefined;
-    var mangler_hint: usize = ctx.lir_fns.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
+    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch, mangler_hint);
     var emitter: c89_mod.C89Emitter = undefined;
     emitter = c89_mod.c89EmitterInit(
@@ -700,13 +719,18 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
     emitter.global_decls = gd_slice.ptr;
     emitter.global_decls_len = @intCast(u32, gd_slice.len);
-    var fns = lir_mod.lirFunctionArrayListGetSlice(&ctx.lir_fns);
+    emitter.spill = &ctx.lir_stream;
+    emitter.fn_slots = ctx.lir_slots.items;
+    emitter.fn_slots_start = @intCast(usize, 0);
+    emitter.fn_slots_len = ctx.lir_slots.len;
+    emitter.spill_arena = &ctx.alloc.lir_read;
+    lir_stream.lirStreamBeginRead(&ctx.lir_stream);
     var module_name: []const u8 = "output";
 
     var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.scratch);
     var ts_fi: usize = @intCast(usize, 0);
-    while (ts_fi < fns.len) : (ts_fi += @intCast(usize, 1)) {
-        var ts_fn = fns[ts_fi];
+    while (ts_fi < ctx.lir_slots.len) : (ts_fi += @intCast(usize, 1)) {
+        var ts_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ts_fi], &ctx.alloc.lir_read);
         var ts_bi: usize = @intCast(usize, 0);
         while (ts_bi < ts_fn.blocks.len) : (ts_bi += @intCast(usize, 1)) {
             var ts_blk = ts_fn.blocks.items[ts_bi];
@@ -737,6 +761,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
                 }
             }
         }
+        alloc_mod.sandReset(&ctx.alloc.lir_read);
     }
     emitter.ts_ref_set = ts_ref_set;
 
@@ -773,8 +798,9 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         while (mi < mods.len) : (mi += 1) {
             var m = mods[mi];
             var fn_start: usize = fn_cursor;
-            while (fn_cursor < fns.len and fns[fn_cursor].module_id == m.id) : (fn_cursor += @intCast(usize, 1)) {}
-            var fn_slice = fns[fn_start..fn_cursor];
+            while (fn_cursor < ctx.lir_slots.len and ctx.lir_slots.items[fn_cursor].module_id == m.id) : (fn_cursor += @intCast(usize, 1)) {}
+            emitter.fn_slots_start = fn_start;
+            emitter.fn_slots_len = fn_cursor - fn_start;
             var base = c89_mod.moduleQualifiedName(&emitter, m.id);
             if (od.len + @intCast(usize, 1) + base.len + @intCast(usize, 3) > @intCast(usize, 511)) {
                 var lmsg: []const u8 = "error: output filename too long\n";
@@ -803,7 +829,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var dep_end: usize = dep_start + @intCast(usize, m.import_count);
             var dep_ids = ctx.module_reg.import_edges_items[dep_start..dep_end];
             var m_c_incs = m.c_includes.items[0..m.c_includes.len];
-            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, fn_slice, m_c_incs, dep_ids, sorted);
+            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, m_c_incs, dep_ids, sorted);
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(fd2);
             var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
@@ -826,11 +852,12 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var cw: c89_mod.BufferedWriter = undefined;
             cw = c89_mod.bufferedWriterInitFd(cfd);
             emitter.writer = cw;
-            c89_mod.emitModuleFile(&emitter, m.id, base, fn_slice);
+            c89_mod.emitModuleFile(&emitter, m.id, base);
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(cfd);
             var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
         }
+        lir_stream.lirStreamEndRead(&ctx.lir_stream);
         return;
     }
 
@@ -840,9 +867,10 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.bufferedWriterFlush(&cwriter);
 
     var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.scratch);
-    c89_mod.emitModule(&emitter, module_name, fns, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
+    c89_mod.emitModule(&emitter, module_name, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);
+    lir_stream.lirStreamEndRead(&ctx.lir_stream);
 }
 
 fn parseArgs() CompilerCli {

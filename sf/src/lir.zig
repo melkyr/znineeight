@@ -428,6 +428,53 @@ pub fn lirFunctionArrayListGetSlice(self: *LirFunctionArrayList) []LirFunction {
     return self.items[0..self.len];
 }
 
+pub const LirSlot = struct {
+    module_id: u32,
+    disk_offset: u32,
+    byte_len: u32,
+};
+
+pub const LirSlotArrayList = struct {
+    items: [*]LirSlot,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn lirSlotArrayListInit(allocator: *Sand) LirSlotArrayList {
+    return LirSlotArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn lirSlotArrayListEnsureCapacity(self: *LirSlotArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < @intCast(usize, 4)) new_cap = @intCast(usize, 4);
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(LirSlot)) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]LirSlot, raw);
+    var i: usize = @intCast(usize, 0);
+    while (i < self.len) : (i += @intCast(usize, 1)) {
+        new_items[i] = self.items[i];
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn lirSlotArrayListAppend(self: *LirSlotArrayList, value: LirSlot) void {
+    lirSlotArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn lirSlotArrayListGetSlice(self: *LirSlotArrayList) []LirSlot {
+    return self.items[0..self.len];
+}
+
 pub const LirFunction = struct {
     name_id: u32,
     module_id: u32,

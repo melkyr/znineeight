@@ -181,6 +181,7 @@ pub const CompilerAlloc = struct {
     permanent: Sand,
     module: Sand,
     scratch: Sand,
+    lir_read: Sand,
     max_mem: u32,
 };
 
@@ -190,6 +191,7 @@ var pool: Sand = undefined; // monotonic bump over memory_pool_buf; never reset
 var perm_gs: GrowableSand = undefined; // tier arena perm (pool-backed growable)
 var mod_gs: GrowableSand = undefined; // tier arena module (pool-backed growable)
 var scr_gs: GrowableSand = undefined; // tier arena scratch (pool-backed growable)
+var lir_gs: GrowableSand = undefined; // tier arena lir_read (pool-backed growable)
 
 pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
 pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
@@ -207,10 +209,12 @@ pub fn initCompilerAlloc() CompilerAlloc {
     growableSandInit(&perm_gs, &pool, 4096, "perm");
     growableSandInit(&mod_gs, &pool, 4096, "module");
     growableSandInit(&scr_gs, &pool, 4096, "scratch");
+    growableSandInit(&lir_gs, &pool, 4096, "lir_read");
     var ca = CompilerAlloc{
         .permanent = perm_gs.view,
         .module = mod_gs.view,
         .scratch = scr_gs.view,
+        .lir_read = lir_gs.view,
         .max_mem = @intCast(u32, DEV_MAX_MEM),
     };
     return ca;
