@@ -1,12 +1,7 @@
 const lir_mod = @import("lir.zig");
 const alloc_mod = @import("allocator.zig");
 const hash_mod = @import("util/hash.zig");
-
-extern "c" fn fopen(path: [*]const u8, mode: [*]const u8) ?*void;
-extern "c" fn fread(buf: [*]u8, size: u32, count: u32, file: *void) u32;
-extern "c" fn fputc(c: i32, file: *void) i32;
-extern "c" fn fclose(file: *void) i32;
-extern "c" fn fseek(file: *void, offset: i32, whence: i32) i32;
+const pal_mod = @import("pal.zig");
 
 const Sand = alloc_mod.Sand;
 const LirFunction = lir_mod.LirFunction;
@@ -43,23 +38,23 @@ pub fn lirStreamBeginWrite(s: *LirStream, path: []const u8) void {
     s.path_len = i;
     s.path[i] = @intCast(u8, 0);
     s.write_offset = @intCast(u32, 0);
-    s.handle = fopen(&s.path[0], WRITE_MODE);
+    s.handle = pal_mod.streamOpen(s.path[0..s.path_len], WRITE_MODE);
 }
 
 pub fn lirStreamFinishWrite(s: *LirStream) void {
     if (s.handle) |h| {
-        _ = fclose(h);
+        pal_mod.streamClose(h);
         s.handle = null;
     }
 }
 
 pub fn lirStreamBeginRead(s: *LirStream) void {
-    s.handle = fopen(&s.path[0], READ_MODE);
+    s.handle = pal_mod.streamOpen(s.path[0..s.path_len], READ_MODE);
 }
 
 pub fn lirStreamEndRead(s: *LirStream) void {
     if (s.handle) |h| {
-        _ = fclose(h);
+        pal_mod.streamClose(h);
         s.handle = null;
     }
 }
@@ -71,33 +66,29 @@ fn wU32(s: *LirStream, v: u32) void {
     b[1] = @intCast(u8, (v >> @intCast(u32, 8)) & @intCast(u32, 0xFF));
     b[2] = @intCast(u8, (v >> @intCast(u32, 16)) & @intCast(u32, 0xFF));
     b[3] = @intCast(u8, (v >> @intCast(u32, 24)) & @intCast(u32, 0xFF));
-    _ = fputc(@intCast(i32, b[0]), h);
-    _ = fputc(@intCast(i32, b[1]), h);
-    _ = fputc(@intCast(i32, b[2]), h);
-    _ = fputc(@intCast(i32, b[3]), h);
+    pal_mod.streamWrite(h, b[0..]);
     s.write_offset += @intCast(u32, 4);
 }
 
 fn wU8(s: *LirStream, v: u8) void {
     var h = s.handle orelse return;
-    _ = fputc(@intCast(i32, v), h);
+    var b: [1]u8 = undefined;
+    b[0] = v;
+    pal_mod.streamWrite(h, b[0..]);
     s.write_offset += @intCast(u32, 1);
 }
 
 fn wBytes(s: *LirStream, ptr: [*]const u8, len: usize) void {
     if (len == @intCast(usize, 0)) return;
     var h = s.handle orelse return;
-    var i: usize = @intCast(usize, 0);
-    while (i < len) : (i += @intCast(usize, 1)) {
-        _ = fputc(@intCast(i32, ptr[i]), h);
-    }
+    pal_mod.streamWrite(h, ptr[0..len]);
     s.write_offset += @intCast(u32, len);
 }
 
 fn rU32(s: *LirStream) u32 {
     var h = s.handle orelse return @intCast(u32, 0);
     var b: [4]u8 = undefined;
-    _ = fread(@ptrCast([*]u8, &b[0]), @intCast(u32, 1), @intCast(u32, 4), h);
+    pal_mod.streamRead(h, b[0..]);
     var v: u32 = @intCast(u32, 0);
     v = v | @intCast(u32, b[0]);
     v = v | (@intCast(u32, b[1]) << @intCast(u32, 8));
@@ -109,14 +100,14 @@ fn rU32(s: *LirStream) u32 {
 fn rU8(s: *LirStream) u8 {
     var h = s.handle orelse return @intCast(u8, 0);
     var b: [1]u8 = undefined;
-    _ = fread(@ptrCast([*]u8, &b[0]), @intCast(u32, 1), @intCast(u32, 1), h);
+    pal_mod.streamRead(h, b[0..]);
     return b[0];
 }
 
 fn rBytes(s: *LirStream, dst: [*]u8, len: usize) void {
     if (len == @intCast(usize, 0)) return;
     var h = s.handle orelse return;
-    _ = fread(dst, @intCast(u32, 1), @intCast(u32, len), h);
+    pal_mod.streamRead(h, dst[0..len]);
 }
 
 pub fn lirStreamAppend(s: *LirStream, src_fn: LirFunction) LirSlot {
@@ -191,7 +182,7 @@ fn emptyLirFunction(dst: *Sand) LirFunction {
 pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFunction {
     alloc_mod.sandReset(dst);
     var h = s.handle orelse return emptyLirFunction(dst);
-    _ = fseek(h, @intCast(i32, slot.disk_offset), @intCast(i32, 0));
+    pal_mod.streamSeek(h, @intCast(i32, slot.disk_offset));
 
     var name_id = rU32(s);
     var module_id = rU32(s);

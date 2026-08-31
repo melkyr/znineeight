@@ -4,6 +4,7 @@ const Sand = alloc_mod.Sand;
 const ext_c = @import("extern_c.zig");
 extern "c" fn fopen(path: [*]const u8, mode: [*]const u8) ?*void;
 extern "c" fn fread(buf: [*]u8, size: u32, count: u32, file: *void) u32;
+extern "c" fn fwrite(buf: [*]const u8, size: u32, count: u32, file: *void) u32;
 extern "c" fn fclose(file: *void) i32;
 extern "c" fn fseek(file: *void, offset: i32, whence: i32) i32;
 extern "c" fn ftell(file: *void) i32;
@@ -88,6 +89,39 @@ pub fn fileWrite(fd: usize, msg: []const u8) void {
 
 pub fn fileClose(fd: usize) void {
     _ = pal_file_close(fd);
+}
+
+// Streaming stdio API (LIR spill stream). All disk I/O lives here (platform layer, Win9x target);
+// consumers @import("pal.zig") and never declare their own "c" externs.
+pub fn streamOpen(path: []const u8, mode: [*]const u8) ?*void {
+    var c_path: [512]u8 = undefined;
+    var i: usize = 0;
+    while (i < path.len and i < 511) {
+        c_path[i] = path[i];
+        i += 1;
+    }
+    if (i >= 511) return null;
+    c_path[i] = 0;
+    var f = fopen(&c_path[0], mode);
+    return f;
+}
+
+pub fn streamClose(file: *void) void {
+    _ = fclose(file);
+}
+
+pub fn streamWrite(file: *void, buf: []const u8) void {
+    if (buf.len == @intCast(usize, 0)) return;
+    _ = fwrite(buf.ptr, @intCast(u32, 1), @intCast(u32, buf.len), file);
+}
+
+pub fn streamRead(file: *void, buf: []u8) void {
+    if (buf.len == @intCast(usize, 0)) return;
+    _ = fread(buf.ptr, @intCast(u32, 1), @intCast(u32, buf.len), file);
+}
+
+pub fn streamSeek(file: *void, offset: i32) void {
+    _ = fseek(file, offset, SEEK_SET);
 }
 
 pub fn getDefaultLibPath(buf: [*]u8, bufsize: i32) i32 {
