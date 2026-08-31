@@ -695,7 +695,7 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 
 ### Task S-TOKEN: Stream the token array (LOW-MED — eliminates double-lex)
 
-> **AMENDMENT 11:** the token array (~330 K × 20 B ≈ 6.6 MB) is fully materialized in scratch before parsing, AND the source is lexed TWICE (`moduleScanDiscover` token-count scan + the real parse). The lexer is already streaming (`lexerNextToken`). A pull-parser removes both the materialization and the double-lex. I + F.
+> **AMENDMENT 13 (operator-ruled 2026-08-26):** the 4 MD5 gates are RE-BASELINEABLE with golden-sample runtime evidence — byte-identity is NOT the bar, runtime behavior is (per Global Constraints line 31; as done W2-1/2/3). S-TOKEN deletes `moduleScanDiscover` outright (pull-parser streams tokens; drop per-module count/materialize lex + token array + AST pre-size). RECORDED HAZARD (census §f.4 incomplete): deleting a scan pass shifts interner insertion order → `name_id` values change → `error_code_registry` (open-addressed, keyed by name_id, emitted in slot order by `emitErrorCodePrologue` c89_emit.zig:1775) lays out differently → lisp `#define ERROR_*` prologue reorders (14 lines; semantically identical, codes unchanged). gol/json/mud immune (no error-set defs). Any future "delete a scan pass" task must audit open-addressed maps keyed by `name_id` emitted in slot order. Measured memory win at HEAD: ~2 MB scratch (largest module token array ≈ 86 K × 24 B ≈ 2.06 MB), not the plan's ~6.6 MB (330 K-token figure stale).
 
 **Files:**
 - Modify: `sf/src/parser.zig` (pull-token consumption; drop `parserInit(tokens:[]const Token)` full array), `sf/src/import_resolver.zig` (`moduleScanDiscover` count-only pre-sizing vs pull-parse), `sf/src/lexer.zig` if a push→pull interface is needed
@@ -703,12 +703,12 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 
 **Interfaces:**
 - Consumes: parser.zig:32-33/57 (token array); import_resolver.zig:33-73/146-148 (scan + pre-size).
-- Produces: scratch peak drops ~6.6 MB; single lex pass.
+- Produces: scratch peak drops ~2 MB; single lex pass.
 
 - [ ] **Step 1: (I) census** — read-only: map every `tokens_ptr`/`tokens_len`/`peek`/`next` consumer in parser.zig; the AST-store pre-sizing dependency (`nodes_target = total_tokens*6/10`); classify mechanical vs needs-design. Report.
 - [ ] **Step 2: Golden baseline** — capture `/tmp/golden_STOKEN/`.
-- [ ] **Step 3: (F) implement** — pull-token consumption; Z98-clean; preserve byte-identical AST (same nodes/order).
-- [ ] **Step 4: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `scratch=` peak drops (record); matrix 21/21.
+- [ ] **Step 3: (F) implement** — pull-token consumption (depth-3 window + `last_tok` + cached eof); delete `moduleScanDiscover` + per-module count/materialize lex + token array + AST pre-size; Z98-clean; preserve same AST nodes/order/spans.
+- [ ] **Step 4: Verify** — 4 MD5 keep-or-re-baseline (re-baseline with golden runtime evidence; EXPECTED: gol/json/mud match, lisp re-baselines to `3591bad9…`); golden 9/9 runtime; self-compile clean; `scratch=` peak drops ~2 MB (record); matrix 21/21.
 - [ ] **Step 5: Commit + report + ledger + memory** — commit verbatim.
 
 ---
