@@ -16,6 +16,9 @@
 **AMENDMENT 9 (operator-ruled 2026-08-26, 4(b) decomposition — the reset is REQUIRED, not reserve):**
 The ≤16 MiB POOL target is unreachable without a module-arena reset: `pool=` is the monotonic CUMULATIVE bump (never returns bytes), so struct compaction lowers the LIVE floor but not the cumulative pool — indeed M1+M2 raised pool `45,407K → 50,501K` (side tables are extra cumulative allocations). The single clean reset point is the **Lowering→Emission boundary**: the module arena holds (a) AST store (built `phase_ImportResolution`, read by every phase through lowering), (b) resolution tables (`resolved_types`/`comptime_values`, keyed by node_idx), (c) LIR (relocated to module by `lirFunctionRelocateToModule`). After `phase_LIRLowering`, (a) and (b) are dead — `c89_emit` reads LIR only (its `.store` is the LIR instruction, not the AST). **Decomposition (added before M6):** **I-4B** (read-only — measure the per-phase module-arena growth + the reset ceiling), **4(b)-1** (split LIR into a dedicated `lir_arena` — mechanical, byte-neutral), **4(b)-2** (reset the module arena after lowering — AST + resolution tables dead; makes pool track live). **M6 spill is re-scoped to be gated on 4(b)-2** (spill only pays after a reset returns bytes).
 
+**AMENDMENT 10 (operator-ruled 2026-08-26, streaming-AST evaluation — the complete path):**
+I-4B showed 4(b)+M6 cannot reach ≤16,384 K (post-M6 live ≈ 16,727 KiB ≈ 16.3 MiB, still ~343 KiB over). The operator's direction (m0805/m0810) corrects the "AST spill blocked" framing: **per-module** dumping is blocked (interleaved flat node array + node_idx-keyed `resolved_types`/`comptime_values`/`Symbol.decl_node` + ComptimeEvaluation full-store scan), but **whole-AST streaming (write-through, always-on-disk)** is viable because the AST is **write-once** (only the parser appends; 281 read sites, 0 writes) — the ideal property for paging (no dirty write-back, no COW). A new read-only **I-STREAM task** (added before 4(b)-1) designs the disk-backed node + resolution-table storage, estimates the pool ceiling, and issues the **complete-path decision**: (a) **STREAM** — new execution task list (node blocks → fault-in accessor → resolution-table streaming → comptime streaming sweep) that caps `pool.peak` (never fully materialized), vs (b) **INCREMENTAL** — keep 4(b)-1 → 4(b)-2 → M6 → I-COMPACT → GATE (lands ~16.3-16.7 MiB live / ~48 MiB pool, misses 16,384 K). I-STREAM's decision informs (and may supersede) 4(b)-1/4(b)-2/M6.
+
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
 ## Global Constraints
@@ -547,6 +550,38 @@ Compute: after 4(b)-1 (LIR → dedicated `lir_arena`) + 4(b)-2 (module-arena res
 - [ ] **Step 4: Report + ledger + memory**
 
 Report: per-phase table, dead-boundary evidence, reset-ceiling number, reachability verdict. Ledger + mnemoria (discovery). Read-only: no source changes, no commit.
+
+---
+
+### Task I-STREAM: Streaming / disk-backed AST design + complete-path decision (read-only)
+
+> **AMENDMENT 10 (operator m0805/m0810):** the "AST spill blocked" framing was over-stated. Per-MODULE dumping IS blocked (interleaved flat node array + node_idx-keyed `resolved_types`/`comptime_values`/`decl_node` + ComptimeEvaluation full-store scan), but whole-AST streaming (write-through, always-on-disk) is viable because the AST is **write-once** (parser-only writer). This task designs it and issues the COMPLETE-PATH decision (streaming execution tasks vs incremental 4(b)-1/2→M6).
+
+**Files:**
+- Report: `.superpowers/sdd/task-MEMREFACTOR-report.md` (append `## I-STREAM` section)
+
+**Interfaces:**
+- Consumes: I-4B verdict (4(b)+M6 → post-M6 live 16,727 KiB ≈ 16.3 MiB / pool ~48 MiB, misses 16,384 K); write-once AST (only parser appends; ~281 `store.nodes.items` read sites across 16 non-test files, 0 writes); M1 side tables (dense `payload` u32 + sparse `extra_ranges` u64); resolution tables `resolved_types`/`comptime_values` (~11 MB, node_idx-keyed, read by analysis + lowering); ComptimeEvaluation full-store scan (main.zig:393-394); module-arena structure (main.zig:200-272).
+- Produces: streaming-AST design + per-item migration census + pool-ceiling estimate + the COMPLETE-PATH go/no-go (ordered task list for the chosen path with expected pool/RSS at each step).
+
+- [ ] **Step 1: Design the disk-backed node storage (preserving the u32 index space)**
+
+Block-based node storage: `store.nodes` → fixed-size blocks (e.g., 4096 nodes/block = 96 KB at 24 B), a RESIDENT block table mapping `block → resident-pointer | disk-slot`, and `store.node(idx) = blocks[idx>>12][idx & 0xFFF]` with fault-in on non-resident blocks. Write-through: the parser appends to the current block, spilling full blocks to disk. NO write-back needed (write-once). Confirm the `u32` node_idx space is preserved so `resolved_types`/`comptime_values`/`decl_node` keys stay valid, and that M1's `payload`/`extra_ranges` side tables stay consistent (resident or block-backed).
+
+- [ ] **Step 2: Migration census**
+
+Enumerate with `file:line` + counts: (a) parser append path (`astStoreAddNode` + writers) → block append + spill; (b) the ~281 `store.nodes.items` read sites → `store.node(idx)` accessor (list per-file counts); (c) the resolution tables `resolved_types`/`comptime_values` (~11 MB, as big as the AST) → same disk-backed treatment or per-module restructure; (d) ComptimeEvaluation full-store scan → streaming sequential block sweep (small resident window — it is already a single linear pass); (e) `error_code_registry` (module-backed) + `global_decls`/`lir_fns` survivors. Classify each as mechanical / needs-design / blocked.
+
+- [ ] **Step 3: Pool-ceiling estimate**
+
+For the STREAMING build (write-through): `pool.peak` ≈ bounded parser buffer + resident block window + scratch + perm + type_db + resolution-table window (if streamed) — state whether pool ≤ 16,384 K is reachable, and the RSS bound. Compare against the INCREMENTAL path (4(b)+M6: 16,727 KiB live / ~48 MiB pool). Note the monotonic-pool subtlety: streaming caps the bump (never fully materialized), so it is the only approach that can guarantee ≤16 MiB pool.
+
+- [ ] **Step 4: Complete-path decision (go/no-go) + report**
+
+Issue the recommendation + the complete ordered task list:
+- **(a) STREAM** — new execution tasks (S-1 node-block storage + write-through; S-2 accessor migration of the ~281 sites; S-3 resolution-table streaming; S-4 comptime streaming sweep), each with its own gate (4 MD5 byte-identical, golden 9/9, self-compile, pool measure).
+- **(b) INCREMENTAL** — keep 4(b)-1 → 4(b)-2 → M6 → I-COMPACT → GATE, accept ~48 MiB pool / ~16.3 MiB live.
+State expected pool/RSS at each step of the recommended path so the operator can decide. Report + ledger + mnemoria (decision). Read-only: no source changes, no commit.
 
 ---
 
