@@ -19,6 +19,9 @@ The ≤16 MiB POOL target is unreachable without a module-arena reset: `pool=` i
 **AMENDMENT 10 (operator-ruled 2026-08-26, streaming-AST evaluation — the complete path):**
 I-4B showed 4(b)+M6 cannot reach ≤16,384 K (post-M6 live ≈ 16,727 KiB ≈ 16.3 MiB, still ~343 KiB over). The operator's direction (m0805/m0810) corrects the "AST spill blocked" framing: **per-module** dumping is blocked (interleaved flat node array + node_idx-keyed `resolved_types`/`comptime_values`/`Symbol.decl_node` + ComptimeEvaluation full-store scan), but **whole-AST streaming (write-through, always-on-disk)** is viable because the AST is **write-once** (only the parser appends; 281 read sites, 0 writes) — the ideal property for paging (no dirty write-back, no COW). A new read-only **I-STREAM task** (added before 4(b)-1) designs the disk-backed node + resolution-table storage, estimates the pool ceiling, and issues the **complete-path decision**: (a) **STREAM** — new execution task list (node blocks → fault-in accessor → resolution-table streaming → comptime streaming sweep) that caps `pool.peak` (never fully materialized), vs (b) **INCREMENTAL** — keep 4(b)-1 → 4(b)-2 → M6 → I-COMPACT → GATE (lands ~16.3-16.7 MiB live / ~48 MiB pool, misses 16,384 K). I-STREAM's decision informs (and may supersede) 4(b)-1/4(b)-2/M6.
 
+**AMENDMENT 11 (operator-ruled 2026-08-26, corrected floor + streaming task decomposition):**
+The operator's "stage done → query only" probe (m0834) corrected the floor. Verified: `path_to_id`/`content_to_id` hash maps are **WRITE-ONCE in import resolution** (`u32ToU32MapPut` only at module_registry.zig:315/345/361/367/370/374/377), then query-only → spilleable. The interner (`string_interner.zig`) is NOT stage-done — `stringInternerIntern` has **196 call sites across all phases** (parse interns identifiers, lowering interns mangled names, emission interns type names) — but its `entries` are append-once+immutable (only `.next` rehashed by `stringInternerGrowBuckets`) and its `text` bytes are append-only (the ~4 MB bulk); it is READ constantly during emission (`stringInternerGet` on every name write). **Corrected floor:** ~38 MB is "stage-done → query only" (AST 9.9 + resolution tables 11 + LIR 10.4 + token array 6.6 + perm hash maps); the truly stay-resident core = interner + type_db + live working set ≈ 7–9 MB (NOT the earlier "perm ~6 MB irreducible" claim). **4(b)-1/4(b)-2 are SUPERSEDED** (streaming caps the bump better than a reset; see the SUPERSEDED notes on those tasks). A new **S-series** replaces M6, ordered **lesser → higher risk**, each item an I (design/census, read-only) + F (implement) pair with a per-step gate (4 MD5 byte-identical-or-re-baselined + golden 9/9 + self-compile clean + `pool=` measure) and a decision outcome toward ≤16,384 K.
+
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
 ## Global Constraints
@@ -587,6 +590,8 @@ State expected pool/RSS at each step of the recommended path so the operator can
 
 ### Task 4(b)-1: Split LIR into a dedicated arena (mechanical, byte-neutral)
 
+> **SUPERSEDED by AMENDMENT 11 (operator m0843).** The streaming S-series (S-LIR) subsumes this — LIR is spilled/streamed directly instead of given its own arena so the module arena can be reset. Do NOT execute this task. Kept as a historical alternative.
+>
 > **AMENDMENT 9:** LIR is in the module arena only to survive lowering→emission. Give it its own arena so the module arena (AST + resolution tables) becomes resettable after lowering.
 
 **Files:**
@@ -617,6 +622,8 @@ Commit verbatim. Report arena-routing diff + gate evidence. Ledger + mnemoria (r
 
 ### Task 4(b)-2: Reset the module arena after lowering (pool tracks live)
 
+> **SUPERSEDED by AMENDMENT 11 (operator m0843).** Streaming (S-series) caps the pool bump better than a post-lowering reset, and the `error_code_registry` module-backed survivor makes the reset a hard stop anyway. Do NOT execute this task. Kept as a historical alternative.
+>
 > **AMENDMENT 9:** after 4(b)-1, everything in the module arena is dead post-`phase_LIRLowering`. Reset it at the Lowering→Emission boundary so the monotonic pool reuses those bytes (pool.peak → live, not cumulative). This is the genuinely hard, high-risk item — the enabler for both the ≤16 MiB pool target and M6 spill.
 
 **Files:**
@@ -645,34 +652,126 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 
 ---
 
-### Task M6: I/O spill (roadmap item 6 — RESERVE, gated on 4(b)-2)
+### Task S-LIR: Spill LIR to disk (LOWEST risk — self-contained per-fn)
+
+> **AMENDMENT 11 (supersedes M6):** LIR (10.4 MB) is the lowest-risk spill — self-contained per-fn scalar units (lir.zig:371-372), already relocated, per-module grouped (main.zig:775-776). Designed by I-STREAM S-5 + I-4B. F task only.
 
 **Files:**
-- Only if pool still > 16,384 K after 4(b)-2 (the reset). Otherwise skip (documented).
-- Modify: per I-4 + I-4B (per-module LIR spill clean; AST spill blocked on index-space surgery)
-- Commit: `perf: spill per-module LIR to disk (reserve)`
+- Modify: `sf/src/lir.zig`, `sf/src/main.zig` (per-module LIR spill/reload around `phase_C89Emission`), `sf/src/c89_emit.zig` (read via fault-in accessor if needed)
+- Commit: `perf: spill per-module LIR to disk`
 
 **Interfaces:**
-- Consumes: 4(b)-2 (reset — spill only pays after arena reset returns bytes; per-module LIR self-contained); I-4B ceiling.
-- Produces: pool crosses ≤16,384 K if the post-reset live still exceeds it.
+- Consumes: I-STREAM S-5 design; I-4B (LIR live ~10.4 MB during lowering; emission reads LIR only).
+- Produces: LIR no longer resident as a full 10.4 MB bump; pool drops ~8 MB toward the S-series floor.
 
-- [ ] **Step 1: Decide (gate)**
-
-Measure `pool=` after 4(b)-2. If ≤16,384 K: mark task SKIPPED with the measurement as evidence (report + ledger). If >: proceed.
-
-- [ ] **Step 2: Implement per-module LIR spill**
-
-Per I-4: spill per-module LIR to disk before emission, reload per module; requires the I-2 reset path. Report STOP if AST-side spill is required (index-space surgery) — present to operator.
-
-- [ ] **Step 3: Verify + commit + report + ledger + memory**
-
-Pool ≤16,384 K; golden runtime matches; 4 MD5 keep-or-re-baseline. Commit verbatim (or "docs: spill reserve not required").
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)** — capture `/tmp/golden_SLIR/` (4 gates + 9 fixtures).
+- [ ] **Step 2: Implement** — write per-module LIR to disk after lowering, reload per module in `phase_C89Emission`; preserve the u32 index/ordinal space; Z98-clean.
+- [ ] **Step 3: Verify** — 4 MD5 byte-identical (or re-baseline with golden runtime evidence); golden 9/9; self-compile 40 .c/0 err; ref 0-warning; `pool=` drops toward the measured floor (record).
+- [ ] **Step 4: Commit + report + ledger + memory** — commit verbatim.
 
 ---
 
-### Task I-COMPACT: clever 16-B AstNode compaction evaluation (read-only, gated after M6)
+### Task S-HASH: Spill perm hash maps after import (LOW — stage-done)
 
-> **AMENDMENT 6 (operator m0694):** after A (M1/M2/M5 quick wins) and M6, evaluate whether the remaining memory need justifies the "clever" ~16-B AstNode compaction (span out-of-line + child_2 side table + payload u32). Go/no-go recommendation only — no `sf/src` changes, no commit.
+> **AMENDMENT 11:** `path_to_id`/`content_to_id` are WRITE-ONCE in import resolution (module_registry.zig:315/345/361/367/370/374/377), then query-only. Small but proven stage-done → a clean first disk-backed win. I + F.
+
+**Files:**
+- Modify: `sf/src/module_registry.zig` (disk-back `path_to_id`/`content_to_id` after import resolution), `sf/src/allocator.zig` if a release path is needed
+- Commit: `perf: spill perm hash maps to disk after import resolution`
+
+**Interfaces:**
+- Consumes: the write-once finding (m0834/m0839); hash.zig U32ToU32Map.
+- Produces: perm shrinks by the hash-map footprint; establishes the write-through/fault-in pattern for later S items.
+
+- [ ] **Step 1: (I) census** — read-only: list every perm-arena hash map, its write phase and read phases, and size; confirm none is written after import resolution. Report to `.superpowers/sdd/task-MEMREFACTOR-report.md`.
+- [ ] **Step 2: Golden baseline** — capture `/tmp/golden_SHASH/`.
+- [ ] **Step 3: (F) implement** — disk-back the confirmed write-once maps (write-through on put, fault-in on get); Z98-clean.
+- [ ] **Step 4: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `pool=`/`perm=` drops (record).
+- [ ] **Step 5: Commit + report + ledger + memory** — commit verbatim.
+
+---
+
+### Task S-TOKEN: Stream the token array (LOW-MED — eliminates double-lex)
+
+> **AMENDMENT 11:** the token array (~330 K × 20 B ≈ 6.6 MB) is fully materialized in scratch before parsing, AND the source is lexed TWICE (`moduleScanDiscover` token-count scan + the real parse). The lexer is already streaming (`lexerNextToken`). A pull-parser removes both the materialization and the double-lex. I + F.
+
+**Files:**
+- Modify: `sf/src/parser.zig` (pull-token consumption; drop `parserInit(tokens:[]const Token)` full array), `sf/src/import_resolver.zig` (`moduleScanDiscover` count-only pre-sizing vs pull-parse), `sf/src/lexer.zig` if a push→pull interface is needed
+- Commit: `perf: stream tokens (pull-parser; drop token array + double-lex)`
+
+**Interfaces:**
+- Consumes: parser.zig:32-33/57 (token array); import_resolver.zig:33-73/146-148 (scan + pre-size).
+- Produces: scratch peak drops ~6.6 MB; single lex pass.
+
+- [ ] **Step 1: (I) census** — read-only: map every `tokens_ptr`/`tokens_len`/`peek`/`next` consumer in parser.zig; the AST-store pre-sizing dependency (`nodes_target = total_tokens*6/10`); classify mechanical vs needs-design. Report.
+- [ ] **Step 2: Golden baseline** — capture `/tmp/golden_STOKEN/`.
+- [ ] **Step 3: (F) implement** — pull-token consumption; Z98-clean; preserve byte-identical AST (same nodes/order).
+- [ ] **Step 4: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `scratch=` peak drops (record); matrix 21/21.
+- [ ] **Step 5: Commit + report + ledger + memory** — commit verbatim.
+
+---
+
+### Task S-AST: Block-based node storage (MED — designed by I-STREAM)
+
+> **AMENDMENT 11:** write-once AST (parser-only writer, ~276 read sites, 0 writes) → block-based disk-backed nodes with a fault-in accessor, preserving the u32 index space. Designed by I-STREAM S-1/S-2. F task.
+
+**Files:**
+- Modify: `sf/src/ast.zig` (block table + `store.node(idx)` accessor + write-through append), parser + all ~276 read sites (per I-STREAM census: 270 cast-form + 6 non-cast-form)
+- Commit: `perf: disk-backed block AST storage (write-through, fault-in accessor)`
+
+**Interfaces:**
+- Consumes: I-STREAM S-1/S-2 (4096-node/96 KB blocks, `blocks[idx>>12][idx & 0xFFF]`, resident ring W=8 + head-pin); M1 side tables (payload/extra_ranges block-parallel).
+- Produces: AST no longer a 9.9 MB resident bump; pool drops toward the bounded-buffer window.
+
+- [ ] **Step 1: Golden baseline** — capture `/tmp/golden_SAST/`.
+- [ ] **Step 2: Implement** — block storage + accessor + parser write-through; migrate the ~276 read sites; Z98-clean; keep u32 indices.
+- [ ] **Step 3: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `pool=`/`mod=` drop (record); matrix 21/21.
+- [ ] **Step 4: Commit + report + ledger + memory** — commit verbatim.
+
+---
+
+### Task S-RES: Stream the resolution tables (HIGHER — ~205 sites)
+
+> **AMENDMENT 11:** `resolved_types`/`comptime_values` (~11 MB, node_idx-keyed, built in semantic analysis, queried in lowering/emission) → same disk-backed treatment or per-module restructure. Designed by I-STREAM S-3. F task; the linear-probing hash (hash.zig:61) is the complication.
+
+**Files:**
+- Modify: `sf/src/resolved_type_table.zig` (+ comptime_values), ~182 call sites across 6 files (per I-STREAM census), `sf/src/hash.zig` if the open-addressing needs a disk-backed variant
+- Commit: `perf: stream resolution tables (resolved_types/comptime_values disk-backed)`
+
+**Interfaces:**
+- Consumes: I-STREAM S-3 (dense-res rewrite, ~205 sites, linear probing); ComptimeEvaluation full-store scan → streaming sweep (main.zig:393-394).
+- Produces: resolution tables no longer an 11 MB resident bump.
+
+- [ ] **Step 1: Golden baseline** — capture `/tmp/golden_SRES/`.
+- [ ] **Step 2: Implement** — disk-back the tables or restructure per-module; migrate the ~182 sites; streaming comptime sweep; Z98-clean.
+- [ ] **Step 3: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `pool=` drops (record).
+- [ ] **Step 4: Commit + report + ledger + memory** — commit verbatim.
+
+---
+
+### Task S-INTERNER: Write-through interner text (HIGHEST — read-constantly)
+
+> **AMENDMENT 11:** the interner is NOT stage-done (196 `Intern` sites across all phases) but its `entries` are append-once+immutable and its `text` bytes are append-only — the ~4 MB bulk. It is READ constantly during emission. The highest-risk item: write-through the text+entries to disk, fault-in on `stringInternerGet`, keeping the mutable `buckets` resident. I + F — do this LAST, only if the pool is still over target after S-LIR..S-RES.
+
+**Files:**
+- Modify: `sf/src/string_interner.zig` (disk-backed entries/text + fault-in `stringInternerGet`)
+- Commit: `perf: write-through interner to disk (fault-in on lookup)`
+
+**Interfaces:**
+- Consumes: m0839 finding (entries immutable, text append-only, buckets mutable, read-constantly).
+- Produces: perm shrinks by the ~4 MB text bulk; the emission read path faults per name.
+
+- [ ] **Step 1: (I) census** — read-only: measure per-phase interner read volume (how much text is touched in emission vs other phases); decide fault-in granularity + whether emission can batch lookups. Report + STOP-present if the read cost is prohibitive.
+- [ ] **Step 2: Golden baseline** — capture `/tmp/golden_SINT/`.
+- [ ] **Step 3: (F) implement** — write-through append + fault-in `stringInternerGet`; keep `buckets` resident; Z98-clean.
+- [ ] **Step 4: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `perm=` drops (record); emission wall acceptable.
+- [ ] **Step 5: Commit + report + ledger + memory** — commit verbatim.
+
+---
+
+### Task I-COMPACT: clever 16-B AstNode compaction evaluation (read-only, orthogonal; gated after the S-series)
+
+> **AMENDMENT 6 + 11 (operator m0694/m0843):** I-COMPACT (span out-of-line + child_2 side table + payload u32 → ~16 B nodes) is ORTHOGONAL to the S-series: under streaming it shrinks the block size + resident window rather than the pool bump directly. Evaluate it AFTER the S-series, only if the pool is still over 16,384 K and the remaining gap is the AST node size. Go/no-go recommendation only — no `sf/src` changes, no commit.
 
 **Files:**
 - Report: `.superpowers/sdd/task-MEMREFACTOR-report.md` (append `## I-COMPACT` section)
@@ -711,7 +810,7 @@ Go/no-go: recommend B ONLY if the post-A+M6 gap to ≤16 MiB is not closed by A+
 
 - [ ] **Step 1: Full gate battery**
 
-4 MD5 (keep-or-re-baseline with golden evidence); matrix 21/21; full corpus sweep vs **golden sample** (RUNTIME must match everywhere; byte-identity diffs documented) — 405 dirs = 330 mi_matrix (incl. W2-1 fixture `emission_global_alias_xmod`) + 21 z98 + 54 top-level repro; self-compile 0 errors; `--track-memory` self-compile `pool=` ≤ 16,384 K (or documented spill-reserve + I-COMPACT verdict).
+4 MD5 (keep-or-re-baseline with golden evidence); matrix 21/21; full corpus sweep vs **golden sample** (RUNTIME must match everywhere; byte-identity diffs documented) — 405 dirs = 330 mi_matrix (incl. W2-1 fixture `emission_global_alias_xmod`) + 21 z98 + 54 top-level repro; self-compile 0 errors; `--track-memory` self-compile `pool=` ≤ 16,384 K (or the S-series outcome + I-COMPACT verdict as the documented residual).
 
 - [ ] **Step 2: Warning-clean confirmation**
 
