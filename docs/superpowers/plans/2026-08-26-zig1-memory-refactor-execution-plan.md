@@ -664,9 +664,11 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 - Consumes: I-STREAM S-5 design; I-4B (LIR live ~10.4 MB during lowering; emission reads LIR only).
 - Produces: LIR no longer resident as a full 10.4 MB bump; pool drops ~8 MB toward the S-series floor.
 
+> **AMENDMENT 12 (operator-ruled 2026-08-26, after S-LIR-F commit `eb203fe8`):** S-LIR is confirmed as **stream-during-lowering** (serialize each `LirFunction` to disk as it is lowered; keep only a disk-slot table resident; fault-in per function during emission) — NOT spill-after-lowering, which cannot lower `pool.peak` (monotonic bump). The S-LIR-F implementation self-declared `fopen/fread/fputc/fclose/fseek` externs in `sf/src/lir_stream.zig` and used byte-at-a-time `fputc` — REJECTED. All disk I/O externs MUST live in `sf/src/pal.zig` (the platform layer, Win9x target); `lir_stream.zig` must `@import("pal.zig")` and use pal's API. Use bulk `fwrite` (declare `extern "c" fn fwrite(buf: [*]const u8, size: u32, count: u32, file: *void) u32;` in pal.zig mirroring `fread`) — the earlier `[*]const void` form failed because Z98 emits `void*` (drops `const` on `void`); `[*]const u8` emits `const unsigned char*`, analogous to the warning-clean `fread([*]u8,…)`. Warnings may appear: if `fwrite([*]const u8,…)` still trips `-Wbuiltin-declaration-mismatch`, a documented `-Wno-builtin-declaration-mismatch` carve-out on the warning gate is acceptable (solve later) — do NOT work around it architecturally.
+
 - [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)** — capture `/tmp/golden_SLIR/` (4 gates + 9 fixtures).
-- [ ] **Step 2: Implement** — write per-module LIR to disk after lowering, reload per module in `phase_C89Emission`; preserve the u32 index/ordinal space; Z98-clean.
-- [ ] **Step 3: Verify** — 4 MD5 byte-identical (or re-baseline with golden runtime evidence); golden 9/9; self-compile 40 .c/0 err; ref 0-warning; `pool=` drops toward the measured floor (record).
+- [ ] **Step 2: Implement** — stream each LirFunction to disk as lowered (AMENDMENT 12); all I/O externs in `pal.zig` (add `fwrite`); `lir_stream.zig` imports pal, no self-declared externs, bulk `fwrite` not `fputc`; reload per module in `phase_C89Emission`; preserve the u32 index/ordinal space; Z98-clean.
+- [ ] **Step 3: Verify** — 4 MD5 byte-identical (or re-baseline with golden runtime evidence); golden 9/9; self-compile 40 .c/0 err; ref 0-warning (or documented `-Wno-builtin-declaration-mismatch` carve-out per AMENDMENT 12); `pool=` drops toward the measured floor (record).
 - [ ] **Step 4: Commit + report + ledger + memory** — commit verbatim.
 
 ---
