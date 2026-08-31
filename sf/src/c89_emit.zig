@@ -2953,7 +2953,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
-                .call_direct => |cd| {
+                .call_direct => |cd_slot| {
+                    var cd = lir_mod.lirSideGetCallDirect(lir_fn, cd_slot);
                     if (cd.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, cd.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
@@ -2973,7 +2974,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
-                .tail_call => |tc| {
+                .tail_call => |tc_slot| {
+                    var tc = lir_mod.lirSideGetTailCall(lir_fn, tc_slot);
                     if (tc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, tc.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
@@ -6106,7 +6108,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
-         .call_direct => |c| {
+         .call_direct => |c_slot| {
+            var c = lir_mod.lirSideGetCallDirect(emitter.current_fn, c_slot);
             if (pal.isMarkersEnabled()) {
             var mkc: []const u8 = "/*==MARKER_CALL n=";
             bufferedWriterWrite(&emitter.writer, mkc);
@@ -6279,7 +6282,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             bufferedWriterWrite(&emitter.writer, s2);
                }
         },
-         .tail_call => |tc| {
+         .tail_call => |tc_slot| {
+            var tc = lir_mod.lirSideGetTailCall(emitter.current_fn, tc_slot);
             var fn_name: []const u8 = undefined;
             if (tc.is_indirect == @intCast(u8, 1)) {
                 fn_name = resolveTempName(emitter, tc.callee);
@@ -6631,7 +6635,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
         .builtin_socket_recv => |bsr| {
             emitSocketSendRecv(emitter, bsr.sock, bsr.buf, bsr.len, bsr.result, @intCast(u8, 1));
         },
-        .builtin_socket_select => |bssel| {
+        .builtin_socket_select => |bssel_slot| {
+            var bssel = lir_mod.lirSideGetSocketSelect(emitter.current_fn, bssel_slot);
             emitSocketSelect(emitter, bssel.nfds, bssel.readfds, bssel.writefds, bssel.exceptfds, bssel.timeout_ms, bssel.result);
         },
         .builtin_socket_fd_zero => |bsfz| {
@@ -7050,11 +7055,11 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .addr_of => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.operand); },
                 .addr_of_field => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); },
                 .wrap_optional => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
-                .call_direct => |c| { var ai: u32 = @intCast(u32, 0); while (ai < c.args_count) : (ai += @intCast(u32, 1)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.args_start + ai); } },
+                .call_direct => |c_slot| { var c = lir_mod.lirSideGetCallDirect(lir_fn, c_slot); var ai: u32 = @intCast(u32, 0); while (ai < c.args_count) : (ai += @intCast(u32, 1)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.args_start + ai); } },
                 .va_start => |vs| { dceMarkReadPos(max_temp, tid_to_pos, read_count, vs.last_param_temp); },
                 .va_arg => |va| { dceMarkReadPos(max_temp, tid_to_pos, read_count, va.va_list_temp); },
                 .va_end => |ve| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ve.va_list_temp); },
-                .tail_call => |tc| { if (tc.is_indirect != @intCast(u8, 0)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, tc.callee); } var ai: u32 = @intCast(u32, 0); while (ai < tc.args_count) : (ai += @intCast(u32, 1)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, tc.args_start + ai); } dceProtectPos(max_temp, tid_to_pos, protected_arr, tc.result); },
+                .tail_call => |tc_slot| { var tc = lir_mod.lirSideGetTailCall(lir_fn, tc_slot); if (tc.is_indirect != @intCast(u8, 0)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, tc.callee); } var ai: u32 = @intCast(u32, 0); while (ai < tc.args_count) : (ai += @intCast(u32, 1)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, tc.args_start + ai); } dceProtectPos(max_temp, tid_to_pos, protected_arr, tc.result); },
                 .unwrap_optional => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .unwrap_optional_abi => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .check_optional => |c| { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.value); },
@@ -7087,7 +7092,7 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .builtin_socket_connect => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.sock); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.port); dceProtectPos(max_temp, tid_to_pos, protected_arr, b.result); },
                 .builtin_socket_send => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.sock); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.buf); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.len); dceProtectPos(max_temp, tid_to_pos, protected_arr, b.result); },
                 .builtin_socket_recv => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.sock); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.buf); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.len); dceProtectPos(max_temp, tid_to_pos, protected_arr, b.result); },
-                .builtin_socket_select => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.nfds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.readfds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.writefds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.exceptfds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.timeout_ms); dceProtectPos(max_temp, tid_to_pos, protected_arr, b.result); },
+                .builtin_socket_select => |b_slot| { var b = lir_mod.lirSideGetSocketSelect(lir_fn, b_slot); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.nfds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.readfds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.writefds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.exceptfds); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.timeout_ms); dceProtectPos(max_temp, tid_to_pos, protected_arr, b.result); },
                 .builtin_socket_fd_zero => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.set); },
                 .builtin_socket_fd_set => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.fd); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.set); },
                 .builtin_socket_fd_isset => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.fd); dceMarkReadPos(max_temp, tid_to_pos, read_count, b.set); dceProtectPos(max_temp, tid_to_pos, protected_arr, b.result); },

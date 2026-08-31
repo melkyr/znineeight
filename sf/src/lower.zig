@@ -2931,15 +2931,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  var fnr_rm: []const u8 = "FNR:R"; pal.markerWriteInt(fnr_rm, fp.return_type);
                  var fnr_tm: []const u8 = "FNR:T"; pal.markerWriteInt(fnr_tm, result);
                   var call_name: u32 = fp.name_id;
-                 emitInst(self, LirInst{ .call_direct = .{
-                     .name_id = call_name,
-                     .module_id = fp.module_id,
-                    .args_start = args_start,
-                    .args_count = @intCast(u32, ec.len),
-                    .result = result,
-                    .return_type = fp.return_type,
-                     .is_extern = fp.is_extern,
-                } });
+                 var cd_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = call_name, .module_id = fp.module_id, .args_start = args_start, .args_count = @intCast(u32, ec.len), .result = result, .return_type = fp.return_type, .is_extern = fp.is_extern });
+                 emitInst(self, LirInst{ .call_direct = cd_slot });
                  return result;
                }
              else if (crt_ty.kind == type_mod.TypeKind.ptr_type) {
@@ -3103,15 +3096,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     var adx1m: []const u8 = "m"; pal.markerWrite(adx1m);
                                     var adx1mb: [10]u8 = undefined; var adx1ml = itoa_mod.itoa(target_mod_id, adx1mb[0..]); var adx1ms: usize = @intCast(usize, 9) - @intCast(usize, adx1ml); pal.markerWrite(adx1mb[adx1ms..@intCast(usize, 9)]);
                                     var adx1nl: []const u8 = "\n"; pal.markerWrite(adx1nl);
-                                    emitInst(self, LirInst{ .call_direct = .{
-                                        .name_id = fs.name_id,
-                                        .module_id = target_mod_id,
-                                        .args_start = call_ns,
-                                        .args_count = args_count,
-                                        .result = result,
-                                         .is_extern = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)),
-                                        .return_type = self._fn_ret_type,
-                                    } });
+                                     var cd2_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = fs.name_id, .module_id = target_mod_id, .args_start = call_ns, .args_count = args_count, .result = result, .return_type = self._fn_ret_type, .is_extern = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)) });
+                                     emitInst(self, LirInst{ .call_direct = cd2_slot });
     var lex_rt_m: []const u8 = "r"; pal.markerWrite(lex_rt_m);
     var lex_rt_b: [10]u8 = undefined; var lex_rt_l = itoa_mod.itoa(result, lex_rt_b[0..]); var lex_rt_s: usize = @intCast(usize, 9) - @intCast(usize, lex_rt_l); pal.markerWrite(lex_rt_b[lex_rt_s..@intCast(usize, 9)]);
     var lex_rt_nl: []const u8 = "\n"; pal.markerWrite(lex_rt_nl);
@@ -3204,15 +3190,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var adx2m: []const u8 = "m"; pal.markerWrite(adx2m);
                     var adx2mb: [10]u8 = undefined; var adx2ml = itoa_mod.itoa(sm.module_id, adx2mb[0..]); var adx2ms: usize = @intCast(usize, 9) - @intCast(usize, adx2ml); pal.markerWrite(adx2mb[adx2ms..@intCast(usize, 9)]);
                     var adx2nl: []const u8 = "\n"; pal.markerWrite(adx2nl);
-                    emitInst(self, LirInst{ .call_direct = .{
-                        .name_id = sm.name_id,
-                        .module_id = sm.module_id,
-                        .args_start = args_start,
-                        .args_count = args_count,
-                        .result = result,
-                         .is_extern = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)),
-                        .return_type = self._fn_ret_type,
-                    } });
+                    var cd3_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = sm.name_id, .module_id = sm.module_id, .args_start = args_start, .args_count = args_count, .result = result, .return_type = self._fn_ret_type, .is_extern = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)) });
+                    emitInst(self, LirInst{ .call_direct = cd3_slot });
                     return result;
                 }
             }
@@ -3462,7 +3441,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var ssel_ef = lowerExpr(self, ec[@intCast(usize, 3)]);
                     var ssel_tm = lowerExpr(self, ec[@intCast(usize, 4)]);
                     var ssel_res = nextTemp(self, type_mod.TYPE_I32);
-                    emitInst(self, LirInst{ .builtin_socket_select = .{ .nfds = ssel_nfds, .readfds = ssel_rf, .writefds = ssel_wf, .exceptfds = ssel_ef, .timeout_ms = ssel_tm, .result = ssel_res } });
+                    var ssel_slot = lir_mod.lirSideAppendSocketSelect(self.func, .{ .nfds = ssel_nfds, .readfds = ssel_rf, .writefds = ssel_wf, .exceptfds = ssel_ef, .timeout_ms = ssel_tm, .result = ssel_res });
+                    emitInst(self, LirInst{ .builtin_socket_select = ssel_slot });
                     return ssel_res;
                 }
                 return nextTemp(self, type_mod.TYPE_I32);
@@ -5140,16 +5120,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                                 if (ci.call_block_idx != saved_bb) {
                                     self.current_bb = ci.call_block_idx;
                                 }
-                                emitInst(self, LirInst{ .tail_call = .{
-                                    .callee = ci.callee,
-                                    .module_id = ci.module_id,
-                                    .args_start = ci.args_start,
-                                    .args_count = ci.args_count,
-                                    .result = ci.result,
-                                    .return_type = ci.return_type,
-                                    .is_indirect = ci.is_indirect,
-                                    .is_extern = ci.is_extern,
-                                } });
+                                var tc_slot = lir_mod.lirSideAppendTailCall(self.func, .{ .callee = ci.callee, .module_id = ci.module_id, .args_start = ci.args_start, .args_count = ci.args_count, .result = ci.result, .return_type = ci.return_type, .is_indirect = ci.is_indirect, .is_extern = ci.is_extern });
+                                emitInst(self, LirInst{ .tail_call = tc_slot });
                                 self.current_bb = saved_bb;
                                 self.block_terminated = @intCast(u8, 1);
                             }
@@ -5705,12 +5677,13 @@ fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
                 var inst = blk.insts.items[ii];
                 var tg = @enumToInt(inst.tag);
                 if (tg == @enumToInt(LirInst.call_direct)) {
-                    if (inst.call_direct.result == cur) {
+                    var cd = lir_mod.lirSideGetCallDirect(self.func, inst.call_direct);
+                    if (cd.result == cur) {
                         var is_self: u8 = @intCast(u8, 0);
-                        if (inst.call_direct.name_id == self.func.name_id and inst.call_direct.module_id == self.func.module_id) {
+                        if (cd.name_id == self.func.name_id and cd.module_id == self.func.module_id) {
                             is_self = @intCast(u8, 1);
                         }
-                        return CallInfo{ .is_self = is_self, .is_indirect = @intCast(u8, 0), .is_extern = inst.call_direct.is_extern, .callee = inst.call_direct.name_id, .module_id = inst.call_direct.module_id, .args_start = inst.call_direct.args_start, .args_count = inst.call_direct.args_count, .result = inst.call_direct.result, .return_type = inst.call_direct.return_type, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
+                        return CallInfo{ .is_self = is_self, .is_indirect = @intCast(u8, 0), .is_extern = cd.is_extern, .callee = cd.name_id, .module_id = cd.module_id, .args_start = cd.args_start, .args_count = cd.args_count, .result = cd.result, .return_type = cd.return_type, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
                     }
                 } else if (tg == @enumToInt(LirInst.call)) {
                     if (inst.call.result == cur) {
@@ -5940,6 +5913,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
     func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
     func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
+    func_ptr.side_table = lir_mod.lirSideEntryArrayListInit(self.alloc);
     func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
@@ -6037,6 +6011,7 @@ pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFu
     func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
     func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
     func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
+    func_ptr.side_table = lir_mod.lirSideEntryArrayListInit(self.alloc);
     func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, 0);
     func_ptr.is_pub = @intCast(u8, 0);

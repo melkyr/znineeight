@@ -43,11 +43,11 @@ pub const LirInst = union(enum) {
     addr_of: struct { operand: u32, result: u32 },
     addr_of_field: struct { base: u32, field_id: u32, result: u32 },
     wrap_optional: struct { value: u32, result: u32, type_id: TypeId },
-    call_direct: struct { name_id: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32, is_extern: u8 },
+    call_direct: u32, // side-table slot (see LirSideEntry / lirSideAppendCallDirect)
     va_start: struct { va_list_temp: u32, last_param_temp: u32 },
     va_arg: struct { va_list_temp: u32, type_id: u32, result: u32 },
     va_end: struct { va_list_temp: u32 },
-    tail_call: struct { callee: u32, module_id: u32, args_start: u32, args_count: u32, result: u32, return_type: u32, is_indirect: u8, is_extern: u8 },
+    tail_call: u32, // side-table slot (see LirSideEntry / lirSideAppendTailCall)
     func_ref: struct { name_id: u32, module_id: u32, result: u32 },
      unwrap_optional: struct { value: u32, result: u32 },
      unwrap_optional_abi: struct { value: u32, result: u32 },
@@ -93,13 +93,93 @@ pub const LirInst = union(enum) {
     builtin_socket_connect: struct { sock: u32, port: u32, result: u32 },
     builtin_socket_send: struct { sock: u32, buf: u32, len: u32, result: u32 },
     builtin_socket_recv: struct { sock: u32, buf: u32, len: u32, result: u32 },
-    builtin_socket_select: struct { nfds: u32, readfds: u32, writefds: u32, exceptfds: u32, timeout_ms: u32, result: u32 },
+    builtin_socket_select: u32, // side-table slot (see LirSideEntry / lirSideAppendSocketSelect)
     builtin_socket_fd_zero: struct { set: u32 },
     builtin_socket_fd_set: struct { fd: u32, set: u32 },
     builtin_socket_fd_isset: struct { fd: u32, set: u32, result: u32 },
     builtin_socket_close: struct { sock: u32 },
     nop: void,
 };
+
+pub const CallDirectData = struct {
+    name_id: u32,
+    module_id: u32,
+    args_start: u32,
+    args_count: u32,
+    result: u32,
+    return_type: u32,
+    is_extern: u8,
+};
+
+pub const TailCallData = struct {
+    callee: u32,
+    module_id: u32,
+    args_start: u32,
+    args_count: u32,
+    result: u32,
+    return_type: u32,
+    is_indirect: u8,
+    is_extern: u8,
+};
+
+pub const SocketSelectData = struct {
+    nfds: u32,
+    readfds: u32,
+    writefds: u32,
+    exceptfds: u32,
+    timeout_ms: u32,
+    result: u32,
+};
+
+// Per-fn side table for the 3 wide LirInst variants. LirInst holds the tag
+// (ordinals unchanged) plus a u32 slot; the operands live here. Relocated with
+// lirFunctionRelocateToModule so pointer stability holds after the scratch→module
+// move (I-3 Concern 2).
+pub const LirSideEntry = union {
+    call_direct: CallDirectData,
+    tail_call: TailCallData,
+    socket_select: SocketSelectData,
+};
+
+pub const LirSideEntryArrayList = struct {
+    items: [*]LirSideEntry,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn lirSideEntryArrayListInit(allocator: *Sand) LirSideEntryArrayList {
+    return LirSideEntryArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn lirSideEntryArrayListEnsureCapacity(self: *LirSideEntryArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(LirSideEntry)) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]LirSideEntry, raw);
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn lirSideEntryArrayListAppend(self: *LirSideEntryArrayList, value: LirSideEntry) void {
+    lirSideEntryArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn lirSideEntryArrayListGetSlice(self: *LirSideEntryArrayList) []LirSideEntry {
+    return self.items[0..self.len];
+}
 
 pub const LirInstArrayList = struct {
     items: [*]LirInst,
@@ -356,11 +436,42 @@ pub const LirFunction = struct {
     blocks: BasicBlockArrayList,
     hoisted_temps: TempDeclArrayList,
     switch_cases: SwitchCaseArrayList,
+    side_table: LirSideEntryArrayList,
     temp_variant_sub_field: hash_mod.U32ToU32Map,
     is_extern: u8,
     is_pub: u8,
     is_variadic: u8,
 };
+
+pub fn lirSideAppendCallDirect(lfn: *LirFunction, d: CallDirectData) u32 {
+    var slot = @intCast(u32, lfn.side_table.len);
+    lirSideEntryArrayListAppend(&lfn.side_table, LirSideEntry{ .call_direct = d });
+    return slot;
+}
+
+pub fn lirSideAppendTailCall(lfn: *LirFunction, d: TailCallData) u32 {
+    var slot = @intCast(u32, lfn.side_table.len);
+    lirSideEntryArrayListAppend(&lfn.side_table, LirSideEntry{ .tail_call = d });
+    return slot;
+}
+
+pub fn lirSideAppendSocketSelect(lfn: *LirFunction, d: SocketSelectData) u32 {
+    var slot = @intCast(u32, lfn.side_table.len);
+    lirSideEntryArrayListAppend(&lfn.side_table, LirSideEntry{ .socket_select = d });
+    return slot;
+}
+
+pub fn lirSideGetCallDirect(lfn: *LirFunction, slot: u32) CallDirectData {
+    return lfn.side_table.items[@intCast(usize, slot)].call_direct;
+}
+
+pub fn lirSideGetTailCall(lfn: *LirFunction, slot: u32) TailCallData {
+    return lfn.side_table.items[@intCast(usize, slot)].tail_call;
+}
+
+pub fn lirSideGetSocketSelect(lfn: *LirFunction, slot: u32) SocketSelectData {
+    return lfn.side_table.items[@intCast(usize, slot)].socket_select;
+}
 
 // Deep-copy a lowered LirFunction's array data out of the (per-phase) scratch
 // arena into a longer-lived arena (module). lowerFn/lowerModuleInit allocate
@@ -433,6 +544,18 @@ pub fn lirFunctionRelocateToModule(src_fn: LirFunction, module_alloc: *Sand) Lir
         switch_cases.len = src_fn.switch_cases.len;
         switch_cases.capacity = src_fn.switch_cases.len;
     }
+    var side_table = lirSideEntryArrayListInit(module_alloc);
+    if (src_fn.side_table.len > @intCast(usize, 0)) {
+        var raw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(LirSideEntry)) * src_fn.side_table.len, @intCast(usize, 4)) catch unreachable;
+        var items = @ptrCast([*]LirSideEntry, raw);
+        var si: usize = @intCast(usize, 0);
+        while (si < src_fn.side_table.len) : (si += @intCast(usize, 1)) {
+            items[si] = src_fn.side_table.items[si];
+        }
+        side_table.items = items;
+        side_table.len = src_fn.side_table.len;
+        side_table.capacity = src_fn.side_table.len;
+    }
     var tvsf = hash_mod.u32ToU32MapInit(module_alloc);
     if (src_fn.temp_variant_sub_field.capacity > @intCast(usize, 0)) {
         var cap = src_fn.temp_variant_sub_field.capacity;
@@ -462,6 +585,7 @@ pub fn lirFunctionRelocateToModule(src_fn: LirFunction, module_alloc: *Sand) Lir
         .blocks = blocks,
         .hoisted_temps = hoisted_temps,
         .switch_cases = switch_cases,
+        .side_table = side_table,
         .temp_variant_sub_field = tvsf,
         .is_extern = src_fn.is_extern,
         .is_pub = src_fn.is_pub,
