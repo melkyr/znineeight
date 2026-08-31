@@ -472,33 +472,19 @@ Commit verbatim. Report sizeof + mod delta. Ledger + mnemoria (decision/refactor
 
 ### Task M5: AST side arrays + token value union (roadmap item 5)
 
+> **AMENDMENT 8 (operator-ruled 2026-08-26): CLOSED AS UNFEASIBLE.** The Token 16 B target is not reachable without risk, verified by a read-only audit (implementer BLOCKED + controller re-check): `TokenValue` (`token.zig:122-127`) genuinely carries `int_val: u64` and `float_val: f64` — the Token is the **only carrier** of literal values into the AstStore pools, read at `parser.zig:539/546/550/562` + `dump_tokens.zig:26/29`. `sf/src` itself contains `>u32` literals (`4294967296`, `1099511628211`, …) and f64 literals; truncation would corrupt them. 16 B requires `packed` (rejected by zig0 — `token.zig:129-131` FIXME) or a module-side literal-value pool (I-3 Option A) / literal-text re-parse (Option B) — both deferred (I-COMPACT-era decision). The AST side-array part is already completed by M1 (payload → dense u32 table + `extra_ranges` u64 pool + literal pools). **No source change, no commit.** Token stays 20 B (live win was only ~60 KB — scratch transient).
+
 **Files:**
-- Modify: `sf/src/ast.zig` (side arrays for rarely-used node fields), `sf/src/token.zig` (TokenValue union → plain `u32` value :115-123)
-- Commit: `refactor: AST side arrays + Token 20->16B value union`
+- (no change — closed unfeasible, AMENDMENT 8)
+- Commit: (none)
 
 **Interfaces:**
-- Consumes: I-1/I-3 (Token 20 B actual; union-forced 8-align; plain u32 not packed); M1 (side-array machinery reused).
-- Produces: live drops ≈0.75-0.9 MB; Token = 16 B.
+- Consumes: I-1/I-3 + the M5 token-value audit (5 genuine u64/f64 read sites).
+- Produces: documented no-op; Token retained at 20 B; the token-value-pool option recorded for a future I-COMPACT decision.
 
-- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
+- [ ] **Step 1 (done — audit):** verified the 5 u64/f64 read sites + the zig0 `packed` rejection + M1-completed AST side arrays. Result: Token 16 B unfeasible without risk; M5 closed.
 
-Capture `/tmp/golden_M5/`.
-
-- [ ] **Step 2: Token value union → plain u32**
-
-token.zig: replace the `union { u64; f64; u32 } value` with a plain `u32` value (the `u64`/`f64` token payloads are not needed at runtime token scope — verify every `value` read site first). 20 → 16 B. NOT packed (zig0 can't). **Padding/alignment discipline (AMENDMENT 6):** if removing the union drops Token to 16 B naturally, keep it; do NOT reorder Token's fields to squeeze padding — report the actual sizeof if alignment keeps it higher.
-
-- [ ] **Step 3: AST side arrays (quick-win scope only)**
-
-Reuse M1's side-table machinery for the extra-children / literal-value data already moved out of the payload. **Scope (AMENDMENT 6, operator m0694):** the clever compaction — moving `child_2` (10/112 kinds) and `span_start`/`span_len` out-of-line — is **I-COMPACT's** job (B, gated after M6), NOT M5's. M5 stays the quick win (different-indices) only. Z98-clean.
-
-- [ ] **Step 4: Verify**
-
-Rebuild. Emitted Token = 16 B; AstNode unchanged from M1. `--track-memory` self-compile `mod=` drops ≈0.75-0.9 MB. Self-compile 0 errors. 4 MD5 gates byte-identical + golden runtime matches. **If live now crosses ≤16 MiB (optimistic edge), note it; the pessimistic edge needs M6.**
-
-- [ ] **Step 5: Commit + report + ledger + memory**
-
-Commit verbatim. Report sizeof + live delta + whether ≤16 MiB is crossed. Ledger + mnemoria (decision/refactor).
+- [ ] **Step 2 (done):** report the finding to `.superpowers/sdd/task-MEMREFACTOR-report.md` (`## M5 fix` — BLOCKED audit + options + controller confirmation). No source change, no commit. Ledger + mnemoria (decision).
 
 ---
 
