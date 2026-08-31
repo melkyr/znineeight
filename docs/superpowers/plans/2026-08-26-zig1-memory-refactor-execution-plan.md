@@ -436,23 +436,25 @@ Commit verbatim. Report sizeof + mod-arena delta. Ledger + mnemoria (decision/re
 
 ---
 
-### Task M2: LirInst 32→20 B (roadmap item 2)
+### Task M2: LirInst 32→24 B (roadmap item 2)
+
+> **AMENDMENT 7 (operator-ruled 2026-08-26, alignment check):** the original "20 B" target is **unmeetable** — i386 `gcc -m32` 4-byte alignment makes `enum_const` (u64 + 3×u32 = 20 B) the floor after side-tabling the call variants; the literal "call/tail_call" scope alone yields **28 B** (because `builtin_socket_select` = 24 B becomes the union max). **Corrected target = 24 B**: side-table `tail_call` (28) + `call_direct` (28) + `builtin_socket_select` (24) → union max = `enum_const` 20 → struct = tag(4) + 20 = 24 B. `enum_const.value u64` STAYS in-node (reaching 20 B would require side-tabling it too — marginal, rejected). Indices stay u32.
 
 **Files:**
-- Modify: `sf/src/lir.zig` (union(enum) :22-102 reshape; wide variants tail_call/call_direct 28 B → side table) + all `switch(inst)` consumers (c89_emit.zig:2780/4324/6308, lower.zig:5699-5860, construction sites lower.zig:2934/5136/2523/1652/1668) + `lirFunctionRelocateToModule` (lir.zig:373-470)
-- Commit: `refactor: LirInst 32->20B (side-table wide operands)`
+- Modify: `sf/src/lir.zig` (union(enum) :22-102 reshape; side-table `tail_call` 28 B + `call_direct` 28 B + `builtin_socket_select` 24 B) + all `switch(inst)` consumers (c89_emit.zig:2780/4324/6308, lower.zig:5699-5860, construction sites lower.zig:2934/5136/2523/1652/1668) + `lirFunctionRelocateToModule` (lir.zig:373-470)
+- Commit: `refactor: LirInst 32->24B (side-table call/tail_call/socket_select operands)`
 
 **Interfaces:**
-- Consumes: I-1/I-3 (20 B natural bound — union payload ≤12 B under the 4 B tag; side-table the 6-8-operand variants).
-- Produces: module-arena live drops ≈1.3-1.5 MB; emitted LirInst = 20 B.
+- Consumes: I-1/I-3 (24 B floor — union max = `enum_const` 20 B after the 3 wide variants are side-tabled; side-table the 6-8-operand call variants).
+- Produces: module-arena live drops ≈1.3-1.5 MB; emitted LirInst = 24 B.
 
 - [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
 
 Capture `/tmp/golden_M2/`.
 
-- [ ] **Step 2: Design the 20 B layout**
+- [ ] **Step 2: Design the 24 B layout**
 
-Reduce every variant's payload ≤12 B; move the wide operands (callee, module_id, args, return_type, is_indirect, is_extern for call/tail_call) into a side table (per-fn, relocated with `lirFunctionRelocateToModule` — see I-3 Concern 2 re pointer stability). Keep the `switch(inst)` dispatch working via the 4 B tag. **Padding/alignment discipline (AMENDMENT 6):** the u64 `int_const`/`float_const`/`enum_const` values stay u64 (genuine 8-byte values); do NOT realign variants or squeeze union padding to hit exactly 20 B — if the natural 4-aligned layout lands at 20 B, keep it; if it lands elsewhere, report the actual sizeof rather than forcing reordering. Operand indices stay u32.
+Move the wide operands (callee, module_id, args, return_type, is_indirect, is_extern for `tail_call`/`call_direct`; nfds/readfds/writefds/exceptfds/timeout_ms/result for `builtin_socket_select`) into a per-fn side table, relocated with `lirFunctionRelocateToModule` (see I-3 Concern 2 re pointer stability). Keep the `switch(inst)` dispatch working via the 4 B tag. **Padding/alignment discipline (AMENDMENT 6):** the u64 `int_const`/`float_const`/`enum_const` values stay u64 in-node (genuine 8-byte values); do NOT realign variants or squeeze union padding — `enum_const` 20 B is the accepted floor. Operand indices stay u32.
 
 - [ ] **Step 3: Apply the migration**
 
@@ -460,7 +462,7 @@ lir.zig new layout + side-table append/read helpers; update all constructors + c
 
 - [ ] **Step 4: Verify**
 
-Rebuild. Emitted LirInst sizeof = 20 B. `--track-memory` self-compile `mod=` drops ≈1.3-1.5 MB. Self-compile 0 errors. 4 MD5 gates byte-identical + golden runtime matches. TCO fixtures (tco_return_try/tco_defer/tco_factorial) still byte-equal to golden.
+Rebuild. Emitted LirInst sizeof = 24 B (or actual — report; do NOT force alignment tricks). `--track-memory` self-compile `mod=` drops ≈1.3-1.5 MB. Self-compile 0 errors. 4 MD5 gates byte-identical + golden runtime matches. TCO fixtures (tco_return_try/tco_defer/tco_factorial) still byte-equal to golden.
 
 - [ ] **Step 5: Commit + report + ledger + memory**
 
