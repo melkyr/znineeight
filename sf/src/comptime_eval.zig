@@ -110,9 +110,10 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     return tid;
 }
 
-fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?ComptimeVal {
+fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
+    var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.child_0 == self.size_of_id) {
-        var ec: []const u32 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var ec: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
@@ -121,7 +122,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.align_of_id) {
-        var ec: []const u32 = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var ec: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
@@ -130,7 +131,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node: AstNode, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.int_cast_id) {
-        var ec = ast_mod.astStoreGetExtraChildren(self.store, node.payload);
+        var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
         var inner = comptimeEvalEvaluateDepth(self, ec[@intCast(usize, 1)], depth);
         if (tid) |t| {
@@ -170,9 +171,9 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     if (node_idx == @intCast(u32, 0)) return null;
     var node = self.store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind == AstKind.int_literal) {
-        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u32, 0), .sig = true };
+        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))], .width_bits = @intCast(u32, 0), .sig = true };
     } else if (node.kind == AstKind.char_literal) {
-        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, node.payload)], .width_bits = @intCast(u32, 8), .sig = false };
+        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))], .width_bits = @intCast(u32, 8), .sig = false };
     } else if (node.kind == AstKind.bool_literal) {
         if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
         return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
@@ -210,12 +211,12 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
                node.kind == AstKind.shl or node.kind == AstKind.shr) {
         return comptimeEvalBinOp(self, node_idx, node.kind, depth);
     } else if (node.kind == AstKind.builtin_call) {
-        return comptimeEvalBuiltin(self, node, depth);
+        return comptimeEvalBuiltin(self, node_idx, depth);
     } else if (node.kind == AstKind.paren_expr) {
         return comptimeEvalEvaluateDepth(self, node.child_0, depth);
     } else if (node.kind == AstKind.ident_expr) {
         if (depth >= @intCast(u32, 16)) return null;
-        var name_id = self.store.identifiers.items[@intCast(usize, node.payload)];
+        var name_id = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
         var mi: usize = 0;
         while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
             var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);

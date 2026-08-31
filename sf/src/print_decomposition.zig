@@ -38,15 +38,15 @@ pub fn printDecompParseAndValidate(store: *AstStore, interner: *StringInterner, 
     if (node_idx == @intCast(u32, 0)) return null;
     var node = store.nodes.items[@intCast(usize, node_idx)];
     if (node.kind != AstKind.fn_call) return null;
-    var args = ast_mod.astStoreGetExtraChildren(store, node.payload);
+    var args = ast_mod.astStoreNodeExtraChildren(store, node_idx);
     if (args.len != @intCast(usize, 2)) return null;
     var fmt_node = store.nodes.items[@intCast(usize, args[0])];
     if (fmt_node.kind != AstKind.string_literal) return null;
-    var raw = interner_mod.stringInternerGet(interner, @intCast(u32, fmt_node.payload));
+    var raw = interner_mod.stringInternerGet(interner, ast_mod.astStoreNodePayload(store, args[0]));
     var spec_count = printDecompScanFormat(raw);
     var tup_node = store.nodes.items[@intCast(usize, args[1])];
     if (tup_node.kind != AstKind.tuple_literal) return null;
-    var fields = ast_mod.astStoreGetExtraChildren(store, tup_node.payload);
+    var fields = ast_mod.astStoreNodeExtraChildren(store, args[1]);
     var fcount: u8 = @intCast(u8, fields.len);
     if (spec_count != fcount) {
         var fmsg: []const u8 = "format string argument count mismatch";

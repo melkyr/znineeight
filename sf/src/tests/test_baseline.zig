@@ -36,7 +36,7 @@ pub fn main() void {
     var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = store.nodes.items[root];
-    var ec = ast_mod.astStoreGetExtraChildren(&store, node.payload);
+    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
     var count: u32 = 0;
     var i: usize = 0;
     while (i < ec.len) {

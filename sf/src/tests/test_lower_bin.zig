@@ -129,7 +129,7 @@ fn testLower() void {
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);
 
     var root = store.nodes.items[@intCast(usize, ast_root)];
-    var decls = ast_mod.astStoreGetExtraChildren(&store, root.payload);
+    var decls = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
     var di: usize = 0;
     var found_count: u32 = @intCast(u32, 0);
     var no_blocks: []const u8 = "function has no blocks";

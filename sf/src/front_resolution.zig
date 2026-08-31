@@ -73,7 +73,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
             var ast_root = mods[mi].ast_root;
             if (ast_root == @intCast(u32, 0)) continue;
             var root = ct.store.nodes.items[@intCast(usize, ast_root)];
-            var decls = ast_mod.astStoreGetExtraChildren(ct.store, root.payload);
+            var decls = ast_mod.astStoreNodeExtraChildren(ct.store, ast_root);
             var src_fid = mods[mi].source_file_id;
             var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, &ct.module_reg.path_to_id);
             var di: usize = 0;
@@ -93,7 +93,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                         var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);
                         if (init.kind == AstKind.ident_expr) {
                             if (init_type != type_mod.TYPE_UNDEFINED) {
-                                var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, decl.payload);
+                                var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(ct.store, decls[di]));
                                 type_mod.nameCachePut(ct.typereg, ck, init_type);
                             }
                         }
@@ -110,7 +110,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                             }
                         }
                         if (init_type != @intCast(u32, 0) and init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE) {
-                            var name_id: u32 = @intCast(u32, decl.payload);
+                            var name_id: u32 = ast_mod.astStoreNodePayload(ct.store, decls[di]);
                             var sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, name_id);
                             if (sym) |s| {
                                 if (s.type_id == @intCast(u32, 0)) {
@@ -149,7 +149,7 @@ pub fn resolveStmtTypes(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: 
         }
     }
     if (node.kind == AstKind.block) {
-        var decls = ast_mod.astStoreGetExtraChildren(ct.store, node.payload);
+        var decls = ast_mod.astStoreNodeExtraChildren(ct.store, node_idx);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             resolveStmtTypes(ct, module_id, decls[di], depth + @intCast(u32, 1));

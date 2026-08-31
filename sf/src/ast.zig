@@ -123,9 +123,8 @@ pub const AstNode = struct {
     child_0: u32,     // u32 — offset 12
     child_1: u32,     // u32 — offset 16
     child_2: u32,     // u32 — offset 20
-    payload: u64,     // u64 — offset 24
-}; // total: 32 bytes (32-bit layout)
-const zzz_astnode_sz = "ZZZ_ASTNODE_32B_OFFSETS_kind0_flags1_pad2_spanlen4_spanstart8_child0_12_child1_16_child2_20_payload_24";
+}; // total: 24 bytes (32-bit layout; payload moved to AstStore side tables)
+const zzz_astnode_sz = "ZZZ_ASTNODE_24B_OFFSETS_kind0_flags1_pad2_spanlen4_spanstart8_child0_12_child1_16_child2_20";
 
 pub const FnProto = struct {
     name_id: u32,
@@ -312,24 +311,37 @@ pub const AstStore = struct {
         len: usize,
         capacity: usize,
     },
+    payload: struct {
+        items: [*]u32,
+        len: usize,
+        capacity: usize,
+    },
+    extra_ranges: struct {
+        items: [*]u64,
+        len: usize,
+        capacity: usize,
+    },
     allocator: *Sand,
 };
 
-// Payload field semantics per AstKind:
-//   int_literal       → int_values index
-//   float_literal     → float_values index
-//   string_literal     → string_values index (interned string ID)
-//   ident_expr         → identifiers index (interned string ID)
-//   fn_decl           → fn_protos index
-//   fn_call, block, struct_decl, enum_decl, union_decl, swt_ex,
-//     tuple_literal, struct_init → extra_children packed (start << 16 | count)
-//   builtin_call      → interned string ID of builtin name
+// Payload side-table semantics (AstNode.payload removed; u32 value stored in
+// `store.payload`, parallel to `nodes`):
+//   int_literal, char_literal → int_values index
+//   float_literal            → float_values index
+//   string_literal           → string_values index (interned string ID)
+//   ident_expr               → identifiers index (interned string ID)
+//   fn_decl                  → fn_protos index
 //   var_decl, field_decl, param_decl, field_access, enum_literal, error_literal → name ID
 //   labeled_stmt, break_stmt, continue_stmt → label name ID (0=unlabeled)
-//   struct_init → extra_children (field_init nodes), child_0=base expr (0=anonymous)
+//   builtin_call             → builtin name ID (child_0); payload = extra-children index
 //   if_capture, while_capture, for_stmt → capture name ID
-//   import_expr       → path string ID
-//   array_init        → child_0=type_node, payload=extra_children (value exprs)
+//   import_expr              → path string ID
+//   fn_call, block, struct_decl, enum_decl, union_decl, swt_ex, tuple_literal,
+//     struct_init, array_init, module_root, swt_prong, error_set_decl, builtin_call
+//     → extra-children range index into `store.extra_ranges` (0 = no children)
+// The extra-children range pool stores the packed (start << 32 | count) with start
+// as u32 (69,026+ ranges on self-compile exceed u16) and slot 0 reserved as a
+// 0 sentinel so a payload-side value of 0 means "no range".
 
 pub fn astStoreInit(arena: *Sand) AstStore {
     var null_node = AstNode{
@@ -337,7 +349,6 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .span_start = @intCast(u32, 0), .span_len = @intCast(u32, 0),
         .child_0 = @intCast(u32, 0), .child_1 = @intCast(u32, 0),
         .child_2 = @intCast(u32, 0),
-        .payload = @intCast(u64, 0),
     };
     var store = AstStore{
         .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -347,9 +358,13 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .fn_protos = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .payload = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .extra_ranges = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .allocator = arena,
     };
     astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, arena, null_node);
+    u32ArrayListAppendInner(&store.payload.items, &store.payload.len, &store.payload.capacity, arena, @intCast(u32, 0));
+    u64ArrayListAppendInner(&store.extra_ranges.items, &store.extra_ranges.len, &store.extra_ranges.capacity, arena, @intCast(u64, 0));
     return store;
 }
 
@@ -402,31 +417,57 @@ pub fn astStoreEnsureExtraChildrenCapacity(store: *AstStore, new_capacity: usize
 }
 
 
-pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u64) u32 {
+pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
     var span_len: u32 = @intCast(u32, span_end - span_start);
     var node = AstNode{
         .kind = kind, .flags = flags,
         .span_start = span_start, .span_len = span_len,
         .child_0 = c0, .child_1 = c1, .child_2 = c2,
-        .payload = payload,
     };
     astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, store.allocator, node);
+    u32ArrayListAppendInner(&store.payload.items, &store.payload.len, &store.payload.capacity, store.allocator, payload);
     return @intCast(u32, store.nodes.len - 1);
 }
 
-pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u64 {
+pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
     var start = @intCast(u32, store.extra_children.len);
     var i: usize = 0;
     while (i < children.len) {
         u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);
         i += 1;
     }
-    return (@intCast(u64, start) << @intCast(u64, 32)) | @intCast(u64, children.len);
+    var range_idx = @intCast(u32, store.extra_ranges.len);
+    u64ArrayListAppendInner(&store.extra_ranges.items, &store.extra_ranges.len, &store.extra_ranges.capacity, store.allocator, (@intCast(u64, start) << @intCast(u64, 32)) | @intCast(u64, children.len));
+    return range_idx;
 }
 
 pub fn astStoreGetExtraChildren(store: *AstStore, payload: u64) []const u32 {
     var start: usize = @intCast(usize, payload >> 32);
     var count: usize = @intCast(usize, payload & @intCast(u64, 0xFFFFFFFF));
+    return store.extra_children.items[start .. start + count];
+}
+
+pub fn astStoreNodePayload(store: *AstStore, node_idx: u32) u32 {
+    return store.payload.items[@intCast(usize, node_idx)];
+}
+
+pub fn astStoreNodePayloadPacked(store: *AstStore, node_idx: u32, kind: AstKind) u64 {
+    var v = store.payload.items[@intCast(usize, node_idx)];
+    if (v == @intCast(u32, 0)) return @intCast(u64, 0);
+    if (nodeHasExtraChildren(kind) or kind == AstKind.builtin_call) {
+        return store.extra_ranges.items[@intCast(usize, v)];
+    }
+    return @intCast(u64, v);
+}
+
+pub fn astStoreNodeExtraChildren(store: *AstStore, node_idx: u32) []const u32 {
+    var range_idx = store.payload.items[@intCast(usize, node_idx)];
+    if (range_idx == @intCast(u32, 0)) {
+        return store.extra_children.items[0..0];
+    }
+    var packed_range = store.extra_ranges.items[@intCast(usize, range_idx)];
+    var start: usize = @intCast(usize, packed_range >> 32);
+    var count: usize = @intCast(usize, packed_range & @intCast(u64, 0xFFFFFFFF));
     return store.extra_children.items[start .. start + count];
 }
 
@@ -500,8 +541,8 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
         if (node_idx == 0) continue;
         var node = store.nodes.items[node_idx];
         callback(store, node_idx);
-        if (nodeHasExtraChildren(node.kind) and node.payload != 0) {
-            var ec = astStoreGetExtraChildren(store, node.payload);
+        if (nodeHasExtraChildren(node.kind) and astStoreNodePayload(store, node_idx) != 0) {
+            var ec = astStoreNodeExtraChildren(store, node_idx);
             var ei: usize = 0;
             while (ei < ec.len) {
                 stack[sp] = ec[ec.len - 1 - ei];
@@ -524,5 +565,7 @@ pub fn astStoreComputeMemory(store: *AstStore) u64 {
     total += @intCast(u64, store.float_values.len) * @sizeOf(f64);
     total += @intCast(u64, store.string_values.len) * @sizeOf(u32);
     total += @intCast(u64, store.fn_protos.len) * @sizeOf(FnProto);
+    total += @intCast(u64, store.payload.len) * @sizeOf(u32);
+    total += @intCast(u64, store.extra_ranges.len) * @sizeOf(u64);
     return total;
 }

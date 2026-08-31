@@ -12,6 +12,7 @@ const interner_mod = @import("string_interner.zig");
 const StringInterner = interner_mod.StringInterner;
 const AstStore = @import("ast.zig").AstStore;
 const AstKind = @import("ast.zig").AstKind;
+const ast_mod = @import("ast.zig");
 const pal = @import("pal.zig");
 
 fn resolveWellKnownTypeName(name: []const u8) u32 {
@@ -125,7 +126,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                 }
                 if (@enumToInt(init.kind) != 24) continue;
 
-                var dep_name = store.identifiers.items[@intCast(usize, init.payload)];
+                var dep_name = store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(store, decl_node.child_1))];
                 {
                     var c2_m: []const u8 = "CAT:dn"; pal.markerWriteInt(c2_m, dep_name);
                 }
@@ -203,7 +204,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
         var rt = resolved_sym.type_id;
 
         var decl_node = store.nodes.items[@intCast(usize, resolved_sym.decl_node)];
-        var alias_own_name: u32 = @intCast(u32, decl_node.payload & @intCast(u64, 0xFFFFFFFF));
+        var alias_own_name: u32 = ast_mod.astStoreNodePayload(store, resolved_sym.decl_node);
         var alias_own_text = interner_mod.stringInternerGet(interner, alias_own_name);
         var alias_own_canonical = interner_mod.stringInternerIntern(interner, alias_own_text);
 

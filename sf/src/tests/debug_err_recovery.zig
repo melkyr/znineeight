@@ -37,7 +37,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var p = parser_mod.parserInit(tk[0..], ss, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = store.nodes.items[root];
-    var child_count = @intCast(u32, node.payload & 0xFFFF);
+    var child_count = @intCast(u32, ast_mod.astStoreNodePayloadPacked(&store, root, node.kind) & @intCast(u64, 0xFFFF));
     var ok_msg: []const u8 = "OK count=";
     pal.stderr_write(ok_msg);
     var nc: [4]u8 = undefined;
@@ -46,7 +46,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     while (dc < 4) { nc[dc] = @intCast(u8, 48 + v % 10); dc += 1; v = v / 10; }
     pal.stderr_write(nc[dc-3..dc+1]);
     pal.stderr_write("\n");
-    var ec = ast_mod.astStoreGetExtraChildren(&store, node.payload);
+    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
     var ds: []const u8 = "ec_len=";
     pal.stderr_write(ds);
     var el: [4]u8 = undefined;

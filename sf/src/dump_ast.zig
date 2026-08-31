@@ -127,25 +127,27 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
     return buf[0..idx];
 }
 
-fn nodeGetNameId(store: *AstStore, node: AstNode) u32 {
+fn nodeGetNameId(store: *AstStore, node_idx: u32) u32 {
+    var node = store.nodes.items[@intCast(usize, node_idx)];
     switch (node.kind) {
-        AstKind.var_decl => { return @intCast(u32, node.payload); },
-        AstKind.field_decl => { return @intCast(u32, node.payload); },
-        AstKind.param_decl => { return @intCast(u32, node.payload); },
-        AstKind.field_access => { return @intCast(u32, node.payload); },
-        AstKind.enum_literal => { return @intCast(u32, node.payload); },
-        AstKind.error_literal => { return @intCast(u32, node.payload); },
-        AstKind.labeled_stmt => { return @intCast(u32, node.payload); },
-        AstKind.break_stmt => { return @intCast(u32, node.payload); },
-        AstKind.continue_stmt => { return @intCast(u32, node.payload); },
-        AstKind.if_capture => { return @intCast(u32, node.payload); },
-        AstKind.while_capture => { return @intCast(u32, node.payload); },
-        AstKind.for_stmt => { return @intCast(u32, node.payload); },
-        AstKind.builtin_call => { return @intCast(u32, node.payload); },
-        AstKind.import_expr => { return @intCast(u32, node.payload); },
+        AstKind.var_decl => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.field_decl => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.param_decl => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.field_access => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.enum_literal => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.error_literal => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.labeled_stmt => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.break_stmt => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.continue_stmt => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.if_capture => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.while_capture => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.for_stmt => { return ast_mod.astStoreNodePayload(store, node_idx); },
+        AstKind.builtin_call => { return @intCast(u32, ast_mod.astStoreNodePayloadPacked(store, node_idx, node.kind) & @intCast(u64, 0xFFFFFFFF)); },
+        AstKind.import_expr => { return ast_mod.astStoreNodePayload(store, node_idx); },
         AstKind.fn_decl => {
-            if (@intCast(usize, node.payload) < store.fn_protos.len) {
-                return store.fn_protos.items[node.payload].name_id;
+            var pl = ast_mod.astStoreNodePayload(store, node_idx);
+            if (@intCast(usize, pl) < store.fn_protos.len) {
+                return store.fn_protos.items[pl].name_id;
             }
             return @intCast(u32, 0);
         },
@@ -188,7 +190,7 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
             pal.stdout_write(op);
             pal.stdout_write(ks);
 
-            var name_id = nodeGetNameId(store, node);
+            var name_id = nodeGetNameId(store, idx);
             if (name_id != 0) {
                 pal.stdout_write(spc);
                 pal.stdout_write(q);
@@ -196,22 +198,25 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
                 pal.stdout_write(name);
                 pal.stdout_write(q);
             } else if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
-                if (@intCast(usize, node.payload) < store.int_values.len) {
-                    var val = store.int_values.items[node.payload];
+                var pl0 = ast_mod.astStoreNodePayload(store, idx);
+                if (@intCast(usize, pl0) < store.int_values.len) {
+                    var val = store.int_values.items[pl0];
                     pal.stdout_write(spc);
                     var fs = fmt.formatU64(val, fmt_buf[0..], 32);
                     pal.stdout_write(fs);
                 }
             } else if (node.kind == AstKind.float_literal) {
-                if (@intCast(usize, node.payload) < store.float_values.len) {
-                    var val = store.float_values.items[node.payload];
+                var pl1 = ast_mod.astStoreNodePayload(store, idx);
+                if (@intCast(usize, pl1) < store.float_values.len) {
+                    var val = store.float_values.items[pl1];
                     pal.stdout_write(spc);
                     var fs = fmt.formatF64(val, fmt_buf[0..], 32);
                     pal.stdout_write(fs);
                 }
             } else if (node.kind == AstKind.string_literal) {
-                if (@intCast(usize, node.payload) < store.string_values.len) {
-                    var str_id = store.string_values.items[node.payload];
+                var pl2 = ast_mod.astStoreNodePayload(store, idx);
+                if (@intCast(usize, pl2) < store.string_values.len) {
+                    var str_id = store.string_values.items[pl2];
                     pal.stdout_write(spc);
                     pal.stdout_write(q);
                     var str_val = interner_mod.stringInternerGet(interner, str_id);
@@ -219,8 +224,9 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
                     pal.stdout_write(q);
                 }
             } else if (node.kind == AstKind.ident_expr) {
-                if (@intCast(usize, node.payload) < store.identifiers.len) {
-                    var id_val = store.identifiers.items[@intCast(usize, node.payload)];
+                var pl3 = ast_mod.astStoreNodePayload(store, idx);
+                if (@intCast(usize, pl3) < store.identifiers.len) {
+                    var id_val = store.identifiers.items[@intCast(usize, pl3)];
                     pal.stdout_write(spc);
                     pal.stdout_write(q);
                     var id_str = interner_mod.stringInternerGet(interner, id_val);
@@ -276,8 +282,8 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
             var has_children: u8 = 0;
             if (node.child_0 != 0 or node.child_1 != 0 or node.child_2 != 0) {
                 has_children = 1;
-            } else if (ast_mod.nodeHasExtraChildren(node.kind) and node.payload != 0) {
-                var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+            } else if (ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
+                var ec = ast_mod.astStoreNodeExtraChildren(store, idx);
                 if (ec.len > 0) has_children = 1;
             }
 
@@ -290,8 +296,8 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
                 if (node.child_2 != 0) { st_idx[sp] = node.child_2; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
                 if (node.child_1 != 0) { st_idx[sp] = node.child_1; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
                 if (node.child_0 != 0) { st_idx[sp] = node.child_0; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
-                if (ast_mod.nodeHasExtraChildren(node.kind) and node.payload != 0) {
-                    var ec = ast_mod.astStoreGetExtraChildren(store, node.payload);
+                if (ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
+                    var ec = ast_mod.astStoreNodeExtraChildren(store, idx);
                     var ei: usize = 0;
                     while (ei < ec.len) {
                         var c = ec[ec.len - 1 - ei];

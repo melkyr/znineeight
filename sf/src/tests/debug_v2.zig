@@ -36,9 +36,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var p = parser_mod.parserInit(tk[0..], ss, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = store.nodes.items[root];
-    var child_count: u32 = @intCast(u32, node.payload & 0xFFFF);
+    var child_count: u32 = @intCast(u32, ast_mod.astStoreNodePayloadPacked(&store, root, node.kind) & @intCast(u64, 0xFFFF));
     if (child_count != 2) @panic("NOT-2-CHILDREN");
-    var ec = ast_mod.astStoreGetExtraChildren(&store, node.payload);
+    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
     var errs: u32 = 0;
     var i: usize = 0;
     while (i < ec.len) {

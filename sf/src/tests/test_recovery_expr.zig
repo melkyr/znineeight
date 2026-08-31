@@ -38,7 +38,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = store.nodes.items[root];
-    var child_count: u32 = @intCast(u32, node.payload & 0xFFFF);
+    var child_count: u32 = @intCast(u32, ast_mod.astStoreNodePayloadPacked(&store, root, node.kind) & @intCast(u64, 0xFFFF));
     var ct_msg: []const u8 = "child_count";
     pal.stderr_write(ct_msg);
 }

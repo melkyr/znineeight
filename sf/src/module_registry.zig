@@ -12,6 +12,7 @@ const ga_mod = @import("growable_array.zig");
 const U32ArrayList = ga_mod.U32ArrayList;
 const AstStore = @import("ast.zig").AstStore;
 const AstKind = @import("ast.zig").AstKind;
+const ast_mod = @import("ast.zig");
 
 pub const ModuleState = enum(u8) {
     pending,
@@ -562,11 +563,11 @@ pub fn moduleRegistryCollectIncludes(store: *AstStore, decls: []u32, c_includes:
     while (di < decls.len) : (di += @intCast(usize, 1)) {
         var decl = store.nodes.items[@intCast(usize, decls[di])];
         if (decl.kind == AstKind.c_include) {
-            ga_mod.u32ArrayListAppend(c_includes, @intCast(u32, decl.payload));
+            ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decls[di]));
         } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
             var init = store.nodes.items[@intCast(usize, decl.child_1)];
             if (init.kind == AstKind.c_include) {
-                ga_mod.u32ArrayListAppend(c_includes, @intCast(u32, init.payload));
+                ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decl.child_1));
             }
         }
     }

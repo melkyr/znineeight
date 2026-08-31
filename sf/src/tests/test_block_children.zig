@@ -66,7 +66,7 @@ pub fn main() void {
         pal.exit(1);
         return;
     }
-    var decls = ast_mod.astStoreGetExtraChildren(&store, root.payload);
+    var decls = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
     var fm: []const u8 = "decls.len=";
     pal.stderr_write(fm);
     writeU32(decls.len);
@@ -87,7 +87,7 @@ pub fn main() void {
             var nl: []const u8 = "\n";
             pal.stderr_write(nl);
             if (body.kind == AstKind.block) {
-                var ec = ast_mod.astStoreGetExtraChildren(&store, body.payload);
+                var ec = ast_mod.astStoreNodeExtraChildren(&store, body_idx);
                 var fm4: []const u8 = "block children count=";
                 pal.stderr_write(fm4);
                 writeU32(ec.len);

@@ -186,8 +186,8 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             if (root.kind == AstKind.module_root) {
                 var p1: []const u8 = "IRP:m"; pal_mod.markerWriteInt(p1, mod_id);
                 var p2: []const u8 = "IRP:n"; pal_mod.markerWriteInt(p2, ast_root);
-                var p3: []const u8 = "IRP:p"; pal_mod.markerWriteInt(p3, @intCast(u32, root.payload & @intCast(u64, 0xFFFFFFFF)));
-                var decls = ast_mod.astStoreGetExtraChildren(shared_store, root.payload);
+                var p3: []const u8 = "IRP:p"; pal_mod.markerWriteInt(p3, @intCast(u32, ast_mod.astStoreNodePayloadPacked(shared_store, ast_root, root.kind) & @intCast(u64, 0xFFFFFFFF)));
+                var decls = ast_mod.astStoreNodeExtraChildren(shared_store, ast_root);
                 var p4: []const u8 = "IRD:c"; pal_mod.markerWriteInt(p4, @intCast(u32, decls.len));
                 var di2: usize = @intCast(usize, 0);
                 while (di2 < decls.len) : (di2 += @intCast(usize, 1)) {
@@ -218,7 +218,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             var vr = shared_store.nodes.items[@intCast(usize, ve.ast_root)];
             if (vr.kind == AstKind.module_root) {
                 var v1: []const u8 = "IRV:m"; pal_mod.markerWriteInt(v1, vmi);
-                var vdecls = ast_mod.astStoreGetExtraChildren(shared_store, vr.payload);
+                var vdecls = ast_mod.astStoreNodeExtraChildren(shared_store, ve.ast_root);
                 var v2: []const u8 = "IRV:c"; pal_mod.markerWriteInt(v2, @intCast(u32, vdecls.len));
                 var vdi: usize = @intCast(usize, 0);
                 while (vdi < vdecls.len) : (vdi += @intCast(usize, 1)) {

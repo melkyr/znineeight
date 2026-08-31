@@ -41,7 +41,7 @@ pub fn main() void {
         var ast_root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
         var root: AstNode = store.nodes.items[@intCast(usize, ast_root)];
         if (root.kind == AstKind.module_root) {
-            var decls: []u32 = ast_mod.astStoreGetExtraChildren(&store, root.payload);
+            var decls: []u32 = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
             var di: usize = @intCast(usize, 0);
             while (di < decls.len) : (di += @intCast(usize, 1)) {
                 var decl: AstNode = store.nodes.items[@intCast(usize, decls[di])];

@@ -312,7 +312,7 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
     if (smods.len > @intCast(usize, 0) and smods[0].ast_root != @intCast(u32, 0)) {
         var sr = ctx.store.nodes.items[@intCast(usize, smods[0].ast_root)];
         if (sr.kind == AstKind.module_root) {
-            var sdl = ast_mod.astStoreGetExtraChildren(ctx.store, sr.payload);
+            var sdl = ast_mod.astStoreNodeExtraChildren(ctx.store, smods[0].ast_root);
             var sdi: usize = @intCast(usize, 0);
             var sl: []const u8 = "S0"; pal.markerWrite(sl);
             while (sdi < sdl.len) : (sdi += @intCast(usize, 1)) {
@@ -350,7 +350,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
         var tr2 = ctx.store.nodes.items[@intCast(usize, mods[0].ast_root)];
         if (tr2.kind == AstKind.module_root) {
-            var tdl = ast_mod.astStoreGetExtraChildren(ctx.store, tr2.payload);
+            var tdl = ast_mod.astStoreNodeExtraChildren(ctx.store, mods[0].ast_root);
             var tdi: usize = @intCast(usize, 0);
             var tl: []const u8 = "T0"; pal.markerWrite(tl);
             while (tdi < tdl.len) : (tdi += @intCast(usize, 1)) {
@@ -440,7 +440,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var ast_root = mods[mi].ast_root;
         if (ast_root == @intCast(u32, 0)) { var mz: []const u8 = "MZ"; pal.markerWrite(mz); continue; }
         var root = ctx.store.nodes.items[@intCast(usize, ast_root)];
-        var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+        var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, ast_root);
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
@@ -553,7 +553,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
             var root = ctx.store.nodes.items[@intCast(usize, mods[mi].ast_root)];
             if (root.kind == AstKind.module_root) {
                 var mr: []const u8 = "R"; pal.markerWrite(mr);
-                var decls = ast_mod.astStoreGetExtraChildren(ctx.store, root.payload);
+                var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, mods[mi].ast_root);
                 var decl_len: u32 = @intCast(u32, decls.len);
                 var dcount_buf: [20]u8 = undefined;
                 var dcount_len = itoa_mod.itoa(decl_len, dcount_buf[0..]);
@@ -584,7 +584,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
-                        var gv_name: u32 = @intCast(u32, decl.payload);
+                        var gv_name: u32 = ast_mod.astStoreNodePayload(ctx.store, decls[di]);
                         var gv_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mods[mi].id, gv_name);
                         if (gv_sym) |gvs| {
                             if (gvs.kind == sym_mod.SymbolKind.global) {
@@ -642,7 +642,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
         var ar = ctx.store.nodes.items[@intCast(usize, amods[0].ast_root)];
         if (ar.kind == AstKind.module_root) {
-            var adl = ast_mod.astStoreGetExtraChildren(ctx.store, ar.payload);
+            var adl = ast_mod.astStoreNodeExtraChildren(ctx.store, amods[0].ast_root);
             var adi: usize = @intCast(usize, 0);
             var al: []const u8 = "A0"; pal.markerWrite(al);
             while (adi < adl.len) : (adi += @intCast(usize, 1)) {

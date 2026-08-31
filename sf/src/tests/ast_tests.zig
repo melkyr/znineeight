@@ -47,7 +47,7 @@ fn testAstKindErrSentinel() void {
 }
 
 fn testAstNodeSize() void {
-    assertEqU32(@intCast(u32, @sizeOf(AstNode)), @intCast(u32, 32));
+    assertEqU32(@intCast(u32, @sizeOf(AstNode)), @intCast(u32, 24));
 }
 
 fn testFnProtoSize() void {
@@ -94,7 +94,7 @@ fn testAstStoreAddExtraChildren() void {
     children[2] = @intCast(u32, 30);
     var payload = ast_mod.astStoreAddExtraChildren(&store, children[0..3]);
     assertEqU32(store.extra_children.len, @intCast(usize, 3));
-    var retrieved = ast_mod.astStoreGetExtraChildren(&store, payload);
+    var retrieved = ast_mod.astStoreGetExtraChildren(&store, store.extra_ranges.items[@intCast(usize, payload)]);
     assertEqU32(retrieved.len, @intCast(usize, 3));
     assertEqU32(retrieved[0], @intCast(u32, 10));
     assertEqU32(retrieved[1], @intCast(u32, 20));
@@ -107,7 +107,7 @@ fn testAstStoreGetExtraChildren() void {
     var store = ast_mod.astStoreInit(&sand);
     var empty: []const u32 = undefined;
     var payload = ast_mod.astStoreAddExtraChildren(&store, empty[0..0]);
-    var retrieved = ast_mod.astStoreGetExtraChildren(&store, payload);
+    var retrieved = ast_mod.astStoreGetExtraChildren(&store, store.extra_ranges.items[@intCast(usize, payload)]);
     assertEqU32(retrieved.len, @intCast(usize, 0));
 }
 
@@ -228,11 +228,11 @@ fn validateNode(store: *AstStore, node_idx: u32) void {
     if (node.child_0 != 0 and @intCast(usize, node.child_0) >= store.nodes.len) { g_validate_ok = false; return; }
     if (node.child_1 != 0 and @intCast(usize, node.child_1) >= store.nodes.len) { g_validate_ok = false; return; }
     if (node.child_2 != 0 and @intCast(usize, node.child_2) >= store.nodes.len) { g_validate_ok = false; return; }
-    if (!ast_mod.nodeHasExtraChildren(node.kind) and node.payload != 0) {
+    if (!ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
         if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
-            if (@intCast(usize, node.payload) >= store.int_values.len) { g_validate_ok = false; return; }
+            if (@intCast(usize, ast_mod.astStoreNodePayload(store, node_idx)) >= store.int_values.len) { g_validate_ok = false; return; }
         } else if (node.kind == AstKind.float_literal) {
-            if (@intCast(usize, node.payload) >= store.float_values.len) { g_validate_ok = false; return; }
+            if (@intCast(usize, ast_mod.astStoreNodePayload(store, node_idx)) >= store.float_values.len) { g_validate_ok = false; return; }
         }
     }
 }

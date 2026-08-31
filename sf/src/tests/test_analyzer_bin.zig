@@ -32,7 +32,7 @@ fn testSignatureVoidParam() void {
     var param_buf: [1]u32 = undefined;
     param_buf[0] = param_node;
     var param_payload = ast_mod.astStoreAddExtraChildren(&store, param_buf[0..1]);
-    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, param_payload >> 32), .params_count = @intCast(u16, 1), .return_type_node = @intCast(u32, 0) };
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, store.extra_ranges.items[@intCast(usize, param_payload)] >> 32), .params_count = @intCast(u16, 1), .return_type_node = @intCast(u32, 0) };
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
@@ -76,7 +76,7 @@ fn testSignatureIncompleteType() void {
     var param_buf: [1]u32 = undefined;
     param_buf[0] = param_node;
     var param_payload = ast_mod.astStoreAddExtraChildren(&store, param_buf[0..1]);
-    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, param_payload >> 32), .params_count = @intCast(u16, 1), .return_type_node = @intCast(u32, 0) };
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, store.extra_ranges.items[@intCast(usize, param_payload)] >> 32), .params_count = @intCast(u16, 1), .return_type_node = @intCast(u32, 0) };
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
