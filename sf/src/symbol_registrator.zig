@@ -236,7 +236,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             if (node.child_1 != 0) {
                 var init_node = store.nodes.items[@intCast(usize, node.child_1)];
                 if (init_node.kind == AstKind.import_expr) {
-                    var target = hash_mod.u32ToU32MapGet(&reg.path_to_id, ast_mod.astStoreNodePayload(store, node.child_1));
+                    var target = mr_mod.moduleRegistryPathToIdGet(reg, ast_mod.astStoreNodePayload(store, node.child_1));
                     var m5m: []const u8 = "M5:p"; pal_mod.markerWrite(m5m);
                     var m5pb: [20]u8 = undefined; var m5pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(store, node.child_1), m5pb[0..]); var m5ps: usize = @intCast(usize, 19) - @intCast(usize, m5pl); pal_mod.markerWrite(m5pb[m5ps..@intCast(usize, 19)]);
                     if (target) |mtid| {
@@ -393,7 +393,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         },
         AstKind.import_expr => {
             var path_id: u32 = ast_mod.astStoreNodePayload(store, decl_idx);
-            var target_mod_id = hash_mod.u32ToU32MapGet(&reg.path_to_id, path_id);
+            var target_mod_id = mr_mod.moduleRegistryPathToIdGet(reg, path_id);
             if (target_mod_id) |tid| {
                 var sym = sym_mod.Symbol{
                     .name_id = path_id,

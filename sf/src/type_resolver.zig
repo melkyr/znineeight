@@ -1138,7 +1138,7 @@ fn resolveImportFieldAlias(env: *TypeResolveEnv, module_reg: *mr_mod.ModuleRegis
         if (fi.kind != AstKind.field_access) return type_mod.TYPE_UNDEFINED;
         var fb = env.store.nodes.items[@intCast(usize, fi.child_0)];
         if (fb.kind != AstKind.import_expr) return type_mod.TYPE_UNDEFINED;
-        var t2 = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, ast_mod.astStoreNodePayload(env.store, fi.child_0));
+        var t2 = mr_mod.moduleRegistryPathToIdGet(module_reg, ast_mod.astStoreNodePayload(env.store, fi.child_0));
         if (t2) |m2| return resolveImportFieldAlias(env, module_reg, importer_mod_id, m2, ast_mod.astStoreNodePayload(env.store, fd.child_1), depth + @intCast(u32, 1));
     }
     return type_mod.TYPE_UNDEFINED;
@@ -1160,7 +1160,7 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
             if (init.kind != AstKind.field_access) { continue; }
             var base = env.store.nodes.items[@intCast(usize, init.child_0)];
             if (base.kind != AstKind.import_expr) { continue; }
-            var target = hash_mod.u32ToU32MapGet(&module_reg.path_to_id, ast_mod.astStoreNodePayload(env.store, init.child_0));
+            var target = mr_mod.moduleRegistryPathToIdGet(module_reg, ast_mod.astStoreNodePayload(env.store, init.child_0));
             if (target) |mtid| {
                 var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, ast_mod.astStoreNodePayload(env.store, decl.child_1), @intCast(u32, 0));
                 if (resolved != type_mod.TYPE_UNDEFINED) {

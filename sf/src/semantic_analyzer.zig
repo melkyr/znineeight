@@ -18,6 +18,7 @@ const pal_mod = @import("pal.zig");
 const itoa_mod = @import("util/itoa.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
+const mr_mod = @import("module_registry.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -81,10 +82,10 @@ pub const SemanticAnalyzer = struct {
     socket_fd_set_name_id: u32,
     socket_fd_isset_name_id: u32,
     socket_close_name_id: u32,
-    path_to_id: *hash_mod.U32ToU32Map,
+    module_reg: *mr_mod.ModuleRegistry,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map, path_to_id: *hash_mod.U32ToU32Map) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map, module_reg: *mr_mod.ModuleRegistry) SemanticAnalyzer {
     var und_text: []const u8 = "_";
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     var pc_text: []const u8 = "@ptrCast";
@@ -211,7 +212,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .socket_fd_set_name_id = sfs_id,
         .socket_fd_isset_name_id = sfi_id,
         .socket_close_name_id = scl_id,
-        .path_to_id = path_to_id,
+        .module_reg = module_reg,
     };
 }
 
@@ -447,7 +448,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         }
     } else if (base_node.kind == AstKind.import_expr) {
         var path_id: u32 = ast_mod.astStoreNodePayload(self.store, node.child_0);
-        var target = hash_mod.u32ToU32MapGet(self.path_to_id, path_id);
+        var target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id);
         if (target) |mtid| {
             var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, mtid, field_name_id);
             if (field_sym) |fs| {

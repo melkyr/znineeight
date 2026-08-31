@@ -299,6 +299,21 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
     import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+    var hash_spill_path: [512]u8 = undefined;
+    var hsp_len: usize = @intCast(usize, 0);
+    if (ctx.cli.output_dir_set) {
+        var od = ctx.cli.output_dir;
+        var oi: usize = @intCast(usize, 0);
+        while (oi < od.len and hsp_len < @intCast(usize, 511)) : (oi += @intCast(usize, 1)) { hash_spill_path[hsp_len] = od[oi]; hsp_len += @intCast(usize, 1); }
+        hash_spill_path[hsp_len] = @intCast(u8, '/'); hsp_len += @intCast(usize, 1);
+    } else {
+        hash_spill_path[hsp_len] = @intCast(u8, '.'); hsp_len += @intCast(usize, 1);
+        hash_spill_path[hsp_len] = @intCast(u8, '/'); hsp_len += @intCast(usize, 1);
+    }
+    var hash_tmp_name: []const u8 = ".zig1_hash.tmp";
+    var hi: usize = @intCast(usize, 0);
+    while (hi < hash_tmp_name.len and hsp_len < @intCast(usize, 511)) : (hi += @intCast(usize, 1)) { hash_spill_path[hsp_len] = hash_tmp_name[hi]; hsp_len += @intCast(usize, 1); }
+    mr_mod.moduleRegistrySpillHashMaps(ctx.module_reg, hash_spill_path[0..hsp_len]);
     var z_msg: []const u8 = "Z\n"; pal.markerWrite(z_msg);
 }
 
@@ -447,7 +462,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
-         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, &ctx.module_reg.path_to_id);
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ctx.store.nodes.items[@intCast(usize, decls[di])];

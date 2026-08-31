@@ -214,6 +214,13 @@ pub fn moduleResolverResolve(self: *ModuleResolver, importer_path: []const u8, t
     return null;
 }
 
+pub const HashMapSpillMeta = struct {
+    disk_off: u32,
+    capacity: usize,
+    count: usize,
+    spilled: u8,
+};
+
 pub const ModuleRegistry = struct {
     modules: ModuleEntryArrayList,
     import_edges_items: [*]u32,
@@ -228,6 +235,10 @@ pub const ModuleRegistry = struct {
     next_id: u32,
     path_to_id: hash_mod.U32ToU32Map,
     content_to_id: hash_mod.U32ToU32Map,
+    hash_spill_path: [512]u8,
+    hash_spill_path_len: usize,
+    path_to_id_spill: HashMapSpillMeta,
+    content_to_id_spill: HashMapSpillMeta,
     import_queue: ImportQueue,
 };
 
@@ -277,6 +288,10 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .next_id = @intCast(u32, 0),
         .path_to_id = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .content_to_id = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
+        .hash_spill_path = undefined,
+        .hash_spill_path_len = @intCast(usize, 0),
+        .path_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
+        .content_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .import_queue = importQueueInit(alloc, diag),
     };
 }
@@ -376,6 +391,113 @@ pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer
     importQueueEnqueue(&self.import_queue, mod_id);
     _ = hash_mod.u32ToU32MapPut(&self.path_to_id, path_id, mod_id);
     return mod_id;
+}
+
+const HASH_SPILL_READ_MODE: [*]const u8 = "rb";
+const HASH_SPILL_WRITE_MODE: [*]const u8 = "wb";
+
+fn hashSpillWriteU32(f: *void, v: u32) void {
+    var b: [4]u8 = undefined;
+    b[0] = @intCast(u8, v & @intCast(u32, 0xFF));
+    b[1] = @intCast(u8, (v >> @intCast(u32, 8)) & @intCast(u32, 0xFF));
+    b[2] = @intCast(u8, (v >> @intCast(u32, 16)) & @intCast(u32, 0xFF));
+    b[3] = @intCast(u8, (v >> @intCast(u32, 24)) & @intCast(u32, 0xFF));
+    pal_mod.streamWrite(f, b[0..]);
+}
+
+fn hashSpillReadU32(f: *void) u32 {
+    var b: [4]u8 = undefined;
+    pal_mod.streamRead(f, b[0..]);
+    var v: u32 = @intCast(u32, 0);
+    v = v | @intCast(u32, b[0]);
+    v = v | (@intCast(u32, b[1]) << @intCast(u32, 8));
+    v = v | (@intCast(u32, b[2]) << @intCast(u32, 16));
+    v = v | (@intCast(u32, b[3]) << @intCast(u32, 24));
+    return v;
+}
+
+fn hashSpillWriteMap(f: *void, m: *hash_mod.U32ToU32Map, meta: *HashMapSpillMeta, off: u32) void {
+    meta.disk_off = off;
+    meta.capacity = m.capacity;
+    meta.count = m.count;
+    meta.spilled = @intCast(u8, 1);
+    hashSpillWriteU32(f, @intCast(u32, m.capacity));
+    hashSpillWriteU32(f, @intCast(u32, m.count));
+    if (m.capacity > @intCast(usize, 0)) {
+        var keys_bytes = m.capacity * @intCast(usize, 4);
+        var vals_bytes = m.capacity * @intCast(usize, 4);
+        var keys_ptr: [*]const u8 = @ptrCast([*]const u8, m.keys);
+        var vals_ptr: [*]const u8 = @ptrCast([*]const u8, m.values);
+        var occ_ptr: [*]const u8 = @ptrCast([*]const u8, m.occupied);
+        var keys_slice: []const u8 = keys_ptr[0..keys_bytes];
+        var vals_slice: []const u8 = vals_ptr[0..vals_bytes];
+        var occ_slice: []const u8 = occ_ptr[0..m.capacity];
+        pal_mod.streamWrite(f, keys_slice);
+        pal_mod.streamWrite(f, vals_slice);
+        pal_mod.streamWrite(f, occ_slice);
+    }
+}
+
+pub fn moduleRegistrySpillHashMaps(self: *ModuleRegistry, spill_path: []const u8) void {
+    var i: usize = @intCast(usize, 0);
+    while (i < spill_path.len and i < @intCast(usize, 511)) : (i += @intCast(usize, 1)) {
+        self.hash_spill_path[i] = spill_path[i];
+    }
+    self.hash_spill_path_len = i;
+    self.hash_spill_path[i] = @intCast(u8, 0);
+    var f = pal_mod.streamOpen(spill_path, HASH_SPILL_WRITE_MODE) orelse return;
+    var off: u32 = @intCast(u32, 0);
+    hashSpillWriteMap(f, &self.path_to_id, &self.path_to_id_spill, off);
+    off += @intCast(u32, 8) + @intCast(u32, self.path_to_id.capacity) * @intCast(u32, 9);
+    hashSpillWriteMap(f, &self.content_to_id, &self.content_to_id_spill, off);
+    pal_mod.streamClose(f);
+    self.path_to_id.capacity = @intCast(usize, 0);
+    self.path_to_id.count = @intCast(usize, 0);
+    self.path_to_id.keys = undefined;
+    self.path_to_id.values = undefined;
+    self.path_to_id.occupied = undefined;
+    self.content_to_id.capacity = @intCast(usize, 0);
+    self.content_to_id.count = @intCast(usize, 0);
+    self.content_to_id.keys = undefined;
+    self.content_to_id.values = undefined;
+    self.content_to_id.occupied = undefined;
+}
+
+fn moduleRegistryFaultInPathToId(self: *ModuleRegistry) void {
+    if (self.path_to_id_spill.spilled == @intCast(u8, 0)) return;
+    if (self.hash_spill_path_len == @intCast(usize, 0)) return;
+    var f = pal_mod.streamOpen(self.hash_spill_path[0..self.hash_spill_path_len], HASH_SPILL_READ_MODE) orelse return;
+    pal_mod.streamSeek(f, @intCast(i32, self.path_to_id_spill.disk_off));
+    var cap: usize = @intCast(usize, hashSpillReadU32(f));
+    var cnt: usize = @intCast(usize, hashSpillReadU32(f));
+    if (cap > @intCast(usize, 0)) {
+        var raw_keys = alloc_mod.sandAlloc(self.path_to_id.alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
+        var raw_vals = alloc_mod.sandAlloc(self.path_to_id.alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
+        var raw_occ = alloc_mod.sandAlloc(self.path_to_id.alloc, @intCast(usize, 1) * cap, @intCast(usize, 4)) catch unreachable;
+        var keys_bytes = cap * @intCast(usize, 4);
+        var vals_bytes = cap * @intCast(usize, 4);
+        var keys_ptr: [*]u8 = @ptrCast([*]u8, raw_keys);
+        var vals_ptr: [*]u8 = @ptrCast([*]u8, raw_vals);
+        var occ_ptr: [*]u8 = @ptrCast([*]u8, raw_occ);
+        var keys_slice: []u8 = keys_ptr[0..keys_bytes];
+        var vals_slice: []u8 = vals_ptr[0..vals_bytes];
+        var occ_slice: []u8 = occ_ptr[0..cap];
+        pal_mod.streamRead(f, keys_slice);
+        pal_mod.streamRead(f, vals_slice);
+        pal_mod.streamRead(f, occ_slice);
+        self.path_to_id.keys = @ptrCast([*]u32, raw_keys);
+        self.path_to_id.values = @ptrCast([*]u32, raw_vals);
+        self.path_to_id.occupied = @ptrCast([*]u8, raw_occ);
+        self.path_to_id.capacity = cap;
+        self.path_to_id.count = cnt;
+    }
+    pal_mod.streamClose(f);
+    self.path_to_id_spill.spilled = @intCast(u8, 0);
+}
+
+pub fn moduleRegistryPathToIdGet(self: *ModuleRegistry, key: u32) ?u32 {
+    moduleRegistryFaultInPathToId(self);
+    return hash_mod.u32ToU32MapGet(&self.path_to_id, key);
 }
 
 pub const ImportQueue = struct {
