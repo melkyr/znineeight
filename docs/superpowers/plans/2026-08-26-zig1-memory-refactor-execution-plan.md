@@ -13,6 +13,9 @@
 2. **A first, B gated after M6 (operator m0694).** Execute M1/M2/M5 as the quick-win (different-indices) versions only, to validate no issues. The "clever" 16-B AstNode compaction (span out-of-line + child_2 side table + payload u32) is NOT in M1/M5 — it becomes a new read-only **I-COMPACT task after M6**, with a go/no-go against the measured pool after A+M6.
 3. **Padding caution (operator m0699).** The AstNode 2-byte padding may be structural (zig0/C89 alignment quirks). **Padding-squeezing is the LAST step** — never force-reorder fields or squeeze padding to hit a size target; that is how a mess starts. M1/M2/M5 must not depend on padding elimination for their size target; report the actual emitted `sizeof` after each migration.
 
+**AMENDMENT 9 (operator-ruled 2026-08-26, 4(b) decomposition — the reset is REQUIRED, not reserve):**
+The ≤16 MiB POOL target is unreachable without a module-arena reset: `pool=` is the monotonic CUMULATIVE bump (never returns bytes), so struct compaction lowers the LIVE floor but not the cumulative pool — indeed M1+M2 raised pool `45,407K → 50,501K` (side tables are extra cumulative allocations). The single clean reset point is the **Lowering→Emission boundary**: the module arena holds (a) AST store (built `phase_ImportResolution`, read by every phase through lowering), (b) resolution tables (`resolved_types`/`comptime_values`, keyed by node_idx), (c) LIR (relocated to module by `lirFunctionRelocateToModule`). After `phase_LIRLowering`, (a) and (b) are dead — `c89_emit` reads LIR only (its `.store` is the LIR instruction, not the AST). **Decomposition (added before M6):** **I-4B** (read-only — measure the per-phase module-arena growth + the reset ceiling), **4(b)-1** (split LIR into a dedicated `lir_arena` — mechanical, byte-neutral), **4(b)-2** (reset the module arena after lowering — AST + resolution tables dead; makes pool track live). **M6 spill is re-scoped to be gated on 4(b)-2** (spill only pays after a reset returns bytes).
+
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
 ## Global Constraints
@@ -518,20 +521,109 @@ Commit verbatim. Report wall/stderr before/after. Ledger + mnemoria (pattern).
 
 ---
 
-### Task M6: I/O spill (roadmap item 6 — RESERVE, gated)
+### Task I-4B: Module-arena reset ceiling measurement (read-only)
+
+> **AMENDMENT 9 (operator m0779):** the ≤16 MiB pool target requires a module-arena reset (pool is the cumulative bump; only a reset makes it track live). This task measures the reset ceiling BEFORE any code change, so 4(b)-1/4(b)-2 are known worth it.
 
 **Files:**
-- Only if pool still > 16,384 K after M1+M2+M5. Otherwise skip (documented).
-- Modify: per I-4 (per-module LIR spill clean; AST spill blocked on index-space surgery)
+- Report: `.superpowers/sdd/task-MEMREFACTOR-report.md` (append `## I-4B` section)
+
+**Interfaces:**
+- Consumes: runCompiler phase structure (main.zig:200-272: ImportResolution → SymbolRegistration → TypeResolution → FrontResolution → ComptimeEvaluation → SemanticAnalysis → StaticAnalyzers → LIRLowering → C89Emission); the module arena (`ctx.alloc.module`) holding AST store + resolution tables + relocated LIR.
+- Produces: per-phase module-arena growth (live), the exact dead-data boundary, and the quantified reset ceiling (expected pool after 4(b)-1+4(b)-2).
+
+- [ ] **Step 1: Measure per-phase module-arena live size**
+
+Read `runCompiler` (main.zig:200-272) + the module-arena consumers. At each phase boundary, record the module-arena live high-water (via `alloc_mod` internals / `--track-memory mod=` checkpoints, or a targeted /tmp-only instrumented build). Confirm which phases grow `ctx.alloc.module` and by how much.
+
+- [ ] **Step 2: Pin the dead-data boundary**
+
+Verify `c89_emit` reads ONLY LIR (its `.store` is the LIR instruction, not the AST store) — i.e., after `phase_LIRLowering`, the AST store + `resolved_types` + `comptime_values` are dead. Grep/confirm no AST-store reads in `phase_C89Emission` paths.
+
+- [ ] **Step 3: Quantify the reset ceiling**
+
+Compute: after 4(b)-1 (LIR → dedicated `lir_arena`) + 4(b)-2 (module-arena reset after lowering), `pool.peak` ≈ max(live module during lowering, LIR live) + scratch + perm + type_db. State the expected pool vs the 16,384 K target, and whether spill (M6) would still be needed. Also record the current `pool=` (~50,501 K) as the no-reset baseline.
+
+- [ ] **Step 4: Report + ledger + memory**
+
+Report: per-phase table, dead-boundary evidence, reset-ceiling number, reachability verdict. Ledger + mnemoria (discovery). Read-only: no source changes, no commit.
+
+---
+
+### Task 4(b)-1: Split LIR into a dedicated arena (mechanical, byte-neutral)
+
+> **AMENDMENT 9:** LIR is in the module arena only to survive lowering→emission. Give it its own arena so the module arena (AST + resolution tables) becomes resettable after lowering.
+
+**Files:**
+- Modify: `sf/src/main.zig` (add `lir_arena: Sand` to CompilerAlloc; init), `sf/src/lir.zig` (`lirFunctionRelocateToModule` → relocate into the LIR arena instead of module), callers
+- Commit: `refactor: relocate LIR into a dedicated arena (decouple from AST module arena)`
+
+**Interfaces:**
+- Consumes: I-4B dead-boundary finding; `lirFunctionRelocateToModule` (lir.zig:373-470, deep-copy scratch→module).
+- Produces: LIR in its own arena; module arena holds AST + resolution tables only; emission unchanged.
+
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — capture per protocol)**
+
+Capture `/tmp/golden_4b1/` (4 gates + 9 fixtures).
+
+- [ ] **Step 2: Add the LIR arena**
+
+Add `lir_arena: Sand` to `CompilerAlloc` (allocator.zig) + init in main.zig; change `lirFunctionRelocateToModule` and its call sites to relocate into `lir_arena` (preserving the deep-copy + pointer-stability semantics). Z98-clean; indices stay u32.
+
+- [ ] **Step 3: Verify byte-neutrality**
+
+Rebuild zig1 + zig1_5. 4 MD5 gates byte-identical; golden 9/9; self-compile 40 `.c`/0 errors; ref 0-warning; matrix 21/21. **Emissions must be unchanged** (this is a pure arena-routing change).
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit verbatim. Report arena-routing diff + gate evidence. Ledger + mnemoria (refactor).
+
+---
+
+### Task 4(b)-2: Reset the module arena after lowering (pool tracks live)
+
+> **AMENDMENT 9:** after 4(b)-1, everything in the module arena is dead post-`phase_LIRLowering`. Reset it at the Lowering→Emission boundary so the monotonic pool reuses those bytes (pool.peak → live, not cumulative). This is the genuinely hard, high-risk item — the enabler for both the ≤16 MiB pool target and M6 spill.
+
+**Files:**
+- Modify: `sf/src/main.zig` (reset `ctx.alloc.module` between `phase_LIRLowering` and `phase_C89Emission`), `sf/src/allocator.zig` (if `sandReset` needs a "release chains" variant for true reuse)
+- Commit: `perf: reset module arena after lowering (pool tracks live, not cumulative)`
+
+**Interfaces:**
+- Consumes: 4(b)-1 (LIR out of module arena); I-4B (dead-boundary proof + expected ceiling).
+- Produces: pool.peak drops from ~50,501 K toward the I-4B ceiling (≤16,384 K if the ceiling says so); AST + resolution tables freed after lowering.
+
+- [ ] **Step 1: Golden baseline (EMISSION-AFFECTING — the compiler's own allocations change; user-program emission must not)**
+
+Capture `/tmp/golden_4b2/` (4 gates + 9 fixtures). Note: `pool=`/`mod=` will change by design (that's the point); byte-identity applies to the emitted C + runtime, NOT the track-memory numbers.
+
+- [ ] **Step 2: Reset the module arena**
+
+Between `phase_LIRLowering` and `phase_C89Emission` in `runCompiler`, `alloc_mod.sandReset(&ctx.alloc.module)` (or a release-to-pool variant). Verify via I-4B + 4(b)-1 that no live pointer into the module arena survives (AST/resolution tables dead; LIR moved out). STOP if `c89_emit` or the emission path needs ANY module-arena data.
+
+- [ ] **Step 3: Verify pool drop + correctness**
+
+Rebuild. `--track-memory` self-compile: `pool=` must drop substantially (measure; compare to I-4B ceiling). 4 MD5 gates byte-identical (user-program emission unchanged); golden 9/9; self-compile 40 `.c`/0 errors; ref 0-warning; matrix 21/21.
+
+- [ ] **Step 4: Commit + report + ledger + memory**
+
+Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointer-safety proof. Ledger + mnemoria (bugfix/refactor).
+
+---
+
+### Task M6: I/O spill (roadmap item 6 — RESERVE, gated on 4(b)-2)
+
+**Files:**
+- Only if pool still > 16,384 K after 4(b)-2 (the reset). Otherwise skip (documented).
+- Modify: per I-4 + I-4B (per-module LIR spill clean; AST spill blocked on index-space surgery)
 - Commit: `perf: spill per-module LIR to disk (reserve)`
 
 **Interfaces:**
-- Consumes: I-4 (spill only pays after arena reset; per-module LIR self-contained).
-- Produces: pool crosses ≤16,384 K if the compacted live still exceeds it.
+- Consumes: 4(b)-2 (reset — spill only pays after arena reset returns bytes; per-module LIR self-contained); I-4B ceiling.
+- Produces: pool crosses ≤16,384 K if the post-reset live still exceeds it.
 
 - [ ] **Step 1: Decide (gate)**
 
-Measure `pool=` after M5. If ≤16,384 K: mark task SKIPPED with the measurement as evidence (report + ledger). If >: proceed.
+Measure `pool=` after 4(b)-2. If ≤16,384 K: mark task SKIPPED with the measurement as evidence (report + ledger). If >: proceed.
 
 - [ ] **Step 2: Implement per-module LIR spill**
 
