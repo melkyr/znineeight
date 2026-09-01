@@ -364,6 +364,7 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
 
 fn phase_TypeResolution(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "T\n"; pal.markerWrite(p_msg);
+    resolved_type_table.resolvedTypeTableReserve(ctx.resolved_types, ctx.store.nodes.len);
     alloc_mod.sandReset(&ctx.alloc.scratch);
     var dep_graph = symbol_registrator.depGraphInit(&ctx.alloc.scratch);
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
