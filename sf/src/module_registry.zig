@@ -407,6 +407,7 @@ pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer
 
 const HASH_SPILL_READ_MODE: [*]const u8 = "rb";
 const HASH_SPILL_WRITE_MODE: [*]const u8 = "wb";
+const HASH_SPILL_MAX_MAP_CAP: usize = @intCast(usize, 4000000);
 
 fn hashSpillWriteU32(f: *void, v: u32) void {
     var b: [4]u8 = undefined;
@@ -497,6 +498,24 @@ fn moduleRegistryFaultInPathToId(self: *ModuleRegistry) void {
     pal_mod.streamSeek(f, @intCast(i32, self.path_to_id_spill.disk_off));
     var cap: usize = @intCast(usize, hashSpillReadU32(f));
     var cnt: usize = @intCast(usize, hashSpillReadU32(f));
+    if (cap != self.path_to_id_spill.capacity or cnt != self.path_to_id_spill.count) {
+        var emsg: []const u8 = "hash spill header cap/count mismatch vs recorded spill metadata (moduleRegistryFaultInPathToId)";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 504);
+        return;
+    }
+    if (cnt > cap) {
+        var emsg: []const u8 = "hash spill header count exceeds capacity (moduleRegistryFaultInPathToId)";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 510);
+        return;
+    }
+    if (cap > HASH_SPILL_MAX_MAP_CAP) {
+        var emsg: []const u8 = "hash spill header capacity absurd (moduleRegistryFaultInPathToId)";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 516);
+        return;
+    }
     if (cap > @intCast(usize, 0)) {
         var raw_keys = alloc_mod.sandAlloc(self.path_to_id.alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
         var raw_vals = alloc_mod.sandAlloc(self.path_to_id.alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
