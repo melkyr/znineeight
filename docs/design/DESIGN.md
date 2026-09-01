@@ -53,8 +53,11 @@ The compiler uses a layered architecture relying heavily on "Arena Allocation" t
 ### Memory Optimization Strategy
 To fit within the strict 16MB peak memory constraint, the compiler employs a multi-tiered arena system:
 - **Global Arena**: Stores long-lived data like the String Interner, Type Registry, and AST for all modules.
-- **Token Arena**: A transient arena used exclusively for lexing and parsing. It is reset once all modules and imports are successfully parsed, as the semantic analysis and codegen phases operate on the AST and do not require raw tokens.
-- **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
+- **Token Arena**: A transient arena used exclusively for lexing and parsing. It is reset once all modules and imports are successfully parsed (~1MB saved), as the semantic analysis and codegen phases operate on the AST and do not require raw tokens.
+- **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers (~2.8MB saved).
+- **Shared Emitter Buffer**: The `C89Emitter` uses a single shared buffer that is cleared between files, rather than allocating a new buffer for every generated file.
+- **AST Block Reuse**: The `ControlFlowLifter` reuses existing `NODE_BLOCK_STMT` nodes during transformation instead of cloning them, reducing AST overhead (~0.5MB saved).
+- **Arena Chunk Tuning**: Default chunk size reduced to 256KB to minimize internal fragmentation and improve memory granularity on 32-bit systems.
 
 ### 3.1 Memory Management
 ## Current Status: Milestone 11 finished (para-Cresol Release).
@@ -253,6 +256,8 @@ filename.zig:23:5: error: type mismatch
 ```
 
 ## 4. Compilation Pipeline
+
+For a detailed breakdown of the compilation phases, see [Compilation Pipeline](CompilationPipeline.md).
 
 ### 4.0 Compilation Unit (`compilation_unit.hpp`)
 **Concept:** A `CompilationUnit` is an ownership wrapper that manages the memory and resources for a single compilation task. It ties together the `ArenaAllocator`, `StringInterner`, and `SourceManager` to provide a clean, unified interface for compiling source code.
@@ -1242,14 +1247,17 @@ Declaring a `pub const` array of aggregates (structs/unions) with complex nested
 - **Root Cause**: The emitter identifies simple array struct initializers as constant, but nested aggregates currently bypass the constant initializer detection logic.
 - **Workaround**: Use `pub var` and initialize at runtime.
 
-### 18.2 Pointers to Fixed-Size Arrays
+### 18.2 Z98 Lexer Leading Dot Behavior
+Leading-dot sequences (e.g., `.123`) are lexed as `TOKEN_DOT` followed by an integer, rather than a float literal. This is an intentional design choice to support tuple member access and naked tags.
+
+### 18.3 Pointers to Fixed-Size Arrays
 Function arguments of type `*[N]T` are incorrectly lowered to `T*` instead of `T(*)[N]`.
 - **Root Cause**: `C89Emitter` lacks specialization for array pointer declarators in parameter lists.
 - **Workaround**: Use slices (`[]T`) instead.
 
-### 18.3 Pointer Captures
+### 18.4 Pointer Captures
 Payload captures in `if` and `while` statements do not yet support pointers (e.g., `if (opt) |*p|`).
 - **Workaround**: Use value captures or explicit flag checks.
 
-### 18.4 MSVC 6.0 Memory Constraints
+### 18.5 MSVC 6.0 Memory Constraints
 The compiler is strictly limited to < 16MB of peak memory usage. While sufficient for the bootstrap task, extremely large single-file modules or deep recursive type cascades may trigger a fatal memory limit abort.

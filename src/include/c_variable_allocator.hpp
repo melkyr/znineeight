@@ -40,6 +40,13 @@ public:
      */
     const char* generate(const char* base);
 
+    /**
+     * @brief Forces a specific C name for a symbol, if it's available.
+     * @param sym The symbol.
+     * @param desired The desired name.
+     */
+    void force_allocate(Symbol* sym, const char* desired);
+
 private:
     /**
      * @brief Ensures a name is unique, truncated to 31 chars, and not a keyword.

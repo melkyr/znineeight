@@ -1,6 +1,8 @@
 #include "ast_utils.hpp"
 #include "symbol_table.hpp"
 #include "type_system.hpp"
+#include "logger.hpp"
+#include "platform.hpp"
 
 bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
     if (!node) return false;
@@ -15,19 +17,106 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
         case NODE_OPTIONAL_TYPE:
         case NODE_ERROR_SET_DEFINITION:
         case NODE_ERROR_SET_MERGE:
+        case NODE_IMPORT_STMT:
             return true;
+
         case NODE_IDENTIFIER: {
-            // Check builtin types first
-            if (resolvePrimitiveTypeName(node->as.identifier.name)) {
+            // built‑in types first
+            if (resolvePrimitiveTypeName(node->as.identifier.name))
                 return true;
+
+            // Use linked symbol if available (especially important for post-check phases)
+            Symbol* sym = node->as.identifier.symbol;
+            if (!sym) sym = symbols.lookup(node->as.identifier.name);
+            if (!sym) return false;
+
+            // Direct type / module references
+            if (sym->kind == SYMBOL_TYPE ||
+                sym->kind == SYMBOL_UNION_TYPE ||
+                sym->kind == SYMBOL_MODULE)
+                return true;
+
+            // const variables that hold a type or module
+            if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
+                if (sym->symbol_type &&
+                    (sym->symbol_type->kind == TYPE_TYPE ||
+                     sym->symbol_type->kind == TYPE_MODULE ||
+                     sym->symbol_type->kind == TYPE_FUNCTION))
+                    return true;
             }
-            // Then check symbol table
-            Symbol* sym = symbols.lookup(node->as.identifier.name);
-            return sym && sym->kind == SYMBOL_TYPE;
+            return false;
         }
+
+        case NODE_MEMBER_ACCESS: {
+            const ASTMemberAccessNode* ma = node->as.member_access;
+            if (!ma || !ma->base) return false;
+
+            if (ma->symbol == NULL) {
+                Logger* logger = plat_get_logger();
+                if (logger) {
+                    logger->logf(LOG_WARNING, "[AST_UTILS] Warning: NULL symbol in member access at %s:%d:%d\n",
+                                 ma->field_name, node->loc.line, node->loc.column);
+                }
+            }
+
+            // @import("…").Field – treat as type if field is a type/module
+            if (ma->base->type == NODE_IMPORT_STMT) {
+                if (ma->symbol &&
+                    (ma->symbol->kind == SYMBOL_TYPE ||
+                     ma->symbol->kind == SYMBOL_UNION_TYPE ||
+                     ma->symbol->kind == SYMBOL_MODULE))
+                    return true;
+                return false;
+            }
+
+            // For all other bases: base itself must be a type expression
+            if (!isTypeExpression(ma->base, symbols))
+                return false;
+
+            // The field must be a type or module
+            if (ma->symbol &&
+                (ma->symbol->kind == SYMBOL_TYPE ||
+                 ma->symbol->kind == SYMBOL_UNION_TYPE ||
+                 ma->symbol->kind == SYMBOL_MODULE))
+                return true;
+
+            return false;
+        }
+
+        case NODE_PAREN_EXPR:
+            return isTypeExpression(node->as.paren_expr.expr, symbols);
+
+        case NODE_FUNCTION_CALL:
+            // Function calls are values, not types.
+            return false;
+
         default:
             return false;
     }
+}
+
+Symbol* getRootSymbol(ASTNode* expr) {
+    if (!expr) return NULL;
+
+    while (expr) {
+        if (expr->type == NODE_UNARY_OP &&
+            (expr->as.unary_op.op == TOKEN_AMPERSAND ||
+             expr->as.unary_op.op == TOKEN_STAR ||
+             expr->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+            expr = expr->as.unary_op.operand;
+        } else if (expr->type == NODE_MEMBER_ACCESS) {
+            expr = expr->as.member_access->base;
+        } else if (expr->type == NODE_PAREN_EXPR) {
+            expr = expr->as.paren_expr.expr;
+        } else {
+            break;
+        }
+    }
+
+    if (expr && expr->type == NODE_IDENTIFIER)
+        return expr->as.identifier.symbol;
+
+    return NULL;
 }
 
 void forEachChild(ASTNode* node, ChildVisitor& visitor) {

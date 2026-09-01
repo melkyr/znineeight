@@ -717,6 +717,10 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_AT_INT_TO_ENUM;
             } else if (len == 10 && plat_strncmp(start, "intToFloat", 10) == 0) {
                 token.type = TOKEN_AT_INT_TO_FLOAT;
+            } else if (len == 2 && plat_strncmp(start, "as", 2) == 0) {
+                token.type = TOKEN_AT_AS;
+            } else if (len == 5 && plat_strncmp(start, "panic", 5) == 0) {
+                token.type = TOKEN_AT_PANIC;
             } else {
                 token.type = TOKEN_ERROR;
             }

@@ -1,8 +1,12 @@
 #include "symbol_table.hpp"
 #include "platform.hpp"
 #include <new>
+#include <stdio.h>
 #include "memory.hpp"
 
+static bool g_post_check_phase = false;
+
+void setPostCheckPhase(bool v) { g_post_check_phase = v; }
 
 // 32-bit FNV-1a hash function
 static u32 hash_string(const char* str) {
@@ -127,7 +131,15 @@ void Scope::insert(Symbol& symbol) {
         if (plat_strcmp(entry->symbol.name, symbol.name) == 0) {
             if (symbol.module_name == NULL || entry->symbol.module_name == NULL ||
                 plat_strcmp(entry->symbol.module_name, symbol.module_name) == 0) {
-                entry->symbol = symbol;
+                                /* HARDENING: Never overwrite a valid type with NULL. */
+                if (entry->symbol.symbol_type != NULL && symbol.symbol_type == NULL) {
+                    /* Keep old type, but update other metadata. */
+                    Type* saved_type = entry->symbol.symbol_type;
+                    entry->symbol = symbol;
+                    entry->symbol.symbol_type = saved_type;
+                } else {
+                    entry->symbol = symbol;
+                }
                 return;
             }
         }
@@ -356,6 +368,9 @@ Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbo
 }
 
 Symbol* SymbolTable::findInAnyScope(const char* name, const char* preferred_module) {
+#ifdef DEBUG
+    Z98_ASSERT(!g_post_check_phase);
+#endif
     Symbol* local_fallback = NULL;
 
     // Search all scopes ever created, from most recent to oldest.

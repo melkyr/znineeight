@@ -61,7 +61,7 @@ ControlFlowLifter::ScopeGuard::~ScopeGuard() {
 }
 
 ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* interner, ErrorHandler* error_handler)
-    : arena_(arena), interner_(interner), error_handler_(error_handler),
+    : ast_arena_(arena), perm_arena_(arena), interner_(interner), error_handler_(error_handler),
       unit_(NULL), module_name_(NULL), debug_mode_(false),
       tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(1000),
       current_fn_return_type_(NULL),
@@ -71,24 +71,44 @@ ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* inte
       block_decl_insert_idx_stack_(*arena),
       parent_stack_(*arena), fn_stack_(*arena) {}
 
+ControlFlowLifter::ControlFlowLifter(ArenaAllocator* ast_arena, ArenaAllocator* perm_arena, StringInterner* interner, ErrorHandler* error_handler)
+    : ast_arena_(ast_arena), perm_arena_(perm_arena), interner_(interner), error_handler_(error_handler),
+      unit_(NULL), module_name_(NULL), debug_mode_(false),
+      tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(1000),
+      current_fn_return_type_(NULL),
+      registered_temps_(*ast_arena),
+      processed_calls_(*ast_arena),
+      stmt_stack_(*ast_arena), block_stack_(*ast_arena),
+      block_decl_insert_idx_stack_(*ast_arena),
+      parent_stack_(*ast_arena), fn_stack_(*ast_arena) {}
+
 void ControlFlowLifter::lift(CompilationUnit* unit) {
     unit_ = unit;
     const DynamicArray<Module*>& modules = unit->getModules();
     for (size_t i = 0; i < modules.length(); ++i) {
-        Module* mod = modules[i];
-        if (!mod->ast_root) continue;
-
-        module_name_ = mod->name;
-        tmp_counter_ = 0;
-        depth_ = 0;
-        registered_temps_.clear();
-        processed_calls_.clear();
-
-        transformNode(&mod->ast_root, NULL);
-        validateLifting(mod);
+        lift(modules[i]);
     }
     unit_ = NULL;
     module_name_ = NULL;
+}
+
+void ControlFlowLifter::lift(Module* mod) {
+    if (!mod->ast_root) return;
+
+    module_name_ = mod->name;
+    tmp_counter_ = 0;
+    depth_ = 0;
+    registered_temps_.clear();
+    processed_calls_.clear();
+
+    // Use per-module arena for new nodes
+    ArenaAllocator* old_arena = ast_arena_;
+    if (mod->mod_arena) ast_arena_ = mod->mod_arena;
+
+    transformNode(&mod->ast_root, NULL);
+    validateLifting(mod);
+
+    ast_arena_ = old_arena;
 }
 
 void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
@@ -318,8 +338,8 @@ ASTNode* ControlFlowLifter::wrapInBlock(ASTNode* stmt) {
     if (!stmt) return NULL;
     if (stmt->type == NODE_BLOCK_STMT) return stmt;
 
-    void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* stmts = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+    void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* stmts = new (array_mem) DynamicArray<ASTNode*>(*ast_arena_);
     stmts->append(stmt);
 
     ASTNode* block_node = createBlock(stmts, stmt->loc);
@@ -391,8 +411,8 @@ void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {
 
             ASTNode* then_assign = createExpressionStmt(createAssignment(arg_tmp_ident, value, arg->loc), arg->loc);
             ASTNode* else_assign = createExpressionStmt(createAssignment(arg_tmp_ident, null_lit, arg->loc), arg->loc);
-            ASTNode* if_stmt = createIfStmt(has_value, createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), arg->loc),
-                                           createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), arg->loc), arg->loc);
+            ASTNode* if_stmt = createIfStmt(has_value, createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), arg->loc),
+                                           createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), arg->loc), arg->loc);
             if_stmt->as.if_stmt->then_block->as.block_stmt.statements->append(then_assign);
             if_stmt->as.if_stmt->else_block->as.block_stmt.statements->append(else_assign);
 
@@ -443,11 +463,11 @@ void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {
         // wrapped.has_value = 0;
         ASTNode* else_has = createExpressionStmt(createAssignment(createMemberAccess(wrapped_tmp_ident, "has_value", node->loc), createIntegerLiteral(0, get_g_type_bool(), node->loc), node->loc), node->loc);
 
-        ASTNode* then_block = createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), node->loc);
+        ASTNode* then_block = createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), node->loc);
         then_block->as.block_stmt.statements->append(then_has);
         then_block->as.block_stmt.statements->append(then_val);
 
-        ASTNode* else_block = createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), node->loc);
+        ASTNode* else_block = createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), node->loc);
         else_block->as.block_stmt.statements->append(else_has);
 
         current_block->statements->insert((size_t)insert_idx + 2, createIfStmt(cond, then_block, else_block, node->loc));
@@ -467,8 +487,8 @@ void ControlFlowLifter::lowerExportPrologue(ASTFnDeclNode* fn) {
     DynamicArray<Type*>* abi_params = sym->c_prototype_type->as.function.params;
     ASTBlockStmtNode* body = &fn->body->as.block_stmt;
 
-    DynamicArray<ASTNode*> prologue(*arena_);
-    DynamicArray<RebindEntry> rebinds(*arena_);
+    DynamicArray<ASTNode*> prologue(*ast_arena_);
+    DynamicArray<RebindEntry> rebinds(*ast_arena_);
 
     for (size_t i = 0; i < fn->params->length(); ++i) {
         if (i >= abi_params->length()) break;
@@ -497,11 +517,11 @@ void ControlFlowLifter::lowerExportPrologue(ASTFnDeclNode* fn) {
             ASTNode* then_val = createExpressionStmt(createAssignment(createMemberAccess(wrapped_ident, "value", fn->body->loc), param_ident, fn->body->loc), fn->body->loc);
             ASTNode* else_has = createExpressionStmt(createAssignment(createMemberAccess(wrapped_ident, "has_value", fn->body->loc), createIntegerLiteral(0, get_g_type_bool(), fn->body->loc), fn->body->loc), fn->body->loc);
 
-            ASTNode* then_block = createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), fn->body->loc);
+            ASTNode* then_block = createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), fn->body->loc);
             then_block->as.block_stmt.statements->append(then_has);
             then_block->as.block_stmt.statements->append(then_val);
 
-            ASTNode* else_block = createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), fn->body->loc);
+            ASTNode* else_block = createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), fn->body->loc);
             else_block->as.block_stmt.statements->append(else_has);
 
             prologue.append(wrapped_decl);
@@ -581,9 +601,9 @@ void ControlFlowLifter::lowerExportReturn(ASTNode** node_slot, ASTNode* parent) 
         ASTNode* then_assign = createExpressionStmt(createAssignment(ret_tmp_ident, value, ret.expression->loc), ret.expression->loc);
         ASTNode* else_assign = createExpressionStmt(createAssignment(ret_tmp_ident, null_lit, ret.expression->loc), ret.expression->loc);
 
-        ASTNode* then_block = createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), ret.expression->loc);
+        ASTNode* then_block = createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), ret.expression->loc);
         then_block->as.block_stmt.statements->append(then_assign);
-        ASTNode* else_block = createBlock(new (arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*arena_), ret.expression->loc);
+        ASTNode* else_block = createBlock(new (ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>))) DynamicArray<ASTNode*>(*ast_arena_), ret.expression->loc);
         else_block->as.block_stmt.statements->append(else_assign);
 
         current_block->statements->insert((size_t)insert_idx + 2, createIfStmt(has_value, then_block, else_block, ret.expression->loc));
@@ -707,7 +727,7 @@ const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
 }
 
 Symbol* ControlFlowLifter::createSymbol(const char* name, Type* type, bool is_const) {
-    Symbol* sym = (Symbol*)arena_->alloc(sizeof(Symbol));
+    Symbol* sym = (Symbol*)perm_arena_->alloc(sizeof(Symbol));
     plat_memset(sym, 0, sizeof(Symbol));
     sym->name = name;
     sym->symbol_type = type;
@@ -719,7 +739,7 @@ Symbol* ControlFlowLifter::createSymbol(const char* name, Type* type, bool is_co
 }
 
 ASTNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode* init, bool is_const) {
-    ASTVarDeclNode* var_decl_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+    ASTVarDeclNode* var_decl_data = (ASTVarDeclNode*)ast_arena_->alloc(sizeof(ASTVarDeclNode));
     plat_memset(var_decl_data, 0, sizeof(ASTVarDeclNode));
     var_decl_data->name = name;
     var_decl_data->name_loc = init ? init->loc : (stmt_stack_.length() > 0 ? stmt_stack_.back()->loc : SourceLocation());
@@ -735,7 +755,7 @@ ASTNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode*
         }
     }
 
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_VAR_DECL;
     node->loc = var_decl_data->name_loc;
@@ -745,7 +765,7 @@ ASTNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode*
 }
 
 ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation loc, Symbol* sym) {
-    ASTNode* ident_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* ident_node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(ident_node, 0, sizeof(ASTNode));
     ident_node->type = NODE_IDENTIFIER;
     ident_node->loc = loc;
@@ -758,11 +778,11 @@ ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation lo
 }
 
 ASTNode* ControlFlowLifter::createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_BINARY_OP;
     node->loc = loc;
-    node->as.binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+    node->as.binary_op = (ASTBinaryOpNode*)ast_arena_->alloc(sizeof(ASTBinaryOpNode));
     node->as.binary_op->left = left;
     node->as.binary_op->right = right;
     node->as.binary_op->op = op;
@@ -771,12 +791,12 @@ ASTNode* ControlFlowLifter::createBinaryOp(ASTNode* left, ASTNode* right, Zig0To
 }
 
 ASTNode* ControlFlowLifter::createAssignment(ASTNode* lvalue, ASTNode* rvalue, SourceLocation loc) {
-    ASTAssignmentNode* assign = (ASTAssignmentNode*)arena_->alloc(sizeof(ASTAssignmentNode));
+    ASTAssignmentNode* assign = (ASTAssignmentNode*)ast_arena_->alloc(sizeof(ASTAssignmentNode));
     plat_memset(assign, 0, sizeof(ASTAssignmentNode));
     assign->lvalue = lvalue;
     assign->rvalue = rvalue;
 
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_ASSIGNMENT;
     node->loc = loc;
@@ -786,7 +806,7 @@ ASTNode* ControlFlowLifter::createAssignment(ASTNode* lvalue, ASTNode* rvalue, S
 }
 
 ASTNode* ControlFlowLifter::createBlock(DynamicArray<ASTNode*>* statements, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_BLOCK_STMT;
     node->loc = loc;
@@ -795,13 +815,13 @@ ASTNode* ControlFlowLifter::createBlock(DynamicArray<ASTNode*>* statements, Sour
 }
 
 ASTNode* ControlFlowLifter::createIfStmt(ASTNode* cond, ASTNode* then_block, ASTNode* else_block, SourceLocation loc) {
-    ASTIfStmtNode* if_stmt = (ASTIfStmtNode*)arena_->alloc(sizeof(ASTIfStmtNode));
+    ASTIfStmtNode* if_stmt = (ASTIfStmtNode*)ast_arena_->alloc(sizeof(ASTIfStmtNode));
     plat_memset(if_stmt, 0, sizeof(ASTIfStmtNode));
     if_stmt->condition = cond;
     if_stmt->then_block = then_block;
     if_stmt->else_block = else_block;
 
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_IF_STMT;
     node->loc = loc;
@@ -810,12 +830,12 @@ ASTNode* ControlFlowLifter::createIfStmt(ASTNode* cond, ASTNode* then_block, AST
 }
 
 ASTNode* ControlFlowLifter::createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwitchStmtProngNode*>* prongs, SourceLocation loc) {
-    ASTSwitchStmtNode* switch_stmt = (ASTSwitchStmtNode*)arena_->alloc(sizeof(ASTSwitchStmtNode));
+    ASTSwitchStmtNode* switch_stmt = (ASTSwitchStmtNode*)ast_arena_->alloc(sizeof(ASTSwitchStmtNode));
     plat_memset(switch_stmt, 0, sizeof(ASTSwitchStmtNode));
     switch_stmt->expression = cond;
     switch_stmt->prongs = prongs;
 
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_SWITCH_STMT;
     node->loc = loc;
@@ -824,7 +844,7 @@ ASTNode* ControlFlowLifter::createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwit
 }
 
 ASTNode* ControlFlowLifter::createExpressionStmt(ASTNode* expr, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_EXPRESSION_STMT;
     node->loc = loc;
@@ -833,7 +853,7 @@ ASTNode* ControlFlowLifter::createExpressionStmt(ASTNode* expr, SourceLocation l
 }
 
 ASTNode* ControlFlowLifter::createReturn(ASTNode* expr, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_RETURN_STMT;
     node->loc = loc;
@@ -842,12 +862,12 @@ ASTNode* ControlFlowLifter::createReturn(ASTNode* expr, SourceLocation loc) {
 }
 
 ASTNode* ControlFlowLifter::createMemberAccess(ASTNode* base, const char* field_name, SourceLocation loc) {
-    ASTMemberAccessNode* member = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+    ASTMemberAccessNode* member = (ASTMemberAccessNode*)ast_arena_->alloc(sizeof(ASTMemberAccessNode));
     plat_memset(member, 0, sizeof(ASTMemberAccessNode));
     member->base = base;
     member->field_name = field_name;
 
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_MEMBER_ACCESS;
     node->loc = loc;
@@ -856,7 +876,7 @@ ASTNode* ControlFlowLifter::createMemberAccess(ASTNode* base, const char* field_
 }
 
 ASTNode* ControlFlowLifter::createIntegerLiteral(u64 value, Type* type, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_INTEGER_LITERAL;
     node->loc = loc;
@@ -867,7 +887,7 @@ ASTNode* ControlFlowLifter::createIntegerLiteral(u64 value, Type* type, SourceLo
 }
 
 ASTNode* ControlFlowLifter::createNodeAt(NodeType type, SourceLocation loc) {
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)ast_arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = type;
     node->loc = loc;
@@ -877,7 +897,7 @@ ASTNode* ControlFlowLifter::createNodeAt(NodeType type, SourceLocation loc) {
 
 ASTNode* ControlFlowLifter::cloneASTNodeWithMetadata(const ASTNode* src) {
     if (!src) return NULL;
-    ASTNode* dst = cloneASTNode((ASTNode*)src, arena_);
+    ASTNode* dst = cloneASTNode((ASTNode*)src, ast_arena_);
     if (!dst) return NULL;
     dst->resolved_type = src->resolved_type;
     dst->module = src->module;
@@ -929,8 +949,8 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, Symbol* temp_sym) {
                 (*stmts)[stmts->length() - 1] = createYieldingStmt((*stmts)[stmts->length() - 1], temp_ident, loc);
             }
         } else {
-            void* stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*arena_);
+            void* stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
             ASTNode* block_node = createBlock(stmts, loc);
             BlockGuard bguard(*this, &block_node->as.block_stmt);
             stmts->append(createYieldingStmt(branch_expr, temp_ident, loc));
@@ -949,8 +969,8 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, Symbol* temp_sym) {
                 (*stmts)[stmts->length() - 1] = createYieldingStmt((*stmts)[stmts->length() - 1], temp_ident, loc);
             }
         } else {
-            void* stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*arena_);
+            void* stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
             ASTNode* block_node = createBlock(stmts, loc);
             BlockGuard bguard(*this, &block_node->as.block_stmt);
             stmts->append(createYieldingStmt(branch_expr, temp_ident, loc));
@@ -963,7 +983,7 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, Symbol* temp_sym) {
 
     if (if_expr->capture_name && if_expr->capture_sym) {
         if_stmt->capture_name = if_expr->capture_name;
-        Symbol* new_sym = (Symbol*)arena_->alloc(sizeof(Symbol));
+        Symbol* new_sym = (Symbol*)perm_arena_->alloc(sizeof(Symbol));
         plat_memcpy(new_sym, if_expr->capture_sym, sizeof(Symbol));
         new_sym->flags |= SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST;
         if_stmt->capture_sym = new_sym;
@@ -984,14 +1004,14 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
     ASTNode* temp_ident = createIdentifier(temp_sym->name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
 
-    void* prongs_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
-    DynamicArray<ASTSwitchStmtProngNode*>* prongs = new (prongs_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
+    void* prongs_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
+    DynamicArray<ASTSwitchStmtProngNode*>* prongs = new (prongs_mem) DynamicArray<ASTSwitchStmtProngNode*>(*ast_arena_);
 
     ASTNode* switch_stmt_node = createSwitchStmt(sw_expr->expression, prongs, loc);
 
     for (size_t i = 0; i < sw_expr->prongs->length(); ++i) {
         ASTSwitchProngNode* orig_prong = (*sw_expr->prongs)[i];
-        ASTSwitchStmtProngNode* new_prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
+        ASTSwitchStmtProngNode* new_prong = (ASTSwitchStmtProngNode*)ast_arena_->alloc(sizeof(ASTSwitchStmtProngNode));
         plat_memset(new_prong, 0, sizeof(ASTSwitchStmtProngNode));
 
         new_prong->items = orig_prong->items;
@@ -1009,8 +1029,8 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
             }
             new_prong->body = body_node;
         } else {
-            void* stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*arena_);
+            void* stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
             ASTNode* block_node = createBlock(stmts, loc);
             BlockGuard bguard(*this, &block_node->as.block_stmt);
             stmts->append(createYieldingStmt(body_node, temp_ident, loc));
@@ -1020,7 +1040,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
         transformNode(&new_prong->body, switch_stmt_node);
 
         if (new_prong->capture_name && new_prong->capture_sym) {
-            Symbol* new_sym = (Symbol*)arena_->alloc(sizeof(Symbol));
+            Symbol* new_sym = (Symbol*)perm_arena_->alloc(sizeof(Symbol));
             plat_memcpy(new_sym, new_prong->capture_sym, sizeof(Symbol));
             new_sym->flags |= SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST;
             Symbol* old_capture_sym = new_prong->capture_sym;
@@ -1054,8 +1074,8 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArr
         ASTNode* temp_ident = createIdentifier(temp_sym->name, loc, temp_sym);
         temp_ident->resolved_type = current_fn_return_type_;
 
-        void* err_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-        DynamicArray<ASTNode*>* err_stmts = new (err_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+        void* err_stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        DynamicArray<ASTNode*>* err_stmts = new (err_stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
         ASTNode* then_block_node = createBlock(err_stmts, loc);
         BlockGuard bguard(*this, &then_block_node->as.block_stmt);
 
@@ -1079,8 +1099,8 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArr
 
         ASTNode* then_block = then_block_node;
 
-        void* succ_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-        DynamicArray<ASTNode*>* succ_stmts = new (succ_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+        void* succ_stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        DynamicArray<ASTNode*>* succ_stmts = new (succ_stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
         ASTNode* else_block_node = createBlock(succ_stmts, loc);
         BlockGuard bguard_else(*this, &else_block_node->as.block_stmt);
 
@@ -1114,26 +1134,26 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArr
             }
             err_access->resolved_type = get_g_type_i32();
             
-            void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
-            DynamicArray<ASTNamedInitializer*>* fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*arena_);
+            void* array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            DynamicArray<ASTNamedInitializer*>* fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*ast_arena_);
             
             if (ret_type->as.error_union.payload->kind == TYPE_VOID) {
-                ASTNamedInitializer* err_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+                ASTNamedInitializer* err_init = (ASTNamedInitializer*)ast_arena_->alloc(sizeof(ASTNamedInitializer));
                 err_init->field_name = "err";
                 err_init->value = err_access;
                 err_init->loc = loc;
                 fields->append(err_init);
             } else {
-                void* inner_array_mem = arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
-                DynamicArray<ASTNamedInitializer*>* inner_fields = new (inner_array_mem) DynamicArray<ASTNamedInitializer*>(*arena_);
+                void* inner_array_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                DynamicArray<ASTNamedInitializer*>* inner_fields = new (inner_array_mem) DynamicArray<ASTNamedInitializer*>(*ast_arena_);
                 
-                ASTNamedInitializer* err_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+                ASTNamedInitializer* err_init = (ASTNamedInitializer*)ast_arena_->alloc(sizeof(ASTNamedInitializer));
                 err_init->field_name = "err";
                 err_init->value = err_access;
                 err_init->loc = loc;
                 inner_fields->append(err_init);
 
-                ASTStructInitializerNode* inner_init = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+                ASTStructInitializerNode* inner_init = (ASTStructInitializerNode*)ast_arena_->alloc(sizeof(ASTStructInitializerNode));
                 inner_init->type_expr = NULL;
                 inner_init->fields = inner_fields;
 
@@ -1141,20 +1161,20 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArr
                 inner_init_node->as.struct_initializer = inner_init;
                 inner_init_node->resolved_type = get_g_type_anytype(); 
 
-                ASTNamedInitializer* data_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+                ASTNamedInitializer* data_init = (ASTNamedInitializer*)ast_arena_->alloc(sizeof(ASTNamedInitializer));
                 data_init->field_name = "data";
                 data_init->value = inner_init_node;
                 data_init->loc = loc;
                 fields->append(data_init);
             }
 
-            ASTNamedInitializer* is_err_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+            ASTNamedInitializer* is_err_init = (ASTNamedInitializer*)ast_arena_->alloc(sizeof(ASTNamedInitializer));
             is_err_init->field_name = "is_error";
             is_err_init->value = createIntegerLiteral(1, get_g_type_i32(), loc);
             is_err_init->loc = loc;
             fields->append(is_err_init);
 
-            ASTStructInitializerNode* init = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+            ASTStructInitializerNode* init = (ASTStructInitializerNode*)ast_arena_->alloc(sizeof(ASTStructInitializerNode));
             init->type_expr = NULL;
             init->fields = fields;
 
@@ -1164,8 +1184,8 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArr
         }
 
         ASTNode* ret_stmt = createReturn(ret_val, loc);
-        void* ret_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-        DynamicArray<ASTNode*>* ret_stmts = new (ret_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+        void* ret_stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        DynamicArray<ASTNode*>* ret_stmts = new (ret_stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
         ASTNode* then_block_node = createBlock(ret_stmts, loc);
         BlockGuard bguard(*this, &then_block_node->as.block_stmt);
         ret_stmts->append(ret_stmt);
@@ -1211,8 +1231,8 @@ void ControlFlowLifter::lowerCatchExpr(ASTNode* node, Symbol* temp_sym, DynamicA
     ASTNode* is_error_access = createMemberAccess(res_ident, "is_error", loc);
     is_error_access->resolved_type = get_g_type_bool();
 
-    void* catch_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* catch_stmts = new (catch_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+    void* catch_stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* catch_stmts = new (catch_stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
     ASTNode* catch_lower_block = createBlock(catch_stmts, loc);
 
     ASTNode* catch_body = catch_expr->else_expr;
@@ -1263,8 +1283,8 @@ void ControlFlowLifter::lowerCatchExpr(ASTNode* node, Symbol* temp_sym, DynamicA
         payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
     }
     payload_access->resolved_type = node->resolved_type;
-    void* succ_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* succ_stmts = new (succ_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+    void* succ_stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* succ_stmts = new (succ_stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
     ASTNode* else_block_node = createBlock(succ_stmts, loc);
     BlockGuard bguard_else(*this, &else_block_node->as.block_stmt);
     succ_stmts->append(createYieldingStmt(payload_access, temp_ident, loc));
@@ -1299,8 +1319,8 @@ void ControlFlowLifter::lowerOrelseExpr(ASTNode* node, Symbol* temp_sym, Dynamic
         value_access = createIntegerLiteral(0, get_g_type_void(), loc);
     }
     value_access->resolved_type = node->resolved_type;
-    void* has_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* has_stmts = new (has_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+    void* has_stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* has_stmts = new (has_stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
     ASTNode* then_block_node = createBlock(has_stmts, loc);
     BlockGuard bguard(*this, &then_block_node->as.block_stmt);
     has_stmts->append(createExpressionStmt(createAssignment(temp_ident, value_access, loc), loc));
@@ -1317,8 +1337,8 @@ void ControlFlowLifter::lowerOrelseExpr(ASTNode* node, Symbol* temp_sym, Dynamic
                 (*stmts)[stmts->length() - 1] = createYieldingStmt((*stmts)[stmts->length() - 1], temp_ident, loc);
             }
         } else {
-            void* stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*arena_);
+            void* stmts_mem = ast_arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            DynamicArray<ASTNode*>* stmts = new (stmts_mem) DynamicArray<ASTNode*>(*ast_arena_);
             ASTNode* block_node = createBlock(stmts, loc);
             BlockGuard bguard_else(*this, &block_node->as.block_stmt);
             stmts->append(createYieldingStmt(branch_expr, temp_ident, loc));
@@ -1382,7 +1402,7 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
 
     if (temp_type && temp_type->kind == TYPE_VOID) {
         // Void-returning control flow: lift logic but no temp variable needed
-        DynamicArray<ASTNode*> lowering_stmts(*arena_);
+        DynamicArray<ASTNode*> lowering_stmts(*ast_arena_);
         Symbol* dummy_sym = createSymbol(temp_name, get_g_type_void(), false);
 
         switch (node->type) {
@@ -1433,9 +1453,9 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
         } else if (node->type == NODE_CATCH_EXPR) {
             if (isAggregateType(temp_type)) {
                 initializer = createNodeAt(NODE_STRUCT_INITIALIZER, node->loc);
-                initializer->as.struct_initializer = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+                initializer->as.struct_initializer = (ASTStructInitializerNode*)ast_arena_->alloc(sizeof(ASTStructInitializerNode));
                 plat_memset(initializer->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
-                initializer->as.struct_initializer->fields = new (arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>))) DynamicArray<ASTNamedInitializer*>(*arena_);
+                initializer->as.struct_initializer->fields = new (ast_arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>))) DynamicArray<ASTNamedInitializer*>(*ast_arena_);
             } else {
                 initializer = createIntegerLiteral(0, temp_type, node->loc);
             }
@@ -1446,7 +1466,7 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
         temp_sym = createSymbol(temp_name, get_g_type_void(), false);
     }
 
-    DynamicArray<ASTNode*> lowering_stmts(*arena_);
+    DynamicArray<ASTNode*> lowering_stmts(*ast_arena_);
 
     bool is_aggregate = (node->type == NODE_STRUCT_INITIALIZER || node->type == NODE_TUPLE_LITERAL);
 

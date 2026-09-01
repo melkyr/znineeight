@@ -1,0 +1,58 @@
+const std = @import("std");
+
+@cInclude("zig_runtime.h");
+
+fn strLessThan(a: [*]const u8, b: [*]const u8) bool {
+    if (a == null or b == null) { return false; }
+    var i: usize = 0;
+    while (a[i] != 0 and b[i] != 0) {
+        if (a[i] < b[i]) { return true; }
+        if (a[i] > b[i]) { return false; }
+        i += 1;
+    }
+    return a[i] == 0 and b[i] != 0; // a is shorter -> true
+}
+
+fn sortStrings(ptr: [*][*]const u8, len: usize) void {
+    if (ptr == null) { return; }
+    var i: usize = 1;
+    while (i < len) {
+        var j = i;
+        while (j > 0) {
+            if (strLessThan(ptr[j], ptr[j-1])) {
+                const tmp = ptr[j];
+                ptr[j] = ptr[j-1];
+                ptr[j-1] = tmp;
+                j -= 1;
+            } else {
+                break;
+            }
+        }
+        i += 1;
+    }
+}
+
+fn printStrings(ptr: [*][*]const u8, len: usize) void {
+    if (ptr == null) { return; }
+    var i: usize = 0;
+    while (i < len) {
+        std.io.print(@ptrCast([*]const c_char, ptr[i]));
+        std.io.print(" ");
+        i += 1;
+    }
+    std.io.print("\n");
+}
+
+pub fn main() void {
+    var words = [4][*]const u8{
+        @ptrCast([*]const u8, "banana"),
+        @ptrCast([*]const u8, "apple"),
+        @ptrCast([*]const u8, "cherry"),
+        @ptrCast([*]const u8, "date")
+    };
+    std.io.print("Original: banana apple cherry date\n");
+
+    std.io.print("Sorted strings: ");
+    sortStrings(@ptrCast([*][*]const u8, &words), 4);
+    printStrings(@ptrCast([*][*]const u8, &words), 4);
+}

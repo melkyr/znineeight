@@ -23,6 +23,12 @@ To avoid C-level collisions, symbols are mangled using the module name as a pref
 ### Cross-Module Access
 When a module accesses a member of an imported module (e.g., `utils.Point`), the `TypeChecker` resolves the reference via `SymbolTable::lookupWithModule`. The `C89Emitter` then uses the mangled name for emission.
 
+### Resolution Stability
+To ensure correct resolution across complex import graphs and two-pass analysis:
+- **Topological Sorting**: Modules are sorted by dependency order to ensure each module's dependencies are analyzed before it.
+- **Top-Level Protection**: The `isTopLevelDeclaration` check ensures that symbols defined at the file scope are never accidentally marked as local variables during re-visitation.
+- **Signature Isolation**: The `is_resolving_signature_` guard ensures that cross-module lookups for function types do not inherit the local scope context of the calling function.
+
 ## C89 Mapping Details
 For more information on how modules map to C89 files, see [C89 Code Generation Strategy](c89_emission.md).
 

@@ -8,11 +8,12 @@ NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner, Compil
     : arena_(arena), interner_(interner), unit_(unit) {}
 
 const char* NameMangler::mangle(char kind, Module* mod, const char* local_name) {
+    if (!local_name) local_name = "anon";
+
     if (isInternalCompilerIdentifier(local_name)) {
-        if (!local_name) return interner_.intern("anon");
         char buf[256];
         plat_strcpy(buf, local_name);
-        if (plat_strlen(buf) > 31) buf[31] = '\0';
+        if (plat_strlen(buf) > 63) buf[63] = '\0';
         return interner_.intern(buf);
     }
 
@@ -21,49 +22,34 @@ const char* NameMangler::mangle(char kind, Module* mod, const char* local_name) 
         return unit_.getTestName(kind, mod_name, local_name);
     }
 
-    if (!local_name) local_name = "anon";
+    // New three-part collision-free mangling: z<Kind>_<module_hash>_<local_hash>_<readable_name>
+    u32 mod_hash = mod ? mod->stable_hash : fnv1a_32("global");
+    
+    // Compute local hash: FNV-1a( kind_char + module_hash + local_name )
+    char hash_buf[1024];
+    hash_buf[0] = kind;
+    hash_buf[1] = '\0';
+    char mod_h_str[16];
+    plat_snprintf(mod_h_str, sizeof(mod_h_str), "%08x", mod_hash);
+    plat_strcat(hash_buf, mod_h_str);
+    plat_strcat(hash_buf, local_name);
+    
+    u32 local_hash = fnv1a_32(hash_buf);
+    char local_h_str[16];
+    plat_snprintf(local_h_str, sizeof(local_h_str), "%08x", local_hash);
 
-    // Hashed mode
-    u32 hash = 0;
-    if (mod) {
-        hash = mod->stable_hash;
-#ifdef DEBUG_MANGLE
-        #ifdef Z98_ENABLE_DEBUG_LOGS
-        plat_printf_debug("[MANGLE] module='%s' hash=%06x\n",
-                         mod->name, hash & 0xFFFFFF);
-        #endif
-#endif
-    } else {
-        hash = fnv1a_32("global");
-    }
-
-    char hash_str[8];
-    char hex_chars[] = "0123456789abcdef";
-    for (int i = 5; i >= 0; --i) {
-        hash_str[i] = hex_chars[hash & 0xF];
-        hash >>= 4;
-    }
-    hash_str[6] = '\0';
-
-    char hashed_prefix[32];
-    hashed_prefix[0] = 'z';
-    hashed_prefix[1] = kind;
-    hashed_prefix[2] = '_';
-    hashed_prefix[3] = '\0';
-    plat_strcat(hashed_prefix, hash_str);
-    plat_strcat(hashed_prefix, "_");
-
-    size_t hp_len = plat_strlen(hashed_prefix);
-    size_t available = 31 - hp_len;
+    // Readable name: truncated suffix (last 31 chars)
+    char readable[64];
     size_t local_len = plat_strlen(local_name);
+    if (local_len > 31) {
+        plat_strcpy(readable, local_name + (local_len - 31));
+    } else {
+        plat_strcpy(readable, local_name);
+    }
 
     char final_name[256];
-    plat_strcpy(final_name, hashed_prefix);
-    if (local_len > available) {
-        plat_strcat(final_name, local_name + (local_len - available));
-    } else {
-        plat_strcat(final_name, local_name);
-    }
+    plat_snprintf(final_name, sizeof(final_name), "z%c_%s_%s_%s", 
+                  kind, mod_h_str, local_h_str, readable);
 
     ::sanitizeForC89(final_name);
     return interner_.intern(final_name);
@@ -76,7 +62,7 @@ const char* NameMangler::mangleFunction(const char* name,
     if (isInternalCompilerIdentifier(name)) {
         char buffer[256];
         plat_strcpy(buffer, name);
-        if (plat_strlen(buffer) > 31) buffer[31] = '\0';
+        if (plat_strlen(buffer) > 63) buffer[63] = '\0';
         return interner_.intern(buffer);
     }
 

@@ -28,6 +28,10 @@ This document tracks known limitations, bugs, and recommended workarounds for th
 **Issue**: When using an `if` or `switch` as an expression that returns a slice, ensure all branches explicitly produce a slice type.
 **Workaround**: The compiler implements "Distributed Coercion" to help, but in complex cases, you may need to wrap the branch result in a synthetic slice or use a temporary variable.
 
+### 1.6 Slice Bounds Expression Complexity
+**Issue**: `zig0` cannot resolve inline `@intCast` and arithmetic inside slice bounds (e.g., `items[@intCast(usize, start)..@intCast(usize, start)+@intCast(usize, count)]`). Type checker fails with "type mismatch".
+**Workaround**: Pre-compute into local `var` variables: `var s: usize = @intCast(usize, start); var e: usize = s + @intCast(usize, count); result = items[s..e];`
+
 ## 2. Code Generation (C89) Caveats
 
 ### 2.1 Pointers to Fixed-Size Arrays

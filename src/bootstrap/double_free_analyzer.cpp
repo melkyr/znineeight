@@ -105,7 +105,7 @@ static bool isDirectArenaCall(ASTNode* node, int depth) {
 }
 
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
-    : unit_(unit), current_state_(NULL), scopes_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0),
+    : unit_(unit), current_state_(NULL), scopes_(unit.getTransientArena()), deferred_actions_(unit.getTransientArena()), current_scope_depth_(0),
       in_error_path_(false), current_is_errdefer_(false), is_executing_defers_(false) {
     current_defer_loc_.file_id = 0;
     current_defer_loc_.line = 0;
@@ -126,9 +126,9 @@ void DoubleFreeAnalyzer::pushScope(bool copy_parent) {
         scopes_.append(new_scope);
         current_state_ = new_scope;
     } else {
-        void* mem = unit_.getArena().alloc(sizeof(AllocationStateMap));
+        void* mem = unit_.getTransientArena().alloc(sizeof(AllocationStateMap));
         if (!mem) return;
-        AllocationStateMap* new_scope = new (mem) AllocationStateMap(unit_.getArena(), current_state_);
+        AllocationStateMap* new_scope = new (mem) AllocationStateMap(unit_.getTransientArena(), current_state_);
         scopes_.append(new_scope);
         current_state_ = new_scope;
     }
@@ -512,7 +512,7 @@ void DoubleFreeAnalyzer::visitIfStmt(ASTNode* node) {
         // Merge both branches into entry_state
         if (entry_state && then_branch && else_branch) {
             // Variables to merge are those modified in either branch
-            DynamicArray<const char*> to_merge(unit_.getArena());
+            DynamicArray<const char*> to_merge(unit_.getTransientArena());
 
             for (size_t i = 0; i < then_branch->modified.length(); ++i) {
                 to_merge.append(then_branch->modified[i]);
@@ -718,7 +718,7 @@ void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
         pushScope(true);
         AllocationStateMap* entry_state = current_state_;
 
-        DynamicArray<AllocationStateMap*> prong_states(unit_.getArena());
+        DynamicArray<AllocationStateMap*> prong_states(unit_.getTransientArena());
 
         for (size_t i = 0; i < sw->prongs->length(); ++i) {
             ASTSwitchProngNode* prong = (*sw->prongs)[i];
@@ -750,7 +750,7 @@ void DoubleFreeAnalyzer::visitSwitchStmt(ASTNode* node) {
         pushScope(true);
         AllocationStateMap* entry_state = current_state_;
 
-        DynamicArray<AllocationStateMap*> prong_states(unit_.getArena());
+        DynamicArray<AllocationStateMap*> prong_states(unit_.getTransientArena());
 
         for (size_t i = 0; i < sw->prongs->length(); ++i) {
             ASTSwitchStmtProngNode* prong = (*sw->prongs)[i];
@@ -778,7 +778,7 @@ void DoubleFreeAnalyzer::mergeSwitchProngStates(AllocationStateMap* entry_state,
     if (prong_states.length() == 0) return;
 
     // Merge all prong states
-    DynamicArray<const char*> to_merge(unit_.getArena());
+    DynamicArray<const char*> to_merge(unit_.getTransientArena());
     for (size_t i = 0; i < prong_states.length(); ++i) {
         for (size_t j = 0; j < prong_states[i]->modified.length(); ++j) {
             const char* name = prong_states[i]->modified[j];
@@ -884,7 +884,7 @@ void DoubleFreeAnalyzer::visitCatchExpr(ASTNode* node) {
 
     // Merge both branches into entry_state
     if (entry_state && main_branch && catch_branch) {
-        DynamicArray<const char*> to_merge(unit_.getArena());
+        DynamicArray<const char*> to_merge(unit_.getTransientArena());
         for (size_t i = 0; i < main_branch->modified.length(); ++i) to_merge.append(main_branch->modified[i]);
         for (size_t i = 0; i < catch_branch->modified.length(); ++i) {
             const char* name = catch_branch->modified[i];
@@ -930,7 +930,7 @@ void DoubleFreeAnalyzer::visitOrelseExpr(ASTNode* node) {
 
     // Merge both branches into entry_state
     if (entry_state && main_branch && orelse_branch) {
-        DynamicArray<const char*> to_merge(unit_.getArena());
+        DynamicArray<const char*> to_merge(unit_.getTransientArena());
         for (size_t i = 0; i < main_branch->modified.length(); ++i) to_merge.append(main_branch->modified[i]);
         for (size_t i = 0; i < orelse_branch->modified.length(); ++i) {
             const char* name = orelse_branch->modified[i];
@@ -1120,7 +1120,7 @@ void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
     const char* dot = plat_strchr(name, '.');
     if (dot) {
         size_t base_len = dot - name;
-        char* base_name = (char*)unit_.getArena().alloc(base_len + 1);
+        char* base_name = (char*)unit_.getTransientArena().alloc(base_len + 1);
         if (base_name) {
             plat_strncpy(base_name, name, base_len);
             base_name[base_len] = '\0';
@@ -1168,7 +1168,7 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node, int depth) {
 void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) {
     if (!name) return;
     TrackedPointer* tp = findTrackedPointer(name);
-    char* msg = (char*)unit_.getArena().alloc(512);
+    char* msg = (char*)unit_.getTransientArena().alloc(512);
     if (!msg) return; // OOM, nothing we can do here
 
     char* p = msg;
@@ -1250,13 +1250,13 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
         }
     }
 
-    unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, ErrorHandler::getMessage(ERR_DOUBLE_FREE), unit_.getArena(), msg);
+    unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, ErrorHandler::getMessage(ERR_DOUBLE_FREE), unit_.getTransientArena(), msg);
 }
 
 void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool is_reassignment) {
     if (!name) return;
     TrackedPointer* tp = findTrackedPointer(name);
-    char* msg = (char*)unit_.getArena().alloc(512);
+    char* msg = (char*)unit_.getTransientArena().alloc(512);
     if (!msg) return;
 
     char* p = msg;
@@ -1334,7 +1334,7 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
         safe_append(p, rem, ")");
     }
 
-    unit_.getErrorHandler().reportWarning(code, loc, msg, unit_.getArena());
+    unit_.getErrorHandler().reportWarning(code, loc, msg, unit_.getTransientArena());
 }
 
 const char* DoubleFreeAnalyzer::extractArrayAccessName(ASTArrayAccessNode* access, int depth) {
@@ -1360,7 +1360,7 @@ const char* DoubleFreeAnalyzer::extractMemberAccessName(ASTMemberAccessNode* nod
     const char* field_name = node->field_name;
     size_t len1 = plat_strlen(base_name);
     size_t len2 = plat_strlen(field_name);
-    char* combined = (char*)unit_.getArena().alloc(len1 + len2 + 2);
+    char* combined = (char*)unit_.getTransientArena().alloc(len1 + len2 + 2);
     if (combined) {
         char* p = combined;
         size_t rem = len1 + len2 + 2;
@@ -1374,7 +1374,7 @@ const char* DoubleFreeAnalyzer::extractMemberAccessName(ASTMemberAccessNode* nod
 
 void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocation loc) {
     if (!name) return;
-    char* msg = (char*)unit_.getArena().alloc(256);
+    char* msg = (char*)unit_.getTransientArena().alloc(256);
     if (!msg) return;
 
     char* p = msg;
@@ -1382,5 +1382,5 @@ void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocatio
     safe_append(p, rem, "Freeing uninitialized pointer '");
     safe_append(p, rem, name);
     safe_append(p, rem, "'");
-    unit_.getErrorHandler().reportWarning(WARN_FREE_UNALLOCATED, loc, msg, unit_.getArena());
+    unit_.getErrorHandler().reportWarning(WARN_FREE_UNALLOCATED, loc, msg, unit_.getTransientArena());
 }
