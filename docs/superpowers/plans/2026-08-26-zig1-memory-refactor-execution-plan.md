@@ -22,6 +22,8 @@ I-4B showed 4(b)+M6 cannot reach ≤16,384 K (post-M6 live ≈ 16,727 KiB ≈ 16
 **AMENDMENT 11 (operator-ruled 2026-08-26, corrected floor + streaming task decomposition):**
 The operator's "stage done → query only" probe (m0834) corrected the floor. Verified: `path_to_id`/`content_to_id` hash maps are **WRITE-ONCE in import resolution** (`u32ToU32MapPut` only at module_registry.zig:315/345/361/367/370/374/377), then query-only → spilleable. The interner (`string_interner.zig`) is NOT stage-done — `stringInternerIntern` has **196 call sites across all phases** (parse interns identifiers, lowering interns mangled names, emission interns type names) — but its `entries` are append-once+immutable (only `.next` rehashed by `stringInternerGrowBuckets`) and its `text` bytes are append-only (the ~4 MB bulk); it is READ constantly during emission (`stringInternerGet` on every name write). **Corrected floor:** ~38 MB is "stage-done → query only" (AST 9.9 + resolution tables 11 + LIR 10.4 + token array 6.6 + perm hash maps); the truly stay-resident core = interner + type_db + live working set ≈ 7–9 MB (NOT the earlier "perm ~6 MB irreducible" claim). **4(b)-1/4(b)-2 are SUPERSEDED** (streaming caps the bump better than a reset; see the SUPERSEDED notes on those tasks). A new **S-series** replaces M6, ordered **lesser → higher risk**, each item an I (design/census, read-only) + F (implement) pair with a per-step gate (4 MD5 byte-identical-or-re-baselined + golden 9/9 + self-compile clean + `pool=` measure) and a decision outcome toward ≤16,384 K.
 
+**AMENDMENT 15 (operator-ruled 2026-08-26, S-RES-I census — dense-vs-sparse tension):** the operator (m0981/m0987) challenged the dense-res conversion: the node_idx-keyed hash tables are **SPARSE BY DESIGN** (they store only *present* entries, avoiding per-node slots — introduced for node-duplication avoidance and bug-fixing). A dense per-node array carries a **fixed floor** (nodes.len × element ≈ 5 B/node for u32 tables, 9 B/node for u64) and can be **larger than the sparse hash at low occupancy** — so the dense→smaller claim is NOT guaranteed without occupancy data. Additionally the I-STREAM "11 MB → 2.2 MB" was an **over-attribution**: the "+11.3 MB during SemanticAnalysis" (I-4B) is the *whole-phase* delta spanning **FIVE** node_idx-keyed tables (`resolved_types`, `source_table`, `coercion_table`, `enum_value_table`, `comptime_values`), not two. A read-only **S-RES-I census** is added BEFORE S-RES to (1) measure actual per-table occupancy/bytes at self-compile, (2) investigate the duplication/bug-fixing history behind each hash, (3) evaluate the strategy fork including the operator-suggested **spill-the-hash-as-a-sorted-file + binary-search-on-demand** (preserves sparsity, zero resident bytes, O(log n) seeks), and (4) STOP-present the data so S-RES's strategy is chosen on measurement, never guesswork.
+
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
 ## Global Constraints
@@ -732,6 +734,25 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 
 ---
 
+### Task S-RES-I: Resolution-table census + duplication-history + strategy (read-only)
+
+> **AMENDMENT 15 (operator m0981/m0987):** the dense-res conversion is challenged — the node_idx-keyed hash tables are SPARSE BY DESIGN (only *present* entries; introduced for node-duplication avoidance + bug-fixing). Dense arrays carry a FIXED floor (nodes.len × element) and can be LARGER than the sparse hash at low occupancy. The I-STREAM "11 MB → 2.2 MB" over-attributed the SemanticAnalysis phase delta (it spans FIVE tables: `resolved_types`, `source_table`, `coercion_table`, `enum_value_table`, `comptime_values`). Census FIRST; S-RES strategy chosen on data.
+
+**Files:**
+- Read-only: `sf/src/resolved_type_table.zig`, `sf/src/coercion.zig`, `sf/src/util/hash.zig`, `sf/src/main.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`
+- Report: append section to `.superpowers/sdd/task-MEMREFACTOR-report.md` (gitignored)
+
+- [ ] **Step 1: Per-table census at self-compile** — capture at end of SemanticAnalysis (instrumented /tmp build or markers): `resolved_types.entries_len` + `index.capacity/count` + `source_len`/`source_index.capacity/count`; `coercion_table.entries_len` + `index.capacity/count`; `enum_value_table.count/capacity`; `comptime_values.count/capacity`. Compute resident bytes per table: entries × entry-size + cap×(4+4+1)=9 for U32ToU32, cap×(4+8+1)=13 for U32ToU64. Compare each against its dense floor (nodes.len=180,020 × 5 B for u32 tables, × 9 B for u64). State which regime each table is in (sparse-hash-wins vs dense-wins).
+- [ ] **Step 2: Duplication-history investigation** — determine WHY each hash exists: node-duplication avoidance + bug-fixing history (git log for resolved_type_table.zig / coercion.zig / hash.zig; reports task-3b-I-modulearena, V-194, I-residual, RR1-r2r1, S-TOKEN interner-order hazard). Verify the dedup semantics: `Set` on an existing node UPDATES in place (resolved_type_table.zig:62-74) — the hash prevents duplicate entries per node. State whether a dense array preserves this (index = node_idx → duplicate impossible; update = array write — strictly dedup-safe) and whether ANY other hash property matters (insertion/iteration order for byte-identity, e.g. the error_code_registry reorder from S-TOKEN).
+- [ ] **Step 3: Strategy evaluation** — for each table evaluate:
+  - (a) **dense per-node array** (fixed floor, dedup by construction, resident);
+  - (b) **spill hash as sorted file + binary search** (operator-suggested: serialize key/value pairs sorted by node_idx at the quiescent boundary; on Get, binary-search the file via fseek/fread — preserves sparsity, zero resident bytes, O(log n) seeks per Get);
+  - (c) **keep resident hash** (no change).
+  Estimate Get volume during lowering/emission (count `resolvedTypeTableGet`/`coercionTableGet`/`enum_value_table`/`u32ToU64MapGet` sites × per-module lowering passes) to judge (b)'s I/O cost. Per-table winner.
+- [ ] **Step 4: STOP-present** — present the census table + duplication finding + per-table strategy to the operator. Do NOT commit source. Ledger line appended; memory stored.
+
+---
+
 ### Task S-RES: Stream the resolution tables (HIGHER — ~205 sites)
 
 > **AMENDMENT 11:** `resolved_types`/`comptime_values` (~11 MB, node_idx-keyed, built in semantic analysis, queried in lowering/emission) → same disk-backed treatment or per-module restructure. Designed by I-STREAM S-3. F task; the linear-probing hash (hash.zig:61) is the complication.
@@ -741,7 +762,7 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 - Commit: `perf: stream resolution tables (resolved_types/comptime_values disk-backed)`
 
 **Interfaces:**
-- Consumes: I-STREAM S-3 (dense-res rewrite, ~205 sites, linear probing); ComptimeEvaluation full-store scan → streaming sweep (main.zig:393-394).
+- Consumes: S-RES-I census (per-table occupancy + duplication-history + strategy decision: dense vs sorted-file+binary-search); ComptimeEvaluation full-store scan → streaming sweep (main.zig:393-394).
 - Produces: resolution tables no longer an 11 MB resident bump.
 
 - [ ] **Step 1: Golden baseline** — capture `/tmp/golden_SRES/`.
