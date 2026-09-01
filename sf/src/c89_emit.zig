@@ -3671,6 +3671,17 @@ fn classifyIntSignedness(reg: *TypeRegistry, tyid: u32) i8 {
     return @intCast(i8, -1);
 }
 
+fn intTypeByteWidth(reg: *TypeRegistry, tyid: u32) u32 {
+    if (tyid == type_mod.TYPE_VOID) { return @intCast(u32, 0); }
+    var ty = reg.types_items[@intCast(usize, tyid)];
+    var k = ty.kind;
+    if (k == TypeKind.i8_type or k == TypeKind.u8_type or k == TypeKind.c_char_type) { return @intCast(u32, 1); }
+    if (k == TypeKind.i16_type or k == TypeKind.u16_type) { return @intCast(u32, 2); }
+    if (k == TypeKind.i32_type or k == TypeKind.u32_type or k == TypeKind.isize_type or k == TypeKind.usize_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.null_type or k == TypeKind.undefined_type) { return @intCast(u32, 4); }
+    if (k == TypeKind.i64_type or k == TypeKind.u64_type) { return @intCast(u32, 8); }
+    return ty.size;
+}
+
 fn typeIsIntKind(reg: *TypeRegistry, tid: u32) u8 {
     if (tid == type_mod.TYPE_VOID) { return @intCast(u8, 0); }
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -5713,9 +5724,13 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     r_sgn = classifyIntSignedness(emitter.registry, r_tyid);
                 }
                 if (l_sgn == @intCast(i8, 1) and r_sgn == @intCast(i8, 0)) {
-                    lhs_cast = getCTypeName(emitter.registry, emitter.mangler, r_tyid);
+                    if (intTypeByteWidth(emitter.registry, r_tyid) >= intTypeByteWidth(emitter.registry, l_tyid)) {
+                        lhs_cast = getCTypeName(emitter.registry, emitter.mangler, r_tyid);
+                    }
                 } else if (l_sgn == @intCast(i8, 0) and r_sgn == @intCast(i8, 1)) {
-                    rhs_cast = getCTypeName(emitter.registry, emitter.mangler, l_tyid);
+                    if (intTypeByteWidth(emitter.registry, l_tyid) >= intTypeByteWidth(emitter.registry, r_tyid)) {
+                        rhs_cast = getCTypeName(emitter.registry, emitter.mangler, l_tyid);
+                    }
                 }
             }
             var bnr_m: []const u8 = "BNR:r"; pal.markerWrite(bnr_m);
