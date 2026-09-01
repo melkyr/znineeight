@@ -770,6 +770,207 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 - [ ] **Step 5: Commit + report + ledger + memory** — commit verbatim.
 
 ---
+> **AMENDMENT 14 (operator-ruled 2026-08-26):** correctness fix wave — one F task per open finding across the S-series (S-LIR/S-HASH/S-TOKEN/S-AST) + the carried W2-2/W2-3 findings. Rationale: **a compiler cannot rely on guessing** — the spill/fault-in I/O paths (`pal.zig` streamOpen/streamWrite/streamRead/streamSeek) discard every C return value (`_ = fwrite/fread/fseek`), so a short write/read, failed open, or failed seek silently produces WRONG emitted C. Each finding (even Minor) becomes a discrete F task. Execution order: these run BEFORE I-COMPACT and after S-INTERNER. Every task's gate = 4 MD5 keep-or-re-baseline (current: gol `b335d894`, lisp `3591bad9`, json `76056b97`, mud `4591fef0`) + golden 9/9 + self-compile clean + ref 0-warning (pre-authorized pal.c `fwrite` carve-out is not a defect).
+
+### Task S-FIX-1: I/O error discipline (systemic — pal.zig + all spill call sites)
+
+**Files:**
+- Modify: `sf/src/pal.zig` (`streamOpen`/`streamWrite`/`streamRead`/`streamSeek`), all spill/fault-in call sites (`sf/src/lir_stream.zig`, `sf/src/module_registry.zig` hash spill, `sf/src/ast.zig` block spill/fault)
+- Commit: `fix: verify spill I/O results (ICE on short write/read/seek, null handle)`
+
+**Interfaces:**
+- Consumes: the systemic finding (pal.zig:113/118/123 `_ = fwrite/fread/fseek`; :96 streamOpen `?*void` never null-checked at call sites).
+- Produces: every spill I/O failure becomes a clear ICE (panicHandler "out of memory"-style diagnostic), never silent wrong output.
+
+- [ ] **Step 1:** `streamWrite`/`streamRead` check the C return equals the requested byte count → on short/mismatch `panic` (ICE); `streamSeek` checks return == 0 → ICE on failure.
+- [ ] **Step 2:** null-check `streamOpen` at EVERY call site (ast.zig:513 spill_handle, lir_stream.zig lirStreamBeginWrite/BeginRead, module_registry.zig hash spill open) → ICE on null.
+- [ ] **Step 3:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 4:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-2: S-HASH fault-in failure is an ICE, not a silent null
+
+**Files:**
+- Modify: `sf/src/module_registry.zig` (`moduleRegistryFaultInPathToId` + `moduleRegistryPathToIdGet`)
+- Commit: `fix: S-HASH fault-in failure is an ICE, not a silent null`
+
+**Interfaces:**
+- Consumes: S-HASH Important + Minor 1 (fault-in open-failure → `spilled=1` + empty map → every Get silently returns null; a future direct Get/Put silently wrong).
+- Produces: post-spill Get either faults successfully or aborts with a clear diagnostic; a direct (un-routed) Get path is structurally prevented or guarded.
+
+- [ ] **Step 1:** fault-in: on open/read failure or empty-after-fault → panic (ICE), never return a null-bearing empty map.
+- [ ] **Step 2:** guard the coupling — a `u32ToU32MapGet`/`Put` on a spilled `path_to_id` must route through the helper (or assert), so future call sites cannot silently misbehave.
+- [ ] **Step 3:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 4:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-3: S-HASH fault-in validates cap/count before allocate
+
+**Files:**
+- Modify: `sf/src/module_registry.zig` (hash spill read)
+- Commit: `fix: S-HASH fault-in validates cap/count before allocate`
+
+**Interfaces:**
+- Consumes: S-HASH Minor 3 (fault-in trusts file-sourced `cap`/`count`; a corrupt file could oversize `sandAlloc`).
+- Produces: fault-in cross-checks file header cap/count against the recorded spill metadata; mismatch → ICE.
+
+- [ ] **Step 1:** read the recorded meta (capacity/count stored at spill) and verify the file header matches before any `sandAlloc`.
+- [ ] **Step 2:** on mismatch or absurd size (> a sane bound) → ICE, not allocation.
+- [ ] **Step 3:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 4:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-4: S-LIR checks spill fopen success
+
+**Files:**
+- Modify: `sf/src/lir_stream.zig` (`lirStreamBeginWrite`/`lirStreamBeginRead`)
+- Commit: `fix: S-LIR checks spill fopen success`
+
+**Interfaces:**
+- Consumes: S-LIR Minor 1 (null handle → silent no-op writes while the slot table records offsets → wrong C).
+- Produces: fopen null → ICE immediately.
+
+- [ ] **Step 1:** after `streamOpen`, null-check the handle in both BeginWrite and BeginRead → ICE on null.
+- [ ] **Step 2:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-5: S-LIR asserts byte_len on read
+
+**Files:**
+- Modify: `sf/src/lir_stream.zig` (`lirStreamReadFunction`)
+- Commit: `fix: S-LIR asserts byte_len on read`
+
+**Interfaces:**
+- Consumes: S-LIR Minor 2 (`byte_len` recorded but never asserted; the S-LIR-I design said "asserted on read" and it was dropped).
+- Produces: a wrong seek/offset is caught (ICE) instead of silently reading garbage.
+
+- [ ] **Step 1:** after reading a function, verify the consumed bytes equal `slot.byte_len` (or verify the record header offsets) → mismatch ICE.
+- [ ] **Step 2:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-6: S-AST closes the spill file
+
+**Files:**
+- Modify: `sf/src/ast.zig` (spill lifecycle) + `sf/src/main.zig` (call the close at end of emission)
+- Commit: `fix: S-AST closes the spill file`
+
+**Interfaces:**
+- Consumes: S-AST Minor 1 (spill_handle never closed — correct only because fseek-before-read happens to flush; fragile invariant + crash-mid-write hazard).
+- Produces: explicit close/flush at end of `phase_C89Emission`; no reliance on exit-time flush.
+
+- [ ] **Step 1:** add an explicit `streamClose` for the AST spill handle at the end of emission (both output-dir and non-output-dir paths).
+- [ ] **Step 2:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-7: S-AST guards spill seek offset width
+
+**Files:**
+- Modify: `sf/src/ast.zig` (fault-in/spill `i32` seek offset)
+- Commit: `fix: S-AST guards spill seek offset width`
+
+**Interfaces:**
+- Consumes: S-AST Minor 6 (`i32` seek offset overflows past ~18,730 blocks / ~77 M nodes).
+- Produces: a bound check (or 64-bit-aware seek) so a pathological AST cannot silently seek to a wrong offset.
+
+- [ ] **Step 1:** guard `bi * AST_BLOCK_REC_SIZE` against `i32` overflow (assert block count below the limit) → ICE if exceeded.
+- [ ] **Step 2:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-8: Emit C89-legal zero-init (drop C99 compound literal)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (`.ret_void` → `return (T){0}` sites, ~6)
+- Commit: `fix: emit C89-legal zero-init (drop C99 compound literal)`
+
+**Interfaces:**
+- Consumes: W2-3 Important #1 (`return (T){0}` C99 compound literal breaks msvc6/openwatcom).
+- Produces: C89-legal zero-init for the non-scalar ret_void fallthrough sites (e.g., a named temp `T t = {0}; return t;` or an equivalent that is valid strict C89).
+
+- [ ] **Step 1:** replace each `return (T){0}` with a C89-legal form (verify with `gcc -m32 -std=c89 -pedantic` on the emitted gen C).
+- [ ] **Step 2:** Verify — 4 MD5 keep-or-re-baseline; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-9: Comparison cast width-guard (no narrow truncation)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig` (comparison cast, W2-2)
+- Commit: `fix: comparison cast width-guard (no narrow truncation)`
+
+**Interfaces:**
+- Consumes: W2-2 Important-latent (comparison cast keys signedness only, not width — a u8/u16 unsigned operand would truncate an out-of-range int).
+- Produces: the cast is emitted only when the unsigned operand width ≥ the signed operand width; otherwise no narrowing cast (or a widening one).
+
+- [ ] **Step 1:** add the width guard so a mixed-sign comparison never casts the signed operand DOWN into a narrower unsigned type.
+- [ ] **Step 2:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-10: Remove dead spill machinery
+
+**Files:**
+- Modify: `sf/src/ast.zig` (dead `astStoreEnsureNodesCapacity`, redundant lir_read reset) + `sf/src/lir.zig` (dead `lirFunctionRelocateToModule`, `LirFunctionArrayList`), `sf/src/module_registry.zig` (unused spill-meta fields), `sf/src/main.zig` (redundant `lir_read` reset)
+- Commit: `chore: remove dead spill machinery (S-AST/S-LIR)`
+
+**Interfaces:**
+- Consumes: S-LIR Minor 5 + S-AST Minor 3 + S-HASH Minor 2 + the redundant-reset note.
+- Produces: no dead code; every removal verified to have zero references (including test files) before deleting.
+
+- [ ] **Step 1:** grep each target (fns, types, fields) for references across `sf/src` (incl. tests); only delete if zero.
+- [ ] **Step 2:** delete; rebuild.
+- [ ] **Step 3:** Verify — 4 MD5 byte-identical; golden 9/9; self-compile; ref 0-warning.
+- [ ] **Step 4:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-11: gitignore spill temp files
+
+**Files:**
+- Modify: `.gitignore` (add `.zig1_ast.tmp`, `.zig1_hash.tmp`, `.zig1_lir.tmp`)
+- Commit: `chore: gitignore spill temp files`
+
+**Interfaces:**
+- Consumes: S-LIR/S-HASH/S-AST leftover temp files in repo CWD on no-output-dir runs.
+- Produces: spill temp files no longer pollute `git status`.
+
+- [ ] **Step 1:** append the three `.zig1_*.tmp` patterns to `.gitignore`; confirm `git status` is clean of them.
+- [ ] **Step 2:** Commit verbatim.
+
+### Task S-FIX-12: astStoreComputeMemory reports block-window size
+
+**Files:**
+- Modify: `sf/src/ast.zig` (`astStoreComputeMemory`)
+- Commit: `fix: astStoreComputeMemory reports block-window size`
+
+**Interfaces:**
+- Consumes: S-AST Minor 4 (computes nodes as `len × 24 B` — over-reports for disk-backed storage; tests-only today).
+- Produces: the reported AST memory is the resident window (slots) + block table, not `len × 24 B`.
+
+- [ ] **Step 1:** recompute: resident slots' allocated node/payload bytes + block-table + resident side tables.
+- [ ] **Step 2:** Verify — build + `ast_tests` (if buildable) or confirm the number is sane; 4 MD5 byte-identical; self-compile.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-13: migrate tests to the astStoreNodeAt accessor
+
+**Files:**
+- Modify: `sf/src/tests/*` (stale `store.nodes.items` refs: test_lower_bin, test_recovery_expr, test_semantic_bin, ast_tests, debug_err_recovery)
+- Commit: `chore: migrate tests to astStoreNodeAt accessor`
+
+**Interfaces:**
+- Consumes: S-AST Minor 5 (tests still reference the removed `nodes.items`).
+- Produces: the test sources compile against the block-backed store (or are documented as out-of-build if they were already broken pre-M1/S-AST).
+
+- [ ] **Step 1:** replace `store.nodes.items[X]` with `astStoreNodeAt(&store, X)` in the listed test files.
+- [ ] **Step 2:** attempt to build the affected tests; for any pre-broken test (pre-existing errors identical at base), document rather than fix.
+- [ ] **Step 3:** Commit verbatim + report + ledger + memory.
+
+### Task S-FIX-14: S-TOKEN formal task review (process gap)
+
+**Files:**
+- Report: `.superpowers/sdd/task-MEMREFACTOR-report.md` (append `## S-TOKEN review`)
+- Commit: none (read-only review)
+
+**Interfaces:**
+- Consumes: S-TOKEN never received a formal task review (process gap — moved on after the operator's +10 MB transient ruling).
+- Produces: an independent review of commit `000b0a73` (pull-parser) with spec-compliance + quality verdicts; any new findings recorded for the fix wave.
+
+- [ ] **Step 1:** generate the review package (`review-package 0d5bd3bb 000b0a73`).
+- [ ] **Step 2:** dispatch the task reviewer (brief = S-TOKEN plan task + AMENDMENT 13; report = `## S-TOKEN-F (final)`); record verdict + findings.
+
+---
 
 ### Task I-COMPACT: clever 16-B AstNode compaction evaluation (read-only, orthogonal; gated after the S-series)
 
