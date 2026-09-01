@@ -57,6 +57,11 @@ tr*
 /zig0
 zig0.exe
 
+# Zig self-hosted compiler spill files
+.zig1_ast.tmp
+.zig1_hash.tmp
+.zig1_lir.tmp
+
 # Generated C89 files
 temp_codegen_*.c
 test_output/
