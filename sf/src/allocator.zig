@@ -116,7 +116,7 @@ fn growableSandGrow(gs: *GrowableSand, view: *Sand, size: usize) bool {
     }
     var old_size: usize = gs.last.size;
     var new_size: usize = gs.last.size * 2; // capped doubling 4→8→16→…→2 MiB
-    var max_segment: usize = @intCast(usize, 2 * 1024 * 1024);
+    var max_segment: usize = @intCast(usize, 1 * 1024 * 1024);
     if (new_size > max_segment) new_size = max_segment;
     if (size > new_size) new_size = size; // exact-fit final segment to the requested size
     var raw = sandAlloc(gs.backing, new_size, 4) catch return false;
