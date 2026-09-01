@@ -542,6 +542,7 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
      writer: BufferedWriter,
      indent: u32,
      alloc: *Sand,
+     persist_alloc: *Sand,
      registry: *TypeRegistry,
      interner: *StringInterner,
      mangler: *NameMangler,
@@ -583,11 +584,12 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
       global_decls_len: u32,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_len: u32) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_len: u32) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
         .alloc = alloc,
+        .persist_alloc = persist_alloc,
         .registry = reg,
         .interner = interner,
         .mangler = mangler,
@@ -611,20 +613,20 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .bb_used = undefined,
          .bb_used_count = @intCast(u32, 0),
          .dl_hoisted = @intCast(u8, 0),
-         .emitted_type_set = hash_mod.u32ToU32MapInitCap(alloc, reg.types_len),
-         .fwd_decl_set = hash_mod.u32ToU32MapInitCap(alloc, reg.types_len),
-         .pointer_only_map = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, pointer_only_len)),
-         .shared_set = hash_mod.u32ToU32MapInit(alloc),
+         .emitted_type_set = hash_mod.u32ToU32MapInitCap(persist_alloc, reg.types_len),
+         .fwd_decl_set = hash_mod.u32ToU32MapInitCap(persist_alloc, reg.types_len),
+         .pointer_only_map = hash_mod.u32ToU32MapInitCap(persist_alloc, @intCast(usize, pointer_only_len)),
+         .shared_set = hash_mod.u32ToU32MapInit(persist_alloc),
          .module_reg = undefined,
          .error_code_registry = error_code_reg,
-          .dedup_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
+          .dedup_names = @ptrCast([*]u32, alloc_mod.sandAlloc(persist_alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
           .dedup_cap = @intCast(u32, 128),
           .dedup_count = @intCast(u32, 0),
-            .fl_name_ids = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
-            .fl_temps = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
+            .fl_name_ids = @ptrCast([*]u32, alloc_mod.sandAlloc(persist_alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
+            .fl_temps = @ptrCast([*]u32, alloc_mod.sandAlloc(persist_alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
             .fl_count = @intCast(u32, 0),
-           .temp_global_map = hash_mod.u32ToU32MapInit(alloc),
-           .ts_ref_set = hash_mod.u32ToU32MapInit(alloc),
+           .temp_global_map = hash_mod.u32ToU32MapInit(persist_alloc),
+           .ts_ref_set = hash_mod.u32ToU32MapInit(persist_alloc),
            .global_decls = undefined,
            .global_decls_len = @intCast(u32, 0),
        };
@@ -2496,6 +2498,7 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32, ptr
     emitGlobalDecls(emitter, @intCast(u32, 0), @intCast(u8, 1));
     var i: usize = @intCast(usize, 0);
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        alloc_mod.sandReset(emitter.alloc);
         var func = faultIn(emitter, i);
         emitter.switch_cases = &func.switch_cases;
         if (func.is_extern == @intCast(u8, 0)) {
@@ -2690,6 +2693,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
     emitGlobalDecls(emitter, module_id, @intCast(u8, 0));
     var i: usize = @intCast(usize, 0);
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        alloc_mod.sandReset(emitter.alloc);
         var f = faultIn(emitter, i);
         if (f.is_extern != @intCast(u8, 0)) continue;
         emitter.switch_cases = &f.switch_cases;
@@ -2786,8 +2790,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var n_cap: u32 = local_cap * @intCast(u32, 2);
             var n_ni = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
             var n_nt = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
-            var n_ft = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
-            var n_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+            var n_ft = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+            var n_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
             var gi: u32 = @intCast(u32, 0);
             while (gi < local_count) : (gi += @intCast(u32, 1)) {
                 n_ni[@intCast(usize, gi)] = local_name_ids[@intCast(usize, gi)];
@@ -2824,8 +2828,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         var n_cap: u32 = local_cap * @intCast(u32, 2);
                         var n_ni = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
                         var n_nt = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
-                        var n_ft = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
-                        var n_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var n_ft = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var n_fn = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, n_cap) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
                         var gi: u32 = @intCast(u32, 0);
                         while (gi < local_count) : (gi += @intCast(u32, 1)) {
                             n_ni[@intCast(usize, gi)] = local_name_ids[@intCast(usize, gi)];
@@ -7264,7 +7268,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                         if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.markerWrite(da); continue; }
                         if (isDeadLocalName(emitter, dl.name_id) != @intCast(u8, 0)) { var dld: []const u8 = "DLD:s\n"; pal.markerWrite(dld); continue; }
                         if (emitter.dedup_count >= emitter.dedup_cap) {
-                            var nb = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, emitter.dedup_cap * @intCast(u32, 2)) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                            var nb = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, emitter.dedup_cap * @intCast(u32, 2)) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
                             var ci: u32 = @intCast(u32, 0);
                             while (ci < emitter.dedup_count) : (ci += @intCast(u32, 1)) {
                                 nb[@intCast(usize, ci)] = emitter.dedup_names[@intCast(usize, ci)];

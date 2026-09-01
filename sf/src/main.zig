@@ -735,7 +735,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     if (!ctx.cli.dump_c89) return;
     var mangler: c89_mod.NameMangler = undefined;
     var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
-    mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.scratch, mangler_hint);
+    mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.module, mangler_hint);
     var emitter: c89_mod.C89Emitter = undefined;
     emitter = c89_mod.c89EmitterInit(
         ctx.typereg,
@@ -745,6 +745,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         undefined,
         undefined,
         &ctx.alloc.scratch,
+        &ctx.alloc.module,
         &ctx.error_code_registry,
         ctx.pointer_only_len,
     );
@@ -761,7 +762,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     lir_stream.lirStreamBeginRead(&ctx.lir_stream);
     var module_name: []const u8 = "output";
 
-    var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.scratch);
+    var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.module);
     var ts_fi: usize = @intCast(usize, 0);
     while (ts_fi < ctx.lir_slots.len) : (ts_fi += @intCast(usize, 1)) {
         var ts_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ts_fi], &ctx.alloc.lir_read);
@@ -803,7 +804,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         while (poi < ctx.pointer_only_len) : (poi += 1) {
             hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ctx.pointer_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
         }
-        var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.scratch);
+        var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.module);
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
         var od = ctx.cli.output_dir;
@@ -900,7 +901,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitIncludes(&cwriter);
     c89_mod.bufferedWriterFlush(&cwriter);
 
-    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.scratch);
+    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.module);
     c89_mod.emitModule(&emitter, module_name, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);
