@@ -148,7 +148,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         pal.exit(@intCast(u8, 1));
         return;
     };
-     var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4096);
+     var interner_bc: u32 = @intCast(u32, source.len) + @intCast(u32, source.len / @intCast(usize, 4));
+     if (interner_bc < @intCast(u32, 4096)) interner_bc = @intCast(u32, 4096);
+     var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, interner_bc);
      var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
      var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
      diag.max_diagnostics = @intCast(usize, cli.max_errors);
