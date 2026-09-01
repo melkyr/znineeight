@@ -132,9 +132,9 @@ pub const SocketSelectData = struct {
 };
 
 // Per-fn side table for the 3 wide LirInst variants. LirInst holds the tag
-// (ordinals unchanged) plus a u32 slot; the operands live here. Relocated with
-// lirFunctionRelocateToModule so pointer stability holds after the scratch→module
-// move (I-3 Concern 2).
+// (ordinals unchanged) plus a u32 slot; the operands live here. Serialized with
+// the function by lirStreamWriteFunction and faulted back in on read (I-3
+// Concern 2); payloads are scalar ids, so the byte dump is exact.
 pub const LirSideEntry = union {
     call_direct: CallDirectData,
     tail_call: TailCallData,
@@ -387,46 +387,6 @@ pub fn switchCaseArrayListGetSlice(self: *SwitchCaseArrayList) []SwitchCase {
     return self.items[0..self.len];
 }
 
-pub const LirFunctionArrayList = struct {
-    items: [*]LirFunction,
-    len: usize,
-    capacity: usize,
-    allocator: *Sand,
-};
-
-pub fn lirFunctionArrayListInit(allocator: *Sand) LirFunctionArrayList {
-    return LirFunctionArrayList{
-        .items = undefined,
-        .len = @intCast(usize, 0),
-        .capacity = @intCast(usize, 0),
-        .allocator = allocator,
-    };
-}
-
-pub fn lirFunctionArrayListEnsureCapacity(self: *LirFunctionArrayList, new_capacity: usize) void {
-    if (new_capacity <= self.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
-    if (new_cap < @intCast(usize, 4)) new_cap = @intCast(usize, 4);
-    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(LirFunction) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]LirFunction, raw);
-    var i: usize = @intCast(usize, 0);
-    while (i < self.len) : (i += @intCast(usize, 1)) {
-        new_items[i] = self.items[i];
-    }
-    self.items = new_items;
-    self.capacity = new_cap;
-}
-
-pub fn lirFunctionArrayListAppend(self: *LirFunctionArrayList, value: LirFunction) void {
-    lirFunctionArrayListEnsureCapacity(self, self.len + 1);
-    self.items[self.len] = value;
-    self.len += 1;
-}
-
-pub fn lirFunctionArrayListGetSlice(self: *LirFunctionArrayList) []LirFunction {
-    return self.items[0..self.len];
-}
 
 pub const LirSlot = struct {
     module_id: u32,
@@ -518,126 +478,6 @@ pub fn lirSideGetTailCall(lfn: *LirFunction, slot: u32) TailCallData {
 
 pub fn lirSideGetSocketSelect(lfn: *LirFunction, slot: u32) SocketSelectData {
     return lfn.side_table.items[@intCast(usize, slot)].socket_select;
-}
-
-// Deep-copy a lowered LirFunction's array data out of the (per-phase) scratch
-// arena into a longer-lived arena (module). lowerFn/lowerModuleInit allocate
-// every list backing store in `self.alloc` (= scratch), so the by-value copy in
-// `lir_fns` still points at scratch. C emission runs in a later phase and reads
-// those lists, so the scratch must survive until then — unless we relocate the
-// data here, which lets the caller `sandReset(scratch)` between functions and
-// bound the per-function LIR working set. All LirInst/param/temp/switch payloads
-// are scalar ids (no pointers/slices), so a value copy is exact.
-pub fn lirFunctionRelocateToModule(src_fn: LirFunction, module_alloc: *Sand) LirFunction {
-    var params = lirParamArrayListInit(module_alloc);
-    if (src_fn.params.len > @intCast(usize, 0)) {
-        var raw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(LirParam)) * src_fn.params.len, @intCast(usize, 4)) catch unreachable;
-        var items = @ptrCast([*]LirParam, raw);
-        var pi: usize = @intCast(usize, 0);
-        while (pi < src_fn.params.len) : (pi += @intCast(usize, 1)) {
-            items[pi] = src_fn.params.items[pi];
-        }
-        params.items = items;
-        params.len = src_fn.params.len;
-        params.capacity = src_fn.params.len;
-    }
-    var blocks = basicBlockArrayListInit(module_alloc);
-    if (src_fn.blocks.len > @intCast(usize, 0)) {
-        var raw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(BasicBlock)) * src_fn.blocks.len, @intCast(usize, 4)) catch unreachable;
-        var items = @ptrCast([*]BasicBlock, raw);
-        var bi: usize = @intCast(usize, 0);
-        while (bi < src_fn.blocks.len) : (bi += @intCast(usize, 1)) {
-            var src_insts = src_fn.blocks.items[bi].insts;
-            items[bi] = src_fn.blocks.items[bi];
-            var binsts = lirInstArrayListInit(module_alloc);
-            if (src_insts.len > @intCast(usize, 0)) {
-                var iraw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(LirInst)) * src_insts.len, @intCast(usize, 4)) catch unreachable;
-                var bitems = @ptrCast([*]LirInst, iraw);
-                var ii: usize = @intCast(usize, 0);
-                while (ii < src_insts.len) : (ii += @intCast(usize, 1)) {
-                    bitems[ii] = src_insts.items[ii];
-                }
-                binsts.items = bitems;
-                binsts.len = src_insts.len;
-                binsts.capacity = src_insts.len;
-            }
-            items[bi].insts = binsts;
-        }
-        blocks.items = items;
-        blocks.len = src_fn.blocks.len;
-        blocks.capacity = src_fn.blocks.len;
-    }
-    var hoisted_temps = tempDeclArrayListInit(module_alloc);
-    if (src_fn.hoisted_temps.len > @intCast(usize, 0)) {
-        var raw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(TempDecl)) * src_fn.hoisted_temps.len, @intCast(usize, 4)) catch unreachable;
-        var items = @ptrCast([*]TempDecl, raw);
-        var hi: usize = @intCast(usize, 0);
-        while (hi < src_fn.hoisted_temps.len) : (hi += @intCast(usize, 1)) {
-            items[hi] = src_fn.hoisted_temps.items[hi];
-        }
-        hoisted_temps.items = items;
-        hoisted_temps.len = src_fn.hoisted_temps.len;
-        hoisted_temps.capacity = src_fn.hoisted_temps.len;
-    }
-    var switch_cases = switchCaseArrayListInit(module_alloc);
-    if (src_fn.switch_cases.len > @intCast(usize, 0)) {
-        var raw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(SwitchCase)) * src_fn.switch_cases.len, @intCast(usize, 4)) catch unreachable;
-        var items = @ptrCast([*]SwitchCase, raw);
-        var si: usize = @intCast(usize, 0);
-        while (si < src_fn.switch_cases.len) : (si += @intCast(usize, 1)) {
-            items[si] = src_fn.switch_cases.items[si];
-        }
-        switch_cases.items = items;
-        switch_cases.len = src_fn.switch_cases.len;
-        switch_cases.capacity = src_fn.switch_cases.len;
-    }
-    var side_table = lirSideEntryArrayListInit(module_alloc);
-    if (src_fn.side_table.len > @intCast(usize, 0)) {
-        var raw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, @sizeOf(LirSideEntry)) * src_fn.side_table.len, @intCast(usize, 4)) catch unreachable;
-        var items = @ptrCast([*]LirSideEntry, raw);
-        var si: usize = @intCast(usize, 0);
-        while (si < src_fn.side_table.len) : (si += @intCast(usize, 1)) {
-            items[si] = src_fn.side_table.items[si];
-        }
-        side_table.items = items;
-        side_table.len = src_fn.side_table.len;
-        side_table.capacity = src_fn.side_table.len;
-    }
-    var tvsf = hash_mod.u32ToU32MapInit(module_alloc);
-    if (src_fn.temp_variant_sub_field.capacity > @intCast(usize, 0)) {
-        var cap = src_fn.temp_variant_sub_field.capacity;
-        var kraw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
-        var vraw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, 4) * cap, @intCast(usize, 4)) catch unreachable;
-        var oraw = alloc_mod.sandAlloc(module_alloc, @intCast(usize, 1) * cap, @intCast(usize, 4)) catch unreachable;
-        var keys = @ptrCast([*]u32, kraw);
-        var vals = @ptrCast([*]u32, vraw);
-        var occ = @ptrCast([*]u8, oraw);
-        var ki: usize = @intCast(usize, 0);
-        while (ki < cap) : (ki += @intCast(usize, 1)) {
-            keys[ki] = src_fn.temp_variant_sub_field.keys[ki];
-            vals[ki] = src_fn.temp_variant_sub_field.values[ki];
-            occ[ki] = src_fn.temp_variant_sub_field.occupied[ki];
-        }
-        tvsf.keys = keys;
-        tvsf.values = vals;
-        tvsf.occupied = occ;
-        tvsf.capacity = cap;
-        tvsf.count = src_fn.temp_variant_sub_field.count;
-    }
-    return LirFunction{
-        .name_id = src_fn.name_id,
-        .module_id = src_fn.module_id,
-        .return_type = src_fn.return_type,
-        .params = params,
-        .blocks = blocks,
-        .hoisted_temps = hoisted_temps,
-        .switch_cases = switch_cases,
-        .side_table = side_table,
-        .temp_variant_sub_field = tvsf,
-        .is_extern = src_fn.is_extern,
-        .is_pub = src_fn.is_pub,
-        .is_variadic = src_fn.is_variadic,
-    };
 }
 
 pub const ModuleGlobalDecl = struct {

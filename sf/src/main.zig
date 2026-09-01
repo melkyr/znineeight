@@ -795,7 +795,6 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
                 }
             }
         }
-        alloc_mod.sandReset(&ctx.alloc.lir_read);
     }
     emitter.ts_ref_set = ts_ref_set;
 

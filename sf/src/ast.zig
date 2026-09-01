@@ -437,39 +437,6 @@ pub fn astStoreCloseSpill(store: *AstStore) void {
     }
 }
 
-pub fn astStoreEnsureNodesCapacity(store: *AstStore, new_capacity: usize) void {
-    // The old contiguous nodes pre-allocation is deleted: capacity is now the
-    // block table (4096 nodes/block), a ~0.5 KB pre-size instead of a ~4.3 MB
-    // contiguous node array.
-    var blocks_needed: usize = new_capacity / @intCast(usize, AST_BLOCK_NODES);
-    if (blocks_needed * @intCast(usize, AST_BLOCK_NODES) < new_capacity) blocks_needed += 1;
-    astBlockTableEnsure(store, blocks_needed);
-}
-
-pub fn astStoreEnsureExtraChildrenCapacity(store: *AstStore, new_capacity: usize) void {
-    if (new_capacity <= store.extra_children.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-    if (store.extra_children.capacity > @intCast(usize, 0)) {
-        var grown = alloc_mod.sandReallocInPlace(store.allocator,
-            @ptrCast([*]u8, store.extra_children.items),
-            store.extra_children.capacity * @intCast(usize, 4),
-            new_cap * @intCast(usize, 4),
-            @intCast(usize, 4));
-        if (grown != null) {
-            store.extra_children.capacity = new_cap;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(store.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]u32, raw);
-    for (store.extra_children.items[0..store.extra_children.len]) |item, i| {
-        new_items[i] = item;
-    }
-    store.extra_children.items = new_items;
-    store.extra_children.capacity = new_cap;
-}
-
 
 pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u32, span_end: u32, c0: u32, c1: u32, c2: u32, payload: u32) u32 {
     var span_len: u32 = @intCast(u32, span_end - span_start);
