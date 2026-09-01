@@ -35,12 +35,12 @@ pub fn main() void {
     var src_s: []const u8 = "const x = 42; var y = 99;";
     var p = parser_mod.parserInit(tk[0..], src_s, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
     var count: u32 = 0;
     var i: usize = 0;
     while (i < ec.len) {
-        var child = store.nodes.items[ec[i]];
+        var child = ast_mod.astStoreNodeAt(&store, ec[i]);
         if (@enumToInt(child.kind) == @enumToInt(AstKind.err)) count += 1;
         i += 1;
     }

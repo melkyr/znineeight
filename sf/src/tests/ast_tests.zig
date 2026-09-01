@@ -59,7 +59,7 @@ fn testAstStoreInit() void {
     var sand = alloc_mod.sandInit(buf[0..65536]);
     var store = ast_mod.astStoreInit(&sand);
     assertEqU32(@intCast(u32, store.nodes.len), @intCast(u32, 1));
-    assertEqU32(@intCast(u32, @enumToInt(store.nodes.items[0].kind)), @intCast(u32, 0));
+    assertEqU32(@intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, 0).kind)), @intCast(u32, 0));
 }
 
 fn testAstStoreAddNode() void {
@@ -80,8 +80,8 @@ fn testAstStoreAddNodeSpan() void {
     var idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0),
         @intCast(u32, 5), @intCast(u32, 10),
         @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    assertEqU32(store.nodes.items[idx].span_start, @intCast(u32, 5));
-    assertEqU32(@intCast(u32, store.nodes.items[idx].span_len), @intCast(u32, 5));
+    assertEqU32(ast_mod.astStoreNodeAt(&store, idx).span_start, @intCast(u32, 5));
+    assertEqU32(@intCast(u32, ast_mod.astStoreNodeAt(&store, idx).span_len), @intCast(u32, 5));
 }
 
 fn testAstStoreAddExtraChildren() void {
@@ -224,7 +224,7 @@ var g_validate_ok: bool = true;
 fn validateNode(store: *AstStore, node_idx: u32) void {
     if (!g_validate_ok) return;
     if (@intCast(usize, node_idx) >= store.nodes.len) { g_validate_ok = false; return; }
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
     if (node.child_0 != 0 and @intCast(usize, node.child_0) >= store.nodes.len) { g_validate_ok = false; return; }
     if (node.child_1 != 0 and @intCast(usize, node.child_1) >= store.nodes.len) { g_validate_ok = false; return; }
     if (node.child_2 != 0 and @intCast(usize, node.child_2) >= store.nodes.len) { g_validate_ok = false; return; }

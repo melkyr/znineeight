@@ -1572,7 +1572,7 @@ fn walkTestVisit(ctx: *az_mod.AnalyzerContext, state: *smap_mod.StateMap, node_i
 }
 
 fn branchVisitSet(ctx: *az_mod.AnalyzerContext, state: *smap_mod.StateMap, node_idx: u32) void {
-    var node = ctx.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     if (node.kind == AstKind.int_literal) {
         smap_mod.stateMapSet(state, @intCast(u32, 42), @intCast(u8, 3));
     } else {

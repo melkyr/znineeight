@@ -59,7 +59,7 @@ pub fn main() void {
         pal.exit(1);
         return;
     };
-    var root = store.nodes.items[@intCast(usize, ast_root)];
+    var root = ast_mod.astStoreNodeAt(&store, ast_root);
     if (root.kind != AstKind.module_root) {
         var e: []const u8 = "FAIL: not module_root\n";
         pal.stderr_write(e);
@@ -74,10 +74,10 @@ pub fn main() void {
     pal.stderr_write(nl2);
     var di: usize = 0;
     while (di < decls.len) : (di += 1) {
-        var d = store.nodes.items[@intCast(usize, decls[di])];
+        var d = ast_mod.astStoreNodeAt(&store, decls[di]);
         if (d.kind == AstKind.fn_decl) {
             var body_idx = d.child_0;
-            var body = store.nodes.items[@intCast(usize, body_idx)];
+            var body = ast_mod.astStoreNodeAt(&store, body_idx);
             var fm2: []const u8 = "body.kind=";
             pal.stderr_write(fm2);
             writeU32(@intCast(usize, @intCast(u32, body.kind)));

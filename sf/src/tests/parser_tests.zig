@@ -153,17 +153,17 @@ fn testSwitchExprBasic() void {
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseSwitchExpr(&p) catch unreachable;
 
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 
     if (ast_mod.astStoreNodePayload(&store, node_idx) > @intCast(u32, 0)) {
         var prongs = ast_mod.astStoreNodeExtraChildren(&store, node_idx);
         if (prongs.len > @intCast(usize, 0)) {
-            var prong0 = store.nodes.items[prongs[0]];
+            var prong0 = ast_mod.astStoreNodeAt(&store, prongs[0]);
             assertEqU32(@intCast(u32, @enumToInt(prong0.kind)), @intCast(u32, @enumToInt(AstKind.swt_prong)));
         }
         if (prongs.len > @intCast(usize, 1)) {
-            var prong1 = store.nodes.items[prongs[1]];
+            var prong1 = ast_mod.astStoreNodeAt(&store, prongs[1]);
             assertEqU32(@intCast(u32, @enumToInt(prong1.kind)), @intCast(u32, @enumToInt(AstKind.swt_prong)));
         }
     }
@@ -206,7 +206,7 @@ fn testParseTypePtr() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseType(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.ptr_type)));
 }
 
@@ -229,7 +229,7 @@ fn testParseTypeVoid() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseType(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.ident_expr)));
 }
 
@@ -251,7 +251,7 @@ fn lexAndTypeKind(src: []const u8) u32 {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseType(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     return @intCast(u32, @enumToInt(node.kind));
 }
 
@@ -306,7 +306,7 @@ fn testParseImportExpr() void {
     var src: []const u8 = "@import(         )";
     var p = parser_mod.parserInit(tokens[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.import_expr)));
     assertEqU32(ast_mod.astStoreNodePayload(&store, node_idx), path_id);
 }
@@ -337,7 +337,7 @@ fn testParserErrorRecovery() void {
     var src_s: []const u8 = "const x = 42; extern const y = 99;";
     var p = parser_mod.parserInit(tokens[0..], src_s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
     var count: usize = @intCast(usize, ast_mod.astStoreNodePayloadPacked(&store, node_idx, node.kind) & @intCast(u64, 0xFFFF));
     assertEqU32(@intCast(u32, count), @intCast(u32, 2));
@@ -354,7 +354,7 @@ fn testParseModuleRootEmpty() void {
     eof_tok[0] = Token{ .kind = TokenKind.eof, .span_start = @intCast(u32, 0), .span_len = @intCast(u16, 0), .value = TokenValue{ .int_val = @intCast(u64, 0) } };
     var p = parser_mod.parserInit(eof_tok[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
 }
 fn testParseModuleRootVarDecl() void {
@@ -376,7 +376,7 @@ fn testParseModuleRootVarDecl() void {
     var src: []const u8 = "const x = 42;    ";
     var p = parser_mod.parserInit(tokens[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
 }
 fn testParseQualifiedImport() void {
@@ -403,9 +403,9 @@ fn testParseQualifiedImport() void {
     var src: []const u8 = "@import(\"foo.zig\").SomeType";
     var p = parser_mod.parserInit(tokens[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.field_access)));
-    var imp_node = store.nodes.items[node.child_0];
+    var imp_node = ast_mod.astStoreNodeAt(&store, node.child_0);
     assertEqU32(@intCast(u32, @enumToInt(imp_node.kind)), @intCast(u32, @enumToInt(AstKind.import_expr)));
     assertEqU32(ast_mod.astStoreNodePayload(&store, node.child_0), path_id);
     assertEqU32(ast_mod.astStoreNodePayload(&store, node_idx), name_id);
@@ -428,7 +428,7 @@ fn lexAndKind(src: []const u8) u32 {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     return @intCast(u32, @enumToInt(node.kind));
 }
 
@@ -450,7 +450,7 @@ fn lexAndKindPrimary(src: []const u8) u32 {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParsePrimary(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     return @intCast(u32, @enumToInt(node.kind));
 }
 
@@ -503,9 +503,9 @@ fn testParseArrayLiteral() void {
     }
     var p = parser_mod.parserInit(tokens[0..i], src_s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.array_init)));
-    var type_node = store.nodes.items[node.child_0];
+    var type_node = ast_mod.astStoreNodeAt(&store, node.child_0);
     assertEqU32(@intCast(u32, @enumToInt(type_node.kind)), @intCast(u32, @enumToInt(AstKind.array_type)));
 }
 
@@ -529,7 +529,7 @@ fn testParseExternFn() void {
     var src: []const u8 = "extern fn foo();";
     var p = parser_mod.parserInit(tokens[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
     var count: usize = @intCast(usize, ast_mod.astStoreNodePayloadPacked(&store, node_idx, node.kind) & @intCast(u64, 0xFFFF));
     assertEqU32(@intCast(u32, count), @intCast(u32, 1));
@@ -561,13 +561,13 @@ fn testParseStructInitVarDecl() void {
     var src: []const u8 = "const p = Point{ .x = 1 }";
     var p = parser_mod.parserInit(tokens[0..12], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
     var children = ast_mod.astStoreNodeExtraChildren(&store, node_idx);
     assertEqU32(@intCast(u32, children.len), @intCast(u32, 1));
-    var decl = store.nodes.items[children[0]];
+    var decl = ast_mod.astStoreNodeAt(&store, children[0]);
     assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.var_decl)));
-    var init_node = store.nodes.items[decl.child_1];
+    var init_node = ast_mod.astStoreNodeAt(&store, decl.child_1);
     assertEqU32(@intCast(u32, @enumToInt(init_node.kind)), @intCast(u32, @enumToInt(AstKind.struct_init)));
 }
 fn testParseAnonStructInit() void {
@@ -602,7 +602,7 @@ fn testParseLabeledBreak() void {
     var src: []const u8 = "break :loop;";
     var p = parser_mod.parserInit(tokens[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
-    assertEqU32(@intCast(u32, @enumToInt(store.nodes.items[node_idx].kind)), @intCast(u32, @enumToInt(AstKind.break_stmt)));
+    assertEqU32(@intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node_idx).kind)), @intCast(u32, @enumToInt(AstKind.break_stmt)));
     assertEqU32(ast_mod.astStoreNodePayload(&store, node_idx), label_id);
 }
 
@@ -625,13 +625,13 @@ fn testGapB_IfExprBody() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.if_stmt)));
-    var cond_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_0].kind));
+    var cond_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node.child_0).kind));
     assertEqU32(cond_kind, @intCast(u32, @enumToInt(AstKind.bool_literal)));
-    var then_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_1].kind));
+    var then_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node.child_1).kind));
     assertEqU32(then_kind, @intCast(u32, @enumToInt(AstKind.plain_assign)));
-    var else_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_2].kind));
+    var else_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node.child_2).kind));
      assertEqU32(else_kind, @intCast(u32, @enumToInt(AstKind.plain_assign)));
 }
 
@@ -672,11 +672,11 @@ fn testGapB_IfExprBody_Chain() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.if_stmt)));
-    var then_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_1].kind));
+    var then_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node.child_1).kind));
     assertEqU32(then_kind, @intCast(u32, @enumToInt(AstKind.plain_assign)));
-    var else_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_2].kind));
+    var else_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node.child_2).kind));
     assertEqU32(else_kind, @intCast(u32, @enumToInt(AstKind.if_stmt)));
 }
 
@@ -705,9 +705,9 @@ fn testForRange() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.for_stmt)));
-    var pat_kind = @intCast(u32, @enumToInt(store.nodes.items[node.child_0].kind));
+    var pat_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(&store, node.child_0).kind));
     assertEqU32(pat_kind, @intCast(u32, @enumToInt(AstKind.range_exclusive)));
 }
 
@@ -730,7 +730,7 @@ fn testDiscardStmt() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
      assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.plain_assign)));
 }
 
@@ -751,13 +751,13 @@ fn testSwitchUnderscoreCapture() void {
     }
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseExprPrec(&p, parser_mod.Prec.assignment) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
 
@@ -780,7 +780,7 @@ fn testForUnderscoreCapture() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], s, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParseStatement(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.for_stmt)));
 }
 
@@ -802,7 +802,7 @@ fn testLabeledBlockExpr() void {
     var src: []const u8 = "blk:{ }";
     var p = parser_mod.parserInit(tokens[0..], src, &store, &in_, &d, &a);
     var node_idx = parser_mod.parserParsePrimary(&p) catch unreachable;
-    var node = store.nodes.items[node_idx];
+    var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.labeled_stmt)));
 }
 pub fn runErrRecoveryTests() void {
@@ -816,12 +816,12 @@ pub fn runErrRecoveryTests() void {
 }
 
 fn countModuleErrs(store: *AstStore, root: u32) u32 {
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     var ec = ast_mod.astStoreNodeExtraChildren(store, root);
     var count: u32 = 0;
     var i: usize = 0;
     while (i < ec.len) {
-        var child = store.nodes.items[ec[i]];
+        var child = ast_mod.astStoreNodeAt(&store, ec[i]);
         if (@enumToInt(child.kind) == @enumToInt(AstKind.err)) count += 1;
         i += 1;
     }
@@ -1077,7 +1077,7 @@ fn testParseExprPrecDepth() void {
     }
     var p_s = parserInit(tokens_s[0..], src_s, &store, &in_, &d, &a);
     var parsed = parserParseExprPrec(&p_s, Prec.assignment) catch unreachable;
-    var node = store.nodes.items[parsed];
+    var node = ast_mod.astStoreNodeAt(&store, parsed);
     var d: u32 = @intCast(u32, 0);
     if (@enumToInt(node.kind) == @enumToInt(AstKind.swt_ex)) d = @intCast(u32, 1);
     var best: u32 = @intCast(u32, 0);
@@ -1138,7 +1138,7 @@ fn testDeepSwitch3Levels() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 }
 fn testTcoWhileContinue() void {
@@ -1161,7 +1161,7 @@ fn testTcoWhileContinue() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
 }
 fn testNestedIntCast() void {
@@ -1184,7 +1184,7 @@ fn testNestedIntCast() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseExprPrec(&p, Prec.none) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.builtin_call)));
 }
 fn testSwitchEmptyProngError() void {
@@ -1233,10 +1233,10 @@ fn testModAssignParse() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
     var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
-    var stmt = store.nodes.items[ec[@intCast(usize, 0)]];
+    var stmt = ast_mod.astStoreNodeAt(&store, ec[0]);
     assertEqU32(@intCast(u32, @enumToInt(stmt.kind)), @intCast(u32, @enumToInt(AstKind.mod_assign)));
     assertEqU32(@intCast(u32, @enumToInt(AstKind.mod_assign)), @intCast(u32, 74));
 }
@@ -1260,11 +1260,11 @@ fn testWhileCaptureNode() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
-    var decl = store.nodes.items[ec[@intCast(usize, 0)]];
+    var decl = ast_mod.astStoreNodeAt(&store, ec[0]);
     assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.while_stmt)));
-    var cap_node = store.nodes.items[ast_mod.astStoreNodePayload(&store, ec[@intCast(usize, 0)])];
+    var cap_node = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodePayload(&store, ec[0]));
     assertEqU32(@intCast(u32, @enumToInt(cap_node.kind)), @intCast(u32, @enumToInt(AstKind.while_capture)));
 }
 fn testForStmtName() void {
@@ -1287,8 +1287,8 @@ fn testForStmtName() void {
     var store = ast_mod.astStoreInit(&a);
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
-    var node = store.nodes.items[root];
+    var node = ast_mod.astStoreNodeAt(&store, root);
     var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
-    var decl = store.nodes.items[ec[@intCast(usize, 0)]];
+    var decl = ast_mod.astStoreNodeAt(&store, ec[0]);
     assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.for_stmt)));
 }
