@@ -816,12 +816,12 @@ pub fn runErrRecoveryTests() void {
 }
 
 fn countModuleErrs(store: *AstStore, root: u32) u32 {
-    var node = ast_mod.astStoreNodeAt(&store, root);
+    var node = ast_mod.astStoreNodeAt(store, root);
     var ec = ast_mod.astStoreNodeExtraChildren(store, root);
     var count: u32 = 0;
     var i: usize = 0;
     while (i < ec.len) {
-        var child = ast_mod.astStoreNodeAt(&store, ec[i]);
+        var child = ast_mod.astStoreNodeAt(store, ec[i]);
         if (@enumToInt(child.kind) == @enumToInt(AstKind.err)) count += 1;
         i += 1;
     }
