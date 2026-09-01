@@ -77,10 +77,20 @@ pub fn sandAlloc(sand: *Sand, size: usize, alignment: usize) ![*]u8 {
 
 pub fn sandReset(sand: *Sand) void {
     if (sand.growable) |gs| {
+        var rest = gs.first.next;
+        gs.first.next = null;
         gs.last = &gs.first;
         sand.start = gs.first.start;
         sand.end = gs.first.end;
         sand.pos = @intCast(usize, 0);
+        if (rest) |r| {
+            var tail = r;
+            while (tail.next) |nn| {
+                tail = nn;
+            }
+            tail.next = seg_free_head;
+            seg_free_head = r;
+        }
         return; // peak intentionally kept (matches plain-sand behavior)
     }
     sand.pos = @intCast(usize, 0);
@@ -119,6 +129,20 @@ fn growableSandGrow(gs: *GrowableSand, view: *Sand, size: usize) bool {
     var max_segment: usize = @intCast(usize, 1 * 1024 * 1024);
     if (new_size > max_segment) new_size = max_segment;
     if (size > new_size) new_size = size; // exact-fit final segment to the requested size
+    if (seg_free_head != null) {
+        if (popFreeBestFit(new_size)) |seg| {
+            var seg_cap: usize = seg.end;
+            gs.last.next = seg;
+            gs.last = seg;
+            seg.next = null;
+            seg.size = new_size; // re-baseline: natural ladder size, not the popped capacity
+            seg.end = seg_cap;
+            view.start = seg.start;
+            view.end = seg.end;
+            view.pos = @intCast(usize, 0);
+            return true; // reuse — no arenaGrew (not a genuine new carve)
+        }
+    }
     var raw = sandAlloc(gs.backing, new_size, 4) catch return false;
     var seg_raw = sandAlloc(gs.backing, @intCast(usize, @sizeOf(SandSegment)), 4) catch return false;
     var node = @ptrCast(*SandSegment, seg_raw);
@@ -130,6 +154,40 @@ fn growableSandGrow(gs: *GrowableSand, view: *Sand, size: usize) bool {
     view.pos = @intCast(usize, 0);
     arenaGrew(view.name, old_size, new_size); // fires ONLY on a new allocation
     return true;
+}
+
+fn popFreeBestFit(min_cap: usize) ?*SandSegment {
+    var best: ?*SandSegment = null;
+    var best_prev: ?*SandSegment = null;
+    var prev: ?*SandSegment = null;
+    var cur = seg_free_head;
+    while (cur) |c| {
+        if (c.end >= min_cap) {
+            if (best) |b| {
+                if (c.end < b.end) {
+                    best = c;
+                    best_prev = prev;
+                    if (c.end == min_cap) break;
+                }
+            } else {
+                best = c;
+                best_prev = prev;
+                if (c.end == min_cap) break;
+            }
+        }
+        prev = cur;
+        cur = c.next;
+    }
+    if (best) |b| {
+        if (best_prev) |bp| {
+            bp.next = b.next;
+        } else {
+            seg_free_head = b.next;
+        }
+        b.next = null;
+        return b;
+    }
+    return null;
 }
 
 pub fn arenaGrew(name: []const u8, old_size: usize, new_size: usize) void {
@@ -182,6 +240,7 @@ pub const CompilerAlloc = struct {
     module: Sand,
     scratch: Sand,
     lir_read: Sand,
+    emission: Sand,
     max_mem: u32,
 };
 
@@ -192,6 +251,8 @@ var perm_gs: GrowableSand = undefined; // tier arena perm (pool-backed growable)
 var mod_gs: GrowableSand = undefined; // tier arena module (pool-backed growable)
 var scr_gs: GrowableSand = undefined; // tier arena scratch (pool-backed growable)
 var lir_gs: GrowableSand = undefined; // tier arena lir_read (pool-backed growable)
+var emit_gs: GrowableSand = undefined; // tier arena emission (pool-backed growable)
+var seg_free_head: ?*SandSegment = null; // cross-arena reuse pool (re-baselined splice)
 
 pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
 pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
@@ -210,11 +271,13 @@ pub fn initCompilerAlloc() CompilerAlloc {
     growableSandInit(&mod_gs, &pool, 4096, "module");
     growableSandInit(&scr_gs, &pool, 4096, "scratch");
     growableSandInit(&lir_gs, &pool, 4096, "lir_read");
+    growableSandInit(&emit_gs, &pool, 4096, "emission");
     var ca = CompilerAlloc{
         .permanent = perm_gs.view,
         .module = mod_gs.view,
         .scratch = scr_gs.view,
         .lir_read = lir_gs.view,
+        .emission = emit_gs.view,
         .max_mem = @intCast(u32, DEV_MAX_MEM),
     };
     return ca;
