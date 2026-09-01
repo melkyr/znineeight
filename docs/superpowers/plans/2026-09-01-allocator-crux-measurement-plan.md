@@ -20,7 +20,9 @@
 - **Pre-existing dirty files never staged:** `docs/superpowers/plans/2026-08-26-assoc-misparse-pendingscope-plan.md`, `mnemoria/*`, untracked `build/`.
 - Design doc: `docs/superpowers/specs/2026-09-01-allocator-crux-measurement-design.md`.
 
-**AMENDMENT 2 (operator-ruled 2026-09-01, redesign F-task set — all 4 levers + spill-threshold follow-up):** after the measurement stage (I-MEAS-1/2/3 + I-EMIT, all approved) the operator directed (m1191/m1192) the redesign amendment with **all four levers** so the spill decision can be re-evaluated afterwards: **F-1 segment free-list keyed on "reset = release"** (~8.1 MB, reset-retained chains), **F-2 growth-policy tuning** (~3.5–5.5 MB, segment headroom incl. lir_read near-empty 2 MiB cap segment), **F-3 emitter-level** (move persistent emitter maps off scratch + per-function scratch reset during emission, ~6.4 MB — the one piece the other three do NOT cover; I-EMIT finding: 94.4% of emission scratch churn is `emitHoistedDecls` per-function arrays, main.zig:738/740 + c89_emit.zig:614-627), **F-4 dead-buffer pre-sizing / tail-aware ordering** (~3.2 MB, class b: astStore extra-children/extra-ranges ast.zig:148/180 1,458 K, si_entries 491 K, hash maps ~974 K, type_db 276 K). **Order (AMENDMENT 3, operator-ruled 2026-09-01):** the F-1 free-list attempt was BLOCKED (off-ladder reuse inflated the doubling base, `pool=` +732 K regression; see `## F-1 fix` in the report) and the operator deferred it — **F-1 is replaced by read-only `Task I-F1` (free-list quirk re-investigation, placed after F-4)**. **Execution order: F-2 → F-3 → F-4 → I-F1 → I-SPILL.** **AMENDMENT 4 (operator-ruled 2026-09-01, F-2 mechanism pinned):** after a design consultation on canonical arena/slab practices (LLVM-style slab cap; 2× geometric growth kept — no need-based/1.5× rewrite), F-2's tuning mechanism is pinned to **lower the growth cap 2 MiB → 1 MiB only** (keep 2× doubling + exact-fit-final; big single requests exact-fit via the existing `size > new_size` rule). Expected `pool=` drop ~2–3 MB (not the full 5.5 MB headroom class — that is bounded by geometric-growth reality). Second variant (512 K) only if the operator approves after measuring 1 MiB. **Do not over-engineer** (operator directive). **Closing I-SPILL task (follow-up, gated after the 4):** re-measure `pool.peak` after the 4 levers and evaluate making S-LIR / S-AST / S-HASH **conditional** — spill to disk only when `pool.peak` is projected to cross a threshold, so small compiles skip disk I/O entirely. Each F-task carries the full gate battery and a `pool=` before/after measurement.
+**AMENDMENT 2 (operator-ruled 2026-09-01, redesign F-task set — all 4 levers + spill-threshold follow-up):** after the measurement stage (I-MEAS-1/2/3 + I-EMIT, all approved) the operator directed (m1191/m1192) the redesign amendment with **all four levers** so the spill decision can be re-evaluated afterwards: **F-1 segment free-list keyed on "reset = release"** (~8.1 MB, reset-retained chains), **F-2 growth-policy tuning** (~3.5–5.5 MB, segment headroom incl. lir_read near-empty 2 MiB cap segment), **F-3 emitter-level** (move persistent emitter maps off scratch + per-function scratch reset during emission, ~6.4 MB — the one piece the other three do NOT cover; I-EMIT finding: 94.4% of emission scratch churn is `emitHoistedDecls` per-function arrays, main.zig:738/740 + c89_emit.zig:614-627), **F-4 dead-buffer pre-sizing / tail-aware ordering** (~3.2 MB, class b: astStore extra-children/extra-ranges ast.zig:148/180 1,458 K, si_entries 491 K, hash maps ~974 K, type_db 276 K). **Order (AMENDMENT 3, operator-ruled 2026-09-01):** the F-1 free-list attempt was BLOCKED (off-ladder reuse inflated the doubling base, `pool=` +732 K regression; see `## F-1 fix` in the report) and the operator deferred it — **F-1 is replaced by read-only `Task I-F1` (free-list quirk re-investigation, placed after F-4)**. **Execution order: F-2 → F-3 → F-4 → I-F1 → I-SPILL.** **AMENDMENT 4 (operator-ruled 2026-09-01, F-2 mechanism pinned):** after a design consultation on canonical arena/slab practices (LLVM-style slab cap; 2× geometric growth kept — no need-based/1.5× rewrite), F-2's tuning mechanism is pinned to **lower the growth cap 2 MiB → 1 MiB only** (keep 2× doubling + exact-fit-final; big single requests exact-fit via the existing `size > new_size` rule). Expected `pool=` drop ~2–3 MB (not the full 5.5 MB headroom class — that is bounded by geometric-growth reality). Second variant (512 K) only if the operator approves after measuring 1 MiB. **Do not over-engineer** (operator directive).
+
+**AMENDMENT 5 (operator-ruled 2026-09-01, remaining levers — quick win first, then tables):** after the F-series (F-2/F-3/F-4 complete; I-F1 closed F-1) the operator directed (m1278/m1279/m1281) the next two levers in order **quick-win-first-then-tables**, with Lever-2 scope **`resolved_types` first (1.7 MB)**: **(1) `F-FREE` — free the dead-after-lowering analysis data at the lowering→emission boundary** (the module arena's ~9.4 MB chain is ~5 MB dead after lowering — AST side tables + `resolved_types` + coercion; verified NOT read by emission, which reads LIR via `lir_read` only); reuse the freed 1 MiB segments for emission's carves via a re-baselined segment free-list (I-F1's corrected, non-regressing policy — the analysis segments are carved EARLY at events 63–673, before emission's post-boundary carves, so the timing works unlike F-1). Prize ~2.5–3.3 MB. **(2) `I-TABLE` + `F-TABLE` — disk-back the dead analysis tables** (operator: "LIR/AST were way complicated... we are already paging in disk a lot of things... key/value pair... encode it so it uses less space... sort them and store them so we can use binary search or an index"; every MB counts). **Scope: `resolved_types` FIRST** (dense `node_idx → u32`, 10 B/node × 180 K ≈ 1.7 MB — direct-offset fault-in, the easy one), then the sparse maps (coercion/comptime_values/etc.: sort + binary search) and AST side tables (extend S-AST) only if the operator approves after measuring. **Execution order: F-FREE → I-TABLE → F-TABLE → I-SPILL.** **Closing I-SPILL task (follow-up, gated after the 4):** re-measure `pool.peak` after the 4 levers and evaluate making S-LIR / S-AST / S-HASH **conditional** — spill to disk only when `pool.peak` is projected to cross a threshold, so small compiles skip disk I/O entirely. Each F-task carries the full gate battery and a `pool=` before/after measurement.
 
 ---
 
@@ -309,6 +311,108 @@ Report the `pool=` delta (expected: toward ~3.2 MB).
 ```bash
 git add sf/src/ast.zig sf/src/string_interner.zig <other modified>
 git commit -m "perf: pre-size high-churn arrays (kill dead-buffer copy churn)"
+```
+
+---
+
+### Task F-FREE: Free the analysis arena at the lowering→emission boundary (quick win) (F)
+
+**Files:**
+- Modify: `sf/src/allocator.zig` (re-baselined segment free-list), `sf/src/main.zig` (move the 3 tiny survivors `lir_slots`/`global_decls`/`error_code_registry` to a dedicated emission arena; `sandReset(ctx.alloc.module)` between `phase_LIRLowering` and `phase_C89Emission`), `sf/src/c89_emit.zig` (emitter maps init from the emission arena instead of module)
+- Commit: `perf: free analysis arena at lowering->emission boundary (reuse segments)`
+
+**Interfaces:**
+- Consumes: the module-arena composition map (explore m1269) — ~5 MB dead after lowering (AST side tables + `resolved_types` + coercion), survivors `< 100 KB` (lir_slots ~20 KB, global_decls ~5 KB, error_code_registry ~tens KB); I-F1's corrected free-list policy (release-at-boundary + re-baselined splice; the analysis segments are carved early events 63–673 as 1 MiB cap segments, available before emission's post-boundary carves at 7295+).
+- Produces: `pool.peak` drop toward ~2.5–3.3 MB (bounded by emission's post-boundary carve: lir_read 2.3 MB + emission maps).
+
+- [ ] **Step 1: Golden baseline capture**
+
+Capture `/tmp/golden_FFREE/` (4 MD5 gate emissions + 9 golden fixtures + `--track-memory` baseline `pool=21141K total=3070K`).
+
+- [ ] **Step 2: Move the 3 survivors to a dedicated emission arena**
+
+In `sf/src/main.zig`: add a new growable arena (or reuse the pattern of the existing 4) wired into `CompilerAlloc`; change `lir_slots`, `global_decls`, and `error_code_registry` (init :185/:188/:215, written during LIR lowering) to allocate from the emission arena instead of `ctx.alloc.module`. These are tiny (< 100 KB). Verify all their reads (emission) still work.
+
+- [ ] **Step 3: Add the re-baselined segment free-list**
+
+In `sf/src/allocator.zig`: a module-level segment free-list where `sandReset` (growable branch) pushes the retained chain (beyond `first`) onto the list, and `growableSandGrow` pops a best-fit segment with **re-baselined** accounting — record `gs.last.size` as the natural ladder `new_size` on splice (I-F1's corrected policy; prevents the off-ladder base inflation that blocked F-1). Byte-neutral: active-arena contents/order unchanged; `arenaGrew` fires only on genuine new carves.
+
+- [ ] **Step 4: Free the analysis arena at the boundary**
+
+In `sf/src/main.zig` `runCompiler`: between `phase_LIRLowering` and `phase_C89Emission`, call `sandReset(ctx.alloc.module)` (returns the ~9.4 MB analysis chain to the free-list). The emitter maps (currently init from module at :738/:740 — F-3) must now init from the emission arena, so they allocate out of the freed segments (or the free-list). `lir_read` (S-LIR fault-in) pops from the free-list when it grows, reusing the freed 1 MiB segments.
+
+- [ ] **Step 5: Verify — NO semantic change + measure**
+
+Gates: 4 MD5 byte-identical (gol `302df36b`, lisp `3591bad9`, json `76056b97`, mud `4591fef0` — must NOT move); golden 9/9; self-compile 41 `.c` / 0 err / 0 PANIC; ref 0-warning. Report `pool=` before/after (expected: toward ~18 MB, −2.5–3.3 MB). Rebuild reference first (`timeout 900 bash sf/scripts/build_release.sh` + reinstall std lib).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add sf/src/allocator.zig sf/src/main.zig sf/src/c89_emit.zig
+git commit -m "perf: free analysis arena at lowering->emission boundary (reuse segments)"
+```
+
+---
+
+### Task I-TABLE: resolved_types read-order + disk-format investigation (read-only)
+
+**Files:**
+- (Read) `sf/src/resolved_type_table.zig`, `sf/src/lower.zig` (the `resolvedTypeTableGet` call sites), the module-composition map
+- Report: append `## I-TABLE` to `.superpowers/sdd/task-ALLOC-report.md`
+
+**Interfaces:**
+- Consumes: the module-composition map (`resolved_types` ≈ 1.7 MB dense, 10 B/node × 180 K, read during lowering, dead after).
+- Produces: the disk-format decision (direct-offset block fault-in vs sorted+binary-search) + I/O cost projection + expected `pool.peak` drop for F-TABLE.
+
+- [ ] **Step 1: Enumerate the read pattern**
+
+Grep `resolvedTypeTableGet` call sites in `sf/src/lower.zig` (and any other lowering readers). Determine the access order: is `node_idx` read roughly sequentially (AST walk order), or random? Count the total Gets during a self-compile (instrument `/tmp` if needed). This decides whether a direct-offset block fault-in (sequential-friendly) suffices.
+
+- [ ] **Step 2: Design the disk format**
+
+For the dense 10 B/node array: (a) direct-offset block fault-in (e.g. 4 KB blocks = 409 nodes, small cache — the S-AST pattern), vs (b) a plain sorted file + binary search (not needed for dense — direct offset is simpler). Decide + justify.
+
+- [ ] **Step 3: Project the prize + I/O cost**
+
+Expected `pool.peak` drop ≈ `resolved_types` 1.7 MB (minus the fault-in cache window). Project the I/O: total Gets × seek+read vs the page-cache/read-ahead benefit. State whether sequential-friendly.
+
+- [ ] **Step 4: Report + STOP-present if a blocker**
+
+Append `## I-TABLE` to `.superpowers/sdd/task-ALLOC-report.md`. If the read pattern is catastrophically random (thrashing), STOP-present. No `sf/src` edits, no commit.
+
+---
+
+### Task F-TABLE: Disk-back `resolved_types` (dense direct-offset fault-in) (F)
+
+**Files:**
+- Modify: `sf/src/resolved_type_table.zig` (fault-in Get), `sf/src/main.zig` (write-through at the end of SemanticAnalysis / when the table is quiescent), possibly `sf/src/pal.zig` (reuse `streamOpen/Read/Seek`)
+- Commit: `perf: disk-back resolved_types (dense direct-offset fault-in)`
+
+**Interfaces:**
+- Consumes: I-TABLE's disk-format decision (direct-offset block fault-in); `resolved_types` is dense `node_idx → u32`, 10 B/node, ~1.7 MB, written during TypeResolution→SemanticAnalysis, read during lowering only.
+- Produces: `pool.peak` drop toward ~1.7 MB; the resident dense array is replaced by a fault-in cache window.
+
+- [ ] **Step 1: Golden baseline capture**
+
+Capture `/tmp/golden_FTABLE/` + baseline `pool=` (post-F-FREE).
+
+- [ ] **Step 2: Write-through the table**
+
+When the table is quiescent (end of SemanticAnalysis, or on demand during lowering if it grows), serialize the dense arrays to a spill file via `pal.streamOpen/Write/Close` (e.g. `.zig1_res.tmp`). The write is byte-identical (no format change).
+
+- [ ] **Step 3: Fault-in Get**
+
+Replace `resolvedTypeTableGet`'s resident-array read with a block fault-in: `fseek(node_idx × 10)` + `fread` a block (4 KB = 409 entries) into a small cache, serve the lookup from the cache. Keep a minimal resident cache window. The `resolvedTypeTableSet` sites (during SA/lowering) write through (or stay resident if the phase still mutates).
+
+- [ ] **Step 4: Verify — NO semantic change + measure**
+
+Gates: 4 MD5 byte-identical, golden 9/9, self-compile 41 `.c` / 0 err / 0 PANIC, ref 0-warning. Report `pool=` before/after (expected: toward ~1.7 MB drop). Byte-identity is the bar — the fault-in must return identical values.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/resolved_type_table.zig sf/src/main.zig
+git commit -m "perf: disk-back resolved_types (dense direct-offset fault-in)"
 ```
 
 ---
