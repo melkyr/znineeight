@@ -168,22 +168,7 @@ fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena:
     len.* += 1;
 }
 
-fn astNodeArrayListAppendInner(items: *[*]AstNode, len: *usize, capacity: *usize, arena: *Sand, value: AstNode) void {
-    if (len.* >= capacity.*) {
-        var new_cap = capacity.*;
-        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-        if (new_cap < len.* * 2) new_cap = len.* * 2;
-        var raw = alloc_mod.sandAlloc(arena, @sizeOf(AstNode) * new_cap, @intCast(usize, 4)) catch unreachable;
-        var new_items_p = @ptrCast([*]AstNode, raw);
-        for (items.*[0..len.*]) |item, i| {
-            new_items_p[i] = item;
-        }
-        items.* = new_items_p;
-        capacity.* = new_cap;
-    }
-    items.*[len.*] = value;
-    len.* += 1;
-}
+
 
 fn u64ArrayListAppendInner(items: *[*]u64, len: *usize, capacity: *usize, arena: *Sand, value: u64) void {
     if (len.* >= capacity.*) {
@@ -275,11 +260,41 @@ fn fnProtoArrayListAppendInner(items: *[*]FnProto, len: *usize, capacity: *usize
     len.* += 1;
 }
 
+// ---- Block-based disk-backed node storage (S-AST) ----
+// Nodes (AstNode, 24 B) and the parallel payload side table are stored in
+// fixed 4096-entry blocks. The head (append) block is pinned resident; when it
+// fills it is spilled to a temp file and a fresh block is started. Readers
+// access nodes through astStoreNodeAt, which faults a block into one of the
+// AST_WINDOW_SLOTS resident slots (ring-evicted) if it is not already resident.
+// No dirty flag / write-back: the AST is write-once, so eviction is free.
+pub const AST_BLOCK_SHIFT: u32 = 12;
+pub const AST_BLOCK_NODES: u32 = 4096;
+pub const AST_BLOCK_NODE_BYTES: u32 = 98304;    // 4096 * 24 (AstNode)
+pub const AST_BLOCK_PAYLOAD_BYTES: u32 = 16384; // 4096 * 4 (u32 payload)
+pub const AST_BLOCK_REC_SIZE: u32 = 114688;     // node array + payload array
+pub const AST_BLOCK_MASK: u32 = 4095;
+pub const AST_WINDOW_SLOTS: u32 = 8;
+pub const AST_HEAD_SLOT: u32 = 0;
+
+pub const NodeBlockInfo = struct {
+    disk_off: u32, // byte offset of this block's record in the spill file
+    resident: u8,  // 1 = block currently in a resident slot
+    slot: u32,     // resident slot index (0xFFFFFFFF when not resident)
+};
+
+const AstSlot = struct {
+    node_buf: [*]AstNode,  // node buffer (grows to AST_BLOCK_NODES for the head)
+    node_cap: usize,
+    payload_buf: [*]u32,   // parallel payload buffer
+    payload_cap: usize,
+    in_use: u8,
+};
+
 pub const AstStore = struct {
     nodes: struct {
-        items: [*]AstNode,
+        // `len` is the flat node ordinal count; node data lives in disk-backed
+        // blocks (astStoreNodeAt), the contiguous items/capacity array is gone.
         len: usize,
-        capacity: usize,
     },
     extra_children: struct {
         items: [*]u32,
@@ -312,9 +327,9 @@ pub const AstStore = struct {
         capacity: usize,
     },
     payload: struct {
-        items: [*]u32,
+        // `len` is maintained == nodes.len; payload data is block-parallel in
+        // the same disk-backed blocks as nodes (astStoreNodePayload).
         len: usize,
-        capacity: usize,
     },
     extra_ranges: struct {
         items: [*]u64,
@@ -322,6 +337,19 @@ pub const AstStore = struct {
         capacity: usize,
     },
     allocator: *Sand,
+    block_table: struct {
+        items: [*]NodeBlockInfo,
+        len: usize,
+        capacity: usize,
+    },
+    slots: [8]AstSlot,
+    slot_block: [8]u32, // resident slot -> block index it currently holds
+    cur_block: u32,     // current head block index (pinned resident, slot 0)
+    cur_block_len: u32, // nodes appended so far in the head block
+    ring_next: u32,     // next eviction candidate slot (1..AST_WINDOW_SLOTS-1)
+    spill_handle: ?*void, // FILE* of the spill temp file (lazily opened)
+    spill_path: [512]u8,
+    spill_path_len: usize,
 };
 
 // Payload side-table semantics (AstNode.payload removed; u32 value stored in
@@ -351,45 +379,62 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .child_2 = @intCast(u32, 0),
     };
     var store = AstStore{
-        .nodes = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .nodes = .{ .len = @intCast(usize, 0) },
         .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .identifiers = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .int_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .fn_protos = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .payload = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .payload = .{ .len = @intCast(usize, 0) },
         .extra_ranges = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .allocator = arena,
+        .block_table = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .slots = undefined,
+        .slot_block = undefined,
+        .cur_block = @intCast(u32, 0),
+        .cur_block_len = @intCast(u32, 0),
+        .ring_next = @intCast(u32, 1),
+        .spill_handle = null,
+        .spill_path = undefined,
+        .spill_path_len = @intCast(usize, 0),
     };
-    astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, arena, null_node);
-    u32ArrayListAppendInner(&store.payload.items, &store.payload.len, &store.payload.capacity, arena, @intCast(u32, 0));
+    var si: u32 = 0;
+    while (si < AST_WINDOW_SLOTS) : (si += 1) {
+        store.slots[si] = AstSlot{ .node_buf = undefined, .node_cap = @intCast(usize, 0), .payload_buf = undefined, .payload_cap = @intCast(usize, 0), .in_use = @intCast(u8, 0) };
+        store.slot_block[si] = @intCast(u32, 0);
+    }
+    store.slots[AST_HEAD_SLOT].in_use = @intCast(u8, 1);
+    astBlockTableEnsure(&store, @intCast(usize, 1));
+    store.block_table.items[0] = NodeBlockInfo{ .disk_off = @intCast(u32, 0), .resident = @intCast(u8, 1), .slot = AST_HEAD_SLOT };
+    store.slot_block[AST_HEAD_SLOT] = @intCast(u32, 0);
+    var default_path: []const u8 = ".zig1_ast.tmp";
+    var pi: usize = 0;
+    while (pi < default_path.len) : (pi += 1) {
+        store.spill_path[pi] = default_path[pi];
+    }
+    store.spill_path_len = default_path.len;
+    astStoreNodeAppend(&store, null_node, @intCast(u32, 0));
     u64ArrayListAppendInner(&store.extra_ranges.items, &store.extra_ranges.len, &store.extra_ranges.capacity, arena, @intCast(u64, 0));
     return store;
 }
 
+pub fn astStoreSetSpillPath(store: *AstStore, path: []const u8) void {
+    var i: usize = 0;
+    while (i < path.len and i < @intCast(usize, 511)) : (i += 1) {
+        store.spill_path[i] = path[i];
+    }
+    store.spill_path_len = i;
+    store.spill_path[i] = @intCast(u8, 0);
+}
+
 pub fn astStoreEnsureNodesCapacity(store: *AstStore, new_capacity: usize) void {
-    if (new_capacity <= store.nodes.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-    if (store.nodes.capacity > @intCast(usize, 0)) {
-        var grown = alloc_mod.sandReallocInPlace(store.allocator,
-            @ptrCast([*]u8, store.nodes.items),
-            store.nodes.capacity * @sizeOf(AstNode),
-            new_cap * @sizeOf(AstNode),
-            @intCast(usize, 4));
-        if (grown != null) {
-            store.nodes.capacity = new_cap;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(store.allocator, @sizeOf(AstNode) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]AstNode, raw);
-    for (store.nodes.items[0..store.nodes.len]) |item, i| {
-        new_items[i] = item;
-    }
-    store.nodes.items = new_items;
-    store.nodes.capacity = new_cap;
+    // The old contiguous nodes pre-allocation is deleted: capacity is now the
+    // block table (4096 nodes/block), a ~0.5 KB pre-size instead of a ~4.3 MB
+    // contiguous node array.
+    var blocks_needed: usize = new_capacity / @intCast(usize, AST_BLOCK_NODES);
+    if (blocks_needed * @intCast(usize, AST_BLOCK_NODES) < new_capacity) blocks_needed += 1;
+    astBlockTableEnsure(store, blocks_needed);
 }
 
 pub fn astStoreEnsureExtraChildrenCapacity(store: *AstStore, new_capacity: usize) void {
@@ -424,9 +469,167 @@ pub fn astStoreAddNode(store: *AstStore, kind: AstKind, flags: u8, span_start: u
         .span_start = span_start, .span_len = span_len,
         .child_0 = c0, .child_1 = c1, .child_2 = c2,
     };
-    astNodeArrayListAppendInner(&store.nodes.items, &store.nodes.len, &store.nodes.capacity, store.allocator, node);
-    u32ArrayListAppendInner(&store.payload.items, &store.payload.len, &store.payload.capacity, store.allocator, payload);
+    astStoreNodeAppend(store, node, payload);
     return @intCast(u32, store.nodes.len - 1);
+}
+
+fn astStoreNodeAppend(store: *AstStore, node: AstNode, payload: u32) void {
+    var node_idx = store.nodes.len;
+    var bi: u32 = @intCast(u32, node_idx >> 12);
+    if (bi != store.cur_block) {
+        astBlockSpillHead(store);
+        astBlockAdvanceHead(store, bi);
+    }
+    var off: usize = node_idx & @intCast(usize, 4095);
+    astSlotEnsureNodeCap(store, AST_HEAD_SLOT, off + @intCast(usize, 1));
+    astSlotEnsurePayloadCap(store, AST_HEAD_SLOT, off + @intCast(usize, 1));
+    store.slots[AST_HEAD_SLOT].node_buf[off] = node;
+    store.slots[AST_HEAD_SLOT].payload_buf[off] = payload;
+    store.nodes.len += 1;
+    store.payload.len += 1;
+    store.cur_block_len += 1;
+}
+
+fn astBlockTableEnsure(store: *AstStore, new_len: usize) void {
+    if (new_len <= store.block_table.len) return;
+    var new_cap = store.block_table.capacity;
+    if (new_cap < @intCast(usize, 16)) new_cap = @intCast(usize, 16);
+    while (new_cap < new_len) new_cap *= 2;
+    var raw = alloc_mod.sandAlloc(store.allocator, @sizeOf(NodeBlockInfo) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]NodeBlockInfo, raw);
+    var i: usize = 0;
+    while (i < store.block_table.len) : (i += 1) {
+        new_items[i] = store.block_table.items[i];
+    }
+    store.block_table.items = new_items;
+    store.block_table.capacity = new_cap;
+    store.block_table.len = new_len;
+}
+
+fn astBlockOpenSpill(store: *AstStore) void {
+    if (store.spill_handle != null) return;
+    // "w+b" (truncate + read/write): the same handle is used to write spilled
+    // blocks during parse and fault them back in during the read phases.
+    store.spill_handle = pal.streamOpen(store.spill_path[0..store.spill_path_len], "w+b");
+    if (store.spill_handle == null) {
+        var emsg: []const u8 = "error: cannot open AST spill file\n";
+        pal.stderr_write(emsg);
+        pal.exit(@intCast(u8, 1));
+    }
+}
+
+fn astBlockSpillHead(store: *AstStore) void {
+    astBlockOpenSpill(store);
+    var h = store.spill_handle orelse return;
+    var bi = store.cur_block;
+    var disk_off: u32 = bi * AST_BLOCK_REC_SIZE;
+    var entry = store.block_table.items[bi];
+    entry.disk_off = disk_off;
+    entry.resident = @intCast(u8, 0);
+    entry.slot = 0xFFFFFFFF;
+    store.block_table.items[bi] = entry;
+    pal.streamSeek(h, @intCast(i32, disk_off));
+    var nraw: [*]u8 = @ptrCast([*]u8, store.slots[AST_HEAD_SLOT].node_buf);
+    pal.streamWrite(h, nraw[0..@intCast(usize, AST_BLOCK_NODE_BYTES)]);
+    var praw: [*]u8 = @ptrCast([*]u8, store.slots[AST_HEAD_SLOT].payload_buf);
+    pal.streamWrite(h, praw[0..@intCast(usize, AST_BLOCK_PAYLOAD_BYTES)]);
+}
+
+fn astBlockAdvanceHead(store: *AstStore, new_bi: u32) void {
+    astBlockTableEnsure(store, @intCast(usize, new_bi) + 1);
+    store.block_table.items[new_bi] = NodeBlockInfo{ .disk_off = new_bi * AST_BLOCK_REC_SIZE, .resident = @intCast(u8, 1), .slot = AST_HEAD_SLOT };
+    store.slots[AST_HEAD_SLOT].in_use = @intCast(u8, 1);
+    store.slot_block[AST_HEAD_SLOT] = new_bi;
+    store.cur_block = new_bi;
+    store.cur_block_len = @intCast(u32, 0);
+}
+
+fn astSlotEnsureNodeCap(store: *AstStore, s: u32, need: usize) void {
+    if (store.slots[s].node_cap >= need) return;
+    var new_cap = store.slots[s].node_cap;
+    if (new_cap < @intCast(usize, 64)) new_cap = @intCast(usize, 64);
+    while (new_cap < need) new_cap *= 2;
+    if (new_cap > @intCast(usize, AST_BLOCK_NODES)) new_cap = @intCast(usize, AST_BLOCK_NODES);
+    var raw = alloc_mod.sandAlloc(store.allocator, @sizeOf(AstNode) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var nb = @ptrCast([*]AstNode, raw);
+    var i: usize = 0;
+    while (i < store.slots[s].node_cap) : (i += 1) {
+        nb[i] = store.slots[s].node_buf[i];
+    }
+    store.slots[s].node_buf = nb;
+    store.slots[s].node_cap = new_cap;
+}
+
+fn astSlotEnsurePayloadCap(store: *AstStore, s: u32, need: usize) void {
+    if (store.slots[s].payload_cap >= need) return;
+    var new_cap = store.slots[s].payload_cap;
+    if (new_cap < @intCast(usize, 64)) new_cap = @intCast(usize, 64);
+    while (new_cap < need) new_cap *= 2;
+    if (new_cap > @intCast(usize, AST_BLOCK_NODES)) new_cap = @intCast(usize, AST_BLOCK_NODES);
+    var raw = alloc_mod.sandAlloc(store.allocator, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var nb = @ptrCast([*]u32, raw);
+    var i: usize = 0;
+    while (i < store.slots[s].payload_cap) : (i += 1) {
+        nb[i] = store.slots[s].payload_buf[i];
+    }
+    store.slots[s].payload_buf = nb;
+    store.slots[s].payload_cap = new_cap;
+}
+
+fn astSlotEnsureFull(store: *AstStore, s: u32) void {
+    astSlotEnsureNodeCap(store, s, @intCast(usize, AST_BLOCK_NODES));
+    astSlotEnsurePayloadCap(store, s, @intCast(usize, AST_BLOCK_NODES));
+}
+
+fn astSlotAcquire(store: *AstStore) u32 {
+    var i: u32 = 1;
+    while (i < AST_WINDOW_SLOTS) : (i += 1) {
+        if (store.slots[i].in_use == @intCast(u8, 0)) {
+            store.slots[i].in_use = @intCast(u8, 1);
+            return i;
+        }
+    }
+    var victim: u32 = store.ring_next;
+    if (victim == AST_HEAD_SLOT) victim = 1;
+    if (victim >= AST_WINDOW_SLOTS) victim = 1;
+    var vblock: u32 = store.slot_block[victim];
+    var ventry: NodeBlockInfo = store.block_table.items[vblock];
+    ventry.resident = @intCast(u8, 0);
+    ventry.slot = 0xFFFFFFFF;
+    store.block_table.items[vblock] = ventry;
+    var nv: u32 = victim + @intCast(u32, 1);
+    if (nv >= AST_WINDOW_SLOTS) nv = 1;
+    store.ring_next = nv;
+    return victim;
+}
+
+fn astBlockFaultIn(store: *AstStore, bi: u32) void {
+    astBlockOpenSpill(store);
+    var h = store.spill_handle orelse return;
+    var entry = store.block_table.items[bi];
+    var s = astSlotAcquire(store);
+    astSlotEnsureFull(store, s);
+    pal.streamSeek(h, @intCast(i32, entry.disk_off));
+    var nraw: [*]u8 = @ptrCast([*]u8, store.slots[s].node_buf);
+    pal.streamRead(h, nraw[0..@intCast(usize, AST_BLOCK_NODE_BYTES)]);
+    var praw: [*]u8 = @ptrCast([*]u8, store.slots[s].payload_buf);
+    pal.streamRead(h, praw[0..@intCast(usize, AST_BLOCK_PAYLOAD_BYTES)]);
+    store.slots[s].in_use = @intCast(u8, 1);
+    store.slot_block[s] = bi;
+    entry.resident = @intCast(u8, 1);
+    entry.slot = s;
+    store.block_table.items[bi] = entry;
+}
+
+pub fn astStoreNodeAt(store: *AstStore, idx: u32) AstNode {
+    var bi: u32 = idx >> 12;
+    var off: u32 = idx & @intCast(u32, 4095);
+    var entry: NodeBlockInfo = store.block_table.items[bi];
+    if (entry.resident == @intCast(u8, 0)) {
+        astBlockFaultIn(store, bi);
+        entry = store.block_table.items[bi];
+    }
+    return store.slots[entry.slot].node_buf[off];
 }
 
 pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
@@ -448,11 +651,18 @@ pub fn astStoreGetExtraChildren(store: *AstStore, payload: u64) []const u32 {
 }
 
 pub fn astStoreNodePayload(store: *AstStore, node_idx: u32) u32 {
-    return store.payload.items[@intCast(usize, node_idx)];
+    var bi: u32 = node_idx >> 12;
+    var off: u32 = node_idx & @intCast(u32, 4095);
+    var entry: NodeBlockInfo = store.block_table.items[bi];
+    if (entry.resident == @intCast(u8, 0)) {
+        astBlockFaultIn(store, bi);
+        entry = store.block_table.items[bi];
+    }
+    return store.slots[entry.slot].payload_buf[off];
 }
 
 pub fn astStoreNodePayloadPacked(store: *AstStore, node_idx: u32, kind: AstKind) u64 {
-    var v = store.payload.items[@intCast(usize, node_idx)];
+    var v = astStoreNodePayload(store, node_idx);
     if (v == @intCast(u32, 0)) return @intCast(u64, 0);
     if (nodeHasExtraChildren(kind) or kind == AstKind.builtin_call) {
         return store.extra_ranges.items[@intCast(usize, v)];
@@ -461,7 +671,7 @@ pub fn astStoreNodePayloadPacked(store: *AstStore, node_idx: u32, kind: AstKind)
 }
 
 pub fn astStoreNodeExtraChildren(store: *AstStore, node_idx: u32) []const u32 {
-    var range_idx = store.payload.items[@intCast(usize, node_idx)];
+    var range_idx = astStoreNodePayload(store, node_idx);
     if (range_idx == @intCast(u32, 0)) {
         return store.extra_children.items[0..0];
     }
@@ -541,7 +751,7 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
         sp -= 1;
         var node_idx = stack[sp];
         if (node_idx == 0) continue;
-        var node = store.nodes.items[node_idx];
+        var node = astStoreNodeAt(store, node_idx);
         callback(store, node_idx);
         if (nodeHasExtraChildren(node.kind) and astStoreNodePayload(store, node_idx) != 0) {
             var ec = astStoreNodeExtraChildren(store, node_idx);

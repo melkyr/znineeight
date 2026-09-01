@@ -93,7 +93,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             reg.modules.items[mod_id].ast_root = ast_root;
             reg.modules.items[mod_id].state = mr_mod.ModuleState.parsed;
 
-            var root = shared_store.nodes.items[@intCast(usize, ast_root)];
+            var root = ast_mod.astStoreNodeAt(shared_store, ast_root);
             if (root.kind == AstKind.module_root) {
                 var p1: []const u8 = "IRP:m"; pal_mod.measureMarkerWriteInt(p1, mod_id);
                 var p2: []const u8 = "IRP:n"; pal_mod.measureMarkerWriteInt(p2, ast_root);
@@ -126,7 +126,7 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
     while (vmi < reg.modules.len) : (vmi += @intCast(usize, 1)) {
         var ve = reg.modules.items[vmi];
         if (ve.ast_root != @intCast(u32, 0)) {
-            var vr = shared_store.nodes.items[@intCast(usize, ve.ast_root)];
+            var vr = ast_mod.astStoreNodeAt(shared_store, ve.ast_root);
             if (vr.kind == AstKind.module_root) {
                 var v1: []const u8 = "IRV:m"; pal_mod.markerWriteInt(v1, vmi);
                 var vdecls = ast_mod.astStoreNodeExtraChildren(shared_store, ve.ast_root);

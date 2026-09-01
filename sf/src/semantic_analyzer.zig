@@ -312,7 +312,7 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
         if (node_idx >= @intCast(u32, 450) and node_idx <= @intCast(u32, 660)) {
             var cname = interner_mod.stringInternerGet(self.interner, name_id);
             pal_mod.markerWrite(cname);
-           var cnode = self.store.nodes.items[@intCast(usize, node_idx)];
+           var cnode = ast_mod.astStoreNodeAt(self.store, node_idx);
            var d8k_m: []const u8 = "D8"; pal_mod.markerWriteInt(d8k_m, @intCast(u32, @enumToInt(cnode.kind)));
            var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node_idx);
            if (rt) |t| { var d8t_m: []const u8 = "D8:T"; pal_mod.markerWriteInt(d8t_m, t); }
@@ -330,8 +330,8 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
 
 pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fae: []const u8 = "FAE\n"; pal_mod.markerWrite(fae);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    var base_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var base_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
     var field_name_id: u32 = ast_mod.astStoreNodePayload(self.store, node_idx);
     var pfa_bkm: []const u8 = "PFA:BK"; pal_mod.markerWriteInt(pfa_bkm, @intCast(u32, @enumToInt(base_node.kind)));
     var pfa_fnm: []const u8 = "PFA:FN"; pal_mod.markerWriteInt(pfa_fnm, field_name_id);
@@ -398,7 +398,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     }
                     if (fs.kind == sym_mod.SymbolKind.function and fs.decl_node != @intCast(u32, 0)) {
                         var q1fx: []const u8 = "Q1FX\n"; pal_mod.markerWrite(q1fx);
-                        var fn_dn = self.store.nodes.items[@intCast(usize, fs.decl_node)];
+                        var fn_dn = ast_mod.astStoreNodeAt(self.store, fs.decl_node);
                         if (fn_dn.kind == AstKind.fn_decl) {
                             var proto = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fs.decl_node))];
                             var bre1_m: []const u8 = "BR:x"; pal_mod.markerWriteInt(bre1_m, proto.name_id);
@@ -556,7 +556,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     return fn_tid;
                 }
                 var mff: []const u8 = "MFF\n"; pal_mod.markerWrite(mff);
-                var dn = self.store.nodes.items[@intCast(usize, mfs.decl_node)];
+                var dn = ast_mod.astStoreNodeAt(self.store, mfs.decl_node);
                 if (dn.kind == AstKind.fn_decl) {
                     var proto = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, mfs.decl_node))];
                     var mfp_m: []const u8 = "MFP"; pal_mod.markerWriteInt(mfp_m, @intCast(u32, proto.params_start));
@@ -664,7 +664,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
 }
 
 fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) return type_mod.TYPE_VOID;
@@ -690,7 +690,7 @@ fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_
 }
 
 fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) return type_mod.TYPE_VOID;
@@ -702,11 +702,11 @@ fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
     var cpe: []const u8 = "CPE"; pal_mod.markerWrite(cpe);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs: u32 = 0;
     var rhs: u32 = 0;
-    var c0n = self.store.nodes.items[@intCast(usize, node.child_0)];
-    var c1n = self.store.nodes.items[@intCast(usize, node.child_1)];
+    var c0n = ast_mod.astStoreNodeAt(self.store, node.child_0);
+    var c1n = ast_mod.astStoreNodeAt(self.store, node.child_1);
     var c0_lit: u8 = if (c0n.kind == AstKind.error_literal or c0n.kind == AstKind.enum_literal) @intCast(u8, 1) else @intCast(u8, 0);
     var c1_lit: u8 = if (c1n.kind == AstKind.error_literal or c1n.kind == AstKind.enum_literal) @intCast(u8, 1) else @intCast(u8, 0);
     if (c0_lit == @intCast(u8, 0) and c1_lit != @intCast(u8, 0)) {
@@ -747,7 +747,7 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
 
 fn semanticAnalyzerResolveLogical(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var loe: []const u8 = "LOE"; pal_mod.markerWrite(loe);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     if (lhs == type_mod.TYPE_BOOL and rhs == type_mod.TYPE_BOOL) { var lo1: []const u8 = "LOB"; pal_mod.markerWrite(lo1); return type_mod.TYPE_BOOL; }
@@ -756,7 +756,7 @@ fn semanticAnalyzerResolveLogical(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveNegate(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
     if (inner == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     if (inner == type_mod.TYPE_INT_LIT) return type_mod.TYPE_INT_LIT;
@@ -765,7 +765,7 @@ fn semanticAnalyzerResolveNegate(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
     if (inner == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     if (inner == type_mod.TYPE_INT_LIT) return type_mod.TYPE_INT_LIT;
@@ -784,7 +784,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
         var coe_dkm: []const u8 = "COE:DK"; pal_mod.markerWriteInt(coe_dkm, @intCast(u32, @enumToInt(dst_t.kind)));
     }
     {
-        var snode = self.store.nodes.items[@intCast(usize, src_node)];
+        var snode = ast_mod.astStoreNodeAt(self.store, src_node);
         var coe_nkm: []const u8 = "COE:NK"; pal_mod.markerWriteInt(coe_nkm, @intCast(u32, @enumToInt(snode.kind)));
     }
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
@@ -799,7 +799,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
 }
 
 fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val: u32) u32 {
-    var rn = self.store.nodes.items[@intCast(usize, child_0)];
+    var rn = ast_mod.astStoreNodeAt(self.store, child_0);
     if (rn.kind == AstKind.error_literal) {
         var frt = self.registry.types_items[@intCast(usize, target_ty)];
         if (frt.kind == type_mod.TypeKind.error_union_type) {
@@ -810,7 +810,7 @@ fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val:
 }
 
 fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.child_0 != @intCast(u32, 0)) {
         pushExpectedType(self, self.current_fn_return);
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -827,8 +827,8 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
 
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fne: []const u8 = "FNE\n"; pal_mod.markerWrite(fne);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
-    var callee_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var callee_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
     var direct_ret: u32 = @intCast(u32, 0);
     var decl_cap: u32 = 0;
     if (callee_node.kind == AstKind.ident_expr) {
@@ -837,7 +837,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             decl_cap = s.decl_node;
             if (s.type_id != @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, s.type_id); }
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
-                var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
+                var dn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
                 if (dn.kind == AstKind.fn_decl) {
                     var proto = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, s.decl_node))];
                     if (proto.return_type_node != @intCast(u32, 0)) {
@@ -972,7 +972,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
     if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
@@ -984,7 +984,7 @@ fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 }
 
 fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
     if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
@@ -1020,7 +1020,7 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 }
 
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     semanticAnalyzerResolveIfHeader(self, node_idx);
     var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
     if (node.child_2 == @intCast(u32, 0)) { var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
@@ -1037,7 +1037,7 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 
 fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var el: []const u8 = "eL\n"; pal_mod.markerWrite(el);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var n: u32 = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
     if (self.current_switch_cond_tu != @intCast(u32, 0)) {
         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
@@ -1115,7 +1115,7 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
 }
 
 fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var target_type: u32 = @intCast(u32, 0);
     if (node.child_0 != @intCast(u32, 0)) {
         target_type = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1130,7 +1130,7 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
         var field_inits = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var fii: usize = 0;
         while (fii < field_inits.len) : (fii += 1) {
-            var fi_node = self.store.nodes.items[@intCast(usize, field_inits[fii])];
+            var fi_node = ast_mod.astStoreNodeAt(self.store, field_inits[fii]);
             var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, field_inits[fii]);
             if (fname_id != @intCast(u32, 0)) {
                 var fi: usize = 0;
@@ -1158,7 +1158,7 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
         var field_inits = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var fii: usize = 0;
         while (fii < field_inits.len) : (fii += 1) {
-            var fi_node = self.store.nodes.items[@intCast(usize, field_inits[fii])];
+            var fi_node = ast_mod.astStoreNodeAt(self.store, field_inits[fii]);
             var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, field_inits[fii]);
             if (fname_id != @intCast(u32, 0)) {
                 var fi: usize = 0;
@@ -1186,7 +1186,7 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
         var field_inits = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var fii: usize = 0;
         while (fii < field_inits.len) : (fii += 1) {
-            var fi_node = self.store.nodes.items[@intCast(usize, field_inits[fii])];
+            var fi_node = ast_mod.astStoreNodeAt(self.store, field_inits[fii]);
             var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, field_inits[fii]);
             if (fname_id != @intCast(u32, 0)) {
                 var fi: usize = 0;
@@ -1212,10 +1212,10 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
 
 fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var ase: []const u8 = "ASE"; pal_mod.markerWrite(ase);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = semanticAnalyzerResolveExpr(self, node.child_0);
     if (node.child_0 != @intCast(u32, 0)) {
-        var lhs_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+        var lhs_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
         if (lhs_node.kind == AstKind.ident_expr) {
             var us_str: []const u8 = "_";
             if (self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node.child_0))] == interner_mod.stringInternerIntern(self.interner, us_str)) {
@@ -1260,7 +1260,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     self.switch_depth += @intCast(u32, 1);
     var se: []const u8 = "SE"; pal_mod.markerWrite(se);
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var swu_im: []const u8 = "SWI:n"; pal_mod.markerWriteInt(swu_im, node_idx); var swu_pm: []const u8 = "SWI:p"; pal_mod.markerWriteInt(swu_pm, @intCast(u32, ast_mod.astStoreNodePayloadPacked(self.store, node_idx, node.kind) & @intCast(u64, 0xFFFFFFFF)));
     var swi_dm: []const u8 = "SWI:d"; pal_mod.markerWriteInt(swi_dm, self.switch_depth);
     if (ast_mod.astStoreNodePayload(self.store, node_idx) == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
@@ -1293,7 +1293,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var sw_base: usize = self.stmt_work_len;
 
     while (i < prongs.len) : (i += 1) {
-        var prong = self.store.nodes.items[@intCast(usize, prongs[i])];
+        var prong = ast_mod.astStoreNodeAt(self.store, prongs[i]);
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
             var swec_msg: []const u8 = "switch else-prong capture (else => |capture|) is not supported";
@@ -1307,7 +1307,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             var case_ec = ast_mod.astStoreNodeExtraChildren(self.store, prongs[i]);
             var ci: usize = 0;
             while (ci < case_ec.len) : (ci += 1) {
-                var case_node = self.store.nodes.items[@intCast(usize, case_ec[ci])];
+                var case_node = ast_mod.astStoreNodeAt(self.store, case_ec[ci]);
                 var cc_val = @intCast(u32, @enumToInt(case_node.kind));
                 var cc_m: []const u8 = "CC:K"; pal_mod.markerWriteInt(cc_m, cc_val);
                     if (case_node.kind == AstKind.enum_literal) {
@@ -1348,7 +1348,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             var es_case_ec = ast_mod.astStoreNodeExtraChildren(self.store, prongs[i]);
             var es_ci: usize = 0;
             while (es_ci < es_case_ec.len) : (es_ci += 1) {
-                var es_case_node = self.store.nodes.items[@intCast(usize, es_case_ec[es_ci])];
+                var es_case_node = ast_mod.astStoreNodeAt(self.store, es_case_ec[es_ci]);
                 if (es_case_node.kind == AstKind.error_literal) {
                     pushExpectedType(self, cond_es);
                     _ = semanticAnalyzerResolveExpr(self, @intCast(u32, es_case_ec[es_ci]));
@@ -1358,7 +1358,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
          var pbd_b0 = prong.child_0;
          var pbd_k0: u32 = @intCast(u32, 0);
-         if (pbd_b0 != @intCast(u32, 0)) { var pbd_n = self.store.nodes.items[@intCast(usize, pbd_b0)]; pbd_k0 = @intCast(u32, @enumToInt(pbd_n.kind)); }
+         if (pbd_b0 != @intCast(u32, 0)) { var pbd_n = ast_mod.astStoreNodeAt(self.store, pbd_b0); pbd_k0 = @intCast(u32, @enumToInt(pbd_n.kind)); }
          var pbd_nm: []const u8 = "PBD:N"; pal_mod.markerWriteInt(pbd_nm, pbd_b0);
          var pbd_km: []const u8 = "PBD:K"; pal_mod.markerWriteInt(pbd_km, pbd_k0);
           var saved_tu = self.current_switch_cond_tu;
@@ -1405,7 +1405,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var result: u32;
     result = @intCast(u32, 0);
     if (node_idx == @intCast(u32, 0)) return result;
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     result = type_mod.TYPE_VOID;
     if (node.kind == AstKind.swt_ex) {
         var rx_sw_m: []const u8 = "RXS"; pal_mod.markerWrite(rx_sw_m);
@@ -1616,7 +1616,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             }
         }
         if (node.child_2 != 0) {
-            var capture_node = self.store.nodes.items[@intCast(usize, node.child_2)];
+            var capture_node = ast_mod.astStoreNodeAt(self.store, node.child_2);
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
             self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node.child_2);
             self.local_decl_types[self.local_decl_count] = if (catch_es != 0) catch_es else type_mod.TYPE_I32;
@@ -1624,7 +1624,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         }
         if (node.child_1 != @intCast(u32, 0)) {
             if (catch_es != 0) {
-                var child1 = self.store.nodes.items[@intCast(usize, node.child_1)];
+                var child1 = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 if (child1.kind == AstKind.error_literal) {
                     pushExpectedType(self, catch_es);
                     _ = semanticAnalyzerResolveExpr(self, node.child_1);
@@ -1750,7 +1750,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
      var fb: []const u8 = "FB"; pal_mod.markerWrite(fb);
      self.local_decl_count = @intCast(usize, 0);
-     var decl = self.store.nodes.items[@intCast(usize, fn_decl_node)];
+     var decl = ast_mod.astStoreNodeAt(self.store, fn_decl_node);
     if (decl.kind != AstKind.fn_decl) return;
     var store = self.store;
     var proto = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fn_decl_node))];
@@ -1760,7 +1760,7 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
         var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
         var pi: usize = @intCast(usize, 0);
         while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
-            var pnode = store.nodes.items[@intCast(usize, pnodes[pi])];
+            var pnode = ast_mod.astStoreNodeAt(store, pnodes[pi]);
             if (pnode.child_0 != @intCast(u32, 0)) {
                 if (self.local_decl_count >= self.local_decl_cap) {
                     semanticAnalyzerGrowLocalDecls(self);
@@ -1834,32 +1834,32 @@ pub fn topExpectedType(self: *SemanticAnalyzer) u32 {
 }
 
 fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
     if (ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
         var icap_idx = ast_mod.astStoreNodePayload(self.store, node_idx);
-        var icap_node = self.store.nodes.items[@intCast(usize, icap_idx)];
+        var icap_node = ast_mod.astStoreNodeAt(self.store, icap_idx);
         if (icap_node.kind == AstKind.if_capture) {
             registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, icap_idx), semanticAnalyzerCaptureType(self, icond_t));
         }
     }
     var ifs_b: [1]u32 = [1]u32{node.child_1};
     var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
-    if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = self.store.nodes.items[@intCast(usize, ifs_b[0])]; ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
+    if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = ast_mod.astStoreNodeAt(self.store, ifs_b[0]); ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
     var ifst_nm: []const u8 = "IFST:N"; pal_mod.markerWriteInt(ifst_nm, node_idx);
     var ifst_cm: []const u8 = "IFST:C"; pal_mod.markerWriteInt(ifst_cm, ifs_b[0]);
     var ifst_km: []const u8 = "IFST:K"; pal_mod.markerWriteInt(ifst_km, ifs_k[0]);
     var ifst_c2m: []const u8 = "IFST:2"; pal_mod.markerWriteInt(ifst_c2m, node.child_2);
     var ifs_k2: [1]u32 = [1]u32{@intCast(u32, 0)};
-    if (node.child_2 != @intCast(u32, 0)) { var ifs_cn2 = self.store.nodes.items[@intCast(usize, node.child_2)]; ifs_k2[0] = @intCast(u32, @enumToInt(ifs_cn2.kind)); }
+    if (node.child_2 != @intCast(u32, 0)) { var ifs_cn2 = ast_mod.astStoreNodeAt(self.store, node.child_2); ifs_k2[0] = @intCast(u32, @enumToInt(ifs_cn2.kind)); }
     var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
 }
 
 fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     _ = semanticAnalyzerResolveExpr(self, node.child_0);
     var fs_c_m: []const u8 = "FS:C"; pal_mod.markerWriteInt(fs_c_m, node.child_0);
-    var cnode = self.store.nodes.items[@intCast(usize, node.child_0)];
+    var cnode = ast_mod.astStoreNodeAt(self.store, node.child_0);
     var fs_ck_m: []const u8 = "FS:CK"; pal_mod.markerWriteInt(fs_ck_m, @intCast(u32, @enumToInt(cnode.kind)));
     var it_tid = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
     if (it_tid) |tid| {
@@ -1888,16 +1888,16 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
 }
 
 fn semanticAnalyzerResolveWhileHeader(self: *SemanticAnalyzer, node_idx: u32) void {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.child_1 != @intCast(u32, 0)) {
-        var ws_node = self.store.nodes.items[@intCast(usize, node.child_1)];
+        var ws_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
         var wst_nm: []const u8 = "WST:N"; pal_mod.markerWriteInt(wst_nm, node_idx);
         var wst_km: []const u8 = "WST:K"; pal_mod.markerWriteInt(wst_km, @intCast(u32, @enumToInt(ws_node.kind)));
     }
     var wcond_t = semanticAnalyzerResolveExpr(self, node.child_0);
     if (ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
         var wcap_idx = ast_mod.astStoreNodePayload(self.store, node_idx);
-        var wcap_node = self.store.nodes.items[@intCast(usize, wcap_idx)];
+        var wcap_node = ast_mod.astStoreNodeAt(self.store, wcap_idx);
         if (wcap_node.kind == AstKind.while_capture) {
             registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t));
         }
@@ -1911,7 +1911,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
         self.stmt_work_len -= @intCast(usize, 1);
         var node_idx = self.stmt_work_items[self.stmt_work_len];
         if (node_idx == @intCast(u32, 0)) { continue; }
-        var node = self.store.nodes.items[@intCast(usize, node_idx)];
+        var node = ast_mod.astStoreNodeAt(self.store, node_idx);
         var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, self.stmt_work_len));
         var spk_m: []const u8 = "SP:K"; pal_mod.markerWriteInt(spk_m, @intCast(u32, @enumToInt(node.kind)));
         if (node.kind == AstKind.block) {
@@ -1924,7 +1924,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var bc_m: []const u8 = "BCK:B"; pal_mod.markerWriteInt(bc_m, node_idx);
                 var bc_im: []const u8 = "BCK:I"; pal_mod.markerWriteInt(bc_im, @intCast(u32, i - @intCast(usize, 1)));
                 var bc_nm: []const u8 = "BCK:N"; pal_mod.markerWriteInt(bc_nm, ci);
-                var cnode_k = self.store.nodes.items[@intCast(usize, ci)].kind;
+                var cnode_k = ast_mod.astStoreNodeAt(self.store, ci).kind;
                 var bc_km: []const u8 = "BCK:K"; pal_mod.markerWriteInt(bc_km, @intCast(u32, @enumToInt(cnode_k)));
                 semanticAnalyzerStmtWorkPush(self, ci);
             }
@@ -1934,7 +1934,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var d10n_m: []const u8 = "D10:C0"; pal_mod.markerWriteInt(d10n_m, node.child_0);
                 var d10c_m: []const u8 = "D10:C1"; pal_mod.markerWriteInt(d10c_m, node.child_1);
                 if (node.child_1 != @intCast(u32, 0)) {
-                    var inode = self.store.nodes.items[@intCast(usize, node.child_1)];
+                    var inode = ast_mod.astStoreNodeAt(self.store, node.child_1);
                     var d10k_m: []const u8 = "D10:IK"; pal_mod.markerWriteInt(d10k_m, @intCast(u32, @enumToInt(inode.kind)));
                 }
             }
@@ -1942,7 +1942,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var vd2_m: []const u8 = "VD:C"; pal_mod.markerWriteInt(vd2_m, @intCast(u32, self.local_decl_count));
             var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
             if (node.child_0 != @intCast(u32, 0)) {
-                var ann = self.store.nodes.items[@intCast(usize, node.child_0)];
+                var ann = ast_mod.astStoreNodeAt(self.store, node.child_0);
                 if (ann.kind == AstKind.ident_expr) { decl_type = semanticAnalyzerResolveExpr(self, node.child_0); }
                 else {
                     var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
@@ -1964,7 +1964,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var b1nl2: []const u8 = "\n"; pal_mod.markerWrite(b1nl2);
             }
             if (node.child_1 != @intCast(u32, 0)) {
-                var init_node = self.store.nodes.items[@intCast(usize, node.child_1)];
+                var init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
                 var vd_exp = if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) decl_type else @intCast(u32, 0);
                 pushExpectedType(self, vd_exp);
@@ -2093,11 +2093,11 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             _ = semanticAnalyzerResolveExpr(self, node_idx);
         }
         if (node.child_0 != @intCast(u32, 0)) {
-            var nc = self.store.nodes.items[@intCast(usize, node.child_0)];
+            var nc = ast_mod.astStoreNodeAt(self.store, node.child_0);
             if (nc.kind == AstKind.fn_decl) { continue; }
         }
         if (node.child_1 != @intCast(u32, 0)) {
-            var nc = self.store.nodes.items[@intCast(usize, node.child_1)];
+            var nc = ast_mod.astStoreNodeAt(self.store, node.child_1);
             if (nc.kind == AstKind.fn_decl) { continue; }
         }
     }
@@ -2107,13 +2107,13 @@ fn semaTraceStep(self: *SemanticAnalyzer, cur_name: *u32, done: *u8) u32 {
     var ss = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, cur_name.*);
     if (ss) |s| {
         if (s.decl_node == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
-        var dn = self.store.nodes.items[@intCast(usize, s.decl_node)];
+        var dn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
         if (dn.kind != AstKind.var_decl) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
         if (dn.child_1 == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
-        var init = self.store.nodes.items[@intCast(usize, dn.child_1)];
+        var init = ast_mod.astStoreNodeAt(self.store, dn.child_1);
         if (init.kind != AstKind.slice_expr) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
         if (init.child_0 == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
-        var c0 = self.store.nodes.items[@intCast(usize, init.child_0)];
+        var c0 = ast_mod.astStoreNodeAt(self.store, init.child_0);
         if (c0.kind != AstKind.ident_expr) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
         var nn = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, init.child_0))];
         cur_name.* = nn;
@@ -2125,11 +2125,11 @@ fn semaTraceStep(self: *SemanticAnalyzer, cur_name: *u32, done: *u8) u32 {
 
 fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
      var ixa_m: []const u8 = "IXA:N"; pal_mod.markerWriteInt(ixa_m, node_idx);
-     var node = self.store.nodes.items[@intCast(usize, node_idx)];
+     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
      var saved = self._stub_0;
      _ = semanticAnalyzerResolveExpr(self, node.child_1);
      self._stub_0 = semanticAnalyzerResolveExpr(self, node.child_0);
-     var c0_node = self.store.nodes.items[@intCast(usize, node.child_0)];
+     var c0_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
      var c0k_m: []const u8 = "C0K:K"; pal_mod.markerWriteInt(c0k_m, @intCast(u32, @enumToInt(c0_node.kind)));
     if (c0_node.kind == AstKind.ident_expr) {
         var c0_name_id = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node.child_0))];
@@ -2166,7 +2166,7 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
 }
 
 fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var saved = self._stub_0;
     self._stub_0 = semanticAnalyzerResolveExpr(self, node.child_0);
     if (node.child_1 != @intCast(u32, 0)) { _ = semanticAnalyzerResolveExpr(self, node.child_1); }
@@ -2197,7 +2197,7 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
 }
 
 fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var saved = self._stub_0;
     var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
     if (ec.len == @intCast(usize, 0)) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
@@ -2213,7 +2213,7 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
 }
 
 fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var saved = self._stub_0;
     var annot_tid: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
     if (node.child_0 != @intCast(u32, 0)) {
@@ -2228,7 +2228,7 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
      var arr_elem_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
      var aei: usize = @intCast(usize, 0);
      while (aei < ec.len) : (aei += @intCast(usize, 1)) {
-         var el = self.store.nodes.items[@intCast(usize, ec[aei])];
+         var el = ast_mod.astStoreNodeAt(self.store, ec[aei]);
          var el_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
          if (el.kind == AstKind.char_literal) { el_tid = type_mod.TYPE_U8; }
          else if (el.kind == AstKind.int_literal) { el_tid = type_mod.TYPE_U32; }
@@ -2247,7 +2247,7 @@ pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void 
 }
 
 pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u32) u32 {
-    var decl = self.store.nodes.items[@intCast(usize, decl_idx)];
+    var decl = ast_mod.astStoreNodeAt(self.store, decl_idx);
     if (decl.child_1 == @intCast(u32, 0)) return @intCast(u32, type_mod.TYPE_UNDEFINED);
     var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
     if (decl.child_0 != @intCast(u32, 0)) {

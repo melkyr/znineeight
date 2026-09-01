@@ -72,13 +72,13 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
             alloc_mod.sandReset(ct.scratch);
             var ast_root = mods[mi].ast_root;
             if (ast_root == @intCast(u32, 0)) continue;
-            var root = ct.store.nodes.items[@intCast(usize, ast_root)];
+            var root = ast_mod.astStoreNodeAt(ct.store, ast_root);
             var decls = ast_mod.astStoreNodeExtraChildren(ct.store, ast_root);
             var src_fid = mods[mi].source_file_id;
             var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg);
             var di: usize = 0;
             while (di < decls.len) : (di += 1) {
-                var decl = ct.store.nodes.items[@intCast(usize, decls[di])];
+                var decl = ast_mod.astStoreNodeAt(ct.store, decls[di]);
                 if (decl.kind != AstKind.var_decl) continue;
                 if (decl.child_0 != @intCast(u32, 0)) {
                     var rtype = resolveTypeExpr(ct, mods[mi].id, decl.child_0);
@@ -88,7 +88,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                     }
                 }
                 if (decl.child_1 != @intCast(u32, 0)) {
-                    var init = ct.store.nodes.items[@intCast(usize, decl.child_1)];
+                    var init = ast_mod.astStoreNodeAt(ct.store, decl.child_1);
                     if (init.kind != AstKind.struct_decl and init.kind != AstKind.union_decl) {
                         var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);
                         if (init.kind == AstKind.ident_expr) {
@@ -130,7 +130,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
 
 pub fn resolveStmtTypes(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u32) void {
     if (depth > @intCast(u32, 16)) return;
-    var node = ct.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(ct.store, node_idx);
     if (node.kind == AstKind.var_decl) {
         if (node.child_0 != 0) {
             var rtype = resolveTypeExpr(ct, module_id, node.child_0);

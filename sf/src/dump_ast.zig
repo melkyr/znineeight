@@ -128,7 +128,7 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
 }
 
 fn nodeGetNameId(store: *AstStore, node_idx: u32) u32 {
-    var node = store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
     switch (node.kind) {
         AstKind.var_decl => { return ast_mod.astStoreNodePayload(store, node_idx); },
         AstKind.field_decl => { return ast_mod.astStoreNodePayload(store, node_idx); },
@@ -176,7 +176,7 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
         var idx = st_idx[sp];
         var indent = st_indent[sp];
         var is_post = st_state[sp];
-        var node = store.nodes.items[idx];
+        var node = ast_mod.astStoreNodeAt(store, @intCast(u32, idx));
 
         if (is_post != 0) {
             var ii: u32 = 0;

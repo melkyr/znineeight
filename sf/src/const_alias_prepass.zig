@@ -111,7 +111,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                 { var g0_m: []const u8 = "GATE:g0"; pal.markerWriteInt(g0_m, sym.type_id); }
                 if (sym.type_id != 0) continue;
                 { var g1_m: []const u8 = "GATE:g1\n"; pal.markerWrite(g1_m); }
-                var decl_node = store.nodes.items[@intCast(usize, sym.decl_node)];
+                var decl_node = ast_mod.astStoreNodeAt(store, sym.decl_node);
                 if (@enumToInt(decl_node.kind) != 1) {
                     { var g2_m: []const u8 = "GATE:g2"; pal.markerWriteInt(g2_m, @intCast(u32, @enumToInt(decl_node.kind))); }
                     continue;
@@ -120,7 +120,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                     { var g3_m: []const u8 = "GATE:g3\n"; pal.markerWrite(g3_m); }
                     continue;
                 }
-                var init = store.nodes.items[@intCast(usize, decl_node.child_1)];
+                var init = ast_mod.astStoreNodeAt(store, decl_node.child_1);
                 {
                     var c1_m: []const u8 = "CAT:ik"; pal.markerWriteInt(c1_m, @intCast(u32, @enumToInt(init.kind)));
                 }
@@ -203,7 +203,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
         var resolved_sym = &resolved_table.items[@intCast(usize, alias_sym_id[@intCast(usize, resolved_idx) * 2 + 1])];
         var rt = resolved_sym.type_id;
 
-        var decl_node = store.nodes.items[@intCast(usize, resolved_sym.decl_node)];
+        var decl_node = ast_mod.astStoreNodeAt(store, resolved_sym.decl_node);
         var alias_own_name: u32 = ast_mod.astStoreNodePayload(store, resolved_sym.decl_node);
         var alias_own_text = interner_mod.stringInternerGet(interner, alias_own_name);
         var alias_own_canonical = interner_mod.stringInternerIntern(interner, alias_own_text);

@@ -45,7 +45,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
 }
 
 fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
     var rhs = comptimeEvalEvaluateDepth(self, node.child_1, depth);
     if (lhs) |l| {
@@ -111,7 +111,7 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
 }
 
 fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.child_0 == self.size_of_id) {
         var ec: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
@@ -169,7 +169,7 @@ pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {
 
 fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
     if (node_idx == @intCast(u32, 0)) return null;
-    var node = self.store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.kind == AstKind.int_literal) {
         return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))], .width_bits = @intCast(u32, 0), .sig = true };
     } else if (node.kind == AstKind.char_literal) {
@@ -222,7 +222,7 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
             var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
             if (c_sym) |cs| {
                 if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                    var c_decl = self.store.nodes.items[@intCast(usize, cs.decl_node)];
+                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
                     if (c_decl.child_1 != @intCast(u32, 0)) {
                         return comptimeEvalEvaluateDepth(self, c_decl.child_1, depth + @intCast(u32, 1));
                     }

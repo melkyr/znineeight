@@ -36,15 +36,15 @@ fn printDecompScanFormat(fmt: []const u8) u8 {
 
 pub fn printDecompParseAndValidate(store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, node_idx: u32) ?PrintDecompEntry {
     if (node_idx == @intCast(u32, 0)) return null;
-    var node = store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
     if (node.kind != AstKind.fn_call) return null;
     var args = ast_mod.astStoreNodeExtraChildren(store, node_idx);
     if (args.len != @intCast(usize, 2)) return null;
-    var fmt_node = store.nodes.items[@intCast(usize, args[0])];
+    var fmt_node = ast_mod.astStoreNodeAt(store, args[0]);
     if (fmt_node.kind != AstKind.string_literal) return null;
     var raw = interner_mod.stringInternerGet(interner, ast_mod.astStoreNodePayload(store, args[0]));
     var spec_count = printDecompScanFormat(raw);
-    var tup_node = store.nodes.items[@intCast(usize, args[1])];
+    var tup_node = ast_mod.astStoreNodeAt(store, args[1]);
     if (tup_node.kind != AstKind.tuple_literal) return null;
     var fields = ast_mod.astStoreNodeExtraChildren(store, args[1]);
     var fcount: u8 = @intCast(u8, fields.len);

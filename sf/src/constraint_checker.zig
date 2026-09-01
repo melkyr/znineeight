@@ -9,7 +9,7 @@ const diag_mod = @import("diagnostics.zig");
 const rtt_mod = @import("resolved_type_table.zig");
 
 pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, node_idx: u32, return_expr_type: u32, current_fn_return: u32) void {
-    var node = store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
     if (node.kind != AstKind.return_stmt) return;
     if (node.child_0 == @intCast(u32, 0)) {
         if (current_fn_return != type_mod.TYPE_VOID and current_fn_return != type_mod.TYPE_NORETURN) {
@@ -28,7 +28,7 @@ pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCo
 }
 
 pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, rtt: *ResolvedTypeTable, node_idx: u32) void {
-    var node = store.nodes.items[@intCast(usize, node_idx)];
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
     if (node.child_0 == @intCast(u32, 0)) return;
     var cond_tid = rtt_mod.resolvedTypeTableGet(rtt, node.child_0);
     if (cond_tid) |tid| {
@@ -49,7 +49,7 @@ pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *Diagnosti
         var has_else: u8 = 0;
         var pi: usize = 0;
         while (pi < prongs.len) : (pi += 1) {
-            var prong = store.nodes.items[@intCast(usize, prongs[pi])];
+            var prong = ast_mod.astStoreNodeAt(store, prongs[pi]);
             if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { has_else = 1; } else {
                 if (ast_mod.astStoreNodePayload(store, prongs[pi]) != @intCast(u32, 0)) {
                     var items = ast_mod.astStoreNodeExtraChildren(store, prongs[pi]);
@@ -79,7 +79,7 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
         sp -= 1;
             var n: u32 = stack_n[sp];
             var depth: u8 = stack_d[sp];
-            var node = store.nodes.items[@intCast(usize, n)];
+            var node = ast_mod.astStoreNodeAt(store, n);
             var nd: u8 = depth;
             if (node.kind == AstKind.while_stmt or node.kind == AstKind.for_stmt) nd += 1;
             if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {

@@ -683,11 +683,11 @@ pub fn moduleRegistryVerifyOrder(reg: *ModuleRegistry) void {
 pub fn moduleRegistryCollectIncludes(store: *AstStore, decls: []u32, c_includes: *U32ArrayList) void {
     var di: usize = @intCast(usize, 0);
     while (di < decls.len) : (di += @intCast(usize, 1)) {
-        var decl = store.nodes.items[@intCast(usize, decls[di])];
+        var decl = ast_mod.astStoreNodeAt(store, decls[di]);
         if (decl.kind == AstKind.c_include) {
             ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decls[di]));
         } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
-            var init = store.nodes.items[@intCast(usize, decl.child_1)];
+            var init = ast_mod.astStoreNodeAt(store, decl.child_1);
             if (init.kind == AstKind.c_include) {
                 ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decl.child_1));
             }
