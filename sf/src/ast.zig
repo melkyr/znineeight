@@ -273,6 +273,7 @@ pub const AST_BLOCK_NODES: u32 = 4096;
 pub const AST_BLOCK_NODE_BYTES: u32 = 98304;    // 4096 * 24 (AstNode)
 pub const AST_BLOCK_PAYLOAD_BYTES: u32 = 16384; // 4096 * 4 (u32 payload)
 pub const AST_BLOCK_REC_SIZE: u32 = 114688;     // node array + payload array
+pub const AST_SPILL_MAX_BLOCKS: u32 = 18724;    // i32 max / AST_BLOCK_REC_SIZE; seek offset must fit i32
 pub const AST_BLOCK_MASK: u32 = 4095;
 pub const AST_WINDOW_SLOTS: u32 = 8;
 pub const AST_HEAD_SLOT: u32 = 0;
@@ -530,6 +531,12 @@ fn astBlockSpillHead(store: *AstStore) void {
     astBlockOpenSpill(store);
     var h = store.spill_handle orelse return;
     var bi = store.cur_block;
+    if (bi > AST_SPILL_MAX_BLOCKS) {
+        var emsg: []const u8 = "S-AST spill block count exceeds i32 seek limit (astBlockSpillHead)";
+        var ef: []const u8 = "ast.zig";
+        panic_mod.panicHandler(emsg, ef, 537);
+        return;
+    }
     var disk_off: u32 = bi * AST_BLOCK_REC_SIZE;
     var entry = store.block_table.items[bi];
     entry.disk_off = disk_off;
@@ -614,6 +621,12 @@ fn astSlotAcquire(store: *AstStore) u32 {
 fn astBlockFaultIn(store: *AstStore, bi: u32) void {
     astBlockOpenSpill(store);
     var h = store.spill_handle orelse return;
+    if (bi > AST_SPILL_MAX_BLOCKS) {
+        var emsg: []const u8 = "S-AST spill block count exceeds i32 seek limit (astBlockFaultIn)";
+        var ef: []const u8 = "ast.zig";
+        panic_mod.panicHandler(emsg, ef, 627);
+        return;
+    }
     var entry = store.block_table.items[bi];
     var s = astSlotAcquire(store);
     astSlotEnsureFull(store, s);
