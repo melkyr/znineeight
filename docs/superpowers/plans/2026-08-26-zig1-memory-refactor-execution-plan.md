@@ -24,6 +24,8 @@ The operator's "stage done → query only" probe (m0834) corrected the floor. Ve
 
 **AMENDMENT 15 (operator-ruled 2026-08-26, S-RES-I census — dense-vs-sparse tension):** the operator (m0981/m0987) challenged the dense-res conversion: the node_idx-keyed hash tables are **SPARSE BY DESIGN** (they store only *present* entries, avoiding per-node slots — introduced for node-duplication avoidance and bug-fixing). A dense per-node array carries a **fixed floor** (nodes.len × element ≈ 5 B/node for u32 tables, 9 B/node for u64) and can be **larger than the sparse hash at low occupancy** — so the dense→smaller claim is NOT guaranteed without occupancy data. Additionally the I-STREAM "11 MB → 2.2 MB" was an **over-attribution**: the "+11.3 MB during SemanticAnalysis" (I-4B) is the *whole-phase* delta spanning **FIVE** node_idx-keyed tables (`resolved_types`, `source_table`, `coercion_table`, `enum_value_table`, `comptime_values`), not two. A read-only **S-RES-I census** is added BEFORE S-RES to (1) measure actual per-table occupancy/bytes at self-compile, (2) investigate the duplication/bug-fixing history behind each hash, (3) evaluate the strategy fork including the operator-suggested **spill-the-hash-as-a-sorted-file + binary-search-on-demand** (preserves sparsity, zero resident bytes, O(log n) seeks), and (4) STOP-present the data so S-RES's strategy is chosen on measurement, never guesswork.
 
+**AMENDMENT 16 (operator-ruled 2026-08-26, S-RES scoped by the S-RES-I census):** S-RES-I measured (self-compile, end of SemanticAnalysis, instrumented /tmp build; `nodes.len = 192,607` NOT the stale 180,020): `resolved_types` = 146,701 entries / index cap 262,144 / **76% occupancy** = 3,450 KiB resident vs **941 KiB dense floor** → **DENSE-WINS** (the only table that moves `pool.peak`). The other four are SPARSE-WINS and KEEP resident: `source_table` EMPTY (source_len 0), `coercion_table` 135 KiB (2.8%), `enum_value_table` 4.5 KiB (0.15%), `comptime_values` 208 KiB (3.2%) — combined 347 KiB; dense would ADD ~4.7 MiB. I-STREAM's "11 MB → 2.2 MB" confirmed an over-attribution (five tables live = 3.8 MiB total). Operator rulings: **(1)** S-RES-F = DENSE `resolved_types` ONLY; **(2)** `source_table` keep as-is; **(3)** `lower.zig:3820` (real post-Sema `resolvedTypeTableSet`, didn't fire at self-compile, can fire elsewhere) is absorbed naturally by the dense array (index = node_idx, plain array write — no spill-boundary problem). All five hashes are node_idx→value dedup structures (Set-on-existing updates in place); dense is strictly dedup-safer; NONE is emitted in hash/insertion order → dense is byte-identity-safe (S-TOKEN hazard confined to `error_code_registry`). S-RES-F preserves the public API (`resolvedTypeTableGet/Set`, `resolvedSourceTableGet/Set` unchanged — the ~182 call sites and test files compile unmodified). Expected: resolved_types 3,450 KiB → 941 KiB (≈2.6 MiB live / pool ≈ 33.4 MB). S-RES-F commit message updated accordingly (was "resolved_types/comptime_values disk-backed" — now scoped to dense resolved_types only).
+
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32 (build + `-O2`/`-O3` portability gate), bash.
 
 ## Global Constraints
@@ -753,22 +755,22 @@ Commit verbatim. Report pool before/after + I-4B ceiling reconciliation + pointe
 
 ---
 
-### Task S-RES: Stream the resolution tables (HIGHER — ~205 sites)
+### Task S-RES: resolved_types → dense per-node array (LOWER — scoped by S-RES-I)
 
-> **AMENDMENT 11:** `resolved_types`/`comptime_values` (~11 MB, node_idx-keyed, built in semantic analysis, queried in lowering/emission) → same disk-backed treatment or per-module restructure. Designed by I-STREAM S-3. F task; the linear-probing hash (hash.zig:61) is the complication.
+> **AMENDMENT 16 (operator-ruled, from S-RES-I census):** DENSE **`resolved_types` ONLY**. The other four node_idx-keyed hash tables (`source_table` empty, `coercion_table` 135 KiB, `enum_value_table` 4.5 KiB, `comptime_values` 208 KiB) are sparse-wins → KEEP resident, untouched. Dense is dedup-safe by construction (index = node_idx) and byte-identity-safe (none emitted in hash/insertion order). Public API preserved — the ~182 call sites and test files compile unchanged.
 
 **Files:**
-- Modify: `sf/src/resolved_type_table.zig` (+ comptime_values), ~182 call sites across 6 files (per I-STREAM census), `sf/src/hash.zig` if the open-addressing needs a disk-backed variant
-- Commit: `perf: stream resolution tables (resolved_types/comptime_values disk-backed)`
+- Modify: `sf/src/resolved_type_table.zig` ONLY (swap internals to dense per-node arrays; keep `resolvedTypeTableInit/Set/Get`, `resolvedSourceTableSet/Get` signatures)
+- Commit: `refactor: resolved_types dense per-node array (O(1) Get, dedup-safe)`
 
 **Interfaces:**
-- Consumes: S-RES-I census (per-table occupancy + duplication-history + strategy decision: dense vs sorted-file+binary-search); ComptimeEvaluation full-store scan → streaming sweep (main.zig:393-394).
-- Produces: resolution tables no longer an 11 MB resident bump.
+- Consumes: S-RES-I census (resolved_types 146,701 entries / 76% occupancy; dense floor 941 KiB at nodes.len 192,607; lower.zig:3820 post-Sema Set absorbed by array write).
+- Produces: resolved_types 3,450 KiB → 941 KiB resident (≈2.6 MiB live; pool ≈ 33.4 MB); O(1) Get; dedup by construction.
 
-- [ ] **Step 1: Golden baseline** — capture `/tmp/golden_SRES/`.
-- [ ] **Step 2: Implement** — disk-back the tables or restructure per-module; migrate the ~182 sites; streaming comptime sweep; Z98-clean.
-- [ ] **Step 3: Verify** — 4 MD5 byte-identical; golden 9/9; self-compile clean; `pool=` drops (record).
-- [ ] **Step 4: Commit + report + ledger + memory** — commit verbatim.
+- [ ] **Step 1: Golden baseline** — capture `/tmp/golden_SRES/` (4 gate MD5 dumps + 9 fixtures run, reference zig1).
+- [ ] **Step 2: Implement** — in `resolved_type_table.zig`: replace the sparse `entries_items` + `index`/`source_index` U32ToU32Map hashes with dense per-node arrays (type_id u32 + presence flag u8; source u32 + flag). Size once to avoid growth chains: reserve at start of `phase_TypeResolution` using `ctx.store.nodes.len` (192,607) — a one-shot 941 KiB bump, no doubling chain. Set = array write (grow-if-needed for the post-Sema `lower.zig:3820` fallback); Get = flag check → type_id or null. Keep the API identical so no call site or test changes. Z98-clean. Do NOT touch comptime_values / coercion / enum_value / source_table semantics.
+- [ ] **Step 3: Verify** — 4 MD5 byte-identical (gol `b335d894`/lisp `3591bad9`/json `76056b97`/mud `4591fef0`, keep-or-re-baseline with golden-runtime evidence); golden 9/9; self-compile clean; `pool=` drops (record; expect ≈ −2.6 MiB); matrix 21/21.
+- [ ] **Step 4: Commit + report + ledger + memory** — commit verbatim; report section `## S-RES`; ledger line; mnemoria.
 
 ---
 
