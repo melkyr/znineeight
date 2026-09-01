@@ -892,6 +892,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
         }
         lir_stream.lirStreamEndRead(&ctx.lir_stream);
+        ast_mod.astStoreCloseSpill(ctx.store);
         return;
     }
 
@@ -905,6 +906,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);
     lir_stream.lirStreamEndRead(&ctx.lir_stream);
+    ast_mod.astStoreCloseSpill(ctx.store);
 }
 
 fn parseArgs() CompilerCli {

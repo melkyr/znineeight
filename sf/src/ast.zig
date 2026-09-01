@@ -429,6 +429,13 @@ pub fn astStoreSetSpillPath(store: *AstStore, path: []const u8) void {
     store.spill_path[i] = @intCast(u8, 0);
 }
 
+pub fn astStoreCloseSpill(store: *AstStore) void {
+    if (store.spill_handle) |h| {
+        pal.streamClose(h);
+        store.spill_handle = null;
+    }
+}
+
 pub fn astStoreEnsureNodesCapacity(store: *AstStore, new_capacity: usize) void {
     // The old contiguous nodes pre-allocation is deleted: capacity is now the
     // block table (4096 nodes/block), a ~0.5 KB pre-size instead of a ~4.3 MB
