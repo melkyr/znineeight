@@ -1,5 +1,6 @@
 const alloc_mod = @import("allocator.zig");
 const Sand = alloc_mod.Sand;
+const panic_mod = @import("panic.zig");
 
 const ext_c = @import("extern_c.zig");
 extern "c" fn fopen(path: [*]const u8, mode: [*]const u8) ?*void;
@@ -112,16 +113,31 @@ pub fn streamClose(file: *void) void {
 
 pub fn streamWrite(file: *void, buf: []const u8) void {
     if (buf.len == @intCast(usize, 0)) return;
-    _ = fwrite(buf.ptr, @intCast(u32, 1), @intCast(u32, buf.len), file);
+    var wrote = fwrite(buf.ptr, @intCast(u32, 1), @intCast(u32, buf.len), file);
+    if (wrote != @intCast(u32, buf.len)) {
+        var emsg: []const u8 = "short write on spill stream (streamWrite)";
+        var ef: []const u8 = "pal.zig";
+        panic_mod.panicHandler(emsg, ef, 120);
+    }
 }
 
 pub fn streamRead(file: *void, buf: []u8) void {
     if (buf.len == @intCast(usize, 0)) return;
-    _ = fread(buf.ptr, @intCast(u32, 1), @intCast(u32, buf.len), file);
+    var got = fread(buf.ptr, @intCast(u32, 1), @intCast(u32, buf.len), file);
+    if (got != @intCast(u32, buf.len)) {
+        var emsg: []const u8 = "short read on spill stream (streamRead)";
+        var ef: []const u8 = "pal.zig";
+        panic_mod.panicHandler(emsg, ef, 130);
+    }
 }
 
 pub fn streamSeek(file: *void, offset: i32) void {
-    _ = fseek(file, offset, SEEK_SET);
+    var rc = fseek(file, offset, SEEK_SET);
+    if (rc != 0) {
+        var emsg: []const u8 = "fseek failed on spill stream (streamSeek)";
+        var ef: []const u8 = "pal.zig";
+        panic_mod.panicHandler(emsg, ef, 139);
+    }
 }
 
 pub fn getDefaultLibPath(buf: [*]u8, bufsize: i32) i32 {

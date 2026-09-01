@@ -5,6 +5,7 @@ const diag_mod = @import("diagnostics.zig");
 const StringInterner = @import("string_interner.zig").StringInterner;
 const interner_mod = @import("string_interner.zig");
 const pal_mod = @import("pal.zig");
+const panic_mod = @import("panic.zig");
 const hash_mod = @import("util/hash.zig");
 const path_mod = @import("util/path.zig");
 const SourceManager = @import("source_manager.zig").SourceManager;
@@ -445,7 +446,12 @@ pub fn moduleRegistrySpillHashMaps(self: *ModuleRegistry, spill_path: []const u8
     }
     self.hash_spill_path_len = i;
     self.hash_spill_path[i] = @intCast(u8, 0);
-    var f = pal_mod.streamOpen(spill_path, HASH_SPILL_WRITE_MODE) orelse return;
+    var f = pal_mod.streamOpen(spill_path, HASH_SPILL_WRITE_MODE) orelse {
+        var emsg: []const u8 = "hash spill open failed (moduleRegistrySpillHashMaps)";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 452);
+        return;
+    };
     var off: u32 = @intCast(u32, 0);
     hashSpillWriteMap(f, &self.path_to_id, &self.path_to_id_spill, off);
     off += @intCast(u32, 8) + @intCast(u32, self.path_to_id.capacity) * @intCast(u32, 9);
@@ -466,7 +472,12 @@ pub fn moduleRegistrySpillHashMaps(self: *ModuleRegistry, spill_path: []const u8
 fn moduleRegistryFaultInPathToId(self: *ModuleRegistry) void {
     if (self.path_to_id_spill.spilled == @intCast(u8, 0)) return;
     if (self.hash_spill_path_len == @intCast(usize, 0)) return;
-    var f = pal_mod.streamOpen(self.hash_spill_path[0..self.hash_spill_path_len], HASH_SPILL_READ_MODE) orelse return;
+    var f = pal_mod.streamOpen(self.hash_spill_path[0..self.hash_spill_path_len], HASH_SPILL_READ_MODE) orelse {
+        var emsg: []const u8 = "hash spill open failed (moduleRegistryFaultInPathToId)";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 478);
+        return;
+    };
     pal_mod.streamSeek(f, @intCast(i32, self.path_to_id_spill.disk_off));
     var cap: usize = @intCast(usize, hashSpillReadU32(f));
     var cnt: usize = @intCast(usize, hashSpillReadU32(f));

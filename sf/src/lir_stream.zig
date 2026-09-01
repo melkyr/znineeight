@@ -2,6 +2,7 @@ const lir_mod = @import("lir.zig");
 const alloc_mod = @import("allocator.zig");
 const hash_mod = @import("util/hash.zig");
 const pal_mod = @import("pal.zig");
+const panic_mod = @import("panic.zig");
 
 const Sand = alloc_mod.Sand;
 const LirFunction = lir_mod.LirFunction;
@@ -39,6 +40,11 @@ pub fn lirStreamBeginWrite(s: *LirStream, path: []const u8) void {
     s.path[i] = @intCast(u8, 0);
     s.write_offset = @intCast(u32, 0);
     s.handle = pal_mod.streamOpen(s.path[0..s.path_len], WRITE_MODE);
+    if (s.handle == null) {
+        var emsg: []const u8 = "LIR spill open failed (lirStreamBeginWrite)";
+        var ef: []const u8 = "lir_stream.zig";
+        panic_mod.panicHandler(emsg, ef, 46);
+    }
 }
 
 pub fn lirStreamFinishWrite(s: *LirStream) void {
@@ -50,6 +56,11 @@ pub fn lirStreamFinishWrite(s: *LirStream) void {
 
 pub fn lirStreamBeginRead(s: *LirStream) void {
     s.handle = pal_mod.streamOpen(s.path[0..s.path_len], READ_MODE);
+    if (s.handle == null) {
+        var emsg: []const u8 = "LIR spill open failed (lirStreamBeginRead)";
+        var ef: []const u8 = "lir_stream.zig";
+        panic_mod.panicHandler(emsg, ef, 62);
+    }
 }
 
 pub fn lirStreamEndRead(s: *LirStream) void {

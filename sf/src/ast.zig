@@ -136,6 +136,7 @@ pub const FnProto = struct {
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const pal = @import("pal.zig");
+const panic_mod = @import("panic.zig");
 const format_mod = @import("util/format.zig");
 
 fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
@@ -512,9 +513,9 @@ fn astBlockOpenSpill(store: *AstStore) void {
     // blocks during parse and fault them back in during the read phases.
     store.spill_handle = pal.streamOpen(store.spill_path[0..store.spill_path_len], "w+b");
     if (store.spill_handle == null) {
-        var emsg: []const u8 = "error: cannot open AST spill file\n";
-        pal.stderr_write(emsg);
-        pal.exit(@intCast(u8, 1));
+        var emsg: []const u8 = "AST spill file open failed (astBlockOpenSpill)";
+        var ef: []const u8 = "ast.zig";
+        panic_mod.panicHandler(emsg, ef, 518);
     }
 }
 
