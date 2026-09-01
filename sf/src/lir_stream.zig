@@ -210,6 +210,16 @@ pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFuncti
     var tvsf_capacity = rU32(s);
     var tvsf_count = rU32(s);
 
+    var expected_len: u32 = @intCast(u32, 44);
+    expected_len += params_count * @intCast(u32, @sizeOf(lir_mod.LirParam));
+    expected_len += blocks_count * @intCast(u32, 12);
+    expected_len += hoisted_temps_count * @intCast(u32, @sizeOf(lir_mod.TempDecl));
+    expected_len += switch_cases_count * @intCast(u32, @sizeOf(lir_mod.SwitchCase));
+    expected_len += side_table_count * @intCast(u32, @sizeOf(lir_mod.LirSideEntry));
+    if (tvsf_capacity > @intCast(u32, 0)) {
+        expected_len += tvsf_capacity * @intCast(u32, 9);
+    }
+
     var params = lir_mod.lirParamArrayListInit(dst);
     if (params_count > @intCast(u32, 0)) {
         var raw = alloc_mod.sandAlloc(dst, @intCast(usize, params_count) * @intCast(usize, @sizeOf(lir_mod.LirParam)), @intCast(usize, 4)) catch unreachable;
@@ -234,6 +244,7 @@ pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFuncti
             _ = rU8(s);
             _ = rU8(s);
             var insts_count = rU32(s);
+            expected_len += insts_count * @intCast(u32, @sizeOf(lir_mod.LirInst));
             var binsts = lir_mod.lirInstArrayListInit(dst);
             if (insts_count > @intCast(u32, 0)) {
                 var iraw = alloc_mod.sandAlloc(dst, @intCast(usize, insts_count) * @intCast(usize, @sizeOf(lir_mod.LirInst)), @intCast(usize, 4)) catch unreachable;
@@ -287,6 +298,13 @@ pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFuncti
         rBytes(s, @ptrCast([*]u8, tvsf.keys), @intCast(usize, 4) * cap);
         rBytes(s, @ptrCast([*]u8, tvsf.values), @intCast(usize, 4) * cap);
         rBytes(s, @ptrCast([*]u8, tvsf.occupied), @intCast(usize, 1) * cap);
+    }
+
+    if (expected_len != slot.byte_len) {
+        var emsg: []const u8 = "S-LIR byte_len mismatch on fault-in read";
+        var ef: []const u8 = "lir_stream.zig";
+        panic_mod.panicHandler(emsg, ef, 306);
+        return emptyLirFunction(dst);
     }
 
     return LirFunction{
