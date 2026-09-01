@@ -758,14 +758,21 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
 
 pub fn astStoreComputeMemory(store: *AstStore) u64 {
     var total: u64 = 0;
-    total += @intCast(u64, store.nodes.len) * @sizeOf(AstNode);
+    var resident_blocks: u32 = 0;
+    var bi: usize = 0;
+    while (bi < store.block_table.len) : (bi += 1) {
+        if (store.block_table.items[bi].resident != @intCast(u8, 0)) {
+            resident_blocks += 1;
+        }
+    }
+    total += @intCast(u64, resident_blocks) * @intCast(u64, AST_BLOCK_REC_SIZE);
+    total += @intCast(u64, store.block_table.len) * @sizeOf(NodeBlockInfo);
     total += @intCast(u64, store.extra_children.len) * @sizeOf(u32);
     total += @intCast(u64, store.identifiers.len) * @sizeOf(u32);
     total += @intCast(u64, store.int_values.len) * @sizeOf(u64);
     total += @intCast(u64, store.float_values.len) * @sizeOf(f64);
     total += @intCast(u64, store.string_values.len) * @sizeOf(u32);
     total += @intCast(u64, store.fn_protos.len) * @sizeOf(FnProto);
-    total += @intCast(u64, store.payload.len) * @sizeOf(u32);
     total += @intCast(u64, store.extra_ranges.len) * @sizeOf(u64);
     return total;
 }
