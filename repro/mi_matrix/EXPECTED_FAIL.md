@@ -1,4 +1,83 @@
-# mi_matrix corpus — expected-fail manifest (v50 2026-08-26)
+# mi_matrix corpus — expected-fail manifest (v51 2026-08-26)
+
+## GATE — zig1 memory-refactor execution plan, FULL battery + reconciliation (2026-08-26)
+
+Final gate battery of the zig1 memory-refactor execution plan
+(docs/superpowers/plans/2026-08-26-zig1-memory-refactor-execution-plan.md),
+at HEAD `179257dc`, measured with `/tmp/fx_subfolder/zig1` (reference oracle rebuilt at HEAD;
+canonical std reinstalled at `/tmp/fx_subfolder/lib/`) vs self-compiled `/tmp/zig1_5/zig1_5_clean`
+(built from HEAD by `scripts/self_compile/build_zig1_5.sh`). Docs-only task — no `sf/src`,
+fixture, or script change in this gate. **This is the plan-complete closeout of the memory
+refactor.** The ≤16,384 K (16 MiB) pool target is **NOT reached**; the S-series outcome is the
+DOCUMENTED RESIDUAL (see trajectory below).
+
+### Memory trajectory (pool= at self-compile, `--track-memory --markers`)
+
+| phase | pool= (K) | event |
+|---|---|---|
+| baseline (pre-S) | 50,501 | canonical anchor (roadmap §1) |
+| S-LIR | 42,513 | LIR streaming |
+| S-HASH | 44,678 | +2,164 K (input growth + one extra 2 MiB doubling boundary; operator-ruled transient) |
+| S-TOKEN | 55,038 | +10,360 K transient (interner-order + lexer window; operator-ruled transient) |
+| S-AST | 35,973 | −19,065 K (AST streaming, block-backed 8-slot window) |
+| S-RES | 25,738 | −10,235 K (resolved_types dense per-node array) |
+| **GATE re-measure** | **25,742** | `track-memory: perm=1661K mod=2047K scr=2047K pool=25742K type_db=246K total=5755K` (Δ4 K = input growth noise vs S-RES) |
+
+**≤16,384 K target NOT reached — documented residual.** Gap = 25,742 − 16,384 = **9,358 K (≈9.14 MiB)**.
+Closures/verdicts: **M5** (AST side arrays + token value union slice) closed-unfeasible (S-AST's
+block-backed window makes the ~1 MB side-array prize inapplicable); **S-INTERNER** closed-unfeasible
+(measured interner text 294,744 B ≈ 0.29 MiB, not the ~4 MB plan estimate — ~3% of the gap at
+highest risk, keep-resident); **I-COMPACT** no-go (16-B AstNode is a byte-identical shuffle under a
+disk record — record delta 0 or +16,384 B/block worse, +2.2 MiB pool ADD if spans go resident;
+migration cost 47 span-read + 45 child_2 sites for ≤0 memory effect). Remaining gap lives in
+module-arena live tables / growth-chain levers, out of scope for this plan.
+
+### Step 1 — full gate battery
+
+1. **4 MD5 gates byte-identical (repo-root CWD, no re-baseline):** gol
+   `302df36be57e9876549d6a8b4031bf95` / lisp `3591bad9726ca0947eae3f8a9a6e7273` / json
+   `76056b978f6330c8af0c7f23b3244135` / mud `4591fef0346b42738874ce992c72f4c2` (dump rc=0 each,
+   `timeout 120`). The memory refactor is byte-neutral for the 4 gates.
+2. **21-example matrix 21/21** dump/gcc/link rc=0 per program (4 non-`main.zig` entries use their
+   own names: `func_ptr_return.zig` / `mandelbrot.zig` / `quicksort.zig` / `sort_strings.zig`).
+3. **Corpus sweep (404 dirs = 330 mi_matrix + 53 top-level repro + 21 z98; `slice_matrix`
+   matrix-of-subdirs skipped):** **0 ASYMMETRIC diffs** (zig1 == zig1_5 behavior everywhere).
+   Distribution: **333 RUN_OK** (rc+output match ref; emitted C byte-identical modulo the
+   path-derived std-module hash — the self compiler resolves std from `/tmp/zig1_5/lib`, ref from
+   `/tmp/fx_subfolder/lib`, so `std_*.c` names differ but content matches except the
+   self-referential `#include` line) + **56 LINK_FAIL** (extern-fn tests; identical
+   `undefined reference` for the reference — not a regression) + **10 DUMP_FAIL** (= the 10
+   green-guards, both compilers identical) + **2 RUN_FAIL** (known symmetric crashes, both
+   compilers: `intcast_range_check` rc=134, `voiddecl_xmodtype_xmod` rc=139) + **3 RUN_TIMEOUT**
+   (game_of_life / mud_server / rogue_mud, both compilers; game_of_life glider grid output
+   truncated-identical, mud_server boots). **1 garbage OUT_DIFF** = `emission_void_temp_enum_xmod`
+   (uninitialized enum temp, output unstable by design — ref `-180421700` vs self `-172545092`,
+   both rc=0; NOT a bug; `voiddecl_payload_xmod` the other known garbage dir happened to be EQ
+   this run — both non-deterministic). W2-1 fixture `emission_global_alias_xmod` RUN_OK, output
+   EQ.
+4. **Self-compile:** `build_zig1_5.sh` → dump rc=0, **41 `.c`, 0 `error[`, 0 PANIC**; rebuilt
+   `zig1_5_clean` runs hello **byte-equal** to reference (`Hello, world!\n`).
+5. **`--track-memory` self-compile:** **`pool=25742K`**, `total=5755K`; residual gap to
+   16,384 K = **9,358 K**.
+
+### Step 2 — warning-clean confirmation
+
+`gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration -I sf/src/include -fsyntax-only` on BOTH
+`/tmp/fx_subfolder/*.c` (reference) AND `/tmp/zig1_5/gen/*.c` (self-emitted): **0 warnings,
+0 errors** on both, with the 1 pre-authorized `-Wbuiltin-declaration-mismatch` fwrite carve-out
+each (`/tmp/fx_subfolder/pal.c:41` reference; `/tmp/zig1_5/gen/pal_388A8A1B.c:700` self-emitted —
+the same fwrite declaration class, not a defect).
+
+### Milestone statement
+
+The zig1 memory-refactor plan is **complete**: Phase 1 (M0/M3/M4) + Phase 2 warnings (W-1..W-4
+ref + W2-1..4 gen, both 0-warning) + M1 (AstNode 32→24 B) + M2 (LirInst 32→24 B) + M5
+(closed-unfeasible) + M7 (markers) + S-series (S-LIR/S-HASH/S-TOKEN/S-AST/S-RES streaming +
+S-INTERNER closed-unfeasible + S-FIX-1..14 correctness) + I-COMPACT no-go. 4 MD5 gates
+byte-identical (no re-baseline). Matrix 21/21. Corpus 404 dirs **0 asymmetric**. Self-compile
+41 `.c` / 0 err / 0 PANIC, hello byte-equal. Warning-clean both builds. **pool=25,742 K,
+target 16,384 K NOT reached — documented residual 9,358 K** (S-series outcome + I-COMPACT verdict).
 
 ## GATE — @as + TCO self-emission plan, FINAL sweep + reconciliation (2026-08-26)
 

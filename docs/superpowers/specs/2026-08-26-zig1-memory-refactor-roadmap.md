@@ -1,7 +1,31 @@
 # zig1 Memory Refactor — Roadmap (≤16 MiB pool, no-OOM)
 
 **Date:** 2026-08-26
-**Status:** CONCLUSION / ROADMAP (the committed deliverable of the zig1 memory-refactor investigation plan; the refactoring itself is a future execution plan)
+**Status:** CONCLUSION / ROADMAP — **EXECUTED** (execution-plan GATE committed `docs: memory refactor execution GATE + reconciliation`; this roadmap's item statuses below supersede the historical estimates above. Historical sections are retained as snapshots — not rewritten.)
+
+## Execution status (memory-refactor execution plan, GATE 2026-08-26)
+
+| # | item | status | measured delta (self-compile `pool=`/live) |
+|---|---|---|---|
+| 0 | Budget tripwire | **DONE (M0)** | tripwire active (`--max-mem 1` → rc=3 `memory limit exceeded`, space-syntax confirmed) |
+| 1 | AstNode 32→24 B | **DONE (M1)** | 32 B → 24 B (payload out-of-line, child_2 getter); live AST side win folded into the S-AST streaming win |
+| 2 | LirInst 32→20 B | **DONE (M2)** | 32 B → **24 B** (zig0-natural 20 B stretch not taken; budget 20 B, treated 24 B) |
+| 3 | Segment-growth policy + exact-fit final segment | **DONE (M3)** | pool 50,501 K → 42,513 K at S-LIR (−8, −11 %); module chain doubling waste removed |
+| 4 | Arena reclaim / pool reset | **DONE (M4)** | 4(a) import-reuse done; **4(b) module-arena reset SUPERSEDED by streaming** (S-LIR/S-HASH/S-AST/S-RES make the reset-with-reload moot — the pool floor is now the streamed live set, not cumulative) |
+| 5 | AST side arrays + token value union slice | **M5 CLOSED-UNFEASIBLE** | S-AST block-backed 8-slot window makes the ~1 MB side-array prize inapplicable; token slice folded into S-TOKEN streaming |
+| 6 | I/O spill (per-module LIR/AST) | **DONE (S-series)** | S-LIR/S-HASH/S-AST/S-RES stream to disk; pool 50,501 → **25,738 K** at S-RES (−24,763 K ≈ −49 %) |
+| 7 | Marker reduction (Option B coarsening) | **DONE (M7)** | markers kept on `--track-memory` channel; `--markers` volume documented (I-5); self-compile `--markers` unaffected |
+| — | I-COMPACT (16-B AstNode, post-plan amendment) | **NO-GO** | byte-identical disk-record shuffle under S-AST; record delta 0 or +16,384 B/block worse, +2.2 MiB pool ADD if spans go resident; 47 span-read + 45 child_2 site migration cost, ≤0 `pool=` effect |
+
+**Gate outcome (GATE-FINAL 2026-08-26, HEAD `179257dc`, reference rebuilt):**
+`--track-memory --markers` self-compile → **`perm=1661K mod=2047K scr=2047K pool=25742K
+type_db=246K total=5755K`**. **`pool=25,742 K` — the ≤16,384 K target is NOT reached**;
+documented residual gap = **9,358 K (≈9.14 MiB)**. Remaining gap lives in module-arena live
+tables / growth-chain levers (out of scope for this plan). 4 MD5 gates byte-identical
+(gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `4591fef0…`); 21-example matrix
+21/21; corpus 404 dirs 0 asymmetric; self-compile 41 `.c` / 0 `error[` / 0 PANIC; warning-clean
+both builds (1 pre-authorized fwrite carve-out each). Full evidence: `repro/mi_matrix/EXPECTED_FAIL.md` v51 GATE section.
+
 **Branch:** zig1_start
 **Inputs:** `.superpowers/sdd/task-ROADMAP-report.md` sections I-1..I-5 (shared investigation report, incl. review-fix audit notes); design doc `2026-08-26-zig1-memory-roadmap-design.md`; plan `2026-08-26-zig1-memory-roadmap-plan.md`.
 
