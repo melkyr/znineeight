@@ -20,7 +20,7 @@
 - **Pre-existing dirty files never staged:** `docs/superpowers/plans/2026-08-26-assoc-misparse-pendingscope-plan.md`, `mnemoria/*`, untracked `build/`.
 - Design doc: `docs/superpowers/specs/2026-09-01-allocator-crux-measurement-design.md`.
 
-**AMENDMENT 2 (operator-ruled 2026-09-01, redesign F-task set — all 4 levers + spill-threshold follow-up):** after the measurement stage (I-MEAS-1/2/3 + I-EMIT, all approved) the operator directed (m1191/m1192) the redesign amendment with **all four levers** so the spill decision can be re-evaluated afterwards: **F-1 segment free-list keyed on "reset = release"** (~8.1 MB, reset-retained chains), **F-2 growth-policy tuning** (~3.5–5.5 MB, segment headroom incl. lir_read near-empty 2 MiB cap segment), **F-3 emitter-level** (move persistent emitter maps off scratch + per-function scratch reset during emission, ~6.4 MB — the one piece the other three do NOT cover; I-EMIT finding: 94.4% of emission scratch churn is `emitHoistedDecls` per-function arrays, main.zig:738/740 + c89_emit.zig:614-627), **F-4 dead-buffer pre-sizing / tail-aware ordering** (~3.2 MB, class b: astStore extra-children/extra-ranges ast.zig:148/180 1,458 K, si_entries 491 K, hash maps ~974 K, type_db 276 K). **Order: F-1 → F-2 → F-3 → F-4** (lowest risk first). **Closing I-SPILL task (follow-up, gated after the 4):** re-measure `pool.peak` after the 4 levers and evaluate making S-LIR / S-AST / S-HASH **conditional** — spill to disk only when `pool.peak` is projected to cross a threshold, so small compiles skip disk I/O entirely. Each F-task carries the full gate battery and a `pool=` before/after measurement.
+**AMENDMENT 2 (operator-ruled 2026-09-01, redesign F-task set — all 4 levers + spill-threshold follow-up):** after the measurement stage (I-MEAS-1/2/3 + I-EMIT, all approved) the operator directed (m1191/m1192) the redesign amendment with **all four levers** so the spill decision can be re-evaluated afterwards: **F-1 segment free-list keyed on "reset = release"** (~8.1 MB, reset-retained chains), **F-2 growth-policy tuning** (~3.5–5.5 MB, segment headroom incl. lir_read near-empty 2 MiB cap segment), **F-3 emitter-level** (move persistent emitter maps off scratch + per-function scratch reset during emission, ~6.4 MB — the one piece the other three do NOT cover; I-EMIT finding: 94.4% of emission scratch churn is `emitHoistedDecls` per-function arrays, main.zig:738/740 + c89_emit.zig:614-627), **F-4 dead-buffer pre-sizing / tail-aware ordering** (~3.2 MB, class b: astStore extra-children/extra-ranges ast.zig:148/180 1,458 K, si_entries 491 K, hash maps ~974 K, type_db 276 K). **Order (AMENDMENT 3, operator-ruled 2026-09-01):** the F-1 free-list attempt was BLOCKED (off-ladder reuse inflated the doubling base, `pool=` +732 K regression; see `## F-1 fix` in the report) and the operator deferred it — **F-1 is replaced by read-only `Task I-F1` (free-list quirk re-investigation, placed after F-4)**. **Execution order: F-2 → F-3 → F-4 → I-F1 → I-SPILL.** **Closing I-SPILL task (follow-up, gated after the 4):** re-measure `pool.peak` after the 4 levers and evaluate making S-LIR / S-AST / S-HASH **conditional** — spill to disk only when `pool.peak` is projected to cross a threshold, so small compiles skip disk I/O entirely. Each F-task carries the full gate battery and a `pool=` before/after measurement.
 
 ---
 
@@ -168,46 +168,39 @@ Assess each as genuine working set vs emission-specific churn. Specifically answ
 
 ## After the measurement (gated redesign — AMENDMENT 2 F-tasks)
 
-After the operator picked the redesign direction from the I-MEAS-3 crux map + the I-EMIT emission study, this plan was amended (AMENDMENT 2) with the F-tasks below, executed in order F-1 → F-2 → F-3 → F-4, then the closing I-SPILL follow-up. Each F-task carries the full gate battery (4 MD5 keep-or-re-baseline with golden 9/9 runtime evidence, self-compile 41 `.c` / 0 err / 0 PANIC, reference 0-warning, Z98 dialect, `edit`/`fastedit` only) and a `pool=` before/after measurement.
+After the operator picked the redesign direction from the I-MEAS-3 crux map + the I-EMIT emission study, this plan was amended (AMENDMENT 2) with the F-tasks below. **AMENDMENT 3 (operator-ruled 2026-09-01, after the F-1 attempt):** the F-1 free-list attempt (report `.superpowers/sdd/task-ALLOC-report.md` `## F-1 fix`) was **BLOCKED** — the brief's best-fit-and-splice mechanism REGRESSED `pool=` 25,742 K → 26,474 K (+732 K): reusing off-ladder free segments (import_scratch 455,156 B, parser odd sizes) as the doubling base inflated subsequent carves (module +642 K, scratch +468 K) beyond the real savings (type_db −262 K, lir_read −99 K, parser −25 K). Tree reverted clean, no commit, 4 MD5 gates untouched. The operator deferred the free-list: **Task F-1 is replaced by a read-only investigation `Task I-F1`** (placed after F-4) that re-investigates the quirk and checks for a missed subtlety before any re-attempt. **Execution order is now F-2 → F-3 → F-4 → I-F1 → I-SPILL.** Each F-task carries the full gate battery (4 MD5 keep-or-re-baseline with golden 9/9 runtime evidence, self-compile 41 `.c` / 0 err / 0 PANIC, reference 0-warning, Z98 dialect, `edit`/`fastedit` only) and a `pool=` before/after measurement.
 
 ---
 
-### Task F-1: Segment free-list keyed on "reset = release" (F)
+### Task I-F1: Free-list quirk re-investigation — missed-subtlety check (read-only, replaces F-1)
 
 **Files:**
-- Modify: `sf/src/allocator.zig` (`sandReset` :78-87, `growableSandGrow` :108-133, `growableSandInit` :89-106)
-- Commit: `perf: reclaim reset-arena segments via free-list (reset=release)`
+- (Read) `sf/src/allocator.zig`, the `## F-1 fix` report section (`.superpowers/sdd/task-ALLOC-report.md`), the `arena grew` marker log (regenerate `/tmp/if1_markers.log` via `timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --markers --output-dir /tmp/if1_gen sf/src/main.zig 2>…`), the I-MEAS-1/2/3 chain/headroom tables
+- Report: append `## I-F1` to `.superpowers/sdd/task-ALLOC-report.md`
 
 **Interfaces:**
-- Consumes: I-MEAS-1/3 crux data — reset-retained chains ≈ 8,068 K (40.4% of gap; scratch 8,384,512 + import_scratch 647,059 + parser 28,672 − scratch live 798,046).
-- Produces: `pool.peak` drop toward the reset-retained prize (~8.1 MB upper bound); the free-list machinery F-3's per-function scratch reset also benefits from.
+- Consumes: the F-1 attempt's BLOCKED result — best-fit splice of off-ladder free segments (import_scratch 455,156 B, parser 8,192/16,384) as the doubling base inflated subsequent carves (module +642 K, scratch +468 K) → `pool=` +732 K; the only real reuse savings were type_db −262 K, lir_read −99 K, parser −25 K. The reset-retained prize estimate (~8.1 MB upper bound, I-MEAS-3: scratch 8,384,512 + import_scratch 647,059 + parser 28,672 − scratch live 798,046).
+- Produces: a verdict — either (a) a concrete corrected reuse policy that provably reduces `pool.peak` below 25,742 K (with a simulated number), or (b) a definitive close of F-1 (the prize is unreachable under the monotonic bump), plus any subtlety the F-1 attempt missed.
 
-- [ ] **Step 1: Golden baseline capture**
+- [ ] **Step 1: Reconstruct the segment-allocation timeline**
 
-Capture `/tmp/golden_F1/` with the reference zig1: 4 MD5 gate emissions (`timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir <dir> <entry> | md5sum` for `examples/z98/{game_of_life,lisp_interpreter_curr,json_parser,mud_server}/main.zig`) + the golden fixture set run outputs (9 fixtures: `repro/mi_matrix/emission_assoc_chain_xmod`, `repro/mi_matrix/fn_ptr_struct_field`, `repro/mi_matrix/emission_lower_crash_xmod`, `examples/z98/{tco_return_try,tco_defer,tco_factorial,quicksort,func_ptr_return,hello}`). Record baseline `--track-memory` (`pool=`).
+From the marker log (`arena <name>: grew <old> -> <new>` events) + the I-MEAS-1 phase table, build the ordered timeline of every segment carve: arena, size, phase, and how it advances `pool.peak`. Identify the peak moment (post-C89-emission) and which carves happen before vs after it.
 
-- [ ] **Step 2: Implement the segment free-list**
+- [ ] **Step 2: Analyze the failure mechanism precisely**
 
-In `sf/src/allocator.zig`:
-- Add a module-level segment free-list (a `?*SandSegment` chain, or an array of free segments) that collects segments returned by reset.
-- In `sandReset` (the `growable` branch): after rewinding `gs.last = &gs.first`, push the chained segments (`first.next` onward) onto the free-list instead of leaving them attached only for reuse by the same arena. Keep `first` as the arena's resident base (4 KB) so the arena still has a working segment.
-- In `growableSandGrow` (the `gs.last.next == null` new-segment path): before carving from the pool bump, scan the free-list for a segment of `>= new_size` (best-fit); if found, splice it into `gs.last.next` and use it. Only carve from the bump when the free-list has no adequate segment.
-- Preserve byte-identity: this is pure allocation routing — segment contents/order of the ACTIVE arenas must be unchanged; `arenaGrew` markers still fire on genuine new carves only (reuse must NOT fire the marker, matching the existing reuse path).
+For each reuse event in the F-1 attempt, show which off-ladder size became a doubling base and the resulting inflated carves (module 455,156 → 910,312 → 1,820,624; scratch 41,238 → 82,476 → …). Quantify how much of the +750,095 B growth is ladder inflation vs genuine reuse loss.
 
-- [ ] **Step 3: Verify — NO semantic change**
+- [ ] **Step 3: Simulate the ladder-conserving policy**
 
-Gates: 4 MD5 byte-identical (gol `302df36b`, lisp `3591bad9`, json `76056b97`, mud `4591fef0` — must NOT move); golden 9/9 runtime byte-identical; self-compile `timeout 900 bash scripts/self_compile/build_zig1_5.sh` → 41 `.c`, 0 `error[`, 0 PANIC; reference build still 0-warning (`gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <repo>/sf/src/include -fsyntax-only /tmp/fx_subfolder/*.c`). Rebuild reference first: `timeout 900 bash sf/scripts/build_release.sh` + reinstall std lib.
+Against the reconstructed timeline, simulate reuse constrained so no off-ladder size ever becomes a doubling base (e.g. only reuse when `size == new_size`, or only when `size` is on the 4K→2 MiB ladder, or exact-fit the reused segment's ladder accounting). Compute the hypothetical `pool.peak` under each variant. Does any variant drop below 25,742 K, and by how much?
 
-- [ ] **Step 4: Measure `pool=` before/after**
+- [ ] **Step 4: Check the missed subtlety — the timing of the peak**
 
-Run `--track-memory` on the self-compile pre-change (recorded in Step 1) and post-change. Report the `pool=` delta (expected: toward ~25,742 K − up to ~8,000 K, order-gated by reset-supply vs growth-demand).
+The `pool.peak` is the monotonic bump high-water reached at the LAST phase (emission). A free-list only prevents FUTURE carves by reusing already-carved segments. Determine whether the reset arenas' chains (scratch resets between phases; import_scratch/parser after import) are available for reuse BEFORE the peak moment — i.e. whether the ~8.1 MB prize is reachable in principle, or whether the peak is set by carves that no free-list can avoid (no reset-arena segment of a useful size exists before the peak).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: STOP-present + report**
 
-```bash
-git add sf/src/allocator.zig
-git commit -m "perf: reclaim reset-arena segments via free-list (reset=release)"
-```
+Present the verdict to the operator: pursue F-1 with a specific corrected policy (and which), or close F-1 definitively with the reasoning. Append `## I-F1` to `.superpowers/sdd/task-ALLOC-report.md`. NO `sf/src` edits, NO commit, NO ledger/mnemoria (controller-owned).
 
 ---
 
