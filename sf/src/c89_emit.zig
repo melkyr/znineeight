@@ -4811,11 +4811,11 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var s: []const u8 = "return 0;\n";
                 bufferedWriterWrite(&emitter.writer, s);
             } else {
-                var s0: []const u8 = "return (";
+                var s0: []const u8 = "{ ";
                 bufferedWriterWrite(&emitter.writer, s0);
                 var rv_cn = getCTypeName(emitter.registry, emitter.mangler, rv_rt);
                 bufferedWriterWrite(&emitter.writer, rv_cn);
-                var s1: []const u8 = "){0};\n";
+                var s1: []const u8 = " zT_ret_void = {0}; return zT_ret_void; }\n";
                 bufferedWriterWrite(&emitter.writer, s1);
             }
         },
