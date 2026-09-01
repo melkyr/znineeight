@@ -324,7 +324,17 @@ pub fn moduleRegistryGetModules(self: *ModuleRegistry) []ModuleEntry {
     return self.modules.items[0..self.modules.len];
 }
 
+fn moduleRegistryAssertPathToIdResident(self: *ModuleRegistry) void {
+    if (self.path_to_id_spill.spilled != @intCast(u8, 0)) {
+        var emsg: []const u8 = "direct path_to_id access after spill; route through moduleRegistryPathToIdGet";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 331);
+        return;
+    }
+}
+
 pub fn moduleRegistryGetOrCreateModule(self: *ModuleRegistry, path_id: u32) u32 {
+    moduleRegistryAssertPathToIdResident(self);
     var existing = hash_mod.u32ToU32MapGet(&self.path_to_id, path_id);
     if (existing) |id| return id;
     var new_id = moduleRegistryAddModule(self, path_id);
@@ -341,6 +351,7 @@ pub fn moduleRegistryAddImport(self: *ModuleRegistry, importer_id: u32, imported
 }
 
 pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer_id: u32, scratch: *Sand) ?u32 {
+    moduleRegistryAssertPathToIdResident(self);
     var path_s = interner_mod.stringInternerGet(self.interner, path_id);
     var importer_path = interner_mod.stringInternerGet(self.interner, self.modules.items[importer_id].path_id);
     var resolved_path_id = moduleResolverResolve(&self.resolver, importer_path, path_s, scratch) orelse {
@@ -449,7 +460,7 @@ pub fn moduleRegistrySpillHashMaps(self: *ModuleRegistry, spill_path: []const u8
     var f = pal_mod.streamOpen(spill_path, HASH_SPILL_WRITE_MODE) orelse {
         var emsg: []const u8 = "hash spill open failed (moduleRegistrySpillHashMaps)";
         var ef: []const u8 = "module_registry.zig";
-        panic_mod.panicHandler(emsg, ef, 452);
+        panic_mod.panicHandler(emsg, ef, 463);
         return;
     };
     var off: u32 = @intCast(u32, 0);
@@ -471,11 +482,16 @@ pub fn moduleRegistrySpillHashMaps(self: *ModuleRegistry, spill_path: []const u8
 
 fn moduleRegistryFaultInPathToId(self: *ModuleRegistry) void {
     if (self.path_to_id_spill.spilled == @intCast(u8, 0)) return;
-    if (self.hash_spill_path_len == @intCast(usize, 0)) return;
+    if (self.hash_spill_path_len == @intCast(usize, 0)) {
+        var emsg: []const u8 = "hash spill state inconsistent: spilled with no spill path (moduleRegistryFaultInPathToId)";
+        var ef: []const u8 = "module_registry.zig";
+        panic_mod.panicHandler(emsg, ef, 488);
+        return;
+    }
     var f = pal_mod.streamOpen(self.hash_spill_path[0..self.hash_spill_path_len], HASH_SPILL_READ_MODE) orelse {
         var emsg: []const u8 = "hash spill open failed (moduleRegistryFaultInPathToId)";
         var ef: []const u8 = "module_registry.zig";
-        panic_mod.panicHandler(emsg, ef, 478);
+        panic_mod.panicHandler(emsg, ef, 494);
         return;
     };
     pal_mod.streamSeek(f, @intCast(i32, self.path_to_id_spill.disk_off));
