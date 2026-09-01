@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Measure exactly where `pool.peak` (25,742 K) goes — per-arena chain, live, and the three churn classes (segment headroom, dead array buffers, reset-retained segments) — then present a crux map + redesign options to the operator, whose decision gates the allocator redesign F-tasks (added by amendment).
+**Goal:** Measure exactly where `pool.peak` (25,742 K) goes — per-arena chain, live, and the three churn classes (segment headroom, dead array buffers, reset-retained segments) — plus study the C89-emission peak specifically, then present a crux map + redesign options to the operator, whose decision gates the allocator redesign F-tasks (added by amendment).
 
-**Architecture:** Three read-only measurement tasks (I-MEAS-1 per-arena chain+live; I-MEAS-2 array-level dead-buffer churn; I-MEAS-3 synthesis+crux map+STOP-present), all measured on the reference zig1 via existing `arena grew` markers plus instrumented `/tmp` builds (the I-4B pattern — never touch `sf/src`). The redesign is gated: after I-MEAS-3 the operator picks a direction and the plan is amended with F-task(s).
+**Architecture:** Read-only measurement tasks (I-MEAS-1 per-arena chain+live; I-MEAS-2 array-level dead-buffer churn; I-MEAS-3 synthesis+crux map+STOP-present), all measured on the reference zig1 via existing `arena grew` markers plus instrumented `/tmp` builds (the I-4B pattern — never touch `sf/src`). **AMENDMENT 1 (operator-ruled 2026-09-01):** I-MEAS-3's crux map showed the C89-emission phase is the pool peak (17,653,076 → 26,360,112, +8,707,036 B = scratch +4,194,304 + lir_read +2,415,360 + perm +2,097,152) and that emission's live set is tiny (~3.1 MB) — the peak is cumulative chain retention surfacing at the last phase. The operator directed (m1165/m1168/m1170) a focused **I-EMIT task** (added after I-MEAS-3) to break down the emission phase's +8.7 MB by allocation site and determine whether emission-specific waste exists beyond the general levers. The redesign is gated: after I-MEAS-3 + I-EMIT the operator picks a direction and the plan is amended with F-task(s).
 
 **Tech Stack:** Zig (sf/src, read-only), C89 (instrumented emitted C in /tmp), bash, gcc -m32.
 
@@ -128,6 +128,42 @@ Append `## I-MEAS-3` (crux map + options + recommendation) to `.superpowers/sdd/
 
 ---
 
+### Task I-EMIT: C89-emission allocation-site breakdown (read-only)
+
+**Files:**
+- (Read) `sf/src/c89_emit.zig`, `sf/src/lir_stream.zig`, `sf/src/allocator.zig`, the `## I-MEAS-1/2/3` report sections
+- (Create, /tmp only) instrumented build under `/tmp/emit_instr/` (patched copies; never `/tmp/meas1_gen`/`/tmp/meas2_instr` originals, never `sf/src`)
+
+**Interfaces:**
+- Consumes: I-MEAS-1/2/3 data — emission phase (phase 8→9) grows `pool.peak` 17,653,076 → 26,360,112 = **+8,707,036 B**: scratch +4,194,304 (emitter working set), lir_read +2,415,360 (S-LIR fault-in), perm +2,097,152 (interner); emission's live set at peak is ~3.1 MB.
+- Produces: the emission-phase allocation-site breakdown + a verdict (emission-specific waste exists / the general levers already cover it) for the redesign amendment.
+
+- [ ] **Step 1: Verify the reference zig1 is fresh**
+
+`/tmp/fx_subfolder/zig1` from I-MEAS-1 is current (HEAD 2a70487d; no rebuild needed unless a build proves stale — rebuild only then, `timeout 900 bash sf/scripts/build_release.sh` from repo root + reinstall std lib).
+
+- [ ] **Step 2: Instrument the emission phase by allocation site**
+
+Refresh an instrumented build in `/tmp/emit_instr/` (patch copies of the pristine emitted C from `/tmp/meas1_gen`; the I-MEAS-1/I-MEAS-2 pattern — MEAS gating flag, patched `allocator.c`/`main.c`, linked with `include/zig_runtime.c` + `include/zig_pal.c` + the `c_exit` shim, `-fsanitize=address` optional):
+- In `allocator.c` `sandAlloc`: add a per-arena byte histogram keyed by **caller return address** (the I-MEAS-2 histogram pattern), plus per-arena byte accumulators; gate accumulation to `phase_C89Emission` only (start at the emission phase entry in `main.c`, stop + dump at its exit).
+- In `lir_stream.c` (`lirStreamReadFunction`): record per-function fault-in byte sizes (to confirm lir_read's chain = the largest single function's LIR).
+
+Recompile (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -I <repo>/sf/src/include -c *.c`; link into `/tmp/emit_instr/zig1_emit`).
+
+- [ ] **Step 3: Measure and map sites**
+
+Run: `mkdir -p /tmp/emit_out && timeout 120 /tmp/emit_instr/zig1_emit --dump-c89 --output-dir /tmp/emit_out sf/src/main.zig 2>/tmp/emit_instr/emit.log`
+Expected: rc=0. Map the histogram's return addresses to function names using the emitted `c89_emit_*.c` (or `nm`/`addr2line`). Break down the emission phase's +8.7 MB:
+- **scratch** (+4,194,304): which emitter functions (e.g. name mangling, per-module emission state, buffered writer, `temp_global_map`, hoisted-decl handling) allocate the bytes; live vs dead within emission.
+- **lir_read** (+2,415,360): per-function fault-in sizes; confirm the largest-function bound.
+- **perm** (+2,097,152): what is interned during emission (mangled names vs type names vs identifiers); count/size by kind.
+
+- [ ] **Step 4: Verdict + report**
+
+Assess each as genuine working set vs emission-specific churn. Specifically answer: does emission have waste the three general levers (reset=release free-list, growth-policy tuning, dead-buffer) do NOT cover (e.g. emitter scratch churn beyond reset-reuse, an oversized single-function LIR, or avoidable interning)? Append `## I-EMIT` to `.superpowers/sdd/task-ALLOC-report.md` with the site breakdown table + verdict + recommendation for the redesign amendment. Do NOT append ledger or run mnemoria (controller-owned). Do NOT modify `sf/src`, do NOT commit.
+
+---
+
 ## After the measurement (gated redesign — added by amendment)
 
-After the operator picks the redesign direction from the I-MEAS-3 crux map, this plan is amended with the F-task(s): a segment free-list keyed on "reset = release", growth-policy tuning, per-arena pools, or the combination the data supports. Each F-task carries the full gate battery (4 MD5 keep-or-re-baseline with golden 9/9 runtime evidence, self-compile 41 `.c` / 0 err / 0 PANIC, reference 0-warning, Z98 dialect, `edit`/`fastedit` only) and a `pool=` before/after measurement.
+After the operator picks the redesign direction from the I-MEAS-3 crux map **and the I-EMIT emission study**, this plan is amended with the F-task(s): a segment free-list keyed on "reset = release", growth-policy tuning, per-arena pools, an emission-targeted fix if I-EMIT finds one, or the combination the data supports. Each F-task carries the full gate battery (4 MD5 keep-or-re-baseline with golden 9/9 runtime evidence, self-compile 41 `.c` / 0 err / 0 PANIC, reference 0-warning, Z98 dialect, `edit`/`fastedit` only) and a `pool=` before/after measurement.
