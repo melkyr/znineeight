@@ -48,25 +48,31 @@ Grep the `astStoreGetExtraChildren` / side-table getters across lowering + seman
 
 For each table: is it big enough to matter, read sequentially (direct-offset block fault-in viable), and dead after lowering? STOP-present if a big table is catastrophically random-access. Append `## I-SIDE` to the report. NO `sf/src` edits, NO commit, NO ledger/mnemoria.
 
-### Task F-SIDE: Disk-back the AST side tables (F)
+### Task F-SIDE: Disk-back the value pools `identifiers` + `int_values` (F)
 
 **Files:**
-- Modify: `sf/src/ast.zig` (side-table block spill — extend the S-AST block machinery or a dedicated block spill keyed by range index), possibly `sf/src/main.zig`
-- Commit: `perf: disk-back AST side tables (extra_children/extra_ranges fault-in)`
+- Modify: `sf/src/ast.zig` (getter + block spill for the value pools), the ~66 inline pool-read sites across `sf/src/{lower,analyzer,type_resolver,semantic_analyzer,symbol_registrator,comptime_eval,const_alias_prepass}.zig`
+- Commit: `perf: disk-back AST value pools (identifiers/int_values fault-in)`
 
 **Interfaces:**
-- Consumes: I-SIDE verdict (which tables + read order).
-- Produces: `pool=` drop toward ~1.4–2 MB.
+- Consumes: I-SIDE verdict + the AMENDMENT-1 reframe (see below). The value pools (`identifiers`, `int_values`) are read as **u32/u64 values** via `astStoreNodePayload(node)` → pool-index → `pool.items[idx]` — VALUE semantics, no slice.
+- Produces: `pool=` drop toward ~1.3 MB (identifiers 1.05 MB + int_values 0.26 MB cumulative).
+
+**AMENDMENT 1 (operator-ruled 2026-09-02):** scope F-SIDE to **`identifiers` + `int_values` only** — whatever it yields. **Defer `extra_children` + `extra_ranges`** (the ast.c-contained pair I-SIDE ranked "cleanest") because they return **`[]const u32` SLICES** into the resident array (`astStoreNodeExtraChildren` ast.zig:661, `astStoreGetExtraChildren` ast.zig:635) — the S-INTERNER "retained slices" deal-breaker: a caller holding the slice across a later fault-in evicts the block → dangling pointer. Disk-backing them needs a copy-out API change (break the `[]const u32` return + all ~66 sites) or an index-based accessor (rewrite the iteration pattern) — a separate decision, not part of this task.
 
 - [ ] **Step 1: Golden baseline capture**
 
 `/tmp/golden_FSIDE/` (4 MD5 gate emissions + 9 fixtures + `--track-memory` baseline `pool=15324K`).
 
-- [ ] **Step 2: Implement the side-table spill**
+- [ ] **Step 2: Route the value-pool reads through getters**
 
-Disk-back the tables I-SIDE ranked as viable (extend the S-AST block machinery to the side tables, or a block spill keyed by range index with write-through + fault-in + a resident window). Preserve byte-identity (fault-in returns identical values).
+Add value getters (e.g. `astStoreIdentifier(store, node)` / `astStoreIntValue(store, node)`) that resolve the payload → pool index → fault in the value's block → return the u32/u64 value. Replace the ~66 inline reads `store.<pool>.items[astStoreNodePayload(store, node)]` with the getter calls across the 7 reader files. This is mechanical (value semantics) — no slice, no retention hazard, byte-identity-safe (same value returned).
 
-- [ ] **Step 3: Verify + measure + commit**
+- [ ] **Step 3: Disk-back the two value pools**
+
+Write `identifiers` + `int_values` through to disk during parse (append order = read order), replace the resident array with a direct-offset block fault-in + resident window (the F-TABLE pattern). Keep `string_values`/`fn_protos`/`float_values` resident (too small).
+
+- [ ] **Step 4: Verify + measure + commit**
 
 Gates: 4 MD5 byte-identical, golden 9/9, self-compile 41 `.c`/0 err/0 PANIC, ref 0-warning, `pool=` before/after. Commit verbatim message above.
 
