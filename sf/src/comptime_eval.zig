@@ -171,9 +171,9 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     if (node_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.kind == AstKind.int_literal) {
-        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))], .width_bits = @intCast(u32, 0), .sig = true };
+        return ComptimeVal{ .bits = ast_mod.astStoreIntValue(self.store, node_idx), .width_bits = @intCast(u32, 0), .sig = true };
     } else if (node.kind == AstKind.char_literal) {
-        return ComptimeVal{ .bits = self.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))], .width_bits = @intCast(u32, 8), .sig = false };
+        return ComptimeVal{ .bits = ast_mod.astStoreIntValue(self.store, node_idx), .width_bits = @intCast(u32, 8), .sig = false };
     } else if (node.kind == AstKind.bool_literal) {
         if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
         return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
@@ -216,7 +216,7 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
         return comptimeEvalEvaluateDepth(self, node.child_0, depth);
     } else if (node.kind == AstKind.ident_expr) {
         if (depth >= @intCast(u32, 16)) return null;
-        var name_id = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
         var mi: usize = 0;
         while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
             var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);

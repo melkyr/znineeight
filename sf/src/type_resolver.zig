@@ -662,10 +662,10 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
     if (node.kind == AstKind.int_literal) {
-        return @intCast(u32, env.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, node_idx))]);
+        return @intCast(u32, ast_mod.astStoreIntValue(env.store, node_idx));
     }
     if (node.kind == AstKind.ident_expr) {
-        var name_id = env.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, node_idx))];
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
         var c_sym = symbolLookupAllModules(env, name_id);
         if (c_sym) |cs| {
             if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
@@ -693,7 +693,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
     var rtd_nm: []const u8 = "RTD:n"; pal_mod.markerWriteInt(rtd_nm, node_idx); var rtd_km: []const u8 = "RTD:k"; pal_mod.markerWriteInt(rtd_km, @intCast(u32, @enumToInt(node.kind)));
     if (node.kind == AstKind.ident_expr) {
-        var name_id = env.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, node_idx))];
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
         var opm4_m: []const u8 = "OPTVOID:id"; pal_mod.markerWriteInt(opm4_m, name_id);
         var text = interner_mod.stringInternerGet(env.interner, name_id);
         var canonical_id = interner_mod.stringInternerIntern(env.interner, text);
@@ -792,7 +792,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         if (base_type == type_mod.TYPE_UNDEFINED) {
             var base_node = ast_mod.astStoreNodeAt(env.store, node.child_0);
             if (base_node.kind == AstKind.ident_expr) {
-                var base_name_id = env.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, node.child_0))];
+                var base_name_id = ast_mod.astStoreIdentifier(env.store, node.child_0);
                 var smi: usize = 0;
                 while (smi < @intCast(usize, env.symbol_reg.tables_len)) : (smi += 1) {
                     var base_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, smi), base_name_id);
@@ -973,7 +973,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                 var arr_len: u32 = @intCast(u32, 0);
                 var arr_resolved: bool = false;
                 if (sz_node.kind == AstKind.int_literal) {
-                    arr_len = @intCast(u32, env.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, node.child_1))]);
+                    arr_len = @intCast(u32, ast_mod.astStoreIntValue(env.store, node.child_1));
                     arr_resolved = true;
                 } else if (sz_node.kind == AstKind.add or sz_node.kind == AstKind.sub) {
                     var lhs = evalConstU32Full(env, sz_node.child_0);

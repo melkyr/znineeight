@@ -117,7 +117,7 @@ fn testAstStoreAddIntLiteral() void {
     var store = ast_mod.astStoreInit(&sand);
     var idx = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 255), @intCast(u32, 0), @intCast(u32, 3));
     assertEqU32(idx, @intCast(u32, 1));
-    assertEqU64(store.int_values.items[0], @intCast(u64, 255));
+    assertEqU64(ast_mod.astStoreIntValue(&store, idx), @intCast(u64, 255));
 }
 
 fn testAstStoreAddFloatLiteral() void {
@@ -143,7 +143,7 @@ fn testAstStoreAddIdentifier() void {
     var store = ast_mod.astStoreInit(&sand);
     var idx = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 7), @intCast(u32, 2), @intCast(u32, 5));
     assertEqU32(idx, @intCast(u32, 1));
-    assertEqU32(store.identifiers.items[0], @intCast(u32, 7));
+    assertEqU32(ast_mod.astStoreIdentifier(&store, idx), @intCast(u32, 7));
 }
 
 var g_visit_count: u32 = 0;

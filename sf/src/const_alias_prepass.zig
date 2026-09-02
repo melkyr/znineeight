@@ -126,7 +126,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
                 }
                 if (@enumToInt(init.kind) != 24) continue;
 
-                var dep_name = store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(store, decl_node.child_1))];
+                var dep_name = ast_mod.astStoreIdentifier(store, decl_node.child_1);
                 {
                     var c2_m: []const u8 = "CAT:dn"; pal.markerWriteInt(c2_m, dep_name);
                 }

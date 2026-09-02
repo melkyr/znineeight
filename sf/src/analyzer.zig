@@ -47,7 +47,7 @@ pub const AllocState = enum(u8) {
 };
 
 fn identNameId(store: *AstStore, node_idx: u32) u32 {
-    return store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(store, node_idx))];
+    return ast_mod.astStoreIdentifier(store, node_idx);
 }
 
 fn resolveOrigin(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
@@ -525,7 +525,7 @@ pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
     if (kind == AstKind.orelse_expr) return @enumToInt(PtrState.safe);
     if (kind == AstKind.catch_expr) return @enumToInt(PtrState.safe);
     if (kind == AstKind.int_literal) {
-        var val = ctx.store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, expr_idx))];
+        var val = ast_mod.astStoreIntValue(ctx.store, expr_idx);
         if (val == @intCast(u64, 0)) return @enumToInt(PtrState.is_null);
         return @enumToInt(PtrState.safe);
     }
@@ -541,7 +541,7 @@ fn isNullExpr(store: *AstStore, idx: u32) u8 {
     var node = ast_mod.astStoreNodeAt(store, idx);
     if (node.kind == AstKind.null_literal) return @intCast(u8, 1);
     if (node.kind == AstKind.int_literal) {
-        var val = store.int_values.items[@intCast(usize, ast_mod.astStoreNodePayload(store, idx))];
+        var val = ast_mod.astStoreIntValue(store, idx);
         if (val == @intCast(u64, 0)) return @intCast(u8, 1);
     }
     return @intCast(u8, 0);

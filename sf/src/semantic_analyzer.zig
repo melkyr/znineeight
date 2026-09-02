@@ -338,7 +338,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
 
     if (base_node.kind == AstKind.ident_expr) {
         var base_rt = semanticAnalyzerResolveExpr(self, node.child_0);
-        var base_ident_id = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node.child_0))];
+        var base_ident_id = ast_mod.astStoreIdentifier(self.store, node.child_0);
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_ident_id);
         if (sym) |s| {
             if (s.kind == sym_mod.SymbolKind.type_alias) {
@@ -832,7 +832,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var direct_ret: u32 = @intCast(u32, 0);
     var decl_cap: u32 = 0;
     if (callee_node.kind == AstKind.ident_expr) {
-        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node.child_0))]);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, node.child_0));
         if (sym) |s| { var xf: []const u8 = "XF\n"; pal_mod.markerWrite(xf);
             decl_cap = s.decl_node;
             if (s.type_id != @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, s.type_id); }
@@ -1038,7 +1038,7 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
 fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var el: []const u8 = "eL\n"; pal_mod.markerWrite(el);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    var n: u32 = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
+    var n: u32 = ast_mod.astStoreIdentifier(self.store, node_idx);
     if (self.current_switch_cond_tu != @intCast(u32, 0)) {
         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
         if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
@@ -1218,7 +1218,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var lhs_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
         if (lhs_node.kind == AstKind.ident_expr) {
             var us_str: []const u8 = "_";
-            if (self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node.child_0))] == interner_mod.stringInternerIntern(self.interner, us_str)) {
+            if (ast_mod.astStoreIdentifier(self.store, node.child_0) == interner_mod.stringInternerIntern(self.interner, us_str)) {
                 _ = semanticAnalyzerResolveExpr(self, node.child_1);
                 return type_mod.TYPE_VOID;
             }
@@ -1466,7 +1466,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             } else { result = type_mod.TYPE_VOID; }
         } else { result = type_mod.TYPE_VOID; }
     } else if (node.kind == AstKind.ident_expr) {
-        result = semanticAnalyzerResolveIdent(self, self.module_id, self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))], node_idx);
+        result = semanticAnalyzerResolveIdent(self, self.module_id, ast_mod.astStoreIdentifier(self.store, node_idx), node_idx);
     } else if (node.kind == AstKind.field_access) {
         result = semanticAnalyzerResolveFieldAccess(self, node_idx);
         var fad: []const u8 = "FAD:R"; pal_mod.markerWriteInt(fad, result);
@@ -2115,7 +2115,7 @@ fn semaTraceStep(self: *SemanticAnalyzer, cur_name: *u32, done: *u8) u32 {
         if (init.child_0 == @intCast(u32, 0)) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
         var c0 = ast_mod.astStoreNodeAt(self.store, init.child_0);
         if (c0.kind != AstKind.ident_expr) { done.* = @intCast(u8, 1); return @intCast(u32, 0); }
-        var nn = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, init.child_0))];
+        var nn = ast_mod.astStoreIdentifier(self.store, init.child_0);
         cur_name.* = nn;
         return nn;
     }
@@ -2132,7 +2132,7 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
      var c0_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
      var c0k_m: []const u8 = "C0K:K"; pal_mod.markerWriteInt(c0k_m, @intCast(u32, @enumToInt(c0_node.kind)));
     if (c0_node.kind == AstKind.ident_expr) {
-        var c0_name_id = self.store.identifiers.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node.child_0))];
+        var c0_name_id = ast_mod.astStoreIdentifier(self.store, node.child_0);
          var ste_m: []const u8 = "STE:N"; pal_mod.markerWriteInt(ste_m, node_idx);
          var src_cur_name = c0_name_id;
         var src_depth: u32 = @intCast(u32, 0);

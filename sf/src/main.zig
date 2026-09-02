@@ -175,11 +175,41 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
          ast_spill_path[asp_len] = @intCast(u8, '.'); asp_len += @intCast(usize, 1);
          ast_spill_path[asp_len] = @intCast(u8, '/'); asp_len += @intCast(usize, 1);
      }
-     var ast_tmp_name: []const u8 = ".zig1_ast.tmp";
-     var ati: usize = @intCast(usize, 0);
-     while (ati < ast_tmp_name.len and asp_len < @intCast(usize, 511)) : (ati += @intCast(usize, 1)) { ast_spill_path[asp_len] = ast_tmp_name[ati]; asp_len += @intCast(usize, 1); }
-     ast_mod.astStoreSetSpillPath(&store, ast_spill_path[0..asp_len]);
-     var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
+      var ast_tmp_name: []const u8 = ".zig1_ast.tmp";
+      var ati: usize = @intCast(usize, 0);
+      while (ati < ast_tmp_name.len and asp_len < @intCast(usize, 511)) : (ati += @intCast(usize, 1)) { ast_spill_path[asp_len] = ast_tmp_name[ati]; asp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetSpillPath(&store, ast_spill_path[0..asp_len]);
+      var id_spill_path: [512]u8 = undefined;
+      var idp_len: usize = @intCast(usize, 0);
+      if (cli.output_dir_set) {
+          var od3 = cli.output_dir;
+          var oi3: usize = @intCast(usize, 0);
+          while (oi3 < od3.len and idp_len < @intCast(usize, 511)) : (oi3 += @intCast(usize, 1)) { id_spill_path[idp_len] = od3[oi3]; idp_len += @intCast(usize, 1); }
+          id_spill_path[idp_len] = @intCast(u8, '/'); idp_len += @intCast(usize, 1);
+      } else {
+          id_spill_path[idp_len] = @intCast(u8, '.'); idp_len += @intCast(usize, 1);
+          id_spill_path[idp_len] = @intCast(u8, '/'); idp_len += @intCast(usize, 1);
+      }
+      var id_tmp_name: []const u8 = ".zig1_side.tmp";
+      var iti: usize = @intCast(usize, 0);
+      while (iti < id_tmp_name.len and idp_len < @intCast(usize, 511)) : (iti += @intCast(usize, 1)) { id_spill_path[idp_len] = id_tmp_name[iti]; idp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 0), id_spill_path[0..idp_len]);
+      var iv_spill_path: [512]u8 = undefined;
+      var ivp_len: usize = @intCast(usize, 0);
+      if (cli.output_dir_set) {
+          var od5 = cli.output_dir;
+          var oi5: usize = @intCast(usize, 0);
+          while (oi5 < od5.len and ivp_len < @intCast(usize, 511)) : (oi5 += @intCast(usize, 1)) { iv_spill_path[ivp_len] = od5[oi5]; ivp_len += @intCast(usize, 1); }
+          iv_spill_path[ivp_len] = @intCast(u8, '/'); ivp_len += @intCast(usize, 1);
+      } else {
+          iv_spill_path[ivp_len] = @intCast(u8, '.'); ivp_len += @intCast(usize, 1);
+          iv_spill_path[ivp_len] = @intCast(u8, '/'); ivp_len += @intCast(usize, 1);
+      }
+      var iv_tmp_name: []const u8 = ".zig1_side_iv.tmp";
+      var ivi: usize = @intCast(usize, 0);
+      while (ivi < iv_tmp_name.len and ivp_len < @intCast(usize, 511)) : (ivi += @intCast(usize, 1)) { iv_spill_path[ivp_len] = iv_tmp_name[ivi]; ivp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 1), iv_spill_path[0..ivp_len]);
+      var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var rtt_spill_path: [512]u8 = undefined;
     var rsp_len: usize = @intCast(usize, 0);

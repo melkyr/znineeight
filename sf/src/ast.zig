@@ -292,6 +292,35 @@ const AstSlot = struct {
     in_use: u8,
 };
 
+// ---- Disk-backed value pools (identifiers / int_values) ----
+// The identifiers (u32 name-id list) and int_values (u64 literal-value list)
+// pools are write-once append-only during parse and read-only through LIR
+// lowering. They use the same direct-offset block fault-in idiom as the node
+// blocks: full blocks are written through to a dedicated spill file during
+// parse (append order == index order) and only the current (tail) block stays
+// resident; earlier blocks are faulted back in through a small cache window.
+pub const VALUE_POOL_BLOCK_BYTES: u32 = 4096;
+pub const VALUE_POOL_SLOTS: u32 = 8;
+
+const AstValuePool = struct {
+    len: usize,           // logical element count
+    elem_bytes: u32,      // 4 (identifiers) or 8 (int_values)
+    elems_per_block: u32, // VALUE_POOL_BLOCK_BYTES / elem_bytes
+    block_shift: u32,     // log2(elems_per_block)
+    block_mask: u32,      // elems_per_block - 1
+    head_buf: [*]u8,      // resident tail block buffer (grows to block bytes)
+    head_cap: usize,
+    head_elems: u32,      // elements currently in the resident tail block
+    cur_block: u32,       // block index of the resident tail block
+    cache_buf: [*]u8,     // VALUE_POOL_SLOTS * VALUE_POOL_BLOCK_BYTES read cache
+    cache_allocated: u8,
+    slot_block: [VALUE_POOL_SLOTS]u32, // cache slot -> block index (0xFFFFFFFF = empty)
+    ring_next: u32,
+    spill_handle: ?*void, // FILE* of this pool's spill file (lazily opened)
+    spill_path: [512]u8,
+    spill_path_len: usize,
+};
+
 pub const AstStore = struct {
     nodes: struct {
         // `len` is the flat node ordinal count; node data lives in disk-backed
@@ -303,16 +332,8 @@ pub const AstStore = struct {
         len: usize,
         capacity: usize,
     },
-    identifiers: struct {
-        items: [*]u32,
-        len: usize,
-        capacity: usize,
-    },
-    int_values: struct {
-        items: [*]u64,
-        len: usize,
-        capacity: usize,
-    },
+    identifiers: AstValuePool,
+    int_values: AstValuePool,
     float_values: struct {
         items: [*]f64,
         len: usize,
@@ -383,8 +404,8 @@ pub fn astStoreInit(arena: *Sand) AstStore {
     var store = AstStore{
         .nodes = .{ .len = @intCast(usize, 0) },
         .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .identifiers = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .int_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .identifiers = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill_handle = null, .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
+        .int_values = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill_handle = null, .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .fn_protos = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -401,6 +422,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .spill_path = undefined,
         .spill_path_len = @intCast(usize, 0),
     };
+    astStoreInitValuePools(&store);
     var si: u32 = 0;
     while (si < AST_WINDOW_SLOTS) : (si += 1) {
         store.slots[si] = AstSlot{ .node_buf = undefined, .node_cap = @intCast(usize, 0), .payload_buf = undefined, .payload_cap = @intCast(usize, 0), .in_use = @intCast(u8, 0) };
@@ -416,9 +438,26 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         store.spill_path[pi] = default_path[pi];
     }
     store.spill_path_len = default_path.len;
+    var d_id: []const u8 = ".zig1_side.tmp";
+    var di: usize = 0;
+    while (di < d_id.len) : (di += 1) {
+        store.identifiers.spill_path[di] = d_id[di];
+    }
+    store.identifiers.spill_path_len = d_id.len;
+    var d_iv: []const u8 = ".zig1_side_iv.tmp";
+    var dvi: usize = 0;
+    while (dvi < d_iv.len) : (dvi += 1) {
+        store.int_values.spill_path[dvi] = d_iv[dvi];
+    }
+    store.int_values.spill_path_len = d_iv.len;
     astStoreNodeAppend(&store, null_node, @intCast(u32, 0));
     u64ArrayListAppendInner(&store.extra_ranges.items, &store.extra_ranges.len, &store.extra_ranges.capacity, arena, @intCast(u64, 0));
     return store;
+}
+
+fn astStoreInitValuePools(store: *AstStore) void {
+    valuePoolInit(&store.identifiers, @intCast(u32, 4));
+    valuePoolInit(&store.int_values, @intCast(u32, 8));
 }
 
 pub fn astStoreSetSpillPath(store: *AstStore, path: []const u8) void {
@@ -435,6 +474,170 @@ pub fn astStoreCloseSpill(store: *AstStore) void {
         pal.streamClose(h);
         store.spill_handle = null;
     }
+    valuePoolClose(store, &store.identifiers);
+    valuePoolClose(store, &store.int_values);
+}
+
+fn valuePoolInit(p: *AstValuePool, elem_bytes: u32) void {
+    p.len = @intCast(usize, 0);
+    p.elem_bytes = elem_bytes;
+    p.elems_per_block = VALUE_POOL_BLOCK_BYTES / elem_bytes;
+    p.block_shift = @intCast(u32, 0);
+    var shift_tmp: u32 = p.elems_per_block - @intCast(u32, 1);
+    while (shift_tmp != @intCast(u32, 0)) : (shift_tmp >>= @intCast(u32, 1)) {
+        p.block_shift += @intCast(u32, 1);
+    }
+    p.block_mask = p.elems_per_block - @intCast(u32, 1);
+    p.head_cap = @intCast(usize, 0);
+    p.head_elems = @intCast(u32, 0);
+    p.cur_block = @intCast(u32, 0);
+    p.cache_allocated = @intCast(u8, 0);
+    var si: u32 = 0;
+    while (si < VALUE_POOL_SLOTS) : (si += 1) {
+        p.slot_block[si] = 0xFFFFFFFF;
+    }
+    p.ring_next = @intCast(u32, 0);
+    p.spill_handle = null;
+    p.spill_path_len = @intCast(usize, 0);
+}
+
+pub fn astStoreSetValuePoolSpillPath(store: *AstStore, which: u32, path: []const u8) void {
+    var p: *AstValuePool = undefined;
+    if (which == @intCast(u32, 0)) {
+        p = &store.identifiers;
+    } else {
+        p = &store.int_values;
+    }
+    var i: usize = 0;
+    while (i < path.len and i < @intCast(usize, 511)) : (i += 1) {
+        p.spill_path[i] = path[i];
+    }
+    p.spill_path_len = i;
+    p.spill_path[i] = @intCast(u8, 0);
+}
+
+fn valuePoolOpen(store: *AstStore, p: *AstValuePool) void {
+    if (p.spill_handle != null) return;
+    p.spill_handle = pal.streamOpen(p.spill_path[0..p.spill_path_len], "w+b");
+    if (p.spill_handle == null) {
+        var emsg: []const u8 = "value-pool spill open failed (valuePoolOpen)";
+        var ef: []const u8 = "ast.zig";
+        panic_mod.panicHandler(emsg, ef, 500);
+    }
+}
+
+fn valuePoolEnsureHead(store: *AstStore, p: *AstValuePool) void {
+    if (p.head_cap != @intCast(usize, 0)) return;
+    var raw = alloc_mod.sandAlloc(store.allocator, @intCast(usize, VALUE_POOL_BLOCK_BYTES), @intCast(usize, 4)) catch unreachable;
+    p.head_buf = raw;
+    p.head_cap = @intCast(usize, VALUE_POOL_BLOCK_BYTES);
+}
+
+fn valuePoolAppend(store: *AstStore, p: *AstValuePool, value: u64) u32 {
+    valuePoolEnsureHead(store, p);
+    var elem_idx = @intCast(u32, p.len);
+    var block: u32 = elem_idx / p.elems_per_block;
+    var off = elem_idx % p.elems_per_block;
+    if (block != p.cur_block) {
+        // write-through the completed full block
+        valuePoolOpen(store, p);
+        var h = p.spill_handle orelse return @intCast(u32, 0);
+        var disk_off = p.cur_block * VALUE_POOL_BLOCK_BYTES;
+        pal.streamSeek(h, @intCast(i32, disk_off));
+        pal.streamWrite(h, p.head_buf[0..@intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
+        p.cur_block = block;
+        p.head_elems = @intCast(u32, 0);
+    }
+    var byte_off = @intCast(usize, off) * @intCast(usize, p.elem_bytes);
+    if (p.elem_bytes == @intCast(u32, 4)) {
+        p.head_buf[byte_off] = @intCast(u8, value & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 1] = @intCast(u8, (value >> @intCast(u64, 8)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 2] = @intCast(u8, (value >> @intCast(u64, 16)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 3] = @intCast(u8, (value >> @intCast(u64, 24)) & @intCast(u64, 0xFF));
+    } else {
+        p.head_buf[byte_off] = @intCast(u8, value & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 1] = @intCast(u8, (value >> @intCast(u64, 8)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 2] = @intCast(u8, (value >> @intCast(u64, 16)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 3] = @intCast(u8, (value >> @intCast(u64, 24)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 4] = @intCast(u8, (value >> @intCast(u64, 32)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 5] = @intCast(u8, (value >> @intCast(u64, 40)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 6] = @intCast(u8, (value >> @intCast(u64, 48)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off + 7] = @intCast(u8, (value >> @intCast(u64, 56)) & @intCast(u64, 0xFF));
+    }
+    p.head_elems += 1;
+    p.len += 1;
+    return elem_idx;
+}
+
+fn valuePoolEnsureCache(store: *AstStore, p: *AstValuePool) void {
+    if (p.cache_allocated != @intCast(u8, 0)) return;
+    var raw = alloc_mod.sandAlloc(store.allocator, @intCast(usize, VALUE_POOL_SLOTS) * @intCast(usize, VALUE_POOL_BLOCK_BYTES), @intCast(usize, 4)) catch unreachable;
+    p.cache_buf = raw;
+    p.cache_allocated = @intCast(u8, 1);
+}
+
+fn valuePoolCacheSlot(store: *AstStore, p: *AstValuePool, block: u32) u32 {
+    valuePoolEnsureCache(store, p);
+    var s: u32 = 0;
+    while (s < VALUE_POOL_SLOTS) : (s += 1) {
+        if (p.slot_block[s] == block) return s;
+    }
+    var v = p.ring_next;
+    p.ring_next = v + @intCast(u32, 1);
+    if (p.ring_next >= VALUE_POOL_SLOTS) p.ring_next = @intCast(u32, 0);
+    valuePoolOpen(store, p);
+    var h = p.spill_handle orelse return v;
+    var disk_off = block * VALUE_POOL_BLOCK_BYTES;
+    pal.streamSeek(h, @intCast(i32, disk_off));
+    pal.streamRead(h, p.cache_buf[@intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) .. @intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) + @intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
+    p.slot_block[v] = block;
+    return v;
+}
+
+fn valuePoolGetValue(store: *AstStore, p: *AstValuePool, elem_idx: u32) u64 {
+    if (elem_idx >= @intCast(u32, p.len)) return @intCast(u64, 0);
+    var block: u32 = elem_idx >> p.block_shift;
+    var off = elem_idx & p.block_mask;
+    var byte_off = @intCast(usize, off) * @intCast(usize, p.elem_bytes);
+    var buf: [*]u8 = undefined;
+    if (block == p.cur_block and p.head_cap != @intCast(usize, 0)) {
+        buf = p.head_buf;
+    } else {
+        var slot = valuePoolCacheSlot(store, p, block);
+        buf = p.cache_buf + @intCast(usize, slot) * @intCast(usize, VALUE_POOL_BLOCK_BYTES);
+    }
+    var v: u64 = @intCast(u64, buf[byte_off]);
+    if (p.elem_bytes == @intCast(u32, 8)) {
+        v |= @intCast(u64, buf[byte_off + 1]) << @intCast(u64, 8);
+        v |= @intCast(u64, buf[byte_off + 2]) << @intCast(u64, 16);
+        v |= @intCast(u64, buf[byte_off + 3]) << @intCast(u64, 24);
+        v |= @intCast(u64, buf[byte_off + 4]) << @intCast(u64, 32);
+        v |= @intCast(u64, buf[byte_off + 5]) << @intCast(u64, 40);
+        v |= @intCast(u64, buf[byte_off + 6]) << @intCast(u64, 48);
+        v |= @intCast(u64, buf[byte_off + 7]) << @intCast(u64, 56);
+    } else {
+        v |= @intCast(u64, buf[byte_off + 1]) << @intCast(u64, 8);
+        v |= @intCast(u64, buf[byte_off + 2]) << @intCast(u64, 16);
+        v |= @intCast(u64, buf[byte_off + 3]) << @intCast(u64, 24);
+    }
+    return v;
+}
+
+fn valuePoolClose(store: *AstStore, p: *AstValuePool) void {
+    if (p.spill_handle) |h| {
+        pal.streamClose(h);
+        p.spill_handle = null;
+    }
+}
+
+pub fn astStoreIdentifier(store: *AstStore, node_idx: u32) u32 {
+    var pool_idx = astStoreNodePayload(store, node_idx);
+    return @intCast(u32, valuePoolGetValue(store, &store.identifiers, pool_idx));
+}
+
+pub fn astStoreIntValue(store: *AstStore, node_idx: u32) u64 {
+    var pool_idx = astStoreNodePayload(store, node_idx);
+    return valuePoolGetValue(store, &store.int_values, pool_idx);
 }
 
 
@@ -670,14 +873,12 @@ pub fn astStoreNodeExtraChildren(store: *AstStore, node_idx: u32) []const u32 {
 }
 
 pub fn astStoreAddIntLiteral(store: *AstStore, value: u64, span_start: u32, span_end: u32) u32 {
-    var val_idx = @intCast(u32, store.int_values.len);
-    u64ArrayListAppendInner(&store.int_values.items, &store.int_values.len, &store.int_values.capacity, store.allocator, value);
+    var val_idx = valuePoolAppend(store, &store.int_values, value);
     return astStoreAddNode(store, AstKind.int_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);
 }
 
 pub fn astStoreAddCharLiteral(store: *AstStore, value: u64, span_start: u32, span_end: u32) u32 {
-    var val_idx = @intCast(u32, store.int_values.len);
-    u64ArrayListAppendInner(&store.int_values.items, &store.int_values.len, &store.int_values.capacity, store.allocator, value);
+    var val_idx = valuePoolAppend(store, &store.int_values, value);
     return astStoreAddNode(store, AstKind.char_literal, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), val_idx);
 }
 
@@ -701,8 +902,7 @@ pub fn astStoreAddStringLiteral(store: *AstStore, string_id: u32, span_start: u3
 }
 
 pub fn astStoreAddIdentifier(store: *AstStore, kind: AstKind, string_id: u32, span_start: u32, span_end: u32) u32 {
-    var id_idx = @intCast(u32, store.identifiers.len);
-    u32ArrayListAppendInner(&store.identifiers.items, &store.identifiers.len, &store.identifiers.capacity, store.allocator, string_id);
+    var id_idx = valuePoolAppend(store, &store.identifiers, @intCast(u64, string_id));
     return astStoreAddNode(store, kind, @intCast(u8, 0), span_start, span_end, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), id_idx);
 }
 
@@ -768,11 +968,22 @@ pub fn astStoreComputeMemory(store: *AstStore) u64 {
     total += @intCast(u64, resident_blocks) * @intCast(u64, AST_BLOCK_REC_SIZE);
     total += @intCast(u64, store.block_table.len) * @sizeOf(NodeBlockInfo);
     total += @intCast(u64, store.extra_children.len) * @sizeOf(u32);
-    total += @intCast(u64, store.identifiers.len) * @sizeOf(u32);
-    total += @intCast(u64, store.int_values.len) * @sizeOf(u64);
     total += @intCast(u64, store.float_values.len) * @sizeOf(f64);
     total += @intCast(u64, store.string_values.len) * @sizeOf(u32);
     total += @intCast(u64, store.fn_protos.len) * @sizeOf(FnProto);
     total += @intCast(u64, store.extra_ranges.len) * @sizeOf(u64);
+    total += valuePoolResident(store, &store.identifiers);
+    total += valuePoolResident(store, &store.int_values);
     return total;
+}
+
+fn valuePoolResident(store: *AstStore, p: *AstValuePool) u64 {
+    var sum: u64 = 0;
+    if (p.head_cap != @intCast(usize, 0)) {
+        sum += @intCast(u64, VALUE_POOL_BLOCK_BYTES);
+    }
+    if (p.cache_allocated != @intCast(u8, 0)) {
+        sum += @intCast(u64, VALUE_POOL_SLOTS) * @intCast(u64, VALUE_POOL_BLOCK_BYTES);
+    }
+    return sum;
 }

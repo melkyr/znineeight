@@ -200,7 +200,7 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
             } else if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
                 var pl0 = ast_mod.astStoreNodePayload(store, idx);
                 if (@intCast(usize, pl0) < store.int_values.len) {
-                    var val = store.int_values.items[pl0];
+                    var val = ast_mod.astStoreIntValue(store, idx);
                     pal.stdout_write(spc);
                     var fs = fmt.formatU64(val, fmt_buf[0..], 32);
                     pal.stdout_write(fs);
@@ -226,7 +226,7 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
             } else if (node.kind == AstKind.ident_expr) {
                 var pl3 = ast_mod.astStoreNodePayload(store, idx);
                 if (@intCast(usize, pl3) < store.identifiers.len) {
-                    var id_val = store.identifiers.items[@intCast(usize, pl3)];
+                    var id_val = ast_mod.astStoreIdentifier(store, idx);
                     pal.stdout_write(spc);
                     pal.stdout_write(q);
                     var id_str = interner_mod.stringInternerGet(interner, id_val);
