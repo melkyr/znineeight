@@ -6,6 +6,8 @@
 
 **Architecture:** A README boundary note; then a read-only **I-BOOT** investigation that builds a minimal-repro harness over the offending construct shapes, classifies each failing site as root vs cascade, and pins the zig0-compatible idiom; then gated **F-BOOT** fix tasks executed on HEAD (ast.zig value-pool slice root first, spill_store roots second), each gated by `build_release.sh` green + the full battery on the zig0-built zig1.
 
+**AMENDMENT 1 (operator-ruled 2026-09-02, emission-layer finding):** F-BOOT-1 (commit `9087e5cb`) fixed the ast.zig:581 type-check root and cleared all 8 front-end sites (zig0 rc=0), but the full `build_release.sh` gate then failed at gcc on a SECOND, independent zig0 incompatibility — a **C89-emission** defect, not a type-check defect: codegen.cpp drops the declaration of a function-local `const` whose initializer is a cross-module comptime constant (`const max_level: u32 = spill_store_mod.SPILL_COUNT;`, parseSLevel main.zig:~1210, introduced by `cc5c37c1` F-S), emitting a bare `max_level` reference with no decl (`error: 'max_level' undeclared`). The type checker accepts it; the reference zig1 emits it correctly; isolated repro confirms it is a zig0-emitter gap. I-BOOT only type-checked, so this layer was masked. **New task `F-BOOT-1_2`** (inserted after F-BOOT-1) rewrites that construct into a zig0-emittable form; if the rebuild surfaces FURTHER emission gaps in the post-boundary commits (`a1bfa260`..`cc5c37c1`), they are handled as follow-on F-BOOT tasks (or folded into F-BOOT-3's iteration), applying the same oracle-driven zig0-compatible workaround per gap.
+
 **Tech Stack:** Zig (sf/src), C++ bootstrap (src/bootstrap), bash, gcc -m32, stale `build/zig0` front-end as the type-check oracle.
 
 ## Global Constraints
@@ -118,6 +120,43 @@ Run `timeout 900 bash sf/scripts/build_release.sh` (repo root) → gate `=== [re
 ```bash
 git add sf/src/ast.zig
 git commit -m "fix: zig0-compatible value-pool slice (hoist computed base)"
+```
+
+### Task F-BOOT-1_2: Rewrite parseSLevel's cross-module comptime-const local (F, emission-layer)
+
+**Files:**
+- Modify: `sf/src/main.zig` (`parseSLevel` ~:1205-1210, the function-local `const max_level: u32 = spill_store_mod.SPILL_COUNT;`)
+- Commit: `fix: zig0-compatible parseSLevel (emission-layer comptime-const)`
+
+**Interfaces:**
+- Consumes: AMENDMENT 1 finding — codegen.cpp drops function-local `const` decls whose initializer is a cross-module comptime constant; the reference zig1 emits the source correctly.
+- Produces: a main.zig that zig0's C emitter handles; the next full `build_release.sh` either goes green or surfaces the next emission gap.
+
+- [ ] **Step 1: Confirm the current state**
+
+The ast.zig fix (`9087e5cb`) is committed. Run `timeout 300 build/zig0 --header-priority-include -o /tmp/boot_f12 sf/src/main.zig` (`mkdir -p /tmp/boot_f12` first) → rc=0 (type-check clean). Then run `timeout 900 bash sf/scripts/build_release.sh` (repo root) and confirm the gcc failure is the parseSLevel `max_level` undeclared site (main.c:2659 in the emitted tree) — reinstall std lib after (`mkdir -p /tmp/fx_subfolder/lib && cp sf/src/{std.zig,std_io.zig,std_arena.zig,std_net.zig} /tmp/fx_subfolder/lib/`).
+
+- [ ] **Step 2: Pin the zig0-emittable idiom via the oracle**
+
+Under `/tmp/boot_diag/`, use the stale `build/zig0` front-end (+ its emitted C) to decide among candidates for expressing the SPILL_COUNT-derived upper bound in `parseSLevel` so codegen.cpp emits a decl:
+- (a) drop the local const and reference `spill_store_mod.SPILL_COUNT` directly at the one use site (the out-of-range check `if (level > spill_store_mod.SPILL_COUNT)`),
+- (b) hoist to a module-scope alias `const SPILL_LEVEL_MAX: u32 = spill_store_mod.SPILL_COUNT;` in main.zig and use that,
+- (c) a local const initialized from a literal with a comment (`const max_level: u32 = 5; // == spill_store.SPILL_COUNT`),
+whichever zig0 emits with the declaration present. Verify the accepted form compiles to C with the decl and matches the reference emission semantics.
+
+- [ ] **Step 3: Apply + verify front-end**
+
+Apply the accepted idiom to `sf/src/main.zig` (edit/fastedit only). Run `timeout 300 build/zig0 --header-priority-include -o /tmp/boot_f12b sf/src/main.zig` → rc=0, 0 real errors.
+
+- [ ] **Step 4: End-to-end gate — build_release.sh + full battery**
+
+Run `timeout 900 bash sf/scripts/build_release.sh` → gate `=== [release] Done ===`; reinstall std lib. On the **zig0-built** `/tmp/fx_subfolder/zig1`: 4 MD5 byte-identical (gol `302df36b`/lisp `3591bad9`/json `76056b97`/mud `4591fef0`); golden 9/9; self-compile `timeout 900 bash scripts/self_compile/build_zig1_5.sh` → 42 `.c` / 0 err / 0 PANIC; reference 0-warning. If gcc now fails on a DIFFERENT emission gap, STOP and report the next gap (it becomes a follow-on F-BOOT task per AMENDMENT 1).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/main.zig
+git commit -m "fix: zig0-compatible parseSLevel (emission-layer comptime-const)"
 ```
 
 ### Task F-BOOT-2: Rewrite spill_store roots if independent (F, gated on I-BOOT classification)
