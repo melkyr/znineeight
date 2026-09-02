@@ -48,6 +48,7 @@ const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
 const LirFunction = @import("lir.zig").LirFunction;
 const cinclude = @import("cinclude.zig");
+const spill_store_mod = @import("spill_store.zig");
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -69,6 +70,7 @@ pub const CompilerCli = struct {
     dump_lir: bool,
     dump_c89: bool,
     max_mem: u32,
+    spill_level: u32, // -s<N> spill level (0 = all on disk .. SPILL_COUNT = all in RAM)
     max_errors: u32,
     color: ColorMode,
     error_format: ErrorFormat,
@@ -142,6 +144,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
+    spill_store_mod.spillSetLevel(cli.spill_level); // set the immutable spill flag prefix before runCompiler
     var source = pal.readFile(cli.input_file, &compiler_alloc.permanent) orelse {
         const msg: []const u8 = "error: could not read input file\n";
         pal.stderr_write(msg);
@@ -969,6 +972,7 @@ fn parseArgs() CompilerCli {
         .dump_lir = false,
         .dump_c89 = false,
         .max_mem = @intCast(u32, alloc_mod.DEFAULT_MAX_MEM_KB),
+        .spill_level = @intCast(u32, 0), // -s0 (default): all spills on disk
         .max_errors = @intCast(u32, 256),
         .color = ColorMode.auto,
         .error_format = ErrorFormat.human,
@@ -1032,6 +1036,10 @@ fn parseArgs() CompilerCli {
             } else if (matchMMFlag(arg)) {
                 // -mm<N>: N MB hard pool budget in one token (e.g. -mm64). Folded into cli.max_mem (KB).
                 cli.max_mem = parseMMBytes(arg[3..]);
+            } else if (matchSFlag(arg)) {
+                // -s<N>: decremental spill level 0..5 (default 0 = all on disk). Level N deactivates
+                // the first N spills (order AST,LIR,HASH,RES,SIDE) to Ram; higher -s = more RAM.
+                cli.spill_level = parseSLevel(arg[2..]);
             } else if (matchFlag(arg, s_max_errors) or matchFlag(arg, s_e)) {
                 i += 1;
                 if (i < argc) {
@@ -1183,6 +1191,57 @@ fn parseMMBytes(rest: []const u8) u32 {
     return mb * @intCast(u32, 1024); // -mm0 -> 0 (checkCombinedPeak's max_mem==0 relax path)
 }
 
+fn matchSFlag(arg: []const u8) bool {
+    const s_s: []const u8 = "-s";
+    if (arg.len < s_s.len) return false;
+    var j: usize = 0;
+    while (j < s_s.len) {
+        if (arg[j] != s_s[j]) return false;
+        j += 1;
+    }
+    return true;
+}
+
+// -s<N>: parse the decimal level suffix already stripped of the "-s" prefix.
+// Level 0 (default) = all spills on disk; level N deactivates the first N
+// spills (order AST,LIR,HASH,RES,SIDE) to Ram. Valid range 0..SPILL_COUNT.
+// Bare -s / non-digit / out-of-range all error rc=1 (mirror -mm discipline).
+fn parseSLevel(rest: []const u8) u32 {
+    const max_level: u32 = spill_store_mod.SPILL_COUNT;
+    var i: usize = 0;
+    var n: u32 = 0;
+    var level: u32 = 0;
+    var over: u32 = 0;
+    while (i < rest.len) {
+        var c = rest[i];
+        if (c < '0' or c > '9') break;
+        n += 1;
+        if (over == 0) {
+            var d = @intCast(u32, c - '0');
+            var nl = level * @intCast(u32, 10) + d; // level <= 5 here, so no u32 overflow
+            if (nl > max_level) {
+                over = 1;
+            } else {
+                level = nl;
+            }
+        }
+        i += 1;
+    }
+    if (n == 0 or i != rest.len) {
+        const em: []const u8 = "error: -s<N> requires a decimal level 0..5 (e.g. -s0 all on disk, -s5 all in RAM)\n";
+        pal.stderr_write(em);
+        pal.exit(@intCast(u8, 1));
+        return @intCast(u32, 0);
+    }
+    if (over != 0) {
+        const em: []const u8 = "error: -s<N> spill level out of range (0..5: 0 = all on disk, 5 = all in RAM)\n";
+        pal.stderr_write(em);
+        pal.exit(@intCast(u8, 1));
+        return @intCast(u32, 0);
+    }
+    return level;
+}
+
 fn parseColorMode(ptr: [*]const u8) ColorMode {
     var s = cstrToSlice(ptr);
     const s_always: []const u8 = "always";
@@ -1225,4 +1284,10 @@ fn printUsage() void {
     pal.stderr_write(msg);
     const mm_help: []const u8 = "  -mm<N>    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)\n";
     pal.stderr_write(mm_help);
+    const s_help: []const u8 = "  -s<N>     spill level 0..5 (default 0 = all spills on disk; -s1..-s5 deactivate the\n";
+    pal.stderr_write(s_help);
+    const s_help2: []const u8 = "            first N spills to RAM in order AST,LIR,HASH,RES,SIDE: higher -s = more RAM,\n";
+    pal.stderr_write(s_help2);
+    const s_help3: []const u8 = "            less disk I/O (pool= rises; -s5 = all in RAM ~71 MB -> pair with -mm128)\n";
+    pal.stderr_write(s_help3);
 }

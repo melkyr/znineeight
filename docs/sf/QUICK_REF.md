@@ -46,6 +46,18 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
+### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [added: 2026-09-02 — spill-backend-config F-S]
+
+`-s<N>` picks how many of the five spills live in RAM instead of the `.zig1_*.tmp` disk files.
+Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST → S-LIR → S-HASH →
+S-RES → S-SIDE** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s5` = all RAM (no spill files).
+Higher `-s` = more RAM, less disk I/O; emission is **byte-identical in every mode** (same data,
+different storage). Measured self-compile `pool=` (self-hosted binary, `--markers --track-memory`):
+`-s0` ~14.9 M, `-s1` ~33.3 M (both fit the 64 MB `-mm` default); `-s2`..`-s5` ~71-73 M → **exceed
+the default and must be paired with `-mm128`** (else `memory limit exceeded`, rc=3). Range 0..5;
+bare `-s` / non-digit / out-of-range (`-s6`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
+`-s1`, `.zig1_lir.tmp` absent at `-s2`, etc. — the spill-file ladder is the mode marker.
+
 ### Corpus gate (329 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-08-26 — assoc-chain + pending_scope plan GATE]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:

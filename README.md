@@ -121,6 +121,31 @@ The Z98 compiler provides several ways to obtain internal logs during compilatio
     ```
 3.  **Quiet Mode**: Use `--no-logs` to suppress all non-essential output, showing only compilation errors and warnings.
 
+### Self-Hosted Compiler Spill Management (`-s<N>`)
+
+The self-hosted compiler (`zig1`) keeps intermediate compiler state in on-disk `.zig1_*.tmp`
+spill files by default. `-s<N>` trades RAM for I/O in decremental steps (default `-s0` = all
+spills on disk):
+
+- `-s0` all five spills on disk (default; lowest `pool=`)
+- `-s1` deactivate S-AST -> RAM
+- `-s2` deactivate S-AST, S-LIR -> RAM
+- `-s3` deactivate S-AST, S-LIR, S-HASH -> RAM
+- `-s4` deactivate S-AST, S-LIR, S-HASH, S-RES -> RAM
+- `-s5` all five spills in RAM (no `.zig1_*.tmp` files; highest `pool=`, least disk I/O)
+
+Deactivation order is oldest-spill-first: **AST** (AST nodes), **LIR** (LIR functions),
+**HASH** (module name maps), **RES** (resolved types), **SIDE** (AST value pools). Higher `-s`
+means more RAM and less disk I/O — the measured `pool=` (via `--markers --track-memory`) rises
+with the level. Compiler output is byte-identical in every mode (same data, different storage
+location), so `-s` is purely a performance/space choice.
+
+The `-mm<N>` hard budget (default 64 MB) guards RAM-heavy levels: the compiler's own
+self-compile fits under the default at `-s0` (~15 MB) and `-s1` (~33 MB), while `-s2` and above
+(~71 MB) exceed it and must be paired with a matching budget, e.g. `zig1 -s5 -mm128`. A level
+that exceeds the budget aborts with `memory limit exceeded` (rc=3). Bare `-s`, a non-digit, or
+an out-of-range level (`-s6`) is an error (rc=1).
+
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.
 ```bash
