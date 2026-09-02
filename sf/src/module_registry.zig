@@ -10,6 +10,7 @@ const hash_mod = @import("util/hash.zig");
 const path_mod = @import("util/path.zig");
 const SourceManager = @import("source_manager.zig").SourceManager;
 const ga_mod = @import("growable_array.zig");
+const spill_mod = @import("spill_store.zig");
 const U32ArrayList = ga_mod.U32ArrayList;
 const AstStore = @import("ast.zig").AstStore;
 const AstKind = @import("ast.zig").AstKind;
@@ -238,6 +239,7 @@ pub const ModuleRegistry = struct {
     content_to_id: hash_mod.U32ToU32Map,
     hash_spill_path: [512]u8,
     hash_spill_path_len: usize,
+    spill: spill_mod.SpillStore, // hash spill (Disk/Ram backend)
     path_to_id_spill: HashMapSpillMeta,
     content_to_id_spill: HashMapSpillMeta,
     import_queue: ImportQueue,
@@ -291,6 +293,7 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .content_to_id = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .hash_spill_path = undefined,
         .hash_spill_path_len = @intCast(usize, 0),
+        .spill = spill_mod.spillStoreInit(),
         .path_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .content_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .import_queue = importQueueInit(alloc, diag),
@@ -409,18 +412,18 @@ const HASH_SPILL_READ_MODE: [*]const u8 = "rb";
 const HASH_SPILL_WRITE_MODE: [*]const u8 = "wb";
 const HASH_SPILL_MAX_MAP_CAP: usize = @intCast(usize, 4000000);
 
-fn hashSpillWriteU32(f: *void, v: u32) void {
+fn hashSpillWriteU32(s: *spill_mod.SpillStore, v: u32) void {
     var b: [4]u8 = undefined;
     b[0] = @intCast(u8, v & @intCast(u32, 0xFF));
     b[1] = @intCast(u8, (v >> @intCast(u32, 8)) & @intCast(u32, 0xFF));
     b[2] = @intCast(u8, (v >> @intCast(u32, 16)) & @intCast(u32, 0xFF));
     b[3] = @intCast(u8, (v >> @intCast(u32, 24)) & @intCast(u32, 0xFF));
-    pal_mod.streamWrite(f, b[0..]);
+    spill_mod.spillWriteAt(s, s.cur, b[0..]);
 }
 
-fn hashSpillReadU32(f: *void) u32 {
+fn hashSpillReadU32(s: *spill_mod.SpillStore) u32 {
     var b: [4]u8 = undefined;
-    pal_mod.streamRead(f, b[0..]);
+    spill_mod.spillReadAt(s, s.cur, b[0..]);
     var v: u32 = @intCast(u32, 0);
     v = v | @intCast(u32, b[0]);
     v = v | (@intCast(u32, b[1]) << @intCast(u32, 8));
@@ -429,13 +432,13 @@ fn hashSpillReadU32(f: *void) u32 {
     return v;
 }
 
-fn hashSpillWriteMap(f: *void, m: *hash_mod.U32ToU32Map, meta: *HashMapSpillMeta, off: u32) void {
-    meta.disk_off = off;
+fn hashSpillWriteMap(s: *spill_mod.SpillStore, m: *hash_mod.U32ToU32Map, meta: *HashMapSpillMeta) void {
+    meta.disk_off = s.cur;
     meta.capacity = m.capacity;
     meta.count = m.count;
     meta.spilled = @intCast(u8, 1);
-    hashSpillWriteU32(f, @intCast(u32, m.capacity));
-    hashSpillWriteU32(f, @intCast(u32, m.count));
+    hashSpillWriteU32(s, @intCast(u32, m.capacity));
+    hashSpillWriteU32(s, @intCast(u32, m.count));
     if (m.capacity > @intCast(usize, 0)) {
         var keys_bytes = m.capacity * @intCast(usize, 4);
         var vals_bytes = m.capacity * @intCast(usize, 4);
@@ -445,9 +448,9 @@ fn hashSpillWriteMap(f: *void, m: *hash_mod.U32ToU32Map, meta: *HashMapSpillMeta
         var keys_slice: []const u8 = keys_ptr[0..keys_bytes];
         var vals_slice: []const u8 = vals_ptr[0..vals_bytes];
         var occ_slice: []const u8 = occ_ptr[0..m.capacity];
-        pal_mod.streamWrite(f, keys_slice);
-        pal_mod.streamWrite(f, vals_slice);
-        pal_mod.streamWrite(f, occ_slice);
+        spill_mod.spillWriteAt(s, s.cur, keys_slice);
+        spill_mod.spillWriteAt(s, s.cur, vals_slice);
+        spill_mod.spillWriteAt(s, s.cur, occ_slice);
     }
 }
 
@@ -458,17 +461,17 @@ pub fn moduleRegistrySpillHashMaps(self: *ModuleRegistry, spill_path: []const u8
     }
     self.hash_spill_path_len = i;
     self.hash_spill_path[i] = @intCast(u8, 0);
-    var f = pal_mod.streamOpen(spill_path, HASH_SPILL_WRITE_MODE) orelse {
-        var emsg: []const u8 = "hash spill open failed (moduleRegistrySpillHashMaps)";
-        var ef: []const u8 = "module_registry.zig";
-        panic_mod.panicHandler(emsg, ef, 463);
+    if (spill_mod.spillBackendFor(spill_mod.SpillId.s_hash) == spill_mod.SpillBackend.ram) {
+        // Ram mode: the maps already live in the never-reset permanent arena;
+        // keep them resident (spilled stays 0, so fault-in no-ops). No file,
+        // no zeroing of the resident arrays. content_to_id is never faulted
+        // back in in any mode (dead but resident/tiny).
         return;
-    };
-    var off: u32 = @intCast(u32, 0);
-    hashSpillWriteMap(f, &self.path_to_id, &self.path_to_id_spill, off);
-    off += @intCast(u32, 8) + @intCast(u32, self.path_to_id.capacity) * @intCast(u32, 9);
-    hashSpillWriteMap(f, &self.content_to_id, &self.content_to_id_spill, off);
-    pal_mod.streamClose(f);
+    }
+    spill_mod.spillOpen(&self.spill, spill_mod.SpillBackend.disk, spill_path, self.alloc, HASH_SPILL_WRITE_MODE);
+    hashSpillWriteMap(&self.spill, &self.path_to_id, &self.path_to_id_spill);
+    hashSpillWriteMap(&self.spill, &self.content_to_id, &self.content_to_id_spill);
+    spill_mod.spillClose(&self.spill);
     self.path_to_id.capacity = @intCast(usize, 0);
     self.path_to_id.count = @intCast(usize, 0);
     self.path_to_id.keys = undefined;
@@ -489,15 +492,10 @@ fn moduleRegistryFaultInPathToId(self: *ModuleRegistry) void {
         panic_mod.panicHandler(emsg, ef, 488);
         return;
     }
-    var f = pal_mod.streamOpen(self.hash_spill_path[0..self.hash_spill_path_len], HASH_SPILL_READ_MODE) orelse {
-        var emsg: []const u8 = "hash spill open failed (moduleRegistryFaultInPathToId)";
-        var ef: []const u8 = "module_registry.zig";
-        panic_mod.panicHandler(emsg, ef, 494);
-        return;
-    };
-    pal_mod.streamSeek(f, @intCast(i32, self.path_to_id_spill.disk_off));
-    var cap: usize = @intCast(usize, hashSpillReadU32(f));
-    var cnt: usize = @intCast(usize, hashSpillReadU32(f));
+    spill_mod.spillOpen(&self.spill, spill_mod.SpillBackend.disk, self.hash_spill_path[0..self.hash_spill_path_len], self.alloc, HASH_SPILL_READ_MODE);
+    spill_mod.spillSeek(&self.spill, self.path_to_id_spill.disk_off);
+    var cap: usize = @intCast(usize, hashSpillReadU32(&self.spill));
+    var cnt: usize = @intCast(usize, hashSpillReadU32(&self.spill));
     if (cap != self.path_to_id_spill.capacity or cnt != self.path_to_id_spill.count) {
         var emsg: []const u8 = "hash spill header cap/count mismatch vs recorded spill metadata (moduleRegistryFaultInPathToId)";
         var ef: []const u8 = "module_registry.zig";
@@ -528,16 +526,16 @@ fn moduleRegistryFaultInPathToId(self: *ModuleRegistry) void {
         var keys_slice: []u8 = keys_ptr[0..keys_bytes];
         var vals_slice: []u8 = vals_ptr[0..vals_bytes];
         var occ_slice: []u8 = occ_ptr[0..cap];
-        pal_mod.streamRead(f, keys_slice);
-        pal_mod.streamRead(f, vals_slice);
-        pal_mod.streamRead(f, occ_slice);
+        spill_mod.spillReadAt(&self.spill, self.spill.cur, keys_slice);
+        spill_mod.spillReadAt(&self.spill, self.spill.cur, vals_slice);
+        spill_mod.spillReadAt(&self.spill, self.spill.cur, occ_slice);
         self.path_to_id.keys = @ptrCast([*]u32, raw_keys);
         self.path_to_id.values = @ptrCast([*]u32, raw_vals);
         self.path_to_id.occupied = @ptrCast([*]u8, raw_occ);
         self.path_to_id.capacity = cap;
         self.path_to_id.count = cnt;
     }
-    pal_mod.streamClose(f);
+    spill_mod.spillClose(&self.spill);
     self.path_to_id_spill.spilled = @intCast(u8, 0);
 }
 

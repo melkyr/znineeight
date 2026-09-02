@@ -138,6 +138,7 @@ const alloc_mod = @import("allocator.zig");
 const pal = @import("pal.zig");
 const panic_mod = @import("panic.zig");
 const format_mod = @import("util/format.zig");
+const spill_mod = @import("spill_store.zig");
 
 fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
     if (len.* >= capacity.*) {
@@ -316,7 +317,7 @@ const AstValuePool = struct {
     cache_allocated: u8,
     slot_block: [VALUE_POOL_SLOTS]u32, // cache slot -> block index (0xFFFFFFFF = empty)
     ring_next: u32,
-    spill_handle: ?*void, // FILE* of this pool's spill file (lazily opened)
+    spill: spill_mod.SpillStore, // per-pool spill (Disk/Ram backend, lazily opened)
     spill_path: [512]u8,
     spill_path_len: usize,
 };
@@ -370,7 +371,7 @@ pub const AstStore = struct {
     cur_block: u32,     // current head block index (pinned resident, slot 0)
     cur_block_len: u32, // nodes appended so far in the head block
     ring_next: u32,     // next eviction candidate slot (1..AST_WINDOW_SLOTS-1)
-    spill_handle: ?*void, // FILE* of the spill temp file (lazily opened)
+    spill: spill_mod.SpillStore, // node spill (Disk/Ram backend, lazily opened)
     spill_path: [512]u8,
     spill_path_len: usize,
 };
@@ -404,8 +405,8 @@ pub fn astStoreInit(arena: *Sand) AstStore {
     var store = AstStore{
         .nodes = .{ .len = @intCast(usize, 0) },
         .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .identifiers = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill_handle = null, .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
-        .int_values = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill_handle = null, .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
+        .identifiers = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
+        .int_values = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .fn_protos = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
@@ -418,7 +419,7 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         .cur_block = @intCast(u32, 0),
         .cur_block_len = @intCast(u32, 0),
         .ring_next = @intCast(u32, 1),
-        .spill_handle = null,
+        .spill = spill_mod.spillStoreInit(),
         .spill_path = undefined,
         .spill_path_len = @intCast(usize, 0),
     };
@@ -470,10 +471,7 @@ pub fn astStoreSetSpillPath(store: *AstStore, path: []const u8) void {
 }
 
 pub fn astStoreCloseSpill(store: *AstStore) void {
-    if (store.spill_handle) |h| {
-        pal.streamClose(h);
-        store.spill_handle = null;
-    }
+    spill_mod.spillClose(&store.spill);
     valuePoolClose(store, &store.identifiers);
     valuePoolClose(store, &store.int_values);
 }
@@ -497,7 +495,7 @@ fn valuePoolInit(p: *AstValuePool, elem_bytes: u32) void {
         p.slot_block[si] = 0xFFFFFFFF;
     }
     p.ring_next = @intCast(u32, 0);
-    p.spill_handle = null;
+    p.spill = spill_mod.spillStoreInit();
     p.spill_path_len = @intCast(usize, 0);
 }
 
@@ -517,13 +515,8 @@ pub fn astStoreSetValuePoolSpillPath(store: *AstStore, which: u32, path: []const
 }
 
 fn valuePoolOpen(store: *AstStore, p: *AstValuePool) void {
-    if (p.spill_handle != null) return;
-    p.spill_handle = pal.streamOpen(p.spill_path[0..p.spill_path_len], "w+b");
-    if (p.spill_handle == null) {
-        var emsg: []const u8 = "value-pool spill open failed (valuePoolOpen)";
-        var ef: []const u8 = "ast.zig";
-        panic_mod.panicHandler(emsg, ef, 500);
-    }
+    if (p.spill.opened != @intCast(u8, 0)) return;
+    spill_mod.spillOpen(&p.spill, spill_mod.spillBackendFor(spill_mod.SpillId.s_side), p.spill_path[0..p.spill_path_len], store.allocator, "w+b");
 }
 
 fn valuePoolEnsureHead(store: *AstStore, p: *AstValuePool) void {
@@ -541,10 +534,8 @@ fn valuePoolAppend(store: *AstStore, p: *AstValuePool, value: u64) u32 {
     if (block != p.cur_block) {
         // write-through the completed full block
         valuePoolOpen(store, p);
-        var h = p.spill_handle orelse return @intCast(u32, 0);
         var disk_off = p.cur_block * VALUE_POOL_BLOCK_BYTES;
-        pal.streamSeek(h, @intCast(i32, disk_off));
-        pal.streamWrite(h, p.head_buf[0..@intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
+        spill_mod.spillWriteAt(&p.spill, disk_off, p.head_buf[0..@intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
         p.cur_block = block;
         p.head_elems = @intCast(u32, 0);
     }
@@ -586,10 +577,8 @@ fn valuePoolCacheSlot(store: *AstStore, p: *AstValuePool, block: u32) u32 {
     p.ring_next = v + @intCast(u32, 1);
     if (p.ring_next >= VALUE_POOL_SLOTS) p.ring_next = @intCast(u32, 0);
     valuePoolOpen(store, p);
-    var h = p.spill_handle orelse return v;
     var disk_off = block * VALUE_POOL_BLOCK_BYTES;
-    pal.streamSeek(h, @intCast(i32, disk_off));
-    pal.streamRead(h, p.cache_buf[@intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) .. @intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) + @intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
+    spill_mod.spillReadAt(&p.spill, disk_off, p.cache_buf[@intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) .. @intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) + @intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
     p.slot_block[v] = block;
     return v;
 }
@@ -624,10 +613,7 @@ fn valuePoolGetValue(store: *AstStore, p: *AstValuePool, elem_idx: u32) u64 {
 }
 
 fn valuePoolClose(store: *AstStore, p: *AstValuePool) void {
-    if (p.spill_handle) |h| {
-        pal.streamClose(h);
-        p.spill_handle = null;
-    }
+    spill_mod.spillClose(&p.spill);
 }
 
 pub fn astStoreIdentifier(store: *AstStore, node_idx: u32) u32 {
@@ -686,20 +672,14 @@ fn astBlockTableEnsure(store: *AstStore, new_len: usize) void {
 }
 
 fn astBlockOpenSpill(store: *AstStore) void {
-    if (store.spill_handle != null) return;
-    // "w+b" (truncate + read/write): the same handle is used to write spilled
-    // blocks during parse and fault them back in during the read phases.
-    store.spill_handle = pal.streamOpen(store.spill_path[0..store.spill_path_len], "w+b");
-    if (store.spill_handle == null) {
-        var emsg: []const u8 = "AST spill file open failed (astBlockOpenSpill)";
-        var ef: []const u8 = "ast.zig";
-        panic_mod.panicHandler(emsg, ef, 518);
-    }
+    if (store.spill.opened != @intCast(u8, 0)) return;
+    // Disk "w+b" (truncate + read/write): one store serves block spills during
+    // parse and fault-ins during the read phases; Ram keeps the data resident.
+    spill_mod.spillOpen(&store.spill, spill_mod.spillBackendFor(spill_mod.SpillId.s_ast), store.spill_path[0..store.spill_path_len], store.allocator, "w+b");
 }
 
 fn astBlockSpillHead(store: *AstStore) void {
     astBlockOpenSpill(store);
-    var h = store.spill_handle orelse return;
     var bi = store.cur_block;
     if (bi > AST_SPILL_MAX_BLOCKS) {
         var emsg: []const u8 = "S-AST spill block count exceeds i32 seek limit (astBlockSpillHead)";
@@ -713,11 +693,10 @@ fn astBlockSpillHead(store: *AstStore) void {
     entry.resident = @intCast(u8, 0);
     entry.slot = 0xFFFFFFFF;
     store.block_table.items[bi] = entry;
-    pal.streamSeek(h, @intCast(i32, disk_off));
     var nraw: [*]u8 = @ptrCast([*]u8, store.slots[AST_HEAD_SLOT].node_buf);
-    pal.streamWrite(h, nraw[0..@intCast(usize, AST_BLOCK_NODE_BYTES)]);
+    spill_mod.spillWriteAt(&store.spill, disk_off, nraw[0..@intCast(usize, AST_BLOCK_NODE_BYTES)]);
     var praw: [*]u8 = @ptrCast([*]u8, store.slots[AST_HEAD_SLOT].payload_buf);
-    pal.streamWrite(h, praw[0..@intCast(usize, AST_BLOCK_PAYLOAD_BYTES)]);
+    spill_mod.spillWriteAt(&store.spill, disk_off + AST_BLOCK_NODE_BYTES, praw[0..@intCast(usize, AST_BLOCK_PAYLOAD_BYTES)]);
 }
 
 fn astBlockAdvanceHead(store: *AstStore, new_bi: u32) void {
@@ -790,7 +769,6 @@ fn astSlotAcquire(store: *AstStore) u32 {
 
 fn astBlockFaultIn(store: *AstStore, bi: u32) void {
     astBlockOpenSpill(store);
-    var h = store.spill_handle orelse return;
     if (bi > AST_SPILL_MAX_BLOCKS) {
         var emsg: []const u8 = "S-AST spill block count exceeds i32 seek limit (astBlockFaultIn)";
         var ef: []const u8 = "ast.zig";
@@ -800,11 +778,10 @@ fn astBlockFaultIn(store: *AstStore, bi: u32) void {
     var entry = store.block_table.items[bi];
     var s = astSlotAcquire(store);
     astSlotEnsureFull(store, s);
-    pal.streamSeek(h, @intCast(i32, entry.disk_off));
     var nraw: [*]u8 = @ptrCast([*]u8, store.slots[s].node_buf);
-    pal.streamRead(h, nraw[0..@intCast(usize, AST_BLOCK_NODE_BYTES)]);
+    spill_mod.spillReadAt(&store.spill, entry.disk_off, nraw[0..@intCast(usize, AST_BLOCK_NODE_BYTES)]);
     var praw: [*]u8 = @ptrCast([*]u8, store.slots[s].payload_buf);
-    pal.streamRead(h, praw[0..@intCast(usize, AST_BLOCK_PAYLOAD_BYTES)]);
+    spill_mod.spillReadAt(&store.spill, entry.disk_off + AST_BLOCK_NODE_BYTES, praw[0..@intCast(usize, AST_BLOCK_PAYLOAD_BYTES)]);
     store.slots[s].in_use = @intCast(u8, 1);
     store.slot_block[s] = bi;
     entry.resident = @intCast(u8, 1);

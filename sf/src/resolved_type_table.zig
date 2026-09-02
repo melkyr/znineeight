@@ -1,9 +1,9 @@
 const Sand = @import("allocator.zig").Sand;
 const alloc_mod = @import("allocator.zig");
 const TypeId = @import("type_registry.zig").TypeId;
-const pal_mod = @import("pal.zig");
 const panic_mod = @import("panic.zig");
 const hash_mod = @import("util/hash.zig");
+const spill_mod = @import("spill_store.zig");
 
 // Dense spill record = the type half only: { type_id u32 @0, present u8 @4 } =
 // 5 B/node (was 10 B/node with the dead source half inlined; the source
@@ -19,8 +19,8 @@ const WRITE_MODE: [*]const u8 = "w+b";
 
 pub const ResolvedTypeTable = struct {
     cap: usize, // logical node extent (file covers blocks up to aligned(cap))
-    entries_alloc: *Sand, // supplies the small resident cache window
-    spill_handle: ?*void, // FILE* of the dense spill file (opened at first reserve/Set)
+    entries_alloc: *Sand, // supplies the small resident cache window + Ram buffer
+    spill: spill_mod.SpillStore, // dense spill (Disk/Ram backend)
     spill_path: [512]u8,
     spill_path_len: usize,
     cache_buf: [*]u8, // RTT_SLOTS * RTT_BLOCK_BYTES resident window
@@ -35,7 +35,7 @@ pub fn resolvedTypeTableInit(alloc: *Sand) ResolvedTypeTable {
     var t = ResolvedTypeTable{
         .cap = @intCast(usize, 0),
         .entries_alloc = alloc,
-        .spill_handle = null,
+        .spill = spill_mod.spillStoreInit(),
         .spill_path = undefined,
         .spill_path_len = @intCast(usize, 0),
         .cache_buf = undefined,
@@ -74,19 +74,13 @@ fn rttAlignedNodes(n: usize) usize {
 }
 
 fn rttOpenSpill(self: *ResolvedTypeTable) void {
-    if (self.spill_handle != null) return;
-    self.spill_handle = pal_mod.streamOpen(self.spill_path[0..self.spill_path_len], WRITE_MODE);
-    if (self.spill_handle == null) {
-        var emsg: []const u8 = "resolved-type spill open failed (rttOpenSpill)";
-        var ef: []const u8 = "resolved_type_table.zig";
-        panic_mod.panicHandler(emsg, ef, 99);
-    }
+    if (self.spill.opened != @intCast(u8, 0)) return;
+    spill_mod.spillOpen(&self.spill, spill_mod.spillBackendFor(spill_mod.SpillId.s_res), self.spill_path[0..self.spill_path_len], self.entries_alloc, WRITE_MODE);
 }
 
 fn rttExtend(self: *ResolvedTypeTable, new_cap: usize) void {
     if (new_cap <= self.cap) return;
     rttOpenSpill(self);
-    var h = self.spill_handle orelse return;
     var old_an = rttAlignedNodes(self.cap);
     var new_an = rttAlignedNodes(new_cap);
     if (new_an > old_an) {
@@ -98,15 +92,19 @@ fn rttExtend(self: *ResolvedTypeTable, new_cap: usize) void {
             panic_mod.panicHandler(emsg, ef, 112);
             return;
         }
-        pal_mod.streamSeek(h, @intCast(i32, old_bytes));
+        // zero-extend the dense extent (block-aligned). Ram mode routes the
+        // zero-fill through the store so the logical length stays the aligned
+        // cap extent and Get on a never-Set record reads a 0 present flag.
         var zero_buf: [RTT_BLOCK_BYTES]u8 = undefined;
         var zi: usize = 0;
         while (zi < @intCast(usize, RTT_BLOCK_BYTES)) : (zi += 1) {
             zero_buf[zi] = @intCast(u8, 0);
         }
         var to_write: u32 = new_bytes - old_bytes;
+        var off: u32 = old_bytes;
         while (to_write > @intCast(u32, 0)) : (to_write -= RTT_BLOCK_BYTES) {
-            pal_mod.streamWrite(h, zero_buf[0..@intCast(usize, RTT_BLOCK_BYTES)]);
+            spill_mod.spillWriteAt(&self.spill, off, zero_buf[0..@intCast(usize, RTT_BLOCK_BYTES)]);
+            off += RTT_BLOCK_BYTES;
         }
     }
     self.cap = new_cap;
@@ -132,7 +130,6 @@ fn rttResidentSlot(self: *ResolvedTypeTable, block: u32) u32 {
 }
 
 fn rttWriteBack(self: *ResolvedTypeTable, s: u32) void {
-    var h = self.spill_handle orelse return;
     var block = self.slot_block[s];
     var off: u32 = block * RTT_BLOCK_BYTES;
     if (off > SEEK_MAX - RTT_BLOCK_BYTES) {
@@ -141,8 +138,7 @@ fn rttWriteBack(self: *ResolvedTypeTable, s: u32) void {
         panic_mod.panicHandler(emsg, ef, 151);
         return;
     }
-    pal_mod.streamSeek(h, @intCast(i32, off));
-    pal_mod.streamWrite(h, rttSlotBuf(self, s)[0..@intCast(usize, RTT_BLOCK_BYTES)]);
+    spill_mod.spillWriteAt(&self.spill, off, rttSlotBuf(self, s)[0..@intCast(usize, RTT_BLOCK_BYTES)]);
     self.slot_dirty[s] = @intCast(u8, 0);
 }
 
@@ -155,7 +151,6 @@ fn rttBlockEnsure(self: *ResolvedTypeTable, block: u32) u32 {
         rttWriteBack(self, v);
     }
     rttOpenSpill(self);
-    var h = self.spill_handle orelse return v;
     var off: u32 = block * RTT_BLOCK_BYTES;
     if (off > SEEK_MAX - RTT_BLOCK_BYTES) {
         var emsg: []const u8 = "resolved-type spill exceeds seek limit (rttBlockEnsure)";
@@ -163,8 +158,7 @@ fn rttBlockEnsure(self: *ResolvedTypeTable, block: u32) u32 {
         panic_mod.panicHandler(emsg, ef, 174);
         return v;
     }
-    pal_mod.streamSeek(h, @intCast(i32, off));
-    pal_mod.streamRead(h, rttSlotBuf(self, v)[0..@intCast(usize, RTT_BLOCK_BYTES)]);
+    spill_mod.spillReadAt(&self.spill, off, rttSlotBuf(self, v)[0..@intCast(usize, RTT_BLOCK_BYTES)]);
     self.slot_block[v] = block;
     self.slot_dirty[v] = @intCast(u8, 0);
     self.ring_next = v + 1;
@@ -228,15 +222,13 @@ pub fn resolvedSourceTableGet(self: *ResolvedTypeTable, node_idx: u32) ?u32 {
 }
 
 pub fn resolvedTypeTableClose(self: *ResolvedTypeTable) void {
-    if (self.spill_handle) |h| {
-        var s: u32 = 0;
-        while (s < RTT_SLOTS) : (s += 1) {
-            if (self.slot_block[s] != EMPTY_BLOCK and self.slot_dirty[s] != @intCast(u8, 0)) {
-                rttWriteBack(self, s);
-            }
+    if (self.spill.opened == @intCast(u8, 0)) return;
+    var s: u32 = 0;
+    while (s < RTT_SLOTS) : (s += 1) {
+        if (self.slot_block[s] != EMPTY_BLOCK and self.slot_dirty[s] != @intCast(u8, 0)) {
+            rttWriteBack(self, s);
         }
-        pal_mod.streamClose(h);
-        self.spill_handle = null;
     }
+    spill_mod.spillClose(&self.spill);
 }
 

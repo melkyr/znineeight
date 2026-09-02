@@ -1,8 +1,8 @@
 const lir_mod = @import("lir.zig");
 const alloc_mod = @import("allocator.zig");
 const hash_mod = @import("util/hash.zig");
-const pal_mod = @import("pal.zig");
 const panic_mod = @import("panic.zig");
+const spill_mod = @import("spill_store.zig");
 
 const Sand = alloc_mod.Sand;
 const LirFunction = lir_mod.LirFunction;
@@ -14,9 +14,11 @@ const WRITE_MODE: [*]const u8 = "wb";
 // Streaming-LIR spill stream. Each LirFunction is serialized to a single temp file
 // during phase_LIRLowering (append-only, "wb") and faulted back in one function at a
 // time during phase_C89Emission ("rb"). All LIR payloads are scalar (u32/u64/f64/u8 ids,
-// no pointers/slices), so a raw byte dump of each array is byte-preserving.
+// no pointers/slices), so a raw byte dump of each array is byte-preserving. In Ram mode
+// the write-phase and read-phase share one arena-backed buffer (backend captured at
+// lirStreamBeginWrite, reused by lirStreamBeginRead — no re-open/re-truncate).
 pub const LirStream = struct {
-    handle: ?*void, // FILE* ("wb" while writing, "rb" while reading)
+    spill: spill_mod.SpillStore, // LIR spill (Disk/Ram backend)
     path: [512]u8,
     path_len: usize,
     write_offset: u32, // running byte offset while appending
@@ -24,14 +26,14 @@ pub const LirStream = struct {
 
 pub fn lirStreamInit() LirStream {
     return LirStream{
-        .handle = null,
+        .spill = spill_mod.spillStoreInit(),
         .path = undefined,
         .path_len = @intCast(usize, 0),
         .write_offset = @intCast(u32, 0),
     };
 }
 
-pub fn lirStreamBeginWrite(s: *LirStream, path: []const u8) void {
+pub fn lirStreamBeginWrite(s: *LirStream, path: []const u8, alloc: *Sand) void {
     var i: usize = @intCast(usize, 0);
     while (i < path.len and i < @intCast(usize, 511)) : (i += @intCast(usize, 1)) {
         s.path[i] = path[i];
@@ -39,67 +41,53 @@ pub fn lirStreamBeginWrite(s: *LirStream, path: []const u8) void {
     s.path_len = i;
     s.path[i] = @intCast(u8, 0);
     s.write_offset = @intCast(u32, 0);
-    s.handle = pal_mod.streamOpen(s.path[0..s.path_len], WRITE_MODE);
-    if (s.handle == null) {
-        var emsg: []const u8 = "LIR spill open failed (lirStreamBeginWrite)";
-        var ef: []const u8 = "lir_stream.zig";
-        panic_mod.panicHandler(emsg, ef, 46);
-    }
+    spill_mod.spillOpen(&s.spill, spill_mod.spillBackendFor(spill_mod.SpillId.s_lir), s.path[0..s.path_len], alloc, WRITE_MODE);
 }
 
 pub fn lirStreamFinishWrite(s: *LirStream) void {
-    if (s.handle) |h| {
-        pal_mod.streamClose(h);
-        s.handle = null;
-    }
+    spill_mod.spillClose(&s.spill);
 }
 
-pub fn lirStreamBeginRead(s: *LirStream) void {
-    s.handle = pal_mod.streamOpen(s.path[0..s.path_len], READ_MODE);
-    if (s.handle == null) {
-        var emsg: []const u8 = "LIR spill open failed (lirStreamBeginRead)";
-        var ef: []const u8 = "lir_stream.zig";
-        panic_mod.panicHandler(emsg, ef, 62);
+pub fn lirStreamBeginRead(s: *LirStream, alloc: *Sand) void {
+    if (s.spill.backend == spill_mod.SpillBackend.ram) {
+        // Ram mode: the write-phase buffer already holds all bytes; just reset
+        // the read cursor. Do NOT re-init/truncate the buffer.
+        s.spill.cur = @intCast(u32, 0);
+        return;
     }
+    spill_mod.spillOpen(&s.spill, spill_mod.SpillBackend.disk, s.path[0..s.path_len], alloc, READ_MODE);
 }
 
 pub fn lirStreamEndRead(s: *LirStream) void {
-    if (s.handle) |h| {
-        pal_mod.streamClose(h);
-        s.handle = null;
-    }
+    spill_mod.spillClose(&s.spill);
 }
 
 fn wU32(s: *LirStream, v: u32) void {
-    var h = s.handle orelse return;
     var b: [4]u8 = undefined;
     b[0] = @intCast(u8, v & @intCast(u32, 0xFF));
     b[1] = @intCast(u8, (v >> @intCast(u32, 8)) & @intCast(u32, 0xFF));
     b[2] = @intCast(u8, (v >> @intCast(u32, 16)) & @intCast(u32, 0xFF));
     b[3] = @intCast(u8, (v >> @intCast(u32, 24)) & @intCast(u32, 0xFF));
-    pal_mod.streamWrite(h, b[0..]);
+    spill_mod.spillWriteAt(&s.spill, s.write_offset, b[0..]);
     s.write_offset += @intCast(u32, 4);
 }
 
 fn wU8(s: *LirStream, v: u8) void {
-    var h = s.handle orelse return;
     var b: [1]u8 = undefined;
     b[0] = v;
-    pal_mod.streamWrite(h, b[0..]);
+    spill_mod.spillWriteAt(&s.spill, s.write_offset, b[0..]);
     s.write_offset += @intCast(u32, 1);
 }
 
 fn wBytes(s: *LirStream, ptr: [*]const u8, len: usize) void {
     if (len == @intCast(usize, 0)) return;
-    var h = s.handle orelse return;
-    pal_mod.streamWrite(h, ptr[0..len]);
+    spill_mod.spillWriteAt(&s.spill, s.write_offset, ptr[0..len]);
     s.write_offset += @intCast(u32, len);
 }
 
 fn rU32(s: *LirStream) u32 {
-    var h = s.handle orelse return @intCast(u32, 0);
     var b: [4]u8 = undefined;
-    pal_mod.streamRead(h, b[0..]);
+    spill_mod.spillReadAt(&s.spill, s.spill.cur, b[0..]);
     var v: u32 = @intCast(u32, 0);
     v = v | @intCast(u32, b[0]);
     v = v | (@intCast(u32, b[1]) << @intCast(u32, 8));
@@ -109,16 +97,14 @@ fn rU32(s: *LirStream) u32 {
 }
 
 fn rU8(s: *LirStream) u8 {
-    var h = s.handle orelse return @intCast(u8, 0);
     var b: [1]u8 = undefined;
-    pal_mod.streamRead(h, b[0..]);
+    spill_mod.spillReadAt(&s.spill, s.spill.cur, b[0..]);
     return b[0];
 }
 
 fn rBytes(s: *LirStream, dst: [*]u8, len: usize) void {
     if (len == @intCast(usize, 0)) return;
-    var h = s.handle orelse return;
-    pal_mod.streamRead(h, dst[0..len]);
+    spill_mod.spillReadAt(&s.spill, s.spill.cur, dst[0..len]);
 }
 
 pub fn lirStreamAppend(s: *LirStream, src_fn: LirFunction) LirSlot {
@@ -192,8 +178,7 @@ fn emptyLirFunction(dst: *Sand) LirFunction {
 
 pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFunction {
     alloc_mod.sandReset(dst);
-    var h = s.handle orelse return emptyLirFunction(dst);
-    pal_mod.streamSeek(h, @intCast(i32, slot.disk_offset));
+    spill_mod.spillSeek(&s.spill, slot.disk_offset);
 
     var name_id = rU32(s);
     var module_id = rU32(s);

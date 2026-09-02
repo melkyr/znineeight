@@ -620,7 +620,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     var tmp_name: []const u8 = ".zig1_lir.tmp";
     var ti: usize = @intCast(usize, 0);
     while (ti < tmp_name.len and sp_len < @intCast(usize, 511)) : (ti += @intCast(usize, 1)) { spill_path[sp_len] = tmp_name[ti]; sp_len += @intCast(usize, 1); }
-    lir_stream.lirStreamBeginWrite(&ctx.lir_stream, spill_path[0..sp_len]);
+    lir_stream.lirStreamBeginWrite(&ctx.lir_stream, spill_path[0..sp_len], &ctx.alloc.emission);
     var sem_ctx: SemanticContext = SemanticContext{
         .store = ctx.store,
         .registry = ctx.typereg,
@@ -808,7 +808,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     emitter.fn_slots_start = @intCast(usize, 0);
     emitter.fn_slots_len = ctx.lir_slots.len;
     emitter.spill_arena = &ctx.alloc.lir_read;
-    lir_stream.lirStreamBeginRead(&ctx.lir_stream);
+    lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
     var module_name: []const u8 = "output";
 
     var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.emission);
