@@ -256,6 +256,8 @@ var seg_free_head: ?*SandSegment = null; // cross-arena reuse pool (re-baselined
 
 pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
 pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
+// -mm<N> default: 64 MB hard pool budget, in KB (checkCombinedPeak compares pool.peak/1024 vs max_mem)
+pub const DEFAULT_MAX_MEM_KB: usize = 64 * 1024;
 
 pub fn poolPtr() *Sand {
     return &pool;

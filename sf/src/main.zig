@@ -968,7 +968,7 @@ fn parseArgs() CompilerCli {
         .dump_types = false,
         .dump_lir = false,
         .dump_c89 = false,
-        .max_mem = @intCast(u32, alloc_mod.RELEASE_MAX_MEM),
+        .max_mem = @intCast(u32, alloc_mod.DEFAULT_MAX_MEM_KB),
         .max_errors = @intCast(u32, 256),
         .color = ColorMode.auto,
         .error_format = ErrorFormat.human,
@@ -1029,6 +1029,9 @@ fn parseArgs() CompilerCli {
                 if (i < argc) {
                     cli.max_mem = parseSize(pal.argGet(i));
                 }
+            } else if (matchMMFlag(arg)) {
+                // -mm<N>: N MB hard pool budget in one token (e.g. -mm64). Folded into cli.max_mem (KB).
+                cli.max_mem = parseMMBytes(arg[3..]);
             } else if (matchFlag(arg, s_max_errors) or matchFlag(arg, s_e)) {
                 i += 1;
                 if (i < argc) {
@@ -1100,6 +1103,17 @@ fn matchFlag(arg: []const u8, flag: []const u8) bool {
     return true;
 }
 
+fn matchMMFlag(arg: []const u8) bool {
+    const s_mm: []const u8 = "-mm";
+    if (arg.len < s_mm.len) return false;
+    var j: usize = 0;
+    while (j < s_mm.len) {
+        if (arg[j] != s_mm[j]) return false;
+        j += 1;
+    }
+    return true;
+}
+
 fn cstrToSlice(ptr: [*]const u8) []const u8 {
     var len: usize = 0;
     while (ptr[len] != 0) {
@@ -1142,6 +1156,33 @@ fn parseU32(ptr: [*]const u8) u32 {
     return val;
 }
 
+// -mm<N>: parse the decimal MB suffix already stripped of the "-mm" prefix.
+// Budgets at/above the 256 MiB static pool ceiling can never trip the gate, so
+// the value is clamped there (no u32 overflow on the *1024 KB conversion).
+fn parseMMBytes(rest: []const u8) u32 {
+    var max_mb: u32 = @intCast(u32, alloc_mod.POOL_SIZE / @intCast(usize, 1024 * 1024));
+    var i: usize = 0;
+    var n: u32 = 0;
+    var mb: u32 = 0;
+    while (i < rest.len) {
+        var c = rest[i];
+        if (c < '0' or c > '9') break;
+        n += 1;
+        if (mb < max_mb) {
+            mb = mb * @intCast(u32, 10) + @intCast(u32, c - '0');
+            if (mb > max_mb) mb = max_mb;
+        }
+        i += 1;
+    }
+    if (n == 0 or i != rest.len) {
+        const em: []const u8 = "error: -mm<N> requires a decimal MB size (e.g. -mm64)\n";
+        pal.stderr_write(em);
+        pal.exit(@intCast(u8, 1));
+        return @intCast(u32, 0);
+    }
+    return mb * @intCast(u32, 1024); // -mm0 -> 0 (checkCombinedPeak's max_mem==0 relax path)
+}
+
 fn parseColorMode(ptr: [*]const u8) ColorMode {
     var s = cstrToSlice(ptr);
     const s_always: []const u8 = "always";
@@ -1181,5 +1222,7 @@ fn writeU32(val: usize) void {
 
 fn printUsage() void {
     const msg: []const u8 = "zig1 - Z98 self-hosted compiler - usage: zig1 [options] <input.zig>\n";
-    pal.markerWrite(msg);
+    pal.stderr_write(msg);
+    const mm_help: []const u8 = "  -mm<N>    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)\n";
+    pal.stderr_write(mm_help);
 }
