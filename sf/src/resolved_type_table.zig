@@ -3,10 +3,15 @@ const alloc_mod = @import("allocator.zig");
 const TypeId = @import("type_registry.zig").TypeId;
 const pal_mod = @import("pal.zig");
 const panic_mod = @import("panic.zig");
+const hash_mod = @import("util/hash.zig");
 
-pub const RTT_BLOCK_NODES: u32 = 409; // 4 KB block = 409 node records (10 B/node)
-pub const RTT_BLOCK_BYTES: u32 = 4090;
-pub const RTT_REC_BYTES: u32 = 10;
+// Dense spill record = the type half only: { type_id u32 @0, present u8 @4 } =
+// 5 B/node (was 10 B/node with the dead source half inlined; the source
+// relation is now sparse + resident, see src_map). Record->offset math:
+// file_byte_off = block x RTT_BLOCK_BYTES + (node_idx % RTT_BLOCK_NODES) x 5.
+pub const RTT_BLOCK_NODES: u32 = 409; // 2045 B block = 409 node records (5 B/node)
+pub const RTT_BLOCK_BYTES: u32 = 2045;
+pub const RTT_REC_BYTES: u32 = 5;
 pub const RTT_SLOTS: u32 = 8;
 const EMPTY_BLOCK: u32 = 0xFFFFFFFF;
 const SEEK_MAX: u32 = 0x7FFFFFFF;
@@ -23,6 +28,7 @@ pub const ResolvedTypeTable = struct {
     slot_block: [8]u32, // resident slot -> block index (EMPTY_BLOCK = empty)
     slot_dirty: [8]u8, // write-back flag per resident slot
     ring_next: u32, // next eviction candidate
+    src_map: hash_mod.U32ToU32Map, // sparse resident node_idx -> source_name_id (only-on-Set)
 };
 
 pub fn resolvedTypeTableInit(alloc: *Sand) ResolvedTypeTable {
@@ -37,6 +43,7 @@ pub fn resolvedTypeTableInit(alloc: *Sand) ResolvedTypeTable {
         .slot_block = undefined,
         .slot_dirty = undefined,
         .ring_next = @intCast(u32, 0),
+        .src_map = .{ .keys = undefined, .values = undefined, .occupied = undefined, .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .alloc = alloc },
     };
     var si: u32 = 0;
     while (si < RTT_SLOTS) : (si += 1) {
@@ -92,7 +99,7 @@ fn rttExtend(self: *ResolvedTypeTable, new_cap: usize) void {
             return;
         }
         pal_mod.streamSeek(h, @intCast(i32, old_bytes));
-        var zero_buf: [4090]u8 = undefined;
+        var zero_buf: [RTT_BLOCK_BYTES]u8 = undefined;
         var zi: usize = 0;
         while (zi < @intCast(usize, RTT_BLOCK_BYTES)) : (zi += 1) {
             zero_buf[zi] = @intCast(u8, 0);
@@ -180,6 +187,9 @@ fn rttWriteU32(p: [*]u8, off: usize, v: u32) void {
     p[off + 3] = @intCast(u8, (v >> @intCast(u32, 24)) & @intCast(u32, 0xFF));
 }
 
+// Dense record (5 B/node, LE): { type_id u32 @0, present u8 @4 }. The source
+// relation is sparse and resident (src_map), populated only on Set; the dense
+// spill file never carries source bytes.
 pub fn resolvedTypeTableReserve(self: *ResolvedTypeTable, node_count: usize) void {
     rttExtend(self, node_count);
 }
@@ -210,28 +220,11 @@ pub fn resolvedTypeTableGet(self: *ResolvedTypeTable, node_idx: u32) ?TypeId {
 }
 
 pub fn resolvedSourceTableSet(self: *ResolvedTypeTable, node_idx: u32, source_name_id: u32) void {
-    var ni: usize = @intCast(usize, node_idx);
-    if (ni >= self.cap) rttExtend(self, ni + 1);
-    var block: u32 = @intCast(u32, ni / @intCast(usize, RTT_BLOCK_NODES));
-    var s = rttBlockEnsure(self, block);
-    var buf = rttSlotBuf(self, s);
-    var rec_off: usize = (ni % @intCast(usize, RTT_BLOCK_NODES)) * @intCast(usize, RTT_REC_BYTES);
-    rttWriteU32(buf, rec_off + 5, source_name_id);
-    buf[rec_off + 9] = @intCast(u8, 1);
-    self.slot_dirty[s] = @intCast(u8, 1);
+    hash_mod.u32ToU32MapPut(&self.src_map, node_idx, source_name_id);
 }
 
 pub fn resolvedSourceTableGet(self: *ResolvedTypeTable, node_idx: u32) ?u32 {
-    var ni: usize = @intCast(usize, node_idx);
-    if (ni >= self.cap) return null;
-    var block: u32 = @intCast(u32, ni / @intCast(usize, RTT_BLOCK_NODES));
-    var s = rttBlockEnsure(self, block);
-    var buf = rttSlotBuf(self, s);
-    var rec_off: usize = (ni % @intCast(usize, RTT_BLOCK_NODES)) * @intCast(usize, RTT_REC_BYTES);
-    if (buf[rec_off + 9] != @intCast(u8, 0)) {
-        return rttReadU32(buf, rec_off + 5);
-    }
-    return null;
+    return hash_mod.u32ToU32MapGet(&self.src_map, node_idx);
 }
 
 pub fn resolvedTypeTableClose(self: *ResolvedTypeTable) void {
