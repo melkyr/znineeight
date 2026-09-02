@@ -1,4 +1,104 @@
-# mi_matrix corpus — expected-fail manifest (v51 2026-08-26)
+# mi_matrix corpus — expected-fail manifest (v52 2026-09-02)
+
+## GATE — spill backend config plan, FULL sweep + reconciliation (2026-09-02)
+
+Final gate battery of the spill backend config plan
+(docs/superpowers/plans/2026-09-02-spill-backend-config-plan.md), at HEAD `cc5c37c1`, measured
+with `/tmp/fx_subfolder/zig1` (reference rebuilt at HEAD from the F-S self-host generation —
+the zig0 bootstrap cannot compile modern `sf/src`; canonical std reinstalled at
+`/tmp/fx_subfolder/lib/`) vs self-compiled `/tmp/zig1_5/zig1_5_clean`. Docs-only task — no
+`sf/src`, fixture, or script change in this gate. **This is the plan-complete closeout of the
+spill backend config: F-SIDE (AST value pools disk-backed) + F-FMT (RES 5 B/node) + F-SBackend
+(`SpillStore` Disk/Ram routing) + F-MM (`-mm<N>` default 64 MB ACTIVE) + F-S (`-s<N>` decremental
+levels).** The `-s<N>` level is a runtime storage choice — emission is **byte-identical at every
+level `-s0`..`-s5`** (same data, different storage medium).
+
+### Pool trajectory (pool= at self-compile, `--markers --track-memory`, self-hosted binary)
+
+| level | pool= (K) | note |
+|---|---|---|
+| allocator-crux GATE (plan predecessor) | 25,742 | canonical anchor before the spill-config work |
+| plan start (I-SIDE baseline) | 15,324 | reference on the pre-change tree |
+| `-s0` (all disk, default) | **14,857** | fits the `-mm64` default (no flag needed) |
+| `-s1` (+AST → Ram) | 33,290 | fits `-mm64` |
+| `-s2` (+LIR → Ram) | 70,922 | **exceeds 64 MB → ICE rc=3 unless paired with `-mm128`** |
+| `-s3` (+HASH → Ram) | 70,922 | needs `-mm128` |
+| `-s4` (+RES → Ram) | 72,970 | needs `-mm128` |
+| `-s5` (all Ram; max level) | **72,970** | Ram-mode resident pool; **no `.zig1_*.tmp` created** |
+
+F-SBackend measured Disk 13,764 K / all-Ram 72,903 K on its intermediate tree; the 13.8–14.9 K
+Disk band is the documented free-list segment-reuse noise (F-SBackend note 3), not a real change.
+Only `-s0`/`-s1` hold the `-mm64` default on the self-compile workload; `-s2`..`-s5` need `-mm128`
+(the documented `-mm`/`-s` pairing tradeoff). Small fixture/gate workloads fit every level
+unflagged.
+
+### Step 1 — full gate battery
+
+1. **4 MD5 gates byte-identical at every level `-s0`..`-s5` (repo-root CWD, no re-baseline):** gol
+   `302df36be57e9876549d6a8b4031bf95` / lisp `3591bad9726ca0947eae3f8a9a6e7273` / json
+   `76056b978f6330c8af0c7f23b3244135` / mud `4591fef0346b42738874ce992c72f4c2` (dump rc=0 each,
+   `timeout 120`). Storage-only difference → byte-identity holds at every level.
+2. **Golden 9/9 fixtures 9/9 at every level `-s0`..`-s5`** (tco_return_try / tco_defer /
+   tco_factorial / fn_ptr_struct_field / func_ptr_return / quicksort / hello /
+   emission_assoc_chain_xmod / emission_lower_crash_xmod): runtime stdout + rc byte-identical to
+   the F-S golden captures at each level.
+3. **21-example matrix 21/21** dump/gcc/link rc=0 (19 RUN_OK + mud_server/rogue_mud
+   server-timeout by design; 4 single-file entries func_ptr_return/mandelbrot/quicksort/sort_strings).
+4. **Corpus sweep at `-s0` (404 dirs = 330 mi_matrix + 53 top-level repro + 21 z98; `slice_matrix`
+   matrix-of-subdirs skipped):** **334 RUN_OK** (incl. `game_of_life` which completed rc=0 with the
+   correct glider grid this run — the memory-refactor gate's gol RUN_TIMEOUT was a sweep-timing
+   artifact, not a behavior change) + **56 LINK_FAIL** (extern-fn tests; identical
+   `undefined reference` class — not a regression) + **10 DUMP_FAIL** (= the 10 green-guards
+   exactly: eu_assign_incompat_payload / euvoid_val_catch / field_access_optional / var_declared_void /
+   emission_pal_xmod / strictzig_brace_if_xmod / parsergap_selfblok_xmod / parsergap_strict_comma_xmod /
+   parsergap_slice_expr_xmod / self_embed_optional_cycle) + **2 RUN_TIMEOUT** (mud_server / rogue_mud,
+   servers) + **2 RUN_FAIL** (known symmetric crashes both compilers: `intcast_range_check` rc=134,
+   `voiddecl_xmodtype_xmod` rc=139). Garbage dirs `emission_void_temp_enum_xmod` and
+   `voiddecl_payload_xmod` classified RUN_OK rc=0 (output unstable by design — NOT a bug). **0
+   asymmetric failures, 0 NEW failures** vs the documented baseline (the only delta is gol
+   timeout→OK, a timing artifact). Corpus unchanged since the memory-refactor gate (0 new `main.zig`).
+5. **Self-compile:** `build_zig1_5.sh` → dump rc=0, **42 `.c`, 0 `error[`, 0 PANIC** (42 = 41 + the
+   `spill_store` module — the plan's "41" is stale); rebuilt `zig1_5_clean` runs hello **byte-equal**
+   to reference (`Hello, world!\n`). Reference emission vs self-emission: **same 42-file set,
+   0 byte-different pairs** (the compiler's own C at HEAD is byte-identical to its self-compile).
+6. **`--track-memory` self-compile at `-s0`:** `pool=14857K`; the pool= trajectory is above.
+
+### Step 2 — `-mm` enforcement
+
+- **`-mm64` default is ACTIVE and HOLDS self-compile** at `-s0`/`-s1` (pool 14,857/33,290 K <
+  65,536 K).
+- **`-s2`..`-s5` at the default ICE rc=3** — `memory limit exceeded: pool limit=65536K pool=70-73M`
+  + `ICE: out of memory at allocator.zig:28`; pairing with **`-mm128`** compiles cleanly
+  (rc=0, 42 `.c`, 0 err, 0 PANIC) at every level — the documented tradeoff, not a regression.
+- **Canary `-mm1` self-compile ICEs rc=3** — `memory limit exceeded: pool limit=1024K pool=6513K`
+  + `ICE: out of memory at allocator.zig:28` (budget now live by default; was an inert 16 GiB opt-in).
+- Spill-file ladder confirms the prefix deactivation: `-s0` all `.zig1_*.tmp` present,
+  `-s1` drops `.zig1_ast.tmp`, `-s2` also `.zig1_lir.tmp`, `-s3` also `.zig1_hash.tmp`,
+  `-s4` also `.zig1_res.tmp`, `-s5` none.
+
+### Step 3 — warning-clean confirmation
+
+`gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration -I sf/src/include -fsyntax-only` on BOTH
+`/tmp/fx_subfolder/*.c` (reference) AND `/tmp/zig1_5/gen/*.c` (self-emitted): **0 warnings,
+0 errors** on both, with the 1 pre-authorized `-Wbuiltin-declaration-mismatch` fwrite carve-out
+each (`/tmp/fx_subfolder/pal_388A8A1B.c:700` and `/tmp/zig1_5/gen/pal_388A8A1B.c:700` — same
+fwrite declaration class, not a defect).
+
+### Milestone statement
+
+The spill backend config plan is **complete**: I-SIDE (AST side-table census) + F-SIDE (AST value
+pools `identifiers`/`int_values` disk-backed, −568 K realized) + I-FMT/F-FMT (RES dense record
+10→5 B/node, source half → sparse only-on-Set resident map; `.zig1_res.tmp` halves) +
+I-SBackend/F-SBackend (`SpillStore` Disk/Ram routing of all five spills, scalar per-spill flags,
+uniform `SPILL_SEEK_MAX`; Ram mode = resident, no `.zig1_*.tmp`) + I-MM/F-MM (`-mm<N>` MB hard
+budget, default 64 MB ACTIVE) + F-S (`-s<N>` decremental levels, help/README docs). 4 MD5 gates
+byte-identical at every level (no re-baseline). Golden 9/9 at every level. Matrix 21/21. Corpus
+404 dirs **0 asymmetric**. Self-compile 42 `.c` / 0 err / 0 PANIC, hello byte-equal, reference
+emission byte-identical to self-emission. Warning-clean both builds. **pool= at `-s0` = 14,857 K
+(same order as the plan-start 15,324 K); the pool rises with `-s` as designed (33,290 → 70,922 →
+72,970 K) — a storage tradeoff, not a regression; the `-mm64` default holds `-s0`/`-s1` and the
+higher levels need `-mm128` (documented).**
 
 ## GATE — zig1 memory-refactor execution plan, FULL battery + reconciliation (2026-08-26)
 
