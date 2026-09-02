@@ -181,6 +181,21 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      ast_mod.astStoreSetSpillPath(&store, ast_spill_path[0..asp_len]);
      var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
+    var rtt_spill_path: [512]u8 = undefined;
+    var rsp_len: usize = @intCast(usize, 0);
+    if (cli.output_dir_set) {
+        var od4 = cli.output_dir;
+        var oi4: usize = @intCast(usize, 0);
+        while (oi4 < od4.len and rsp_len < @intCast(usize, 511)) : (oi4 += @intCast(usize, 1)) { rtt_spill_path[rsp_len] = od4[oi4]; rsp_len += @intCast(usize, 1); }
+        rtt_spill_path[rsp_len] = @intCast(u8, '/'); rsp_len += @intCast(usize, 1);
+    } else {
+        rtt_spill_path[rsp_len] = @intCast(u8, '.'); rsp_len += @intCast(usize, 1);
+        rtt_spill_path[rsp_len] = @intCast(u8, '/'); rsp_len += @intCast(usize, 1);
+    }
+    var rtt_tmp_name: []const u8 = ".zig1_res.tmp";
+    var rti2: usize = @intCast(usize, 0);
+    while (rti2 < rtt_tmp_name.len and rsp_len < @intCast(usize, 511)) : (rti2 += @intCast(usize, 1)) { rtt_spill_path[rsp_len] = rtt_tmp_name[rti2]; rsp_len += @intCast(usize, 1); }
+    resolved_type_table.resolvedTypeTableSetSpillPath(&resolved_types, rtt_spill_path[0..rsp_len]);
     var coercion_table = coercion_mod.coercionTableInit(&compiler_alloc.module);
     var lir_slots = lir_mod.lirSlotArrayListInit(&compiler_alloc.emission);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
@@ -254,6 +269,7 @@ fn runCompiler(ctx: *CompilerContext) void {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
+    resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); // flush + close dense resolved-type spill (no reads post-lowering)
     alloc_mod.sandReset(&ctx.alloc.module); // free the dead analysis arena at lowering→emission boundary
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
