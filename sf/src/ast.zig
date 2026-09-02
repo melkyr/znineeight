@@ -578,7 +578,8 @@ fn valuePoolCacheSlot(store: *AstStore, p: *AstValuePool, block: u32) u32 {
     if (p.ring_next >= VALUE_POOL_SLOTS) p.ring_next = @intCast(u32, 0);
     valuePoolOpen(store, p);
     var disk_off = block * VALUE_POOL_BLOCK_BYTES;
-    spill_mod.spillReadAt(&p.spill, disk_off, p.cache_buf[@intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) .. @intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES) + @intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
+    var base = p.cache_buf + @intCast(usize, v) * @intCast(usize, VALUE_POOL_BLOCK_BYTES);
+    spill_mod.spillReadAt(&p.spill, disk_off, base[0..@intCast(usize, VALUE_POOL_BLOCK_BYTES)]);
     p.slot_block[v] = block;
     return v;
 }
