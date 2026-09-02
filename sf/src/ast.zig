@@ -541,19 +541,19 @@ fn valuePoolAppend(store: *AstStore, p: *AstValuePool, value: u64) u32 {
     }
     var byte_off = @intCast(usize, off) * @intCast(usize, p.elem_bytes);
     if (p.elem_bytes == @intCast(u32, 4)) {
-        p.head_buf[byte_off] = @intCast(u8, value & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 1] = @intCast(u8, (value >> @intCast(u64, 8)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 2] = @intCast(u8, (value >> @intCast(u64, 16)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 3] = @intCast(u8, (value >> @intCast(u64, 24)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off] = @intCast(u8, @intCast(u32, value & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 1] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 8)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 2] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 16)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 3] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 24)) & @intCast(u64, 0xFF)));
     } else {
-        p.head_buf[byte_off] = @intCast(u8, value & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 1] = @intCast(u8, (value >> @intCast(u64, 8)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 2] = @intCast(u8, (value >> @intCast(u64, 16)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 3] = @intCast(u8, (value >> @intCast(u64, 24)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 4] = @intCast(u8, (value >> @intCast(u64, 32)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 5] = @intCast(u8, (value >> @intCast(u64, 40)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 6] = @intCast(u8, (value >> @intCast(u64, 48)) & @intCast(u64, 0xFF));
-        p.head_buf[byte_off + 7] = @intCast(u8, (value >> @intCast(u64, 56)) & @intCast(u64, 0xFF));
+        p.head_buf[byte_off] = @intCast(u8, @intCast(u32, value & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 1] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 8)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 2] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 16)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 3] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 24)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 4] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 32)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 5] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 40)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 6] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 48)) & @intCast(u64, 0xFF)));
+        p.head_buf[byte_off + 7] = @intCast(u8, @intCast(u32, (value >> @intCast(u64, 56)) & @intCast(u64, 0xFF)));
     }
     p.head_elems += 1;
     p.len += 1;
