@@ -146,6 +146,14 @@ self-compile fits under the default at `-s0` (~15 MB) and `-s1` (~33 MB), while 
 that exceeds the budget aborts with `memory limit exceeded` (rc=3). Bare `-s`, a non-digit, or
 an out-of-range level (`-s6`) is an error (rc=1).
 
+### Bootstrap-Chain Boundary (`zig0 → zig1`)
+
+The `zig0 → zig1` bootstrap chain (zig0 compiling the Zig compiler sources) was last verified
+green at commit `2206177e`. It broke at `a1bfa260` (`perf: disk-back AST value pools`, F-SIDE):
+the sources drifted past zig0's type checker (`src/bootstrap/type_checker.cpp`, unchanged since
+2026-05-11) while the tree was kept alive only via the self-host chain. Restoration is tracked
+in [docs/superpowers/plans/2026-09-02-bootstrap-chain-restore-plan.md](docs/superpowers/plans/2026-09-02-bootstrap-chain-restore-plan.md).
+
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.
 ```bash
