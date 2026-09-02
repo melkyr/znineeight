@@ -1207,7 +1207,6 @@ fn matchSFlag(arg: []const u8) bool {
 // spills (order AST,LIR,HASH,RES,SIDE) to Ram. Valid range 0..SPILL_COUNT.
 // Bare -s / non-digit / out-of-range all error rc=1 (mirror -mm discipline).
 fn parseSLevel(rest: []const u8) u32 {
-    const max_level: u32 = spill_store_mod.SPILL_COUNT;
     var i: usize = 0;
     var n: u32 = 0;
     var level: u32 = 0;
@@ -1219,7 +1218,7 @@ fn parseSLevel(rest: []const u8) u32 {
         if (over == 0) {
             var d = @intCast(u32, c - '0');
             var nl = level * @intCast(u32, 10) + d; // level <= 5 here, so no u32 overflow
-            if (nl > max_level) {
+            if (nl > spill_store_mod.SPILL_COUNT) {
                 over = 1;
             } else {
                 level = nl;
