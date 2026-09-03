@@ -213,18 +213,19 @@ Rank candidates; pick the 1-2 that fix RED with a clean corpus. Append `## E-STO
 
 ### Task F-STORE-DROP: fix the dropped global array-element struct store + mud correctness + combined battery
 
-*(Fix shape finalized from I3-STORE-DROP findings + the candidate selected in E-STORE-DROP.)*
+*(Fix shape finalized from I3-STORE-DROP findings + operator ruling 2026-09-03: implement the C4-helper = C3-semantics, the analysis-surfaced candidate. It replaces E-STORE-DROP's C3 pre-pass with a named helper that encodes the invariant directly at the mark site.)*
 
 **Files:**
-- Modify: `sf/src/lower.zig` and/or `sf/src/c89_emit.zig` (emit the missing store)
+- Modify: `sf/src/c89_emit.zig` (the `.assign_index` base read-mark guard + a new helper)
 - Test: the `global_struct_array_store_xmod` fixture GREEN; mud_server movement now matches the zig0 oracle.
 
 **Interfaces:**
-- Consumes: I3's root-cause verdict; the committed RED fixture; the mud_server source shape.
+- Consumes: I3's root-cause verdict; the committed RED fixture; the mud_server source shape; the E-STORE-DROP C3/C4 analysis.
 - Produces: correct emission such that `world[i] = <struct value>` stores to the global; mud_server's `initRooms` populates the world; mud .Go movement behaves like the zig0 oracle.
 
 - [ ] **Step 1: RED first** — run the I3 fixture on the current compiler (with the SWEXPR fix `6d71b917` retained): RED (zeros). Snapshot gates.
-- [ ] **Step 2: Apply the fix** — per the I3-STORE-DROP verdict and the E-STORE-DROP-selected candidate, ensure a struct-valued store to a subscripted global array element emits the store (whole-struct assignment or equivalent correct field stores). No unrelated changes.
+- [ ] **Step 2: Apply the fix — C4 helper (C3 semantics)**
+In `c89_emit.zig`, the `.assign_index` mark line at :7080 currently reads `if (!dceTempIsArray(registry, lir_fn, a.base)) { dceMarkReadPos(...a.base); }`, which drops side-effecting stores into global-array elements because the by-name `load_global` alias base is array-typed and never read-marked. Replace the inline array-guard with a named helper `dceBaseEscapes` that returns true (mark the base read) UNLESS the base is a DCE-able LOCAL array temp. Concretely: mark `a.base` read when the base is NOT array-typed, OR the base is a by-name `load_global` alias (its `no_decl_arr`/global-alias bit is set — the invariant "global-array element store is a side effect on outliving storage"). Local array temps (decl'd as C locals, DCE-able) must remain unmarked so dead-local-array stores are still eliminated. The helper MUST be ordering-proof: a `load_global` def can live in a dominating block that the mark pass visits after the consuming `assign_index` block, so determine global-alias status without depending on single-pass in-order `no_decl_arr` population (e.g., record load_global result temps in a pre-pass bitmap the helper reads, mirroring E-STORE-DROP C3's pre-pass but encapsulated behind the helper). No change to the release pass (dceReleaseOperands :7237) — E-STORE-DROP proved C2's release-exemption is unnecessary (the release only fires for already-dead instructions, and a marked-alive base is never dead). No change to `dceTempIsArray`, `dceFieldIsArray`, `store_global`, `store_field`, `.store` paths. No unrelated changes.
 - [ ] **Step 3: GREEN gate** — I3 fixture prints expected values rc=0. Also rebuild mud_server and drive it (timeout-guarded socket probe): "north" from start must reply `A sunny clearing...` (oracle-verified), movement works.
 - [ ] **Step 4: Combined full battery + final mud re-baseline decision**
 Run the full battery with BOTH fixes (SWEXPR + store-drop): 4 MD5 gates (gol/lisp/json MUST stay byte-identical; **mud WILL move** — this is now the FINAL mud hash, proposed for re-baseline only with runtime verified vs the oracle per AMENDMENT 2, STOP for operator ruling), golden 9/9, matrix 21/21, corpus 0-asymmetric, self-compile round-trip (record NEW fixed-point md5), reference 0-warning, json_parser_upgraded end-to-end (run-only). Present the mud re-baseline proposal + full results to the operator.
