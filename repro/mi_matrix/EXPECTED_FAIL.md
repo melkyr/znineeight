@@ -1,5 +1,33 @@
 # mi_matrix corpus — expected-fail manifest (v52 2026-09-02)
 
+## GATE — zig1 self-host closure plan, gate-record reconciliation (2026-09-02)
+
+Final gate of the zig1 self-host closure plan (docs/superpowers/plans/2026-09-02-zig1-selfhost-closure-plan.md),
+measured on the plan's fixed-point chain (reference `/tmp/fx_subfolder/zig1`, zig0-built md5 `29327e2c`,
+vs the 5 byte-identical self-host binaries under `/tmp/zig1_5*`, md5 `e2028dcf`, size 2,930,952 B).
+Docs-only task — no `sf/src`, fixture, or script change. Reconciliation notes for the
+expected-fail/gate record:
+
+- **4 MD5 gates UNCHANGED (no re-baseline):** gol `302df36b…` / lisp `3591bad9…` / json
+  `76056b97…` / mud `4591fef0…` byte-identical on both new hops. Golden 9/9 PASS; matrix 21/21
+  PASS (mud/rogue/gol timeout-gated rc=124 = PASS). Corpus 404 dirs at `-s0`: reference
+  OK=394 / FAIL=10 (= exactly the 10 green-guards, unchanged set) / ICE=0 / CRASH=0, hop
+  identical, **asymmetric = 0**.
+- **`_upgraded` example dirs are NEW — exempt from the 4-MD5 gate:** `lisp_interpreter_upgraded`
+  (commit `ab318b1e`) and `rogue_mud_upgraded` (commit `93d3ee79`) are new `examples/z98` dirs,
+  not corpus/gate members; their emissions differ from the originals by design (source-only
+  idiomatic rewrites), stdout byte-identical to the originals on all 4 compilers. The original
+  gate dirs (gol/lisp/json/mud) are untouched — no re-baseline.
+- **`json_parser_upgraded` DEFERRED (NOT committed) — recorded as a known deferred compiler
+  gap:** the planned const-from-switch-expression rewrite (json.zig key extraction) SIGSEGVs
+  rc=139 on all 4 compilers from a REAL zig1 emission bug (switch-as-expression with payload
+  capture mis-lowers: payload binding emitted after the dispatch `goto` before the case label →
+  skipped → uninitialized read). Statement-switch form emits correctly. Follow-up I/F task to
+  fix the emission bug to be created by the controller; the untracked dir stays for that fix.
+
+Determinism fixed point **CLOSED** (self-host chain byte-identical, `e2028dcf`); the bootstrap
+cycle is closable via the future cInclude-zig1-only migration.
+
 ## GATE — spill backend config plan, FULL sweep + reconciliation (2026-09-02)
 
 Final gate battery of the spill backend config plan
