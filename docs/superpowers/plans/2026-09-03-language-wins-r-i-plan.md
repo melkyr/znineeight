@@ -734,3 +734,29 @@ pub fn main() void {
 ## Execution Handoff
 
 Plan complete. Two execution options once the operator takes this plan: (1) Subagent-Driven (recommended) — fresh subagent per task with two-stage review; (2) Inline execution with checkpoints. Execution requires a build-mode session (this plan commits R fixtures + docs, then runs read-only I investigations).
+
+---
+## AMENDMENT — G1 rulings + execution record (operator, 2026-09-03)
+
+**Status of this plan:** R phase COMPLETE (Tasks R1-R10 committed, all review-Approved; 19 fixture rows; EXPECTED_FAIL v53→v63). I phase: I1-I8 DONE + review-Approved (I8 Approved after report fixes). **I9/I10 SKIPPED by operator ruling** (entailed by I8's SEPARATE-PLAN + hard narrow-int prereq; packed-union deltas + enum(uN) deps fold into the packed F-plans). G1 STOP-presented; rulings below. NO F work begins under this plan.
+
+**Operator G1 rulings (verbatim intent):**
+- **(a) packed_byvalue byte 186-vs-187:** CONFIRM **186** (0xBA = hi<<4|lo = 0xB0|0xA). Header literal `187` was a self-corrected arithmetic slip (kept verbatim in the fixture). L6 run-gate GREEN contract = `1 21 186`.
+- **(b) packed_l3 nested field:** KEEP contract `2 5 6 3 3`; support **LEAF access through nested packed containers** (bit-offset chain accumulation via packed-container bit_size dispatch). Scope OUT: whole-sub-container value moves and `&packed.field`.
+- **(c) cross-module pub-var ICE (R5):** fix in **F-CROSSMOD-STORE**. Defect confirmed CLEAR via I5 (review-Approved root cause: store-side module-base→`store_global` routing missing; load path lower.zig:2549-2591 has it; additive fix in `lowerFieldStore` head) — no additional prior-I task required. ICE-on-unimplemented-path pattern → F-CLEANDIAG.
+- **(d) clean-diagnostics task:** ADD **F-CLEANDIAG** (unsupported-builtin silent mis-emission + `uN`→void false-green; error[3000]-class gates; byte-neutral for valid programs so 4 MD5 gates hold).
+
+**Approved follow-on execution order** (future F-plans, dependency-first; each its own writing-plans → subagent-driven cycle):
+1. F-INTRO (`@offsetOf`/`@bitSizeOf`/`@bitOffsetOf`)
+2. F-PTRBUILTIN (`@intFromPtr`/`@fieldParentPtr`; `@ptrFromInt` conditional on R2 fixture amend `var q: *i32`)
+3. F-BITCAST (@as-unchecked-arm + size/int-family gate + clean size-mismatch error)
+4. Independents (order free): F-CROSSMOD-STORE (bug-fix), F-EXPORT, F-SWITCHRANGE (must carry `itoa64` hardening + case-literal vs C-int cap)
+5. F-CLEANDIAG
+6. PLAN-INTWIDTH (width-vs-byte-size refactor, `intWidthBits`/`intIsSigned`, ≤64 cap)
+7. PLAN-PACK-CORE (P1-P3 → packed L0/L1/L2 GREEN)
+8. PLAN-PACK-AGG (P4 → L3-L6 GREEN; packed-union folded)
+9. PLAN-PACK-B3 (P5 → L7 `enum(u3)` GREEN; enum(uN) folded; defers on PLAN-INTWIDTH)
+
+**Corpus post-R reconciliation** (reference compiler `/tmp/fx_subfolder/zig1` md5 `1a5056b2`, -s0, single run): 424 dirs = OK 397 / FAIL 15 / GCCFAIL 5 / GREEN 6 / ICE 1 / CRASH 0; GCCFAIL folded → FAIL-class 20. Pre-existing 405 subset reproduced exactly (OK 395/FAIL 5/GREEN 5/ICE 0/CRASH 0), 0 drift; gol/lisp/json/mud gates unaffected (no sf/src change). New fixtures bucket: 5 GCCFAIL (R1+R2 builtins), 10 parse-FAIL (export×2 + packed×8), 1 false-green GREEN (`int_arbitrary_width_xmod`), 1 ICE (`crossmod_pubvar_xmod`), 2 compile-OK runtime-wrong invisible to the compile-only sweep (@bitCast, case-ranges).
+
+**Key feasibility findings carried into F-planning:** (i) unsupported builtins have NO clean diagnostic — silent mis-emission (GCCFAIL) or silent result-drop (runtime-wrong) or void-fallback (uN→void); (ii) unknown type names degrade to TYPE_VOID (sema var_declared_void); (iii) top-level fns/module vars already emit non-static — export = mangler source-name exemption; (iv) zig0 parses `export` but keeps mangled names → source-name GREEN is Zig-semantics, not oracle; (v) switch range prongs parse but drop to default in the shared case-map loop (EXPAND per-value is drop-in); (vi) packed needs a hard narrow-int `uN` registry prereq; width-vs-byte-size conflation is the INTWIDTH blocker.
