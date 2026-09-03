@@ -1203,6 +1203,24 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
     var fa_node = ast_mod.astStoreNodeAt(self.ctx.store, fa_node_idx);
     var field_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, fa_node_idx);
     var child_0_node = ast_mod.astStoreNodeAt(self.ctx.store, fa_node.child_0);
+    if (child_0_node.kind == AstKind.ident_expr) {
+        var cm_c0_name = ast_mod.astStoreIdentifier(self.ctx.store, fa_node.child_0);
+        var cm_c0_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, cm_c0_name);
+        if (cm_c0_sym) |cmcs| {
+            if (cmcs.kind == sym_mod.SymbolKind.module) {
+                var cm_tgt_mod = cmcs.module_id;
+                var cm_mem_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, cm_tgt_mod, field_name_id);
+                if (cm_mem_sym) |cmms| {
+                    if (cmms.kind == sym_mod.SymbolKind.global) {
+                        if ((@intCast(u16, cmms.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
+                            emitInst(self, LirInst{ .store_global = .{ .name_id = cmms.name_id, .module_id = cm_tgt_mod, .value = value_temp } });
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
     var base_temp: u32 = undefined;
     var resolved_base: ?u32 = null;
     if (child_0_node.kind == AstKind.index_access) {
