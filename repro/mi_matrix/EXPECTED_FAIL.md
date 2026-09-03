@@ -1,4 +1,35 @@
-# mi_matrix corpus — expected-fail manifest (v53 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v54 2026-09-03)
+
+## Langwins feature-gap fixtures (v54 2026-09-03) — R1 introspection-builtin REPRO rows
+
+New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R1): the three introspection
+builtins `@offsetOf` / `@bitSizeOf` / `@bitOffsetOf` have NO lowering branch in zig1 today. Measured on the
+reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative classify1.sh recipe
+(`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run). Each is **RED class FAIL**
+(emission-defect GCCFAIL, deterministic 3/3): dump rc=0 with 4 `.c` emitted and 0-byte stderr (no frontend
+diagnostic), then gcc `-c` rejects the emitted `main_*.c`. Corpus +3 (mi_matrix 332→335). No
+implementation yet — these rows are GREEN-contract expectations, NOT runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `builtin_offsetof_xmod` | `@offsetOf(T, "field")` — comptime field byte offset | FAIL (GCCFAIL, deterministic 3/3) | `0 4 8\n` (c:u8@0, b:u32@4, d:u16@8) |
+| `builtin_bitsizeof_xmod` | `@bitSizeOf(T)` — comptime bit size | FAIL (GCCFAIL, deterministic 3/3) | `1 8 32\n` (bool=1, u8=8, u32=32) |
+| `builtin_bitoffsetof_xmod` | `@bitOffsetOf(T, "field")` — comptime bit offset | FAIL (GCCFAIL, deterministic 3/3) | `0 32 64\n` (byte offsets 0/4/8 × 8) |
+
+- **Current RED status — builtin_offsetof_xmod:** the `@offsetOf(Mixed, "c"/"b"/"d")` calls are
+  mis-lowered — emitted C declares `zT_B9A8EF98_Mixed zT_N = {0};` (a zero-init `Mixed` struct) then casts
+  the struct to int: `zT_3 = (int)zT_2;` → gcc `error: aggregate value used where an integer was expected`
+  (`main_0B772F7A.c:19/25/31`, 3 errors). Emitted main md5 `15d72bd1…` byte-identical 3/3.
+- **Current RED status — builtin_bitsizeof_xmod:** the `@bitSizeOf(bool/u8/u32)` results reference
+  never-declared temps — emitted `zT_2 = (int)zT_1;` etc. → gcc `error: 'zT_1' undeclared (first use in
+  this function)` (`main_481CB325.c:16/22/28`, likewise `'zT_6'`/`'zT_11'`). Emitted main md5 `71077278…`
+  byte-identical 3/3.
+- **Current RED status — builtin_bitoffsetof_xmod:** identical shape to builtin_offsetof_xmod — emitted
+  `zT_B9A8EF98_Mixed zT_N = {0}; zT_3 = (int)zT_2;` → gcc `error: aggregate value used where an integer
+  was expected` (`main_A9A908BB.c:19/25/31`). Emitted main md5 `312ad771…` byte-identical 3/3.
+- **Rule:** each fixture MUST print its expected GREEN stdout above (rc=0) once the builtin gains a real
+  lowering branch; the current emission-defect signatures (int-cast of a struct temp / never-declared
+  result temp) mark the missing-introspection-builtin gap.
 
 ## RED FIXTURE — global_struct_array_store_xmod (2026-09-03)
 
