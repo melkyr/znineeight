@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v62 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v63 2026-09-03)
+
+## Langwins feature-gap fixtures (v63 2026-09-03) — R10 packed ladder top: L5 array+global / L6 by-value+cross-module / L7 enum(u3) field REPRO rows
+
+New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R10): the `packed struct`
+ladder top — L5 an ARRAY of packed structs in a storage GLOBAL (whole-element global stores), L6 a
+packed struct passed BY VALUE across MODULES (two modules must agree on the packed layout), L7 a
+`packed struct` with an `enum(u3)` field. As R8 established, `packed` is NOT a registered keyword
+(`sf/src/token.zig` has no `kw_packed`) — the lexer treats `packed` as a PLAIN IDENTIFIER, so the parse
+error fires at the FOLLOWING `struct` keyword. Measured on the reference `/tmp/fx_subfolder/zig1` md5
+`1a5056b2` via the authoritative classify1.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md`
+Step 4, fresh output dir per run). Each is **RED class FAIL** (clean frontend parse rejection,
+deterministic 3/3): dump rc=2, **0 `.c` emitted** (no `error[3000]` → clean-FAIL per the Step-4
+rules), dump stdout 0 bytes, stderr byte-identical 3/3 per fixture. Neither ICE nor CRASH observed.
+Corpus +3 (mi_matrix 348→351). No implementation yet.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `packed_array_global_xmod` | `packed struct` L5: array of packed in a storage GLOBAL `var grid: [4]Cell`; whole-element global stores | clean parse FAIL error[2000] at `struct` (col 20) after `packed` lexed as identifier; 0 `.c`; deterministic 3/3 | `1 33 3 4\n` |
+| `packed_byvalue_module_xmod` | `packed struct` L6: by-value + cross-module layout identity (`types.zig` `Pair{lo:u4,hi:u4}` imported + passed by value) | clean parse FAIL error[2000] at `struct` (col 24, in `types.zig:1` — the imported module is parsed first); 0 `.c`; deterministic 3/3 | `1 21 186\n` |
+| `packed_enum_field_xmod` | `packed struct` L7: `enum(u3)` field inside a packed struct (exercises B0+B3); the enum(u3) decl PARSES clean — the parse error fires first at the packed decl | clean parse FAIL error[2000] at `struct` (col 21, `main.zig:8`); 0 `.c`; deterministic 3/3 | `1 3 1 1\n` |
+
+- **Current RED status — packed_array_global_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes.
+  dump.err verbatim: `repro/mi_matrix/packed_array_global_xmod/main.zig:7:20: error[2000]: expected
+  ';' but found token` then `…:7:20: error[2000]: unexpected token`. Line 7 = `const Cell = packed
+  struct { x: u4, y: u4 };`; col 20 (0-based) = the `struct` token (`packed` at col 13). No caret
+  context echo. stderr md5 `6d8674a0…` byte-identical 3/3.
+- **Current RED status — packed_byvalue_module_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes.
+  dump.err verbatim: `repro/mi_matrix/packed_byvalue_module_xmod/types.zig:1:24: error[2000]:
+  expected ';' but found token` then `…:1:24: error[2000]: unexpected token`, each with the caret
+  echo. Line 1 (types.zig) = `pub const Pair = packed struct { lo: u4, hi: u4 };`; col 24 (0-based) =
+  the `struct` token (`packed` at col 17). The FAIL fires in the IMPORTED module `types.zig` (parsed
+  first), NOT in main.zig. stderr md5 `a4232b9f…` byte-identical 3/3.
+- **Current RED status — packed_enum_field_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes.
+  dump.err verbatim: `repro/mi_matrix/packed_enum_field_xmod/main.zig:8:21: error[2000]: expected
+  ';' but found token` then `…:8:21: error[2000]: unexpected token`, with caret echo. Line 8 =
+  `const Pixel = packed struct { on: bool, color: Color };`; col 21 (0-based) = the `struct` token
+  (`packed` at col 14). The caret echo displays the PRECEDING line 7 text
+  (`const Color = enum(u3) { red, green, blue };`) — the same R7 caret display quirk (line:col
+  authoritative). Line 7's `enum(u3)` decl PARSES clean (u3 semantic void-degrade never reached
+  because the parse error at the packed decl fires first and stops). stderr md5 `12c9feba…`
+  byte-identical 3/3.
+- **Rule (L5-L7 contracts; L6 carries the 186-vs-187 resolution note):** once `packed struct` parses
+  and lowers as true LSB-first bitfields with NO padding and `size=(bits+7)/8`, stride=size:
+  - `packed_array_global_xmod` MUST print `1 33 3 4\n` (rc=0) — size 1 (stride 1, no pad);
+    grid[1] byte = x=1,y=2 => 0x21 = 33; grid[3].x=3, .y=4 (whole-element global stores must land).
+  - `packed_byvalue_module_xmod` MUST print `1 21 186\n` (rc=0) — size 1; sum(10,11)=21;
+    lo=10(1010 bits0-3), hi=11(1011 bits4-7) => hi<<4|lo = 0xBA = 186. **186-vs-187 note:** the
+    fixture header's literal first GREEN-contract line says `"1 21 187\n"` (transcribed verbatim) but
+    its own inline correction + the plan contract-note establish **186 (0xBA = hi<<4|lo =
+    10 + 176 = 186)**; to be confirmed at the I8/G1 gate — do NOT silently change the committed
+    main.zig.
+  - `packed_enum_field_xmod` MUST print `1 3 1 1\n` (rc=0) — size 1; on=true(bit0),
+    color=green(enum 1, bits1-3) => byte 0b00000011 = 3; `@enumToInt(Color.blue)`==2;
+    `@sizeOf(Color)`=1 (an enum(u3) whose u3 must register as a real type, per R7).
 
 ## Langwins feature-gap fixtures (v62 2026-09-03) — R9 packed struct L3 nested / packed union REPRO rows
 
