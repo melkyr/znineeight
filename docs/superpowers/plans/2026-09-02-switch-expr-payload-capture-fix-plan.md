@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the zig1 lowering/emission bug where a switch used as an **expression** with a **payload-capture** prong places the capture load in the dispatch fall-through (skipped by the case `goto` → uninitialized read → SIGSEGV), leaving a permanent corpus repro so the bug can never silently return.
+**Goal:** Fix TWO zig1 front-end defects found while validating idiomatic switch payload captures: (1) a switch used as an **expression** with a **payload-capture** prong places the capture load in the dispatch fall-through (skipped by the case `goto` → uninitialized read → SIGSEGV/garbage); (2) a slice-typed callee whose parameter FIELDS are read returns stale values on a 2nd call when the slice came from a payload capture. Both get permanent corpus RED fixtures (→ GREEN after fix) so neither can silently return.
 
-**Architecture:** I task (read-only analysis + corpus RED fixture committed) → STOP-present → F task (locus-corrected lowering in `sf/src/lower.zig`) → full battery GATE. Bug context: discovered in the zig1 self-host closure plan Task U-JSON (`const key = switch (keyVal) { .String => |s| s, else => unreachable };` → rc=139 SIGSEGV on all 4 compilers); evidence at `/tmp/ujson/probes/pA.zig` (exhaustive 2-prong, no else) + `pB.zig` (`else => unreachable`), both mis-emit; the statement-switch block form (original json.zig) emits correctly. Reported in `.superpowers/sdd/task-CLOSURE-report.md` `## U-JSON`.
+**Architecture:** I-SWEXPR (root-cause defect 1 + corpus RED fixture) → STOP-present → I2-SLICESTALE (root-cause defect 2 + corpus RED fixture; operator-directed addition) → STOP-present → F-SWEXPR (solve BOTH, locus-corrected lowering/binding in `sf/src/lower.zig` + `sf/src/c89_emit.zig`) → full battery GATE. Bug context: discovered in the zig1 self-host closure plan Task U-JSON (`const key = switch (keyVal) { .String => |s| s, else => unreachable };` → rc=139 SIGSEGV on all 4 compilers); evidence at `/tmp/ujson/probes/pA.zig` (exhaustive 2-prong, no else) + `pB.zig` (`else => unreachable`), both mis-emit; the statement-switch block form (original json.zig) emits correctly. Reported in `.superpowers/sdd/task-CLOSURE-report.md` `## U-JSON`.
 
 **Tech Stack:** Z98 (sf/src), C89 emission, gcc -m32, bash. Compilers: reference `/tmp/fx_subfolder/zig1` (zig0-built, md5 `29327e2c`), chain `/tmp/zig1_5/{zig1_5_clean,zig1_5_self,zig1_5_self_self}` (all md5 `e2028dcf`). Current HEAD `8650b959`.
 
@@ -60,29 +60,76 @@ Append `## I-SWEXPR` to `.superpowers/sdd/task-SWEXPR-report.md` (root-cause ver
 
 ---
 
-### Task F-SWEXPR: fix the lowering so payload-capture loads live in the prong block + full battery
+### Task I2-SLICESTALE: reproduce + root-cause the stale slice-field-read quirk + commit the RED fixture
 
-*(Implementation details finalized from I-SWEXPR findings; the fix text below is the expected shape and must be reconciled against the I verdict before coding.)*
+*(Operator directive 2026-09-02: I-SWEXPR surfaced a SECOND front-end quirk; an additional investigation task MUST run before F-SWEXPR, and the F phase must solve BOTH defects. Leaving the quirk latent is unacceptable.)*
 
 **Files:**
-- Modify: `sf/src/lower.zig` (the offending site(s): capture `load_field`/`decl_local` placement)
-- Test: the I fixture goes GREEN; sibling statement-switch programs byte-identical.
+- Create (corpus RED fixture, committed): `repro/mi_matrix/slice_field_callee_stale_xmod/main.zig`
+- Modify (docs note, committed): `repro/mi_matrix/EXPECTED_FAIL.md`
+- Read: `sf/src/lower.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/c89_emit.zig`, and the I-SWEXPR probe family (tF/tE/tC/tF2/green2/control — re-derive under /tmp if the originals are not recoverable).
 
 **Interfaces:**
-- Consumes: I-SWEXPR's root-cause verdict (which site, which ordering).
-- Produces: a corrected lowering where a payload-capture prong's `load_field`+`decl_local` instructions are emitted into the PRONG's own basic block (after `self.current_bb = prong_bb_id`), never into the dispatch fall-through region; the switch-expression result value is written by the prong block and read after the merge.
+- Consumes: I-SWEXPR's report (`.superpowers/sdd/task-SWEXPR-report.md` line ~116-121) describing the quirk: a slice-typed callee parameter whose FIELDS are read (`payload[0]`, `payload.len`) returns STALE values on a 2nd call when the slice came from a payload capture (probes showed `kv.tag=1` yet a `helloA` payload read inside the callee before return). Whole-slice `write()` pass-through is immune (tC/tF2/green2 correct).
+- Produces: (1) a minimal deterministic reproduction, (2) a root-cause verdict with file:line evidence, (3) a committed runtime-gated corpus RED fixture that turns GREEN only when the defect is fixed.
+
+- [ ] **Step 1: Minimal reproduction**
+
+Build the smallest program (under /tmp/slicestale/) showing the quirk: a payload-carrying `union(enum)` whose payload is a slice; extract the slice via a payload-capture switch (statement-switch form, the one currently "correct"); pass the captured slice to a helper callee that READS slice fields (`payload[0]`, `payload.len`) rather than whole-slicing; call the path twice with DIFFERENT payload values so the 2nd call must observe the 2nd value. Also probe: (a) same shape but the capture never leaves the caller (field reads in the caller), (b) whole-write pass-through control, (c) values read immediately vs after another capture/decl is created (temp-reuse suspicion). Establish determinism (3 runs identical). Confirm the stale read reproduces on all 4 compilers (`/tmp/fx_subfolder/zig1`, `/tmp/zig1_5/zig1_5_clean`, `/tmp/zig1_5_self/zig1_5_clean`, `/tmp/zig1_5_self_self/zig1_5_clean`).
+
+- [ ] **Step 2: Root-cause**
+
+Determine the mechanism with evidence: is the stale read caused by (a) the payload-capture `decl_local` binding to a temp whose C storage is reused/clobbered by a later capture or call argument (name-dedup / temp-renumbering in c89_emit, `fl_temps`/F-EMITMAP `ea6882ac` behavior), (b) argument materialization reading the slice pointer/len from a stale local, or (c) something in the callee's parameter binding? Contrast the emitted C for the stale path vs the immune whole-write path (file:line in `sf/src/c89_emit.zig` and/or `sf/src/lower.zig`). Also determine whether the switch-expr placement defect (I-SWEXPR) and this quirk share a root or are independent. Record the verdict precisely — the F phase fixes both.
+
+- [ ] **Step 3: Author the corpus RED fixture**
+
+`repro/mi_matrix/slice_field_callee_stale_xmod/main.zig`: self-contained, runnable, deterministic; prints integer evidence (slice len + first char) for two consecutive calls with different payload values; RED today (2nd call prints the stale 1st value / garbage), GREEN = correct values both calls. Document expected GREEN stdout in the header + EXPECTED_FAIL.md. Mirror the print idiom of the I-SWEXPR fixture (whole-slice `write` for OUTPUT is fine — the STALE path under test is the callee FIELD read, keep that distinction explicit in comments). The fixture must exercise ONLY shapes that are correct-by-design post-fix; note any shape that must remain avoided.
+
+- [ ] **Step 4: RED proof + EXPECTED_FAIL + commit**
+
+Prove RED on all 4 compilers (dump rc=0/0 error[, gcc -c + link clean, run rc=0 with stale/garbage stdout ≠ expected). Append the EXPECTED_FAIL.md note (fixture, expected GREEN stdout, RED status, runtime-gated guard semantics). Commit ONLY the fixture + EXPECTED_FAIL.md:
+```bash
+git add repro/mi_matrix/slice_field_callee_stale_xmod repro/mi_matrix/EXPECTED_FAIL.md
+git commit -m "test: RED fixture — stale slice-field reads in callee on 2nd call"
+```
+No compiler source touched; binaries remain `e2028dcf`.
+
+- [ ] **Step 5: Report + STOP**
+
+Append `## I2-SLICESTALE` to `.superpowers/sdd/task-SWEXPR-report.md` (reproduction shapes, root-cause verdict with file:line + emitted-C contrast, fixture design, RED proof table, commit sha, and the statement of whether the two defects share a root). Report back under 15 lines. The controller STOP-presents; F-SWEXPR does NOT start without the controller (or operator) ruling.
+
+---
+
+### Task F-SWEXPR: fix BOTH defects — payload captures into the prong block AND the stale slice-field read + full battery
+
+*(Implementation details finalized from the I-SWEXPR + I2-SLICESTALE findings; the fix text below is the expected shape and must be reconciled against both I verdicts before coding.)*
+
+**Files:**
+- Modify: `sf/src/lower.zig` and/or `sf/src/c89_emit.zig` (the offending sites per the two I verdicts)
+- Test: BOTH I fixtures go GREEN; sibling statement-switch programs byte-identical.
+
+**Interfaces:**
+- Consumes: I-SWEXPR's root-cause verdict (expression-site capture placement) and I2-SLICESTALE's root-cause verdict (stale slice-field read — same root or independent).
+- Produces: (1) a corrected lowering where a payload-capture prong's `load_field`+`decl_local` instructions are emitted into the PRONG's own basic block (after `self.current_bb = prong_bb_id`), never into the dispatch fall-through region; (2) a corrected binding/emission such that a payload-captured slice read by a callee's field reads stays correct across repeated calls. Both fixes must keep the 4 gate examples' emission byte-identical or STOP for an operator re-baseline ruling.
 
 - [ ] **Step 1: RED first (TDD)**
 
-Run the I fixture on the current reference: confirm RED (SIGSEGV/garbage) as the baseline before touching code. Also run the 4 MD5 gates + golden 9/9 to snapshot the pre-change state.
+Run BOTH I fixtures on the current reference: confirm RED (SIGSEGV/garbage AND/OR stale-2nd-call) as the baseline before touching code. Also run the 4 MD5 gates + golden 9/9 to snapshot the pre-change state.
 
-- [ ] **Step 2: Apply the fix**
+- [ ] **Step 2: Apply the fixes**
 
-Per the I verdict, restructure the offending switch-lowering site in `sf/src/lower.zig` so the prong payload-capture emissions (`load_field` with `TU_FIELD_PAYLOAD`, `decl_local` for the capture name, and the capture's `addLocalDecl`) execute AFTER the emitter has switched `self.current_bb` to the prong's block id — i.e. capture setup belongs to the prong block, mirroring the site/shape that already emits correctly (the block-body statement path). Keep the capture-name disambiguation (`maybeDisambiguateCapture`) and temp bookkeeping (`temp_variant_sub_field`) unchanged. Do not alter enum/error-literal/void-member (payload-less) prong behavior — payload-less captures bind the whole cond value and must stay as-is. No other compiler changes. Compile the changed compiler (`bash sf/scripts/build_release.sh` into a scratch OUT dir OR the documented manual recipe — never `sf/build/out_release/`), emit the I fixture, gcc + run.
+Defect 1 (per I-SWEXPR): restructure the offending expression-switch site in `sf/src/lower.zig` so the prong payload-capture emissions (`load_field` with `TU_FIELD_PAYLOAD`, `decl_local` for the capture name, `addLocalDecl`) execute AFTER `self.current_bb` switches to the prong's block id — capture setup belongs to the prong block, mirroring the statement site's ordering. Keep `maybeDisambiguateCapture` + `temp_variant_sub_field` bookkeeping; keep payload-less (whole-value) capture semantics unchanged.
+Defect 2 (per I2-SLICESTALE): apply the root-cause fix (in `sf/src/lower.zig` and/or `sf/src/c89_emit.zig`), e.g. if the cause is capture-local temp storage reused/clobbered across calls, ensure the captured slice's backing locals are not aliased/reused while live — implement exactly what the I2 verdict prescribes; do not invent a broader refactor.
+Compile the changed compiler via the documented recipe (never `sf/build/out_release/`); emit + run both I fixtures.
 
-- [ ] **Step 3: GREEN gate — the fixture**
+- [ ] **Step 3: GREEN gate — both fixtures**
 
-I fixture: dump rc=0, gcc clean, run prints the EXPECTED GREEN stdout (len + first char evidence from BOTH the expression-switch and statement-switch siblings), rc=0. This is the regression guard: it must stay green on every future change.
+Both `switch_expr_payload_capture_xmod` and `slice_field_callee_stale_xmod`: dump rc=0, gcc clean, run prints the EXPECTED GREEN stdout, rc=0. Both stay green on every future change.
+
+- [ ] **Step 4: Full battery**
+
+1. 4 MD5 gates byte-identical (gol/lisp/json/mud). If ANY moves, STOP for operator ruling (no silent re-baseline). 2. Golden 9/9 (incl. original lisp/json/mud statement-switch programs). 3. Matrix 21/21. 4. Corpus sweep 0-asymmetric vs the reference (both new fixtures GREEN in run-style sweeps). 5. Self-compile round-trip: 42 `.c`/0 err/0 PANIC; new compiler self-compiles to a byte-identical binary (record the NEW fixed-point md5). 6. Reference rebuild 0-warning (1 pre-authorized fwrite carve-out).
+- End-to-end validation (optional, not committed unless operator approves): run the existing untracked `examples/z98/json_parser_upgraded/` on the fixed compiler — it must now run rc=0 with the original `json_parser` stdout (the exact program that exposed the bug). Record the result.
 
 - [ ] **Step 4: Full battery**
 
