@@ -104,6 +104,8 @@ Append `## I2-SLICESTALE` to `.superpowers/sdd/task-SWEXPR-report.md` (reproduct
 
 *(Implementation details finalized from the I-SWEXPR verdict; I2-SLICESTALE was closed as a phantom by operator ruling 2026-09-03 and contributes no fix.)*
 
+**STATUS (AMENDMENT 2, operator ruling 2026-09-03):** the switch-expr capture-placement fix is COMMITTED (`6d71b917`). The full battery AND the mud re-baseline (`4591fef0 → 517635c9`) are DEFERRED: the operator determined mud_server is currently a broken "sample" (its world never initializes — see Task I3-STORE-DROP below), so re-baselining it now is meaningless. Sequence now: I3-STORE-DROP (RED repro + root-cause, run FIRST) → F-STORE-DROP (fix, with the SWEXPR fix retained) → combined full battery → THEN decide the final mud re-baseline once mud runtime correctness is verified against the zig0 oracle. Do NOT run F-SWEXPR's Step 4 battery standalone.
+
 **Files:**
 - Modify: `sf/src/lower.zig` (the expression-switch site `lowerExprImpl`: capture `load_field`/`decl_local` placement)
 - Test: the `switch_expr_payload_capture_xmod` I fixture goes GREEN; sibling statement-switch programs byte-identical.
@@ -148,3 +150,56 @@ Append `## F-SWEXPR` to `.superpowers/sdd/task-SWEXPR-report.md` (RED→GREEN ev
 ### Task (optional, operator-approved): commit json_parser_upgraded
 
 Only if the operator approves after F-SWEXPR GREEN: `git add examples/z98/json_parser_upgraded` + `git commit -m "feat: json_parser_upgraded — idiomatic z98 (zig1-supersedes-zig0 demo)"`, completing the deferred U-JSON.
+
+---
+
+## AMENDMENT 2 (operator ruling 2026-09-03): store-drop I/F first; mud re-baseline deferred
+
+**Context:** During the F-SWEXPR runtime check the operator asked to compare mud_server against the zig0-bootstrap oracle. The oracle moves north correctly; every zig1-emitted mud_server binary (old AND new, ref AND chain) returns "You cannot go that way." Root cause (runtime-instrumented): emitted `initRooms()` builds the two Room structs in locals (`zT_0.north = 1;` …) then `return;` — the stores `zG_2C95C42B_rooms[0] = zT_0;` / `[1] = zT_10;` are **missing from the emitted C**. The rooms global is all-zero at runtime. **zig1 DROPS struct-value assignments into a global array element.** Source: `examples/z98/mud_server/main.zig:33-47`. zig0 emits the stores correctly.
+
+**Ruling:** Do NOT re-baseline mud now (`4591fef0 → 517635c9` is deferred; the sample is broken by the store-drop bug). Keep the SWEXPR placement fix (`6d71b917`). Run the store-drop I/F FIRST, then the combined full battery, then decide the final mud re-baseline with runtime verified against the oracle.
+
+### Task I3-STORE-DROP: reproduce + root-cause the dropped global array-element struct store + commit the RED fixture
+
+**Files:**
+- Create (corpus RED fixture, committed): `repro/mi_matrix/global_struct_array_store_xmod/main.zig`
+- Modify (docs note, committed): `repro/mi_matrix/EXPECTED_FAIL.md`
+- Read: `sf/src/lower.zig`, `sf/src/c89_emit.zig`, `sf/src/semantic_analyzer.zig`, `examples/z98/mud_server/main.zig:22-47` (the source shape), the `/tmp/mudcheck_*` emitted-C evidence (initRooms missing stores).
+
+**Interfaces:**
+- Consumes: the runtime-instrumented evidence (`DBG dir=0 tag=1 room=0 north=0`; initRooms emitted C builds locals then returns with no global store).
+- Produces: (1) minimal reproduction, (2) root-cause verdict (file:line) of where the global-array-element struct store is dropped in lowering/emission, (3) a committed runtime-gated corpus RED fixture (prints the room world; RED today = zeros/garbage, GREEN = the source-set values).
+
+- [ ] **Step 1: Minimal reproduction**
+Smallest program: a file-scope `var world: [N]Room = undefined;` + `fn init() void { world[0] = Room{ .north = @intCast(u8,1), ... }; }` + `main` calls init then prints `world[0].north`. Confirm on all 4 compilers that the print shows the stored value (RED today: 0 / uninitialized) and that the emitted C of init() lacks the global store. Also probe the shape matrix: scalar store to `world[0].field = v` (works?), whole-struct literal store to `world[0] = Room{...}` (dropped?), copy from a local `var r: Room = ...; world[0] = r;` (dropped?), local array `var a: [2]Room` (works?). This bounds the defect.
+- [ ] **Step 2: Root-cause**
+Find in `sf/src/lower.zig`/`sf/src/c89_emit.zig` how a `store` whose target is a subscripted global array element with a struct-valued source is lowered/emitted, and why the aggregate is built in a temp but the store is never emitted (or dropped by DCE/`store` handling — check whether related prior fixes F-ACOPY `0af060d8`, `emission_misc_xmod`, `field_store_drop`, `array_value_copy` fixtures are the same class). Cite file:line; state whether the defect is in lowering (no store inst emitted), emission (store inst skipped), or the analyzer. Record the verdict precisely for F-STORE-DROP.
+- [ ] **Step 3: Author the corpus RED fixture**
+`repro/mi_matrix/global_struct_array_store_xmod/main.zig`: self-contained, runnable, deterministic; file-scope `var rooms: [2]Room = undefined;`, `fn initRooms()` mirroring mud's shape, `main` calls it and prints integer evidence of `rooms[0].north`/`rooms[1].desc.len` etc. GREEN = source-set values; RED today = zeros. Document expected GREEN stdout in the header + EXPECTED_FAIL.md. Mirror sibling print idioms.
+- [ ] **Step 4: RED proof + EXPECTED_FAIL + commit**
+Prove RED on all 4 compilers (dump rc=0/0 error[, gcc clean, run prints zeros ≠ expected). Append the EXPECTED_FAIL.md note (runtime-gated guard semantics). Commit ONLY the fixture + EXPECTED_FAIL.md:
+```bash
+git add repro/mi_matrix/global_struct_array_store_xmod repro/mi_matrix/EXPECTED_FAIL.md
+git commit -m "test: RED fixture — global array-element struct store dropped (rooms init)"
+```
+- [ ] **Step 5: Report + STOP**
+Append `## I3-STORE-DROP` to `.superpowers/sdd/task-SWEXPR-report.md` (shapes tested, root-cause verdict file:line, fixture design, RED proof table, commit sha). Controller STOP-presents; F-STORE-DROP does not start without a ruling.
+
+### Task F-STORE-DROP: fix the dropped global array-element struct store + mud correctness + combined battery
+
+*(Fix shape finalized from I3-STORE-DROP findings.)*
+
+**Files:**
+- Modify: `sf/src/lower.zig` and/or `sf/src/c89_emit.zig` (emit the missing store)
+- Test: the `global_struct_array_store_xmod` fixture GREEN; mud_server movement now matches the zig0 oracle.
+
+**Interfaces:**
+- Consumes: I3's root-cause verdict; the committed RED fixture; the mud_server source shape.
+- Produces: correct emission such that `world[i] = <struct value>` stores to the global; mud_server's `initRooms` populates the world; mud .Go movement behaves like the zig0 oracle.
+
+- [ ] **Step 1: RED first** — run the I3 fixture on the current compiler (with the SWEXPR fix `6d71b917` retained): RED (zeros). Snapshot gates.
+- [ ] **Step 2: Apply the fix** — per the I3 verdict, ensure a struct-valued store to a subscripted global array element emits the store (whole-struct assignment or equivalent correct field stores). No unrelated changes.
+- [ ] **Step 3: GREEN gate** — I3 fixture prints expected values rc=0. Also rebuild mud_server and drive it (timeout-guarded socket probe): "north" from start must reply `A sunny clearing...` (oracle-verified), movement works.
+- [ ] **Step 4: Combined full battery + final mud re-baseline decision**
+Run the full battery with BOTH fixes (SWEXPR + store-drop): 4 MD5 gates (gol/lisp/json MUST stay byte-identical; **mud WILL move** — this is now the FINAL mud hash, proposed for re-baseline only with runtime verified vs the oracle per AMENDMENT 2, STOP for operator ruling), golden 9/9, matrix 21/21, corpus 0-asymmetric, self-compile round-trip (record NEW fixed-point md5), reference 0-warning, json_parser_upgraded end-to-end (run-only). Present the mud re-baseline proposal + full results to the operator.
+- [ ] **Step 5: Commit + report** — commit the fix, append `## F-STORE-DROP` to the report, controller ledger + memory.
