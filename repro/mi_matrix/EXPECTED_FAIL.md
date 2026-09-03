@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v65 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v66 2026-09-03)
 
 ## Langwins feature-gap fixtures (v63 2026-09-03) — R10 packed ladder top: L5 array+global / L6 by-value+cross-module / L7 enum(u3) field REPRO rows
 
@@ -185,6 +185,15 @@ runnable today.
 
 ## Langwins feature-gap fixtures (v59 2026-09-03) — R6 switch case-range REPRO row
 
+- **RESOLVED (2026-09-03, COMBINED items-3-6 GATE, F-SWITCHRANGE `bbe47d0e`):** the
+  `switch_case_range_xmod` fixture is now **GREEN** — the range prong items `1...5`/`6...9` and
+  `'a'...'e'`/`'f'...'z'` now expand to real per-value case dispatch (fixed by commit `bbe47d0e` —
+  switch case-range per-value expansion + itoa64 case hardening). Its run-gate contract below now
+  **PASSES**: run rc=0 with stdout `130 47`. The RED class was runtime-wrong — the compile gate was OK
+  but the range case labels were dropped (all prongs fell to `else`), printing `0 0`. It **no longer
+  belongs in the expected-fail set** (kept as a permanent regression guard). The historical RED
+  root-cause record beneath this marker is retained verbatim as evidence.
+
 New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R6): `switch` prong items
 that are RANGES — `1...5` (inclusive int range) and `'a'...'e'` (inclusive char range). Range nodes ARE
 parsed (parser.zig:977-981 range_exclusive/inclusive) but switch lowering does not turn them into case
@@ -214,6 +223,15 @@ this row is a GREEN-contract expectation, NOT runnable today.
   `else`).
 
 ## Langwins feature-gap fixtures (v58 2026-09-03) — R5 cross-module pub var REPRO row
+
+- **RESOLVED (2026-09-03, COMBINED items-3-6 GATE, F-CROSSMOD-STORE `3ad5c12e`):** the
+  `crossmod_pubvar_xmod` fixture is now **GREEN** — the importer-side STORE of a cross-module pub var
+  now lowers via a real path (fixed by commit `3ad5c12e` — cross-module pub var scalar store, module
+  base `store_global` routing). Its run-gate contract below now **PASSES**: run rc=0 with stdout
+  `7 7` (importer write visible to the owner's `read()` — ONE storage cell). The RED class was ICE
+  `error[3043] internal: unsupported field-store base` rc=3 on the importer-side store. It **no longer
+  belongs in the expected-fail set** (kept as a permanent regression guard). The historical RED
+  root-cause record beneath this marker is retained verbatim as evidence.
 
 New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R5): a module-scope `pub
 var` imported AND **directly written** from another module (`other.shared = 7` in `main.zig`, then read
@@ -250,6 +268,25 @@ yet — this row is a GREEN-contract expectation, NOT runnable today.
 
 ## Langwins feature-gap fixtures (v57 2026-09-03) — R4 export fn/var REPRO rows
 
+- **RESOLVED (2026-09-03, COMBINED items-3-6 GATE, F-EXPORT `9b2fef74`):** the `export_fn_xmod`
+  fixture is now **GREEN** — the `export fn square` decl now parses and lowers to a source-named,
+  externally-visible C function symbol (fixed by commit `9b2fef74` — export parser bit + registry +
+  mangler exemption; the emitted C holds a NON-STATIC `int square(int n) { … }` definition by source
+  name, no `zF_…_square` mangled name). Its run-gate contract below now **PASSES**: run rc=0 with
+  stdout `81`, with the **symbol gate** holding (emitted C has the non-static `square` defn). The RED
+  class was clean parse FAIL `error[2000]` at the `export` keyword (`kw_export` had no parser handler).
+  It **no longer belongs in the expected-fail set** (kept as a permanent regression guard). The
+  historical RED root-cause record beneath this marker is retained verbatim as evidence.
+- **RESOLVED (2026-09-03, COMBINED items-3-6 GATE, F-EXPORT `9b2fef74`):** the `export_var_xmod`
+  fixture is now **GREEN** — the `export var counter` decl now parses and lowers to a source-named
+  external storage symbol (fixed by commit `9b2fef74` — export parser bit + registry + mangler
+  exemption; the emitted C holds a NON-STATIC `int counter;` definition by source name, no
+  `zG_…_counter` mangled name). Its run-gate contract below now **PASSES**: run rc=0 with stdout `3`,
+  with the **symbol gate** holding (emitted C exposes non-static `counter`). The RED class was clean
+  parse FAIL `error[2000]` at the `export` keyword (`kw_export` had no parser handler). It **no longer
+  belongs in the expected-fail set** (kept as a permanent regression guard). The historical RED
+  root-cause record beneath this marker is retained verbatim as evidence.
+
 New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R4): the `export`
 modifier keyword HAS a token (`kw_export`, `sf/src/token.zig:156`) but NO parser handler — `export fn` /
 `export var` do not parse. Measured on the reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the
@@ -281,6 +318,15 @@ runnable today.
   definition; the current parse-level FAIL (0 `.c`) cannot reach the gate yet.
 
 ## Langwins feature-gap fixtures (v56 2026-09-03) — R3 bitcast-builtin REPRO row
+
+- **RESOLVED (2026-09-03, COMBINED items-3-6 GATE, F-BITCAST `3922a8d7`):** the
+  `builtin_bitcast_xmod` fixture is now **GREEN** — the `@bitCast(Dest, src)` call now lowers as a
+  same-size integer reinterpretation (fixed by commit `3922a8d7` — @bitCast same-size integer
+  reinterpretation). Its run-gate contract below now **PASSES**: run rc=0 with stdout `-1` (u32
+  0xFFFFFFFF reinterpreted as i32). The RED class was compile-OK runtime-wrong — the emitted C was
+  VALID (gcc `-c` clean) but the silent-drop signature printed `0` (the var's zero-init) instead of
+  the contract `-1`. It **no longer belongs in the expected-fail set** (kept as a permanent regression
+  guard). The historical RED root-cause record beneath this marker is retained verbatim as evidence.
 
 New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R3): the same-size
 reinterpretation builtin `@bitCast` is ABSENT from sf/src — grep of sf/src for `bitCast` returns NO
