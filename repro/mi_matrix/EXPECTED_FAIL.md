@@ -1,4 +1,35 @@
-# mi_matrix corpus — expected-fail manifest (v66 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v67 2026-09-03)
+
+## Langwins clean-diag fixtures (v67) — F-CLEANDIAG
+
+New-corpus CLEAN-DIAG fixtures (plan `2026-09-03-f-cleandiag-clean-diagnostics-plan.md`, Task 1):
+two silent/misleading zig1 failure modes get clean `error[3000]` diagnostics — (a) an UNKNOWN /
+unsupported builtin name (`@totallyBogus(i32, 5)`), today a silent dump rc=0 emitting valid C whose
+result is dropped → prints `0`; (b) an unknown TYPE name in a var annotation
+(`var a: bogusfoo = 1;`, the R7 `uN`/void-fallback class), today the misleading
+`cannot declare variable of type void`. Measured on the reference `/tmp/fx_subfolder/zig1` md5
+`821d77ff` via the authoritative classify1.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md`
+Step 4, fresh output dir per run). Corpus +2. Implementation: `sf/src/semantic_analyzer.zig` ONLY
+(membership helper `semanticAnalyzerIsBuiltinSupported` + unsupported-builtin arm + unknown-type
+check at the var-decl annotation site). No implementation yet at fixture-commit time.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `cleandiag_unknown_builtin_xmod` | unknown `@builtin` name (`@totallyBogus`) parses as `builtin_call`, no sema/lower handler → silent drop | RED today dump rc=0, 0 stderr, compiles + prints `0` (silent mis-emission); after fix clean FAIL rc=2, 0 `.c`, `error[3000]: unsupported builtin function` | (clean-FAIL — no stdout contract) |
+| `cleandiag_unknown_type_xmod` | unknown TYPE annotation (`var a: bogusfoo`) → R7 void-fallback | RED today dump rc=2, `error[3000]: cannot declare variable of type void`; after fix `error[3000]: unknown type in variable declaration`, NO `cannot declare variable of type void` | (clean-FAIL — no stdout contract) |
+
+- **Current RED status — cleandiag_unknown_builtin_xmod:** dump rc=0, stderr 0 bytes (empty),
+  `fixture_run.sh` run rc=0 printing `0` (the `@totallyBogus` result is silently dropped).
+- **Current RED status — cleandiag_unknown_type_xmod:** dump rc=2, 0 `.c`. dump.err verbatim:
+  `repro/mi_matrix/cleandiag_unknown_type_xmod/main.zig:10:4: error[3000]: cannot declare variable
+  of type void` then `…:10:4: warning[3000]: type mismatch in variable declaration — initialization
+  type may not be compatible with declared type` + the source/`note: source: comptime_int` /
+  `note: target: void` echo.
+- **Rule (GREEN contracts):** once implemented, both dump rc=2 with 0 `.c`; the builtin fixture's
+  stderr contains `error[3000]: unsupported builtin function`; the type fixture's stderr contains
+  `error[3000]: unknown type in variable declaration` and does NOT contain
+  `cannot declare variable of type void` (cascade suppressed). Valid programs byte-identical
+  (4-MD5 gates gol `302df36b…`/lisp `3591bad9…`/json `76056b97…`/mud `53405b3b…`).
 
 ## Langwins feature-gap fixtures (v63 2026-09-03) — R10 packed ladder top: L5 array+global / L6 by-value+cross-module / L7 enum(u3) field REPRO rows
 
