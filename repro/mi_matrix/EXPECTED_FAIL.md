@@ -1,4 +1,31 @@
-# mi_matrix corpus — expected-fail manifest (v55 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v56 2026-09-03)
+
+## Langwins feature-gap fixtures (v56 2026-09-03) — R3 bitcast-builtin REPRO row
+
+New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R3): the same-size
+reinterpretation builtin `@bitCast` is ABSENT from sf/src — grep of sf/src for `bitCast` returns NO
+matches. Measured on the reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative
+classify1.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run).
+RED at the RUN gate: the dump is silent (rc=0, 4 `.c` emitted, 0-byte stderr — the R1/R2 silent-dump
+pattern again, NO frontend diagnostic), but unlike R1/R2 the emitted C is VALID — gcc `-c` passes
+(compile gate **OK**), so the run-gate applies. The `@bitCast(i32, u)` call is silently DROPPED: the
+emitted main computes `zT_2 = (unsigned int)zT_1;` then `(void)zT_2;` and `s` falls back to its
+zero-init (`int zT_4 = 0; s = zT_4;`) → full chain prints `0` instead of the contract `-1` →
+**class runtime-wrong, deterministic 3/3**. Neither ICE nor CRASH observed. Corpus +1 (mi_matrix
+337→338). No implementation yet — this row is a GREEN-contract expectation, NOT runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `builtin_bitcast_xmod` | `@bitCast(Dest, src)` — same-size reinterpretation | runtime-wrong (compile gate OK; silent drop; deterministic 3/3) | `-1\n` (u32 0xFFFFFFFF reinterpreted as i32) |
+
+- **Current RED status — builtin_bitcast_xmod:** `@bitCast(i32, u)` has no lowering branch — emitted
+  `zT_1 = 4294967295u; zT_2 = (unsigned int)zT_1; (void)zT_2;` (result discarded) and the var `s`
+  stays at its zero-init (`int zT_4 = 0; s = zT_4; s = zT_4; s = zT_4;`) → run-gate `RUNRC=0`
+  stdout `0` (expected `-1`) = runtime-wrong. Emitted main md5 `4b85e4fc…` (module
+  `main_0B4CB05F.c`) byte-identical 3/3.
+- **Rule:** the fixture MUST print `-1` (rc=0) once `@bitCast` gains a real lowering branch; the
+  current silent-drop signature (valid C that discards the result and prints the var's zero-init)
+  marks the missing-bitcast gap.
 
 ## Langwins feature-gap fixtures (v55 2026-09-03) — R2 pointer-builtin REPRO rows
 
