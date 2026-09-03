@@ -1,4 +1,39 @@
-# mi_matrix corpus — expected-fail manifest (v57 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v58 2026-09-03)
+
+## Langwins feature-gap fixtures (v58 2026-09-03) — R5 cross-module pub var REPRO row
+
+New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R5): a module-scope `pub
+var` imported AND **directly written** from another module (`other.shared = 7` in `main.zig`, then read
+back via `other.read()`, a function in the owning module). This is the **ASYMmetry probe**: importer
+writes, owner reads — both must refer to ONE storage cell. Measured on the reference
+`/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative classify1.sh recipe
+(`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run). **RED class ICE
+(error[3043])**: dump rc=3, **0 `.c` emitted** — the importer-side STORE of a cross-module pub var hits
+a designed internal-error halt `error[3043]: internal: unsupported field-store base` in the lowerer
+(`sf/src/lower.zig:1264/1267`, `iceFieldStoreUnsupported` fall-through when the base's resolved type is
+neither struct/slice/tagged-union). Deterministic 3/3 (dump.err md5 `ec67ef7f…` byte-identical). NOT
+the predicted runtime-wrong class: the store is unimplemented, so the run-gate is never reached. The
+**read** side of the same pub var IS green-path (P1-2 fix present): a read-only variant dumps rc=0 and
+the owner's emitted header carries the extern decl `extern int zG_A4F844D4_shared;` — but the store to
+it is not implemented. ICE flagged per task rules. Corpus +1 (mi_matrix 340→341). No implementation
+yet — this row is a GREEN-contract expectation, NOT runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `crossmod_pubvar_xmod` | module-scope `pub var` — importer writes, owner's fn reads, ONE storage cell | ICE (error[3043] `internal: unsupported field-store base` on the importer-side store; 0 `.c`; deterministic 3/3) | `7 7\n` |
+
+- **Current RED status — crossmod_pubvar_xmod:** dump rc=3, 0 `.c` emitted. dump.err verbatim:
+  `warning[3023]: module used as value expression` then
+  `error[3043]: internal: unsupported field-store base (node 9)`; stderr md5 `ec67ef7ff2…`
+  byte-identical 3/3. Isolated probes (import forms + per-statement): bare `@import("other")` and
+  `.zig`-suffixed `@import("other.zig")` resolve identically (same owner module hash `other_BE9F306D`);
+  a read-only variant (`var x: i32 = other.shared;`) dumps rc=0 with 2 `.c` and the owner header
+  carries `/* Storage globals (extern decls) */ extern int zG_A4F844D4_shared;` (P1-2 fix present);
+  a same-module `pub var` store control dumps rc=0 (1 `.c`). Only the importer-side cross-module
+  STORE triggers the ICE.
+- **Rule:** the fixture MUST print `7 7\n` (rc=0) — importer write visible to the owner's `read()` —
+  once the importer-side store of a cross-module pub var gains a real lowering path; the emitted C must
+  then hold ONE definition in the owner module (extern header decl in the importer, per the P1-2 shape).
 
 ## Langwins feature-gap fixtures (v57 2026-09-03) — R4 export fn/var REPRO rows
 
