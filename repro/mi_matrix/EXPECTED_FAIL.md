@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v64 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v65 2026-09-03)
 
 ## Langwins feature-gap fixtures (v63 2026-09-03) — R10 packed ladder top: L5 array+global / L6 by-value+cross-module / L7 enum(u3) field REPRO rows
 
@@ -308,6 +308,24 @@ zero-init (`int zT_4 = 0; s = zT_4;`) → full chain prints `0` instead of the c
   marks the missing-bitcast gap.
 
 ## Langwins feature-gap fixtures (v55 2026-09-03) — R2 pointer-builtin REPRO rows
+
+- **RESOLVED (2026-09-03, F-PTRBUILTIN `c5381d94` + `35468510`):** the `builtin_ptr_roundtrip_xmod`
+  fixture is now **GREEN** — the `@intFromPtr(p)`/`@ptrFromInt(a)` calls now lower (fixed by commit
+  `35468510` — `@intFromPtr` as an ALIAS branch-extension of the existing `@ptrToInt`, and `@ptrFromInt`
+  in its ANNOTATED form reading the target pointer type from the expected-type stack — preceded by the
+  `test:` fixture amend `c5381d94` that annotates the `@ptrFromInt` target var `q: *i32` so the
+  expected type is resolvable). Its run-gate contract below now **PASSES**: run rc=0 with stdout `42`
+  (store 42 through recovered ptr). It **no longer belongs in the expected-fail set** (kept as a
+  permanent regression guard). The historical RED root-cause record beneath this marker is retained
+  verbatim as evidence.
+- **RESOLVED (2026-09-03, F-PTRBUILTIN `c5381d94` + `35468510`):** the `builtin_fieldparentptr_xmod`
+  fixture is now **GREEN** — the `@fieldParentPtr(Outer, "inner", &o.inner)` call now recovers the
+  container pointer (fixed by commit `35468510` — a struct byte-offset 4-inst chain: resolve the
+  `Outer` struct fields, match the `"inner"` field name to its byte offset, `ptr_to_int(&o.inner) −
+  offset`, then `int_to_ptr` back to `*Outer`). Its run-gate contract below now **PASSES**: run rc=0
+  with stdout `1` (recovered ptr == &o). It **no longer belongs in the expected-fail set** (kept as a
+  permanent regression guard). The historical RED root-cause record beneath this marker is retained
+  verbatim as evidence.
 
 New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R2): the modern pointer
 builtins `@intFromPtr` / `@ptrFromInt` / `@fieldParentPtr` are ABSENT from sf/src — grep of sf/src for
