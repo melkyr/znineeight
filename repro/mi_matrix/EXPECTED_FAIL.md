@@ -1,4 +1,51 @@
-# mi_matrix corpus — expected-fail manifest (v60 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v61 2026-09-03)
+
+## Langwins feature-gap fixtures (v61 2026-09-03) — R8 packed struct L0/L1/L2 REPRO rows
+
+New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R8): the `packed struct`
+ladder — L0 bool flags / L1 mixed int widths in 1 byte / L2 a straddling field (the C89 padding /
+bit-accounting regression net). `packed` is NOT a registered keyword (`sf/src/token.zig` has no
+`kw_packed`; grep of `sf/src/` for a parser/lexer `packed` token matches only the unrelated
+`flags_packed` fn-flag, packed-range encodings, and the token.zig:129-131 FIXME comment) — so the
+lexer treats `packed` as a PLAIN IDENTIFIER and the parse error fires at the FOLLOWING `struct`
+keyword, not at `packed` (differs from R4 `export`, a real keyword, which failed at col 0 of
+`export`). Measured on the reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative
+classify1.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run).
+Each is **RED class FAIL** (clean frontend parse rejection, deterministic 3/3): dump rc=2, **0 `.c`
+emitted** (no `error[3000]` → clean-FAIL per the Step-4 rules), dump stdout 0 bytes, stderr
+byte-identical 3/3 per fixture. Neither ICE nor CRASH observed. These L0-L2 contracts are the
+hand-computed C89 padding/bit-accounting regression net — contract-ONLY, NOT runnable today, never
+forced GREEN. Corpus +3 (mi_matrix 343→346). No implementation yet.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `packed_l0_flags_xmod` | `packed struct` L0: bool bitflags `{a,b,c: bool}` (LSB-first, 3 bools → 1 byte) | clean parse FAIL error[2000] at `struct` (col 21) after `packed` lexed as identifier; 0 `.c`; deterministic 3/3 | `1 5 1\n` |
+| `packed_l1_mix_xmod` | `packed struct` L1: mixed widths `{x:u1, y:u3, z:u4}` in 1 byte (LSB-first bit accounting) | clean parse FAIL error[2000] at `struct` (col 19); 0 `.c`; deterministic 3/3 | `1 155 1 5 9\n` |
+| `packed_l2_straddle_xmod` | `packed struct` L2: straddling field `{a:u5, b:u8}` — b spans bytes 0-1 (bits 5..12) | clean parse FAIL error[2000] at `struct` (col 21); 0 `.c`; deterministic 3/3 | `2 255 31 31 255\n` |
+
+- **Current RED status — packed_l0_flags_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  verbatim: `repro/mi_matrix/packed_l0_flags_xmod/main.zig:8:21: error[2000]: expected ';' but found
+  token` then `repro/mi_matrix/packed_l0_flags_xmod/main.zig:8:21: error[2000]: unexpected token`.
+  Line 8 = `const Flags = packed struct {`; col 21 (0-based) = the `struct` token — `packed` at col
+  14 parses as a bare identifier in the const value expr, then the `struct` keyword terminates the
+  expr with no `;`. stderr md5 `1ffc4f38…` byte-identical 3/3.
+- **Current RED status — packed_l1_mix_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  verbatim: `repro/mi_matrix/packed_l1_mix_xmod/main.zig:6:19: error[2000]: expected ';' but found
+  token` then `…:6:19: error[2000]: unexpected token`. Line 6 = `const Mix = packed struct {`; col 19
+  (0-based) = the `struct` token (`packed` at col 12). stderr md5 `0d31d96d…` byte-identical 3/3.
+- **Current RED status — packed_l2_straddle_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes.
+  dump.err verbatim: `repro/mi_matrix/packed_l2_straddle_xmod/main.zig:7:21: error[2000]: expected
+  ';' but found token` then `…:7:21: error[2000]: unexpected token`. Line 7 =
+  `const Strad = packed struct {`; col 21 (0-based) = the `struct` token (`packed` at col 14). stderr
+  md5 `4ac74363…` byte-identical 3/3.
+- **Rule (L0-L2 = the padding regression net):** once `packed struct` parses and lowers as true
+  LSB-first bitfields with NO padding and `size=(bits+7)/8`, stride=size:
+  - `packed_l0_flags_xmod` MUST print `1 5 1\n` (rc=0) — 3 bools = 1 byte; a=true(bit0),
+    b=false, c=true(bit2) ⇒ byte `0b00000101` = 5; `f.a and !f.b and f.c` ⇒ 1;
+  - `packed_l1_mix_xmod` MUST print `1 155 1 5 9\n` (rc=0) — size 1; x=1(bit0), y=5(bits1-3),
+    z=9(bits4-7) ⇒ byte `0b10011011` = 155; field reads 1 5 9;
+  - `packed_l2_straddle_xmod` MUST print `2 255 31 31 255\n` (rc=0) — size 2; a=31(11111 bits0-4),
+    b=255(8 bits @5..12) ⇒ byte0 `0xFF`, byte1 `0x1F`; field reads 31 255.
 
 ## Langwins feature-gap fixtures (v60 2026-09-03) — R7 arbitrary-width int REPRO row
 
