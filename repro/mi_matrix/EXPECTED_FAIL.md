@@ -1,4 +1,34 @@
-# mi_matrix corpus — expected-fail manifest (v58 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v59 2026-09-03)
+
+## Langwins feature-gap fixtures (v59 2026-09-03) — R6 switch case-range REPRO row
+
+New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R6): `switch` prong items
+that are RANGES — `1...5` (inclusive int range) and `'a'...'e'` (inclusive char range). Range nodes ARE
+parsed (parser.zig:977-981 range_exclusive/inclusive) but switch lowering does not turn them into case
+labels. Measured on the reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative
+classify1.sh + fixture_run.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output
+dir per run). **RED class runtime-wrong**: dump rc=0, 4 `.c` emitted, dump stdout+stderr 0 bytes (NO
+frontend diagnostic — the ranges are not rejected), gcc `-c` clean (compile gate OK), so the run-gate
+applies → `RUNRC=0` with stdout **`0 0`** (contract `130 47`). The emitted switch keeps ONLY
+`default: goto z_bb_3;` — the range prongs' bodies are still emitted but unreachable (no case labels),
+so every call falls to `else` = 0. Deterministic 3/3 (emitted main md5 `3fb6c7cb…`, prog.out md5
+`5928dd99…`). Neither ICE nor CRASH observed. Corpus +1 (mi_matrix 341→342). No implementation yet —
+this row is a GREEN-contract expectation, NOT runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `switch_case_range_xmod` | switch prong ranges `1...5`/`6...9`, `'a'...'e'`/`'f'...'z'` (inclusive) → real dispatch | runtime-wrong (compile gate OK; range case labels dropped → all prongs fall to `else`; deterministic 3/3) | `130 47\n` |
+
+- **Current RED status — switch_case_range_xmod:** dump rc=0, 4 `.c` emitted, stdout+stderr 0 bytes.
+  Emitted `zF_78D6088B_inRange` is `switch (n) { default: goto z_bb_3; }` followed by the two range
+  prongs' bodies (`zT_2 = 10;` / `zT_3 = 20;`) as DEAD unreachable code, then `z_bb_3: zT_4 = 0;` — the
+  `1...5`/`6...9` case labels never lower, so every call jumps straight to `else`. `charClass` identical
+  shape. Full chain (fixture_run.sh) 3x → each `RUNRC=0` stdout `0 0` (expected `130 47`) = runtime-wrong.
+  Emitted main md5 `3fb6c7cb4f87e8c8f1fb7861b4086c58` (module `main_14A2705C.c`) byte-identical 3/3.
+- **Rule:** the fixture MUST print `130 47\n` (rc=0) — int ranges `1..5`=>10, `6..9`=>20 over 1..9 and
+  char ranges `'a'..'e'`=>1, `'f'..'z'`=>2 over 'a'..'z' — once switch lowering turns range prong items
+  into real case dispatch (the current signature: case labels dropped, prong bodies dead, all falls to
+  `else`).
 
 ## Langwins feature-gap fixtures (v58 2026-09-03) — R5 cross-module pub var REPRO row
 
