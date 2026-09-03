@@ -1,4 +1,48 @@
-# mi_matrix corpus — expected-fail manifest (v61 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v62 2026-09-03)
+
+## Langwins feature-gap fixtures (v62 2026-09-03) — R9 packed struct L3 nested / packed union REPRO rows
+
+New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R9): the `packed struct`
+ladder part 2 — L3 a NESTED `packed struct` field (bit-contiguous) and L4 a `packed union` (members
+overlap at bit 0). As R8 established, `packed` is NOT a registered keyword (`sf/src/token.zig` has no
+`kw_packed`) — the lexer treats `packed` as a PLAIN IDENTIFIER, so the parse error fires at the
+FOLLOWING `struct`/`union` keyword. Measured on the reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2`
+via the authoritative classify1.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh
+output dir per run). Each is **RED class FAIL** (clean frontend parse rejection, deterministic 3/3):
+dump rc=2, **0 `.c` emitted** (no `error[3000]` → clean-FAIL per the Step-4 rules), dump stdout 0
+bytes, stderr byte-identical 3/3 per fixture. Neither ICE nor CRASH observed.
+
+**L3 FEASIBILITY probe:** the nested fixture is a deliberate feasibility probe — if zig1 must restrict
+`packed struct` fields to int/bool/enum only (i.e. a nested packed-struct field is disallowed), this
+GREEN contract (`2 5 6 3 3\n`) re-baselines with the operator at the I8 gate rather than staying as
+written. Contracts are contract-ONLY, NOT runnable today, never forced GREEN. Corpus +2 (mi_matrix
+346→348). No implementation yet.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `packed_l3_nested_xmod` | `packed struct` L3: NESTED packed-struct field `Inner{a:u3,b:u3}` inside `Outer{head:u2,inner,tail:u2}` (bit-contiguous) | clean parse FAIL error[2000] at `struct` (col 21) after `packed` lexed as identifier — BOTH decls (lines 8 & 9) fire; 0 `.c`; deterministic 3/3 | `2 5 6 3 3\n` |
+| `packed_union_xmod` | `packed union` L4: `U{a:u4,b:u12}` members overlap at bit 0 | clean parse FAIL error[2000] at `union` (col 17) after `packed` lexed as identifier; 0 `.c`; deterministic 3/3 | `2 8\n` |
+
+- **Current RED status — packed_l3_nested_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  verbatim (repo-relative entry): `repro/mi_matrix/packed_l3_nested_xmod/main.zig:8:21: error[2000]:
+  expected ';' but found token`, `…:8:21: error[2000]: unexpected token`, then the SAME pair at
+  `…:9:21` (the parser recovers after the `Inner` decl and reports the `Outer` decl too). Line 8 =
+  `const Inner = packed struct { a: u3, b: u3 };`, line 9 = `const Outer = packed struct { head: u2,
+  inner: Inner, tail: u2 };`; col 21 (0-based) = the `struct` token (`packed` at col 14). The caret
+  context echo appears only under the SECOND (9:21) error group and echoes the PREVIOUS (line 8)
+  source text — the same caret display quirk R7 recorded (line:col authoritative). stderr md5
+  `01bfa4ab…` byte-identical 3/3.
+- **Current RED status — packed_union_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  verbatim: `repro/mi_matrix/packed_union_xmod/main.zig:6:17: error[2000]: expected ';' but found
+  token` then `…:6:17: error[2000]: unexpected token`. Line 6 = `const U = packed union {`; col 17
+  (0-based) = the `union` token (`packed` at col 10). stderr md5 `de467b85…` byte-identical 3/3.
+- **Rule (L3-L4 contracts, both FEASIBILITY-flagged):** once `packed struct`/`packed union` parse and
+  lower as true LSB-first bitfields:
+  - `packed_l3_nested_xmod` MUST print `2 5 6 3 3\n` (rc=0) — 2+6+2 = 10 bits => size 2, nested
+    packed field bit-contiguous; field reads back. **If the I8 gate restricts packed fields to
+    int/bool/enum only (no nesting), re-baseline this contract with the operator.**
+  - `packed_union_xmod` MUST print `2 8\n` (rc=0) — members overlap at bit 0; 12 bits => size 2;
+    write b=3000, read a = low 4 bits of 3000 = 8.
 
 ## Langwins feature-gap fixtures (v61 2026-09-03) — R8 packed struct L0/L1/L2 REPRO rows
 
