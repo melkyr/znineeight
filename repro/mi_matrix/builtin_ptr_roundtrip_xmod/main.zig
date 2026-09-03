@@ -8,7 +8,7 @@ pub fn main() void {
     var v: i32 = 7;
     var p = &v;
     var a = @intFromPtr(p);
-    var q = @ptrFromInt(a);
+    var q: *i32 = @ptrFromInt(a);
     q.* = 42;
     std.io.printInt(v);
     std.io.writeByte('\n');
