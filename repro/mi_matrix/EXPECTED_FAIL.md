@@ -1,5 +1,38 @@
 # mi_matrix corpus — expected-fail manifest (v52 2026-09-02)
 
+## RED FIXTURE — switch_expr_payload_capture_xmod (2026-09-02)
+
+New corpus fixture `repro/mi_matrix/switch_expr_payload_capture_xmod/main.zig` (plan
+`2026-09-02-switch-expr-payload-capture-fix-plan.md`, Task I-SWEXPR): a switch used as an
+EXPRESSION with a payload-capture prong mis-lowers in zig1 — the payload binding
+(`load_field` + `decl_local`) is emitted into the wrong block (dead default fall-through in an
+exhaustive no-else switch, or the dispatch block before the case label with an `else` prong)
+because at the expression-site (`lowerExprImpl`, sf/src/lower.zig ~4169-4171) the capture
+emissions precede `self.current_bb = prong_bb_id;` (~4180). The capture is read UNINITIALIZED.
+The statement-switch site (`lowerStmt`, ~5026 before ~5028-5052) is correct. Original repro:
+U-JSON json_parser_upgraded rc=139 SIGSEGV; probes `/tmp/ujson/probes/pA.zig` (exhaustive
+no-else, rc=139) + `pB.zig` (else-unreachable, garbage).
+
+- **Expected GREEN stdout** (28 B, deterministic, both paths identical): `helloA\nhelloA\n
+  helloB\nhelloB\n` (k=0 → payload `helloA`, k=1 → `helloB`; per k an expression-switch
+  extraction line then a statement-switch sibling line).
+- **Current RED status:** RUNTIME-gated guard — compile-gate OK (dump rc=0, 4 `.c`, 0 `error[`,
+  0 PANIC on all 4 compilers; gcc `-c` + link rc=0) so the standard corpus compile sweep
+  classifies it OK; the guard fires in run/golden-style batteries and the F-task gate. Measured
+  on all 4 compilers (ref `/tmp/fx_subfolder/zig1` + the three `e2028dcf` self-host binaries):
+  run rc=0 with stdout `\nhelloA\n\nhelloB\n` (16 B — the two expression-switch lines are EMPTY,
+  the captured slice is uninitialized garbage read as empty; emitted `main_*.c` byte-identical,
+  md5 `ec77cc10…`, across all four). Sibling shapes crash rc=139 SIGSEGV (pA probe, fixC
+  write-loop variant); the committed fixture manifests as deterministic garbage-empty output.
+  Emitted defect region (ref): the dispatch `switch (zT_11){case 0: goto z_bb_5; case 1: goto
+  z_bb_6; default: goto z_bb_7;}` is followed by `z_bb_5: zT_14 = s;` (reads unassigned capture),
+  a stranded `s_1 = kv.payload.A._0;` after the case-0 goto, and `s = kv.payload.A._0;` in the
+  dead `z_bb_7` default — while the statement sibling emits `z_bb_1: s = kv.payload.A._0; r = s;`
+  correctly inside its case block.
+- **Rule:** the fixture MUST print the expected GREEN stdout above (rc=0) after any future change;
+  a return of empty expr lines / SIGSEGV / garbage marks the switch-expression payload-capture
+  regression.
+
 ## GATE — zig1 self-host closure plan, gate-record reconciliation (2026-09-02)
 
 Final gate of the zig1 self-host closure plan (docs/superpowers/plans/2026-09-02-zig1-selfhost-closure-plan.md),
