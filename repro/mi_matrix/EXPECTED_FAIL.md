@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v63 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v64 2026-09-03)
 
 ## Langwins feature-gap fixtures (v63 2026-09-03) — R10 packed ladder top: L5 array+global / L6 by-value+cross-module / L7 enum(u3) field REPRO rows
 
@@ -342,6 +342,29 @@ runnable today.
   `@ptrToInt`/`@intToPtr` already work — only the modern spellings and `@fieldParentPtr` are absent.
 
 ## Langwins feature-gap fixtures (v54 2026-09-03) — R1 introspection-builtin REPRO rows
+
+- **RESOLVED (2026-09-03, F-INTRO `c8145a8b`):** the `builtin_offsetof_xmod` fixture is now **GREEN** —
+  the `@offsetOf(Mixed, "c"/"b"/"d")` calls fold at comptime to the field byte offsets 0/4/8 (fixed by
+  commit `c8145a8b` — struct-only `@offsetOf`/`@bitOffsetOf`/`@bitSizeOf` fold branches in
+  `sf/src/comptime_eval.zig` + the introspection name-ids in semantic_analyzer/lower). Its run-gate
+  contract below now **PASSES**: run rc=0 with stdout `0 4 8` (folded int_consts `zT_N = 0/4/8;` in
+  emitted `main_0B772F7A.c`, no struct zero-init). It **no longer belongs in the expected-fail set**
+  (kept as a permanent regression guard). The historical RED root-cause record beneath this marker is
+  retained verbatim as evidence.
+- **RESOLVED (2026-09-03, F-INTRO `c8145a8b`):** the `builtin_bitsizeof_xmod` fixture is now **GREEN** —
+  the `@bitSizeOf(bool/u8/u32)` calls fold at comptime to 1/8/32 (fixed by commit `c8145a8b` — the
+  `@bitSizeOf` size×8 fold with the bool→1 special case). Its run-gate contract below now **PASSES**:
+  run rc=0 with stdout `1 8 32` (folded int_consts `zT_N = 1/8/32;` in emitted `main_481CB325.c`, no
+  never-declared temps). It **no longer belongs in the expected-fail set** (kept as a permanent
+  regression guard). The historical RED root-cause record beneath this marker is retained verbatim as
+  evidence.
+- **RESOLVED (2026-09-03, F-INTRO `c8145a8b`):** the `builtin_bitoffsetof_xmod` fixture is now **GREEN** —
+  the `@bitOffsetOf(Mixed, "c"/"b"/"d")` calls fold at comptime to the field byte offsets 0/4/8 × 8 =
+  0/32/64 (fixed by commit `c8145a8b` — struct-only `@bitOffsetOf` shares the `@offsetOf` fold branch,
+  result × 8). Its run-gate contract below now **PASSES**: run rc=0 with stdout `0 32 64` (folded
+  int_consts `zT_N = 0/32/64;` in emitted `main_A9A908BB.c`, no struct zero-init). It **no longer
+  belongs in the expected-fail set** (kept as a permanent regression guard). The historical RED
+  root-cause record beneath this marker is retained verbatim as evidence.
 
 New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R1): the three introspection
 builtins `@offsetOf` / `@bitSizeOf` / `@bitOffsetOf` have NO lowering branch in zig1 today. Measured on the
