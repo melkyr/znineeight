@@ -1351,11 +1351,12 @@ fn parserParseTypeName(self: *Parser) ParserError!u32 {
 pub fn parserParseStatement(self: *Parser) ParserError!u32 {
     var tok = parserPeek(self);
     var pstk_m: []const u8 = "PSTK:k"; pal.markerWrite(pstk_m); var pstk_b: [10]u8 = undefined; var pstk_l = itoa_mod.itoa(@intCast(u32, @enumToInt(tok.kind)), pstk_b[0..]); var pstk_s: usize = @intCast(usize, 9) - @intCast(usize, pstk_l); pal.markerWrite(pstk_b[pstk_s..@intCast(usize, 9)]); var pstk_nl: []const u8 = "\n"; pal.markerWrite(pstk_nl);
-    if (tok.kind == TokenKind.kw_const) { var varc_s: []const u8 = "VARC"; pal.markerWrite(varc_s); return parserParseVarDecl(self, false, false, false); }
-    if (tok.kind == TokenKind.kw_var) { var varv_s: []const u8 = "VARV"; pal.markerWrite(varv_s); return parserParseVarDecl(self, true, false, false); }
+    if (tok.kind == TokenKind.kw_const) { var varc_s: []const u8 = "VARC"; pal.markerWrite(varc_s); return parserParseVarDecl(self, false, false, false, false); }
+    if (tok.kind == TokenKind.kw_var) { var varv_s: []const u8 = "VARV"; pal.markerWrite(varv_s); return parserParseVarDecl(self, true, false, false, false); }
     if (tok.kind == TokenKind.kw_pub) return parserParsePubDecl(self);
     if (tok.kind == TokenKind.kw_extern) return parserParseExternDecl(self, false);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, false, false, false);
+    if (tok.kind == TokenKind.kw_export) return parserParseExportDecl(self, false);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, false, false, false, false);
     if (tok.kind == TokenKind.kw_if) return parserParseIfStmt(self);
     if (tok.kind == TokenKind.kw_while) return parserParseWhileStmt(self);
     if (tok.kind == TokenKind.kw_for) return parserParseForStmt(self);
@@ -1442,7 +1443,7 @@ fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
         label_tok.span_start, end_pos, body, 0, 0, label_tok.value.string_id);
 }
 
-fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool) ParserError!u32 {
+fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool, is_export: bool) ParserError!u32 {
     var vmsg: []const u8 = "V"; pal.markerWrite(vmsg);
     var kw = parserAdvance(self);
     var name_raw = parserPeek(self);
@@ -1456,6 +1457,7 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
     if (is_mutable) flags = flags | @intCast(u8, 0x01);
     if (is_pub) flags = flags | @intCast(u8, 0x02);
     if (is_extern) flags = flags | @intCast(u8, 0x04);
+    if (is_export) flags = flags | @intCast(u8, 0x08);
     var type_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.colon) {
         _ = parserAdvance(self);
@@ -1482,11 +1484,12 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
 fn parserParsePubDecl(self: *Parser) ParserError!u32 {
     _ = parserAdvance(self);
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, true, false, false);
-    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, true, false);
-    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, true, false);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, true, false, false, false);
+    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, true, false, false);
+    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, true, false, false);
     if (tok.kind == TokenKind.kw_test) return parserParseTestDecl(self);
     if (tok.kind == TokenKind.kw_extern) return parserParseExternDecl(self, true);
+    if (tok.kind == TokenKind.kw_export) return parserParseExportDecl(self, true);
     var p_msg: []const u8 = "expected fn/const/var after pub";
     parserAddError(self, tok, p_msg);
     return error.UnexpectedToken;
@@ -1497,20 +1500,31 @@ fn parserParseExternDecl(self: *Parser, is_pub: bool) ParserError!u32 {
         _ = parserAdvance(self);
     }
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, true, false);
-    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, true);
-    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, true);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, true, false, false);
+    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, true, false);
+    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, true, false);
     var e_msg: []const u8 = "expected fn/const/var after extern";
     parserAddError(self, tok, e_msg);
     return error.UnexpectedToken;
 }
-fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool) ParserError!u32 {
+fn parserParseExportDecl(self: *Parser, is_pub: bool) ParserError!u32 {
+    _ = parserAdvance(self);
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, false, false, true);
+    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, false, true);
+    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, false, true);
+    var x_msg: []const u8 = "expected fn/const/var after export";
+    parserAddError(self, tok, x_msg);
+    return error.UnexpectedToken;
+}
+fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool, is_export: bool) ParserError!u32 {
     var fmsg: []const u8 = "Fv"; pal.markerWrite(fmsg);
     var kw = parserAdvance(self);
     var flags: u8 = 0;
     if (is_pub) flags = flags | @intCast(u8, 0x02);
     if (is_extern) flags = flags | @intCast(u8, 0x04);
     if (is_test) flags = flags | @intCast(u8, 0x20);
+    if (is_export) flags = flags | @intCast(u8, 0x08);
 
     var name_tok = try parserExpect(self, TokenKind.identifier);
     _ = try parserExpect(self, TokenKind.lparen);

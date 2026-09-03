@@ -114,6 +114,8 @@ pub const CompilerContext = struct {
     pointer_only_ids: [*]u32,
     pointer_only_len: u32,
     global_decls: lir_mod.GlobalDeclArrayList,
+
+    exported: hash_mod.U64ToU32Map,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -237,6 +239,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var comptime_values = hash_mod.u32ToU64MapInit(&compiler_alloc.module);
+     var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -258,6 +261,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
         .comptime_values = comptime_values,
+        .exported = exported,
         .pointer_only_ids = undefined,
         .pointer_only_len = @intCast(u32, 0),
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
@@ -678,6 +682,11 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     pal.markerWrite(sp2);
             if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.markerWrite(mf);
+                        if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) {
+                            var fexp_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decls[di]))];
+                            var fexp_key: u64 = (@intCast(u64, mods[mi].id) << @intCast(u64, 35)) | (@intCast(u64, 0) << @intCast(u64, 32)) | @intCast(u64, fexp_proto.name_id);
+                            _ = hash_mod.u64ToU32MapPut(&ctx.exported, fexp_key, @intCast(u32, 1));
+                        }
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
@@ -712,6 +721,10 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                     }
                                 }
                                 if (gv_is_storage == @intCast(u8, 1)) {
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) {
+                                        var gexp_key: u64 = (@intCast(u64, mods[mi].id) << @intCast(u64, 35)) | (@intCast(u64, 1) << @intCast(u64, 32)) | @intCast(u64, gv_name);
+                                        _ = hash_mod.u64ToU32MapPut(&ctx.exported, gexp_key, @intCast(u32, 1));
+                                    }
                                     var gv_has_ri: u8 = @intCast(u8, 0);
                                     if (decl.child_1 != @intCast(u32, 0)) {
                                         var gv_init2 = ast_mod.astStoreNodeAt(ctx.store, decl.child_1);
@@ -788,6 +801,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var mangler: c89_mod.NameMangler = undefined;
     var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.emission, mangler_hint);
+    mangler.exported = &ctx.exported;
     var emitter: c89_mod.C89Emitter = undefined;
     emitter = c89_mod.c89EmitterInit(
         ctx.typereg,

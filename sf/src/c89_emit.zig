@@ -95,7 +95,9 @@ pub const NameMangler = struct {
     collision_mod: U32ToU32Map,
     collision_name: U32ToU32Map,
     interner: *StringInterner,
+    exported: ?*U64ToU32Map,
 };
+
 
 fn writeHex(buf: []u8, pos: *usize, value: u32) void {
     var v = value;
@@ -442,6 +444,7 @@ pub fn nameManglerInit(interner: *StringInterner, alloc: *Sand, cache_hint: usiz
         .collision_mod = hash_mod.u32ToU32MapInit(alloc),
         .collision_name = hash_mod.u32ToU32MapInit(alloc),
         .interner = interner,
+        .exported = null,
     };
     nameManglerPopulateKeywords(&mangler);
     return mangler;
@@ -452,6 +455,9 @@ pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: 
     if (isTempOrBuiltin(name) != @intCast(u8, 0)) return name_id;
     if (isC89Keyword(self, name_id) != @intCast(u8, 0)) return mangleC89Keyword(self, name);
     var key: u64 = (@intCast(u64, module_id) << @intCast(u64, 35)) | (@intCast(u64, kind) << @intCast(u64, 32)) | @intCast(u64, name_id);
+    if (self.exported) |exp_map| {
+        if (hash_mod.u64ToU32MapGet(exp_map, key)) |_| return name_id;
+    }
     if (hash_mod.u64ToU32MapGet(&self.cache, key)) |cached| {
         return cached;
     }
