@@ -1,4 +1,36 @@
-# mi_matrix corpus — expected-fail manifest (v56 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v57 2026-09-03)
+
+## Langwins feature-gap fixtures (v57 2026-09-03) — R4 export fn/var REPRO rows
+
+New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R4): the `export`
+modifier keyword HAS a token (`kw_export`, `sf/src/token.zig:156`) but NO parser handler — `export fn` /
+`export var` do not parse. Measured on the reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the
+authoritative classify1.sh recipe (`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir
+per run). Each is **RED class FAIL** (clean frontend rejection, deterministic 3/3): dump rc=2, **0 `.c`
+emitted** (no `error[3000]` → clean-FAIL per the Step-4 rules), with the parse diagnostic pointing at
+the `export` keyword (col 0). Unlike the R1-R3 silent-dump builtin cases, this is a genuine PARSE-level
+clean FAIL — the expected signature for a keyword with no parser handler. Neither ICE nor CRASH observed.
+Corpus +2 (mi_matrix 338→340). No implementation yet — these rows are GREEN-contract expectations, NOT
+runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `export_fn_xmod` | `export fn` — source-named, externally-visible C function symbol | FAIL (clean parse diag at `export`; 0 `.c`; deterministic 3/3) | `81\n` (+ symbol gate: emitted C has a non-static `square` defn) |
+| `export_var_xmod` | `export var` — source-named external storage symbol | FAIL (clean parse diag at `export`; 0 `.c`; deterministic 3/3) | `3\n` (+ symbol gate: emitted C exposes non-static `counter`) |
+
+- **Current RED status — export_fn_xmod:** `kw_export` has no parser handler → clean parse FAIL at
+  `main.zig:8:0` (the `export` keyword, col 0), two `error[2000]` pairs (`expected expression` /
+  `unexpected token`) followed by a `:`-recovery pair at `8:18` and a duplicate pair at `10:0`. stderr
+  md5 `97924fc3…` byte-identical 3/3; dump rc=2; 0 `.c` emitted.
+- **Current RED status — export_var_xmod:** clean parse FAIL at `main.zig:7:0` (the `export` keyword,
+  col 0), one `error[2000]` pair (`expected expression` / `unexpected token`). stderr md5 `525d7e69…`
+  byte-identical 3/3; dump rc=2; 0 `.c` emitted.
+- **Rule:** each fixture MUST print its expected GREEN stdout above (rc=0) AND expose the source-named
+  symbol once `export` gains a parser+lowering path. The real `export` contract is the **SYMBOL GATE**:
+  the emitted C must contain a NON-STATIC definition named `square` (fn) / `counter` (var) with the
+  source name — the runtime-`stdout` contract alone is weak (a non-exported fn can print the same bytes).
+  At GREEN time assert the symbol gate by grepping the emitted C for the non-static `square`/`counter`
+  definition; the current parse-level FAIL (0 `.c`) cannot reach the gate yet.
 
 ## Langwins feature-gap fixtures (v56 2026-09-03) — R3 bitcast-builtin REPRO row
 
