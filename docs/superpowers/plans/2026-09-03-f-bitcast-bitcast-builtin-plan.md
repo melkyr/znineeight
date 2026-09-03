@@ -24,6 +24,7 @@
 - Full battery on the F commit: golden 9/9, matrix 21/21, corpus sweep (424 dirs `-s0`), self-compile round-trip. **Corpus-delta expectation is special for @bitCast:** the R3 fixture classifies `OK` even on the pre-fix compiler (its RED class is compile-OK runtime-wrong — the sweep is compile-only). Therefore the sweep per-dir asymmetric count is expected to be **0**, and the ONLY behavioral flip is the run-gate of `builtin_bitcast_xmod` (stdout `0` → `-1`). A 0-asymmetric sweep is the SUCCESS signal here, not a no-op — verify the run-gate flip explicitly.
 - Authoritative per-fixture classifier = Step-4 recipe in `.superpowers/sdd/task-LANGWINS-report.md` (`classify1.sh` compile-gate + `fixture_run.sh` run-gate; fresh output dir `rm -rf`+`mkdir -p` REQUIRED, else dump ICEs rc=3 spill-open). Pre-existing dirty/untracked repo files are NEVER staged or committed.
 - Commit messages follow repo style (lowercase `feat:`/`test:`/`docs:` prefix + concise body).
+- **Operator-authorized D1 dialect (AMENDMENT 1, 2026-09-03):** this plan's edit blocks may contain cross-module comptime-const local-init decls of the form `var x: u32 = type_mod.TYPE_VOID;` (or `type_mod.TYPE_USIZE`/any `type_mod.TYPE_*`). zig0 DROPS such decls during self-compile → `'x' undeclared` gcc error. THIS SPECIFIC situation (a dropped cross-module comptime-const local-init decl) is operator-authorized to be fixed WITHOUT a fresh ruling, by wrapping the initializer in the probe-proven form `var x: u32 = @intCast(u32, type_mod.TYPE_VOID);`. The authorization covers F-BITCAST and ALL subsequent F plans that encounter the same issue; any task step that applies this wrap proceeds without STOP-present. If a drop/undeclared situation does NOT match this exact class (e.g. a different decl or a genuinely wrong value), STOP-present as usual.
 - Operator standing rules: only plan-authorized actions; STOP-and-present on any issue or any plan-vs-evidence divergence; store memories as we go (mnemoria agent `fbitcast-session`); NO context compression during this build session.
 
 ---
@@ -86,7 +87,7 @@ Expected: the fixture compiles but prints `0` (RED runtime-wrong — run-gate st
 (2c) Add a NEW branch immediately AFTER the `@fieldParentPtr` branch (after its `result = fpp_res;` / closing `}` at :1561) and BEFORE the `} else if (node.child_0 == self.getchar_name_id) {` line (:1562). The new branch must be a chained `} else if` so the surrounding if/else-if chain continues:
 ```zig
         } else if (node.child_0 == self.bitcast_name_id) {
-            var bc_res: u32 = type_mod.TYPE_VOID;
+            var bc_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
             if (ec.len >= @intCast(usize, 2)) {
                 var bc_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
                 var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
@@ -109,7 +110,7 @@ Expected: the fixture compiles but prints `0` (RED runtime-wrong — run-gate st
             }
             result = bc_res;
 ```
-Notes: `node`/`node_idx`/`ec`/`self.diag`/`result` are in scope in this dispatch (verify against the `@ptrFromInt`/`@fieldParentPtr` sibling branches :1534-1561). On gate failure the branch STILL returns `bc_dst` (`bc_res = bc_dst`) so the var-decl never sees a bogus `TYPE_VOID` cascade; the recorded `error[3000]` already stops the compile (rc=2, 0 `.c`). If `bc_dst` is unresolvable (`TYPE_UNDEFINED`), `bc_res` stays `TYPE_VOID`.
+Notes: `node`/`node_idx`/`ec`/`self.diag`/`result` are in scope in this dispatch (verify against the `@ptrFromInt`/`@fieldParentPtr` sibling branches :1534-1561). The `bc_res` initializer uses the operator-authorized D1 `@intCast(u32, ...)` wrap (AMENDMENT 1, Global Constraints) — the unwrapped `type_mod.TYPE_VOID` form is dropped by zig0 during self-compile. On gate failure the branch STILL returns `bc_dst` (`bc_res = bc_dst`) so the var-decl never sees a bogus `TYPE_VOID` cascade; the recorded `error[3000]` already stops the compile (rc=2, 0 `.c`). If `bc_dst` is unresolvable (`TYPE_UNDEFINED`), `bc_res` stays `TYPE_VOID`.
 
 - [ ] **Step 3: Edit `sf/src/lower.zig`**
 
