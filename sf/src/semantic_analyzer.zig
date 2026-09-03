@@ -61,6 +61,9 @@ pub const SemanticAnalyzer = struct {
     as_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
+    offset_of_name_id: u32,
+    bit_size_of_name_id: u32,
+    bit_offset_of_name_id: u32,
     putchar_name_id: u32,
     stdout_write_name_id: u32,
     stderr_write_name_id: u32,
@@ -108,6 +111,12 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var so_id = interner_mod.stringInternerIntern(interner, so_s);
     var ao_s: []const u8 = "@alignOf";
     var ao_id = interner_mod.stringInternerIntern(interner, ao_s);
+    var oo_s: []const u8 = "@offsetOf";
+    var oo_id = interner_mod.stringInternerIntern(interner, oo_s);
+    var bso_s: []const u8 = "@bitSizeOf";
+    var bso_id = interner_mod.stringInternerIntern(interner, bso_s);
+    var boo_s: []const u8 = "@bitOffsetOf";
+    var boo_id = interner_mod.stringInternerIntern(interner, boo_s);
     var pc2_s: []const u8 = "@putChar";
     var pc2_id = interner_mod.stringInternerIntern(interner, pc2_s);
     var sow_s: []const u8 = "@stdoutWrite";
@@ -191,6 +200,9 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .as_name_id = as_id,
         .size_of_name_id = so_id,
         .align_of_name_id = ao_id,
+        .offset_of_name_id = oo_id,
+        .bit_size_of_name_id = bso_id,
+        .bit_offset_of_name_id = boo_id,
         .putchar_name_id = pc2_id,
         .stdout_write_name_id = sow_id,
         .stderr_write_name_id = sew_id,
@@ -1498,7 +1510,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveFnCall(self, node_idx);
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id) {
+        if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
             if (ec.len >= @intCast(usize, 1)) {
                 var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
                 _ = type_resolver.resolveTypeExprFull(&so_env, ec[@intCast(usize, 0)], @intCast(u32, 0));

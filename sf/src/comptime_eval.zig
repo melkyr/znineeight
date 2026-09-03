@@ -24,6 +24,9 @@ pub const ComptimeEval = struct {
     symbol_reg: *SymbolRegistry,
     size_of_id: u32,
     align_of_id: u32,
+    offset_of_id: u32,
+    bit_size_of_id: u32,
+    bit_offset_of_id: u32,
     int_cast_id: u32,
     is_windows_id: u32,
 };
@@ -35,11 +38,18 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     var intc_id = interner_mod.stringInternerIntern(interner, s_intc);
     var size_id = interner_mod.stringInternerIntern(interner, s_size);
     var align_id = interner_mod.stringInternerIntern(interner, s_align);
+    var s_off: []const u8 = "@offsetOf";
+    var s_bitsz: []const u8 = "@bitSizeOf";
+    var s_bitoff: []const u8 = "@bitOffsetOf";
+    var off_id = interner_mod.stringInternerIntern(interner, s_off);
+    var bitsz_id = interner_mod.stringInternerIntern(interner, s_bitsz);
+    var bitoff_id = interner_mod.stringInternerIntern(interner, s_bitoff);
     var s_iw: []const u8 = "@isWindows";
     var iw_id = interner_mod.stringInternerIntern(interner, s_iw);
     return ComptimeEval{
         .registry = registry, .store = store, .interner = interner, .symbol_reg = symbol_reg,
         .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id,
+        .offset_of_id = off_id, .bit_size_of_id = bitsz_id, .bit_offset_of_id = bitoff_id,
         .is_windows_id = iw_id,
     };
 }
@@ -127,6 +137,52 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
             if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.alignment), .width_bits = @intCast(u32, 0), .sig = false };
+        }
+        return null;
+    }
+    if (node.child_0 == self.offset_of_id or node.child_0 == self.bit_offset_of_id) {
+        var ec2: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        if (ec2.len >= @intCast(usize, 2)) {
+            var tid = comptimeEvalResolveTypeArg(self, ec2[@intCast(usize, 0)]);
+            if (tid) |t| {
+                var ty = self.registry.types_items[@intCast(usize, t)];
+                if (ty.state == @intCast(u8, 2) and ty.kind == type_mod.TypeKind.struct_type) {
+                    var fields: []type_mod.FieldEntry = undefined;
+                    type_mod.typeRegistryGetStructFields(self.registry, t, &fields);
+                    var fname_node = ast_mod.astStoreNodeAt(self.store, ec2[@intCast(usize, 1)]);
+                    if (fname_node.kind == AstKind.string_literal) {
+                        var sv_idx = ast_mod.astStoreNodePayload(self.store, ec2[@intCast(usize, 1)]);
+                        var want_id = self.store.string_values.items[@intCast(usize, sv_idx)];
+                        var fi: usize = 0;
+                        while (fi < fields.len) : (fi += 1) {
+                            if (fields[fi].name_id == want_id) {
+                                var bo: u64 = @intCast(u64, fields[fi].offset);
+                                if (node.child_0 == self.bit_offset_of_id) {
+                                    bo = bo * @intCast(u64, 8);
+                                }
+                                return ComptimeVal{ .bits = bo, .width_bits = @intCast(u32, 0), .sig = false };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    if (node.child_0 == self.bit_size_of_id) {
+        var ec3: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        if (ec3.len >= @intCast(usize, 1)) {
+            var tid2 = comptimeEvalResolveTypeArg(self, ec3[@intCast(usize, 0)]);
+            if (tid2) |t2| {
+                var ty2 = self.registry.types_items[@intCast(usize, t2)];
+                if (ty2.state == @intCast(u8, 2)) {
+                    var bsz: u64 = @intCast(u64, ty2.size) * @intCast(u64, 8);
+                    if (ty2.kind == type_mod.TypeKind.bool_type) {
+                        bsz = @intCast(u64, 1);
+                    }
+                    return ComptimeVal{ .bits = bsz, .width_bits = @intCast(u32, 0), .sig = false };
+                }
+            }
         }
         return null;
     }

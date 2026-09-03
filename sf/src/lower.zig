@@ -377,6 +377,9 @@ pub const LirLowerer = struct {
     as_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
+    offset_of_name_id: u32,
+    bit_size_of_name_id: u32,
+    bit_offset_of_name_id: u32,
     cvastart_name_id: u32,
     cvaarg_name_id: u32,
     cvaend_name_id: u32,
@@ -449,6 +452,12 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var sizeof_id = si_mod.stringInternerIntern(ctx.registry.interner, sizeof_s);
     var alignof_s: []const u8 = "@alignOf";
     var alignof_id = si_mod.stringInternerIntern(ctx.registry.interner, alignof_s);
+    var offsetof_s: []const u8 = "@offsetOf";
+    var offsetof_id = si_mod.stringInternerIntern(ctx.registry.interner, offsetof_s);
+    var bitsizeof_s: []const u8 = "@bitSizeOf";
+    var bitsizeof_id = si_mod.stringInternerIntern(ctx.registry.interner, bitsizeof_s);
+    var bitoffsetof_s: []const u8 = "@bitOffsetOf";
+    var bitoffsetof_id = si_mod.stringInternerIntern(ctx.registry.interner, bitoffsetof_s);
     var cvastart_s: []const u8 = "@cVaStart";
     var cvastart_id = si_mod.stringInternerIntern(ctx.registry.interner, cvastart_s);
     var cvaarg_s: []const u8 = "@cVaArg";
@@ -522,6 +531,9 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .as_name_id = as_id,
          .size_of_name_id = sizeof_id,
          .align_of_name_id = alignof_id,
+         .offset_of_name_id = offsetof_id,
+         .bit_size_of_name_id = bitsizeof_id,
+         .bit_offset_of_name_id = bitoffsetof_id,
          .cvastart_name_id = cvastart_id,
          .cvaarg_name_id = cvaarg_id,
          .cvaend_name_id = cvaend_id,
@@ -3274,7 +3286,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return cres;
             }
 
-            if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id) {
+            if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
                 iceUnresolvedComptime(self, node_idx);
                 return nextTemp(self, type_mod.TYPE_USIZE);
             }
