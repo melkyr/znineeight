@@ -282,3 +282,7 @@ Only the two doc files staged. Report back: `DONE` + commit sha.
 ## Execution Handoff
 
 Plan complete. **Subagent-Driven (recommended per operator):** fresh implementer subagent per task + task reviewer (spec compliance + quality) after each; Task 2 and Task 3 proceed only after the prior review approves and, for Task 3, after the operator approves the Task-2 re-baseline proposal.
+
+## AMENDMENT 2 — deferred battery/docs GATE (operator, 2026-09-03)
+
+**Status:** Task 1 COMPLETE (commit `3922a8d7`, review Approved). **Operator ruling:** do NOT run the full battery + STOP-present re-baseline (Task 2) nor the docs GATE (Task 3) for F-BITCAST individually. All four items 3-6 (F-BITCAST, F-CROSSMOD-STORE, F-EXPORT, F-SWITCHRANGE) are implemented Task-1-style first; the combined battery / re-baseline proposal / docs GATE runs once AFTER item 6 lands. Task 1's per-commit gates (fixture GREEN, negative probe, 4-MD5 byte-identical, comptime_eval byte-identical, self-compile fixed point closed, exact commit scope) remain in force as executed.
