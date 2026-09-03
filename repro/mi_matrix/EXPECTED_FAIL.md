@@ -1,4 +1,42 @@
-# mi_matrix corpus — expected-fail manifest (v59 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v60 2026-09-03)
+
+## Langwins feature-gap fixtures (v60 2026-09-03) — R7 arbitrary-width int REPRO row
+
+New-corpus REPRO fixture (plan `2026-09-03-language-wins-r-i-plan.md`, Task R7): integer types of
+ARBITRARY width — `u3`/`i7`/`u12`. Only the fixed widths register as primitive type names
+(`registerPrimitiveName`, `sf/src/type_registry.zig:630-635` — i8/u8/u16/u32/u64/i16/i32/i64/f32/...),
+so an unregistered width name in a var-decl type annotation does NOT produce the predicted unknown-type
+diagnostic — it silently degrades to TYPE_VOID (probe: an arbitrary unknown name `bogusname` degrades
+identically, so this is a general unknown-type-name fallback, not uN-specific). Measured on the
+reference `/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative classify1.sh recipe
+(`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run). **RED class: clean
+error[3000] rejection (compile-gate label GREEN — a FALSE green, NOT a genuine green-guard)**: dump
+rc=2, **0 `.c` emitted**, no ICE/CRASH. Each `uN`/`iN` var-decl fires the GENERIC `cannot declare
+variable of type void` (the `var_declared_void` green-guard diagnostic,
+`sf/src/semantic_analyzer.zig:2023-2030`) — the unknown width is masked as a void variable, so this
+valid `u3` program is currently indistinguishable from a genuine `var x: void` misuse. Deterministic
+3/3 (dump.err md5 `2f6985ba…` byte-identical; 4 error/warning pairs = the four var-decls a/b/c/d).
+Corpus +1 (mi_matrix 342→343). No implementation yet — this row is a GREEN-contract expectation, NOT
+runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `int_arbitrary_width_xmod` | arbitrary-width integer types `u3`/`i7`/`u12` (N in 1..65535) in var-decl annotations + arithmetic | clean error[3000] rejection (compile-gate label GREEN, FALSE green — NOT a genuine green-guard; unknown width name silently resolves to TYPE_VOID → generic `cannot declare variable of type void`; 0 `.c`; deterministic 3/3) | `7 -3 3000 4\n` |
+
+- **Current RED status — int_arbitrary_width_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. The
+  four typed var-decls each fire an `error[3000]: cannot declare variable of type void` +
+  `warning[3000]: type mismatch in variable declaration — initialization type may not be compatible
+  with declared type` pair (`note: source: comptime_int` / `note: target: void`); the analyzer stops
+  after the 4th (var `d: u3`). NO unknown-type diagnostic exists for the unregistered width. Observed
+  caret-context quirk: the echoed source line under each diagnostic is the PRECEDING line's text while
+  the `line:col` points at the declaration (display off-by-one, line numbers authoritative). stderr md5
+  `2f6985bae684274035b47118c935dc7d` byte-identical 3/3. A scratch probe with `var a: bogusname = 5;`
+  produces the IDENTICAL diagnostic → unknown type names in var-decl annotations generally fall back to
+  void (no `unknown type` error[30xx]), which is why a future corpus sweep would mislabel this row a
+  green-guard — it is NOT (the program is valid Zig; the width simply fails to register).
+- **Rule:** the fixture MUST print `7 -3 3000 4\n` (rc=0) — u3 5+2=7; i7 -3; u12 3000; u3 7&4=4 —
+  once arbitrary-width int types uN/iN register as real types (with arithmetic + `@intCast(i32, …)`
+  lowering); at GREEN time the analyzer must also stop conflating unregistered-width names with `void`.
 
 ## Langwins feature-gap fixtures (v59 2026-09-03) — R6 switch case-range REPRO row
 
