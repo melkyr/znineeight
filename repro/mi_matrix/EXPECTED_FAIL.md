@@ -1,5 +1,37 @@
 # mi_matrix corpus — expected-fail manifest (v52 2026-09-02)
 
+## RED FIXTURE — global_struct_array_store_xmod (2026-09-03)
+
+New corpus fixture `repro/mi_matrix/global_struct_array_store_xmod/main.zig` (plan
+`2026-09-02-switch-expr-payload-capture-fix-plan.md` AMENDMENT 2, Task I3-STORE-DROP): zig1 DROPS
+a struct-value (indeed ANY whole-element) assignment into a **storage-global array element**.
+`fn initRooms()` builds each `Room` in locals then `return;`s — no `zG_...rooms[i] = zT_N;` write
+is emitted. Root cause (evidence in `.superpowers/sdd/task-SWEXPR-report.md` `## I3-STORE-DROP`):
+the whole-element store is lowered (sf/src/lower.zig:1139-1161) as `.assign_index` whose base is
+the by-name load_global alias temp of the global array (c89_emit.zig:5172-5181 `temp_global_map`).
+The emitter DCE pass never read-marks an ARRAY-typed assign_index base (c89_emit.zig:7080,
+`dceTempIsArray` :7055-7068), so that alias temp has read_count 0 → dead (c89_emit.zig:3380-3381),
+and the emission filter skips any inst whose result temp is dead (c89_emit.zig:7384-7387;
+assign_index "result" = base, dceResultPos :7202). Every later read of the global creates a fresh
+alias temp, so the store is dead-classified in every function that performs it → **unconditionally
+dropped**. Original repro: mud_server `examples/z98/mud_server/main.zig:31-48` (`var rooms: [2]Room
+= undefined;` + whole-struct stores in initRooms) — world global all-zero at runtime, no movement.
+
+- **Expected GREEN stdout** (10 B, deterministic): `1 5 5 10\n` (rooms[0].north=1,
+  rooms[0].desc.len=5 ("first"), rooms[1].north=5, rooms[1].desc.len=10 ("secondroom"); values come
+  straight from the source stores, verified via a field-store sibling control — same values through
+  the WORKING `rooms[i].field = v` path print byte-identical output on the current compiler).
+- **Current RED status:** RUNTIME-gated guard — compile-gate OK (dump rc=0, 4 `.c`, 0 `error[`,
+  0 PANIC on all 4 compilers; gcc `-c` rc=0, link rc=0) so the standard corpus compile sweep
+  classifies it OK; the guard fires in run/golden-style batteries and the F-STORE-DROP gate.
+  Measured on all 4 compilers (ref `/tmp/fx_subfolder/zig1` md5 `29327e2c` + the three `e2028dcf`
+  self-host binaries): run rc=0 with stdout `0 0 0 0` (8 B — rooms global stays zero-initialized,
+  desc is a null slice → len 0), deterministic 3/3 per compiler, != expected GREEN on all four.
+  Emitted `initRooms()` defect region (byte-identical across all four): builds `zT_0`/`zT_10`
+  (field-by-field `zT_0.north = zT_4;` …) then `return;` with NO `zG_..._rooms[...] = zT_...;`.
+- **Rule:** the fixture MUST print the expected GREEN stdout above (rc=0) after any future change;
+  a return of zeros (`0 0 0 0`) marks the global array-element store-drop regression.
+
 ## RED FIXTURE — switch_expr_payload_capture_xmod (2026-09-02)
 
 New corpus fixture `repro/mi_matrix/switch_expr_payload_capture_xmod/main.zig` (plan
