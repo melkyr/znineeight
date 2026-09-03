@@ -3245,6 +3245,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             }
         }
     }
+    dceMarkLoadGlobalAliases(lir_fn, max_temp, tid_to_pos, no_decl_arr);
     dceMarkAllReads(lir_fn, max_temp, tid_to_pos, read_count, protected_arr, no_decl_arr, emitter.registry);
     var raw_lr = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, local_count) * @intCast(usize, 1), @intCast(usize, 1)) catch unreachable;
     var local_read_arr = @ptrCast([*]u8, raw_lr);
@@ -7067,6 +7068,32 @@ fn dceTempIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, temp: u32) bool
     return false;
 }
 
+fn dceMarkLoadGlobalAliases(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, no_decl_arr: [*]u8) void {
+    var bb_idx: usize = @intCast(usize, 0);
+    while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
+        var bb = &lir_fn.blocks.items[bb_idx];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            var inst = bb.insts.items[ii];
+            switch (inst) {
+                .load_global => |lg| { dceNoDeclPos(max_temp, tid_to_pos, no_decl_arr, lg.result); },
+                else => {},
+            }
+        }
+    }
+}
+
+fn dceBaseEscapes(registry: *TypeRegistry, lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, no_decl_arr: [*]u8, temp: u32) bool {
+    if (!dceTempIsArray(registry, lir_fn, temp)) { return true; }
+    if (temp < max_temp) {
+        var p = tid_to_pos[@intCast(usize, temp)];
+        if (p != @intCast(u32, 0xFFFFFFFF)) {
+            if (no_decl_arr[@intCast(usize, p)] != @intCast(u8, 0)) { return true; }
+        }
+    }
+    return false;
+}
+
 fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, protected_arr: [*]u8, no_decl_arr: [*]u8, registry: *TypeRegistry) void {
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
@@ -7077,7 +7104,7 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
             switch (inst) {
                 .assign => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
                 .assign_field => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); if (!dceFieldIsArray(registry, lir_fn, a.base, a.field_id)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); } },
-                .assign_index => |a| { if (!dceTempIsArray(registry, lir_fn, a.base)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); } dceMarkReadPos(max_temp, tid_to_pos, read_count, a.index); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
+                .assign_index => |a| { if (dceBaseEscapes(registry, lir_fn, max_temp, tid_to_pos, no_decl_arr, a.base)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); } dceMarkReadPos(max_temp, tid_to_pos, read_count, a.index); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
                 .branch => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.cond); },
                 .switch_br => |s| { dceMarkReadPos(max_temp, tid_to_pos, read_count, s.cond); },
                 .ret => |v| { dceMarkReadPos(max_temp, tid_to_pos, read_count, v); },
