@@ -104,7 +104,7 @@ Append `## I2-SLICESTALE` to `.superpowers/sdd/task-SWEXPR-report.md` (reproduct
 
 *(Implementation details finalized from the I-SWEXPR verdict; I2-SLICESTALE was closed as a phantom by operator ruling 2026-09-03 and contributes no fix.)*
 
-**STATUS (AMENDMENT 2, operator ruling 2026-09-03):** the switch-expr capture-placement fix is COMMITTED (`6d71b917`). The full battery AND the mud re-baseline (`4591fef0 → 517635c9`) are DEFERRED: the operator determined mud_server is currently a broken "sample" (its world never initializes — see Task I3-STORE-DROP below), so re-baselining it now is meaningless. Sequence now: I3-STORE-DROP (RED repro + root-cause, run FIRST) → F-STORE-DROP (fix, with the SWEXPR fix retained) → combined full battery → THEN decide the final mud re-baseline once mud runtime correctness is verified against the zig0 oracle. Do NOT run F-SWEXPR's Step 4 battery standalone.
+**STATUS (AMENDMENT 2, operator ruling 2026-09-03):** the switch-expr capture-placement fix is COMMITTED (`6d71b917`). The full battery AND the mud re-baseline (`4591fef0 → 517635c9`) are DEFERRED: the operator determined mud_server is currently a broken "sample" (its world never initializes — see Task I3-STORE-DROP below), so re-baselining it now is meaningless. Sequence now: I3-STORE-DROP (RED repro + root-cause, DONE `42d41e79`) → E-STORE-DROP (POC/experiment: candidate fixes evaluated CORPUS-ONLY, no permanent change) → operator picks 1-2 candidates → F-STORE-DROP (real fix, full battery, mud correctness vs oracle, with the SWEXPR fix retained) → combined full battery → THEN decide the final mud re-baseline once mud runtime correctness is verified against the zig0 oracle. Do NOT run F-SWEXPR's Step 4 battery standalone.
 
 **Files:**
 - Modify: `sf/src/lower.zig` (the expression-switch site `lowerExprImpl`: capture `load_field`/`decl_local` placement)
@@ -185,9 +185,35 @@ git commit -m "test: RED fixture — global array-element struct store dropped (
 - [ ] **Step 5: Report + STOP**
 Append `## I3-STORE-DROP` to `.superpowers/sdd/task-SWEXPR-report.md` (shapes tested, root-cause verdict file:line, fixture design, RED proof table, commit sha). Controller STOP-presents; F-STORE-DROP does not start without a ruling.
 
+### Task E-STORE-DROP (POC / experiment): candidate fixes, corpus-only evaluation, no permanent change
+
+*(Operator directive 2026-09-03: BEFORE the real F-STORE-DROP, run a BOUNDED experiment to find 1-2 candidate fixes for the RED `global_struct_array_store_xmod`. Boundary: NO permanent compiler change — scratch builds only, working tree left clean; for EACH candidate run the CORPUS ONLY (no other gates) plus the RED fixture (mud "north" probe optional), to see which candidate turns the RED GREEN without opening regressions. The real F-STORE-DROP (full battery, mud correctness vs oracle, mud re-baseline decision) runs afterward on the chosen candidate. Do NOT start the experiment with a predetermined single answer — enumerate candidates and let the corpus adjudicate.)*
+
+**Files:**
+- None committed. Scratch under `/tmp/storedrop_cand/` (copy `sf/src` per candidate; edit the COPY's `c89_emit.zig`; build a scratch zig1 from the copy; restore/delete after).
+- Test (read): `repro/mi_matrix/global_struct_array_store_xmod` (RED today: `0 0 0 0`; GREEN = `1 5 5 10`); the corpus (404 dirs at `-s0`, classifier per docs/sf/QUICK_REF.md lines ~61-89).
+
+**Interfaces:**
+- Consumes: I3-STORE-DROP's root-cause (mark/release two-pass liveness; `.assign_index` base array-guard c89_emit.zig:7080; unconditional base release :7237; `load_global` no_decl :7137 + `temp_global_map` :5172-5181; the `dceTempIsArray` guard born in commit `c45f7333`, no documented rationale). Baseline compiler = current HEAD (incl. SWEXPR `6d71b917`).
+- Produces: a candidate table (1-2 recommended) — per candidate: exact diff, RED-fixture verdict, corpus sweep summary (asymmetric count; NEW FAIL/ICE/CRASH/gcc-error vs baseline), optional mud-north probe, and a recommendation for F-STORE-DROP.
+
+- [ ] **Step 1: Baseline**
+Build the baseline zig1 from current HEAD into a scratch dir; confirm the RED fixture prints `0 0 0 0` (RED); run the corpus sweep to capture baseline counts (the comparison reference). (Corpus = the established 404-dir `-s0` sweep reusing the documented classifier; record OK/FAIL/ICE/CRASH + asymmetric=0 vs the reference `/tmp/fx_subfolder/zig1`.)
+- [ ] **Step 2: Enumerate + implement candidates (scratch copies)**
+Starting set (extend if analysis reveals more): 
+  - C1: mark the `.assign_index` base read unconditionally (remove the `!dceTempIsArray` guard, c89_emit.zig:7080).
+  - C2: C1 AND exempt the `.assign_index` base from the release pass (:7237) so the mark is not undone.
+  - C3: keep the base alive + no-decl only when it is a by-name `load_global` alias (protect/no-release for the global-alias case; targeted, globals only).
+  - C4: any other locus the executor's analysis surfaces.
+  For each candidate: copy `sf/src` to `/tmp/storedrop_cand/cN/`, apply the exact edit to the copy's `c89_emit.zig` (edit tool; re-read before edit), build a scratch zig1 from the copy (zig0 → gcc, never `sf/build/out_release/`), verify the candidate compiler runs.
+- [ ] **Step 3: Evaluate each candidate — corpus ONLY**
+For each candidate compiler: (a) emit + gcc + run the RED fixture → GREEN (`1 5 5 10`, rc=0)? (b) run the corpus sweep (404 dirs `-s0`) → compare vs baseline: asymmetric count must stay 0 and no NEW FAIL/ICE/CRASH/gcc-error; any new corpus failure = reject the candidate (matryoshka signal). Optional: mud_server "north" probe (timeout-guarded) if a candidate reaches GREEN.
+- [ ] **Step 4: Report + restore + STOP**
+Rank candidates; pick the 1-2 that fix RED with a clean corpus. Append `## E-STORE-DROP` to the report file (candidate table: diff, fixture verdict, corpus counts, probe, recommendation). Restore the working tree to clean (no compiler change left). NO commit of any candidate. STOP-present the candidates to the operator — F-STORE-DROP runs only after the operator chooses a candidate.
+
 ### Task F-STORE-DROP: fix the dropped global array-element struct store + mud correctness + combined battery
 
-*(Fix shape finalized from I3-STORE-DROP findings.)*
+*(Fix shape finalized from I3-STORE-DROP findings + the candidate selected in E-STORE-DROP.)*
 
 **Files:**
 - Modify: `sf/src/lower.zig` and/or `sf/src/c89_emit.zig` (emit the missing store)
@@ -198,7 +224,7 @@ Append `## I3-STORE-DROP` to `.superpowers/sdd/task-SWEXPR-report.md` (shapes te
 - Produces: correct emission such that `world[i] = <struct value>` stores to the global; mud_server's `initRooms` populates the world; mud .Go movement behaves like the zig0 oracle.
 
 - [ ] **Step 1: RED first** — run the I3 fixture on the current compiler (with the SWEXPR fix `6d71b917` retained): RED (zeros). Snapshot gates.
-- [ ] **Step 2: Apply the fix** — per the I3 verdict, ensure a struct-valued store to a subscripted global array element emits the store (whole-struct assignment or equivalent correct field stores). No unrelated changes.
+- [ ] **Step 2: Apply the fix** — per the I3-STORE-DROP verdict and the E-STORE-DROP-selected candidate, ensure a struct-valued store to a subscripted global array element emits the store (whole-struct assignment or equivalent correct field stores). No unrelated changes.
 - [ ] **Step 3: GREEN gate** — I3 fixture prints expected values rc=0. Also rebuild mud_server and drive it (timeout-guarded socket probe): "north" from start must reply `A sunny clearing...` (oracle-verified), movement works.
 - [ ] **Step 4: Combined full battery + final mud re-baseline decision**
 Run the full battery with BOTH fixes (SWEXPR + store-drop): 4 MD5 gates (gol/lisp/json MUST stay byte-identical; **mud WILL move** — this is now the FINAL mud hash, proposed for re-baseline only with runtime verified vs the oracle per AMENDMENT 2, STOP for operator ruling), golden 9/9, matrix 21/21, corpus 0-asymmetric, self-compile round-trip (record NEW fixed-point md5), reference 0-warning, json_parser_upgraded end-to-end (run-only). Present the mud re-baseline proposal + full results to the operator.
