@@ -1,4 +1,38 @@
-# mi_matrix corpus — expected-fail manifest (v54 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v55 2026-09-03)
+
+## Langwins feature-gap fixtures (v55 2026-09-03) — R2 pointer-builtin REPRO rows
+
+New-corpus REPRO fixtures (plan `2026-09-03-language-wins-r-i-plan.md`, Task R2): the modern pointer
+builtins `@intFromPtr` / `@ptrFromInt` / `@fieldParentPtr` are ABSENT from sf/src — grep of sf/src for
+`intFromPtr|ptrFromInt|fieldParentPtr` returns NO matches, while the OLD names `@ptrToInt`/`@intToPtr`
+DO exist (sf/src/lower.zig:438-440; semantic_analyzer.zig:93-95). Measured on the reference
+`/tmp/fx_subfolder/zig1` md5 `1a5056b2` via the authoritative classify1.sh recipe
+(`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run). Each is **RED class FAIL**
+(emission-defect GCCFAIL, deterministic 3/3): dump rc=0 with 4 `.c` emitted and 0-byte stderr (NO
+frontend diagnostic — the R1 silent-dump pattern again: the calls lower to dangling temps / a
+struct-typed result), then gcc `-c` rejects the emitted `main_*.c`. Neither ICE nor CRASH observed.
+Corpus +2 (mi_matrix 335→337). No implementation yet — these rows are GREEN-contract expectations, NOT
+runnable today.
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `builtin_ptr_roundtrip_xmod` | `@intFromPtr(p)`/`@ptrFromInt(a)` — pointer-int round trip | FAIL (GCCFAIL, deterministic 3/3) | `42\n` (store 42 through recovered ptr) |
+| `builtin_fieldparentptr_xmod` | `@fieldParentPtr(Outer, "inner", &o.inner)` — recover container ptr | FAIL (GCCFAIL, deterministic 3/3) | `1\n` (recovered ptr == &o) |
+
+- **Current RED status — builtin_ptr_roundtrip_xmod:** `@intFromPtr(p)` and `@ptrFromInt(a)` have no
+  lowering branch — the emitted main body ends `(void)zT_4;` `(void)zT_6;` `q = zT_8;` referencing
+  never-declared result temps `zT_6`/`zT_8` → gcc `error: 'zT_6' undeclared (first use in this
+  function)` and `'zT_8' undeclared` (`main_083B9CD1.c:19:11` / `:20:9`). Emitted main md5 `6e2eb21f…`
+  byte-identical 3/3.
+- **Current RED status — builtin_fieldparentptr_xmod:** `@fieldParentPtr(Outer, "inner", &o.inner)`
+  mis-types its result as a struct VALUE — emitted C declares `zT_2E7A8214_Outer po;` plus three
+  `po = zT_9;` zero-init stores, then compares via `zT_13 = (unsigned int)po;` → gcc `error: aggregate
+  value used where an integer was expected` (`main_D9BA0AD5.c:41:5`). Emitted main md5 `90c5cbc9…`
+  byte-identical 3/3.
+- **Rule:** each fixture MUST print its expected GREEN stdout above (rc=0) once the builtins gain real
+  lowering branches; the current silent-dump signatures (never-declared result temps / struct-value
+  result where a pointer is required) mark the missing pointer-builtin gap. The old-name aliases
+  `@ptrToInt`/`@intToPtr` already work — only the modern spellings and `@fieldParentPtr` are absent.
 
 ## Langwins feature-gap fixtures (v54 2026-09-03) — R1 introspection-builtin REPRO rows
 
