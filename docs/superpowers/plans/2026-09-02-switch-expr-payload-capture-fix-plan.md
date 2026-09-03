@@ -215,6 +215,8 @@ Rank candidates; pick the 1-2 that fix RED with a clean corpus. Append `## E-STO
 
 *(Fix shape finalized from I3-STORE-DROP findings + operator ruling 2026-09-03: implement the C4-helper = C3-semantics, the analysis-surfaced candidate. It replaces E-STORE-DROP's C3 pre-pass with a named helper that encodes the invariant directly at the mark site.)*
 
+**STATUS (operator ruling 2026-09-03):** F-STORE-DROP is COMMITTED (`f014259b`, ONLY `sf/src/c89_emit.zig` — global array-element stores now emit). The combined battery (SWEXPR `6d71b917` + store-drop) **PASSES**: `global_struct_array_store_xmod` GREEN (`1 5 5 10`) + `switch_expr_payload_capture_xmod` GREEN (helloA/helloB stdout); golden 9/9; matrix 21/21; corpus 405 dirs `-s0` OK=395/FAIL=5(=green-guards)/GREEN=5/ICE=0/CRASH=0, 0 asymmetric; self-compile 42 `.c`/0 err/0 PANIC with NEW fixed point `3b45184e…` (was `e2028dcf`); json_parser_upgraded run rc=0 stdout byte-identical. **mud 4-MD5 gate RE-BASELINED `4591fef0…` → `53405b3b…`** per the operator ruling (runtime-verified vs the zig0 oracle — mud "north" replies `A sunny clearing…`; the sample was broken pre-fix, world never initialized); gol/lisp/json byte-identical (`302df36b…`/`3591bad9…`/`76056b97…`), NOT re-baselined. HEAD `f014259b`.
+
 **Files:**
 - Modify: `sf/src/c89_emit.zig` (the `.assign_index` base read-mark guard + a new helper)
 - Test: the `global_struct_array_store_xmod` fixture GREEN; mud_server movement now matches the zig0 oracle.

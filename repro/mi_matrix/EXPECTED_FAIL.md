@@ -1,6 +1,14 @@
-# mi_matrix corpus — expected-fail manifest (v52 2026-09-02)
+# mi_matrix corpus — expected-fail manifest (v53 2026-09-03)
 
 ## RED FIXTURE — global_struct_array_store_xmod (2026-09-03)
+
+- **RESOLVED (2026-09-03, F-STORE-DROP `f014259b`):** the fixture is now **GREEN** — fixed by commit
+  `f014259b` (C4-helper/C3-semantics, `sf/src/c89_emit.zig` — the `.assign_index` base of a
+  global-array-element store is now read-marked via the `dceBaseEscapes` helper, so the by-name
+  `load_global` alias is never dead-classified). Its runtime guard rule below now **PASSES**: run rc=0
+  with stdout `1 5 5 10`. It **no longer belongs in the expected-fail set** (kept as a permanent
+  regression guard). mud_server movement restored (verified vs the zig0 oracle). The historical
+  root-cause record beneath this marker is retained verbatim as evidence.
 
 New corpus fixture `repro/mi_matrix/global_struct_array_store_xmod/main.zig` (plan
 `2026-09-02-switch-expr-payload-capture-fix-plan.md` AMENDMENT 2, Task I3-STORE-DROP): zig1 DROPS
@@ -33,6 +41,14 @@ dropped**. Original repro: mud_server `examples/z98/mud_server/main.zig:31-48` (
   a return of zeros (`0 0 0 0`) marks the global array-element store-drop regression.
 
 ## RED FIXTURE — switch_expr_payload_capture_xmod (2026-09-02)
+
+- **RESOLVED (2026-09-03, F-SWEXPR `6d71b917`):** the fixture is now **GREEN** — fixed by commit
+  `6d71b917` (`sf/src/lower.zig` — expression-switch payload-capture `load_field`/`decl_local`
+  emissions moved into the prong's own block, after `current_bb = prong_bb_id`). Its runtime guard
+  rule below now **PASSES**: run rc=0 with stdout `helloA\nhelloA\nhelloB\nhelloB\n` (28 B). It **no
+  longer belongs in the expected-fail set** (kept as a permanent regression guard). json_parser_upgraded
+  (the program that exposed the bug) now runs rc=0 stdout byte-identical. The historical root-cause
+  record beneath this marker is retained verbatim as evidence.
 
 New corpus fixture `repro/mi_matrix/switch_expr_payload_capture_xmod/main.zig` (plan
 `2026-09-02-switch-expr-payload-capture-fix-plan.md`, Task I-SWEXPR): a switch used as an
