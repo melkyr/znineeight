@@ -4147,6 +4147,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var lf16_sp: []const u8 = "t"; pal.markerWrite(lf16_sp);
             var lf16_tb: [10]u8 = undefined; var lf16_tl = itoa_mod.itoa(tu_type_box[0], lf16_tb[0..]); var lf16_ts: usize = @intCast(usize, 9) - @intCast(usize, lf16_tl); pal.markerWrite(lf16_tb[lf16_ts..@intCast(usize, 9)]);
             var lf16_n: []const u8 = "\n"; pal.markerWrite(lf16_n);
+        var prong_bb_id: u32 = prong_start + @intCast(u32, pi);
+            self.current_bb = prong_bb_id;
+            self.block_terminated = @intCast(u8, 0);
             if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                 var capture_name = prong_node.child_1;
                 if (tu_type_box[0] != @intCast(u32, 0)) {
@@ -4176,9 +4179,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                      }
                 }
             }
-        var prong_bb_id: u32 = prong_start + @intCast(u32, pi);
-            self.current_bb = prong_bb_id;
-            self.block_terminated = @intCast(u8, 0);
             var body_node = ast_mod.astStoreNodeAt(store, prong_node.child_0);
             var prong_val: u32 = @intCast(u32, 0);
             if (body_node.kind == AstKind.block) {
