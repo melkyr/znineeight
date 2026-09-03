@@ -57,6 +57,7 @@ pub const SemanticAnalyzer = struct {
     int_from_ptr_name_id: u32,
     ptr_from_int_name_id: u32,
     field_parent_ptr_name_id: u32,
+    bitcast_name_id: u32,
     intcast_name_id: u32,
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
@@ -106,6 +107,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var pfi_id = interner_mod.stringInternerIntern(interner, pfi_s);
     var fpp_s: []const u8 = "@fieldParentPtr";
     var fpp_id = interner_mod.stringInternerIntern(interner, fpp_s);
+    var bc_s: []const u8 = "@bitCast";
+    var bc_id = interner_mod.stringInternerIntern(interner, bc_s);
     var ic_s: []const u8 = "@intCast";
     var ic_id = interner_mod.stringInternerIntern(interner, ic_s);
     var fc_s: []const u8 = "@floatCast";
@@ -205,6 +208,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .int_from_ptr_name_id = ifp_id,
         .ptr_from_int_name_id = pfi_id,
         .field_parent_ptr_name_id = fpp_id,
+        .bitcast_name_id = bc_id,
         .intcast_name_id = ic_id,
         .floatcast_name_id = fc_id,
         .inttofloat_name_id = if_id,
@@ -1559,6 +1563,29 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 }
             }
             result = fpp_res;
+        } else if (node.child_0 == self.bitcast_name_id) {
+            var bc_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
+            if (ec.len >= @intCast(usize, 2)) {
+                var bc_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                if (bc_dst != type_mod.TYPE_UNDEFINED) {
+                    var bc_src = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
+                    var bc_ok: u8 = @intCast(u8, 0);
+                    if (bc_src != type_mod.TYPE_UNDEFINED and type_mod.typeRegistryIsInteger(self.registry, bc_dst) and type_mod.typeRegistryIsInteger(self.registry, bc_src)) {
+                        var bc_dty = self.registry.types_items[@intCast(usize, bc_dst)];
+                        var bc_sty = self.registry.types_items[@intCast(usize, bc_src)];
+                        if (bc_dty.state == @intCast(u8, 2) and bc_sty.state == @intCast(u8, 2) and bc_dty.size == bc_sty.size) {
+                            bc_ok = @intCast(u8, 1);
+                        }
+                    }
+                    bc_res = bc_dst;
+                    if (bc_ok == @intCast(u8, 0)) {
+                        var bc_msg: []const u8 = "@bitCast requires same-size integer source and destination types";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3000_TYPE_MISMATCH)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), bc_msg);
+                    }
+                }
+            }
+            result = bc_res;
         } else if (node.child_0 == self.getchar_name_id) {
             result = type_mod.TYPE_U8;
         } else if (node.child_0 == self.exit_name_id) {

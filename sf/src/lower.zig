@@ -378,6 +378,7 @@ pub const LirLowerer = struct {
     enumtoint_name_id: u32,
     inttoenum_name_id: u32,
     as_name_id: u32,
+    bitcast_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
     offset_of_name_id: u32,
@@ -457,6 +458,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var ite_id = si_mod.stringInternerIntern(ctx.registry.interner, ite_s);
     var as_s: []const u8 = "@as";
     var as_id = si_mod.stringInternerIntern(ctx.registry.interner, as_s);
+    var bc_s: []const u8 = "@bitCast";
+    var bc_id = si_mod.stringInternerIntern(ctx.registry.interner, bc_s);
     var sizeof_s: []const u8 = "@sizeOf";
     var sizeof_id = si_mod.stringInternerIntern(ctx.registry.interner, sizeof_s);
     var alignof_s: []const u8 = "@alignOf";
@@ -541,6 +544,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .enumtoint_name_id = eit_id,
          .inttoenum_name_id = ite_id,
          .as_name_id = as_id,
+         .bitcast_name_id = bc_id,
          .size_of_name_id = sizeof_id,
          .align_of_name_id = alignof_id,
          .offset_of_name_id = offsetof_id,
@@ -3320,6 +3324,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 }
                             }
                         }
+                    }
+                }
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
+            if (node.child_0 == self.bitcast_name_id) {
+                if (ec.len >= @intCast(usize, 2)) {
+                    var bc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+                    var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                    if (bc_dst != type_mod.TYPE_UNDEFINED) {
+                        var bc_arg = lowerExpr(self, ec[@intCast(usize, 1)]);
+                        var bc_res = nextTemp(self, bc_dst);
+                        emitInst(self, LirInst{ .int_cast = .{ .value = bc_arg, .target = bc_dst, .result = bc_res, .is_checked = @intCast(u8, 0) } });
+                        return bc_res;
                     }
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
