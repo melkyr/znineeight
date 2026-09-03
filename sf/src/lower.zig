@@ -372,6 +372,9 @@ pub const LirLowerer = struct {
     ptrcast_name_id: u32,
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
+    int_from_ptr_name_id: u32,
+    ptr_from_int_name_id: u32,
+    field_parent_ptr_name_id: u32,
     enumtoint_name_id: u32,
     inttoenum_name_id: u32,
     as_name_id: u32,
@@ -442,6 +445,12 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var ptin_id = si_mod.stringInternerIntern(ctx.registry.interner, pti_s);
     var itp_s: []const u8 = "@intToPtr";
     var itp_id = si_mod.stringInternerIntern(ctx.registry.interner, itp_s);
+    var ifp_s: []const u8 = "@intFromPtr";
+    var ifp_id = si_mod.stringInternerIntern(ctx.registry.interner, ifp_s);
+    var pfi_s: []const u8 = "@ptrFromInt";
+    var pfi_id = si_mod.stringInternerIntern(ctx.registry.interner, pfi_s);
+    var fpp_s: []const u8 = "@fieldParentPtr";
+    var fpp_id = si_mod.stringInternerIntern(ctx.registry.interner, fpp_s);
     var eit_s: []const u8 = "@enumToInt";
     var eit_id = si_mod.stringInternerIntern(ctx.registry.interner, eit_s);
     var ite_s: []const u8 = "@intToEnum";
@@ -526,6 +535,9 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .ptrcast_name_id = ptrcast_id,
          .ptrtoint_name_id = ptin_id,
          .inttoptr_name_id = itp_id,
+         .int_from_ptr_name_id = ifp_id,
+         .ptr_from_int_name_id = pfi_id,
+         .field_parent_ptr_name_id = fpp_id,
          .enumtoint_name_id = eit_id,
          .inttoenum_name_id = ite_id,
          .as_name_id = as_id,
@@ -3249,7 +3261,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return result;
         } else if (node.kind == AstKind.builtin_call) {
          var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
-            if (node.child_0 == self.ptrtoint_name_id) {
+            if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
                 if (ec.len >= 1) {
                     var arg_val = lowerExpr(self, ec[@intCast(usize, 0)]);
                     var result2 = nextTemp(self, type_mod.TYPE_USIZE);
@@ -3258,6 +3270,59 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 } else {
                     return nextTemp(self, type_mod.TYPE_USIZE);
                 }
+            }
+            if (node.child_0 == self.ptr_from_int_name_id) {
+                var pfi_t: u32 = @intCast(u32, type_mod.TYPE_USIZE);
+                var pfi_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                if (pfi_rt) |prt| {
+                    var pfi_ty = self.ctx.registry.types_items[@intCast(usize, prt)];
+                    if (pfi_ty.kind == type_mod.TypeKind.ptr_type or pfi_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                        pfi_t = prt;
+                    }
+                }
+                if (ec.len >= @intCast(usize, 1)) {
+                    var pfi_arg = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    var pfi_res = nextTemp(self, pfi_t);
+                    emitInst(self, LirInst{ .int_to_ptr = .{ .value = pfi_arg, .target = pfi_t, .result = pfi_res } });
+                    return pfi_res;
+                }
+                return nextTemp(self, pfi_t);
+            }
+            if (node.child_0 == self.field_parent_ptr_name_id) {
+                if (ec.len >= @intCast(usize, 3)) {
+                    var fpp_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+                    var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                    if (fpp_outer != type_mod.TYPE_UNDEFINED) {
+                        var fpp_oty = self.ctx.registry.types_items[@intCast(usize, fpp_outer)];
+                        if (fpp_oty.state == @intCast(u8, 2) and fpp_oty.kind == type_mod.TypeKind.struct_type) {
+                            var fpp_fields: []type_mod.FieldEntry = undefined;
+                            type_mod.typeRegistryGetStructFields(self.ctx.registry, fpp_outer, &fpp_fields);
+                            var fpp_fnode = ast_mod.astStoreNodeAt(self.ctx.store, ec[@intCast(usize, 1)]);
+                            if (fpp_fnode.kind == AstKind.string_literal) {
+                                var fpp_sv = ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 1)]);
+                                var fpp_want = self.ctx.store.string_values.items[@intCast(usize, fpp_sv)];
+                                var fpp_i: usize = 0;
+                                while (fpp_i < fpp_fields.len) : (fpp_i += 1) {
+                                    if (fpp_fields[fpp_i].name_id == fpp_want) {
+                                        var fpp_off: u64 = @intCast(u64, fpp_fields[fpp_i].offset);
+                                        var fpp_base = lowerExpr(self, ec[@intCast(usize, 2)]);
+                                        var fpp_t1 = nextTemp(self, type_mod.TYPE_USIZE);
+                                        emitInst(self, LirInst{ .ptr_to_int = .{ .value = fpp_base, .result = fpp_t1 } });
+                                        var fpp_t2 = nextTemp(self, type_mod.TYPE_USIZE);
+                                        emitInst(self, LirInst{ .int_const = .{ .value = fpp_off, .result = fpp_t2 } });
+                                        var fpp_t3 = nextTemp(self, type_mod.TYPE_USIZE);
+                                        emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = fpp_t1, .rhs = fpp_t2, .result = fpp_t3 } });
+                                        var fpp_ptr = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fpp_outer, false);
+                                        var fpp_res = nextTemp(self, fpp_ptr);
+                                        emitInst(self, LirInst{ .int_to_ptr = .{ .value = fpp_t3, .target = fpp_ptr, .result = fpp_res } });
+                                        return fpp_res;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
                 var fold_ty_box: [1]u32 = [1]u32{ type_mod.TYPE_USIZE };

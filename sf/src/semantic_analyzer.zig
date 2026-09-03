@@ -54,6 +54,9 @@ pub const SemanticAnalyzer = struct {
     ptrcast_name_id: u32,
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
+    int_from_ptr_name_id: u32,
+    ptr_from_int_name_id: u32,
+    field_parent_ptr_name_id: u32,
     intcast_name_id: u32,
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
@@ -97,6 +100,12 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var ptin_id = interner_mod.stringInternerIntern(interner, pti_s);
     var itp_s: []const u8 = "@intToPtr";
     var itp_id = interner_mod.stringInternerIntern(interner, itp_s);
+    var ifp_s: []const u8 = "@intFromPtr";
+    var ifp_id = interner_mod.stringInternerIntern(interner, ifp_s);
+    var pfi_s: []const u8 = "@ptrFromInt";
+    var pfi_id = interner_mod.stringInternerIntern(interner, pfi_s);
+    var fpp_s: []const u8 = "@fieldParentPtr";
+    var fpp_id = interner_mod.stringInternerIntern(interner, fpp_s);
     var ic_s: []const u8 = "@intCast";
     var ic_id = interner_mod.stringInternerIntern(interner, ic_s);
     var fc_s: []const u8 = "@floatCast";
@@ -193,6 +202,9 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .ptrcast_name_id = pc_name_id,
         .ptrtoint_name_id = ptin_id,
         .inttoptr_name_id = itp_id,
+        .int_from_ptr_name_id = ifp_id,
+        .ptr_from_int_name_id = pfi_id,
+        .field_parent_ptr_name_id = fpp_id,
         .intcast_name_id = ic_id,
         .floatcast_name_id = fc_id,
         .inttofloat_name_id = if_id,
@@ -1516,9 +1528,37 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 _ = type_resolver.resolveTypeExprFull(&so_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             }
             result = type_mod.TYPE_INT_LIT;
-        } else if (node.child_0 == self.ptrtoint_name_id) {
+        } else if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
             result = type_mod.TYPE_USIZE;
+        } else if (node.child_0 == self.ptr_from_int_name_id) {
+            var pfi_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
+            if (ec.len >= @intCast(usize, 1)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+                var pfi_top = topExpectedType(self);
+                if (pfi_top != @intCast(u32, 0) and pfi_top != type_mod.TYPE_UNDEFINED) {
+                    var pfi_ty = self.registry.types_items[@intCast(usize, pfi_top)];
+                    if (pfi_ty.kind == type_mod.TypeKind.ptr_type or pfi_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                        pfi_res = pfi_top;
+                    }
+                }
+            }
+            if (pfi_res == type_mod.TYPE_VOID) {
+                var pfi_msg: []const u8 = "cannot infer pointer type for @ptrFromInt; annotate the target variable type";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3000_TYPE_MISMATCH)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pfi_msg);
+            }
+            result = pfi_res;
+        } else if (node.child_0 == self.field_parent_ptr_name_id) {
+            var fpp_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
+            if (ec.len >= @intCast(usize, 3)) {
+                var fpp_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                if (fpp_outer != type_mod.TYPE_UNDEFINED) {
+                    _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
+                    fpp_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, fpp_outer, false);
+                }
+            }
+            result = fpp_res;
         } else if (node.child_0 == self.getchar_name_id) {
             result = type_mod.TYPE_U8;
         } else if (node.child_0 == self.exit_name_id) {
