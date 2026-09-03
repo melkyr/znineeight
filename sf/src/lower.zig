@@ -1314,6 +1314,87 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
     }
 }
 
+fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32, cond_ty_id: ?u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, item_idx);
+    if (node.kind == AstKind.range_inclusive or node.kind == AstKind.range_exclusive) {
+        var lo_node = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
+        var hi_node = ast_mod.astStoreNodeAt(self.ctx.store, node.child_1);
+        var lo_is_lit: u8 = @intCast(u8, 0);
+        if (lo_node.kind == AstKind.int_literal or lo_node.kind == AstKind.char_literal) { lo_is_lit = @intCast(u8, 1); }
+        var hi_is_lit: u8 = @intCast(u8, 0);
+        if (hi_node.kind == AstKind.int_literal or hi_node.kind == AstKind.char_literal) { hi_is_lit = @intCast(u8, 1); }
+        if (lo_is_lit == @intCast(u8, 1) and hi_is_lit == @intCast(u8, 1)) {
+            var lo = ast_mod.astStoreIntValue(self.ctx.store, node.child_0);
+            var hi = ast_mod.astStoreIntValue(self.ctx.store, node.child_1);
+            if (hi >= lo) {
+                var one: u64 = @intCast(u64, 1);
+                var count: u64 = if (node.kind == AstKind.range_inclusive) (hi - lo) + one else hi - lo;
+                if (count <= @intCast(u64, 16384)) {
+                    var vv: u64 = lo;
+                    var ctr: u64 = @intCast(u64, 0);
+                    while (ctr < count) : (ctr += @intCast(u64, 1)) {
+                        lir_mod.switchCaseArrayListAppend(&self.func.switch_cases, lir_mod.SwitchCase{ .value = vv, .target_bb = prong_bb_id });
+                        vv += @intCast(u64, 1);
+                    }
+                }
+            }
+        }
+        return;
+    }
+    var case_val: u64 = @intCast(u64, 0);
+    if (node.kind == AstKind.int_literal) {
+        case_val = ast_mod.astStoreIntValue(self.ctx.store, item_idx);
+    } else if (node.kind == AstKind.char_literal) {
+        case_val = ast_mod.astStoreIntValue(self.ctx.store, item_idx);
+    } else if (node.kind == AstKind.enum_literal) {
+        var cval2: u64 = @intCast(u64, ast_mod.astStoreNodePayload(self.ctx.store, item_idx));
+        var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
+        if (cev2) |v| { cval2 = @intCast(u64, v); }
+        case_val = cval2;
+    } else if (node.kind == AstKind.error_literal) {
+        var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, ast_mod.astStoreNodePayload(self.ctx.store, item_idx)));
+        var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
+        if (cev3) |v| { cval3 = @intCast(u64, v); }
+        case_val = cval3;
+    } else if (node.kind == AstKind.field_access) {
+        var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item_idx);
+        var fa_found: bool = false;
+        if (cond_ty_id) |ct| {
+            var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+            if (ct_ty.kind == type_mod.TypeKind.enum_type) {
+                var ep = self.ctx.registry.en_items[@intCast(usize, ct_ty.payload_idx)];
+                var estart: usize = @intCast(usize, ep.members_start);
+                var ecount: usize = @intCast(usize, ep.members_count);
+                var ei: usize = 0;
+                while (ei < ecount) : (ei += 1) {
+                    var member = self.ctx.registry.em_items[estart + ei];
+                    if (member.name_id == fa_name_id) {
+                        case_val = @intCast(u64, member.value);
+                        fa_found = true;
+                        break;
+                    }
+                }
+            } else if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                var tp = self.ctx.registry.tu_items[@intCast(usize, ct_ty.payload_idx)];
+                var fstart: usize = @intCast(usize, tp.fields_start);
+                var fcount: usize = @intCast(usize, tp.fields_count);
+                var fi: usize = 0;
+                while (fi < fcount) : (fi += 1) {
+                    if (self.ctx.registry.fe_items[fstart + fi].name_id == fa_name_id) {
+                        case_val = @intCast(u64, fi);
+                        fa_found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!fa_found) { return; }
+    } else {
+        return;
+    }
+    lir_mod.switchCaseArrayListAppend(&self.func.switch_cases, lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
+}
+
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     if (@intCast(usize, temp_id) >= self.hoisted_temps.len) {
         var ws: []const u8 = "temp";
@@ -4173,61 +4254,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var case_ec = ast_mod.astStoreNodeExtraChildren(store, prong_ec[pi]);
             var ci: usize = 0;
             while (ci < case_ec.len) : (ci += 1) {
-                var case_node = ast_mod.astStoreNodeAt(store, case_ec[ci]);
-                var case_val: u64 = @intCast(u64, 0);
-                if (case_node.kind == AstKind.int_literal) {
-                    case_val = ast_mod.astStoreIntValue(store, case_ec[ci]);
-                } else if (case_node.kind == AstKind.char_literal) {
-                    case_val = ast_mod.astStoreIntValue(store, case_ec[ci]);
-                } else if (case_node.kind == AstKind.enum_literal) {
-                    var cval2: u64 = @intCast(u64, ast_mod.astStoreNodePayload(store, case_ec[ci]));
-                    var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
-                    if (cev2) |v| { cval2 = @intCast(u64, v); }
-                    case_val = cval2;
-                } else if (case_node.kind == AstKind.error_literal) {
-                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, ast_mod.astStoreNodePayload(store, case_ec[ci])));
-                    var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
-                    if (cev3) |v| { cval3 = @intCast(u64, v); }
-                    case_val = cval3;
-                } else if (case_node.kind == AstKind.field_access) {
-                    var fa_name_id: u32 = ast_mod.astStoreNodePayload(store, case_ec[ci]);
-                    var fa_found: bool = false;
-                    if (cond_ty_id) |ct| {
-                        var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
-                        if (ct_ty.kind == type_mod.TypeKind.enum_type) {
-                            var ep = self.ctx.registry.en_items[@intCast(usize, ct_ty.payload_idx)];
-                            var estart: usize = @intCast(usize, ep.members_start);
-                            var ecount: usize = @intCast(usize, ep.members_count);
-                            var ei: usize = 0;
-                            while (ei < ecount) : (ei += 1) {
-                                var member = self.ctx.registry.em_items[estart + ei];
-                                if (member.name_id == fa_name_id) {
-                                    case_val = @intCast(u64, member.value);
-                                    fa_found = true;
-                                    break;
-                                }
-                            }
-                        } else if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                            var tp = self.ctx.registry.tu_items[@intCast(usize, ct_ty.payload_idx)];
-                            var fstart: usize = @intCast(usize, tp.fields_start);
-                            var fcount: usize = @intCast(usize, tp.fields_count);
-                            var fi: usize = 0;
-                            while (fi < fcount) : (fi += 1) {
-                                if (self.ctx.registry.fe_items[fstart + fi].name_id == fa_name_id) {
-                                    case_val = @intCast(u64, fi);
-                                    fa_found = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (!fa_found) { continue; } // base ident not verified against cond enum type: conservative continue fallback
-                } else {
-                    continue;
-                }
-
-                lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
-                    lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
+                lowerAppendSwitchCaseItem(self, case_ec[ci], prong_bb_id, cond_ty_id);
             }
         }
         var sc_len = @intCast(u32, self.func.switch_cases.len);
@@ -5055,60 +5082,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var case_ec = ast_mod.astStoreNodeExtraChildren(store, prong_ec[pi]);
             var ci: usize = 0;
             while (ci < case_ec.len) : (ci += 1) {
-                var case_node = ast_mod.astStoreNodeAt(store, case_ec[ci]);
-                var case_val: u64 = @intCast(u64, 0);
-                if (case_node.kind == AstKind.int_literal) {
-                    case_val = ast_mod.astStoreIntValue(store, case_ec[ci]);
-                } else if (case_node.kind == AstKind.char_literal) {
-                    case_val = ast_mod.astStoreIntValue(store, case_ec[ci]);
-                } else if (case_node.kind == AstKind.enum_literal) {
-                    var cval2: u64 = @intCast(u64, ast_mod.astStoreNodePayload(store, case_ec[ci]));
-                    var cev2 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
-                    if (cev2) |v| { cval2 = @intCast(u64, v); }
-                    case_val = cval2;
-                } else if (case_node.kind == AstKind.error_literal) {
-                    var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, ast_mod.astStoreNodePayload(store, case_ec[ci])));
-                    var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, @intCast(u32, case_ec[ci]));
-                    if (cev3) |v| { cval3 = @intCast(u64, v); }
-                    case_val = cval3;
-                } else if (case_node.kind == AstKind.field_access) {
-                    var fa_name_id: u32 = ast_mod.astStoreNodePayload(store, case_ec[ci]);
-                    var fa_found: bool = false;
-                    if (cond_ty_id) |ct| {
-                        var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
-                        if (ct_ty.kind == type_mod.TypeKind.enum_type) {
-                            var ep = self.ctx.registry.en_items[@intCast(usize, ct_ty.payload_idx)];
-                            var estart: usize = @intCast(usize, ep.members_start);
-                            var ecount: usize = @intCast(usize, ep.members_count);
-                            var ei: usize = 0;
-                            while (ei < ecount) : (ei += 1) {
-                                var member = self.ctx.registry.em_items[estart + ei];
-                                if (member.name_id == fa_name_id) {
-                                    case_val = @intCast(u64, member.value);
-                                    fa_found = true;
-                                    break;
-                                }
-                            }
-                        } else if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                            var tp = self.ctx.registry.tu_items[@intCast(usize, ct_ty.payload_idx)];
-                            var fstart: usize = @intCast(usize, tp.fields_start);
-                            var fcount: usize = @intCast(usize, tp.fields_count);
-                            var fi: usize = 0;
-                            while (fi < fcount) : (fi += 1) {
-                                if (self.ctx.registry.fe_items[fstart + fi].name_id == fa_name_id) {
-                                    case_val = @intCast(u64, fi);
-                                    fa_found = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (!fa_found) { continue; } // base ident not verified against cond enum type: conservative continue fallback
-                } else {
-                    continue;
-                }
-                lir_mod.switchCaseArrayListAppend(&self.func.switch_cases,
-                    lir_mod.SwitchCase{ .value = case_val, .target_bb = prong_bb_id });
+                lowerAppendSwitchCaseItem(self, case_ec[ci], prong_bb_id, cond_ty_id);
             }
         }
         var sc_len = @intCast(u32, self.func.switch_cases.len);

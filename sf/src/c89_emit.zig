@@ -6388,7 +6388,7 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 var case_kw: []const u8 = "case ";
                 bufferedWriterWrite(&emitter.writer, case_kw);
                 var val_buf: [20]u8 = undefined;
-                var val_len = itoa_mod.itoa(@intCast(u32, c.value), val_buf[0..]);
+                var val_len = itoa_mod.itoa64(c.value, val_buf[0..]);
                 var val_start = @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1) - val_len);
                 var val_str = val_buf[val_start .. @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1))];
                 bufferedWriterWrite(&emitter.writer, val_str);
