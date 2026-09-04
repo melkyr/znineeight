@@ -640,6 +640,7 @@ git commit -m "feat: rogue upgraded — network 'i' demo variant (net_main + dem
 
 **Files:**
 - Create: `scripts/closeout/verify_upgraded.sh`
+- Create: `scripts/closeout/flush.c` (AMENDMENT 6, from the Task-6 review): 5-line `_IONBF` stdout-flush LD_PRELOAD shim, required because `std.io.print` lowers to fully-buffered `fwrite(stdout)` and a timeout-killed server would otherwise lose its buffered output (observed empty server.out). Repo-authoritative so the gate is self-contained (Task 6's scratch `/tmp/netdemo/flush.so` is NOT a gate dependency).
 - Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (header bump + closeout note)
 - Modify: `docs/sf/QUICK_REF.md` (newest-first closeout baseline bullet)
 
@@ -647,7 +648,16 @@ git commit -m "feat: rogue upgraded — network 'i' demo variant (net_main + dem
 - Consumes: everything from Tasks 1-6 (feeds, expecteds, client, helpers).
 - Produces: the single reproducible closeout verification gate; the zig0-incompatibility evidence is DOCUMENTED only (Global Constraints AMENDMENT 2 — no `sf/build/zig0` build is ever executed against `examples/z98`).
 
-- [ ] **Step 1: Write `scripts/closeout/verify_upgraded.sh`** — self-contained, calls the Task 1 helpers, exits nonzero on the first failure, prints a verdict table. Sequence:
+- [ ] **Step 1: Write `scripts/closeout/flush.c`** (AMENDMENT 6):
+
+```c
+#include <stdio.h>
+__attribute__((constructor)) static void flush_init(void) { setvbuf(stdout, 0, _IONBF, 0); }
+```
+
+Build for the net phase with: `gcc -m32 -shared -fPIC -o "$W/flush.so" scripts/closeout/flush.c`.
+
+- [ ] **Step 2: Write `scripts/closeout/verify_upgraded.sh`** — self-contained, calls the Task 1 helpers, exits nonzero on the first failure, prints a verdict table. IMPORTANT (AMENDMENT 6): every dump for the rogue program (and the net variant) MUST run from the rogue program's own directory CWD (its std module resolution is relative — dumping from repo root / server dir fails `error[3048]`); the Task 1 run_upgraded.sh helper already `cd`s to the repo root, so the gate's rogue A/B phases must cd into `examples/z98/rogue_mud_upgraded` and use the absolute entry path there (verify each build actually produces rc0 + 0 error[ before relying on it). Sequence:
 
 ```
 phase A lisp:
@@ -656,33 +666,33 @@ phase A lisp:
   A3 demo feed       == demo/demo_expected.txt (compare with the non-deterministic `(address)` integer line masked per AMENDMENT 4 — see README; all other lines byte-compare)
   A4 export symbol gate: emitted C has source-name alloc_value, no zF_…alloc_value
   A5 zig0-incompatibility NOTE (no build): echo the AMENDMENT-2 scope line and the documented C1 construct sites
-phase B rogue:
+phase B rogue (from examples/z98/rogue_mud_upgraded CWD):
   B1 build rogue_mud_upgraded (single player)
   B2 canonical q feed    == demo/canonical_expected.txt
   B3 canonical move feed == demo/canonical_move_expected.txt
   B4 demo feed           == demo/demo_expected.txt
   B5 export symbol gates: saveDungeon/loadDungeon source-named, no zF_; render_calls cross-module
-  B6 net variant: build demo/net_main.zig + demo/net_demo_client.zig; background server on :4000 with </dev/null; run client; capture server stdout == demo/net_demo_expected.txt; kill server
+  B6 net variant: build demo/net_main.zig + demo/net_demo_client.zig; build flush.so; background server on :4000 with </dev/null under `timeout -k 2 12 env LD_PRELOAD=$W/flush.so ./prog`; run client under `timeout 10`; capture server stdout == demo/net_demo_expected.txt; kill the server PID; verify no leftover listener on 4000
   B7 zig0-incompatibility NOTE (no build): echo the AMENDMENT-2 scope line and the documented C1 construct sites
 verdict: print "CLOSEOUT OK" / "CLOSEOUT FAILED:<phase>"
 ```
 
 All feeds/expecteds are resolved relative to the repo root. Runs are `timeout`-guarded; fresh dirs (`rm -rf` + `mkdir -p`) before every dump. A5/B7 MUST NOT invoke `sf/build/zig0`.
 
-- [ ] **Step 2: Run the gate end-to-end** on the current tree. It must pass all of A1-A4, B1-B6 (A5/B7 are echo-only notes). If any phase fails, fix within this task's scope (the gate script) or STOP-present if the failure is a program/compiler issue.
+- [ ] **Step 3: Run the gate end-to-end** on the current tree. It must pass all of A1-A4, B1-B6 (A5/B7 are echo-only notes). If any phase fails, fix within this task's scope (the gate script or flush.c) or STOP-present if the failure is a program/compiler issue.
 
-- [ ] **Step 3: EXPECTED_FAIL.md.** Bump the header version and add a short closeout note (the `_upgraded` example dirs remain gate-exempt; canonical byte-identity + demo goldens are now committed gate artifacts under `scripts/closeout/`; zig0 scope per AMENDMENT 2 = `examples/zig0` only). Preserve all historical sections verbatim.
+- [ ] **Step 4: EXPECTED_FAIL.md.** Bump the header version and add a short closeout note (the `_upgraded` example dirs remain gate-exempt; canonical byte-identity + demo goldens are now committed gate artifacts under `scripts/closeout/`; zig0 scope per AMENDMENT 2 = `examples/zig0` only). Preserve all historical sections verbatim.
 
-- [ ] **Step 4: QUICK_REF.md.** Insert a newest-first baseline bullet (dense dated style, above the current-newest Post-F-CLEANDIAG bullet) recording: this closeout work (spec/plan shas), the two upgraded programs' committed canonical/demo goldens, the harness path, the zig0-scope note (zig0 compiles only `examples/zig0`; no z98 zig0 build is performed), no `sf/src` change / no gate movement (4-MD5 unchanged, fixed point untouched).
+- [ ] **Step 5: QUICK_REF.md.** Insert a newest-first baseline bullet (dense dated style, above the current-newest Post-F-CLEANDIAG bullet) recording: this closeout work (spec/plan shas), the two upgraded programs' committed canonical/demo goldens, the harness path, the zig0-scope note (zig0 compiles only `examples/zig0`; no z98 zig0 build is performed), no `sf/src` change / no gate movement (4-MD5 unchanged, fixed point untouched).
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 6: Commit.**
 
 ```bash
-git add scripts/closeout/verify_upgraded.sh repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
+git add scripts/closeout/verify_upgraded.sh scripts/closeout/flush.c repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
 git commit -m "docs: closeout verification gate + upgraded-examples feature-showcase reconciliation (verify_upgraded.sh)"
 ```
 
-- [ ] **Step 6: Report + STOP-present.** Full verdict table, each md5, tree state. STOP-present the close (operator review); no further F-plan authoring resumes until the operator directs.
+- [ ] **Step 7: Report + STOP-present.** Full verdict table, each md5, tree state. STOP-present the close (operator review); no further F-plan authoring resumes until the operator directs.
 
 ---
 
