@@ -87,6 +87,7 @@ pub fn main() !void {
 
     std.io.print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
 
+    ui_mod.render_calls = 0;
     game_loop: while (true) {
         // Handle Networking and Local Input via select
         // Z98 Constraint: MSVC 6.0 and OpenWatcom may require individual field assignments
@@ -455,7 +456,8 @@ fn injectInt(cells: [*]ui_mod.Cell, n: i32) void {
         cells[0].ch = '0';
         return;
     }
-    var val = @intCast(u32, if (n < 0) -n else n);
+    var mag: i32 = if (n < 0) -n else n;
+    var val = @bitCast(u32, mag);
     var i: usize = 0;
     var temp: [10]u8 = undefined;
     while (val > 0) {

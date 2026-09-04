@@ -27,7 +27,11 @@ pub const COLOR_BRIGHT: u8 = 8;
 var prev_buffer: [80 * 50]Cell = undefined;
 var dirty: bool = true;
 
+pub var render_calls: u32 = 0;
+
+
 pub fn draw(rows: usize, cols: usize, cells: []const Cell) void {
+    render_calls += 1;
     if (dirty) {
         var i: usize = 0;
         while (i < @intCast(usize, 80 * 50)) : (i += 1) {

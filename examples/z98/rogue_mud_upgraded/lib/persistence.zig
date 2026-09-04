@@ -12,19 +12,26 @@ extern "c" fn fwrite(ptr: *const void, size: usize, count: usize, stream: *void)
 extern "c" fn fread(ptr: *void, size: usize, count: usize, stream: *void) usize;
 extern "c" fn fclose(stream: *void) i32;
 
+const FileHeader = struct {
+    w: u8,
+    h: u8,
+};
+
+export var last_save_status: i32 = 0;
+
 pub const FileError = error {
     OpenFailed,
     WriteFailed,
     ReadFailed,
 };
 
-pub fn saveDungeon(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t, filename: []const u8) !void {
+export fn saveDungeon(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t, filename: []const u8) !void {
     const c_path = try sand_mod.sand_dupe_z(arena, filename);
     const file = fopen(c_path, "wb") orelse return error.OpenFailed;
     defer _ = fclose(file);
 
-    var header = [2]u8{ dungeon.width, dungeon.height };
-    if (fwrite(@ptrCast(*const void, &header), 1, 2, file) != 2) return error.WriteFailed;
+    var header = FileHeader{ .w = dungeon.width, .h = dungeon.height };
+    if (fwrite(@ptrCast(*const void, &header), @sizeOf(FileHeader), 1, file) != 1) return error.WriteFailed;
 
     const tile_count = @intCast(usize, dungeon.width) * @intCast(usize, dungeon.height);
     if (fwrite(@ptrCast(*const void, dungeon.tiles.ptr), @sizeOf(tile_mod.Tile), tile_count, file) != tile_count) return error.WriteFailed;
@@ -34,18 +41,19 @@ pub fn saveDungeon(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t, filename:
 
     if (fwrite(@ptrCast(*const void, dungeon.rooms.ptr), @sizeOf(room_mod.Room_t), @intCast(usize, dungeon.room_count), file) != @intCast(usize, dungeon.room_count)) return error.WriteFailed;
     if (fwrite(@ptrCast(*const void, dungeon.entities.ptr), @sizeOf(entity_mod.Entity), dungeon.entity_count, file) != dungeon.entity_count) return error.WriteFailed;
+    last_save_status = 1;
 }
 
-pub fn loadDungeon(arena: *sand_mod.Sand, out: *scenario.Dungeon_t, filename: []const u8) !void {
+export fn loadDungeon(arena: *sand_mod.Sand, out: *scenario.Dungeon_t, filename: []const u8) !void {
     const c_path = try sand_mod.sand_dupe_z(arena, filename);
     const file = fopen(c_path, "rb") orelse return error.OpenFailed;
     defer _ = fclose(file);
 
-    var header = [2]u8{ @intCast(u8, 0), @intCast(u8, 0) };
-    if (fread(@ptrCast(*void, &header), 1, 2, file) != 2) return error.ReadFailed;
+    var header = FileHeader{ .w = @intCast(u8, 0), .h = @intCast(u8, 0) };
+    if (fread(@ptrCast(*void, &header), @sizeOf(FileHeader), 1, file) != 1) return error.ReadFailed;
 
-    const width = header[0];
-    const height = header[1];
+    const width = header.w;
+    const height = header.h;
     const tile_count = @intCast(usize, width) * @intCast(usize, height);
 
     const tiles_mem = try sand_mod.sand_alloc(arena, tile_count * @sizeOf(tile_mod.Tile), @alignOf(tile_mod.Tile));
