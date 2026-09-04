@@ -467,7 +467,7 @@ git commit -m "feat: rogue upgraded — silent F-area thread-ins (FileHeader @si
 - Consumes: Task 4 exports/counters; Task 1 canonical expecteds.
 - Produces: local `i` demo (same info routine reused by Task 6's net path via the per-client loop calling the same helper).
 
-- [ ] **Step 1: Add `demoInfo` helper** near the other top-level fns in `main.zig` (e.g. after `injectInt`). Deterministic, layout-only output (no position/timing dependence):
+- [ ] **Step 1: Add `demoInfo` helper** near the other top-level fns in `main.zig` (e.g. after `injectInt`). Deterministic, layout-only output (no position/timing dependence). The `Local` container struct must be MODULE-scope in `main.zig` (AMENDMENT 3: zig1 does not support local struct type bindings); AMENDMENT 5 (operator ruling): the earlier code-block draft digit-print loop is SUPERSEDED and omitted — the contract line set is exactly: header, layout line, bitcast line, container-of line, render_calls line, range-classifier lines, footer:
 
 ```zig
 fn demoInfo() void {
@@ -488,10 +488,6 @@ fn demoInfo() void {
     std.io.print("bitcast(i32,0xFFFFFFFF)=");
     std.io.printInt(s);
     std.io.print("\n");
-    const Local = struct {
-        tag: u8,
-        payload: u32,
-    };
     var lo = Local{ .tag = @intCast(u8, 1), .payload = @intCast(u32, 5) };
     const parent = @fieldParentPtr(Local, "payload", &lo.payload);
     std.io.print("container-of=");
@@ -499,15 +495,22 @@ fn demoInfo() void {
     std.io.print("render_calls=");
     std.io.printInt(@intCast(i32, ui_mod.render_calls));
     std.io.print("\n");
-    var rn: u32 = 0;
-    while (rn <= 9) : (rn += 1) {
-        std.io.printInt(@intCast(i32, rn));
-        std.io.print(" ");
-    }
-    std.io.print("\n");
+    demoRangeClassifier(3, 'x');
+    demoRangeClassifier(7, '!');
     std.io.print("--- end demo ---\n");
 }
 ```
+
+with the module-scope declaration above it in `main.zig`:
+
+```zig
+const Local = struct {
+    tag: u8,
+    payload: u32,
+};
+```
+
+`render_calls` prints the counter value at the time the demo runs (timing-coupled; on the buffered `i\nq` feed no render has fired yet, so it prints `0` — documented in the demo README, not asserted as a fixed constant elsewhere).
 
 Add a **case-range classifier** as a separate module-level helper in `main.zig`:
 
@@ -528,7 +531,7 @@ fn demoRangeClassifier(n: i32, ch: u8) void {
 }
 ```
 
-and call `demoRangeClassifier(3, 'x');` and `demoRangeClassifier(7, '!');` from `demoInfo()` after the classifier line (contracts `110` and `20`). Reorder so `demoInfo()` output is: header, layout line, bitcast line, container-of line, render_calls line, range-classifier lines, footer. The exact line set is the contract; adjust ordering in the code so the golden is stable.
+`demoInfo()` (Step 1) calls `demoRangeClassifier(3, 'x');` then `demoRangeClassifier(7, '!');` (contracts `110` and `20`), giving the exact line set: header, layout line, bitcast line, container-of line, render_calls line, range-classifier lines, footer. The exact line set is the contract.
 
 - [ ] **Step 2: Local `i` prong.** In the local-input switch (`main.zig:234`), add before `else => {}`:
 
