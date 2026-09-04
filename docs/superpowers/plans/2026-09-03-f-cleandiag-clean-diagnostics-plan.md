@@ -152,11 +152,16 @@ fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) boo
     if (name_id == self.socket_fd_set_name_id) return true;
     if (name_id == self.socket_fd_isset_name_id) return true;
     if (name_id == self.socket_close_name_id) return true;
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, "@enumToInt")) return true;
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, "@cVaStart")) return true;
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, "@cVaArg")) return true;
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, "@cVaEnd")) return true;
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, "@panic")) return true;
+    var eti_s: []const u8 = "@enumToInt";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, eti_s)) return true;
+    var cvs_s: []const u8 = "@cVaStart";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, cvs_s)) return true;
+    var cva_s: []const u8 = "@cVaArg";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, cva_s)) return true;
+    var cve_s: []const u8 = "@cVaEnd";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, cve_s)) return true;
+    var pan_s: []const u8 = "@panic";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, pan_s)) return true;
     return false;
 }
 
@@ -293,6 +298,8 @@ Only the two doc files staged. Report back: `DONE` + commit sha.
 1. **Spec coverage:** G1 ruling (d) F-CLEANDIAG → Task 1 implements the two error[3000]-class gates at the sema builtin dispatch and the var-decl annotation resolution (the two documented silent/wrong classes: silent mis-emission/drop for unknown builtins; uN/void-fallback false message for unknown type names); both byte-neutral (valid programs never enter the new paths — proven by the 4-MD5/self-compile gates); Task 2 = regression battery incl. the 426-dir list and message contracts; Task 3 = EXPECTED_FAIL/QUICK_REF reconciliation.
 2. **Placeholder scan:** no TBD/TODO; every step carries exact file paths, complete edit content, and commands; fixture sources are complete.
 3. **Type/name consistency:** `semanticAnalyzerIsBuiltinSupported`/`semanticAnalyzerBuiltinNameEq` named consistently; the field guards mirror the struct's real `*_name_id` names; literal code `3000` (not `@enumToInt`) so the diagnostic prints `error[3000]`; secondary `resolveTypeExprFull` reuses the exact `TypeResolveEnv` shape used throughout sema.
+
+**AMENDMENT 1 (operator, 2026-09-03):** the five text-match strings MUST be bound to `var x: []const u8` locals before the `semanticAnalyzerBuiltinNameEq` calls (as written above). Passing bare literals inline breaks the compiler's own multi-module build: zig0 emits raw `char*` across module boundaries with no slice coercion → gcc `incompatible type … expected 'Slice_u8'` (AGENTS.md X.5). Operator-ratified; probe-verified clean rebuild.
 
 ## Execution Handoff
 
