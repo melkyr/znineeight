@@ -204,12 +204,19 @@ git commit -m "feat: lisp upgraded — silent F-area thread-ins (case-ranges, @i
 - Consumes: `value_mod.alloc_count` (Task 2); canonical expecteds (Task 1).
 - Produces: demo feed + golden; used by the gate (Task 8).
 
-- [ ] **Step 1: Add two imports to the top of `builtins.zig`** (next to the existing imports at lines 1-3):
+- [ ] **Step 1: Add two imports AND one module-level demo struct to the top of `builtins.zig`** (next to the existing imports at lines 1-3; AMENDMENT 3, operator ruling):
 
 ```zig
 const std = @import("std");
 const env_mod = @import("env.zig");
+
+const DemoOuter = struct {
+    tag: u8,
+    payload: u32,
+};
 ```
+
+(The struct must be MODULE-scope: zig1 supports struct type declarations only at module/container scope — a local `const X = struct {...}` inside a fn body resolves to `void` (`error[3000]`). This is a known limitation, not a defect.)
 
 - [ ] **Step 2: Append the 8 builtins to `builtins.zig`** (after line 169; style matches the file: arity checks + `switch (arg.*)` + `value_mod.alloc_*`). Note: the existing `=` builtin keeps its name; the new atom-aware one is registered under the distinct name `"eq?"` as `builtin_phys_eq`:
 
@@ -256,12 +263,8 @@ pub fn builtin_ptr_check(args: []*value_mod.Value, arena: *sand_mod.Sand) util.L
 
 pub fn builtin_container_of(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len != 0) return error.WrongArity;
-    const Outer = struct {
-        tag: u8,
-        payload: u32,
-    };
-    var o = Outer{ .tag = @intCast(u8, 7), .payload = @intCast(u32, 99) };
-    const parent = @fieldParentPtr(Outer, "payload", &o.payload);
+    var o = DemoOuter{ .tag = @intCast(u8, 7), .payload = @intCast(u32, 99) };
+    const parent = @fieldParentPtr(DemoOuter, "payload", &o.payload);
     return try value_mod.alloc_bool(parent == &o, arena);
 }
 
@@ -306,7 +309,7 @@ pub fn builtin_classify(args: []*value_mod.Value, arena: *sand_mod.Sand) util.Li
 }
 ```
 
-Note: `builtin_layout`/`builtin_classify` print a line then return `Nil` (REPL prints `nil` after). If the local `const Outer = struct {...}` with a captured address does not lower under zig1 (STOP condition), fall back to a module-level plain struct in the same file. `@fieldParentPtr(Outer, "payload", &o.payload)` returns `*Outer`; `parent == &o` is a valid pointer `==`. Verify the emitted C carries the offset-subtract chain.
+Note: `builtin_layout`/`builtin_classify` print a line then return `Nil` (REPL prints `nil` after). `@fieldParentPtr(DemoOuter, "payload", &o.payload)` returns `*DemoOuter`; `parent == &o` is a valid pointer `==`. Verify the emitted C carries the offset-subtract chain. (AMENDMENT 3: module-level `DemoOuter` — local struct type bindings are unsupported by zig1.)
 
 - [ ] **Step 2: Register the 8 builtins** in `main.zig` after line 126 (same shape as existing registrations):
 
@@ -335,7 +338,7 @@ Note: `builtin_layout`/`builtin_classify` print a line then return `Nil` (REPL p
 (bitcast)
 (container-of)
 (allocs)
-(classify "abc12XY")
+(classify (quote ab12XY))
 (address (quote abc))
 (ptr-check (quote abc))
 exit
@@ -343,7 +346,7 @@ exit
 
 Verify each `(define …)`/quote form parses under the upgraded REPL (the interpreter supports define/quote per the error vocabulary; substitute an equivalent expression if any form errors, noting it in the report). Values that are large/absolute (address, allocs) must be deterministic across runs.
 
-- [ ] **Step 4: Capture + verify the demo golden.** Build, run feed 3× → byte-identical stdout (`md5sum`). Cross-check the deterministic values against hand contracts: `layout` line prints `8 1 64` (`EnvNode.value` @ byte 8; `@bitSizeOf(bool)`=1; `@bitSizeOf(i64)`=64); `bitcast` prints `-1`; `container-of` prints `true`; `ptr-check` prints `true`; `classify` prints `2 2 2` (for `abc12XY`); `eq?` atom lines `true/false/true/false`. If any line contradicts its hand contract, STOP-present (do not silently re-baseline). Write the 3×-verified bytes to `demo_expected.txt` (the REPL prints `> ` prompts and `nil` for Nil-returning builtins — these bytes are part of the golden, captured, not assumed).
+- [ ] **Step 4: Capture + verify the demo golden.** Build, run feed 3× → byte-identical stdout (`md5sum`). Cross-check the deterministic values against hand contracts: `layout` line prints `8 1 64` (`EnvNode.value` @ byte 8; `@bitSizeOf(bool)`=1; `@bitSizeOf(i64)`=64); `bitcast` prints `-1`; `container-of` prints `true`; `ptr-check` prints `true`; `classify` prints `2 2 2` (AMENDMENT 3: the lisp reader has no string-literal type, so the symbol is quote-wrapped `ab12XY` = 2 lower + 2 digit + 2 upper); `eq?` atom lines `true/false/true/false`. If any line contradicts its hand contract, STOP-present (do not silently re-baseline). Write the 3×-verified bytes to `demo_expected.txt` (the REPL prints `> ` prompts and `nil` for Nil-returning builtins — these bytes are part of the golden, captured, not assumed).
 
 - [ ] **Step 5: Canonical regression.** Re-run the canonical feed → byte-identical to `canonical_expected.txt` (new builtins are inert until called; `(allocs)`/`address` reachable only from the demo feed).
 
