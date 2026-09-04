@@ -1,6 +1,8 @@
 const sand_mod = @import("sand.zig");
 const util = @import("util.zig");
 
+pub var alloc_count: i32 = 0;
+
 pub const Value = union(enum) {
     Nil: void,
     Int: i64,
@@ -10,10 +12,12 @@ pub const Value = union(enum) {
     Builtin: *void,
 };
 
-pub fn alloc_value(arena: *sand_mod.Sand) util.LispError!*Value {
+export fn alloc_value(arena: *sand_mod.Sand) util.LispError!*Value {
     const mem = try sand_mod.sand_alloc(arena, @sizeOf(Value), @alignOf(Value));
+    alloc_count += 1;
     return @ptrCast(*Value, mem);
 }
+
 
 pub fn alloc_cons(car: *Value, cdr: *Value, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);

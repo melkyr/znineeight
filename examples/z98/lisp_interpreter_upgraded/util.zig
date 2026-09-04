@@ -42,7 +42,10 @@ pub fn parse_int(s: []const u8) LispError!i64 {
         i = 1;
     }
     while (i < s.len) {
-        if (s[i] < '0' or s[i] > '9') return error.InvalidDigit;
+        switch (s[i]) {
+            '0'...'9' => {},
+            else => return error.InvalidDigit,
+        }
         res = res * 10 + @intCast(i64, s[i] - '0');
         i += 1;
     }
@@ -51,8 +54,8 @@ pub fn parse_int(s: []const u8) LispError!i64 {
 }
 
 pub fn points_to_arena(ptr: *const void, sand_start: [*]u8, sand_pos: usize) bool {
-    const addr = @ptrToInt(ptr);
-    const start = @ptrToInt(sand_start);
+    const addr = @intFromPtr(ptr);
+    const start = @intFromPtr(sand_start);
     const end = start + sand_pos;
     return addr >= start and addr < end;
 }

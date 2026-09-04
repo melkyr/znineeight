@@ -18,7 +18,10 @@ fn is_whitespace(c: u8) bool {
 }
 
 fn is_digit(c: u8) bool {
-    return c >= '0' and c <= '9';
+    return switch (c) {
+        '0'...'9' => true,
+        else => false,
+    };
 }
 
 fn skip_whitespace(self: *Tokenizer) void {

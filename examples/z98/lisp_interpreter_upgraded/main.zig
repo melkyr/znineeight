@@ -126,6 +126,7 @@ pub fn main() void {
     global_env = (env_mod.env_extend(">", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_gt), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
 
     var input_buf: [4096]u8 = undefined;
+    value_mod.alloc_count = 0;
     while (true) {
         print_str("> ");
         const len = read_line(&input_buf);
