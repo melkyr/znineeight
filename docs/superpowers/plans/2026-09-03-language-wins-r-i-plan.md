@@ -760,3 +760,19 @@ Plan complete. Two execution options once the operator takes this plan: (1) Suba
 **Corpus post-R reconciliation** (reference compiler `/tmp/fx_subfolder/zig1` md5 `1a5056b2`, -s0, single run): 424 dirs = OK 397 / FAIL 15 / GCCFAIL 5 / GREEN 6 / ICE 1 / CRASH 0; GCCFAIL folded → FAIL-class 20. Pre-existing 405 subset reproduced exactly (OK 395/FAIL 5/GREEN 5/ICE 0/CRASH 0), 0 drift; gol/lisp/json/mud gates unaffected (no sf/src change). New fixtures bucket: 5 GCCFAIL (R1+R2 builtins), 10 parse-FAIL (export×2 + packed×8), 1 false-green GREEN (`int_arbitrary_width_xmod`), 1 ICE (`crossmod_pubvar_xmod`), 2 compile-OK runtime-wrong invisible to the compile-only sweep (@bitCast, case-ranges).
 
 **Key feasibility findings carried into F-planning:** (i) unsupported builtins have NO clean diagnostic — silent mis-emission (GCCFAIL) or silent result-drop (runtime-wrong) or void-fallback (uN→void); (ii) unknown type names degrade to TYPE_VOID (sema var_declared_void); (iii) top-level fns/module vars already emit non-static — export = mangler source-name exemption; (iv) zig0 parses `export` but keeps mangled names → source-name GREEN is Zig-semantics, not oracle; (v) switch range prongs parse but drop to default in the shared case-map loop (EXPAND per-value is drop-in); (vi) packed needs a hard narrow-int `uN` registry prereq; width-vs-byte-size conflation is the INTWIDTH blocker.
+
+---
+
+## AMENDMENT — STATUS: PLAN ON HOLD (2026-09-04, operator directive) — zig0-closeout demo work in progress
+
+**Status:** Items 1-5 of the approved follow-on order above (F-INTRO, F-PTRBUILTIN, F-BITCAST, F-CROSSMOD-STORE, F-EXPORT, F-SWITCHRANGE) plus F-CLEANDIAG are EXECUTED and CLOSED (branch commits through `852b40e7`; every task review Approved; EXPECTED_FAIL v68; QUICK_REF baseline chain updated; 4-MD5 gates unchanged at gol `302df36b`/lisp `3591bad9`/json `76056b97`/mud `53405b3b`; self-compile fixed point `85733145`).
+
+**Operator directive (2026-09-04):** further compiler-feature plan authoring is **ON HOLD** while the zig0 closeout is prepared. The closeout uses the two committed `_upgraded` showcase programs (`examples/z98/lisp_interpreter_upgraded`, `examples/z98/rogue_mud_upgraded`): each is being extended with first-use demos of the newly implemented syntax (silent thread-ins + observable demos via extended feeds) and gains a whole-program zig0-reject gate. Design spec: `docs/superpowers/specs/2026-09-04-upgraded-examples-closeout-design.md`; implementation plan: `docs/superpowers/plans/2026-09-04-upgraded-examples-closeout-plan.md`.
+
+**Remaining follow-on order items 6-9 resume AFTER the closeout demo work completes** (operator-authority to resume):
+6. PLAN-INTWIDTH (width-vs-byte-size refactor, `intWidthBits`/`intIsSigned`, ≤64 cap)
+7. PLAN-PACK-CORE (P1-P3 → packed L0/L1/L2 GREEN)
+8. PLAN-PACK-AGG (P4 → L3-L6 GREEN; packed-union folded)
+9. PLAN-PACK-B3 (P5 → L7 `enum(u3)` GREEN; enum(uN) folded; defers on PLAN-INTWIDTH)
+
+No F/compiler-feature task begins until the operator lifts the hold. `examples/z98/json_parser_upgraded` remains untracked/deferred (may become a third closeout vehicle on a separate operator GO).
