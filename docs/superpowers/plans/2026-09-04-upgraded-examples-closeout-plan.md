@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend `examples/z98/lisp_interpreter_upgraded` and `examples/z98/rogue_mud_upgraded` with first-use showcase of every language-wins F-area feature (silent thread-ins + observable demos), keeping canonical behavior byte-identical, and add the whole-program zig0-reject closeout gate.
+**Goal:** Extend `examples/z98/lisp_interpreter_upgraded` and `examples/z98/rogue_mud_upgraded` with first-use showcase of every language-wins F-area feature (silent thread-ins + observable demos), keeping canonical behavior byte-identical, and record the zig0-incompatibility closeout evidence (documented, not executed against `examples/z98`).
 
-**Architecture:** Example-only work. Each program gets silent rewrites onto the new constructs plus an observable demo surface reachable only through extended feeds (lisp REPL builtins; rogue `i` local command + network-variant `i`). A committed harness (`scripts/closeout/verify_upgraded.sh`) builds/runs each program under the reference compiler, compares canonical + demo stdout byte-exactly, checks export symbol gates, and proves `sf/build/zig0` cannot build the upgraded entrypoints.
+**Architecture:** Example-only work. Each program gets silent rewrites onto the new constructs plus an observable demo surface reachable only through extended feeds (lisp REPL builtins; rogue `i` local command + network-variant `i`). A committed harness (`scripts/closeout/verify_upgraded.sh`) builds/runs each program under the reference compiler, compares canonical + demo stdout byte-exactly, and checks export symbol gates.
 
-**Tech Stack:** zig1 (reference compiler `/tmp/fx_subfolder/zig1`, md5 `7c08d2d5`, std lib installed at `/tmp/fx_subfolder/lib`), `gcc -m32 -std=c89`, feeds via stdin, `sf/build/zig0` (legacy compiler, closeout oracle).
+**Tech Stack:** zig1 (reference compiler `/tmp/fx_subfolder/zig1`, md5 `7c08d2d5`, std lib installed at `/tmp/fx_subfolder/lib`), `gcc -m32 -std=c89`, feeds via stdin.
 
 Design spec: `docs/superpowers/specs/2026-09-04-upgraded-examples-closeout-design.md` (operator-approved).
 
@@ -18,22 +18,23 @@ Design spec: `docs/superpowers/specs/2026-09-04-upgraded-examples-closeout-desig
 - Every canonical feed run must remain **byte-identical between the original program and its `_upgraded`** counterpart. Demo goldens (new surface) are authored at GREEN time, determinism-verified 3×.
 - Z98 dialect in all new code: no `anytype`/`@Type`/method syntax/pointer captures; `@intCast` on width changes; `else` prong on every non-exhaustive switch; case-range endpoints are int/char literals only; `@ptrFromInt` always on an **annotated** target var; `@offsetOf`/`@fieldParentPtr` on **plain structs** only; do not reintroduce the switch-expression payload-capture emission bug (statement switches for captures).
 - Build/run recipe (authoritative): fresh output dir (`rm -rf` + `mkdir -p`), then `(cd /workspace/znineeight && <zig1> --dump-c89 --output-dir <W> <entry>)`; gcc `-m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include` each `.c` → `.o`; link `*.o` + `sf/src/include/zig_runtime.c` `sf/src/include/zig_pal.c` (repo-authoritative location — AMENDMENT 1, operator ruling); run under `timeout` with a feed file on stdin; capture stdout. Task 1 installs this as `scripts/closeout/run_upgraded.sh`; later tasks call it.
+- **zig0 scope (AMENDMENT 2, operator ruling):** the legacy compiler `sf/build/zig0` compiles ONLY the `examples/zig0` program set — each such program carries its own README documenting how to build it with zig0. zig0 CANNOT compile `examples/z98` sources (they use zig1-only syntax plus `std`/`@cInclude`), so any `sf/build/zig0` attempt against an `examples/z98` entrypoint fails for syntax/std reasons unrelated to the feature work and is vacuous. **NO agent may attempt, or write a script/harness that attempts, a `sf/build/zig0` build of any `examples/z98` entrypoint, including the `_upgraded` programs.** The "bye-bye zig0" closeout evidence is therefore DOCUMENTED (the programs' zig1-superset construct usage, the pre-existing C1 tag-`==` records, and the `examples/zig0` README convention), not an executed zig0 build.
 - Reports accumulate in `.superpowers/sdd/task-CLOSEOUT-report.md` (gitignored). Ledger: `.superpowers/sdd/progress.md`. Memory: `mnemoria --path .opencode/memory`, agent `closeout-session`.
 - Only plan-authorized actions; STOP-present on any divergence; commits only per-task; stage ONLY intended files; pre-existing dirty set (2026-08-26 plan doc, `mnemoria/*`, `.zig1_*.tmp`, `build/`, `json_parser_upgraded/`) never staged.
-- A report/evidence contract per task: status, files changed, feed-byte-identity + golden evidence (md5s), symbol-gate evidence, zig0-reject evidence where applicable, concerns.
+- A report/evidence contract per task: status, files changed, feed-byte-identity + golden evidence (md5s), symbol-gate evidence, concerns.
 
 ---
 
 ### Task 1: Baseline harness + canonical feeds/expected (no program edits)
 
 **Files:**
-- Create: `scripts/closeout/run_upgraded.sh`, `scripts/closeout/zig0_try.sh`
+- Create: `scripts/closeout/run_upgraded.sh`
 - Create: `examples/z98/lisp_interpreter_upgraded/demo/canonical_feed.txt` + `canonical_expected.txt`
-- Create: `examples/z98/rogue_mud_upgraded/demo/canonical_feed.txt` + `canonical_expected.txt`
+- Create: `examples/z98/rogue_mud_upgraded/demo/canonical_feed.txt` + `canonical_expected.txt` + `canonical_move_feed.txt` + `canonical_move_expected.txt`
 - Record: `.superpowers/sdd/task-CLOSEOUT-report.md` header
 
 **Interfaces:**
-- Produces: `scripts/closeout/run_upgraded.sh <zig1> <entry> <feed> <out_stdout>` (exit 0 + stdout file + echo `RUNRC`), reused by every later task and the gate; `scripts/closeout/zig0_try.sh <entry> <workdir>` (attempt `sf/build/zig0` build, prints rc + first diagnostic, never emits a binary into the repo).
+- Produces: `scripts/closeout/run_upgraded.sh <zig1> <entry> <feed> <out_stdout>` (exit 0 + stdout file + echo `RUNRC`), reused by every later task and the gate.
 
 - [ ] **Step 1: Write `scripts/closeout/run_upgraded.sh`**
 
@@ -49,29 +50,14 @@ rm -rf "$W"; mkdir -p "$W"
 (cd "$ROOT" && "$ZIG1" --dump-c89 --output-dir "$W" "$ENTRY") >"$W/dump.log" 2>&1
 if [ $? -ne 0 ]; then echo "RUNRC=DUMPFAIL"; cat "$W/dump.log"; exit 1; fi
 for f in "$W"/*.c; do
-  gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$ROOT/sf/src/include" -c "$f" -o "${f%.c}.o" || { echo "RUNRC=GCCFAIL"; cat "$W"/gcc.err 2>/dev/null; exit 1; }
+  gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$ROOT/sf/src/include" -c "$f" -o "${f%.c}.o" || { echo "RUNRC=GCCFAIL"; exit 1; }
 done
 gcc -m32 -o "$W/prog" "$W"/*.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" || { echo "RUNRC=LINKFAIL"; exit 1; }
 timeout 30 "$W/prog" < "$FEED" > "$OUT" 2>"$W/run.err"
 echo "RUNRC=$?"
 ```
 
-- [ ] **Step 2: Write `scripts/closeout/zig0_try.sh`**
-
-```bash
-#!/usr/bin/env bash
-# zig0_try.sh <entry> — attempt a whole-program zig0 build of <entry>; prints rc + first diagnostic.
-set -u
-ENTRY="$1"
-ROOT=/workspace/znineeight
-W=$(mktemp -d)
-rm -rf "$W"; mkdir -p "$W"
-(cd "$ROOT" && timeout 120 "$ROOT/sf/build/zig0" --dump-c89 --output-dir "$W" "$ENTRY") >"$W/zig0.out" 2>&1
-echo "ZIG0_RC=$?"
-head -5 "$W/zig0.out"
-```
-
-- [ ] **Step 3: Author the lisp canonical feed** (`examples/z98/lisp_interpreter_upgraded/demo/canonical_feed.txt`). Lines — each must be a value-producing expression parseable by BOTH `lisp_interpreter_curr` and `lisp_interpreter_upgraded` (no new builtins):
+- [ ] **Step 2: Author the lisp canonical feed** (`examples/z98/lisp_interpreter_upgraded/demo/canonical_feed.txt`). Lines — each must be a value-producing expression parseable by BOTH `lisp_interpreter_curr` and `lisp_interpreter_upgraded` (no new builtins):
 
 ```
 (+ 1 2)
@@ -90,9 +76,9 @@ exit
 
 Verify in the ORIGINAL `lisp_interpreter_curr` that every line prints a value (no `Parse error`/`Eval error`). If a specific expression errors, replace it with an equivalent value-producing expression of the same feature class (list/int/bool/compare/nil) and note the substitution in the report — the canonical set must keep at least one line per class and must reproduce identically in the upgraded program.
 
-- [ ] **Step 4: Capture the lisp canonical expected.** `bash scripts/closeout/run_upgraded.sh /tmp/fx_subfolder/zig1 examples/z98/lisp_interpreter_curr/main.zig examples/z98/lisp_interpreter_upgraded/demo/canonical_feed.txt /tmp/lisp_canon_expected.txt`; run 3× → byte-identical (`md5sum`). Verify `RUNRC=0`. Write the bytes to `canonical_expected.txt`. Then run the SAME feed through `lisp_interpreter_upgraded` today → byte-identical to `canonical_expected.txt` (pre-edit identity proof).
+- [ ] **Step 3: Capture the lisp canonical expected.** `bash scripts/closeout/run_upgraded.sh /tmp/fx_subfolder/zig1 examples/z98/lisp_interpreter_curr/main.zig examples/z98/lisp_interpreter_upgraded/demo/canonical_feed.txt /tmp/lisp_canon_expected.txt`; run 3× → byte-identical (`md5sum`). Verify `RUNRC=0`. Write the bytes to `canonical_expected.txt`. Then run the SAME feed through `lisp_interpreter_upgraded` today → byte-identical to `canonical_expected.txt` (pre-edit identity proof).
 
-- [ ] **Step 5: Author the rogue canonical feeds** (`examples/z98/rogue_mud_upgraded/demo/canonical_feed.txt`):
+- [ ] **Step 4: Author the rogue canonical feeds** (`examples/z98/rogue_mud_upgraded/demo/canonical_feed.txt`):
 
 ```
 q
@@ -108,19 +94,19 @@ q
 
 (The `q`-only feed ≈ 221 B boot text; the move/look feed exercises rendering + look + quit. Neither contains the reserved demo char `i`.)
 
-- [ ] **Step 6: Capture the rogue canonical expecteds.** For EACH of the two feeds run the ORIGINAL `examples/z98/rogue_mud` entry with `run_upgraded.sh` 3× → byte-identical, `RUNRC=0`; write bytes to `demo/canonical_expected.txt` (q-feed) and `demo/canonical_move_expected.txt` (move feed). Re-run both through `rogue_mud_upgraded` → byte-identical (pre-edit identity proof). md5 both pairs.
+- [ ] **Step 5: Capture the rogue canonical expecteds.** For EACH of the two feeds run the ORIGINAL `examples/z98/rogue_mud` entry with `run_upgraded.sh` 3× → byte-identical, `RUNRC=0`; write bytes to `demo/canonical_expected.txt` (q-feed) and `demo/canonical_move_expected.txt` (move feed). Re-run both through `rogue_mud_upgraded` → byte-identical (pre-edit identity proof). md5 both pairs.
 
-- [ ] **Step 7: Record baseline zig0-reject evidence.** `bash scripts/closeout/zig0_try.sh examples/z98/lisp_interpreter_upgraded/main.zig` and the same for `rogue_mud_upgraded/main.zig`. Record rc + first diagnostic verbatim in the report (expected: nonzero reject already via the C1 tag-`==` rewrites; exact text recorded, not assumed).
+- [ ] **Step 6: Record the zig0-incompatibility note (no build).** Per Global Constraints AMENDMENT 2, zig0 compiles ONLY the `examples/zig0` set (each such program's README documents how to build it), so NO `sf/build/zig0` build is attempted against `examples/z98` entrypoints. Record in the report: the two `_upgraded` programs use zig1-superset constructs (the prior C1 tag-`==` rewrites at `lisp eval.zig:44`/`builtins.zig:133` and `rogue combat.zig`/`pathfinding.zig`/`scenario.zig`/`ui.zig`), which is the documented closeout evidence. Do not execute zig0.
 
-- [ ] **Step 8: Commit.** Stage the 2 scripts + the lisp and rogue `demo/` feed/expected files only.
+- [ ] **Step 7: Commit.** Stage the script + the lisp and rogue `demo/` feed/expected files only.
 
 ```bash
-git add scripts/closeout/run_upgraded.sh scripts/closeout/zig0_try.sh \
+git add scripts/closeout/run_upgraded.sh \
         examples/z98/lisp_interpreter_upgraded/demo examples/z98/rogue_mud_upgraded/demo
 git commit -m "test: closeout harness + canonical feeds/expected for upgraded examples (baseline)"
 ```
 
-- [ ] **Step 9: Report.** Status, file list, all md5s (feed expecteds, original-vs-upgraded identity), zig0-reject diagnostics, concerns. Ledger line.
+- [ ] **Step 8: Report.** Status, file list, all md5s (feed expecteds, original-vs-upgraded identity), zig0-incompatibility note, concerns. Ledger line.
 
 ---
 
@@ -653,7 +639,7 @@ git commit -m "feat: rogue upgraded — network 'i' demo variant (net_main + dem
 
 **Interfaces:**
 - Consumes: everything from Tasks 1-6 (feeds, expecteds, client, helpers).
-- Produces: the single reproducible whole-program closeout gate (operator ruling: no per-construct zig0 attribution).
+- Produces: the single reproducible closeout verification gate; the zig0-incompatibility evidence is DOCUMENTED only (Global Constraints AMENDMENT 2 — no `sf/build/zig0` build is ever executed against `examples/z98`).
 
 - [ ] **Step 1: Write `scripts/closeout/verify_upgraded.sh`** — self-contained, calls the Task 1 helpers, exits nonzero on the first failure, prints a verdict table. Sequence:
 
@@ -663,7 +649,7 @@ phase A lisp:
   A2 canonical feed  == demo/canonical_expected.txt   (md5)
   A3 demo feed       == demo/demo_expected.txt        (md5)
   A4 export symbol gate: emitted C has source-name alloc_value, no zF_…alloc_value
-  A5 whole-program zig0 build attempt must be nonzero (rc != 0, no binary) — print first diagnostic
+  A5 zig0-incompatibility NOTE (no build): echo the AMENDMENT-2 scope line and the documented C1 construct sites
 phase B rogue:
   B1 build rogue_mud_upgraded (single player)
   B2 canonical q feed    == demo/canonical_expected.txt
@@ -671,31 +657,31 @@ phase B rogue:
   B4 demo feed           == demo/demo_expected.txt
   B5 export symbol gates: saveDungeon/loadDungeon source-named, no zF_; render_calls cross-module
   B6 net variant: build demo/net_main.zig + demo/net_demo_client.zig; background server on :4000 with </dev/null; run client; capture server stdout == demo/net_demo_expected.txt; kill server
-  B7 whole-program zig0 build attempt of rogue_mud_upgraded/main.zig must be nonzero — print first diagnostic
+  B7 zig0-incompatibility NOTE (no build): echo the AMENDMENT-2 scope line and the documented C1 construct sites
 verdict: print "CLOSEOUT OK" / "CLOSEOUT FAILED:<phase>"
 ```
 
-All feeds/expecteds are resolved relative to the repo root. Runs are `timeout`-guarded; fresh dirs (`rm -rf` + `mkdir -p`) before every dump.
+All feeds/expecteds are resolved relative to the repo root. Runs are `timeout`-guarded; fresh dirs (`rm -rf` + `mkdir -p`) before every dump. A5/B7 MUST NOT invoke `sf/build/zig0`.
 
-- [ ] **Step 2: Run the gate end-to-end** on the current tree. It must pass all of A1-A4, B1-B5, B5-variant handling, A5/B7 nonzero. If any phase fails, fix within this task's scope (the gate script) or STOP-present if the failure is a program/compiler issue.
+- [ ] **Step 2: Run the gate end-to-end** on the current tree. It must pass all of A1-A4, B1-B6 (A5/B7 are echo-only notes). If any phase fails, fix within this task's scope (the gate script) or STOP-present if the failure is a program/compiler issue.
 
-- [ ] **Step 3: EXPECTED_FAIL.md.** Bump the header version and add a short closeout note (the `_upgraded` example dirs remain gate-exempt; canonical byte-identity + demo goldens + zig0 whole-program reject are now committed gate artifacts under `scripts/closeout/`). Preserve all historical sections verbatim.
+- [ ] **Step 3: EXPECTED_FAIL.md.** Bump the header version and add a short closeout note (the `_upgraded` example dirs remain gate-exempt; canonical byte-identity + demo goldens are now committed gate artifacts under `scripts/closeout/`; zig0 scope per AMENDMENT 2 = `examples/zig0` only). Preserve all historical sections verbatim.
 
-- [ ] **Step 4: QUICK_REF.md.** Insert a newest-first baseline bullet (dense dated style, above the current-newest Post-F-CLEANDIAG bullet) recording: this closeout work (spec/plan shas), the two upgraded programs' committed canonical/demo goldens, the harness path, the zig0 whole-program-reject property, no `sf/src` change / no gate movement (4-MD5 unchanged, fixed point untouched).
+- [ ] **Step 4: QUICK_REF.md.** Insert a newest-first baseline bullet (dense dated style, above the current-newest Post-F-CLEANDIAG bullet) recording: this closeout work (spec/plan shas), the two upgraded programs' committed canonical/demo goldens, the harness path, the zig0-scope note (zig0 compiles only `examples/zig0`; no z98 zig0 build is performed), no `sf/src` change / no gate movement (4-MD5 unchanged, fixed point untouched).
 
 - [ ] **Step 5: Commit.**
 
 ```bash
 git add scripts/closeout/verify_upgraded.sh repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
-git commit -m "docs: closeout gate + upgraded-examples feature-showcase reconciliation (verify_upgraded.sh)"
+git commit -m "docs: closeout verification gate + upgraded-examples feature-showcase reconciliation (verify_upgraded.sh)"
 ```
 
-- [ ] **Step 6: Report + STOP-present.** Full verdict table, each md5, zig0 diagnostics, tree state. STOP-present the close (operator review); no further F-plan authoring resumes until the operator directs.
+- [ ] **Step 6: Report + STOP-present.** Full verdict table, each md5, tree state. STOP-present the close (operator review); no further F-plan authoring resumes until the operator directs.
 
 ---
 
 ## Plan Self-Review
 
-1. **Spec coverage:** silent thread-ins + observable demos per program (Tasks 2-6) cover all six F-areas (introspection Task 2/3/4/5, pointer builtins Task 2/3/5, `@bitCast` Task 2/4/5, cross-module pub-var store Task 2/4, export Task 2/4, case-ranges Task 2/3/5); mixed policy honored; compact canonical feeds + authored demo goldens; whole-program zig0 gate (Task 7) matches the operator's build-gate ruling; `json_parser_upgraded` and the F-hold recorded out of scope.
+1. **Spec coverage:** silent thread-ins + observable demos per program (Tasks 2-6) cover all six F-areas (introspection Task 2/3/4/5, pointer builtins Task 2/3/5, `@bitCast` Task 2/4/5, cross-module pub-var store Task 2/4, export Task 2/4, case-ranges Task 2/3/5); mixed policy honored; compact canonical feeds + authored demo goldens; the zig0-incompatibility closeout evidence is documented-only per AMENDMENT 2 (no `examples/z98` zig0 build); `json_parser_upgraded` and the F-hold recorded out of scope.
 2. **Placeholder scan:** no TBD; every code step complete; goldens are captured-verbatim artifacts with explicit determinism + hand-contract checks.
 3. **Type/name consistency:** builtins named `<prefix>_<name>` matching the file's `builtin_*` convention; new REPL names (`layout`, `address`, `eq?`, `ptr-check`, `container-of`, `bitcast`, `allocs`, `classify`) distinct from all 11 existing; rogue helpers `demoInfo`/`demoRangeClassifier` unique.
