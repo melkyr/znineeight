@@ -124,6 +124,14 @@ pub fn main() void {
     global_env = (env_mod.env_extend("nil?", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_is_nil), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
     global_env = (env_mod.env_extend("<", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_lt), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
     global_env = (env_mod.env_extend(">", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_gt), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("layout", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_layout), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("address", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_address), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("eq?", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_phys_eq), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("ptr-check", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_ptr_check), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("container-of", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_container_of), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("bitcast", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_bitcast), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("allocs", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_allocs), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("classify", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_classify), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
 
     var input_buf: [4096]u8 = undefined;
     value_mod.alloc_count = 0;

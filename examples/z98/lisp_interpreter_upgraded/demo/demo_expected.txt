@@ -1,0 +1,17 @@
+> true
+> false
+> true
+> false
+> (1 2)
+> true
+> false
+> 8 1 64
+nil
+> -1
+> true
+> 116
+> 2 2 2
+nil
+> 1644496928
+> true
+> 
