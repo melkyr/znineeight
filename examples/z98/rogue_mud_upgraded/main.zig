@@ -25,6 +25,11 @@ var buffer: [512 * 1024]u8 = undefined;
 var temp_buffer: [512 * 1024]u8 = undefined;
 var local_cells: [80 * 50]ui_mod.Cell = undefined;
 
+const Local = struct {
+    tag: u8,
+    payload: u32,
+};
+
 pub fn main() !void {
     ui_mod.initUI();
     var arena = sand_mod.sand_init(buffer[0..], true);
@@ -251,6 +256,7 @@ pub fn main() !void {
                     std.io.print("Failed to load dungeon!\n");
                 };
             },
+            'i', 'I' => demoInfo(),
             else => {},
         }
 
@@ -469,4 +475,49 @@ fn injectInt(cells: [*]ui_mod.Cell, n: i32) void {
     while (j < i) : (j += 1) {
         cells[j].ch = temp[i - 1 - j];
     }
+}
+
+fn demoRangeClassifier(n: i32, ch: u8) void {
+    var acc: i32 = 0;
+    switch (n) {
+        1...5 => acc += 10,
+        6...9 => acc += 20,
+        else => acc += 0,
+    }
+    switch (ch) {
+        'a'...'z' => acc += 100,
+        else => acc += 0,
+    }
+    std.io.printInt(acc);
+    std.io.print("\n");
+}
+
+fn demoInfo() void {
+    std.io.print("--- zig1 demo ---\n");
+    std.io.print("off Entity.hp=");
+    std.io.printInt(@intCast(i32, @offsetOf(entity_mod.Entity, "hp")));
+    std.io.print(" off Entity.x=");
+    std.io.printInt(@intCast(i32, @offsetOf(entity_mod.Entity, "x")));
+    std.io.print(" size Entity=");
+    std.io.printInt(@intCast(i32, @sizeOf(entity_mod.Entity)));
+    std.io.print(" bits bool=");
+    std.io.printInt(@intCast(i32, @bitSizeOf(bool)));
+    std.io.print(" off Room_t.h=");
+    std.io.printInt(@intCast(i32, @offsetOf(room_mod.Room_t, "h")));
+    std.io.print("\n");
+    var u: u32 = 0xFFFFFFFF;
+    const s = @bitCast(i32, u);
+    std.io.print("bitcast(i32,0xFFFFFFFF)=");
+    std.io.printInt(s);
+    std.io.print("\n");
+    var lo = Local{ .tag = @intCast(u8, 1), .payload = @intCast(u32, 5) };
+    const parent = @fieldParentPtr(Local, "payload", &lo.payload);
+    std.io.print("container-of=");
+    if (parent == &lo) std.io.print("true\n") else std.io.print("false\n");
+    std.io.print("render_calls=");
+    std.io.printInt(@intCast(i32, ui_mod.render_calls));
+    std.io.print("\n");
+    demoRangeClassifier(3, 'x');
+    demoRangeClassifier(7, '!');
+    std.io.print("--- end demo ---\n");
 }
