@@ -1,6 +1,29 @@
-# mi_matrix corpus — expected-fail manifest (v67 2026-09-03)
+# mi_matrix corpus — expected-fail manifest (v68 2026-09-04)
 
 ## Langwins clean-diag fixtures (v67) — F-CLEANDIAG
+
+- **RESOLVED (2026-09-04, F-CLEANDIAG GATE, `932fea8d`):** the `cleandiag_unknown_builtin_xmod`
+  fixture is now **GREEN** — the unsupported-builtin diagnostic gate landed (fixed by commit `932fea8d`
+  — the `semanticAnalyzerIsBuiltinSupported` membership helper + the unsupported-builtin arm emitting
+  `error[3000]: unsupported builtin function` — preceded by the `test:` fixture commit `1e373449`). Its
+  dump contract below now **HOLDS**: dump rc=2, **0 `.c`**, stderr PRIMARY `error[3000]: unsupported
+  builtin function` (9:12); a downstream `error[3000]: cannot declare variable of type void` CASCADE on
+  the UNTYPED `var r = @totallyBogus(i32, 5)` (9:4) is EXPECTED normal compiler behavior per AMENDMENT 2
+  (`c294fce0`) — the binding requirement is the PRIMARY `unsupported builtin function` present with
+  rc=2 and 0 `.c`; the cascade is not a defect. It **no longer belongs in the expected-fail set** (kept
+  as a permanent regression guard). The historical RED root-cause record beneath this marker is
+  retained verbatim as evidence.
+- **RESOLVED (2026-09-04, F-CLEANDIAG GATE, `932fea8d`):** the `cleandiag_unknown_type_xmod` fixture
+  is now **GREEN** — the unknown-type diagnostic gate landed (fixed by commit `932fea8d` — at the
+  var-decl annotation site, when a bare-ident annotation resolves to `TYPE_VOID` a second
+  `resolveTypeExprFull` distinguishes a real `void`/alias from a truly unknown name, emitting
+  `error[3000]: unknown type in variable declaration` only for the unknown case — preceded by the
+  `test:` fixture commit `1e373449`). Its dump contract below now **HOLDS**: dump rc=2, **0 `.c`**,
+  stderr the single `error[3000]: unknown type in variable declaration` (10:11) with NO `cannot declare
+  variable of type void` (cascade suppressed via `decl_type = TYPE_UNDEFINED` + the existing
+  `decl_type = it` init-site recovery). It **no longer belongs in the expected-fail set** (kept as a
+  permanent regression guard). The historical RED root-cause record beneath this marker is retained
+  verbatim as evidence.
 
 New-corpus CLEAN-DIAG fixtures (plan `2026-09-03-f-cleandiag-clean-diagnostics-plan.md`, Task 1):
 two silent/misleading zig1 failure modes get clean `error[3000]` diagnostics — (a) an UNKNOWN /
@@ -199,6 +222,15 @@ runnable today.
 |---|---|---|---|
 | `int_arbitrary_width_xmod` | arbitrary-width integer types `u3`/`i7`/`u12` (N in 1..65535) in var-decl annotations + arithmetic | clean error[3000] rejection (compile-gate label GREEN, FALSE green — NOT a genuine green-guard; unknown width name silently resolves to TYPE_VOID → generic `cannot declare variable of type void`; 0 `.c`; deterministic 3/3) | `7 -3 3000 4\n` |
 
+- **Status update (2026-09-04, F-CLEANDIAG GATE):** class **unchanged GREEN** — this fixture is the
+  R7 void-fallback manifestation now covered by F-CLEANDIAG. Its stderr MESSAGE changed with the
+  unknown-type gate (`feat` `932fea8d`): the four bare-ident var-decl annotations (u3/u3/i7/u12) now
+  report `error[3000]: unknown type in variable declaration` and there are **0** occurrences of
+  `cannot declare variable of type void` — the generic void-conflation message is GONE for unknown type
+  names. NO fix commit and NO class move (the compile-gate label was already GREEN pre-fix; the RED
+  class was a FALSE green, the valid `u3` program still does NOT compile — arbitrary-width uN/iN remain
+  unregistered types, F-CLEANDIAG added only the precise diagnostic, not the width feature). Historical
+  RED root-cause record beneath retained verbatim.
 - **Current RED status — int_arbitrary_width_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. The
   four typed var-decls each fire an `error[3000]: cannot declare variable of type void` +
   `warning[3000]: type mismatch in variable declaration — initialization type may not be compatible
