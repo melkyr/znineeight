@@ -255,6 +255,68 @@ fn semanticAnalyzerIsTypeValueCast(self: *SemanticAnalyzer, name_id: u32) bool {
     return false;
 }
 
+fn semanticAnalyzerBuiltinNameEq(self: *SemanticAnalyzer, name_id: u32, lit: []const u8) bool {
+    var nm = interner_mod.stringInternerGet(self.interner, name_id);
+    if (nm.len != lit.len) return false;
+    var ci: usize = 0;
+    while (ci < nm.len) : (ci += @intCast(usize, 1)) {
+        if (nm[ci] != lit[ci]) return false;
+    }
+    return true;
+}
+
+fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) bool {
+    if (name_id == self.ptrcast_name_id) return true;
+    if (name_id == self.ptrtoint_name_id) return true;
+    if (name_id == self.inttoptr_name_id) return true;
+    if (name_id == self.int_from_ptr_name_id) return true;
+    if (name_id == self.ptr_from_int_name_id) return true;
+    if (name_id == self.field_parent_ptr_name_id) return true;
+    if (name_id == self.bitcast_name_id) return true;
+    if (name_id == self.intcast_name_id) return true;
+    if (name_id == self.floatcast_name_id) return true;
+    if (name_id == self.inttofloat_name_id) return true;
+    if (name_id == self.inttoenum_name_id) return true;
+    if (name_id == self.as_name_id) return true;
+    if (name_id == self.size_of_name_id) return true;
+    if (name_id == self.align_of_name_id) return true;
+    if (name_id == self.offset_of_name_id) return true;
+    if (name_id == self.bit_size_of_name_id) return true;
+    if (name_id == self.bit_offset_of_name_id) return true;
+    if (name_id == self.putchar_name_id) return true;
+    if (name_id == self.stdout_write_name_id) return true;
+    if (name_id == self.stderr_write_name_id) return true;
+    if (name_id == self.getchar_name_id) return true;
+    if (name_id == self.exit_name_id) return true;
+    if (name_id == self.sleep_ms_name_id) return true;
+    if (name_id == self.is_windows_name_id) return true;
+    if (name_id == self.console_clear_name_id) return true;
+    if (name_id == self.console_gotoxy_name_id) return true;
+    if (name_id == self.console_set_color_name_id) return true;
+    if (name_id == self.socket_create_name_id) return true;
+    if (name_id == self.socket_bind_listen_name_id) return true;
+    if (name_id == self.socket_accept_name_id) return true;
+    if (name_id == self.socket_connect_name_id) return true;
+    if (name_id == self.socket_send_name_id) return true;
+    if (name_id == self.socket_recv_name_id) return true;
+    if (name_id == self.socket_select_name_id) return true;
+    if (name_id == self.socket_fd_zero_name_id) return true;
+    if (name_id == self.socket_fd_set_name_id) return true;
+    if (name_id == self.socket_fd_isset_name_id) return true;
+    if (name_id == self.socket_close_name_id) return true;
+    var l_e2i: []const u8 = "@enumToInt";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) return true;
+    var l_cvs: []const u8 = "@cVaStart";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cvs)) return true;
+    var l_cva: []const u8 = "@cVaArg";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cva)) return true;
+    var l_cve: []const u8 = "@cVaEnd";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cve)) return true;
+    var l_pan: []const u8 = "@panic";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_pan)) return true;
+    return false;
+}
+
 fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
     var new_cap: usize = if (self.local_decl_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.local_decl_cap * @intCast(usize, 2);
     var raw_names = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
@@ -1524,6 +1586,10 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         }
     } else if (node.kind == AstKind.fn_call) {
         result = semanticAnalyzerResolveFnCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call and !semanticAnalyzerIsBuiltinSupported(self, node.child_0)) {
+        var ub_msg: []const u8 = "unsupported builtin function";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ub_msg);
+        result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
@@ -2022,7 +2088,18 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
             if (node.child_0 != @intCast(u32, 0)) {
                 var ann = ast_mod.astStoreNodeAt(self.store, node.child_0);
-                if (ann.kind == AstKind.ident_expr) { decl_type = semanticAnalyzerResolveExpr(self, node.child_0); }
+                if (ann.kind == AstKind.ident_expr) {
+                    decl_type = semanticAnalyzerResolveExpr(self, node.child_0);
+                    if (decl_type == type_mod.TYPE_VOID) {
+                        var cd_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                        var cd_full = type_resolver.resolveTypeExprFull(&cd_env, node.child_0, @intCast(u32, 0));
+                        if (cd_full == type_mod.TYPE_UNDEFINED) {
+                            var ut_msg: []const u8 = "unknown type in variable declaration";
+                            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, ann.span_start, ann.span_start + @intCast(u32, ann.span_len), ut_msg);
+                            decl_type = type_mod.TYPE_UNDEFINED;
+                        }
+                    }
+                }
                 else {
                     var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                     if (rt) |t| { decl_type = t; }
