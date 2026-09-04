@@ -17,7 +17,7 @@ Design spec: `docs/superpowers/specs/2026-09-04-upgraded-examples-closeout-desig
 - `examples/z98/json_parser_upgraded` (untracked) is **out of scope** — never staged.
 - Every canonical feed run must remain **byte-identical between the original program and its `_upgraded`** counterpart. Demo goldens (new surface) are authored at GREEN time, determinism-verified 3×.
 - Z98 dialect in all new code: no `anytype`/`@Type`/method syntax/pointer captures; `@intCast` on width changes; `else` prong on every non-exhaustive switch; case-range endpoints are int/char literals only; `@ptrFromInt` always on an **annotated** target var; `@offsetOf`/`@fieldParentPtr` on **plain structs** only; do not reintroduce the switch-expression payload-capture emission bug (statement switches for captures).
-- Build/run recipe (authoritative): fresh output dir (`rm -rf` + `mkdir -p`), then `(cd /workspace/znineeight && <zig1> --dump-c89 --output-dir <W> <entry>)`; gcc `-m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include` each `.c` → `.o`; link `*.o` + `sf/src/zig_runtime.c` `sf/src/zig_pal.c`; run under `timeout` with a feed file on stdin; capture stdout. Task 1 installs this as `scripts/closeout/run_upgraded.sh`; later tasks call it.
+- Build/run recipe (authoritative): fresh output dir (`rm -rf` + `mkdir -p`), then `(cd /workspace/znineeight && <zig1> --dump-c89 --output-dir <W> <entry>)`; gcc `-m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include` each `.c` → `.o`; link `*.o` + `sf/src/include/zig_runtime.c` `sf/src/include/zig_pal.c` (repo-authoritative location — AMENDMENT 1, operator ruling); run under `timeout` with a feed file on stdin; capture stdout. Task 1 installs this as `scripts/closeout/run_upgraded.sh`; later tasks call it.
 - Reports accumulate in `.superpowers/sdd/task-CLOSEOUT-report.md` (gitignored). Ledger: `.superpowers/sdd/progress.md`. Memory: `mnemoria --path .opencode/memory`, agent `closeout-session`.
 - Only plan-authorized actions; STOP-present on any divergence; commits only per-task; stage ONLY intended files; pre-existing dirty set (2026-08-26 plan doc, `mnemoria/*`, `.zig1_*.tmp`, `build/`, `json_parser_upgraded/`) never staged.
 - A report/evidence contract per task: status, files changed, feed-byte-identity + golden evidence (md5s), symbol-gate evidence, zig0-reject evidence where applicable, concerns.
@@ -51,7 +51,7 @@ if [ $? -ne 0 ]; then echo "RUNRC=DUMPFAIL"; cat "$W/dump.log"; exit 1; fi
 for f in "$W"/*.c; do
   gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$ROOT/sf/src/include" -c "$f" -o "${f%.c}.o" || { echo "RUNRC=GCCFAIL"; cat "$W"/gcc.err 2>/dev/null; exit 1; }
 done
-gcc -m32 -o "$W/prog" "$W"/*.o "$ROOT/sf/src/zig_runtime.c" "$ROOT/sf/src/zig_pal.c" || { echo "RUNRC=LINKFAIL"; exit 1; }
+gcc -m32 -o "$W/prog" "$W"/*.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" || { echo "RUNRC=LINKFAIL"; exit 1; }
 timeout 30 "$W/prog" < "$FEED" > "$OUT" 2>"$W/run.err"
 echo "RUNRC=$?"
 ```
