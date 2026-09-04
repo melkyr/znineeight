@@ -1,4 +1,24 @@
-# mi_matrix corpus — expected-fail manifest (v68 2026-09-04)
+# mi_matrix corpus — expected-fail manifest (v69 2026-09-04)
+
+## Closeout note (v69 2026-09-04) — upgraded-examples verification gate
+
+The upgraded-example feature showcases (`examples/z98/lisp_interpreter_upgraded` and
+`examples/z98/rogue_mud_upgraded`, each with its `demo/` dir) remain **gate-exempt**
+from the mi_matrix corpus — they are example programs, not repro fixtures, and no
+expected-fail row applies to them. Their canonical byte-identity + demo goldens are
+now committed **gate artifacts** verified by the self-contained closeout gate at
+`scripts/closeout/verify_upgraded.sh` (with its repo-authoritative 5-line
+`scripts/closeout/flush.c` `_IONBF` LD_PRELOAD shim): A1-A5 = lisp build / canonical
+feed (`96654b39…`) / demo feed masked-compare (AMENDMENT 4 `(address)` line) / export
+symbol gate (`alloc_value`) / zig0 note; B1-B7 = rogue build / q feed (`3fb6709e…`) /
+move feed (`b3c5b0e1…`) / demo feed (`7361d248…`) / export symbol gates
+(`saveDungeon`/`loadDungeon`/cross-module `render_calls`) / net variant
+(`aa40a52e…`) / zig0 note. Rogue dumps run from the rogue program dir CWD (module
+resolution relative; dumping `demo/net_main.zig` from the repo root fails
+`error[3048]`). zig0 scope per Global Constraints AMENDMENT 2 = `examples/zig0` ONLY
+— no `sf/build/zig0` build is ever attempted against an `examples/z98` entrypoint;
+the zig0-incompatibility closeout evidence is documented-only (gate phases A5/B7 echo
+the scope line + the C1 tag-`==` construct sites; no build).
 
 ## Langwins clean-diag fixtures (v67) — F-CLEANDIAG
 
