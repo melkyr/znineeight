@@ -17,6 +17,8 @@ Design spec: `docs/superpowers/specs/2026-09-04-win32-cross-pre-test-design.md` 
 - All builds/dumps use fresh dirs (`rm -rf` + `mkdir -p`) and `timeout`-guard every run. Net runs: localhost only, never `pkill`; kill only PIDs started; verify no listener left after.
 - Wine: use a dedicated 32-bit prefix (e.g. `/tmp/wine32` with `WINEARCH=win32`), set per-command (`WINEPREFIX=... WINEARCH=win32 wine prog.exe`), never mutate the operator's wine config.
 - Goldens are the linux-verified ones already committed/recorded (mud boot line; rogue net `server.out` `aa40a52e`; canonical `96654b39`/`3fb6709e`/`b3c5b0e1`; demos `7361d248`/`aa40a52e`/`834459d0`). Byte-parity is measured against those. The lisp demo `(address)` line stays masked per AMENDMENT-4 convention.
+
+**AMENDMENT 1 (operator ruling, 2026-09-04):** the parity criterion for CRT-path programs (`std_io` `fwrite`/`putchar` → msvcrt win32 **text mode** translates `\n`→`\r\n`, reproduced under wine and on any real win32/win9x) is **LF-normalized byte parity** — `cross_parity.sh` strips `\r` before the compare when `PARITY_STRIP_CR=1` is set; the raw wine stdout (`stdout.txt`) is preserved as evidence. PAL `WriteFile`-path programs (e.g. `game_of_life`) keep strict byte parity. CRLF output is expected real-platform behavior, NOT a defect and never fixed.
 - Reports accumulate in `.superpowers/sdd/task-WIN32-report.md` (gitignored). Ledger: `.superpowers/sdd/progress.md`. Memory: `mnemoria --path .opencode/memory`, agent `win32cross-session`.
 - Per-task report contract: status, cross-compile/link/run rc evidence, byte-parity result (md5), wine prefix/proc evidence, gaps classified (environment/toolchain/gap), concerns.
 
