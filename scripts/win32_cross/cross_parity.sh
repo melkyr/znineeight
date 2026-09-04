@@ -38,6 +38,11 @@
 #                   CRT-path programs; raw stdout.txt is preserved as evidence).
 #   WINE_RUN_TIMEOUT run timeout seconds (default 300)
 #   WINEPREFIX      wine prefix (default /tmp/wine32)
+#   CROSS_EXTRA_LIBS space-separated extra link libs/flags passed through to
+#                     cross_build_run.sh (e.g. "-lwsock32" for programs whose
+#                     emitted std_net module references winsock symbols even in
+#                     single-player mode; cross_parity.sh's own argv is fixed at
+#                     entry/feed/expected/workdir, so link extras go via env).
 # Exit status: 0 only on full pass (build ok + run rc 0 + PARITY=OK).
 set -u
 
@@ -45,6 +50,7 @@ ROOT=${ROOT:-/workspace/znineeight}
 ZIG1=${ZIG1:-/tmp/fx_subfolder/zig1}
 WINEPREFIX=${WINEPREFIX:-/tmp/wine32}
 WINE_RUN_TIMEOUT=${WINE_RUN_TIMEOUT:-300}
+CROSS_EXTRA_LIBS=${CROSS_EXTRA_LIBS:-}
 ENTRY=${1:?usage: cross_parity.sh <entry> <feed> <expected_stdout> <workdir>}
 FEED=${2:?usage: cross_parity.sh <entry> <feed> <expected_stdout> <workdir>}
 EXPECTED=${3:?usage: cross_parity.sh <entry> <feed> <expected_stdout> <workdir>}
@@ -57,8 +63,12 @@ rm -rf "$WORKDIR"
 mkdir -p "$WORKDIR" "$RUN_CWD"
 
 # ---- Step 1: cross build ----------------------------------------------------
+extra_libs=()
+if [ -n "$CROSS_EXTRA_LIBS" ]; then
+    read -r -a extra_libs <<<"$CROSS_EXTRA_LIBS"
+fi
 if ! bash "$HARNESS" "$ZIG1" "$ENTRY" "$WORKDIR/build" "$WORKDIR/prog.exe" \
-    >"$WORKDIR/build.log" 2>&1; then
+    "${extra_libs[@]}" >"$WORKDIR/build.log" 2>&1; then
     sed -n '1,25p' "$WORKDIR/build.log"
     echo "XRUNRC=$(sed -n 's/^XRUNRC=//p' "$WORKDIR/build.log")"
     exit 1
