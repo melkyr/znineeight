@@ -31,6 +31,11 @@
 #   PARITY_MASK     if non-empty, compare line-by-line masking AMENDMENT-4
 #                   (address) lines: a line where BOTH actual and expected
 #                   match '^> [0-9]+$' compares equal. Default: strict cmp.
+#   PARITY_STRIP_CR if non-empty, strip CR from the captured stdout before the
+#                   parity compare (AMENDMENT-1 ruling: win32 CRT text mode
+#                   translates \n -> \r\n on the std_io fwrite/putchar path;
+#                   LF-normalized parity is the cross-platform criterion for
+#                   CRT-path programs; raw stdout.txt is preserved as evidence).
 #   WINE_RUN_TIMEOUT run timeout seconds (default 300)
 #   WINEPREFIX      wine prefix (default /tmp/wine32)
 # Exit status: 0 only on full pass (build ok + run rc 0 + PARITY=OK).
@@ -77,11 +82,19 @@ if [ "$WINE_RC" -eq 124 ]; then
     echo "WINE_TMOUT=1"
 fi
 
-# ---- Step 3: byte parity -----------------------------------------------------
+# ---- Step 3: parity -----------------------------------------------------------
+# AMENDMENT-1: win32 CRT text mode emits CRLF on the std_io path; when
+# PARITY_STRIP_CR is set the compare runs on an LF-normalized copy.
+PARITY_SRC="$WORKDIR/stdout.txt"
+if [ -n "${PARITY_STRIP_CR:-}" ]; then
+    tr -d '\r' <"$WORKDIR/stdout.txt" >"$WORKDIR/stdout.norm"
+    PARITY_SRC="$WORKDIR/stdout.norm"
+fi
+
 parity_ok=0
 if [ -n "${PARITY_MASK:-}" ]; then
     a_ln=0; e_ln=0
-    while IFS= read -r _; do a_ln=$((a_ln + 1)); done <"$WORKDIR/stdout.txt"
+    while IFS= read -r _; do a_ln=$((a_ln + 1)); done <"$PARITY_SRC"
     while IFS= read -r _; do e_ln=$((e_ln + 1)); done <"$EXPECTED"
     n=0
     while true; do
@@ -95,10 +108,10 @@ if [ -n "${PARITY_MASK:-}" ]; then
         fi
         parity_ok=1
         break
-    done 3<"$WORKDIR/stdout.txt" 4<"$EXPECTED"
+    done 3<"$PARITY_SRC" 4<"$EXPECTED"
     if [ "$parity_ok" -eq 0 ] && [ "$a_ln" -ne "$e_ln" ]; then parity_ok=1; fi
 else
-    if ! cmp -s "$WORKDIR/stdout.txt" "$EXPECTED"; then parity_ok=1; fi
+    if ! cmp -s "$PARITY_SRC" "$EXPECTED"; then parity_ok=1; fi
 fi
 
 if [ "$parity_ok" -eq 0 ]; then
@@ -107,5 +120,5 @@ if [ "$parity_ok" -eq 0 ]; then
 fi
 
 echo "PARITY=DIFF"
-diff "$WORKDIR/stdout.txt" "$EXPECTED" || true
+diff "$PARITY_SRC" "$EXPECTED" || true
 exit 1
