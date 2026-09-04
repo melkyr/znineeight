@@ -12,7 +12,7 @@ const net_mod = @import("lib/net.zig");
 const ui_mod = @import("ui.zig");
 const std = @import("std");
 
-const MULTIPLAYER_ENABLED: bool = false;
+const MULTIPLAYER_ENABLED: bool = true;
 
 @cInclude("zig_runtime.h");
 @cInclude("<stdio.h>");

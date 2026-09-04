@@ -65,3 +65,63 @@ demo/demo_feed.txt`) produce byte-identical stdout (md5 `7361d248…`,
 RUNRC=0 each); `demo_expected.txt` is that capture. Unlike the lisp `(address)`
 demo, nothing in this demo prints a runtime address, so there is no PIE/ASLR
 variance — the golden is a whole-file byte gate.
+
+## Network variant (`net_main.zig` + `net_demo_client.zig`)
+
+`net_main.zig` is a verbatim copy of `main.zig` with exactly ONE delta:
+`const MULTIPLAYER_ENABLED: bool = true;` (line 15; the `false` → `true`
+flip). Duplicating the file is intentional: the net variant must be a
+deterministically-buildable committed entry whose byte output is a committed
+golden. `git diff net_main.zig main.zig` shows only that one line.
+
+`main.zig` additionally threads `'i', 'I' => demoInfo()` into the per-client
+network byte loop (the `switch (cc)` over each received char, before
+`else => {}`), so a networked client's `i` prints the same info block on the
+**server's stdout**. `demoInfo()` is shared by both input paths (Task 5); the
+net prong adds no new output code. Canonical single-player feeds never send
+`i`, so the net-loop addition leaves the two canonical goldens byte-identical.
+
+`net_demo_client.zig` is the committed demo client (pattern:
+`repro/mi_matrix/net_builtin_test/main.zig` — `@socketCreate(0)` then
+`@socketConnect(client, 4000)` reaches the server's listen socket on
+127.0.0.1:4000). It sends a single `i` byte, drains whatever the server
+streams, and self-terminates.
+
+`net_demo_expected.txt` is the verified server-stdout golden (md5
+`aa40a52e…`, 359 bytes): the net boot lines (`Welcome to Rogue MUD!`,
+`Generating dungeon...`, the two `Random_range error` lines, `Game
+started! ...` — note NO `Running in single-player ASCII mode.`, which only the
+`false` branch prints) followed by the SAME `i` info block bytes as
+`demo_expected.txt` (verified: `demo_expected.txt` minus its single-player
+boot line is byte-identical to `net_demo_expected.txt`). No render frames
+appear: the server runs with stdin from `/dev/null` (fd0 EOF ⇒ select always
+reports it ready ⇒ the periodic-render path never fires), and the client sends
+no movement keys.
+
+### Capture procedure (server stdout golden)
+
+The net golden cannot be produced by `run_upgraded.sh` (the server never
+exits on its own), so the gate encodes this backgrounded procedure instead.
+All socket output lowers to `fwrite(..., stdout)`, which is fully buffered
+when stdout is a file — a bare `timeout` kill loses the buffer. Run the
+server under `stdbuf`-style unbuffered stdout so the file is populated
+live:
+
+```
+zig1 --dump-c89   net_main.zig;       # into a fresh server dir (dump + gcc, see run_upgraded.sh)
+zig1 --dump-c89   net_demo_client.zig # into a fresh client dir (dump + gcc)
+cd <server_dir>
+(env LD_PRELOAD=/tmp/netdemo/flush.so timeout -k 2 12 ./prog \
+     < /dev/null > server.out 2> server.err &)   # flush.so = 32-bit setvbuf(_IONBF) shim
+sleep 0.5
+cd <client_dir> && timeout 10 ./prog              # client sends 'i', self-terminates
+# allow the server to reach its 12 s timeout; stdout is stable at kill
+```
+
+`flush.so` is a 5-line `-m32` shim (`__attribute__((constructor))` calling
+`setvbuf(stdout, NULL, _IONBF, 0)`); a bare `timeout`/`kill` otherwise
+discards the libc stdout buffer and yields an empty `server.out`.
+Determinism: 3× runs produced byte-identical `server.out` (md5 `aa40a52e…`).
+Port 4000 must be free before each run (`connect_ex` returns 111/refused); do
+not `pkill` — capture the server PID and `kill` it only after the client
+finishes.
