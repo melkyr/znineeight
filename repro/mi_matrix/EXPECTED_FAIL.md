@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v69 2026-09-04)
+# mi_matrix corpus — expected-fail manifest (v70 2026-09-05)
+
+## Netbind reconciliation (v70 2026-09-05) — std_net extern OS bindings + target model + socket-builtin removal
+
+Plan `2026-09-05-std-net-extern-target-plan.md` (design `2026-09-05-std-net-extern-target-design.md`
+`4e322a71`; commits `bd2666b1` S1 / `93e7d247` S2 / `12a16726` S3-C1 / `838009b0` S3) is COMPLETE:
+S1 target model + S2 std_net extern rewrite + S3 builtin removal + S4 combined battery + the
+operator-approved re-baselines (2026-09-04). Measured on the reference `/tmp/fx_subfolder/zig1` md5
+`c8f1b3d0` (rebuilt at HEAD `838009b0`, canonical std reinstalled). Corpus 428 dirs `-s0` =
+**OK=406 / FAIL=13 / GREEN=9 / GCCFAIL=0 / ICE=0 / CRASH=0** — per-row zero delta vs the S3-F sweep;
+the ONLY row move is `net_builtin_test` OK→GREEN (the clean-error reclass below). Golden 9/9 PASS;
+matrix 21/21 PASS; `scripts/closeout/verify_upgraded.sh` A1–B7 PASS. Three fixture rows reconcile
+(the two NEW dirs are valid programs kept as permanent regression guards; `net_builtin_test` is the
+C2 negative probe, reclassified in place):
+
+- **GREEN (2026-09-05, S1 `bd2666b1`, NEW regression guard):** `target_is_windows_xmod` — the
+  target-model fixture. `@isWindows()` now folds from the per-invocation target (`-osl` default /
+  `-osw`; `--target linux|windows` alias), so the `if (@isWindows())` branch is comptime-pruned per
+  target: `-osl`/no-flag emission is `x = 222`, `-osw` emission is `x = 111`; run-gate verified 3×
+  deterministic both targets (`-osl` gcc -m32 → `222`, `-osw` mingw + wine → `111`), no-flag ==
+  `-osl` dump byte-identical. RED pre-S1 (fold hard-false → `222` under BOTH flags; `-osw` was
+  silently ignored). It no longer belongs in the expected-fail set; kept as a permanent regression
+  guard (a target-fold regression flips it straight back to RED).
+- **GREEN (2026-09-05, S2 `93e7d247`, NEW regression guard):** `net_bind_startup_xmod` — the
+  std_net init + socket-call shape. `init()` now executes WSAStartup(1,1) on win (was a no-op
+  returning 0 → the first socket call failed WSANOTINITIALISED `10093` → `createTcpServer(0)` −1 →
+  `@exit(2)`); linux no-op unchanged. Run-gate verified 3× deterministic: linux rc=0 stdout `7`,
+  win rc=0 stdout `7` (wine). RED pre-S2 on the WIN target only (rc=2, empty stdout); linux RED was
+  never observable (no startup needed). It no longer belongs in the expected-fail set; kept as a
+  permanent regression guard (an init regression re-fires the win `10093` path).
+- **RECLASSIFIED (2026-09-05, S3 `838009b0`):** `net_builtin_test` **OK → GREEN** (clean-error
+  class; the C2 negative probe, AMENDMENT `f1b62a87`). Its main.zig exercises the 11 `@socket*`
+  builtins directly; S3 deleted them (std_net is now the sole networking surface — extern wsock32/
+  libc bindings), so the fixture is invalid by design post-removal and a direct `@socket*` call now
+  fails CLEAN via the F-CLEANDIAG diagnostic: dump rc=2, **0 `.c`**, stderr `error[3000]: unsupported
+  builtin function` (19 occurrences; the AMENDMENT-2 `c294fce0`-documented `cannot declare variable
+  of type void` CASCADE on the untyped-var results is expected — not a defect). Corpus class moved
+  OK→GREEN at S3-F and HOLDS (S4 re-sweep). The historical OK-era records beneath (the fixture
+  NOTES.md and the F3/F4/F7-era "all classify OK" rows in the Totals sections) are retained
+  verbatim as evidence; the fixture's `main.zig`/NOTES.md are untouched.
+
+**Plan reconciliation note (S1-S3 change record; all operator-ruled or -approved):** (1) target
+flags `-osl`/`-osw` + `--target linux|windows` alias, default linux, with target-aware
+`@isWindows()` folding (S1 `bd2666b1`); no-flag/`-osl` output byte-identical to pre-change. (2)
+std_net full extern rewrite (S2 `93e7d247`): target-selected wsock32/libc `extern "c"` bindings
+under `if (@isWindows())` comptime selection, single OS-prototype source = the new
+`sf/src/include/net_prelude.h` via `@cInclude("<net_prelude.h>")`, win `init()`/`cleanup()` =
+WSAStartup(1,1)/WSACleanup, manual byte-swap helpers `htonsManual`/`htonlManual` (public) alongside
+extern `htons`/`htonl`, `-1` INVALID_SOCKET/SOCKET_ERROR mapping preserved. (3) additive public API
+(S3-C1 `12a16726`, operator m0926): `createTcpClient(port: u16) i32` client factory; the demo
+client `examples/z98/rogue_mud_upgraded/demo/net_demo_client.zig` migrated to the std_net flow
+(`init()` → `createTcpClient(4000)` → `send` → `recv` → `close` → `cleanup()`). (4) the 11
+`@socket*` builtins removed (S3 `838009b0`) — a direct call now yields the clean `error[3000]:
+unsupported builtin function`, and `net_builtin_test` reclassifies OK→GREEN (above). (5)
+operator-approved re-baselines (2026-09-04): mud 4-MD5 `53405b3b` → `846106ac` (intermediate
+`962a692c` superseded; gol/lisp/json UNCHANGED `302df36b`/`3591bad9`/`76056b97`) and self-compile
+fixed point `85733145` → `10f0ca2b` (41 `.c`/0 err/0 PANIC, hop1==hop2 closure). Wine net
+verification: mud_server BINDS + serves under `-osw` (banner, zero `10093`), demo client connect
+rc 0, select live — 3× deterministic. `cross_net.sh` (legacy win32 pre-test artifact encoding the
+pre-fix 10093-gap expectations) intentionally left untouched; `verify_upgraded.sh` is the live gate.
 
 ## Closeout note (v69 2026-09-04) — upgraded-examples verification gate
 
