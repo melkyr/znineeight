@@ -217,3 +217,11 @@ git commit -m "docs: GATE — target model + std_net extern net bindings + built
 1. **Spec coverage:** S1 → rulings 2/3 + architecture target model; S2 → rulings 4/5/7/8 + extern rewrite + manual helpers; S3 → builtin removal; S4 → rulings 9/gates. The extern-mechanism I task covers ruling 6. Out-of-scope items excluded from tasks.
 2. **Placeholder scan:** I tasks carry explicit probe/decision steps and STOP conditions instead of pre-deciding verdicts; F tasks implement recorded verdicts. No TBD.
 3. **Type/name consistency:** fixture names `<name>_xmod`; report `task-NETBIND-report.md`; flags `-osl`/`-osw`; std_net API names unchanged; helper names `htonsManual`/`htonlManual` (public), extern `htons`/`htonl`.
+
+---
+
+## AMENDMENT — S3 direct-`@socket*` caller rulings (2026-09-04, operator)
+
+S3 Task 3-0 inventory (Approved) found two direct `@socket*` callers. Operator rulings (m0917):
+- **C1 (a):** migrate `examples/z98/rogue_mud_upgraded/demo/net_demo_client.zig` (lines 6,8,10,15,18) to the `std_net` API (protected-example exemption granted for this one demo file so the win9x client demo survives builtin removal). Migration precedes Task 3-1. If a pure-public-API client socket factory does not exist in `std_net`, STOP-present a precise gap for a narrow follow-on ruling (no public-API behavior change).
+- **C2:** leave `repro/mi_matrix/net_builtin_test/main.zig` as-is; it becomes the Task 3-1 negative probe (post-removal clean `error[3000] unsupported builtin`, rc2, 0 `.c`); EXPECTED_FAIL reconciled at S4.
