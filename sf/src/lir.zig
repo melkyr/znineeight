@@ -87,17 +87,6 @@ pub const LirInst = union(enum) {
     builtin_console_clear: void,
     builtin_console_gotoxy: struct { x: u32, y: u32 },
     builtin_console_set_color: struct { fg: u32, bg: u32 },
-    builtin_socket_create: struct { port: u32, result: u32 },
-    builtin_socket_bind_listen: struct { sock: u32, backlog: u32, result: u32 },
-    builtin_socket_accept: struct { sock: u32, result: u32 },
-    builtin_socket_connect: struct { sock: u32, port: u32, result: u32 },
-    builtin_socket_send: struct { sock: u32, buf: u32, len: u32, result: u32 },
-    builtin_socket_recv: struct { sock: u32, buf: u32, len: u32, result: u32 },
-    builtin_socket_select: u32, // side-table slot (see LirSideEntry / lirSideAppendSocketSelect)
-    builtin_socket_fd_zero: struct { set: u32 },
-    builtin_socket_fd_set: struct { fd: u32, set: u32 },
-    builtin_socket_fd_isset: struct { fd: u32, set: u32, result: u32 },
-    builtin_socket_close: struct { sock: u32 },
     nop: void,
 };
 
@@ -122,23 +111,13 @@ pub const TailCallData = struct {
     is_extern: u8,
 };
 
-pub const SocketSelectData = struct {
-    nfds: u32,
-    readfds: u32,
-    writefds: u32,
-    exceptfds: u32,
-    timeout_ms: u32,
-    result: u32,
-};
-
-// Per-fn side table for the 3 wide LirInst variants. LirInst holds the tag
+// Per-fn side table for the 2 wide LirInst variants. LirInst holds the tag
 // (ordinals unchanged) plus a u32 slot; the operands live here. Serialized with
 // the function by lirStreamWriteFunction and faulted back in on read (I-3
 // Concern 2); payloads are scalar ids, so the byte dump is exact.
 pub const LirSideEntry = union {
     call_direct: CallDirectData,
     tail_call: TailCallData,
-    socket_select: SocketSelectData,
 };
 
 pub const LirSideEntryArrayList = struct {
@@ -462,22 +441,12 @@ pub fn lirSideAppendTailCall(lfn: *LirFunction, d: TailCallData) u32 {
     return slot;
 }
 
-pub fn lirSideAppendSocketSelect(lfn: *LirFunction, d: SocketSelectData) u32 {
-    var slot = @intCast(u32, lfn.side_table.len);
-    lirSideEntryArrayListAppend(&lfn.side_table, LirSideEntry{ .socket_select = d });
-    return slot;
-}
-
 pub fn lirSideGetCallDirect(lfn: *LirFunction, slot: u32) CallDirectData {
     return lfn.side_table.items[@intCast(usize, slot)].call_direct;
 }
 
 pub fn lirSideGetTailCall(lfn: *LirFunction, slot: u32) TailCallData {
     return lfn.side_table.items[@intCast(usize, slot)].tail_call;
-}
-
-pub fn lirSideGetSocketSelect(lfn: *LirFunction, slot: u32) SocketSelectData {
-    return lfn.side_table.items[@intCast(usize, slot)].socket_select;
 }
 
 pub const ModuleGlobalDecl = struct {

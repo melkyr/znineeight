@@ -78,17 +78,6 @@ pub const SemanticAnalyzer = struct {
     console_clear_name_id: u32,
     console_gotoxy_name_id: u32,
     console_set_color_name_id: u32,
-    socket_create_name_id: u32,
-    socket_bind_listen_name_id: u32,
-    socket_accept_name_id: u32,
-    socket_connect_name_id: u32,
-    socket_send_name_id: u32,
-    socket_recv_name_id: u32,
-    socket_select_name_id: u32,
-    socket_fd_zero_name_id: u32,
-    socket_fd_set_name_id: u32,
-    socket_fd_isset_name_id: u32,
-    socket_close_name_id: u32,
     module_reg: *mr_mod.ModuleRegistry,
 };
 
@@ -149,30 +138,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var cg_id = interner_mod.stringInternerIntern(interner, cg_s);
     var csc_s: []const u8 = "@consoleSetColor";
     var csc_id = interner_mod.stringInternerIntern(interner, csc_s);
-    var sc_s: []const u8 = "@socketCreate";
-    var sc_id = interner_mod.stringInternerIntern(interner, sc_s);
-    var sbl_s: []const u8 = "@socketBindListen";
-    var sbl_id = interner_mod.stringInternerIntern(interner, sbl_s);
-    var sac_s: []const u8 = "@socketAccept";
-    var sac_id = interner_mod.stringInternerIntern(interner, sac_s);
-    var scon_s: []const u8 = "@socketConnect";
-    var scon_id = interner_mod.stringInternerIntern(interner, scon_s);
-    var ssnd_s: []const u8 = "@socketSend";
-    var ssnd_id = interner_mod.stringInternerIntern(interner, ssnd_s);
-    var srcv_s: []const u8 = "@socketRecv";
-    var srcv_id = interner_mod.stringInternerIntern(interner, srcv_s);
-    var ssel_s: []const u8 = "@socketSelect";
-    var ssel_id = interner_mod.stringInternerIntern(interner, ssel_s);
-    var sfz_s: []const u8 = "@socketFdZero";
-    var sfz_id = interner_mod.stringInternerIntern(interner, sfz_s);
-    var sfs_s: []const u8 = "@socketFdSet";
-    var sfs_id = interner_mod.stringInternerIntern(interner, sfs_s);
-    var sfi_s: []const u8 = "@socketFdIsset";
-    var sfi_id = interner_mod.stringInternerIntern(interner, sfi_s);
-    var scl_s: []const u8 = "@socketClose";
-    var scl_id = interner_mod.stringInternerIntern(interner, scl_s);
     return SemanticAnalyzer{
-        .type_table = type_table,
+    .type_table = type_table,
         .diag = diag,
         .registry = registry,
         .symbols = symbols,
@@ -229,17 +196,6 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .console_clear_name_id = cc_id,
         .console_gotoxy_name_id = cg_id,
         .console_set_color_name_id = csc_id,
-        .socket_create_name_id = sc_id,
-        .socket_bind_listen_name_id = sbl_id,
-        .socket_accept_name_id = sac_id,
-        .socket_connect_name_id = scon_id,
-        .socket_send_name_id = ssnd_id,
-        .socket_recv_name_id = srcv_id,
-        .socket_select_name_id = ssel_id,
-        .socket_fd_zero_name_id = sfz_id,
-        .socket_fd_set_name_id = sfs_id,
-        .socket_fd_isset_name_id = sfi_id,
-        .socket_close_name_id = scl_id,
         .module_reg = module_reg,
     };
 }
@@ -293,17 +249,7 @@ fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) boo
     if (name_id == self.console_clear_name_id) return true;
     if (name_id == self.console_gotoxy_name_id) return true;
     if (name_id == self.console_set_color_name_id) return true;
-    if (name_id == self.socket_create_name_id) return true;
-    if (name_id == self.socket_bind_listen_name_id) return true;
-    if (name_id == self.socket_accept_name_id) return true;
-    if (name_id == self.socket_connect_name_id) return true;
-    if (name_id == self.socket_send_name_id) return true;
-    if (name_id == self.socket_recv_name_id) return true;
-    if (name_id == self.socket_select_name_id) return true;
-    if (name_id == self.socket_fd_zero_name_id) return true;
-    if (name_id == self.socket_fd_set_name_id) return true;
-    if (name_id == self.socket_fd_isset_name_id) return true;
-    if (name_id == self.socket_close_name_id) return true;
+
     var l_e2i: []const u8 = "@enumToInt";
     if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) return true;
     var l_cvs: []const u8 = "@cVaStart";
@@ -1680,55 +1626,6 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
             }
             result = type_mod.TYPE_VOID;
-        } else if (node.child_0 == self.socket_create_name_id or node.child_0 == self.socket_accept_name_id or node.child_0 == self.socket_close_name_id or node.child_0 == self.socket_fd_zero_name_id) {
-            if (ec.len >= @intCast(usize, 1)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-            }
-            if (node.child_0 == self.socket_create_name_id or node.child_0 == self.socket_accept_name_id) {
-                result = type_mod.TYPE_I32;
-            } else {
-                result = type_mod.TYPE_VOID;
-            }
-        } else if (node.child_0 == self.socket_bind_listen_name_id or node.child_0 == self.socket_connect_name_id or node.child_0 == self.socket_fd_set_name_id or node.child_0 == self.socket_fd_isset_name_id) {
-            if (ec.len >= @intCast(usize, 2)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-            } else if (ec.len >= @intCast(usize, 1)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-            }
-            if (node.child_0 == self.socket_bind_listen_name_id or node.child_0 == self.socket_connect_name_id) {
-                result = type_mod.TYPE_I32;
-            } else if (node.child_0 == self.socket_fd_isset_name_id) {
-                result = type_mod.TYPE_BOOL;
-            } else {
-                result = type_mod.TYPE_VOID;
-            }
-        } else if (node.child_0 == self.socket_send_name_id or node.child_0 == self.socket_recv_name_id) {
-            if (ec.len >= @intCast(usize, 3)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
-            } else if (ec.len >= @intCast(usize, 2)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-            } else if (ec.len >= @intCast(usize, 1)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-            }
-            result = type_mod.TYPE_I32;
-        } else if (node.child_0 == self.socket_select_name_id) {
-            if (ec.len >= @intCast(usize, 5)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 3)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 4)]);
-            } else {
-                var sei: usize = @intCast(usize, 0);
-                while (sei < ec.len) : (sei += @intCast(usize, 1)) {
-                    _ = semanticAnalyzerResolveExpr(self, ec[sei]);
-                }
-            }
-            result = type_mod.TYPE_I32;
         } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);

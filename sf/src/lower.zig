@@ -397,17 +397,6 @@ pub const LirLowerer = struct {
     console_clear_name_id: u32,
     console_gotoxy_name_id: u32,
     console_set_color_name_id: u32,
-    socket_create_name_id: u32,
-    socket_bind_listen_name_id: u32,
-    socket_accept_name_id: u32,
-    socket_connect_name_id: u32,
-    socket_send_name_id: u32,
-    socket_recv_name_id: u32,
-    socket_select_name_id: u32,
-    socket_fd_zero_name_id: u32,
-    socket_fd_set_name_id: u32,
-    socket_fd_isset_name_id: u32,
-    socket_close_name_id: u32,
     local_decl_names: [*]u32,
     local_decl_src_names: [*]u32,
     local_decl_types: [*]u32,
@@ -496,30 +485,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var console_gotoxy_id = si_mod.stringInternerIntern(ctx.registry.interner, console_gotoxy_s);
     var console_set_color_s: []const u8 = "@consoleSetColor";
     var console_set_color_id = si_mod.stringInternerIntern(ctx.registry.interner, console_set_color_s);
-    var socket_create_s: []const u8 = "@socketCreate";
-    var socket_create_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_create_s);
-    var socket_bind_listen_s: []const u8 = "@socketBindListen";
-    var socket_bind_listen_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_bind_listen_s);
-    var socket_accept_s: []const u8 = "@socketAccept";
-    var socket_accept_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_accept_s);
-    var socket_connect_s: []const u8 = "@socketConnect";
-    var socket_connect_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_connect_s);
-    var socket_send_s: []const u8 = "@socketSend";
-    var socket_send_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_send_s);
-    var socket_recv_s: []const u8 = "@socketRecv";
-    var socket_recv_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_recv_s);
-    var socket_select_s: []const u8 = "@socketSelect";
-    var socket_select_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_select_s);
-    var socket_fd_zero_s: []const u8 = "@socketFdZero";
-    var socket_fd_zero_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_fd_zero_s);
-    var socket_fd_set_s: []const u8 = "@socketFdSet";
-    var socket_fd_set_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_fd_set_s);
-    var socket_fd_isset_s: []const u8 = "@socketFdIsset";
-    var socket_fd_isset_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_fd_isset_s);
-    var socket_close_s: []const u8 = "@socketClose";
-    var socket_close_id = si_mod.stringInternerIntern(ctx.registry.interner, socket_close_s);
     var lowerer = LirLowerer{
-        .ctx = ctx,
+    .ctx = ctx,
         .func = undefined,
         .current_bb = @intCast(u32, 0),
         .temp_counter = @intCast(u32, 0),
@@ -563,17 +530,6 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .console_clear_name_id = console_clear_id,
          .console_gotoxy_name_id = console_gotoxy_id,
          .console_set_color_name_id = console_set_color_id,
-         .socket_create_name_id = socket_create_id,
-         .socket_bind_listen_name_id = socket_bind_listen_id,
-         .socket_accept_name_id = socket_accept_id,
-         .socket_connect_name_id = socket_connect_id,
-         .socket_send_name_id = socket_send_id,
-         .socket_recv_name_id = socket_recv_id,
-         .socket_select_name_id = socket_select_id,
-         .socket_fd_zero_name_id = socket_fd_zero_id,
-         .socket_fd_set_name_id = socket_fd_set_id,
-         .socket_fd_isset_name_id = socket_fd_isset_id,
-         .socket_close_name_id = socket_close_id,
         .local_decl_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_src_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_types = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
@@ -3570,105 +3526,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var csf = lowerExpr(self, ec[@intCast(usize, 0)]);
                     var csb = lowerExpr(self, ec[@intCast(usize, 1)]);
                     emitInst(self, LirInst{ .builtin_console_set_color = .{ .fg = csf, .bg = csb } });
-                }
-                return nextTemp(self, type_mod.TYPE_VOID);
-            }
-            if (node.child_0 == self.socket_create_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var sc_port = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var sc_res = nextTemp(self, type_mod.TYPE_I32);
-                    emitInst(self, LirInst{ .builtin_socket_create = .{ .port = sc_port, .result = sc_res } });
-                    return sc_res;
-                }
-                return nextTemp(self, type_mod.TYPE_I32);
-            }
-            if (node.child_0 == self.socket_bind_listen_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var sbl_sock = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var sbl_backlog = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var sbl_res = nextTemp(self, type_mod.TYPE_I32);
-                    emitInst(self, LirInst{ .builtin_socket_bind_listen = .{ .sock = sbl_sock, .backlog = sbl_backlog, .result = sbl_res } });
-                    return sbl_res;
-                }
-                return nextTemp(self, type_mod.TYPE_I32);
-            }
-            if (node.child_0 == self.socket_accept_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var sac_sock = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var sac_res = nextTemp(self, type_mod.TYPE_I32);
-                    emitInst(self, LirInst{ .builtin_socket_accept = .{ .sock = sac_sock, .result = sac_res } });
-                    return sac_res;
-                }
-                return nextTemp(self, type_mod.TYPE_I32);
-            }
-            if (node.child_0 == self.socket_connect_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var scon_sock = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var scon_port = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var scon_res = nextTemp(self, type_mod.TYPE_I32);
-                    emitInst(self, LirInst{ .builtin_socket_connect = .{ .sock = scon_sock, .port = scon_port, .result = scon_res } });
-                    return scon_res;
-                }
-                return nextTemp(self, type_mod.TYPE_I32);
-            }
-            if (node.child_0 == self.socket_send_name_id or node.child_0 == self.socket_recv_name_id) {
-                if (ec.len >= @intCast(usize, 3)) {
-                    var ss_sock = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var ss_buf = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var ss_len = lowerExpr(self, ec[@intCast(usize, 2)]);
-                    var ss_res = nextTemp(self, type_mod.TYPE_I32);
-                    if (node.child_0 == self.socket_send_name_id) {
-                        emitInst(self, LirInst{ .builtin_socket_send = .{ .sock = ss_sock, .buf = ss_buf, .len = ss_len, .result = ss_res } });
-                    } else {
-                        emitInst(self, LirInst{ .builtin_socket_recv = .{ .sock = ss_sock, .buf = ss_buf, .len = ss_len, .result = ss_res } });
-                    }
-                    return ss_res;
-                }
-                return nextTemp(self, type_mod.TYPE_I32);
-            }
-            if (node.child_0 == self.socket_select_name_id) {
-                if (ec.len >= @intCast(usize, 5)) {
-                    var ssel_nfds = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var ssel_rf = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var ssel_wf = lowerExpr(self, ec[@intCast(usize, 2)]);
-                    var ssel_ef = lowerExpr(self, ec[@intCast(usize, 3)]);
-                    var ssel_tm = lowerExpr(self, ec[@intCast(usize, 4)]);
-                    var ssel_res = nextTemp(self, type_mod.TYPE_I32);
-                    var ssel_slot = lir_mod.lirSideAppendSocketSelect(self.func, .{ .nfds = ssel_nfds, .readfds = ssel_rf, .writefds = ssel_wf, .exceptfds = ssel_ef, .timeout_ms = ssel_tm, .result = ssel_res });
-                    emitInst(self, LirInst{ .builtin_socket_select = ssel_slot });
-                    return ssel_res;
-                }
-                return nextTemp(self, type_mod.TYPE_I32);
-            }
-            if (node.child_0 == self.socket_fd_zero_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var sfz_set = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    emitInst(self, LirInst{ .builtin_socket_fd_zero = .{ .set = sfz_set } });
-                }
-                return nextTemp(self, type_mod.TYPE_VOID);
-            }
-            if (node.child_0 == self.socket_fd_set_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var sfs_fd = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var sfs_set = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    emitInst(self, LirInst{ .builtin_socket_fd_set = .{ .fd = sfs_fd, .set = sfs_set } });
-                }
-                return nextTemp(self, type_mod.TYPE_VOID);
-            }
-            if (node.child_0 == self.socket_fd_isset_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var sfi_fd = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var sfi_set = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var sfi_res = nextTemp(self, type_mod.TYPE_BOOL);
-                    emitInst(self, LirInst{ .builtin_socket_fd_isset = .{ .fd = sfi_fd, .set = sfi_set, .result = sfi_res } });
-                    return sfi_res;
-                }
-                return nextTemp(self, type_mod.TYPE_BOOL);
-            }
-            if (node.child_0 == self.socket_close_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var scl_sock = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    emitInst(self, LirInst{ .builtin_socket_close = .{ .sock = scl_sock } });
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
