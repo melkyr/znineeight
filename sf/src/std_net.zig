@@ -98,6 +98,38 @@ pub fn createTcpServer(port: u16) i32 {
     }
 }
 
+pub fn createTcpClient(port: u16) i32 {
+    if (@isWindows()) {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s == -1) return -1;
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0x7F000001)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (connect_os(s, @ptrCast(*const void, &addr), @intCast(i32, 16)) == -1) {
+            _ = closesocket(s);
+            return -1;
+        }
+        return s;
+    } else {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s < 0) return -1;
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0x7F000001)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (connect_os(s, @ptrCast(*const void, &addr), @intCast(i32, 16)) < 0) {
+            _ = close_os(s);
+            return -1;
+        }
+        return s;
+    }
+}
+
 pub fn bindListen(fd: i32, backlog: i32) i32 {
     if (@isWindows()) {
         const rc = listen(fd, backlog);
