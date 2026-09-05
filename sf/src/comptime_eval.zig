@@ -9,7 +9,6 @@ const type_mod = @import("type_registry.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
-const config = @import("config.zig");
 
 pub const ComptimeVal = struct {
     bits: u64,
@@ -29,6 +28,7 @@ pub const ComptimeEval = struct {
     bit_offset_of_id: u32,
     int_cast_id: u32,
     is_windows_id: u32,
+    host_is_windows: bool,
 };
 
 pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *StringInterner, symbol_reg: *SymbolRegistry) ComptimeEval {
@@ -51,6 +51,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
         .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id,
         .offset_of_id = off_id, .bit_size_of_id = bitsz_id, .bit_offset_of_id = bitoff_id,
         .is_windows_id = iw_id,
+        .host_is_windows = false,
     };
 }
 
@@ -211,7 +212,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
     }
     if (node.child_0 == self.is_windows_id) {
         var wb2: u64 = @intCast(u64, 0);
-        if (config.host_is_windows) {
+        if (self.host_is_windows) {
             wb2 = @intCast(u64, 1);
         }
         return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u32, 1), .sig = false };

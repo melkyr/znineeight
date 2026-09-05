@@ -87,6 +87,7 @@ pub const CompilerCli = struct {
      show_markers: bool,
      include_dirs: [16][]const u8,
     include_count: u32,
+    target_is_windows: bool,
 };
 
 pub const CompilerContext = struct {
@@ -479,6 +480,7 @@ fn phase_FrontResolution(ctx: *CompilerContext) void {
 fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
     var pc_m: []const u8 = "CE\n"; pal.markerWrite(pc_m);
     var ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
+    ce.host_is_windows = ctx.cli.target_is_windows;
     // Block-by-block sweep: fault in each 4096-node block, scan its slots, let
     // the resident ring evict it on the next fault. Node VALUES are identical to
     // the old contiguous scan (storage-location-only change).
@@ -1003,6 +1005,7 @@ fn parseArgs() CompilerCli {
          .show_markers = false,
          .include_count = @intCast(u32, 0),
         .include_dirs = undefined,
+        .target_is_windows = false,
     };
     var argc = pal.argCount();
     var i: i32 = 1;
@@ -1036,6 +1039,9 @@ fn parseArgs() CompilerCli {
     const s_o: []const u8 = "-o";
     const s_q: []const u8 = "-q";
     const s_W: []const u8 = "-W";
+    const s_osl: []const u8 = "-osl";
+    const s_osw: []const u8 = "-osw";
+    const s_target: []const u8 = "--target";
     while (i < argc) {
         var arg_ptr = pal.argGet(i);
         var arg = cstrToSlice(arg_ptr);
@@ -1100,13 +1106,22 @@ fn parseArgs() CompilerCli {
                  cli.show_markers = true;
              } else if (matchFlag(arg, s_include) or matchFlag(arg, s_lib_dir)) {
                 i += 1;
-                if (i < argc and cli.include_count < 16) {
-                    cli.include_dirs[@intCast(usize, cli.include_count)] = cstrToSlice(pal.argGet(i));
-                    cli.include_count += 1;
-                }
-            } else {
-                cli.input_file = cstrToSlice(arg_ptr);
-            }
+                 if (i < argc and cli.include_count < 16) {
+                     cli.include_dirs[@intCast(usize, cli.include_count)] = cstrToSlice(pal.argGet(i));
+                     cli.include_count += 1;
+                 }
+             } else if (matchFlag(arg, s_osl)) {
+                 cli.target_is_windows = false;
+             } else if (matchFlag(arg, s_osw)) {
+                 cli.target_is_windows = true;
+             } else if (matchFlag(arg, s_target)) {
+                 i += 1;
+                 if (i < argc) {
+                     cli.target_is_windows = parseTargetIsWindows(pal.argGet(i));
+                 }
+             } else {
+                 cli.input_file = cstrToSlice(arg_ptr);
+             }
         } else {
             cli.input_file = cstrToSlice(arg_ptr);
         }
@@ -1273,6 +1288,18 @@ fn parseErrorFormat(ptr: [*]const u8) ErrorFormat {
     return ErrorFormat.human;
 }
 
+fn parseTargetIsWindows(ptr: [*]const u8) bool {
+    var s = cstrToSlice(ptr);
+    const s_linux: []const u8 = "linux";
+    const s_windows: []const u8 = "windows";
+    if (matchFlag(s, s_windows)) return true;
+    if (matchFlag(s, s_linux)) return false;
+    const err_msg: []const u8 = "error: --target must be 'linux' or 'windows'\n";
+    pal.stderr_write(err_msg);
+    pal.exit(@intCast(u8, 1));
+    return false;
+}
+
 fn writeU32(val: usize) void {
     var buf: [16]u8 = undefined;
     var i: usize = 16;
@@ -1303,4 +1330,8 @@ fn printUsage() void {
     pal.stderr_write(s_help2);
     const s_help3: []const u8 = "            less disk I/O (pool= rises; -s5 = all in RAM ~71 MB -> pair with -mm128)\n";
     pal.stderr_write(s_help3);
+    const os_help: []const u8 = "  -osl       compile target = linux (default); -osw = windows\n";
+    pal.stderr_write(os_help);
+    const tgt_help: []const u8 = "  --target <linux|windows>  long-form target alias for -osl/-osw\n";
+    pal.stderr_write(tgt_help);
 }
