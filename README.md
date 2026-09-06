@@ -119,14 +119,19 @@ RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 | B | zig0 → gen-0 C89 | 3.10 | 46,704 | 45.6 | 43 |
 | C | gcc -m32 compile+link of emitted C89 → zig1 | 1.87 | 87,280 | 85.2 | (43 in) |
 | D | zig1 `-s0` self-compile → C89 | 1.12 | 13,388 | 13.1 | 41 |
+| E | gcc -m32 compile+link of zig1's self-emitted C89 → zig1_5 | 3.46 | 170,544 | 166.5 | (41 in) |
 
-> **The gcc ~80 MB caveat.** Row C is the memory hotspot of building the compiler from source: the
-> gcc backend peaks at **~85 MB** measured (linux `-m32`; the mingw cross peaks higher, ~168 MB).
-> Because zig1's emission is byte-identical on every hop, this figure applies to **every**
-> `zig1_5`-style next-generation hop and to any compiler-from-source build — it is not specific to
-> this measurement. Row A (the g++ C++98 bootstrap) is even larger at ~182 MB, but only matters when
-> rebuilding `zig0` from scratch; the release ships prebuilt `zig0` binaries (no `zig0` source
-> archive). Rows B (~46 MB) and D (~13 MB) fit comfortably in era-class RAM.
+> **The gcc caveat (~80 MB and ~166 MB, both measured).** The gcc backend is the memory hotspot of
+> building the compiler from source, and both gcc steps are measured here. Row C — gcc over the gen-0 C89 that zig0 emitted
+> (43 files, ~3.3 MB) — peaks at **~85 MB** (linux `-m32`; the mingw cross peaks higher, ~168 MB).
+> Row E — gcc over zig1's **own** self-emission (41 files, ~7.6 MB, ~2.3× the gen-0 C set,
+> byte-identical on every self-host hop) — peaks at **~166 MB** (3.46 s). Because each self-host hop
+> recompiles that same byte-identical self-emission, **Row E's ~166 MB figure — not Row C's —
+> applies to every `zig1_5`-style next-generation hop** and to any compiler-from-source build that
+> starts from a self-hosted zig1; it is not specific to this measurement. Row A (the g++ C++98
+> bootstrap) is even larger at ~182 MB, but only matters when rebuilding `zig0` from scratch; the
+> release ships prebuilt `zig0` binaries (no `zig0` source archive). Rows B (~46 MB) and D (~13 MB)
+> fit comfortably in era-class RAM.
 
 Supporting data for the `-s0` row: `zig1 -s0 --markers --track-memory` self-compile reports
 `pool=14881K` (~14.5 MB pool) with RSS ~13 MB — the basis for the "~16 MB at `-s0`" figure.

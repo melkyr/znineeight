@@ -24,7 +24,7 @@ The 0.20.0 binaries were built on an **AMD Ryzen 7 7700X 8-core/16-thread up to 
 
 ## 💾 Minimum Requirements
 
-Running `zig1` fits within ~16 MB at `-s0`: the self-compile pool measures ≈14.5 MB and the measured peak RSS is ~13 MB. Building the compiler from source is dominated by the gcc backend, which needs ~80 MB when compiling and linking the emitted C89 (~85 MB measured peak; the g++ bootstrap step measures ~182 MB). A 16 MB machine can run `zig1`, but it cannot build the compiler from source.
+Running `zig1` fits within ~16 MB at `-s0`: the self-compile pool measures ≈14.5 MB and the measured peak RSS is ~13 MB. Building the compiler from source is dominated by the gcc backend, which needs ~80 MB when compiling and linking the emitted C89 (~85 MB measured peak for the gen-0 hop; the g++ bootstrap step measures ~182 MB). The next-generation (`zig1_5`) hop — gcc over zig1's own self-emitted C89, a ~2.3× larger C set — measures **~166 MB peak at 3.46 s** and is the figure that applies to every self-host next-generation build. A 16 MB machine can run `zig1`, but it cannot build the compiler from source.
 
 Wall-clock and peak RAM were re-measured on the build machine (median of 3 under `/usr/bin/time -v`):
 
@@ -34,6 +34,7 @@ Wall-clock and peak RAM were re-measured on the build machine (median of 3 under
 | zig0 → emitted C89 | 3.10 | ~46 MB |
 | gcc compile+link → zig1 | 1.87 | ~85 MB |
 | zig1 `-s0` self-compile | 1.12 | ~13 MB |
+| gcc compile+link of zig1's self-emitted C89 → zig1_5 | 3.46 | ~166 MB |
 
 Clock-scaled engineering estimates for period hardware (PII ~300–450 MHz, PIII ~700–1000 MHz; method as in the README) put the whole battery at ~1.1–1.7 min on a PII and ~30–44 s on a PIII at the clock-only lower bound, with the memory-bound phases (gcc, g++) scaling worse (1.5–3×). These are estimates for the operator's real VM, not measurements.
 
@@ -53,7 +54,7 @@ Win-facing artifacts are `.zip` (win9x-unpackable). There is no `zig0` source ar
 Z98 is made possible by the dedicated work of its contributors.
 
 *@melkyr-Andres Hernandez*
-*Jules (AI-Agent)*
+*Zni005 (DeepseekV4+Opencode)*
 
 ---
 
