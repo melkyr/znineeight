@@ -369,7 +369,7 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
   broken sample pre-fix: `initRooms` never populated the world). Runtime verified vs the zig0 oracle: the
   rebuilt mud_server replies to `north` from start with `A sunny clearing. Exits: south back to forest.`
   (movement now works). mud old→new: `4591fef0346b42738874ce992c72f4c2` →
-  `53405b3be5bbc5e0f8c9aaba69c8fb6d` (the table row above is the CURRENT value). gol/lisp/json UNCHANGED
+  `53405b3be5bbc5e0f8c9aaba69c8fb6d` (that was the current table value at the time of this record; the table has since been refreshed — the current-baseline row above now carries the netbind S4 value `846106ac42e770a3bd2bf69afbfcb5db`). gol/lisp/json UNCHANGED
   (byte-identical `302df36b…` / `3591bad9…` / `76056b97…` — no re-baseline).
 
 - **Labeled-break plan B3a gol/lisp re-baseline (2026-08-26, F-EMITMAP fix, operator ruling A):** the

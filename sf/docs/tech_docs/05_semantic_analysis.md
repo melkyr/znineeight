@@ -1,10 +1,10 @@
-# 05 — Semantic Analysis [updated: 2026-08-14 — F-task root-cause fix: `semanticAnalyzerResolveFnCall` return-type fallback routes through `resolveTypeExprFull` (dead manual scan removed); prior 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1441-1489); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
+# 05 — Semantic Analysis [updated: 2026-09-04 — the 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) were REMOVED (netbind S3, `838009b0`): the socket `name_id` fields and the builtin_call resolver socket dispatch (semantic_analyzer.zig:1441-1489) are deleted; a direct `@socket*` caller now fails `error[3000]: unsupported builtin function` (rc=2, 0 `.c`); networking is now the std_net extern surface (target-selected wsock32/libc, WSAStartup init, `createTcpClient`). Socket sections below are the pre-removal F6 records; prior 2026-08-14 — F-task root-cause fix: `semanticAnalyzerResolveFnCall` return-type fallback routes through `resolveTypeExprFull` (dead manual scan removed); prior 2026-08-13 — 11 socket builtins (@socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) added to the builtin_call resolver (semantic_analyzer.zig:1441-1489); prior 2026-08-08 — console builtins (@isWindows/@consoleClear/@consoleGotoxy/@consoleSetColor) added to the builtin_call resolver; prior 2026-08-08 — 6 core I/O builtins (@putChar/@stdoutWrite/@stderrWrite/@getChar/@exit/@sleepMs); prior 2026-08-07 — labeled_stmt transparent unwrap in stmt dispatcher + expr redirect; prior variadic fn-call typing via `FnPayload.flags_packed`]
 
 ## Summary Table
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 60 | 30 non-builtin + 30 builtin name IDs |
+| `SemanticAnalyzer` fields | 49 | 30 non-builtin + 19 builtin name IDs (11 socket builtin name IDs REMOVED 2026-09-04, netbind S3) |
 | Expression kind dispatch arms | 46+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` (coercion.zig:1-19) |
 | Coercion checks in `classifyCoercion` | ~18 | Null, optional, error union, ptr, slice, array, widening |
@@ -52,7 +52,8 @@ pub const SemanticAnalyzer = struct {
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
-    // 30 builtin name IDs (19 incl. F1/F2 + 11 socket):
+    // 30 builtin name IDs pre-S3 (19 incl. F1/F2 + 11 socket); netbind S3
+    // (2026-09-04) REMOVED the 11 socket IDs below — 19 remain:
     ptrcast_name_id, ptrtoint_name_id, inttoptr_name_id,
     intcast_name_id, floatcast_name_id, inttofloat_name_id,
     inttoenum_name_id, size_of_name_id, align_of_name_id,
@@ -63,7 +64,7 @@ pub const SemanticAnalyzer = struct {
     socket_create_name_id, socket_bind_listen_name_id, socket_accept_name_id,
     socket_connect_name_id, socket_send_name_id, socket_recv_name_id,
     socket_select_name_id, socket_fd_zero_name_id, socket_fd_set_name_id,
-    socket_fd_isset_name_id, socket_close_name_id,
+    socket_fd_isset_name_id, socket_close_name_id,   // REMOVED netbind S3 (2026-09-04)
 };
 ```
 
@@ -73,7 +74,7 @@ Key state: expected-type stack for contextual type inference (enum literals, err
 
 `[inference: sandAlloc-builtin name interning, zero-init stacks/lists, return SemanticAnalyzer]`
 
-Allocates no heap memory in the struct itself. Interns 30 builtin names (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`, `@isWindows`, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`, `@socketCreate`, `@socketBindListen`, `@socketAccept`, `@socketConnect`, `@socketSend`, `@socketRecv`, `@socketSelect`, `@socketFdZero`, `@socketFdSet`, `@socketFdIsset`, `@socketClose`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
+Allocates no heap memory in the struct itself. Interns 30 builtin names (netbind S3, 2026-09-04, REMOVED the 11 socket names from this interning list — the live count is 19; the pre-removal list follows): (`@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@sizeOf`, `@alignOf`, `@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@sleepMs`, `@isWindows`, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`, `@socketCreate`, `@socketBindListen`, `@socketAccept`, `@socketConnect`, `@socketSend`, `@socketRecv`, `@socketSelect`, `@socketFdZero`, `@socketFdSet`, `@socketFdIsset`, `@socketClose`) plus the discard identifier `_`. Stacks and work arrays are zero-capacity — grown on first use.
 
 ### semanticAnalyzerIsTypeValueCast (`sf/src/semantic_analyzer.zig:152-160`)
 
@@ -470,7 +471,13 @@ populates `comptime_values[node]` and the lowerer emits an `int_const` (`TYPE_BO
 comptime-fold path, lower.zig:2721-2724). `if (@isWindows())` then folds to only the active branch
 (see 07 §Builtin console + comptime branch folding).
 
-#### Socket builtin dispatch (F6, 2026-08-13) — `[updated: 2026-08-13]`
+#### Socket builtin dispatch (F6, 2026-08-13 — REMOVED 2026-09-04, netbind S3) — `[updated: 2026-09-04]`
+
+**REMOVED (netbind S3, 2026-09-04, `838009b0`):** the resolver dispatch described below is deleted
+— a direct `@socket*` call now fails `error[3000]: unsupported builtin function` (rc=2, 0 `.c`;
+`repro/mi_matrix/net_builtin_test` is the GREEN negative probe). Networking is now the std_net
+extern surface (target-selected wsock32/libc `extern "c"` bindings, WSAStartup init,
+`createTcpClient`). The signature table below is the pre-removal F6 record, retained for history:
 
 The same resolver (semantic_analyzer.zig:1441-1489) adds the 11 socket builtins by `child_0`
 name ID (fields `socket_create_name_id` … `socket_close_name_id`). All resolve their value args

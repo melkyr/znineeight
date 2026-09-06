@@ -81,11 +81,17 @@ network byte loop (the `switch (cc)` over each received char, before
 net prong adds no new output code. Canonical single-player feeds never send
 `i`, so the net-loop addition leaves the two canonical goldens byte-identical.
 
-`net_demo_client.zig` is the committed demo client (pattern:
-`repro/mi_matrix/net_builtin_test/main.zig` — `@socketCreate(0)` then
-`@socketConnect(client, 4000)` reaches the server's listen socket on
-127.0.0.1:4000). It sends a single `i` byte, drains whatever the server
-streams, and self-terminates.
+`net_demo_client.zig` is the committed demo client. It uses the std_net
+public API to reach the server's listen socket on 127.0.0.1:4000:
+`std_net.init()` then `std_net.createTcpClient(4000)`, sends via
+`std_net.send`, drains via `std_net.recv`, and finishes with
+`std_net.close()` + `std_net.cleanup()` (grep-0 `@socket`). (The client
+was previously patterned on `repro/mi_matrix/net_builtin_test/main.zig`,
+which used the `@socketCreate`/`@socketConnect` compiler builtins — the
+11 `@socket*` builtins were removed from the compiler in netbind S3, so
+the demo client now uses the std_net public API, and `net_builtin_test`
+is the negative probe for their clean removal.) It sends a single `i`
+byte, drains whatever the server streams, and self-terminates.
 
 `net_demo_expected.txt` is the verified server-stdout golden (md5
 `aa40a52e…`, 359 bytes): the net boot lines (`Welcome to Rogue MUD!`,

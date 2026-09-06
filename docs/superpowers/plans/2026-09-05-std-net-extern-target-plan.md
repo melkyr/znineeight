@@ -6,7 +6,7 @@
 
 **Architecture:** Four incremental sections, each with its own I (investigation) and F (implementation) tasks, in one plan: S1 target model + `@isWindows()` (I settles the extern-emission mechanism, F implements flag/fold); S2 `std_net` extern rewrite (API-identical); S3 socket-builtin removal; S4 gates/verification + operator-ruled re-baselines. No release pressure — correctness first.
 
-**Tech Stack:** zig1 (reference `/tmp/fx_subfolder/zig1` md5 `7c08d2d5`, std lib at `/tmp/fx_subfolder/lib`), `gcc -m32`, `i686-w64-mingw32-gcc` + wine32 prefix `/tmp/wine32`, harness `scripts/win32_cross/cross_{build_run,parity}.sh` + `scripts/closeout/`.
+**Tech Stack:** zig1 (reference `/tmp/fx_subfolder/zig1` md5 `c8f1b3d0`, std lib at `/tmp/fx_subfolder/lib`; reference rebuilt through S1/S3 — history `7c08d2d5` → `7e0691dc` [S1] → `c8f1b3d0` [S3 rebuild]), `gcc -m32`, `i686-w64-mingw32-gcc` + wine32 prefix `/tmp/wine32`, harness `scripts/win32_cross/cross_{build_run,parity}.sh` + `scripts/closeout/`.
 
 Design spec: `docs/superpowers/specs/2026-09-05-std-net-extern-target-design.md` (operator-approved).
 
