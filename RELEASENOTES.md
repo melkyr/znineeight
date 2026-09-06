@@ -1,3 +1,62 @@
+# Z98 0.20.0 "Oxalic Acid" Release Notes
+
+We are proud to announce the release of Z98 version **0.20.0**, codenamed **"Oxalic Acid"** — a **major** release and the first fully self-hosted release of Z98. The self-hosted `zig1` compiler — written in Z98 itself and running from the ANSI C89 it emits — now builds itself, deterministically. The 0.20.0 binaries in this release are produced entirely by the self-hosted chain (Z98 source emitted to C89, compiled with `gcc`); the C++98 bootstrap compiler (`zig0`) is no longer part of building the compiler.
+
+## 🚀 Timeline
+
+- **2025-12-07** — repository created and the bootstrap (`zig0`) era begins (`b1ad10be` "Initial commit").
+- **2026-04-27** — bootstrap era ends and zig1 development begins: the `zig1_start` branch is created from `main` (the last `main` commit is the same day), and the first self-hosted commit `cb11d5c6` ("Self hosting initial milestone0 commit") lands.
+- **2026-09-06** — today: **1500** commits on `zig1_start` since `main`.
+
+Elapsed: the project overall spans 2025-12-07 → 2026-09-06 (~9 months). The bootstrap era ran ~4.7 months (2025-12-07 → 2026-04-27). The self-hosted / 0.20.0 development window ran ~4.3 months (2026-04-27 → 2026-09-06).
+
+## ✨ Headline Capabilities
+
+- **Deterministic self-hosting**: `zig1` self-compiles to a byte-identical fixed point. The 4-program dump gate (game_of_life, lisp_interpreter_curr, json_parser, mud_server) is byte-stable, the goldens are 9/9 and the target matrix 21/21, and the corpus (428 repros, `-s0`) stands at OK=406 / FAIL=13 / GREEN=9 (EXPECTED_FAIL v70). The emission chain gen-0 → zig1 → self-emission → fixed point (`9c1d956a` → `e791ffd2` → `c0102983` → `10f0ca2b`) is byte-identical at every hop.
+- **Language builtins**: `@offsetOf` / `@bitSizeOf` / `@bitOffsetOf`, `@intFromPtr` / `@ptrFromInt` / `@fieldParentPtr`, `@bitCast`; `export fn` / `export var`; cross-module `pub var` stores; `switch` case ranges; clean diagnostics.
+- **Target model**: `-osl` (linux) / `-osw` (windows) with the `--target linux|windows` alias select the compile target; `@isWindows()` is target-aware.
+- **std_net**: rewritten as target-selected extern `wsock32` (windows) / libc (POSIX) bindings with `WSAStartup` initialisation, `createTcpClient`, and `htonsManual` / `htonlManual`; the 11 `@socket*` builtins were removed from the compiler, so networking programs now use the std library.
+- **Upgraded showcase examples**: `lisp_interpreter_upgraded` and `rogue_mud_upgraded` (with committed canonical and demo goldens) plus a net demo client and the `verify_upgraded.sh` closeout harness.
+
+## 🛠️ Build Machine & Toolchain
+
+The 0.20.0 binaries were built on an **AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian** box with **gcc/g++ 12.2.0** and **i686-w64-mingw32-gcc 12-win32**. Linux artifacts are `gcc -m32` builds; Windows artifacts are cross-built with `i686-w64-mingw32-gcc` in the `-osw` target flavour. Linux-facing archives are `.tgz`; the win-facing archives are `.zip` so they unpack directly on the win9x-era targets.
+
+## 💾 Minimum Requirements
+
+Running `zig1` fits within ~16 MB at `-s0`: the self-compile pool measures ≈14.5 MB and the measured peak RSS is ~13 MB. Building the compiler from source is dominated by the gcc backend, which needs ~80 MB when compiling and linking the emitted C89 (~85 MB measured peak; the g++ bootstrap step measures ~182 MB). A 16 MB machine can run `zig1`, but it cannot build the compiler from source.
+
+Wall-clock and peak RAM were re-measured on the build machine (median of 3 under `/usr/bin/time -v`):
+
+| Build step | Wall (s) | Peak RAM |
+|---|---|---|
+| g++ → zig0 (bootstrap) | 1.52 | ~182 MB |
+| zig0 → emitted C89 | 3.10 | ~46 MB |
+| gcc compile+link → zig1 | 1.87 | ~85 MB |
+| zig1 `-s0` self-compile | 1.12 | ~13 MB |
+
+Clock-scaled engineering estimates for period hardware (PII ~300–450 MHz, PIII ~700–1000 MHz; method as in the README) put the whole battery at ~1.1–1.7 min on a PII and ~30–44 s on a PIII at the clock-only lower bound, with the memory-bound phases (gcc, g++) scaling worse (1.5–3×). These are estimates for the operator's real VM, not measurements.
+
+## 📦 Release Artifacts
+
+Eight artifacts plus MANIFEST.txt are staged for this release (git-ignored `release/staging/`):
+
+- `zig0_linux32`, `zig0_w32.exe` — the C++98 bootstrap, retained for the bootstrap-era build path.
+- `zig1_linux32` — the self-hosted compiler; its md5 `10f0ca2b…` reproduces the recorded self-compile fixed point byte-for-byte.
+- `zig1_w32.exe` — the self-hosted compiler, Windows (`-osw`) flavour.
+- `src_c_zig1_linux.tgz`, `src_c_zig1_w32.zip` — the fixed-point self-emission C89 set (83 files; byte-identical across both target flavours).
+- `zig1_src.tgz`, `zig1_src.zip` — the Z98 source tree (`sf/src/*.zig` + `sf/src/include/`) plus `RELEASE_README.txt`; both formats carry identical content.
+
+Win-facing artifacts are `.zip` (win9x-unpackable). There is no `zig0` source archive in this release: `zig1_src` is compiled with a `zig0_linux32` / `zig0_w32.exe` bootstrap binary from the same release (exact steps in the archive's `RELEASE_README.txt`), observing the gcc ~80 MB memory caveat above.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Jules (AI-Agent)*
+
+---
+
 # Z98 0.13.0 “2-Propanol” Release Notes
 
 We are proud to announce the release of Z98 version **0.13.0**, codenamed **“2-Propanol”**.

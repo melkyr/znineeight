@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0] - "Oxalic Acid"
+
+### Added
+- **Self-Hosted Compiler (zig1)**: Z98 now compiles itself — `zig1`, written in Z98, builds Z98 source deterministically to a byte-identical fixed point.
+- **Deterministic Fixed Point**: `-s0` self-compiles emit byte-identical C89 at every hop; the recorded fixed-point binary md5 `10f0ca2b` is reproduced byte-for-byte.
+- **Language Builtins**: `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr`, `@bitCast`.
+- **Export Support**: `export fn` / `export var`, keeping source-level symbol names in the emitted C.
+- **Cross-Module `pub var` Stores**: stores to `pub var` across modules compile and link.
+- **Switch Case Ranges**: inclusive (`...`) and exclusive (`..`) case ranges in switch prongs.
+- **Clean Diagnostics**: stable, non-cascading error diagnostics for malformed input.
+- **Target Model**: `-osl` (linux) / `-osw` (windows) and the `--target linux|windows` alias select the compile target; `@isWindows()` is target-aware.
+- **std_net Extern Bindings**: target-selected `wsock32` / libc extern bindings with `WSAStartup` init, `createTcpClient`, `htonsManual`, `htonlManual`, and the `net_prelude.h` prelude header.
+- **Spill Management**: `-s<N>` and `-mm<N>` spill-to-disk controls (all-spill `-s0` self-compile: ≈14.5 MB pool, ~13 MB peak RSS).
+- **Upgraded Showcase Examples**: `lisp_interpreter_upgraded` (demo builtins) and `rogue_mud_upgraded` (local `i` demo + network variant) with committed canonical + demo goldens, plus the `verify_upgraded.sh` closeout harness (A1–B7).
+
+### Changed
+- **std_net Rewritten**: compiler socket builtins replaced by std_net target-selected extern bindings; the net demo client migrated from `@socket*` builtins to `std_net` (`createTcpClient`).
+- **Networking Programs**: mud_server, rogue_mud (+upgraded) and the net demos now link the extern net path (linux libc; windows `wsock32` with WSAStartup init).
+- **Windows std-lib Discovery**: win32 `zig1` needs an explicit std-lib dir (`-I`) — `fopen` cannot open a directory handle on Windows, so the exe-relative `lib/` auto-discovery does not fire there.
+
+### Removed
+- **`@socket*` Builtins**: 11 socket builtins removed from the compiler (semantic analyzer, lowerer, C89 emitter, LIR); direct use now produces a clean `error[3000]` (net_builtin_test).
+- **Bootstrap (`zig0`) from the current build path**: the C++98 compiler is retained only as the bootstrap-era tool and release binary; current development is fully self-hosted.
+
+### Fixed
+- **WSAStartup Init**: std_net now calls `WSAStartup`, removing win32 `10093` (WSANOTINITIALISED) failures — mud_server binds and serves, and the client connects, under wine.
+- **Connect Loopback**: `createTcpClient` connects to `htonl(0x7F000001)` (127.0.0.1) with `htons(port)` — no double byte-swap.
+
 ## [Unreleased]
 
 ## [0.13.0] - "2-Propanol"
