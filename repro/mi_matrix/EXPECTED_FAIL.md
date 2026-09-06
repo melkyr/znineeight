@@ -1,4 +1,69 @@
-# mi_matrix corpus — expected-fail manifest (v70 2026-09-05)
+# mi_matrix corpus — expected-fail manifest (v71 2026-09-06)
+
+## Arbitrary-width ints RED set (v71 2026-09-06) — INTWIDTH plan Task 2
+
+New-corpus RED fixtures (plan `2026-09-06-arbitrary-width-ints-plan.md`, Task 2): the five
+`intwidth_*` guard fixtures for arbitrary-width integer types `uN`/`iN` (wrap arithmetic at `u3`/
+`u12`, sign-extend through `i7`, truncate/mask casts, introspection `@bitSizeOf/@sizeOf/@alignOf` on
+u3/u12/u20/u33/i7, and the 64-bit-carrier boundary `u63`/`i63`). Only the fixed widths register as
+primitive type names (`registerPrimitiveName`, `sf/src/type_registry.zig:630-635`), so each `uN`/`iN`
+var-decl annotation resolves as an unknown type name — the same R7 void-fallback family
+(`error[3000]: unknown type in variable declaration` at the bare-ident annotation, F-CLEANDIAG gate
+`932fea8d`, plus the downstream `cannot declare variable of type void` cascade on the untyped-var
+results where the analyzer proceeds). Measured on the reference `/tmp/fx_subfolder/zig1` md5
+`c8f1b3d0` (rebuilt at HEAD `d4813c70`) via the authoritative classify1.sh recipe
+(`.superpowers/sdd/task-LANGWINS-report.md` Step 4, fresh output dir per run). Contracts are
+GREEN-time only — NOT runnable today, never forced. Neither CRASH observed; `intwidth_introspect_xmod`
+is the exception class (ICE error[3043], R5-precedent — the `@sizeOf/@alignOf` type-arg resolves the
+uN annotation to a non-type and comptime-eval halts before the clean 3000s can fire). Corpus +5
+(mi_matrix 428→433). No implementation yet at fixture-commit time (Task 3+).
+
+| dir | feature | RED class | expected GREEN stdout |
+|---|---|---|---|
+| `intwidth_wrap_xmod` | `uN` arithmetic wrap (`u3` 7+1→0; `u12` 4095+1→0) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `u3`/`u12` annotations unknown → `unknown type in variable declaration`; 0 `.c`; deterministic 3/3) | `0 0` |
+| `intwidth_sign_extend_xmod` | `iN` sign-extend (`i7` -1 < 0; `@intCast(i16, i7 -1)` sign-extends) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `i7` annotation unknown; 0 `.c`; deterministic 3/3) | `true 1` |
+| `intwidth_cast_xmod` | `@intCast` narrow/truncate + widen (`u3` 255→7; `u8` 256→0; widen keeps value) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `u3` annotation unknown; 0 `.c`; deterministic 3/3) | `7 0 255` |
+| `intwidth_introspect_xmod` | introspection on `uN`/`iN` — `@bitSizeOf/@sizeOf/@alignOf` (u3/u12/u20/u33/i7) | ICE (dump rc=3, 0 `.c`; `error[3043]: internal: comptime value unresolved for @sizeOf/@alignOf`; deterministic 3/3) | `3 1 2 4 8 1 7` |
+| `intwidth_full_xmod` | 64-bit-carrier boundary — `u63` 2^63-1+1 → 0 wrap; `i63` -1 sign-extends through `@intCast(i64)` | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `u63`/`i63` annotations unknown; 0 `.c`; deterministic 3/3) | `0 -1` |
+
+- **Current RED status — intwidth_wrap_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  verbatim (repo-relative): `repro/mi_matrix/intwidth_wrap_xmod/main.zig:4:11: error[3000]: unknown
+  type in variable declaration` (the `pub fn main() void` annotation line echoed as caret context —
+  the R7 display quirk), then `…:5:11` (the `u3` annot at `var a`), then `…:6:4: error[3000]: cannot
+  declare variable of type void` (the `var b` result of the untyped-var cascade), repeated for the
+  u12 block (`…:9:11`/`…:10:11` unknown-type, `…:11:4` cannot-declare-void). stderr md5
+  `13454eb500f2f52ca389ed4c596057e1` byte-identical 3/3.
+- **Current RED status — intwidth_sign_extend_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes.
+  dump.err the SINGLE `…:4:11: error[3000]: unknown type in variable declaration` (the `i7` annot at
+  `var n`; analyzer stops after the first). stderr md5 `bd389d87cc563124951f022a72cda1e2`
+  byte-identical 3/3.
+- **Current RED status — intwidth_cast_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  the SINGLE `…:4:11: error[3000]: unknown type in variable declaration` (the `u3` annot at `var t`;
+  analyzer stops after the first). stderr md5 `d6138f8850eb7b691a76cea7d8f787e8` byte-identical 3/3.
+- **Current RED status — intwidth_introspect_xmod:** dump rc=3, 0 `.c` emitted, stdout 0 bytes.
+  dump.err verbatim: `error[3043]: internal: comptime value unresolved for @sizeOf/@alignOf (node 9)`
+  — the first `@sizeOf(u3)` type-arg resolves the unknown-width annotation to a non-type and the
+  comptime fold halts before any clean 3000 diagnostic fires. No source-echo, no line:col (node-level
+  halt). stderr md5 `8d17a8bdf8a7162af6c73ef0d3becdfa` byte-identical 3/3. ICE precedent: R5
+  `crossmod_pubvar_xmod` error[3043].
+- **Current RED status — intwidth_full_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. dump.err
+  verbatim (repo-relative): `…:4:11: error[3000]: unknown type in variable declaration`, then
+  `…:5:11` (the `u63` annot at `var a`), then `…:6:4: error[3000]: cannot declare variable of type
+  void` (the `var b` result of the untyped-var cascade), then `…:9:11` unknown-type. stderr md5
+  `fd9557a11312ef4142b2323e25a178df` byte-identical 3/3.
+- **Rule (GREEN contracts; fixtures turn GREEN in Task 4):** once arbitrary-width int types uN/iN
+  register as real types (Task 3 type layer + Task 4 emission carrier math, plan §4), each fixture
+  MUST dump rc=0, gcc `-m32` clean, and run rc=0 printing its byte-exact contract: `intwidth_wrap_xmod`
+  `0 0` (u3 7+1 wraps 0; u12 4095+1 wraps 0), `intwidth_sign_extend_xmod` `true 1` (i7 -1 < 0 true;
+  `@intCast(i16, i7 -1)` = -1 sign-extended → prints 1), `intwidth_cast_xmod` `7 0 255` (@intCast(u3,
+  255) masks to 7; @intCast(u8, 256) masks to 0; u3→u8 widen keeps 255), `intwidth_introspect_xmod`
+  `3 1 2 4 8 1 7` (@bitSizeOf(u3)=3, @sizeOf(u3)=1 carrier byte, @sizeOf(u12)=2, @sizeOf(u20)=4,
+  @sizeOf(u33)=8, @alignOf(u3)=1, @bitSizeOf(i7)=7), `intwidth_full_xmod` `0 -1` (u63
+  18446744073709551615==2^63-1 +1 → 0 on the 64-bit carrier via mask (1<<63)-1; i63 -1 sign-extends
+  through @intCast(i64) → -1). At GREEN time the analyzer must also stop conflating unregistered-width
+  names with `void`/unknown (the R7 note), and `@sizeOf/@alignOf` on uN must fold (no error[3043]).
+  R7 `int_arbitrary_width_xmod` (v60 row below) is the model row; its current class is the same
+  compile-gate FALSE-green family.
 
 ## Netbind reconciliation (v70 2026-09-05) — std_net extern OS bindings + target model + socket-builtin removal
 
