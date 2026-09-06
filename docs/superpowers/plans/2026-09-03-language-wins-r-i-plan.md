@@ -776,3 +776,16 @@ Plan complete. Two execution options once the operator takes this plan: (1) Suba
 9. PLAN-PACK-B3 (P5 → L7 `enum(u3)` GREEN; enum(uN) folded; defers on PLAN-INTWIDTH)
 
 No F/compiler-feature task begins until the operator lifts the hold. `examples/z98/json_parser_upgraded` remains untracked/deferred (may become a third closeout vehicle on a separate operator GO).
+
+---
+
+## AMENDMENT — ADDENDUM (2026-09-06, operator directive) — LIROPTPASS added to the follow-on order
+
+**Status addendum:** the on-hold state persists (items 6-9 below). The zig1-era release-docs work (Z98 0.20.0 "Oxalic Acid", plan `docs/superpowers/plans/2026-09-06-zig1-docs-0.20.0-release-plan.md`) is a docs/measurement/artifact plan with zero `sf/src` edits; it is closed. Its measurement battery surfaced the emission-bloat evidence that motivates the new item below.
+
+**Follow-on order now continues (operator-authority to resume and to reorder):**
+6. PLAN-INTWIDTH (width-vs-byte-size refactor, `intWidthBits`/`intIsSigned`, ≤64 cap)
+7. PLAN-PACK-CORE (P1-P3 → packed L0/L1/L2 GREEN)
+8. PLAN-PACK-AGG (P4 → L3-L6 GREEN; packed-union folded)
+9. PLAN-PACK-B3 (P5 → L7 `enum(u3)` GREEN; enum(uN) folded; defers on PLAN-INTWIDTH)
+10. **PLAN-LIROPTPASS** — LIR-level emission-tightening optimization pass. Motivation (measured, release-0200 battery): zig1's C89 emission of `sf/src/main.zig` is ~7.6 MB across 41 `.c` vs zig0's gen-0 ~3.3 MB across 43 `.c` (~2.3x denser in zig0); that bloat directly drives the measured gcc peak ~166 MB for the `zig1_5` self-emission gcc step (Row E, release-0200 AMENDMENT) vs ~85 MB for gen-0 (Row C), and applies to every self-host hop and user build. Goal: shrink emitted C toward zig0's density via a LIR pass RUN BEFORE c89 emission (copy propagation, dead/redundant-temporary elimination, constant folding, expression nesting where legal), so gcc input — RAM and wall — drops. Relationship to gcc `-O`: the LIR pass shrinks gcc's INPUT (reduces gcc RAM/time); gcc `-O2/-O3/-Os` only optimizes machine code at INCREASED gcc cost, so sequencing is LIROPTPASS first, then optionally gcc `-O` for the released compiler binary with gcc RSS re-measured. Era-toolchain caveat: the ~85/~166 MB figures are measured on modern gcc 12.2.0; era compilers (MSVC6, mingw 2.x/gcc 2.95, Open Watcom) are expected to need substantially less — unverified until measured on the operator's real win9x VM (separate VM measurement item, not this plan). Emission changes ⇒ 4-MD5 / fixed-point re-baseline discipline applies (never silent). No dependency on items 6-9; operator-authority to reorder it earlier if desired.
