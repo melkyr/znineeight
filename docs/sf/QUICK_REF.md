@@ -358,7 +358,7 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 | [updated: 2026-09-02 — spill backend config GATE: table refreshed to the AUTHORITATIVE hashes (established by the memory-refactor plan; re-verified byte-identical at `-s0`..`-s5` by the spill-config GATE, no re-baseline). Historical rows below record the older values and their re-baselines.] |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `53405b3be5bbc5e0f8c9aaba69c8fb6d` |
+| `examples/z98/mud_server/main.zig` | `846106ac42e770a3bd2bf69afbfcb5db` |
 | `examples/z98/game_of_life/main.zig` | `302df36be57e9876549d6a8b4031bf95` |
 | `examples/z98/lisp_interpreter_curr/main.zig` | `3591bad9726ca0947eae3f8a9a6e7273` |
 | `examples/z98/json_parser/main.zig` | `76056b978f6330c8af0c7f23b3244135` |
