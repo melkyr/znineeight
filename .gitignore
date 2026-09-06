@@ -98,3 +98,4 @@ out/*
 sf_out/*
 repro_out/*
 out_*/
+release/staging/
