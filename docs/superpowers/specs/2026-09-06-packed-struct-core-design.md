@@ -10,7 +10,7 @@ Give Z98/zig1 true `packed struct` semantics — full sub-byte, LSB-first, paddi
 
 - **PACK-CORE scope = P1–P3** (parse → type/layout → LIR → emitter) → L0/L1/L2 GREEN. Authored now; **executed after INTWIDTH**, which supplies the arbitrary-width integer registry (`Type.width_bits`/`is_signed` + `intWidthBits(ty) u8` + `intIsSigned(ty) bool` + uN/iN name registration/carrier rules). PACK-CORE never re-implements uN registration — it consumes INTWIDTH's model.
 - **Representation: `packed struct` = existing `struct_type` + new flags bit bit4 (`0x10`, `is_packed`)** + a backend-neutral **bit-layout side table** keyed by type id. (Operator ruling m1090; lowest churn — all struct_type dispatch sites keep matching `struct_type`, only layout/emission branch on the flag.)
-- **Backend-agnostic layout**: the type layer records only the *bit* layout (per-field `bit_offset`, `bit_width`, LSB-first, no padding, `bool` = 1 bit); the C89 emitter owns byte packing, shift/mask accessors, carrier, and `memcpy` of whole values. Mirrors the INTWIDTH semantic-vs-emission split.
+- **Backend-agnostic layout**: the type layer records only the *bit* layout (per-field `bit_offset`, `bit_width`, LSB-first, no padding, `bool` = 1 bit); the C89 emitter owns byte packing, shift/mask accessors, and the carrier + whole-value encoding (§4.5 AMENDMENT 1). Mirrors the INTWIDTH semantic-vs-emission split.
 - **`token.zig` packed-layout FIXME (24B→16B, union field) is PACK-AGG territory** (packed container containing a union(enum) field) — not PACK-CORE.
 - Packed-ladder fixtures keep their **locked contracts** — no re-baseline: L0 `1 5 1`, L1 `1 155 1 5 9`, L2 `2 255 31 31 255`.
 - Every `sf/src` change moves the self-compile fixed point → operator-ruled re-baseline (never silent). 4-MD5 gates must hold byte-identical (no existing source uses `packed`).
@@ -19,7 +19,7 @@ Give Z98/zig1 true `packed struct` semantics — full sub-byte, LSB-first, paddi
 
 - `packed` = **true bitfields**, sub-byte, LSB-first, zero padding between fields (whole-value padding only to the byte boundary of `@sizeOf`).
 - Allowed packed field types in PACK-CORE: `bool` (1 bit) and `uN`/`iN` (INTWIDTH widths; `u0/i0/>64` already rejected by INTWIDTH). **PACK-CORE rejects** (clean `error[3000]` B6): floats, pointers, arrays, slices, optionals, error unions, non-packed structs, packed unions, `enum(uN)`, `anytype`.
-- `&packed.field` is a compile error (packed fields have no address). Whole-value ops are supported: load/store of a whole packed value, assignment `=`, `@sizeOf`/`@alignOf`/`@bitSizeOf`, pass/return **by value** (memcpy), array element store of a whole packed value (memcpy).
+- `&packed.field` is a compile error (packed fields have no address). Whole-value ops are supported: load/store of a whole packed value, assignment `=`, `@sizeOf`/`@alignOf`/`@bitSizeOf`, pass/return **by value**, array element store of a whole packed value (whole-value encoding is the emitter's carrier choice — §4.5 AMENDMENT 1; native C struct-by-value on the single-member-struct carrier).
 - A pointer to a whole packed value (`*Packed`) is allowed (the byte-dump fixtures cast `&f` to `[*]const u8`).
 - Introspection on a packed type: `@sizeOf` = `ceil(total_bits/8)`; `@alignOf` = 1; `@bitSizeOf` = total bits; array stride = `@sizeOf`.
 - LSB-first bit numbering: field N starts at the bit offset equal to the sum of the bit widths of fields 0..N-1; bit `k` of the value lives at byte `k/8`, bit `k%8` of that byte. (L1: x:u1 @0, y:u3 @1, z:u4 @4.)
@@ -48,14 +48,18 @@ Give Z98/zig1 true `packed struct` semantics — full sub-byte, LSB-first, paddi
 - The store-drop rule: packed struct stays `struct_type`, so the existing `dceTempIsArray`-gated store emission must treat a packed-typed base like the array case (keep whole-value stores into global arrays live — the f014259b/C4 rule generalized by "is-array **or** is-packed").
 - `lir_stream` raw-byte serialization carries the new variants (no pointers; pure layout growth — self-consistent per run).
 
-### 4.5 C89 emitter (P3)
+### 4.5 C89 emitter (P3) — carrier is EMITTER-OWNED (AMENDMENT 1)
 
-- A packed type emits as a C89 byte carrier `unsigned char zT_NAME[N]` (N = `@sizeOf` = `ceil(total_bits/8)`) — never C bitfields, never gcc natural layout.
-- Field write at bit offset `bo`/width `w`: read-modify-write mask across the one-or-two bytes spanned (`byte = bo/8`, bit `bo%8`): clear the field's bit window, OR the masked/shifted value (value masked to width via INTWIDTH's unsigned mask rule; signed stored value sign-extended then masked into the window as its two's-complement bit pattern).
+The carrier is a C89-emission decision only — it never leaks into the backend-agnostic type/LIR layers (which record bit layout alone) and is revisitable under LIROPTPASS. Default carrier: a **single-member struct** `typedef struct { unsigned char _[N]; } zT_NAME;` (N = `@sizeOf` = `ceil(total_bits/8)`) — never C bitfields, never multi-field natural layout (one array member, exact N bytes, no padding). Rationale: C89 arrays cannot be by-value params/returns, but single-member structs CAN — so locals, by-value param/return, `=`, array-element store, and globals are all uniform native C struct ops with zero hidden-pointer/memcpy wrapper bloat (the low-bloat encoding LIROPTPASS tightens further).
+
+- A packed type's C type name/definition is the single-member struct carrier above.
+- Field write at bit offset `bo`/width `w`: read-modify-write mask over the carrier bytes (`byte = bo/8`, bit `bo%8`), spanning the one-or-two bytes the field occupies: clear the field's bit window, OR the masked/shifted value (value masked to width via INTWIDTH's unsigned mask rule; signed stored value sign-extended then masked into the window as its two's-complement bit pattern).
 - Field read: shift right by `bo%8` from the spanned byte(s) (little-endian gather, honoring byte stride when the field crosses a byte boundary — L2 straddle), mask to width; signed fields sign-extend from bit `w-1` (INTWIDTH `intIsSigned`).
-- Whole-value moves/assignment/by-value param/return/array-element store = `memcpy` of N bytes (pal/memcpy precedent). A `*Packed` pointer is emitted as a pointer to the carrier (`unsigned char *`/`[*]u8`-compatible) so `@ptrCast([*]const u8, &f)` byte-dump fixtures work.
-- Local packed vars: an N-byte carrier (`unsigned char f[N]`) plus the shift/mask accessors for field reads/writes and the fixtures' byte-dump.
+- Whole-value moves/assignment/by-value param/return/array-element store = native C struct ops on the carrier (C89 struct-by-value; no memcpy wrapper needed). A `*Packed` pointer is a pointer to the carrier struct; byte-dump fixtures cast it to `[*]const u8` (e.g. `(const unsigned char*)&f`, first-member address == carrier start).
+- Local packed vars: a carrier-struct local plus the shift/mask accessors for field reads/writes and the fixtures' byte-dump.
 - Emission only branches on `is_packed` for packed types → byte-neutral for all non-packed programs.
+
+**AMENDMENT 1 (2026-09-06, operator):** canonical carrier is the single-member struct above (supersedes the earlier bare `unsigned char zT_NAME[N]` wording in this section and in the PACK-CORE plan). The type/LIR layers stay carrier-free (bit layout only); the carrier is emitter-owned and LIROPTPASS-revisitable — the decision was framed by "what LIR can optimize better later", i.e. the low-bloat by-value-native encoding.
 
 ## 5. Behavior contracts (fixtures, byte-exact)
 

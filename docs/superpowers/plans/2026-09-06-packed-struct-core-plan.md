@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement `packed struct` for field types `bool`/`uN`/`iN` — parse, backend-neutral bit-layout, LIR `load_bitfield`/`store_bitfield`, and a C89 `unsigned char[N]` shift/mask emitter — turning the committed L0/L1/L2 packed RED fixtures GREEN with their locked byte-exact contracts.
+**Goal:** Implement `packed struct` for field types `bool`/`uN`/`iN` — parse, backend-neutral bit-layout, LIR `load_bitfield`/`store_bitfield`, and a C89 single-member-struct carrier shift/mask emitter — turning the committed L0/L1/L2 packed RED fixtures GREEN with their locked byte-exact contracts.
 
 **Architecture:** `packed struct` = existing `struct_type` + flags bit4 (`is_packed`) + a bit-layout side table; the C89 emitter owns byte packing (never C bitfields). Three stacked change layers (parse/type/sema → LIR/DCE → emitter), each byte-neutral for non-packed programs until the emitter layer turns the fixtures GREEN. Executes AFTER INTWIDTH (uN registry, `intWidthBits`/`intIsSigned`).
 
@@ -39,7 +39,7 @@ Design spec: `docs/superpowers/specs/2026-09-06-packed-struct-core-design.md` (o
 
 - [ ] **Step 5: LIR + DCE census.** Map `LirInst` variant set + where variants are added, the `lir_stream` raw-byte serialization sites, and enumerate EVERY inst-switch site that must gain `load_bitfield`/`store_bitfield` arms (emitter inst walk; `dceMarkAllReads`, `dceReleaseOperands`, `dceResultPos`, `dceTempIsArray`, `dceBaseEscapes`, `dceMarkLoadGlobalAliases`, any spill/other walks) — the authoritative "arm list" Tasks 4/5 must not miss. Record the store-drop rule sites (f014259b/C4) that need the "is-array **or** is-packed" generalization.
 
-- [ ] **Step 6: Emitter census.** Map: where a struct type's C type name + definition are emitted (packed must instead emit `unsigned char zT_NAME[N]`), local var decl for a struct-typed temp/value, whole-value assignment/param/return lowering to C (memcpy candidates), `&packed-value` / `[*]u8` casting path, existing memcpy/pal helper precedent, and the small-endian byte gather/shift sites. Record.
+- [ ] **Step 6: Emitter census.** Map: where a struct type's C type name + definition are emitted (packed must instead emit the single-member struct carrier `typedef struct { unsigned char _[N]; } zT_NAME;` per spec AMENDMENT 1), local var decl for a struct-typed temp/value, whole-value assignment/param/return lowering to C (native struct-by-value; note C89 arrays cannot be by-value — the carrier MUST be a struct for L6), `&packed-value` / `[*]u8` casting path, existing struct-typedef precedent, and the small-endian byte gather/shift sites. Record.
 
 - [ ] **Step 7: Report + ledger.** Write the edit-map + baseline into the report; ledger line. No commit, no source edits.
 
@@ -135,16 +135,16 @@ git commit -m "feat: packed struct — LIR load_bitfield/store_bitfield + DCE ar
 ### Task 5: C89 emitter — carrier + bitfield accessors + memcpy → L0/L1/L2 GREEN
 
 **Files:**
-- Modify (per Task-1 census): c89_emit.zig (packed type emission as `unsigned char[N]`, `load_bitfield`/`store_bitfield` bodies, whole-value memcpy, `*Packed` carrier pointer, local packed var carrier).
+- Modify (per Task-1 census): c89_emit.zig (packed type emission as the single-member struct carrier per spec AMENDMENT 1, `load_bitfield`/`store_bitfield` bodies, whole-value native struct ops, `*Packed` carrier pointer, local packed var carrier).
 - Record: report + ledger.
 
 **Interfaces:**
 - Consumes: Task-3 side table + Task-4 armed ops.
 - Produces: L0/L1/L2 GREEN with byte-exact contracts; fixed point moves (emitter-layer commit) → Task 6 re-baseline.
 
-- [ ] **Step 1: Type emission.** A packed `struct_type` emits as a C89 `unsigned char zT_NAME[N]` (N = `@sizeOf`) wherever a struct type name/definition would be emitted — never a C struct, never C bitfields. Verify the three fixture types produce 1/1/2-byte carriers in the emitted C.
+- [ ] **Step 1: Type emission.** A packed `struct_type` emits as the single-member struct carrier `typedef struct { unsigned char _[N]; } zT_NAME;` (N = `@sizeOf`) wherever a struct type name/definition would be emitted (spec AMENDMENT 1) — never C bitfields, never multi-field natural layout. Verify the three fixture types produce 1/1/2-byte carriers in the emitted C.
 
-- [ ] **Step 2: Local + whole-value.** A packed-typed local/value is an N-byte carrier; whole-value `=`/by-value param/return/array-element store emit `memcpy` of N bytes (use the pal memcpy precedent). `*Packed` is emitted as a pointer to the carrier (compatible with `[*]u8`/`[*]const u8`), so the fixtures' `@ptrCast([*]const u8, &f)` byte-dump works.
+- [ ] **Step 2: Local + whole-value.** A packed-typed local/value is a carrier-struct local; whole-value `=`/by-value param/return/array-element store are native C struct-by-value ops (no memcpy wrapper needed — C89 supports struct-by-value, arrays do not). `*Packed` is emitted as a pointer to the carrier struct, so the fixtures' `@ptrCast([*]const u8, &f)` byte-dump works (first-member address == carrier start).
 
 - [ ] **Step 3: `store_bitfield` body.** Emit the read-modify-write: locate byte(s) `bo/8..(bo+w-1)/8`; clear the bit window `[bo%8, bo%8+w)`; OR the value masked to `w` bits (unsigned; for signed field values store the two's-complement bit pattern of the sign-extended value) shifted into the window. Match L1 (single byte) and L2 (byte-spanning) shapes.
 
@@ -158,7 +158,7 @@ git commit -m "feat: packed struct — LIR load_bitfield/store_bitfield + DCE ar
 
 ```bash
 git add sf/src/<per-census>
-git commit -m "feat: packed struct — C89 unsigned char carrier + bitfield accessors + memcpy (PACK-CORE)"
+git commit -m "feat: packed struct — C89 single-member-struct carrier + bitfield accessors (PACK-CORE)"
 ```
 
 - [ ] **Step 8: Report.** GREEN evidence (3 fixtures ×3, md5s, emitted-C shapes), byte-neutrality on the common set, fixed-point-moved disclosure, concerns. Ledger line.
