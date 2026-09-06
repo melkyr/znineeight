@@ -81,7 +81,7 @@ These two helpers replace (a) every semantic compare that currently uses byte `s
   - `intwidth_sign_extend_xmod` — `i7 -1 < 0`, `@intCast(i16, i7 -1)` sign-extends.
   - `intwidth_cast_xmod` — `@intCast(u3, 255)`, narrow/truncate, widen zero/sign.
   - `intwidth_introspect_xmod` — `@bitSizeOf/@sizeOf/@alignOf` on u3/u12/u20/u33/i7.
-  - `intwidth_full_xmod` — u64/i64 boundary + a 64-bit-width uN aliasing u64 semantics.
+  - `intwidth_full_xmod` — 64-bit-carrier boundary wrap + sign-extend (`u63 2^63-1 + 1 → 0` via 64-bit carrier; `i63 -1` sign-extends through `@intCast(i64)` → `-1`).
 - All fixtures under `repro/mi_matrix/<name>_xmod/main.zig`, dialect-correct, run-gate `RUNRC=0` byte-exact stdout; classifier per the authoritative recipe (.superpowers/sdd/task-LANGWINS-report.md Step-4; fresh-dir requirement).
 
 ## 7. Gates / verification
