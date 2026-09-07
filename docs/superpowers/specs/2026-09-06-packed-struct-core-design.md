@@ -19,6 +19,7 @@ Give Z98/zig1 true `packed struct` semantics — full sub-byte, LSB-first, paddi
 
 - `packed` = **true bitfields**, sub-byte, LSB-first, zero padding between fields (whole-value padding only to the byte boundary of `@sizeOf`).
 - Allowed packed field types in PACK-CORE: `bool` (1 bit) and `uN`/`iN` (INTWIDTH widths; `u0/i0/>64` already rejected by INTWIDTH). **PACK-CORE rejects** (clean `error[3000]` B6): floats, pointers, arrays, slices, optionals, error unions, non-packed structs, packed unions, `enum(uN)`, `anytype`.
+- **Allowed packed field bit width ≤ 31.** PACK-CORE supports packed fields of bit width ≤ 31 only: `bool` (1 bit) and `uN`/`iN` with width ≤ 31 (via `intWidthBits`/`intIsSigned`). Packed fields of bit width ≥ 32 — `u32`/`i32`/`u64`/`i64` and any `uN`/`iN`/`usize`/`isize` at width ≥ 32 — are **REJECTED in PACK-CORE with a clean `error[3000]`** (B6 width cap; the ≤31-bit accessors are correct, the ≥32-bit paths are not yet) and deferred to PACK-AGG (see §7). (AMENDMENT 2, 2026-09-07 operator ruling Imp-2 B1.)
 - `&packed.field` is a compile error (packed fields have no address). Whole-value ops are supported: load/store of a whole packed value, assignment `=`, `@sizeOf`/`@alignOf`/`@bitSizeOf`, pass/return **by value**, array element store of a whole packed value (whole-value encoding is the emitter's carrier choice — §4.5 AMENDMENT 1; native C struct-by-value on the single-member-struct carrier).
 - A pointer to a whole packed value (`*Packed`) is allowed (the byte-dump fixtures cast `&f` to `[*]const u8`).
 - Introspection on a packed type: `@sizeOf` = `ceil(total_bits/8)`; `@alignOf` = 1; `@bitSizeOf` = total bits; array stride = `@sizeOf`.
@@ -79,6 +80,7 @@ The carrier is a C89-emission decision only — it never leaks into the backend-
 
 - **Depends on INTWIDTH** (uN/iN registration, `intWidthBits`/`intIsSigned`, mask/sign-extend helpers). Executes after it.
 - PACK-AGG (item 8): packed union (untagged; every field at bit 0), nested packed-struct fields, packed array/global/by-value/cross-module (L3–L6), `token.zig` packed FIXME.
+- **Packed fields of bit width ≥ 32 (`u32`/`i32`/`u64`/`i64`, and any `uN`/`iN`/`usize`/`isize` width ≥ 32)** — rejected in PACK-CORE (B6 width cap, clean `error[3000]`), deferred to PACK-AGG. (AMENDMENT 2, 2026-09-07 operator ruling Imp-2 B1.)
 - PACK-B3 (item 9): `enum(uN)` backing + `enum(uN)` packed fields (L7).
 - LIROPTPASS (item 10): unrelated (emission-tightening).
 - The R7 `int_arbitrary_width_xmod` false-green is INTWIDTH's deliverable, not PACK-CORE's.
