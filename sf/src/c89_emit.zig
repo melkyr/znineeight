@@ -670,6 +670,18 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
+    if (ty.kind == TypeKind.arb_uint_type) {
+        if (ty.size == @intCast(u32, 2)) { var s: []const u8 = "unsigned short"; return s; }
+        if (ty.size == @intCast(u32, 4)) { var s: []const u8 = "unsigned int"; return s; }
+        if (ty.size == @intCast(u32, 8)) { return getCTypeName(reg, mangler, type_mod.TYPE_U64); }
+        var s: []const u8 = "unsigned char"; return s;
+    }
+    if (ty.kind == TypeKind.arb_int_type) {
+        if (ty.size == @intCast(u32, 2)) { var s: []const u8 = "short"; return s; }
+        if (ty.size == @intCast(u32, 4)) { var s: []const u8 = "int"; return s; }
+        if (ty.size == @intCast(u32, 8)) { return getCTypeName(reg, mangler, type_mod.TYPE_I64); }
+        var s: []const u8 = "signed char"; return s;
+    }
     if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
@@ -1258,6 +1270,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         if (ty.kind == TypeKind.integer_literal_type) continue;
         if (ty.kind == TypeKind.type_type) continue;
         if (ty.kind == TypeKind.module_type) continue;
+        if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) continue;
         if (ty.name_id == @intCast(u32, 0)) {
             if (ty.kind != TypeKind.slice_type and
                 ty.kind != TypeKind.optional_type and
@@ -1309,6 +1322,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         if (ty.kind == TypeKind.integer_literal_type) continue;
         if (ty.kind == TypeKind.type_type) continue;
         if (ty.kind == TypeKind.module_type) continue;
+        if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) continue;
         if (ty.name_id == @intCast(u32, 0)) {
             if (ty.kind != TypeKind.slice_type and
                 ty.kind != TypeKind.optional_type and
@@ -3638,6 +3652,12 @@ fn getUnsignedCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []c
     if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type) {
         return getCTypeName(reg, mangler, type_mod.TYPE_U64);
     }
+    if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) {
+        if (ty.size == @intCast(u32, 1)) { var s: []const u8 = "unsigned char"; return s; }
+        if (ty.size == @intCast(u32, 2)) { var s: []const u8 = "unsigned short"; return s; }
+        if (ty.size == @intCast(u32, 4)) { var s: []const u8 = "unsigned int"; return s; }
+        return getCTypeName(reg, mangler, type_mod.TYPE_U64);
+    }
     return getCTypeName(reg, mangler, tid);
 }
 
@@ -3646,8 +3666,136 @@ fn classifyIntSignedness(reg: *TypeRegistry, tyid: u32) i8 {
     var ty = reg.types_items[@intCast(usize, tyid)];
     var k = ty.kind;
     if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.c_char_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(i8, 1); }
-    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type) { return @intCast(i8, 0); }
+    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type) { return @intCast(i8, 0); }
+    if (k == TypeKind.arb_int_type) { return @intCast(i8, 1); }
     return @intCast(i8, -1);
+}
+
+fn intTypeNeedsWidthWrap(reg: *TypeRegistry, tyid: u32) u8 {
+    if (tyid == type_mod.TYPE_VOID) { return @intCast(u8, 0); }
+    var ty = reg.types_items[@intCast(usize, tyid)];
+    if (ty.kind != TypeKind.arb_uint_type and ty.kind != TypeKind.arb_int_type) { return @intCast(u8, 0); }
+    var w = type_mod.typeRegistryIntWidthBits(reg, tyid);
+    var cb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
+    if (@intCast(u32, w) < @intCast(u32, 1) or @intCast(u32, w) >= cb) { return @intCast(u8, 0); }
+    return @intCast(u8, 1);
+}
+
+fn writeWidthMaskString(writer: *BufferedWriter, width_bits: u32) void {
+    var mask: u64 = @intCast(u64, 0);
+    if (width_bits < @intCast(u32, 64)) {
+        mask = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
+    } else {
+        mask = @intCast(u64, 0) - @intCast(u64, 1);
+    }
+    var ib: [24]u8 = undefined;
+    var il = itoa_mod.itoa64(mask, ib[0..]);
+    var is_idx = @intCast(u32, @intCast(u32, 23) - il);
+    var is_start: usize = @intCast(usize, is_idx);
+    var is_end: usize = @intCast(usize, 23);
+    bufferedWriterWrite(writer, ib[is_start..is_end]);
+    var sfx = intLitSuffixUns(mask);
+    bufferedWriterWrite(writer, sfx);
+}
+
+fn writeWidthSignBitString(writer: *BufferedWriter, width_bits: u32) void {
+    var sb: u64 = @intCast(u64, 0);
+    if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
+        sb = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
+    }
+    var ib: [24]u8 = undefined;
+    var il = itoa_mod.itoa64(sb, ib[0..]);
+    var is_idx = @intCast(u32, @intCast(u32, 23) - il);
+    var is_start: usize = @intCast(usize, is_idx);
+    var is_end: usize = @intCast(usize, 23);
+    bufferedWriterWrite(writer, ib[is_start..is_end]);
+    var sfx = intLitSuffixUns(sb);
+    bufferedWriterWrite(writer, sfx);
+}
+
+fn emitWidthWrapStmt(emitter: *C89Emitter, name: []const u8, tyid: u32) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tyid)];
+    var w = type_mod.typeRegistryIntWidthBits(emitter.registry, tyid);
+    if (@intCast(u32, w) < @intCast(u32, 1)) return;
+    var is_signed: u8 = @intCast(u8, 0);
+    if (ty.kind == TypeKind.arb_int_type) { is_signed = @intCast(u8, 1); }
+    var ctype = getCTypeName(emitter.registry, emitter.mangler, tyid);
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, name);
+    var eqs: []const u8 = " = (";
+    bufferedWriterWrite(&emitter.writer, eqs);
+    bufferedWriterWrite(&emitter.writer, ctype);
+    if (is_signed != @intCast(u8, 0)) {
+        var cp: []const u8 = ")(((";
+        bufferedWriterWrite(&emitter.writer, cp);
+    } else {
+        var cp: []const u8 = ")(";
+        bufferedWriterWrite(&emitter.writer, cp);
+    }
+    bufferedWriterWrite(&emitter.writer, name);
+    var amp: []const u8 = " & ";
+    bufferedWriterWrite(&emitter.writer, amp);
+    writeWidthMaskString(&emitter.writer, w);
+    if (is_signed != @intCast(u8, 0)) {
+        var xor_s: []const u8 = ") ^ ";
+        bufferedWriterWrite(&emitter.writer, xor_s);
+        writeWidthSignBitString(&emitter.writer, w);
+        var sub_s: []const u8 = ") - ";
+        bufferedWriterWrite(&emitter.writer, sub_s);
+        writeWidthSignBitString(&emitter.writer, w);
+    }
+    var end_s: []const u8 = ");\n";
+    bufferedWriterWrite(&emitter.writer, end_s);
+}
+
+fn emitWidthCheckedCheckStmt(emitter: *C89Emitter, src: []const u8, tyid: u32) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tyid)];
+    var w = type_mod.typeRegistryIntWidthBits(emitter.registry, tyid);
+    if (@intCast(u32, w) < @intCast(u32, 1)) return;
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    if (ty.kind == TypeKind.arb_uint_type) {
+        var pf: []const u8 = "if ((unsigned long long)(";
+        bufferedWriterWrite(&emitter.writer, pf);
+        bufferedWriterWrite(&emitter.writer, src);
+        var pm: []const u8 = ") > ";
+        bufferedWriterWrite(&emitter.writer, pm);
+        writeWidthMaskString(&emitter.writer, w);
+        var pe: []const u8 = ") std_panic(\"integer cast overflow in @intCast\");\n";
+        bufferedWriterWrite(&emitter.writer, pe);
+    } else {
+        var pf: []const u8 = "if ((long long)(";
+        bufferedWriterWrite(&emitter.writer, pf);
+        bufferedWriterWrite(&emitter.writer, src);
+        var pm: []const u8 = ") < (long long)(";
+        bufferedWriterWrite(&emitter.writer, pm);
+        var ib: [24]u8 = undefined;
+        var mag: u64 = @intCast(u64, 1) << @intCast(u64, w - @intCast(u32, 1));
+        var nm: []const u8 = "-";
+        bufferedWriterWrite(&emitter.writer, nm);
+        var il = itoa_mod.itoa64(mag, ib[0..]);
+        var is_idx = @intCast(u32, @intCast(u32, 23) - il);
+        var is_start: usize = @intCast(usize, is_idx);
+        var is_end: usize = @intCast(usize, 23);
+        bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+        var nsfx = intLitSuffixNeg(mag);
+        bufferedWriterWrite(&emitter.writer, nsfx);
+        var po: []const u8 = ") || (long long)(";
+        bufferedWriterWrite(&emitter.writer, po);
+        bufferedWriterWrite(&emitter.writer, src);
+        var pz: []const u8 = ") > (long long)(";
+        bufferedWriterWrite(&emitter.writer, pz);
+        var maxv: u64 = (@intCast(u64, 1) << @intCast(u64, w - @intCast(u32, 1))) - @intCast(u64, 1);
+        var mib: [24]u8 = undefined;
+        var mil = itoa_mod.itoa64(maxv, mib[0..]);
+        var mis_idx = @intCast(u32, @intCast(u32, 23) - mil);
+        var mis_start: usize = @intCast(usize, mis_idx);
+        var mis_end: usize = @intCast(usize, 23);
+        bufferedWriterWrite(&emitter.writer, mib[mis_start..mis_end]);
+        var msfx = intLitSuffixUns(maxv);
+        bufferedWriterWrite(&emitter.writer, msfx);
+        var pe: []const u8 = ")) std_panic(\"integer cast overflow in @intCast\");\n";
+        bufferedWriterWrite(&emitter.writer, pe);
+    }
 }
 
 fn intTypeByteWidth(reg: *TypeRegistry, tyid: u32) u32 {
@@ -3665,7 +3813,7 @@ fn typeIsIntKind(reg: *TypeRegistry, tid: u32) u8 {
     if (tid == type_mod.TYPE_VOID) { return @intCast(u8, 0); }
     var ty = reg.types_items[@intCast(usize, tid)];
     var k = ty.kind;
-    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.c_char_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(u8, 1); }
+    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.c_char_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type or k == TypeKind.arb_int_type or k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(u8, 1); }
     return @intCast(u8, 0);
 }
 
@@ -3675,6 +3823,7 @@ fn retTypeIsScalarC(reg: *TypeRegistry, tid: u32) u8 {
     if (rv_k == TypeKind.i8_type or rv_k == TypeKind.i16_type or rv_k == TypeKind.i32_type or rv_k == TypeKind.i64_type or
         rv_k == TypeKind.isize_type or rv_k == TypeKind.u8_type or rv_k == TypeKind.u16_type or rv_k == TypeKind.u32_type or
         rv_k == TypeKind.u64_type or rv_k == TypeKind.usize_type or rv_k == TypeKind.c_char_type or
+        rv_k == TypeKind.arb_uint_type or rv_k == TypeKind.arb_int_type or
         rv_k == TypeKind.f32_type or rv_k == TypeKind.f64_type or rv_k == TypeKind.bool_type or
         rv_k == TypeKind.enum_type or rv_k == TypeKind.error_set_type or rv_k == TypeKind.ptr_type or
         rv_k == TypeKind.many_ptr_type or rv_k == TypeKind.fn_type or rv_k == TypeKind.null_type or
@@ -3742,7 +3891,7 @@ fn getTempEffType(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed
             if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) {
                 out_type.* = eff;
                 var bty = emitter.registry.types_items[@intCast(usize, eff)];
-                if (bty.kind == TypeKind.i8_type or bty.kind == TypeKind.i16_type or bty.kind == TypeKind.i32_type or bty.kind == TypeKind.i64_type or bty.kind == TypeKind.isize_type or bty.kind == TypeKind.undefined_type or bty.kind == TypeKind.null_type) {
+                if (bty.kind == TypeKind.i8_type or bty.kind == TypeKind.i16_type or bty.kind == TypeKind.i32_type or bty.kind == TypeKind.i64_type or bty.kind == TypeKind.isize_type or bty.kind == TypeKind.arb_int_type or bty.kind == TypeKind.undefined_type or bty.kind == TypeKind.null_type) {
                     out_signed.* = @intCast(u8, 1);
                 } else {
                     out_signed.* = @intCast(u8, 0);
@@ -3764,7 +3913,7 @@ fn getTempTypeInfoResolve(emitter: *C89Emitter, temp_id: u32, out_type: *u32, ou
             out_type.* = ht.type_id;
             if (bty.kind == TypeKind.i8_type or bty.kind == TypeKind.i16_type or
                 bty.kind == TypeKind.i32_type or bty.kind == TypeKind.i64_type or
-                bty.kind == TypeKind.isize_type) {
+                bty.kind == TypeKind.isize_type or bty.kind == TypeKind.arb_int_type) {
                 out_signed.* = @intCast(u8, 1);
             } else {
                 out_signed.* = @intCast(u8, 0);
@@ -5486,6 +5635,12 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
             }
+            var bin_wt: u32 = getTempTypeByIndex(emitter, b.result);
+            if (bin_wt != @intCast(u32, 0xFFFFFFFF)) {
+                if (intTypeNeedsWidthWrap(emitter.registry, bin_wt) != @intCast(u8, 0)) {
+                    emitWidthWrapStmt(emitter, result, bin_wt);
+                }
+            }
         },
         .unary => |u| {
             var result = resolveTempName(emitter, u.result);
@@ -5526,6 +5681,12 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
             }
+            var un_wt: u32 = getTempTypeByIndex(emitter, u.result);
+            if (un_wt != @intCast(u32, 0xFFFFFFFF)) {
+                if (intTypeNeedsWidthWrap(emitter.registry, un_wt) != @intCast(u8, 0)) {
+                    emitWidthWrapStmt(emitter, result, un_wt);
+                }
+            }
         },
         .int_const => |ic| {
             var result = resolveTempName(emitter, ic.result);
@@ -5548,10 +5709,14 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             }
             temp_type_id = intConstTypeForValue(emitter.registry, ic.value, ht_found_tid);
             var ict_bty = emitter.registry.types_items[@intCast(usize, temp_type_id)];
-            if (ict_bty.kind == type_mod.TypeKind.i8_type or ict_bty.kind == type_mod.TypeKind.i16_type or ict_bty.kind == type_mod.TypeKind.i32_type or ict_bty.kind == type_mod.TypeKind.i64_type or ict_bty.kind == type_mod.TypeKind.isize_type) {
+            if (ict_bty.kind == type_mod.TypeKind.i8_type or ict_bty.kind == type_mod.TypeKind.i16_type or ict_bty.kind == type_mod.TypeKind.i32_type or ict_bty.kind == type_mod.TypeKind.i64_type or ict_bty.kind == type_mod.TypeKind.isize_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
                 is_signed = @intCast(u8, 1);
             }
-            width_bits = @intCast(u32, ict_bty.size * @intCast(u32, 8));
+            if (ict_bty.kind == type_mod.TypeKind.arb_uint_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
+                width_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, temp_type_id));
+            } else {
+                width_bits = @intCast(u32, ict_bty.size * @intCast(u32, 8));
+            }
             if (ict_bty.kind == type_mod.TypeKind.tagged_union_type) {
                 is_tagged_union = @intCast(u8, 1);
             }
@@ -6140,8 +6305,14 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var icrb: [10]u8 = undefined; var icrl = itoa_mod.itoa(c.result, icrb[0..]); var icrs: usize = @intCast(usize, 9) - @intCast(usize, icrl); pal.markerWrite(icrb[icrs..@intCast(usize, 9)]);
             var icnl: []const u8 = "\n"; pal.markerWrite(icnl);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
+            var dst_is_arb: u8 = intTypeNeedsWidthWrap(emitter.registry, c.target);
             if (c.is_checked != @intCast(u8, 0)) {
                 var src_tid = getTempTypeByIndex(emitter, c.value);
+                var needs_width_check: u8 = dst_is_arb;
+                if (src_tid != @intCast(u32, 0xFFFFFFFF)) {
+                    if (intTypeNeedsWidthWrap(emitter.registry, src_tid) != @intCast(u8, 0)) { needs_width_check = @intCast(u8, 1); }
+                }
+                if (needs_width_check == @intCast(u8, 0)) {
                 if (src_tid != @intCast(u32, 0xFFFFFFFF)) {
                     var dst_suffix = getCastTypeSuffix(emitter.registry, c.target);
                     var src_suffix = getCastTypeSuffix(emitter.registry, src_tid);
@@ -6189,6 +6360,19 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                     var s3: []const u8 = ";\n";
                     bufferedWriterWrite(&emitter.writer, s3);
                 }
+                } else {
+                    emitWidthCheckedCheckStmt(emitter, src, c.target);
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    bufferedWriterWrite(&emitter.writer, dst);
+                    var s1: []const u8 = " = (";
+                    bufferedWriterWrite(&emitter.writer, s1);
+                    bufferedWriterWrite(&emitter.writer, ctype);
+                    var s2: []const u8 = ")";
+                    bufferedWriterWrite(&emitter.writer, s2);
+                    bufferedWriterWrite(&emitter.writer, src);
+                    var s3: []const u8 = ";\n";
+                    bufferedWriterWrite(&emitter.writer, s3);
+                }
             } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, dst);
@@ -6200,6 +6384,9 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
                 bufferedWriterWrite(&emitter.writer, src);
                 var s3: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, s3);
+            }
+            if (dst_is_arb != @intCast(u8, 0)) {
+                emitWidthWrapStmt(emitter, dst, c.target);
             }
         },
         .int_to_float => |c| {
