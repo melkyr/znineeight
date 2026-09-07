@@ -719,7 +719,7 @@ fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_
 
     if (!type_mod.typeRegistryIsNumeric(self.registry, lhs) or !type_mod.typeRegistryIsNumeric(self.registry, rhs)) return type_mod.TYPE_VOID;
     if (lhs == rhs) return lhs;
-    if (type_mod.typeRegistryIsInteger(self.registry, lhs) and type_mod.typeRegistryIsInteger(self.registry, rhs) and lhs != type_mod.TYPE_INT_LIT and rhs != type_mod.TYPE_INT_LIT) {
+    if (type_mod.typeRegistryIsInteger(self.registry, lhs) and type_mod.typeRegistryIsInteger(self.registry, rhs)) {
         var lw = type_mod.typeRegistryIntWidthBits(self.registry, lhs);
         var rw = type_mod.typeRegistryIntWidthBits(self.registry, rhs);
         if (lw >= rw) return lhs;

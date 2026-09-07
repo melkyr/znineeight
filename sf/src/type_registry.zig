@@ -45,7 +45,6 @@ pub const TypeKind = enum(u8) {
     u8_type, u16_type, u32_type, u64_type,
     isize_type, usize_type, c_char_type,
     f32_type, f64_type,
-    arb_uint_type, arb_int_type,
     ptr_type, many_ptr_type, array_type, slice_type,
     optional_type, error_union_type, error_set_type,
     fn_type,
@@ -56,6 +55,7 @@ pub const TypeKind = enum(u8) {
     integer_literal_type,
     anon_struct_init, anon_array, anon_tuple, anon_union,
     va_list_type,
+    arb_uint_type, arb_int_type,
 };
 
 pub const Type = struct {
@@ -271,16 +271,16 @@ pub fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
      self.xn_items[self.xn_len] = v; self.xn_len += 1;
  }
 
-fn typeWidthBitsForSize(size: u32) u8 {
-    if (size == @intCast(u32, 1)) return @intCast(u8, 8);
-    if (size == @intCast(u32, 2)) return @intCast(u8, 16);
-    if (size == @intCast(u32, 4)) return @intCast(u8, 32);
-    if (size == @intCast(u32, 8)) return @intCast(u8, 64);
+fn typeWidthBitsForKind(kind: TypeKind) u8 {
+    if (kind == TypeKind.i8_type or kind == TypeKind.u8_type or kind == TypeKind.c_char_type) return @intCast(u8, 8);
+    if (kind == TypeKind.i16_type or kind == TypeKind.u16_type) return @intCast(u8, 16);
+    if (kind == TypeKind.i32_type or kind == TypeKind.u32_type or kind == TypeKind.isize_type or kind == TypeKind.usize_type) return @intCast(u8, 32);
+    if (kind == TypeKind.i64_type or kind == TypeKind.u64_type) return @intCast(u8, 64);
     return @intCast(u8, 0);
 }
 
 fn registerPrimitive(self: *TypeRegistry, kind: TypeKind, size: u32, alignment: u32) u32 {
-    var p_wb: u8 = typeWidthBitsForSize(size);
+    var p_wb: u8 = typeWidthBitsForKind(kind);
     var p_sg: u8 = @intCast(u8, 0);
     if (kind == TypeKind.i8_type or kind == TypeKind.i16_type or kind == TypeKind.i32_type or kind == TypeKind.i64_type or kind == TypeKind.isize_type or kind == TypeKind.c_char_type) {
         p_sg = @intCast(u8, 1);
@@ -740,11 +740,7 @@ pub fn typeRegistryIntWidthBits(self: *TypeRegistry, tid: u32) u8 {
     if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) {
         return ty.width_bits;
     }
-    if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.u8_type or ty.kind == TypeKind.c_char_type) return @intCast(u8, 8);
-    if (ty.kind == TypeKind.i16_type or ty.kind == TypeKind.u16_type) return @intCast(u8, 16);
-    if (ty.kind == TypeKind.i32_type or ty.kind == TypeKind.u32_type or ty.kind == TypeKind.isize_type or ty.kind == TypeKind.usize_type) return @intCast(u8, 32);
-    if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type) return @intCast(u8, 64);
-    return @intCast(u8, 0);
+    return typeWidthBitsForKind(ty.kind);
 }
 
 pub fn typeRegistryIntIsSigned(self: *TypeRegistry, tid: u32) bool {

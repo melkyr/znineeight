@@ -196,8 +196,14 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         var inner = comptimeEvalEvaluateDepth(self, ec[@intCast(usize, 1)], depth);
         if (tid) |t| {
             if (inner) |cv| {
+                var ty = self.registry.types_items[@intCast(usize, t)];
+                var is_int_t: bool = type_mod.typeRegistryIsInteger(self.registry, t);
                 var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
                 var sig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
+                if (!is_int_t) {
+                    wb = @intCast(u32, ty.size * @intCast(u32, 8));
+                    sig = false;
+                }
                 if (wb >= @intCast(u32, 64)) {
                     return ComptimeVal{ .bits = cv.bits, .width_bits = wb, .sig = sig };
                 }
