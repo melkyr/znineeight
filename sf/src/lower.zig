@@ -1170,7 +1170,7 @@ fn lowerContainerOfAccess(self: *LirLowerer, base_node_idx: u32, out_tid: *u32) 
     return @intCast(u8, 0);
 }
 
-fn lowerPackedChainAnalyze(self: *LirLowerer, node_idx: u32, holder_out: *u32, off_out: *u32, width_out: *u32, depth_out: *u32, first_packed_out: *u32) u8 {
+fn lowerPackedChainAnalyze(self: *LirLowerer, node_idx: u32, holder_out: *u32, off_out: *u32, width_out: *u32, depth_out: *u32, first_packed_out: *u32, leaf_field_ty_out: *u32) u8 {
     var store = self.ctx.store;
     var stack: [16]u32 = undefined;
     var depth: usize = @intCast(usize, 0);
@@ -1218,6 +1218,7 @@ fn lowerPackedChainAnalyze(self: *LirLowerer, node_idx: u32, holder_out: *u32, o
                 total_off += pk_fields[fi2].bit_offset;
                 if (li == @intCast(usize, 0)) {
                     leaf_width = @intCast(u32, pk_fields[fi2].bit_width);
+                    leaf_field_ty_out.* = fields[fi2].type_id;
                 }
                 found_off = @intCast(u8, 1);
                 break;
@@ -1244,7 +1245,16 @@ fn lowerTryNestedPackedLeafRead(self: *LirLowerer, node_idx: u32) u32 {
     var width: u32 = @intCast(u32, 0);
     var depth: u32 = @intCast(u32, 0);
     var first_packed: u32 = @intCast(u32, 0);
-    if (lowerPackedChainAnalyze(self, node_idx, &holder, &off, &width, &depth, &first_packed) == @intCast(u8, 0)) return TEMP_NONE;
+    var leaf_field_ty: u32 = @intCast(u32, 0);
+    if (lowerPackedChainAnalyze(self, node_idx, &holder, &off, &width, &depth, &first_packed, &leaf_field_ty) == @intCast(u8, 0)) return TEMP_NONE;
+    if (leaf_field_ty < @intCast(u32, self.ctx.registry.types_len)) {
+        var lf_ty = self.ctx.registry.types_items[@intCast(usize, leaf_field_ty)];
+        if (lf_ty.kind == type_mod.TypeKind.struct_type and (lf_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            var wsv_msg: []const u8 = "cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)";
+            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
+            return nextTemp(self, leaf_field_ty);
+        }
+    }
     var leaf_ty: u32 = @intCast(u32, 0);
     var got_leaf: u8 = @intCast(u8, 0);
     var lrt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -1270,7 +1280,16 @@ fn lowerTryNestedPackedLeafStore(self: *LirLowerer, node_idx: u32, value_temp: u
     var width: u32 = @intCast(u32, 0);
     var depth: u32 = @intCast(u32, 0);
     var first_packed: u32 = @intCast(u32, 0);
-    if (lowerPackedChainAnalyze(self, node_idx, &holder, &off, &width, &depth, &first_packed) == @intCast(u8, 0)) return @intCast(u8, 0);
+    var leaf_field_ty: u32 = @intCast(u32, 0);
+    if (lowerPackedChainAnalyze(self, node_idx, &holder, &off, &width, &depth, &first_packed, &leaf_field_ty) == @intCast(u8, 0)) return @intCast(u8, 0);
+    if (leaf_field_ty < @intCast(u32, self.ctx.registry.types_len)) {
+        var lf_ty = self.ctx.registry.types_items[@intCast(usize, leaf_field_ty)];
+        if (lf_ty.kind == type_mod.TypeKind.struct_type and (lf_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
+            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
+            return @intCast(u8, 1);
+        }
+    }
     if (first_packed + @intCast(u32, 1) < depth) {
         var wps_msg: []const u8 = "cannot write a packed-struct leaf through a byte-aligned container field in a nested packed struct (unsupported store path)";
         _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wps_msg);

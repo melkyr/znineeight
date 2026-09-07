@@ -796,12 +796,12 @@ fn semanticAnalyzerCheckedStructTidsAppend(self: *SemanticAnalyzer, struct_tid: 
     self.checked_struct_tids_len += @intCast(usize, 1);
 }
 
-fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32) bool {
+fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32, allow_packed_struct_type: bool) bool {
     if (@intCast(usize, tid) >= self.registry.types_len) return false;
     var ty = self.registry.types_items[@intCast(usize, tid)];
     if (ty.kind == type_mod.TypeKind.bool_type) return true;
     if (ty.kind == type_mod.TypeKind.integer_literal_type) return false;
-    if (ty.kind == type_mod.TypeKind.struct_type and (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return true;
+    if (allow_packed_struct_type and ty.kind == type_mod.TypeKind.struct_type and (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return true;
     return type_mod.typeRegistryIsInteger(self.registry, tid);
 }
 
@@ -824,7 +824,7 @@ fn semanticAnalyzerGatePackedFields(self: *SemanticAnalyzer, struct_node_idx: u3
             var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
             if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
                 gate_state = @intCast(u8, 1);
-            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft)) {
+            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft, true)) {
                 if (type_mod.typeRegistryIntWidthBits(self.registry, ft) > @intCast(u8, 31)) {
                     gate_wide = @intCast(u8, 1);
                 } else {
@@ -904,7 +904,7 @@ fn semanticAnalyzerGatePackedUnionMembers(self: *SemanticAnalyzer, union_node_id
             var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
             if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
                 gate_state = @intCast(u8, 1);
-            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft)) {
+            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft, false)) {
                 if (type_mod.typeRegistryIntWidthBits(self.registry, ft) > @intCast(u8, 31)) {
                     gate_wide = @intCast(u8, 1);
                 } else {
