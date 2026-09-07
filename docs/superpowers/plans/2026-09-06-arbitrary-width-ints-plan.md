@@ -76,7 +76,7 @@ pub fn main() void {
 }
 ```
 
-`intwidth_sign_extend_xmod/main.zig` — contract `true 1` (i7 -1 < 0; sign-extend through @intCast to i16):
+`intwidth_sign_extend_xmod/main.zig` — contract `true -1` (i7 -1 < 0; sign-extend through @intCast to i16):
 ```zig
 const std = @import("std");
 

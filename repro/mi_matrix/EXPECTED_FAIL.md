@@ -21,7 +21,7 @@ uN annotation to a non-type and comptime-eval halts before the clean 3000s can f
 | dir | feature | RED class | expected GREEN stdout |
 |---|---|---|---|
 | `intwidth_wrap_xmod` | `uN` arithmetic wrap (`u3` 7+1→0; `u12` 4095+1→0) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `u3`/`u12` annotations unknown → `unknown type in variable declaration`; 0 `.c`; deterministic 3/3) | `0 0` |
-| `intwidth_sign_extend_xmod` | `iN` sign-extend (`i7` -1 < 0; `@intCast(i16, i7 -1)` sign-extends) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `i7` annotation unknown; 0 `.c`; deterministic 3/3) | `true 1` |
+| `intwidth_sign_extend_xmod` | `iN` sign-extend (`i7` -1 < 0; `@intCast(i16, i7 -1)` sign-extends) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `i7` annotation unknown; 0 `.c`; deterministic 3/3) | `true -1` |
 | `intwidth_cast_xmod` | `@intCast` narrow/truncate + widen (`u3` 255→7; `u8` 256→0; widen keeps value) | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `u3` annotation unknown; 0 `.c`; deterministic 3/3) | `7 0 255` |
 | `intwidth_introspect_xmod` | introspection on `uN`/`iN` — `@bitSizeOf/@sizeOf/@alignOf` (u3/u12/u20/u33/i7) | ICE (dump rc=3, 0 `.c`; `error[3043]: internal: comptime value unresolved for @sizeOf/@alignOf`; deterministic 3/3) | `3 1 2 4 8 1 7` |
 | `intwidth_full_xmod` | 64-bit-carrier boundary — `u63` 2^63-1+1 → 0 wrap; `i63` -1 sign-extends through `@intCast(i64)` | clean error[3000] rejection (compile-gate label GREEN — FALSE green; `u63`/`i63` annotations unknown; 0 `.c`; deterministic 3/3) | `0 -1` |
@@ -54,12 +54,12 @@ uN annotation to a non-type and comptime-eval halts before the clean 3000s can f
 - **Rule (GREEN contracts; fixtures turn GREEN in Task 4):** once arbitrary-width int types uN/iN
   register as real types (Task 3 type layer + Task 4 emission carrier math, plan §4), each fixture
   MUST dump rc=0, gcc `-m32` clean, and run rc=0 printing its byte-exact contract: `intwidth_wrap_xmod`
-  `0 0` (u3 7+1 wraps 0; u12 4095+1 wraps 0), `intwidth_sign_extend_xmod` `true 1` (i7 -1 < 0 true;
-  `@intCast(i16, i7 -1)` = -1 sign-extended → prints 1), `intwidth_cast_xmod` `7 0 255` (@intCast(u3,
+  `0 0` (u3 7+1 wraps 0; u12 4095+1 wraps 0), `intwidth_sign_extend_xmod` `true -1` (i7 -1 < 0 true;
+  `@intCast(i16, i7 -1)` = -1 sign-extended → prints -1), `intwidth_cast_xmod` `7 0 255` (@intCast(u3,
   255) masks to 7; @intCast(u8, 256) masks to 0; u3→u8 widen keeps 255), `intwidth_introspect_xmod`
   `3 1 2 4 8 1 7` (@bitSizeOf(u3)=3, @sizeOf(u3)=1 carrier byte, @sizeOf(u12)=2, @sizeOf(u20)=4,
   @sizeOf(u33)=8, @alignOf(u3)=1, @bitSizeOf(i7)=7), `intwidth_full_xmod` `0 -1` (u63
-  18446744073709551615==2^63-1 +1 → 0 on the 64-bit carrier via mask (1<<63)-1; i63 -1 sign-extends
+  9223372036854775807 (2^63−1) + 1 → 0 on the 64-bit carrier via mask (1<<63)-1; i63 -1 sign-extends
   through @intCast(i64) → -1). At GREEN time the analyzer must also stop conflating unregistered-width
   names with `void`/unknown (the R7 note), and `@sizeOf/@alignOf` on uN must fold (no error[3043]).
   R7 `int_arbitrary_width_xmod` (v60 row below) is the model row; its current class is the same
