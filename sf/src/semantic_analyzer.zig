@@ -51,6 +51,13 @@ pub const SemanticAnalyzer = struct {
     packed_gate_items: [*]u32,
     packed_gate_len: usize,
     packed_gate_cap: usize,
+    packed_struct_tids: [*]u32,
+    packed_struct_decl_nodes: [*]u32,
+    packed_struct_cache_len: usize,
+    packed_struct_cache_cap: usize,
+    checked_struct_tids: [*]u32,
+    checked_struct_tids_len: usize,
+    checked_struct_tids_cap: usize,
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
@@ -170,6 +177,13 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .packed_gate_items = undefined,
         .packed_gate_len = @intCast(usize, 0),
         .packed_gate_cap = @intCast(usize, 0),
+        .packed_struct_tids = undefined,
+        .packed_struct_decl_nodes = undefined,
+        .packed_struct_cache_len = @intCast(usize, 0),
+        .packed_struct_cache_cap = @intCast(usize, 0),
+        .checked_struct_tids = undefined,
+        .checked_struct_tids_len = @intCast(usize, 0),
+        .checked_struct_tids_cap = @intCast(usize, 0),
         ._stub_0 = und_name_id,
         ._stub_1 = @intCast(u32, 0),
         .call_arg_types = cal_typs,
@@ -732,6 +746,56 @@ fn semanticAnalyzerPackedGateSeen(self: *SemanticAnalyzer, node_idx: u32) bool {
     return false;
 }
 
+fn semanticAnalyzerPackedStructCacheGrow(self: *SemanticAnalyzer) void {
+    var new_cap: usize = if (self.packed_struct_cache_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.packed_struct_cache_cap * @intCast(usize, 2);
+    var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst = @ptrCast([*]u32, raw);
+    if (self.packed_struct_cache_len > @intCast(usize, 0)) {
+        var ci: usize = 0;
+        while (ci < self.packed_struct_cache_len) : (ci += @intCast(usize, 1)) {
+            ndst[ci] = self.packed_struct_tids[ci];
+        }
+    }
+    self.packed_struct_tids = ndst;
+    var raw2 = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst2 = @ptrCast([*]u32, raw2);
+    if (self.packed_struct_cache_len > @intCast(usize, 0)) {
+        var ci2: usize = 0;
+        while (ci2 < self.packed_struct_cache_len) : (ci2 += @intCast(usize, 1)) {
+            ndst2[ci2] = self.packed_struct_decl_nodes[ci2];
+        }
+    }
+    self.packed_struct_decl_nodes = ndst2;
+    self.packed_struct_cache_cap = new_cap;
+}
+
+fn semanticAnalyzerPackedStructCacheAppend(self: *SemanticAnalyzer, struct_tid: u32, decl_node: u32) void {
+    if (self.packed_struct_cache_len >= self.packed_struct_cache_cap) { semanticAnalyzerPackedStructCacheGrow(self); }
+    self.packed_struct_tids[self.packed_struct_cache_len] = struct_tid;
+    self.packed_struct_decl_nodes[self.packed_struct_cache_len] = decl_node;
+    self.packed_struct_cache_len += @intCast(usize, 1);
+}
+
+fn semanticAnalyzerCheckedStructTidsGrow(self: *SemanticAnalyzer) void {
+    var new_cap: usize = if (self.checked_struct_tids_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.checked_struct_tids_cap * @intCast(usize, 2);
+    var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst = @ptrCast([*]u32, raw);
+    if (self.checked_struct_tids_len > @intCast(usize, 0)) {
+        var ci: usize = 0;
+        while (ci < self.checked_struct_tids_len) : (ci += @intCast(usize, 1)) {
+            ndst[ci] = self.checked_struct_tids[ci];
+        }
+    }
+    self.checked_struct_tids = ndst;
+    self.checked_struct_tids_cap = new_cap;
+}
+
+fn semanticAnalyzerCheckedStructTidsAppend(self: *SemanticAnalyzer, struct_tid: u32) void {
+    if (self.checked_struct_tids_len >= self.checked_struct_tids_cap) { semanticAnalyzerCheckedStructTidsGrow(self); }
+    self.checked_struct_tids[self.checked_struct_tids_len] = struct_tid;
+    self.checked_struct_tids_len += @intCast(usize, 1);
+}
+
 fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32) bool {
     if (@intCast(usize, tid) >= self.registry.types_len) return false;
     var ty = self.registry.types_items[@intCast(usize, tid)];
@@ -783,7 +847,28 @@ fn semanticAnalyzerMaybeGateAliasDecl(self: *SemanticAnalyzer, decl_node: u32, m
     if (target != @intCast(u32, 0)) semanticAnalyzerGatePackedFields(self, target, module_id);
 }
 
+pub fn semanticAnalyzerGateModulePackedDecl(self: *SemanticAnalyzer, decl_node: u32) void {
+    if (decl_node == @intCast(u32, 0)) return;
+    var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
+    var target: u32 = @intCast(u32, 0);
+    if (dnode.kind == AstKind.struct_decl) {
+        target = decl_node;
+    } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+        var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+        if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+    }
+    if (target != @intCast(u32, 0)) semanticAnalyzerGatePackedFields(self, target, self.module_id);
+}
+
 fn semanticAnalyzerPackedStructDeclForType(self: *SemanticAnalyzer, struct_tid: u32) u32 {
+    var hc: usize = 0;
+    while (hc < self.packed_struct_cache_len) : (hc += @intCast(usize, 1)) {
+        if (self.packed_struct_tids[hc] == struct_tid) return self.packed_struct_decl_nodes[hc];
+    }
+    var cc: usize = 0;
+    while (cc < self.checked_struct_tids_len) : (cc += @intCast(usize, 1)) {
+        if (self.checked_struct_tids[cc] == struct_tid) return @intCast(u32, 0);
+    }
     if (@intCast(usize, struct_tid) >= self.registry.types_len) return @intCast(u32, 0);
     var sty = self.registry.types_items[@intCast(usize, struct_tid)];
     if (sty.kind != type_mod.TypeKind.struct_type) return @intCast(u32, 0);
@@ -805,9 +890,13 @@ fn semanticAnalyzerPackedStructDeclForType(self: *SemanticAnalyzer, struct_tid: 
             }
             if (target == @intCast(u32, 0)) continue;
             var tnode = ast_mod.astStoreNodeAt(self.store, target);
-            if ((tnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return target;
+            if ((tnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                semanticAnalyzerPackedStructCacheAppend(self, struct_tid, target);
+                return target;
+            }
         }
     }
+    semanticAnalyzerCheckedStructTidsAppend(self, struct_tid);
     return @intCast(u32, 0);
 }
 

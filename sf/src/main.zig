@@ -551,6 +551,11 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 var sa0: []const u8 = "SA"; pal.markerWrite(sa0);
                 sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
                 var sa1: []const u8 = "sA"; pal.markerWrite(sa1);
+            } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
+                var di_inn = ast_mod.astStoreNodeAt(ctx.store, decl.child_1);
+                if (di_inn.kind == AstKind.struct_decl) {
+                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decls[di]);
+                }
             }
         }
     }
