@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# usage: build_zig1_5.sh [compiler]
+# Self-emission dump engine defaults to /tmp/fx_subfolder/zig1 (legacy
+# reference). Env COMPILER=... or $1 overrides it (e.g. a seed/rebuilt zig1 per
+# the seed model: scripts/seed/build_from_seed.sh). Default output
+# (/tmp/zig1_5/{zig1_5_asan,zig1_5_clean}) is byte-unchanged.
+COMPILER="${COMPILER:-${1:-/tmp/fx_subfolder/zig1}}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=/tmp/zig1_5
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/lib"
 cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$OUT/lib/"
 cd "$ROOT"
-timeout 120 /tmp/fx_subfolder/zig1 --dump-c89 --output-dir "$OUT/gen" sf/src/main.zig
+timeout 120 "$COMPILER" --dump-c89 --output-dir "$OUT/gen" sf/src/main.zig
 # canonical multi-module recipe (QUICK_REF §Multi-Module Build): compile inside DIR, link zig_runtime.c + zig_pal.c
 cd "$OUT/gen"
 gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \

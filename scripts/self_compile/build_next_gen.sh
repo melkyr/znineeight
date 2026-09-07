@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # usage: build_next_gen.sh <compiler> <out_dir>
+# <compiler> = the dump engine (zig0-built reference, a seed zig1, or a
+# build_from_seed.sh output). Canonical recipe: full flag set incl -Wall + link
+# trio zig_runtime.c/zig_pal.c/c_exit.c (matches build_zig1_5.sh / seed model).
 COMPILER="$1"; OUT="$2"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/lib"
