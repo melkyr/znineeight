@@ -817,20 +817,30 @@ fn semanticAnalyzerGatePackedFields(self: *SemanticAnalyzer, struct_node_idx: u3
         if (fd.kind != AstKind.field_decl) continue;
         var type_node: u32 = fd.child_0;
         var gate_state: u8 = @intCast(u8, 0);
+        var gate_wide: u8 = @intCast(u8, 0);
         if (type_node != @intCast(u32, 0)) {
             var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id };
             var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
             if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
                 gate_state = @intCast(u8, 1);
             } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft)) {
-                gate_state = @intCast(u8, 1);
+                if (type_mod.typeRegistryIntWidthBits(self.registry, ft) > @intCast(u8, 31)) {
+                    gate_wide = @intCast(u8, 1);
+                } else {
+                    gate_state = @intCast(u8, 1);
+                }
             }
         }
         if (gate_state == @intCast(u8, 1)) continue;
         var fsp = fd.span_start;
         var fep = fsp + @intCast(u32, fd.span_len);
-        var pg_msg: []const u8 = "packed struct fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed struct";
-        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, pg_msg);
+        if (gate_wide == @intCast(u8, 1)) {
+            var pw_msg: []const u8 = "packed struct field width must be <= 31 bits (u32/i64 etc. packed fields are not supported yet)";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, pw_msg);
+        } else {
+            var pg_msg: []const u8 = "packed struct fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed struct";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, pg_msg);
+        }
     }
 }
 
