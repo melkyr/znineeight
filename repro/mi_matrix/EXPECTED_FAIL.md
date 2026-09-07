@@ -1,4 +1,53 @@
-# mi_matrix corpus — expected-fail manifest (v71 2026-09-06)
+# mi_matrix corpus — expected-fail manifest (v72 2026-09-06)
+
+## Arbitrary-width ints GREEN (v72 2026-09-06) — INTWIDTH plan Task 5
+
+Plan `2026-09-06-arbitrary-width-ints-plan.md` Tasks 3+4 are COMPLETE — arbitrary-width integer
+types `uN`/`iN` now register as real types and emit. The five `intwidth_*` guard fixtures PLUS R7
+`int_arbitrary_width_xmod` are GREEN: compile-clean OK (dump rc=0, 0 `error[`, 0 PANIC, gcc `-m32`
+clean, 1 `.c` each) AND run-gate byte-exact 3× deterministic (RUNRC=0 — the v71 GREEN-time contracts
+are now all runnable, nothing forced). Measured on the reference `/tmp/fx_subfolder/zig1` md5
+`3707d33b` (rebuilt at HEAD `6b440d2c`, canonical std reinstalled) via the authoritative classify1.sh
+recipe; fixture run-gates fresh under `/tmp/iw_t5/fixtures` (emit `-s0` → gcc `-m32` → link
+`zig_runtime.c + zig_pal.c` → run, 3 fresh runs per fixture, stdout md5 identical 3/3). The v71 RED
+section below is the historical record of the same rows (kept verbatim); the fix commits the v71 rows
+reference are Task-2 fixtures `ca452470`/`3581c172`/`54ef34f5` (doc rulings) + Task-3 type layer
+`8967a0b1`/`91912420` + Task-4 emission `cf7169e6`/`6b440d2c`.
+
+| fixture | v71 RED class | v72 GREEN stdout (byte-exact 3×) |
+|---|---|---|
+| `intwidth_wrap_xmod` | clean error[3000] reject (compile-gate FALSE green) | `0 0` |
+| `intwidth_sign_extend_xmod` | clean error[3000] reject (compile-gate FALSE green) | `true -1` |
+| `intwidth_cast_xmod` | clean error[3000] reject (compile-gate FALSE green) | `7 0 255` |
+| `intwidth_introspect_xmod` | ICE (error[3043] comptime unresolved @sizeOf/@alignOf) | `3 1 2 4 8 1 7` |
+| `intwidth_full_xmod` | clean error[3000] reject (compile-gate FALSE green) | `0 -1` |
+| `int_arbitrary_width_xmod` (R7, v60 row) | compile-gate FALSE-green family | `7 -3 3000 4` |
+
+- **RESOLVED rows (fix commits):** type layer `8967a0b1` (`width_bits`/`is_signed` on `Type`,
+  `typeRegistryIntWidthBits`/`IntIsSigned` helpers, uN/iN primitive registration u1..64/i1..63 with
+  clean `error[3000]` for out-of-range widths, `TypeKind` arb_uint/arb_int appended) + review fixes
+  `91912420` (comptime fold neutrality for non-int targets); emission `cf7169e6` (carrier map to the
+  smallest power-of-2 C carrier, width-keyed mask/sign-extend at the binary/unary/int_cast/int_const
+  producers, width-level checked `@intCast`, introspection folds) + sat-op width fix `6b440d2c` (sat
+  ops on arbitrary-width clamp at the semantic width bound). The v71 ICE class (introspection) is
+  gone — `@sizeOf/@alignOf/@bitSizeOf` on uN fold at comptime; the unknown-type error[3000]
+  rejection family (incl. the R7 void-fallback conflation, `cannot declare variable of type void`
+  cascade, FALSE-green compile-gate label) is gone — uN/iN annotations resolve to real types. Each
+  fixture stays as a permanent regression guard.
+- **Corpus v71→v72 reconciliation (Task-5 battery, reference `3707d33b`):** full 433-dir `-s0`
+  sweep = **OK=412 / FAIL=13 / GREEN=8 / GCCFAIL=0 / ICE=0 / CRASH=0** (412+13+8=433). vs the
+  pre-INTWIDTH netbind S4 baseline (428 dirs, OK=406/FAIL=13/GREEN=9, compiler `c8f1b3d0`): sorted
+  per-row `diff` = **EXACTLY ONE row changed — `int_arbitrary_width_xmod` GREEN→OK**; zero delta on
+  the other 427. The 5 new intwidth dirs classify OK. FAIL 13 / GREEN common sets row-identical.
+- **4-MD5 gates byte-identical UNCHANGED (v72, NO gate re-baseline):** gol `302df36b…` / lisp
+  `3591bad9…` / json `76056b97…` / mud `846106ac…` (repo-root CWD, stdout-only, dump rc=0 each).
+  Golden 9/9 PASS; matrix 21/21 PASS.
+- **Self-compile fixed point RE-BASELINED (operator-approved 2026-09-07): `10f0ca2b…` →
+  `24da89b9d6398ff24f4baecfe2e23f77`** — two-hop closure at HEAD `6b440d2c`, 41 `.c`, rc=0, 0
+  `error[`, 0 PANIC, hop1==hop2 binary byte-identical (`cmp` clean); the documented
+  fixed-point-moves-when-compiler-source-changes class (Task 3's intermediate `4cc150c1…` and
+  Task-4's binary md5 `3707d33b…` superseded). Reference binary md5 `3707d33b…` (rebuilt at HEAD
+  `6b440d2c`).
 
 ## Arbitrary-width ints RED set (v71 2026-09-06) — INTWIDTH plan Task 2
 
