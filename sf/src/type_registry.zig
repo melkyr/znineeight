@@ -45,6 +45,7 @@ pub const TypeKind = enum(u8) {
     u8_type, u16_type, u32_type, u64_type,
     isize_type, usize_type, c_char_type,
     f32_type, f64_type,
+    arb_uint_type, arb_int_type,
     ptr_type, many_ptr_type, array_type, slice_type,
     optional_type, error_union_type, error_set_type,
     fn_type,
@@ -61,7 +62,8 @@ pub const Type = struct {
     kind: TypeKind,
     state: u8,
     flags: u8,
-    _pad: u8,
+    is_signed: u8,
+    width_bits: u8,
     size: u32,
     alignment: u32,
     name_id: u32,
@@ -269,12 +271,26 @@ pub fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
      self.xn_items[self.xn_len] = v; self.xn_len += 1;
  }
 
+fn typeWidthBitsForSize(size: u32) u8 {
+    if (size == @intCast(u32, 1)) return @intCast(u8, 8);
+    if (size == @intCast(u32, 2)) return @intCast(u8, 16);
+    if (size == @intCast(u32, 4)) return @intCast(u8, 32);
+    if (size == @intCast(u32, 8)) return @intCast(u8, 64);
+    return @intCast(u8, 0);
+}
+
 fn registerPrimitive(self: *TypeRegistry, kind: TypeKind, size: u32, alignment: u32) u32 {
+    var p_wb: u8 = typeWidthBitsForSize(size);
+    var p_sg: u8 = @intCast(u8, 0);
+    if (kind == TypeKind.i8_type or kind == TypeKind.i16_type or kind == TypeKind.i32_type or kind == TypeKind.i64_type or kind == TypeKind.isize_type or kind == TypeKind.c_char_type) {
+        p_sg = @intCast(u8, 1);
+    }
     return typeRegistryAppend(self, Type{
         .kind = kind,
         .state = @intCast(u8, 2),
         .flags = @intCast(u8, 0),
-        ._pad = @intCast(u8, 0),
+        .is_signed = p_sg,
+        .width_bits = p_wb,
         .size = size,
         .alignment = alignment,
         .name_id = @intCast(u32, 0),
@@ -356,7 +372,8 @@ pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: b
     ptrAppend(self, PtrPayload{ .base = base });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.ptr_type, .state = @intCast(u8, 2),
-        .flags = @intCast(u8, if (is_const) 1 else 0), ._pad = @intCast(u8, 0),
+        .flags = @intCast(u8, if (is_const) 1 else 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.ptr_len - @intCast(usize, 1)),
@@ -372,7 +389,8 @@ pub fn typeRegistryGetOrCreateManyPtr(self: *TypeRegistry, base: TypeId, is_cons
     ptrAppend(self, PtrPayload{ .base = base });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.many_ptr_type, .state = @intCast(u8, 2),
-        .flags = @intCast(u8, if (is_const) 1 else 0), ._pad = @intCast(u8, 0),
+        .flags = @intCast(u8, if (is_const) 1 else 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.ptr_len - @intCast(usize, 1)),
@@ -396,7 +414,8 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
     sliceAppend(self, SlicePayload{ .elem = elem });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.slice_type, .state = @intCast(u8, 2),
-        .flags = @intCast(u8, if (is_const) 1 else 0), ._pad = @intCast(u8, 0),
+        .flags = @intCast(u8, if (is_const) 1 else 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 8), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.slice_len - @intCast(usize, 1)),
@@ -426,7 +445,8 @@ pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32
     }
     optAppend(self, OptionalPayload{ .payload = payload });
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.optional_type, .state = opt_state, .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.optional_type, .state = opt_state, .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = opt_size, .alignment = opt_align,
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.opt_len - @intCast(usize, 1)),
@@ -455,7 +475,8 @@ pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, e
     }
     euAppend(self, EUPayload{ .payload = payload, .error_set = error_set });
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.error_union_type, .state = eu_state, .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.error_union_type, .state = eu_state, .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = eu_size, .alignment = eu_align,
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.eu_len - @intCast(usize, 1)),
@@ -495,7 +516,8 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
         arr_state = @intCast(u8, 2);
     }
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.array_type, .state = arr_state, .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.array_type, .state = arr_state, .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = arr_size, .alignment = arr_align,
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.array_len - @intCast(usize, 1)),
@@ -512,7 +534,8 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
 pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems_count: u16) u32 {
     tupAppend(self, TuplePayload{ .elems_start = elems_start, .elems_count = elems_count });
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.tuple_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.tuple_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 0), .alignment = @intCast(u32, 1),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.tup_len - @intCast(usize, 1)),
@@ -533,7 +556,8 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
      }
      fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .is_extern = is_extern, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = is_variadic });
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.fn_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.fn_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = name_id, .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.fn_len - @intCast(usize, 1)),
@@ -557,7 +581,8 @@ pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u32, tag
     if (hash_mod.u64ToU32MapGet(&self.es_cache, key)) |existing| return existing;
     esAppend(self, ErrorSetPayload{ .tags_start = tags_start, .tags_count = tags_count });
     var tid = typeRegistryAppend(self, Type{
-        .kind = TypeKind.error_set_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .kind = TypeKind.error_set_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.es_len - @intCast(usize, 1)),
@@ -592,7 +617,8 @@ pub fn typeRegistryGetOrCreateModule(self: *TypeRegistry, module_id: u32) u32 {
     }
     var t = Type{
         .kind = TypeKind.module_type,
-        .state = @intCast(u8, 0), .flags = @intCast(u8, 0), ._pad = @intCast(u8, 0),
+        .state = @intCast(u8, 0), .flags = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 0), .alignment = @intCast(u32, 0),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
         .module_id = module_id, .payload_idx = @intCast(u32, 0),
@@ -654,6 +680,83 @@ fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {
     nameCachePut(self, @intCast(u64, nid), tid);
 }
 
+pub fn parseArbIntWidth(name: []const u8, is_unsigned: *bool) u32 {
+    var nlen: usize = name.len;
+    if (nlen < @intCast(usize, 2)) return @intCast(u32, 0);
+    var prefix: u8 = name[0];
+    var is_u: bool = prefix == @intCast(u8, 'u');
+    var is_i: bool = prefix == @intCast(u8, 'i');
+    if (!is_u and !is_i) return @intCast(u32, 0);
+    if (is_u) { is_unsigned.* = true; } else { is_unsigned.* = false; }
+    var w: u32 = @intCast(u32, 0);
+    var i: usize = @intCast(usize, 1);
+    while (i < nlen) : (i += 1) {
+        var c: u8 = name[i];
+        if (c < @intCast(u8, '0') or c > @intCast(u8, '9')) return @intCast(u32, 0);
+        var d: u32 = @intCast(u32, c - @intCast(u8, '0'));
+        w = w * @intCast(u32, 10) + d;
+        if (w > @intCast(u32, 64)) return @intCast(u32, 0);
+    }
+    if (is_u) {
+        if (w < @intCast(u32, 1) or w > @intCast(u32, 64)) return @intCast(u32, 0);
+    } else {
+        if (w < @intCast(u32, 1) or w > @intCast(u32, 63)) return @intCast(u32, 0);
+    }
+    return w;
+}
+
+pub fn typeRegistryGetOrCreateArbInt(self: *TypeRegistry, name: []const u8) u32 {
+    var arb_u: bool = false;
+    var arb_w = parseArbIntWidth(name, &arb_u);
+    if (arb_w == @intCast(u32, 0)) return TYPE_UNDEFINED;
+    var nid = interner_mod.stringInternerIntern(self.interner, name);
+    var ck_existing = nameCacheGet(self, @intCast(u64, nid));
+    if (ck_existing) |ce| return ce;
+    var kind: TypeKind = if (arb_u) TypeKind.arb_uint_type else TypeKind.arb_int_type;
+    var carrier: u32 = @intCast(u32, 1);
+    if (arb_w > @intCast(u32, 8)) carrier = @intCast(u32, 2);
+    if (arb_w > @intCast(u32, 16)) carrier = @intCast(u32, 4);
+    if (arb_w > @intCast(u32, 32)) carrier = @intCast(u32, 8);
+    var tid = typeRegistryAppend(self, Type{
+        .kind = kind,
+        .state = @intCast(u8, 2),
+        .flags = @intCast(u8, 0),
+        .is_signed = if (arb_u) @intCast(u8, 0) else @intCast(u8, 1),
+        .width_bits = @intCast(u8, arb_w),
+        .size = carrier,
+        .alignment = carrier,
+        .name_id = @intCast(u32, 0),
+        .c_name_id = @intCast(u32, 0),
+        .module_id = @intCast(u32, 0),
+        .payload_idx = @intCast(u32, 0),
+    });
+    registerPrimitiveName(self, tid, name);
+    return tid;
+}
+
+pub fn typeRegistryIntWidthBits(self: *TypeRegistry, tid: u32) u8 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u8, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) {
+        return ty.width_bits;
+    }
+    if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.u8_type or ty.kind == TypeKind.c_char_type) return @intCast(u8, 8);
+    if (ty.kind == TypeKind.i16_type or ty.kind == TypeKind.u16_type) return @intCast(u8, 16);
+    if (ty.kind == TypeKind.i32_type or ty.kind == TypeKind.u32_type or ty.kind == TypeKind.isize_type or ty.kind == TypeKind.usize_type) return @intCast(u8, 32);
+    if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type) return @intCast(u8, 64);
+    return @intCast(u8, 0);
+}
+
+pub fn typeRegistryIntIsSigned(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.arb_int_type) return true;
+    if (ty.kind == TypeKind.arb_uint_type) return false;
+    if (ty.kind == TypeKind.u8_type or ty.kind == TypeKind.u16_type or ty.kind == TypeKind.u32_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.usize_type) return false;
+    if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.i16_type or ty.kind == TypeKind.i32_type or ty.kind == TypeKind.i64_type or ty.kind == TypeKind.isize_type or ty.kind == TypeKind.c_char_type) return true;
+    return false;
+}
+
 pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_id: u32, kind: TypeKind) u32 {
     var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
     if (nameCacheGet(self, key)) |existing| return existing;
@@ -661,7 +764,8 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
         .kind = kind,
         .state = @intCast(u8, 0),
         .flags = @intCast(u8, 0),
-        ._pad = @intCast(u8, 0),
+        .is_signed = @intCast(u8, 0),
+        .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 0),
         .alignment = @intCast(u32, 0),
         .name_id = name_id,
@@ -719,6 +823,8 @@ pub fn typeRegistryIsNumeric(self: *TypeRegistry, tid: u32) bool {
     if (kind == TypeKind.u64_type) return true;
     if (kind == TypeKind.isize_type) return true;
     if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.arb_uint_type) return true;
+    if (kind == TypeKind.arb_int_type) return true;
     if (kind == TypeKind.f32_type) return true;
     if (kind == TypeKind.f64_type) return true;
     if (kind == TypeKind.integer_literal_type) return true;
@@ -737,6 +843,8 @@ pub fn typeRegistryIsInteger(self: *TypeRegistry, tid: u32) bool {
     if (kind == TypeKind.u64_type) return true;
     if (kind == TypeKind.isize_type) return true;
     if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.arb_uint_type) return true;
+    if (kind == TypeKind.arb_int_type) return true;
     if (kind == TypeKind.integer_literal_type) return true;
     return false;
 }
@@ -748,6 +856,7 @@ pub fn typeRegistryIsUnsigned(self: *TypeRegistry, tid: u32) bool {
     if (kind == TypeKind.u32_type) return true;
     if (kind == TypeKind.u64_type) return true;
     if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.arb_uint_type) return true;
     return false;
 }
 
@@ -826,7 +935,7 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     if (src.kind == TypeKind.integer_literal_type and typeRegistryIsNumeric(self, target)) return true;
     if (src.kind == TypeKind.integer_literal_type and target == TYPE_C_CHAR) return true;
     if (typeRegistryIsInteger(self, source) and typeRegistryIsInteger(self, target) and source != TYPE_INT_LIT) {
-        if (typeRegistryIsUnsigned(self, source) == typeRegistryIsUnsigned(self, target) and src.size < tgt.size) return true;
+        if (typeRegistryIsUnsigned(self, source) == typeRegistryIsUnsigned(self, target) and typeRegistryIntWidthBits(self, source) < typeRegistryIntWidthBits(self, target)) return true;
     }
     if (source == TYPE_F32 and target == TYPE_F64) return true;
     if (src.kind == TypeKind.null_type) {

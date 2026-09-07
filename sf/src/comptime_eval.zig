@@ -178,6 +178,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 var ty2 = self.registry.types_items[@intCast(usize, t2)];
                 if (ty2.state == @intCast(u8, 2)) {
                     var bsz: u64 = @intCast(u64, ty2.size) * @intCast(u64, 8);
+                    if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
+                        bsz = @intCast(u64, type_mod.typeRegistryIntWidthBits(self.registry, t2));
+                    }
                     if (ty2.kind == type_mod.TypeKind.bool_type) {
                         bsz = @intCast(u64, 1);
                     }
@@ -193,9 +196,8 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         var inner = comptimeEvalEvaluateDepth(self, ec[@intCast(usize, 1)], depth);
         if (tid) |t| {
             if (inner) |cv| {
-                var ty = self.registry.types_items[@intCast(usize, t)];
-                var wb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
-                var sig: bool = (ty.kind == type_mod.TypeKind.i8_type or ty.kind == type_mod.TypeKind.i16_type or ty.kind == type_mod.TypeKind.i32_type or ty.kind == type_mod.TypeKind.i64_type or ty.kind == type_mod.TypeKind.isize_type);
+                var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
+                var sig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
                 if (wb >= @intCast(u32, 64)) {
                     return ComptimeVal{ .bits = cv.bits, .width_bits = wb, .sig = sig };
                 }

@@ -101,7 +101,7 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
     if (src.kind == type_mod.TypeKind.integer_literal_type and type_mod.typeRegistryIsNumeric(reg, target)) return CoercionKind.int_literal_coerce;
 
     if (type_mod.typeRegistryIsInteger(reg, source) and type_mod.typeRegistryIsInteger(reg, target) and source != type_mod.TYPE_INT_LIT) {
-        if (type_mod.typeRegistryIsUnsigned(reg, source) == type_mod.typeRegistryIsUnsigned(reg, target) and src.size < tgt.size) return CoercionKind.int_widen;
+        if (type_mod.typeRegistryIsUnsigned(reg, source) == type_mod.typeRegistryIsUnsigned(reg, target) and type_mod.typeRegistryIntWidthBits(reg, source) < type_mod.typeRegistryIntWidthBits(reg, target)) return CoercionKind.int_widen;
     }
     if (source == type_mod.TYPE_F32 and target == type_mod.TYPE_F64) return CoercionKind.float_widen;
 

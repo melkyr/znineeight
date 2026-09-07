@@ -732,6 +732,11 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             }
         }
         var opm4f_m: []const u8 = "OPTVOID:idF"; pal_mod.markerWriteInt(opm4f_m, name_id);
+        var arbu: bool = false;
+        var arbw = type_mod.parseArbIntWidth(text, &arbu);
+        if (arbw != @intCast(u32, 0)) {
+            return type_mod.typeRegistryGetOrCreateArbInt(env.typereg, text);
+        }
         return type_mod.TYPE_UNDEFINED;
     }
     if (node.kind == AstKind.struct_decl) {
