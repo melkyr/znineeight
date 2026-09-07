@@ -1,4 +1,57 @@
-# mi_matrix corpus — expected-fail manifest (v72 2026-09-07)
+# mi_matrix corpus — expected-fail manifest (v73 2026-09-07)
+
+## Packed struct core GREEN (v73 2026-09-07) — PACK-CORE plan Tasks 2-5
+
+Plan `2026-09-06-packed-struct-core-plan.md` Tasks 2-5 are COMPLETE — `packed struct` now parses,
+resolves with true LSB-first bit layout (no padding, `size=(bits+7)/8`, stride=size), and lowers /
+emits through real bitfield paths. The three L0/L1/L2 guard fixtures `packed_l0_flags_xmod` /
+`packed_l1_mix_xmod` / `packed_l2_straddle_xmod` are GREEN: compile-clean OK (dump rc=0, 0
+`error[`, 0 PANIC, gcc `-m32` clean, 1 `.c` each) AND run-gate byte-exact 3× deterministic
+(RUNRC=0 — the v61-era GREEN contracts are now all runnable, nothing forced). Measured on the
+reference `/tmp/fx_subfolder/zig1` md5 `801fdc55` (rebuilt at HEAD `c7af022a`, canonical std
+reinstalled) via the authoritative fixture_run.sh + classify1.sh recipes (full `-Wall` flag set,
+fresh dirs, 3 fresh runs per fixture, stdout md5 identical 3/3). The v61 R8 RED set below (the same
+rows) is the historical record — retained verbatim; the fix commits the v61 rows reference are the
+Tasks 2-5 chain.
+
+| fixture | v61 RED class | v73 GREEN stdout (byte-exact 3×) |
+|---|---|---|
+| `packed_l0_flags_xmod` | clean parse FAIL error[2000] at the `struct` token (`packed` not a registered keyword) | `1 5 1` |
+| `packed_l1_mix_xmod` | clean parse FAIL error[2000] at the `struct` token | `1 155 1 5 9` |
+| `packed_l2_straddle_xmod` | clean parse FAIL error[2000] at the `struct` token | `2 255 31 31 255` |
+
+- **RESOLVED rows (Tasks 2-5 fix commits):** parser `59a59171` (`kw_packed` token + `packed struct`
+  parse + `is_packed` bit + B6 field gate) + review fix `79bd5ac0` (module-level B6 gate `main.zig`
+  hook + memoized packed-`&field` check); type/layout `d1d8b5a3` (packed bit-layout side table:
+  per-field LSB-first bit offsets/widths, `size=(bits+7)/8`, stride=size, packed
+  `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf` folds); LIR `f819a3cd`
+  (`load_bitfield`/`store_bitfield` insts + DCE arms, 16/16 inst-switch sites); emitter `efe9d67c`
+  (C89 single-member-struct carrier + bitfield store/load accessors) + width-cap `c1d66325` / spec
+  `c7af022a` (Imp-2 B1 ruling). Run-gate stdout md5s (×3, RUNRC=0): `1 5 1`→`2b5aa27d…`,
+  `1 155 1 5 9`→`db777fc7…`, `2 255 31 31 255`→`d381a891…`. Each fixture stays as a permanent
+  regression guard.
+- **PACK-AGG scope note (Imp-1 ACCEPTED):** the two ladder-top stub rows `packed_array_global_xmod`
+  (L5 array+global) and `packed_byvalue_module_xmod` (L6 by-value + cross-module) are
+  **GCCFAIL-on-carrier** — expected PACK-AGG L5/L6 rows (accepted at the Task-5 review; NOT a
+  regression); their contracts `1 33 3 4` / `1 21 186` land with PACK-AGG. `packed_l3_nested_xmod` +
+  `packed_enum_field_xmod` classify GREEN (PACK-AGG/B3 scope); `packed_union_xmod` remains FAIL
+  (packed union is out of PACK-CORE scope).
+- **Width cap (Imp-2 B1, spec `c7af022a`):** packed fields must be ≤ 31 bits wide; `u32`/`i64` and
+  wider field types are rejected with a clean `error[3000]` (PACK-AGG deferred).
+- **Corpus reconciliation (Task-6 battery, reference `801fdc55`):** full 428-dir `-s0` compile-gate
+  sweep = **OK=410 / GREEN=10 / FAIL=6 / GCCFAIL=2 / ICE=0 / CRASH=0** — per-row ZERO movement vs
+  the Task-5 PACK-CORE baseline (sorted diff identical). The 3 PACK-CORE dirs classify OK at the
+  compile gate (their RED→GREEN shows at the run gate above); the 2 PACK-AGG stubs are the GCCFAIL=2;
+  `packed_l3_nested_xmod` / `packed_enum_field_xmod` GREEN and `packed_union_xmod` FAIL unchanged.
+  Golden 9/9 PASS; matrix 21/21 PASS.
+- **4-MD5 gates byte-identical UNCHANGED (v73, NO gate re-baseline):** gol `302df36b…` / lisp
+  `3591bad9…` / json `76056b97…` / mud `846106ac…` (repo-root CWD, stdout-only, dump rc=0 each).
+- **Self-compile fixed point RE-BASELINED (operator-approved 2026-09-07): `24da89b9…` →
+  `fd3e1c0e1787be22e2b2bc09e9916e4c`** — two-hop closure at HEAD `c7af022a`, 41 `.c` + 42 `.h`,
+  rc=0, 0 `error[`, 0 PANIC, hop1==hop2 binary byte-identical (`cmp` clean); the documented
+  fixed-point-moves-when-compiler-source-grows class (the INTWIDTH/seed-era `24da89b9…` value
+  superseded). Reference binary md5 `801fdc55…` (rebuilt at HEAD `c7af022a`). Seed rotated to the
+  new fixed point (release/seed seed v1).
 
 ## Arbitrary-width ints GREEN (v72 2026-09-07) — INTWIDTH plan Task 5
 
