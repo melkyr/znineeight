@@ -1237,6 +1237,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type) {
             if (ty.name_id != @intCast(u32, 0)) {
+                if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) continue;
                 var cname = getCTypeName(reg, emitter.mangler, tid);
                 var dedup_key: u32 = @intCast(u32, 0);
                 var h_ci: usize = @intCast(usize, 0);
@@ -1370,6 +1371,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type) {
             if (ty.name_id != @intCast(u32, 0)) {
+                if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) continue;
                 var cname = getCTypeName(reg, emitter.mangler, tid);
                 var dedup_key: u32 = @intCast(u32, 0);
                 var h_ci: usize = @intCast(usize, 0);
@@ -1618,6 +1620,19 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var ty = reg.types_items[@intCast(usize, tid)];
     var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    if (type_mod.typeRegistryIsPacked(reg, tid)) {
+        var psz: u32 = ty.size;
+        if (psz == @intCast(u32, 0)) psz = @intCast(u32, 1);
+        var es0p: []const u8 = "typedef struct {\n\tunsigned char _[";
+        bufferedWriterWrite(&emitter.writer, es0p);
+        bfWriteU32(&emitter.writer, psz);
+        var es1p: []const u8 = "];\n} ";
+        bufferedWriterWrite(&emitter.writer, es1p);
+        bufferedWriterWrite(&emitter.writer, mangled_name);
+        var es2p: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, es2p);
+        return;
+    }
     var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
     var fstart: usize = @intCast(usize, sp.fields_start);
     var fcount: usize = @intCast(usize, sp.fields_count);
@@ -4762,6 +4777,153 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
     bufferedWriterWrite(&emitter.writer, cc12);
  }
 
+fn bfWriteU32(writer: *BufferedWriter, value: u32) void {
+    var b: [16]u8 = undefined;
+    var bl = itoa_mod.itoa(value, b[0..]);
+    var bs: usize = @intCast(usize, 15) - @intCast(usize, bl);
+    bufferedWriterWrite(writer, b[bs .. bs + @intCast(usize, bl)]);
+}
+
+fn bfByteRefWrite(writer: *BufferedWriter, base_c: []const u8, is_ptr: u8, byte_idx: u32) void {
+    bufferedWriterWrite(writer, base_c);
+    if (is_ptr != @intCast(u8, 0)) {
+        var arrow: []const u8 = "->_[";
+        bufferedWriterWrite(writer, arrow);
+    } else {
+        var dot: []const u8 = "._[";
+        bufferedWriterWrite(writer, dot);
+    }
+    bfWriteU32(writer, byte_idx);
+    var close: []const u8 = "]";
+    bufferedWriterWrite(writer, close);
+}
+
+fn emitterTempIsPackedStructPtr(emitter: *C89Emitter, temp_id: u32) u8 {
+    var tid = getTempTypeByIndex(emitter, temp_id);
+    if (tid == @intCast(u32, 0xFFFFFFFF)) return @intCast(u8, 0);
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.ptr_type or ty.kind == type_mod.TypeKind.many_ptr_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+fn emitPackedStoreBitfield(emitter: *C89Emitter, base_c: []const u8, is_ptr: u8, bit_offset: u32, bit_width: u32, val_c: []const u8) void {
+    var lo: u32 = bit_offset % @intCast(u32, 8);
+    var b_first: u32 = bit_offset / @intCast(u32, 8);
+    var b_last: u32 = (bit_offset + bit_width - @intCast(u32, 1)) / @intCast(u32, 8);
+    var nbytes: u32 = b_last - b_first + @intCast(u32, 1);
+    var k: u32 = @intCast(u32, 0);
+    while (k < nbytes) : (k += @intCast(u32, 1)) {
+        var byte: u32 = b_first + k;
+        var inbyte_lo: u32 = @intCast(u32, 0);
+        var count: u32 = @intCast(u32, 0);
+        var vs: u32 = @intCast(u32, 0);
+        if (k == @intCast(u32, 0)) {
+            inbyte_lo = lo;
+            count = @intCast(u32, 8) - lo;
+            if (bit_width < count) count = bit_width;
+            vs = @intCast(u32, 0);
+        } else {
+            inbyte_lo = @intCast(u32, 0);
+            vs = k * @intCast(u32, 8) - lo;
+            if (byte == b_last) {
+                count = (bit_offset + bit_width) - byte * @intCast(u32, 8);
+            } else {
+                count = @intCast(u32, 8);
+            }
+        }
+        var win_mask: u32 = @intCast(u32, 0);
+        var sh: u32 = @intCast(u32, 0);
+        while (sh < count) : (sh += @intCast(u32, 1)) { win_mask = (win_mask << @intCast(u32, 1)) | @intCast(u32, 1); }
+        var clear_val: u32 = ~(win_mask << inbyte_lo) & @intCast(u32, 0xFF);
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bfByteRefWrite(&emitter.writer, base_c, is_ptr, byte);
+        var eq: []const u8 = " = (unsigned char)(((unsigned int)";
+        bufferedWriterWrite(&emitter.writer, eq);
+        bfByteRefWrite(&emitter.writer, base_c, is_ptr, byte);
+        var and1: []const u8 = " & ";
+        bufferedWriterWrite(&emitter.writer, and1);
+        bfWriteU32(&emitter.writer, clear_val);
+        var or1: []const u8 = ") | (((unsigned int)";
+        bufferedWriterWrite(&emitter.writer, or1);
+        bufferedWriterWrite(&emitter.writer, val_c);
+        var shr: []const u8 = " >> ";
+        bufferedWriterWrite(&emitter.writer, shr);
+        bfWriteU32(&emitter.writer, vs);
+        var and2: []const u8 = ") & ";
+        bufferedWriterWrite(&emitter.writer, and2);
+        bfWriteU32(&emitter.writer, win_mask);
+        var shl: []const u8 = ") << ";
+        bufferedWriterWrite(&emitter.writer, shl);
+        bfWriteU32(&emitter.writer, inbyte_lo);
+        var end1: []const u8 = ");\n";
+        bufferedWriterWrite(&emitter.writer, end1);
+    }
+}
+
+fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []const u8, is_ptr: u8, bit_offset: u32, bit_width: u32, is_signed: u8) void {
+    var lo: u32 = bit_offset % @intCast(u32, 8);
+    var b_first: u32 = bit_offset / @intCast(u32, 8);
+    var b_last: u32 = (bit_offset + bit_width - @intCast(u32, 1)) / @intCast(u32, 8);
+    var mask_w: u32 = @intCast(u32, 0);
+    var shw: u32 = @intCast(u32, 0);
+    while (shw < bit_width) : (shw += @intCast(u32, 1)) { if (shw >= @intCast(u32, 31)) break; mask_w = (mask_w << @intCast(u32, 1)) | @intCast(u32, 1); }
+    var sbit: u32 = @intCast(u32, 1) << (bit_width - @intCast(u32, 1));
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    if (is_signed != @intCast(u8, 0) and bit_width < @intCast(u32, 32)) {
+        var blk0: []const u8 = "{ unsigned int zT_pkread = (unsigned int)(( ";
+        bufferedWriterWrite(&emitter.writer, blk0);
+    } else {
+        bufferedWriterWrite(&emitter.writer, result_c);
+        var plain0: []const u8 = " = (unsigned int)(( ";
+        bufferedWriterWrite(&emitter.writer, plain0);
+    }
+    var k: u32 = @intCast(u32, 0);
+    while (k < b_last - b_first + @intCast(u32, 1)) : (k += @intCast(u32, 1)) {
+        var byte: u32 = b_first + k;
+        if (k != @intCast(u32, 0)) {
+            var or2: []const u8 = "| ";
+            bufferedWriterWrite(&emitter.writer, or2);
+        }
+        var open2: []const u8 = "((unsigned int)";
+        bufferedWriterWrite(&emitter.writer, open2);
+        bfByteRefWrite(&emitter.writer, base_c, is_ptr, byte);
+        if (k == @intCast(u32, 0)) {
+            var shr2: []const u8 = " >> ";
+            bufferedWriterWrite(&emitter.writer, shr2);
+            bfWriteU32(&emitter.writer, lo);
+        } else {
+            var shl2: []const u8 = " << ";
+            bufferedWriterWrite(&emitter.writer, shl2);
+            bfWriteU32(&emitter.writer, k * @intCast(u32, 8) - lo);
+        }
+        var close2: []const u8 = ") ";
+        bufferedWriterWrite(&emitter.writer, close2);
+    }
+    if (is_signed != @intCast(u8, 0) and bit_width < @intCast(u32, 32)) {
+        var sx0: []const u8 = "& ";
+        bufferedWriterWrite(&emitter.writer, sx0);
+        bfWriteU32(&emitter.writer, mask_w);
+        var sx1: []const u8 = ")); ";
+        bufferedWriterWrite(&emitter.writer, sx1);
+        bufferedWriterWrite(&emitter.writer, result_c);
+        var sx2: []const u8 = " = (int)((zT_pkread ^ ";
+        bufferedWriterWrite(&emitter.writer, sx2);
+        bfWriteU32(&emitter.writer, sbit);
+        var sx3: []const u8 = ") - ";
+        bufferedWriterWrite(&emitter.writer, sx3);
+        bfWriteU32(&emitter.writer, sbit);
+        var sx4: []const u8 = "); }\n";
+        bufferedWriterWrite(&emitter.writer, sx4);
+    } else {
+        if (bit_width < @intCast(u32, 32)) {
+            var us0: []const u8 = "& ";
+            bufferedWriterWrite(&emitter.writer, us0);
+            bfWriteU32(&emitter.writer, mask_w);
+        }
+        var end2: []const u8 = "));\n";
+        bufferedWriterWrite(&emitter.writer, end2);
+    }
+}
 
  fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     var ins: []const u8 = "I\n"; pal.markerWrite(ins);
@@ -6929,8 +7091,23 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var ve_e: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, ve_e);
         },
-        .load_bitfield => |lb| {},
-        .store_bitfield => |sb| {},
+        .load_bitfield => |lb| {
+            var base = resolveTempName(emitter, lb.base);
+            var result = resolveTempName(emitter, lb.result);
+            var is_ptr = emitterTempIsPackedStructPtr(emitter, lb.base);
+            var sgn: u8 = @intCast(u8, 0);
+            var rty = getTempTypeByIndex(emitter, lb.result);
+            if (rty != @intCast(u32, 0xFFFFFFFF) and rty != type_mod.TYPE_VOID) {
+                if (type_mod.typeRegistryIntIsSigned(emitter.registry, rty)) { sgn = @intCast(u8, 1); }
+            }
+            emitPackedLoadBitfield(emitter, result, base, is_ptr, lb.bit_offset, lb.bit_width, sgn);
+        },
+        .store_bitfield => |sb| {
+            var base = resolveTempName(emitter, sb.base);
+            var val = resolveTempName(emitter, sb.value);
+            var is_ptr = emitterTempIsPackedStructPtr(emitter, sb.base);
+            emitPackedStoreBitfield(emitter, base, is_ptr, sb.bit_offset, sb.bit_width, val);
+        },
         else => {},
     }
 }
