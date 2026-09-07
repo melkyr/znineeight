@@ -145,6 +145,15 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         printUsage();
         return;
     }
+    if (cli.output_dir_set and !pal.dirExists(cli.output_dir)) {
+        const msg: []const u8 = "error: output directory does not exist: ";
+        pal.stderr_write(msg);
+        pal.stderr_write(cli.output_dir);
+        const nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(@intCast(u8, 1));
+        return;
+    }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
     spill_store_mod.spillSetLevel(cli.spill_level); // set the immutable spill flag prefix before runCompiler

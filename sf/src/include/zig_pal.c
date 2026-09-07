@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #endif
 
 #ifdef _WIN32
@@ -209,6 +210,19 @@ int pal_file_close(PlatFile fd) {
     return CloseHandle((HANDLE)fd) ? 0 : -1;
 #else
     return close(fd);
+#endif
+}
+
+int pal_dir_exists(const char* path)
+{
+#ifdef _WIN32
+    DWORD attr;
+    attr = GetFileAttributesA(path);
+    return (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY));
+#else
+    struct stat sb;
+    if (path == 0 || stat(path, &sb) != 0) return 0;
+    return (sb.st_mode & 0040000) != 0;
 #endif
 }
 

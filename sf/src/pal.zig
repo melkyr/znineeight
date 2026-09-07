@@ -14,6 +14,7 @@ extern "c" fn pal_file_open(path: [*]const u8, flags: i32) usize;
 extern "c" fn pal_file_write(fd: usize, buf: [*]const u8, len: u32) i32;
 extern "c" fn pal_file_close(fd: usize) i32;
 extern "c" fn pal_get_default_lib_path(buf: [*]u8, bufsize: i32) i32;
+extern "c" fn pal_dir_exists(path: [*]const u8) i32;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;
@@ -60,6 +61,18 @@ pub fn fileExists(path: []const u8) bool {
     var f = fopen(&c_path[0], MODE_READ) orelse return false;
     _ = fclose(f);
     return true;
+}
+
+pub fn dirExists(path: []const u8) bool {
+    var c_path: [512]u8 = undefined;
+    var i: usize = 0;
+    while (i < path.len and i < 511) {
+        c_path[i] = path[i];
+        i += 1;
+    }
+    if (i >= 511) return false;
+    c_path[i] = 0;
+    return pal_dir_exists(&c_path[0]) != 0;
 }
 
 pub fn stdout_write(msg: []const u8) void {
