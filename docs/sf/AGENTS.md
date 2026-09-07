@@ -2,7 +2,7 @@
 
 **Version:** 2.0  
 **Phase:** Self‑Hosted Implementation  
-**Context:** `zig1` is written in Z98, compiled by `zig0`, and emits C89 code for 1998‑era targets.
+**Context:** `zig1` is written in Z98, compiled by `zig0` (while zig0 still compiles `sf/src`) or rebuilt from the committed seed `release/seed/zig1-seed.tgz` (zig0-independent - only `gcc` needed), and emits C89 code for 1998‑era targets.
 **Current Milestone in progress:**
 ---
 
@@ -17,7 +17,7 @@ The agent's mission: **implement `zig1` according to the design specifications i
 | Aspect | Details |
 |--------|---------|
 | **Compiler Source Language** | Z98 (a strict subset of Zig targeting C89) |
-| **Bootstrap Compiler** | `zig0` (C++98) – compiles `zig1.zig` to C89 |
+| **Bootstrap Compiler** | `zig0` (C++98) – compiles `zig1.zig` to C89 (current-cycle builder while it still compiles `sf/src`); committed seed `release/seed/zig1-seed.tgz` is the zig0-independent rebuild path |
 | **Target Output** | C89 source code (`.c` / `.h` files) |
 | **Runtime Environment** | 32‑bit Windows 9x / NT, 16 MB peak RAM |
 | **Development Host** | Linux (with cross‑compilation capability) |
@@ -70,7 +70,7 @@ in sf/docs/tech_docs/:
 ### 1.2 Development Environment
 
 - **Host OS**: Linux (Ubuntu 20.04+ or equivalent)
-- **Bootstrap Compiler**: `zig0` (built from the C++98 codebase, has to be compiled `./zig0`)
+- **Bootstrap Compiler**: `zig0` (built from the C++98 codebase, has to be compiled `./zig0`) - the current-cycle builder, in-tree and ACTIVE while it still compiles `sf/src`. The committed **seed** `release/seed/zig1-seed.tgz` is the zig0-independent rebuild authority (rebuildable with only `gcc`); rebuild via `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>` (see §9.4)
 - **Build Tool**: g++ (g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0)
 - **Version Control**: Git
 - **Testing**: Differential testing against `zig0` output, unit tests via `test_runner.zig`
@@ -141,9 +141,27 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declar
 ./sf/scripts/memory_profile.sh ./build/zig1 test_programs/eval.zig
 ```
 
+**Forward path (seed model, 2026-09-07):** the cycle above is the zig0
+current-cycle path, valid while zig0 still compiles `sf/src`. The forward
+rebuild path - the one new compiler code is staged through - is the seed:
+`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`
+dumps the CURRENT `sf/src` with the committed seed compiler and gcc-links it
+(two-hop closure gate `=== [seed] Done: <out_dir> ===`; result
+`<out_dir>/zig1_5_clean` + `<out_dir>/lib/`). The dump MUST run from the repo
+root with the RELATIVE `sf/src/main.zig` path (module basename-hash tokens are
+path-derived). Full model + constraint: §9.4.
+
 ### 2.3 Differential Testing as the Primary Oracle
 
 Since `zig0` is the reference implementation, every pipeline stage must produce semantically equivalent to `zig0`.
+
+**Oracle note (seed model, 2026-09-07):** zig0 remains the differential oracle
+ONLY while it can still compile the source (`sf/src`). For programs using
+constructs newer than zig0 supports, the oracle is the seed/fixed-point
+self-emission: the committed seed compiler (`release/seed/zig1-seed.tgz`) at the
+fixed point `24da89b9...` represents the same compiler state byte-for-byte, and
+its `--dump-c89` output is the reference for newer-construct programs (see
+§9.4).
 
 **Workflow:**
 1. Compile something with zig0 (If you need flags check the zig0 docs in /docs/*)
@@ -409,6 +427,8 @@ Two pre-made scripts isolate output per target:
 |--------|--------|--------|
 | `sf/scripts/build_release.sh` | `sf/src/main.zig` → zig1 binary | `sf/build/out_release/` |
 | `sf/scripts/build_test.sh` | Test binaries (`test_*_bin.zig`) | `sf/build/out_test_<name>/` (one per test) |
+| `scripts/seed/build_from_seed.sh` | Rebuild zig1 from the committed seed (seed/forward path, two-hop closure) | `<out_dir>/zig1_5_clean` + `<out_dir>/lib/` |
+| `scripts/seed/archive_seed.sh` | Assemble + pack a fresh `zig1-seed.tgz` + rotate `release/seed/CHANGELOG.md` (plan closeout) | `release/seed/zig1-seed.tgz` |
 
 **Note:** `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary. This is required since `pal.zig` gained the `pal_file_open`/`pal_file_write`/`pal_file_close` externs — without it every test binary fails to link.
 
@@ -419,6 +439,12 @@ bash sf/scripts/build_release.sh
 
 # All tests (semantic, module_reg, sym_reg)
 bash sf/scripts/build_test.sh
+
+# Seed rebuild (forward path - current sf/src via the committed seed; see 9.4)
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
+
+# Seed rotation (ONLY at plan closeout - see 9.4)
+bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog
 ```
 
 ### 9.3 Manual Build Commands
@@ -438,6 +464,58 @@ rm -rf $OUT && mkdir -p $OUT
 gcc -m32 ... $OUT/*.c -o $OUT/foo
 $OUT/foo
 ```
+
+### 9.4 Seed Model + Bootstrap-Staging Constraint (SEEDMIG, 2026-09-07)
+
+`zig1` is rebuildable **zig0-independently** from the committed rotating seed
+`release/seed/zig1-seed.tgz` (git-tracked; provenance in
+`release/seed/CHANGELOG.md`). The archive's top-level `zig1-seed/` holds: `zig1`
+(reference binary md5 `3707d33bd1d3779c4a98aab9d5be1841`), `gen/` (its
+self-emission C89: 41 `.c` + 42 `.h`), top-level `c_exit.c`, `runtime/`
+(`zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
+`zig_pal.c` - NO `net_prelude.h`), `lib/` (the 4 std `.zig`), and
+`SEED_README.txt` (provenance + rebuild recipes + flag-set rule). The archived
+binary and the self-emission fixed point `24da89b9d6398ff24f4baecfe2e23f77` are
+the SAME compiler state at HEAD `1079d90a`.
+
+**Bootstrap-staging constraint** - a seed compiled at commit N can only compile
+`sf/src` written in the subset that seed already understands:
+
+1. **Every plan begins from the committed seed.** The forward rebuild is
+   `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`
+   (two-hop fixed-point closure, gate `=== [seed] Done: <out_dir> ===`,
+   missing-binary fallback reconstructs the seed compiler from its own `gen/` C;
+   `--reconstruct-only` does that alone). While zig0 still compiles `sf/src`,
+   `sf/scripts/build_release.sh` is the current-cycle builder (outputs
+   `/tmp/fx_subfolder/zig1`).
+2. **New-feature compiler code must be written in constructs the current seed
+   already understands** - the seed compiler (or its gcc-of-C reconstruction) is
+   the engine that compiles the next hop of `sf/src`.
+3. **`sf/src` may adopt new syntax only after a new fixed point exists** - a
+   self-compiling binary that already supports it - so the staging chain never
+   breaks.
+4. **Rotate the seed at plan closeout** - and only via
+   `bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`.
+   It gcc-rebuilds the assembled archive C self-contained (records the NEW fixed
+   point, proves gcc-only rebuildability) and prepends the provenance entry to
+   `release/seed/CHANGELOG.md`. Every completed plan that moves the fixed point
+   rotates the seed.
+5. **The seed lives at `release/seed/` (tracked), never `/tmp`.**
+
+**Plan-convention line (future plans' Global Constraints):** every plan should
+carry the standard line: "Reference compiler rebuilt per the seed model
+(`release/seed/`); rotate the seed at closeout via
+`scripts/seed/archive_seed.sh`."
+
+**Flag-set rule (operator amendment, binding):** every `gcc -c` MUST be
+`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
+- the fixed point `24da89b9...` reproduces ONLY with `-Wall` present (without it
+the deterministic result differs - cosmetic assembler local-label numbering
+only - so the recorded fixed point is not reproduced). Link set for
+self-emission C89: `zig_runtime.c` + `zig_pal.c` + `c_exit.c` (`zig_pal.c`
+alone is insufficient - undefined `std_panic`/`c_exit`). `-Wextra -O3
+-fsyntax-only` is a SEPARATE verification gate, never the build command. The
+rebuild recipes + full flag set are recorded in `release/seed/SEED_README.txt`.
 
 ---
 
