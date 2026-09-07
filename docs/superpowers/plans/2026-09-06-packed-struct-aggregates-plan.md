@@ -15,11 +15,12 @@ Design spec: `docs/superpowers/specs/2026-09-06-packed-struct-aggregates-design.
 - **`token.zig` tagged-union-in-packed FIXME is OUT of this plan** (separate future follow-on).
 - Byte-neutral gates on every F task before the emitter layer lands: 4-MD5 (gol `302df36b`, lisp `3591bad9`, json `76056b97`, mud `846106ac`), golden 9/9, matrix 21/21, self-compile hop identity (fixed point does NOT move until the emitter layer commit → Task 5 re-baseline STOP, operator-ruled, never silent).
 - `examples/z98` originals, gate programs, goldens, `sf/build/`, `out_release/` untouched. Stage ONLY intended files. Pre-existing dirty/untracked set (2026-08-26 plan doc, `mnemoria/*`, `.zig1_*.tmp`, `build/`, `examples/z98/json_parser_upgraded/`) never staged.
-- Reference compiler: `/tmp/fx_subfolder/zig1` (post-PACK-CORE md5 recorded at execution; std lib reinstalled at `/tmp/fx_subfolder/lib` after any `build_release.sh`). Fixture run/classify recipe: `.superpowers/sdd/task-LANGWINS-report.md` Step-4 (fresh-dir `rm -rf`+`mkdir -p` REQUIRED).
+- Reference compiler: `/tmp/fx_subfolder/zig1` per the SEEDMIG seed model (committed seed `release/seed/zig1-seed.tgz` = zig0-built reference binary md5 `3707d33b…` + self-emission C; fixed point `24da89b9…`; provenance `release/seed/CHANGELOG.md`). Forward rebuild path: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh-out>` — NEVER point `<fresh-out>` at `/tmp/fx_subfolder` (the script `rm -rf`s it); std lib (4 std `.zig`) is copied to `<fresh-out>/lib` by the script. `bash sf/scripts/build_release.sh` (zig0) remains usable ONLY while zig0 still compiles the current `sf/src` subset; the moment a task's `sf/src` needs syntax zig0 cannot parse, rebuild the reference from the seed (STOP-present on first such use). Bootstrap-staging constraint (binding): this plan's `sf/src` feature code must be written in constructs the current seed (`24da89b9`-era) already understands; `sf/src` may adopt new packed syntax only after the Task-5 fixed-point re-baseline + Task-6 seed rotation. Fixture run/classify recipe: `.superpowers/sdd/task-LANGWINS-report.md` Step-4 (fresh-dir `rm -rf`+`mkdir -p` REQUIRED).
 - Fastedit per docs/sf/AGENTS.md X.7. No python/sed/bulk transforms; no `git checkout` to erase.
 - Report: `.superpowers/sdd/task-PACKAGG-report.md` (gitignored). Ledger: `.superpowers/sdd/progress.md`. Memory: `mnemoria --path .opencode/memory`, agent `packagg-session`.
 - Per-task evidence contract: status, commits, per-gate md5/evidence, fixture run-gate output, concerns. STOP-present on any divergence/ambiguity/plan-vs-evidence mismatch.
 - Subagent-driven execution with the SDD skill.
+- **Seed rotation is part of the Task-6 docs-GATE commit** (SEEDMIG model): Task 6 additionally runs `bash scripts/seed/archive_seed.sh <Task-5 fixed-point binary> <fresh gen dir> release/seed/zig1-seed.tgz --update-changelog`, staging `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` alongside EXPECTED_FAIL.md + QUICK_REF.md (the seed rotates ONLY at this operator-approved closeout — never mid-plan).
 
 ---
 
@@ -137,9 +138,9 @@ git commit -m "feat: packed aggregates — union/nested/array/global/by-value em
 
 - [ ] **Step 1: Battery.** golden 9/9 rc0 byte-identical; matrix 21/21; full corpus sweep (common set zero-asymmetric except the 4 packed dirs); 4-MD5 byte-identical.
 
-- [ ] **Step 2: Self-compile round-trip.** hop1==hop2; record the NEW fixed point md5 (moved by the emitter-layer commit) + 42-ish `.c`, 0 `error[`, 0 PANIC.
+- [ ] **Step 2: Self-compile round-trip.** hop1==hop2; record the NEW fixed point md5 (PACK-CORE-era seed v0 `24da89b9…`, moved by the emitter-layer commit) + 42-ish `.c`, 0 `error[`, 0 PANIC.
 
-- [ ] **Step 3: STOP-present.** Re-baseline proposal (fixed point only; NO 4-MD5 gate re-baseline); L3/L4/L5/L6 GREEN rows need the EXPECTED_FAIL/QUICK_REF docs update in Task 6 AFTER operator approval. No commit, no docs touched.
+- [ ] **Step 3: STOP-present.** Re-baseline proposal (fixed point only; NO 4-MD5 gate re-baseline); L3/L4/L5/L6 GREEN rows need the EXPECTED_FAIL/QUICK_REF docs update in Task 6 AFTER operator approval; seed rotation to the new fixed point also happens in Task 6 (never here). No commit, no docs touched.
 
 ---
 
@@ -157,7 +158,10 @@ git commit -m "feat: packed aggregates — union/nested/array/global/by-value em
 
 ```bash
 git add repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
-git commit -m "docs: GATE — packed aggregates L3-L6 GREEN + fixed-point re-baseline (PACK-AGG)"
+# Seed rotation (SEEDMIG model): rotate the committed seed to the Task-5 fixed-point binary
+bash scripts/seed/archive_seed.sh <Task-5-fixed-point-binary> <Task-5-fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog
+git add release/seed/zig1-seed.tgz release/seed/CHANGELOG.md
+git commit -m "docs: GATE — packed aggregates L3-L6 GREEN + fixed-point re-baseline + seed rotation (PACK-AGG)"
 ```
 
 - [ ] **Step 4: Report + STOP-present plan close** (PACK-B3 L7 remains; token.zig FIXME deferred; operator-authority to continue).

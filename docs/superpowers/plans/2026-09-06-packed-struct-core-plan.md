@@ -13,11 +13,12 @@ Design spec: `docs/superpowers/specs/2026-09-06-packed-struct-core-design.md` (o
 - **Depends on INTWIDTH executed first** (its `Type.width_bits`/`is_signed` + `intWidthBits(ty) u8`/`intIsSigned(ty) bool` helpers + uN/iN registration). PACK-CORE never re-implements uN registration.
 - No `sf/src` edit may change emission of any non-packed program: the 4-MD5 gate (gol `302df36b`, lisp `3591bad9`, json `76056b97`, mud `846106ac`), golden 9/9, matrix 21/21, and the self-compile fixed point's byte-identity must hold on every F task until the emitter layer lands. The self-compile fixed point will move once the emitter layer is committed → operator-ruled re-baseline at Task 6 (never silent).
 - `examples/z98` originals, gate programs, goldens, `sf/build/`, `out_release/` untouched. Stage ONLY intended files. Pre-existing dirty/untracked set (2026-08-26 plan doc, `mnemoria/*`, `.zig1_*.tmp`, `build/`, `examples/z98/json_parser_upgraded/`) never staged.
-- Reference compiler: `/tmp/fx_subfolder/zig1` (INTWIDTH-era md5 recorded at execution; std lib must be reinstalled at `/tmp/fx_subfolder/lib` after any `build_release.sh`, which wipes it). Fixture run/classify recipe: authoritative copy in `.superpowers/sdd/task-LANGWINS-report.md` Step-4 (fresh-dir `rm -rf`+`mkdir -p` REQUIRED). Feed `bash /tmp/sd_work/fixture_run.sh` equivalents per that recipe.
+- Reference compiler: `/tmp/fx_subfolder/zig1` per the SEEDMIG seed model (committed seed `release/seed/zig1-seed.tgz` = zig0-built reference binary md5 `3707d33b…` + self-emission C; fixed point `24da89b9…`; provenance `release/seed/CHANGELOG.md`). Forward rebuild path: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh-out>` — NEVER point `<fresh-out>` at `/tmp/fx_subfolder` (the script `rm -rf`s it); std lib (4 std `.zig`) is copied to `<fresh-out>/lib` by the script. `bash sf/scripts/build_release.sh` (zig0) remains usable ONLY while zig0 still compiles the current `sf/src` subset; the moment a task's `sf/src` needs syntax zig0 cannot parse, rebuild the reference from the seed (STOP-present on first such use). Bootstrap-staging constraint (binding): this plan's `sf/src` feature code must be written in constructs the current seed (`24da89b9`-era) already understands; `sf/src` may adopt packed syntax only after the Task-6 fixed-point re-baseline + Task-7 seed rotation. Fixture run/classify recipe: authoritative copy in `.superpowers/sdd/task-LANGWINS-report.md` Step-4 (fresh-dir `rm -rf`+`mkdir -p` REQUIRED). Feed `bash /tmp/sd_work/fixture_run.sh` equivalents per that recipe.
 - Fastedit per docs/sf/AGENTS.md X.7 (re-read region before every edit; absolute lines; edit bottom-to-top). No python/sed/bulk transforms; no `git checkout` to erase.
 - Report: `.superpowers/sdd/task-PACKCORE-report.md` (gitignored). Ledger: `.superpowers/sdd/progress.md`. Memory: `mnemoria --path .opencode/memory`, agent `packcore-session`.
 - Per-task evidence contract: status, commits, per-gate md5/evidence, fixture run-gate output, concerns. STOP-present on any divergence/ambiguity/plan-vs-evidence mismatch.
 - Subagent-driven execution with the SDD skill (fresh implementer per task, independent reviewer, fix loops, ledger lines).
+- **Seed rotation is part of the Task-7 docs-GATE commit** (SEEDMIG model): Task 7 additionally runs `bash scripts/seed/archive_seed.sh <Task-6 fixed-point binary> <fresh gen dir> release/seed/zig1-seed.tgz --update-changelog`, staging `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` alongside EXPECTED_FAIL.md + QUICK_REF.md (the seed rotates ONLY at this operator-approved closeout — never mid-plan).
 
 ---
 
@@ -172,9 +173,9 @@ git commit -m "feat: packed struct — C89 single-member-struct carrier + bitfie
 
 - [ ] **Step 1: Battery.** golden 9/9 rc0 byte-identical; matrix 21/21; full corpus sweep (common set zero-asymmetric except the 3 packed dirs); 4-MD5 byte-identical (gol/lisp/json/mud unchanged); live mud/rogue net unaffected (no net change).
 
-- [ ] **Step 2: Self-compile round-trip.** hop1==hop2; record the NEW fixed point md5 (was INTWIDTH-era `…`, moved by the emitter-layer commit) + 42-ish `.c`, 0 `error[`, 0 PANIC.
+- [ ] **Step 2: Self-compile round-trip.** hop1==hop2; record the NEW fixed point md5 (seed v0-era `24da89b9…`, moved by the emitter-layer commit) + 42-ish `.c`, 0 `error[`, 0 PANIC.
 
-- [ ] **Step 3: STOP-present.** Re-baseline proposal (self-compile fixed point re-baseline; NO 4-MD5 gate re-baseline since gates are byte-identical); L0/L1/L2 GREEN rows need the EXPECTED_FAIL/QUICK_REF docs update in Task 7 AFTER operator approval. No commit, no docs touched.
+- [ ] **Step 3: STOP-present.** Re-baseline proposal (self-compile fixed point re-baseline; NO 4-MD5 gate re-baseline since gates are byte-identical); L0/L1/L2 GREEN rows need the EXPECTED_FAIL/QUICK_REF docs update in Task 7 AFTER operator approval; seed rotation to the new fixed point also happens in Task 7 (never here). No commit, no docs touched.
 
 ---
 
@@ -192,7 +193,10 @@ git commit -m "feat: packed struct — C89 single-member-struct carrier + bitfie
 
 ```bash
 git add repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
-git commit -m "docs: GATE — packed struct core L0-L2 GREEN + fixed-point re-baseline (PACK-CORE)"
+# Seed rotation (SEEDMIG model): rotate the committed seed to the Task-6 fixed-point binary
+bash scripts/seed/archive_seed.sh <Task-6-fixed-point-binary> <Task-6-fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog
+git add release/seed/zig1-seed.tgz release/seed/CHANGELOG.md
+git commit -m "docs: GATE — packed struct core L0-L2 GREEN + fixed-point re-baseline + seed rotation (PACK-CORE)"
 ```
 
 - [ ] **Step 4: Report + STOP-present plan close** (PACK-AGG/PACK-B3 remain; operator-authority to continue).

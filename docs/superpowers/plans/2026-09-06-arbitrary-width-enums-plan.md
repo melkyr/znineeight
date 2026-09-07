@@ -14,9 +14,10 @@ Design spec: `docs/superpowers/specs/2026-09-06-arbitrary-width-enums-design.md`
 - Byte-neutral gates on every F task before the emission/backing layer lands: 4-MD5 (gol `302df36b`, lisp `3591bad9`, json `76056b97`, mud `846106ac`), golden 9/9, matrix 21/21, self-compile hop identity (fixed point moves only at the Task 5 re-baseline STOP, operator-ruled).
 - Plain `enum` (no backing / existing forms) byte-identical — no silent re-baseline.
 - `examples/z98` originals, gate programs, goldens, `sf/build/`, `out_release/` untouched; stage ONLY intended files; pre-existing dirty/untracked set never staged.
-- Reference compiler `/tmp/fx_subfolder/zig1` (post-INTWIDTH+POST-PACK-CORE md5 at execution; std lib reinstalled at `/tmp/fx_subfolder/lib`). Fixture recipe: `.superpowers/sdd/task-LANGWINS-report.md` Step-4 (fresh dirs REQUIRED).
+- Reference compiler `/tmp/fx_subfolder/zig1` per the SEEDMIG seed model (committed seed `release/seed/zig1-seed.tgz` = zig0-built reference binary md5 `3707d33b…` + self-emission C; fixed point `24da89b9…`; provenance `release/seed/CHANGELOG.md`). Forward rebuild path: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh-out>` — NEVER point `<fresh-out>` at `/tmp/fx_subfolder` (the script `rm -rf`s it); std lib (4 std `.zig`) is copied to `<fresh-out>/lib` by the script. `bash sf/scripts/build_release.sh` (zig0) remains usable ONLY while zig0 still compiles the current `sf/src` subset; the moment a task's `sf/src` needs syntax zig0 cannot parse, rebuild the reference from the seed (STOP-present on first such use). Bootstrap-staging constraint (binding): this plan's `sf/src` feature code must be written in constructs the current seed already understands; `sf/src` may adopt new enum syntax only after the Task-4 fixed-point re-baseline + Task-5 seed rotation. Fixture recipe: `.superpowers/sdd/task-LANGWINS-report.md` Step-4 (fresh dirs REQUIRED).
 - Fastedit per docs/sf/AGENTS.md X.7. Report `.superpowers/sdd/task-PACKB3-report.md` (gitignored). Ledger `.superpowers/sdd/progress.md`. Memory agent `packb3-session`.
 - Per-task evidence contract. STOP-present on divergence/ambiguity/plan-vs-evidence. Subagent-driven execution.
+- **Seed rotation is part of the Task-5 docs-GATE commit** (SEEDMIG model): Task 5 additionally runs `bash scripts/seed/archive_seed.sh <Task-4 fixed-point binary> <fresh gen dir> release/seed/zig1-seed.tgz --update-changelog`, staging `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` alongside EXPECTED_FAIL.md + QUICK_REF.md (the seed rotates ONLY at this operator-approved closeout — never mid-plan).
 
 ---
 
@@ -66,8 +67,8 @@ git commit -m "feat: enum(uN) packed fields + backing-width enum ops (PACK-B3)"
 ### Task 4: Full battery + fixed-point re-baseline STOP-present
 
 - [ ] **Step 1: Battery.** golden 9/9; matrix 21/21; full corpus (common set zero-asymmetric except the L7 dir); 4-MD5 byte-identical.
-- [ ] **Step 2: Self-compile round-trip.** hop1==hop2; record the NEW fixed point md5 (moved by the source growth) + 42-ish `.c`, 0 `error[`, 0 PANIC.
-- [ ] **Step 3: STOP-present.** Re-baseline proposal (fixed point only; NO 4-MD5 gate re-baseline); L7 GREEN row + EXPECTED_FAIL/QUICK_REF docs update in Task 5 AFTER operator approval. No commit, no docs touched.
+- [ ] **Step 2: Self-compile round-trip.** hop1==hop2; record the NEW fixed point md5 (PACK-CORE/AGG-era seed, moved by the source growth) + 42-ish `.c`, 0 `error[`, 0 PANIC.
+- [ ] **Step 3: STOP-present.** Re-baseline proposal (fixed point only; NO 4-MD5 gate re-baseline); L7 GREEN row + EXPECTED_FAIL/QUICK_REF docs update in Task 5 AFTER operator approval; seed rotation to the new fixed point also happens in Task 5 (never here). No commit, no docs touched.
 
 ---
 
@@ -79,7 +80,10 @@ git commit -m "feat: enum(uN) packed fields + backing-width enum ops (PACK-B3)"
 
 ```bash
 git add repro/mi_matrix/EXPECTED_FAIL.md docs/sf/QUICK_REF.md
-git commit -m "docs: GATE — enum(uN)/L7 GREEN + fixed-point re-baseline (PACK-B3)"
+# Seed rotation (SEEDMIG model): rotate the committed seed to the Task-4 fixed-point binary
+bash scripts/seed/archive_seed.sh <Task-4-fixed-point-binary> <Task-4-fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog
+git add release/seed/zig1-seed.tgz release/seed/CHANGELOG.md
+git commit -m "docs: GATE — enum(uN)/L7 GREEN + fixed-point re-baseline + seed rotation (PACK-B3)"
 ```
 
 - [ ] **Step 4: Report + STOP-present plan close.** All packed ladder L0-L7 GREEN after PACK-CORE/AGG/B3; remaining follow-on: LIROPTPASS.

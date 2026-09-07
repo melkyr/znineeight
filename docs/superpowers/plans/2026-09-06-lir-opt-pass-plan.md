@@ -14,9 +14,10 @@ Design spec: `docs/superpowers/specs/2026-09-06-lir-opt-pass-design.md` (operato
 - **Correctness = RUNTIME byte-identity**: golden 9/9, matrix 21/21, corpus runs, upgraded-examples goldens, net round-trips byte-identical pre-vs-post; self-compile converges to a NEW fixed point (hop1==hop2).
 - Pass lives in a new `sf/src/lir_opt_pass.zig`, run per function pre-emission post-reload, deterministic. No lowering change, no spill-format change, no emitter carrier change (PACK AMENDMENT 1 intact).
 - `examples/z98` originals, goldens, `sf/build/`, `out_release/` untouched; stage ONLY intended files; pre-existing dirty/untracked set never staged.
-- Reference compiler `/tmp/fx_subfolder/zig1` (post-INTWIDTH/PACK md5 at execution; std lib at `/tmp/fx_subfolder/lib`). Fixture/run recipe: `.superpowers/sdd/task-LANGWINS-report.md` Step-4 + release-0200 battery procedure (rows C/E under `/usr/bin/time -v`, median of 3).
+- Reference compiler `/tmp/fx_subfolder/zig1` per the SEEDMIG seed model (committed seed `release/seed/zig1-seed.tgz` = zig0-built reference binary md5 `3707d33b…` + self-emission C; fixed point `24da89b9…`; provenance `release/seed/CHANGELOG.md`). Forward rebuild path: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh-out>` — NEVER point `<fresh-out>` at `/tmp/fx_subfolder` (the script `rm -rf`s it); std lib (4 std `.zig`) is copied to `<fresh-out>/lib` by the script. `bash sf/scripts/build_release.sh` (zig0) remains usable ONLY while zig0 still compiles the current `sf/src` subset; the moment a task's `sf/src` needs syntax zig0 cannot parse, rebuild the reference from the seed (STOP-present on first such use). Bootstrap-staging constraint (binding): this plan's `sf/src` feature code (the new `lir_opt_pass.zig`) must be written in constructs the current seed already understands. Fixture/run recipe: `.superpowers/sdd/task-LANGWINS-report.md` Step-4 + release-0200 battery procedure (rows C/E under `/usr/bin/time -v`, median of 3).
 - Fastedit per docs/sf/AGENTS.md X.7. Report `.superpowers/sdd/task-LIROPT-report.md`. Ledger `.superpowers/sdd/progress.md`. Memory agent `liroptpass-session`.
 - Per-task evidence contract; STOP-present on divergence/ambiguity/plan-vs-evidence; subagent-driven execution.
+- **Seed rotation is part of the Task-6 docs-GATE commit** (SEEDMIG model): Task 6 additionally runs `bash scripts/seed/archive_seed.sh <Task-5 fixed-point binary> <fresh gen dir> release/seed/zig1-seed.tgz --update-changelog`, staging `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` alongside QUICK_REF.md + EXPECTED_FAIL.md (the seed rotates ONLY at this operator-approved closeout — never mid-plan). LIROPTPASS moves all four 4-MD5 gates AND the fixed point, so this rotation captures the new emission-era seed.
 
 ---
 
@@ -78,7 +79,7 @@ git commit -m "feat: LIR opt pass — pure-chain expression nesting (LIROPTPASS)
 - [ ] **Step 1: Battery.** golden 9/9 + matrix 21/21 runs byte-identical; full corpus run-class zero-asymmetric vs Task-1; upgraded-examples + net goldens byte-identical.
 - [ ] **Step 2: Self-compile.** hop1==hop2 at the NEW fixed point (42-ish `.c`, 0 `error[`, 0 PANIC).
 - [ ] **Step 3: Emissions.** Record the new 4-MD5 dump-gate values + emission-size/battery deltas.
-- [ ] **Step 4: STOP-present.** Re-baseline proposal for ALL FOUR gate rows + the fixed point (operator-ruled); QUICK_REF gate-table + fixed-point + new-bullet docs update in Task 6 AFTER operator approval. No commit, no docs touched.
+- [ ] **Step 4: STOP-present.** Re-baseline proposal for ALL FOUR gate rows + the fixed point (operator-ruled); QUICK_REF gate-table + fixed-point + new-bullet docs update in Task 6 AFTER operator approval; seed rotation to the new fixed point also happens in Task 6 (never here). No commit, no docs touched.
 
 ---
 
@@ -90,7 +91,10 @@ git commit -m "feat: LIR opt pass — pure-chain expression nesting (LIROPTPASS)
 
 ```bash
 git add docs/sf/QUICK_REF.md repro/mi_matrix/EXPECTED_FAIL.md
-git commit -m "docs: GATE — LIR opt pass emission re-baseline + battery record (LIROPTPASS)"
+# Seed rotation (SEEDMIG model): rotate the committed seed to the Task-5 fixed-point binary
+bash scripts/seed/archive_seed.sh <Task-5-fixed-point-binary> <Task-5-fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog
+git add release/seed/zig1-seed.tgz release/seed/CHANGELOG.md
+git commit -m "docs: GATE — LIR opt pass emission re-baseline + seed rotation (LIROPTPASS)"
 ```
 
 - [ ] **Step 4: Report + STOP-present plan close.** Language-wins follow-on order items 6-10 all delivered. Operator authority for any further plan.
