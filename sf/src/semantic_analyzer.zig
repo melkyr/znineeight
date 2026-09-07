@@ -48,6 +48,9 @@ pub const SemanticAnalyzer = struct {
     local_decl_types: [*]u32,
     local_decl_count: usize,
     local_decl_cap: usize,
+    packed_gate_items: [*]u32,
+    packed_gate_len: usize,
+    packed_gate_cap: usize,
     _stub_0: u32,
     _stub_1: u32,
     interner: *interner_mod.StringInterner,
@@ -164,6 +167,9 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .local_decl_types = undefined,
         .local_decl_count = @intCast(usize, 0),
         .local_decl_cap = @intCast(usize, 0),
+        .packed_gate_items = undefined,
+        .packed_gate_len = @intCast(usize, 0),
+        .packed_gate_cap = @intCast(usize, 0),
         ._stub_0 = und_name_id,
         ._stub_1 = @intCast(u32, 0),
         .call_arg_types = cal_typs,
@@ -326,6 +332,7 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     if (sym) |s| {
         var id2: []const u8 = "S\n"; pal_mod.markerWrite(id2);
         if (s.kind == sym_mod.SymbolKind.type_alias) {
+            semanticAnalyzerMaybeGateAliasDecl(self, s.decl_node, s.module_id);
             if (s.type_id != @intCast(u32, 0)) { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return s.type_id; }
             if (ncgm) |ctm| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ctm; }
             if (ncg) |ct| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ct; }
@@ -697,6 +704,111 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     var ff2n_m: []const u8 = "FF2:N"; pal_mod.markerWriteInt(ff2n_m, node_idx); var ff2f_m: []const u8 = "FF2:F"; pal_mod.markerWriteInt(ff2f_m, field_name_id); var ff2b_m: []const u8 = "FF2:B"; pal_mod.markerWriteInt(ff2b_m, base_type_id);
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
     return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerPackedGateGrow(self: *SemanticAnalyzer) void {
+    var new_cap: usize = if (self.packed_gate_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.packed_gate_cap * @intCast(usize, 2);
+    var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst = @ptrCast([*]u32, raw);
+    if (self.packed_gate_len > @intCast(usize, 0)) {
+        var ci: usize = 0;
+        while (ci < self.packed_gate_len) : (ci += @intCast(usize, 1)) { ndst[ci] = self.packed_gate_items[ci]; }
+    }
+    self.packed_gate_items = ndst;
+    self.packed_gate_cap = new_cap;
+}
+
+fn semanticAnalyzerPackedGateMark(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (self.packed_gate_len >= self.packed_gate_cap) { semanticAnalyzerPackedGateGrow(self); }
+    self.packed_gate_items[self.packed_gate_len] = node_idx;
+    self.packed_gate_len += @intCast(usize, 1);
+}
+
+fn semanticAnalyzerPackedGateSeen(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var gi: usize = 0;
+    while (gi < self.packed_gate_len) : (gi += @intCast(usize, 1)) {
+        if (self.packed_gate_items[gi] == node_idx) return true;
+    }
+    return false;
+}
+
+fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.registry.types_len) return false;
+    var ty = self.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.bool_type) return true;
+    if (ty.kind == type_mod.TypeKind.integer_literal_type) return false;
+    return type_mod.typeRegistryIsInteger(self.registry, tid);
+}
+
+fn semanticAnalyzerGatePackedFields(self: *SemanticAnalyzer, struct_node_idx: u32, module_id: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, struct_node_idx);
+    if (node.kind != AstKind.struct_decl) return;
+    if ((node.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return;
+    if (semanticAnalyzerPackedGateSeen(self, struct_node_idx)) return;
+    semanticAnalyzerPackedGateMark(self, struct_node_idx);
+    var children = ast_mod.astStoreNodeExtraChildren(self.store, struct_node_idx);
+    var ci: usize = 0;
+    while (ci < children.len) : (ci += @intCast(usize, 1)) {
+        var fd = ast_mod.astStoreNodeAt(self.store, children[ci]);
+        if (fd.kind != AstKind.field_decl) continue;
+        var type_node: u32 = fd.child_0;
+        var gate_state: u8 = @intCast(u8, 0);
+        if (type_node != @intCast(u32, 0)) {
+            var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id };
+            var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
+            if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
+                gate_state = @intCast(u8, 1);
+            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft)) {
+                gate_state = @intCast(u8, 1);
+            }
+        }
+        if (gate_state == @intCast(u8, 1)) continue;
+        var fsp = fd.span_start;
+        var fep = fsp + @intCast(u32, fd.span_len);
+        var pg_msg: []const u8 = "packed struct fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed struct";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, pg_msg);
+    }
+}
+
+fn semanticAnalyzerMaybeGateAliasDecl(self: *SemanticAnalyzer, decl_node: u32, module_id: u32) void {
+    if (decl_node == @intCast(u32, 0)) return;
+    var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
+    var target: u32 = @intCast(u32, 0);
+    if (dnode.kind == AstKind.struct_decl) {
+        target = decl_node;
+    } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+        var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+        if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+    }
+    if (target != @intCast(u32, 0)) semanticAnalyzerGatePackedFields(self, target, module_id);
+}
+
+fn semanticAnalyzerPackedStructDeclForType(self: *SemanticAnalyzer, struct_tid: u32) u32 {
+    if (@intCast(usize, struct_tid) >= self.registry.types_len) return @intCast(u32, 0);
+    var sty = self.registry.types_items[@intCast(usize, struct_tid)];
+    if (sty.kind != type_mod.TypeKind.struct_type) return @intCast(u32, 0);
+    var ti: usize = 0;
+    while (ti < self.symbols.tables_len) : (ti += @intCast(usize, 1)) {
+        var table = self.symbols.tables_items[ti];
+        var si: usize = 0;
+        while (si < table.len) : (si += @intCast(usize, 1)) {
+            var s = table.items[si];
+            if (s.kind != sym_mod.SymbolKind.type_alias) continue;
+            if (s.type_id != struct_tid or s.decl_node == @intCast(u32, 0)) continue;
+            var dnode = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+            var target: u32 = @intCast(u32, 0);
+            if (dnode.kind == AstKind.struct_decl) {
+                target = s.decl_node;
+            } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+                var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+                if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+            }
+            if (target == @intCast(u32, 0)) continue;
+            var tnode = ast_mod.astStoreNodeAt(self.store, target);
+            if ((tnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return target;
+        }
+    }
+    return @intCast(u32, 0);
 }
 
 fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
@@ -1532,6 +1644,27 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.address_of) {
         var base = semanticAnalyzerResolveExpr(self, node.child_0);
         if (base != @intCast(u32, 0) and base != type_mod.TYPE_VOID) {
+            var base_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            if (base_node.kind == AstKind.field_access) {
+                var fa_base_t = semanticAnalyzerResolveExpr(self, base_node.child_0);
+                var st = fa_base_t;
+                if (fa_base_t != @intCast(u32, 0) and fa_base_t != type_mod.TYPE_VOID) {
+                    var st_ty = self.registry.types_items[@intCast(usize, st)];
+                    if (st_ty.kind == type_mod.TypeKind.ptr_type or st_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                        st = self.registry.ptr_items[@intCast(usize, st_ty.payload_idx)].base;
+                        st_ty = self.registry.types_items[@intCast(usize, st)];
+                    }
+                    if (st_ty.kind == type_mod.TypeKind.struct_type) {
+                        var sd = semanticAnalyzerPackedStructDeclForType(self, st);
+                        if (sd != @intCast(u32, 0)) {
+                            var aps = node.span_start;
+                            var ape = aps + @intCast(u32, node.span_len);
+                            var aof_msg: []const u8 = "cannot take the address of a field of a packed struct; packed fields have no address";
+                            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, aps, ape, aof_msg);
+                        }
+                    }
+                }
+            }
             result = type_mod.typeRegistryGetOrCreatePtr(self.registry, base, false);
         } else {
             result = type_mod.TYPE_VOID;
@@ -1718,6 +1851,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.fn_type or node.kind == AstKind.struct_decl or
                node.kind == AstKind.enum_decl or node.kind == AstKind.union_decl or
                node.kind == AstKind.error_set_decl) {
+        if (node.kind == AstKind.struct_decl) {
+            semanticAnalyzerGatePackedFields(self, node_idx, self.module_id);
+        }
         result = type_mod.TYPE_TYPE;
     } else if (node.kind == AstKind.paren_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);

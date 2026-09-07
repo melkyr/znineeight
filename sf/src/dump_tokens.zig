@@ -118,6 +118,7 @@ fn tokenKindToString(kind: TokenKind, buf: []u8) []u8 {
         TokenKind.kw_struct => { var s: []const u8 = "kw_struct"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_enum => { var s: []const u8 = "kw_enum"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_union => { var s: []const u8 = "kw_union"; fmt.copyStr(buf, &idx, s); },
+        TokenKind.kw_packed => { var s: []const u8 = "kw_packed"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_if => { var s: []const u8 = "kw_if"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_else => { var s: []const u8 = "kw_else"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_while => { var s: []const u8 = "kw_while"; fmt.copyStr(buf, &idx, s); },

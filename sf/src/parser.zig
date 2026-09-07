@@ -424,9 +424,17 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_if) return parserParseIfExpr(self);
     if (tok.kind == TokenKind.kw_switch) return parserParseSwitchExpr(self);
     if (tok.kind == TokenKind.lbracket) return parserParseArrayLiteral(self);
-    if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self);
+    if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
+    if (tok.kind == TokenKind.kw_packed) {
+        _ = parserAdvance(self);
+        var ntok = parserPeek(self);
+        if (ntok.kind == TokenKind.kw_struct) return parserParseStructType(self, 1);
+        var pmsg: []const u8 = "expected 'struct' after 'packed'";
+        parserAddError(self, ntok, pmsg);
+        return error.UnexpectedToken;
+    }
     if (tok.kind == TokenKind.kw_return) return parserParseReturnExpr(self);
     if (tok.kind == TokenKind.kw_break) return parserParseBreakExpr(self);
     if (tok.kind == TokenKind.kw_continue) return parserParseContinueExpr(self);
@@ -1059,9 +1067,17 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
         }
         return es;
     }
-    if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self);
+    if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
+    if (tok.kind == TokenKind.kw_packed) {
+        _ = parserAdvance(self);
+        var ntok = parserPeek(self);
+        if (ntok.kind == TokenKind.kw_struct) return parserParseStructType(self, 1);
+        var pmsg: []const u8 = "expected 'struct' after 'packed'";
+        parserAddError(self, ntok, pmsg);
+        return error.UnexpectedToken;
+    }
     if (tok.kind == TokenKind.kw_anytype) { _ = parserAdvance(self); var z: u32 = @intCast(u32, 0); return z; }
     var base = try parserParseTypeName(self);
     if (parserPeek(self).kind == TokenKind.bang) {
@@ -1212,7 +1228,7 @@ fn parserParseErrorSetDeclBody(self: *Parser, kw: Token) ParserError!u32 {
         0, 0, 0, payload);
 }
 
-fn parserParseStructType(self: *Parser) ParserError!u32 {
+fn parserParseStructType(self: *Parser, is_packed: u8) ParserError!u32 {
     var tok = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lbrace);
     var fields_buf: [*]u32 = undefined;
@@ -1237,7 +1253,9 @@ fn parserParseStructType(self: *Parser) ParserError!u32 {
     if (fields_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
     }
-    return ast_mod.astStoreAddNode(self.store, AstKind.struct_decl, 0,
+    var flags: u8 = 0;
+    if (is_packed != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x10);
+    return ast_mod.astStoreAddNode(self.store, AstKind.struct_decl, flags,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
         0, 0, 0, payload);
 }

@@ -80,6 +80,7 @@ pub const TokenKind = enum(u16) {
     kw_struct,
     kw_enum,
     kw_union,
+    kw_packed,
     kw_if,
     kw_else,
     kw_while,
@@ -145,7 +146,7 @@ pub var keyword_table: []KeywordEntry = undefined;
 pub var keyword_count: usize = 0;
 
 pub fn initKeywordTable(alloc: *Sand) void {
-    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(KeywordEntry)) * @intCast(usize, 36), @intCast(usize, 4)) catch unreachable;
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(KeywordEntry)) * @intCast(usize, 37), @intCast(usize, 4)) catch unreachable;
     var table = @ptrCast([*]KeywordEntry, raw);
     var i: usize = 0;
     var s_const: []const u8 = "const"; table[i] = KeywordEntry{ .name = s_const, .kind = TokenKind.kw_const }; i += 1;
@@ -158,6 +159,7 @@ pub fn initKeywordTable(alloc: *Sand) void {
     var s_struct: []const u8 = "struct"; table[i] = KeywordEntry{ .name = s_struct, .kind = TokenKind.kw_struct }; i += 1;
     var s_enum: []const u8 = "enum"; table[i] = KeywordEntry{ .name = s_enum, .kind = TokenKind.kw_enum }; i += 1;
     var s_union: []const u8 = "union"; table[i] = KeywordEntry{ .name = s_union, .kind = TokenKind.kw_union }; i += 1;
+    var s_packed: []const u8 = "packed"; table[i] = KeywordEntry{ .name = s_packed, .kind = TokenKind.kw_packed }; i += 1;
     var s_if: []const u8 = "if"; table[i] = KeywordEntry{ .name = s_if, .kind = TokenKind.kw_if }; i += 1;
     var s_else: []const u8 = "else"; table[i] = KeywordEntry{ .name = s_else, .kind = TokenKind.kw_else }; i += 1;
     var s_while: []const u8 = "while"; table[i] = KeywordEntry{ .name = s_while, .kind = TokenKind.kw_while }; i += 1;
@@ -185,7 +187,7 @@ pub fn initKeywordTable(alloc: *Sand) void {
     var s_c_char: []const u8 = "c_char"; table[i] = KeywordEntry{ .name = s_c_char, .kind = TokenKind.kw_c_char }; i += 1;
     var s_anytype: []const u8 = "anytype"; table[i] = KeywordEntry{ .name = s_anytype, .kind = TokenKind.kw_anytype }; i += 1;
 
-    keyword_table = table[0..36];
+    keyword_table = table[0..37];
     keyword_count = i;
 }
 
