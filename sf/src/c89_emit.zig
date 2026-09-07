@@ -3681,6 +3681,114 @@ fn intTypeNeedsWidthWrap(reg: *TypeRegistry, tyid: u32) u8 {
     return @intCast(u8, 1);
 }
 
+fn writeSatNegDecimal(v: u64, buf: []u8) []const u8 {
+    var ib: [24]u8 = undefined;
+    var il = itoa_mod.itoa64(v, ib[0..]);
+    var sidx: usize = @intCast(usize, 23) - @intCast(usize, il);
+    var len: usize = @intCast(usize, 1) + @intCast(usize, il);
+    buf[0] = @intCast(u8, '-');
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, il)) : (i += @intCast(usize, 1)) {
+        buf[@intCast(usize, 1) + i] = ib[sidx + i];
+    }
+    var idx: usize = len;
+    var sfx = intLitSuffixNeg(v);
+    var s: usize = @intCast(usize, 0);
+    while (s < sfx.len) : (s += @intCast(usize, 1)) {
+        buf[idx] = sfx[s];
+        idx += @intCast(usize, 1);
+    }
+    return buf[0..idx];
+}
+
+fn writeSatUnsDecimal(v: u64, buf: []u8) []const u8 {
+    var ib: [24]u8 = undefined;
+    var il = itoa_mod.itoa64(v, ib[0..]);
+    var idx: usize = @intCast(usize, 23) - @intCast(usize, il);
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, il)) : (i += @intCast(usize, 1)) {
+        buf[i] = ib[idx + i];
+    }
+    var len: usize = @intCast(usize, il);
+    var pos: usize = len;
+    var sfx = intLitSuffixUns(v);
+    var s: usize = @intCast(usize, 0);
+    while (s < sfx.len) : (s += @intCast(usize, 1)) {
+        buf[pos] = sfx[s];
+        pos += @intCast(usize, 1);
+    }
+    return buf[0..pos];
+}
+
+fn writeSatSignedMaxDecimal(v: u64, buf: []u8) []const u8 {
+    var ib: [24]u8 = undefined;
+    var il = itoa_mod.itoa64(v, ib[0..]);
+    var idx: usize = @intCast(usize, 23) - @intCast(usize, il);
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, il)) : (i += @intCast(usize, 1)) {
+        buf[i] = ib[idx + i];
+    }
+    var len: usize = @intCast(usize, il);
+    var pos: usize = len;
+    var sfx = intLitSuffixNeg(v);
+    var s: usize = @intCast(usize, 0);
+    while (s < sfx.len) : (s += @intCast(usize, 1)) {
+        buf[pos] = sfx[s];
+        pos += @intCast(usize, 1);
+    }
+    return buf[0..pos];
+}
+
+fn satMaxLitBound(width_bits: u32, buf: []u8) []const u8 {
+    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "127"; return s; }
+    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "32767"; return s; }
+    if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "2147483647"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "9223372036854775807"; return s; }
+    var sm: u64 = @intCast(u64, 0);
+    if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
+        sm = (@intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1))) - @intCast(u64, 1);
+    }
+    return writeSatSignedMaxDecimal(sm, buf);
+}
+
+fn satMinLitBound(width_bits: u32, buf: []u8) []const u8 {
+    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "(-128)"; return s; }
+    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "(-32768)"; return s; }
+    if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "(-2147483647 - 1)"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "(-9223372036854775807 - 1)"; return s; }
+    var sb: u64 = @intCast(u64, 0);
+    if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
+        sb = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
+    }
+    return writeSatNegDecimal(sb, buf);
+}
+
+fn satMinMagLitBound(width_bits: u32, buf: []u8) []const u8 {
+    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "128"; return s; }
+    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "32768"; return s; }
+    if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "2147483648"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "9223372036854775808"; return s; }
+    var sb: u64 = @intCast(u64, 0);
+    if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
+        sb = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
+    }
+    return writeSatUnsDecimal(sb, buf);
+}
+
+fn satMaxULitBound(width_bits: u32, buf: []u8) []const u8 {
+    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "255"; return s; }
+    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "65535"; return s; }
+    if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "0xFFFFFFFFu"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "0xFFFFFFFFFFFFFFFFull"; return s; }
+    var um: u64 = @intCast(u64, 0);
+    if (width_bits < @intCast(u32, 64)) {
+        um = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
+    } else {
+        um = @intCast(u64, 0) - @intCast(u64, 1);
+    }
+    return writeSatUnsDecimal(um, buf);
+}
+
 fn writeWidthMaskString(writer: *BufferedWriter, width_bits: u32) void {
     var mask: u64 = @intCast(u64, 0);
     if (width_bits < @intCast(u32, 64)) {
@@ -3943,41 +4051,16 @@ fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, fb1: u32, fb2: u32, out_t
     diag_mod.diagnosticCollectorFlushAndExit(emitter.diag, @intCast(u32, 3));
 }
 
-fn satMaxLit(width_bits: u32) []const u8 {
-    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "127"; return s; }
-    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "32767"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "9223372036854775807"; return s; }
-    { var s: []const u8 = "2147483647"; return s; }
-}
-
-fn satMinLit(width_bits: u32) []const u8 {
-    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "(-128)"; return s; }
-    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "(-32768)"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "(-9223372036854775807 - 1)"; return s; }
-    { var s: []const u8 = "(-2147483647 - 1)"; return s; }
-}
-
-fn satMinMagLit(width_bits: u32) []const u8 {
-    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "128"; return s; }
-    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "32768"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "9223372036854775808"; return s; }
-    { var s: []const u8 = "2147483648"; return s; }
-}
-
-fn satMaxULit(width_bits: u32) []const u8 {
-    if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "255"; return s; }
-    if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "65535"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "0xFFFFFFFFFFFFFFFFull"; return s; }
-    { var s: []const u8 = "0xFFFFFFFFu"; return s; }
-}
-
 fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8, result: []const u8, tid: u32, is_signed: u8) void {
-    var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    var width_bits: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
-    var max_lit = satMaxLit(width_bits);
-    var min_lit = satMinLit(width_bits);
-    var minmag_lit = satMinMagLit(width_bits);
-    var maxu_lit = satMaxULit(width_bits);
+    var width_bits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, tid));
+    var max_buf: [24]u8 = undefined;
+    var min_buf: [24]u8 = undefined;
+    var minmag_buf: [24]u8 = undefined;
+    var maxu_buf: [24]u8 = undefined;
+    var max_lit = satMaxLitBound(width_bits, max_buf[0..]);
+    var min_lit = satMinLitBound(width_bits, min_buf[0..]);
+    var minmag_lit = satMinMagLitBound(width_bits, minmag_buf[0..]);
+    var maxu_lit = satMaxULitBound(width_bits, maxu_buf[0..]);
     var width_lit: [12]u8 = undefined;
     var wl = itoa_mod.itoa(@intCast(u32, width_bits), width_lit[0..]);
     var wls: usize = @intCast(usize, 11) - @intCast(usize, wl);
