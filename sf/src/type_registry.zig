@@ -86,6 +86,8 @@ pub const TaggedUnionPayload = struct { tag_type: TypeId, fields_start: u32, fie
 pub const TuplePayload = struct { elems_start: u32, elems_count: u16 };
 pub const UnresolvedPayload = struct { name_id: u32, module_id: u32 };
 pub const FieldEntry = struct { name_id: u32, type_id: TypeId, offset: u32 };
+pub const PackedBitField = struct { bit_offset: u32, bit_width: u16 };
+pub const PackedStructInfo = struct { pk_start: u32, pk_count: u16, total_bits: u32 };
 pub const EnumMember = struct { name_id: u32, value: i64 };
 pub const FnParam = struct { name_id: u32, type_id: TypeId };
 
@@ -114,6 +116,9 @@ pub const TypeRegistry = struct {
     em_items: [*]EnumMember, em_len: usize, em_cap: usize,
     xt_items: [*]TypeId, xt_len: usize, xt_cap: usize,
     xn_items: [*]u32, xn_len: usize, xn_cap: usize,
+
+    pk_items: [*]PackedBitField, pk_len: usize, pk_cap: usize,
+    pk_struct_items: [*]PackedStructInfo, pk_struct_len: usize, pk_struct_cap: usize,
 
     ptr_cache: hash_mod.U64ToU32Map,
     many_ptr_cache: hash_mod.U64ToU32Map,
@@ -233,6 +238,18 @@ fn fnAppend(self: *TypeRegistry, v: FnPayload) void {
 pub fn stAppend(self: *TypeRegistry, v: StructPayload) void {
     payloadEnsure(@ptrCast(*[*]u8, &self.st_items), &self.st_len, &self.st_cap, self.types_alloc, @sizeOf(StructPayload), self.st_len + 1);
     self.st_items[self.st_len] = v; self.st_len += 1;
+    pkStructAppend(self, PackedStructInfo{ .pk_start = @intCast(u32, 0), .pk_count = @intCast(u16, 0), .total_bits = @intCast(u32, 0) });
+}
+fn pkStructAppend(self: *TypeRegistry, v: PackedStructInfo) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.pk_struct_items), &self.pk_struct_len, &self.pk_struct_cap, self.types_alloc, @sizeOf(PackedStructInfo), self.pk_struct_len + 1);
+    self.pk_struct_items[self.pk_struct_len] = v; self.pk_struct_len += 1;
+}
+pub fn pkFieldAppend(self: *TypeRegistry, v: PackedBitField) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.pk_items), &self.pk_len, &self.pk_cap, self.types_alloc, @sizeOf(PackedBitField), self.pk_len + 1);
+    self.pk_items[self.pk_len] = v; self.pk_len += 1;
+}
+pub fn pkSetFields(self: *TypeRegistry, pk_idx: u32, v: PackedStructInfo) void {
+    self.pk_struct_items[@intCast(usize, pk_idx)] = v;
 }
 pub fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
      payloadEnsure(@ptrCast(*[*]u8, &self.en_items), &self.en_len, &self.en_cap, self.types_alloc, @sizeOf(EnumPayload), self.en_len + 1);
@@ -331,6 +348,8 @@ pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
         .em_items = undefined, .em_len = @intCast(usize, 0), .em_cap = @intCast(usize, 0),
         .xt_items = undefined, .xt_len = @intCast(usize, 0), .xt_cap = @intCast(usize, 0),
         .xn_items = undefined, .xn_len = @intCast(usize, 0), .xn_cap = @intCast(usize, 0),
+        .pk_items = undefined, .pk_len = @intCast(usize, 0), .pk_cap = @intCast(usize, 0),
+        .pk_struct_items = undefined, .pk_struct_len = @intCast(usize, 0), .pk_struct_cap = @intCast(usize, 0),
         .ptr_cache = hash_mod.u64ToU32MapInit(alloc),
         .many_ptr_cache = hash_mod.u64ToU32MapInit(alloc),
         .slice_cache = hash_mod.u64ToU32MapInit(alloc),
@@ -914,6 +933,77 @@ pub fn typeRegistryGetStructFields(self: *TypeRegistry, tid: u32, out: *[]FieldE
     var fstart: usize = @intCast(usize, sp.fields_start);
     var fcount: usize = @intCast(usize, sp.fields_count);
     out.* = self.fe_items[fstart .. fstart + fcount];
+}
+
+pub fn typeRegistryIsPacked(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.struct_type) return false;
+    return (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0);
+}
+
+pub fn typeRegistryComputePackedLayout(self: *TypeRegistry, tid: u32) void {
+    var idx = @intCast(usize, tid);
+    var ty = self.types_items[idx];
+    if (ty.kind != TypeKind.struct_type) return;
+    if ((ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return;
+    if (ty.payload_idx >= @intCast(u32, self.st_len)) return;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_struct_len) return;
+    var sp = self.st_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, sp.fields_start);
+    var fcount: usize = @intCast(usize, sp.fields_count);
+    var pk_start: u32 = @intCast(u32, self.pk_len);
+    var total_bits: u32 = @intCast(u32, 0);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        var fe = self.fe_items[fstart + fi];
+        var w: u32 = @intCast(u32, 1);
+        if (fe.type_id < @intCast(u32, self.types_len)) {
+            var ft = self.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind != TypeKind.bool_type) {
+                w = @intCast(u32, typeRegistryIntWidthBits(self, fe.type_id));
+            }
+        }
+        pkFieldAppend(self, PackedBitField{ .bit_offset = total_bits, .bit_width = @intCast(u16, w) });
+        total_bits += w;
+    }
+    pkSetFields(self, ty.payload_idx, PackedStructInfo{ .pk_start = pk_start, .pk_count = @intCast(u16, fcount), .total_bits = total_bits });
+    var sz: u32 = (total_bits + @intCast(u32, 7)) / @intCast(u32, 8);
+    if (sz == @intCast(u32, 0)) sz = @intCast(u32, 1);
+    ty.size = sz;
+    ty.alignment = @intCast(u32, 1);
+    self.types_items[idx] = ty;
+}
+
+pub fn typeRegistryGetPackedBitFields(self: *TypeRegistry, tid: u32, out: *[]PackedBitField) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.struct_type) return false;
+    if ((ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return false;
+    if (ty.payload_idx >= @intCast(u32, self.st_len)) return false;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_struct_len) return false;
+    var psi = self.pk_struct_items[@intCast(usize, ty.payload_idx)];
+    var pstart: usize = @intCast(usize, psi.pk_start);
+    var pcount: usize = @intCast(usize, psi.pk_count);
+    if (pstart + pcount > self.pk_len) return false;
+    out.* = self.pk_items[pstart .. pstart + pcount];
+    return true;
+}
+
+pub fn typeRegistryGetPackedTotalBits(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u32, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.struct_type) return @intCast(u32, 0);
+    if ((ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return @intCast(u32, 0);
+    if (ty.payload_idx >= @intCast(u32, self.st_len)) return @intCast(u32, 0);
+    if (@intCast(usize, ty.payload_idx) >= self.pk_struct_len) return @intCast(u32, 0);
+    return self.pk_struct_items[@intCast(usize, ty.payload_idx)].total_bits;
+}
+
+pub fn typeRegistrySetPacked(self: *TypeRegistry, tid: u32) void {
+    var ty = self.types_items[@intCast(usize, tid)];
+    ty.flags = ty.flags | @intCast(u8, 0x10);
+    self.types_items[@intCast(usize, tid)] = ty;
 }
 
 pub fn typeRegistryGetUnionFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {

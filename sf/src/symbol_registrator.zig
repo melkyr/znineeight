@@ -263,6 +263,9 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         else => TypeKind.void_type,
                     };
                     sym_type_id = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
+                    if (init_node.kind == AstKind.struct_decl and (@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+                        type_mod.typeRegistrySetPacked(type_reg, sym_type_id);
+                    }
                     if (populate) { populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_reg); }
                     addTypeDependencies(store, node.child_1, sym_type_id, g);
                     sym_kind = sym_mod.SymbolKind.type_alias;
@@ -361,6 +364,9 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 else => TypeKind.void_type,
             };
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
+            if (node.kind == AstKind.struct_decl and (@intCast(u16, node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+                type_mod.typeRegistrySetPacked(type_reg, tid);
+            }
             if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }
             addTypeDependencies(store, decl_idx, tid, g);
             var sym = sym_mod.Symbol{

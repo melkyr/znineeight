@@ -130,30 +130,34 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
     var idx = @intCast(usize, tid);
     var ty = self.registry.types_items[idx];
     if (ty.kind == TypeKind.struct_type) {
-        var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
-        var fstart: usize = @intCast(usize, sp.fields_start);
-        var fcount: usize = @intCast(usize, sp.fields_count);
-        var offset: u32 = 0;
-        var max_align: u32 = 1;
-        var fi: usize = 0;
-        while (fi < fcount) : (fi += 1) {
-            var fe = self.registry.fe_items[fstart + fi];
-            var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
-            if (ft.kind == TypeKind.void_type) {
-                fe.offset = offset;
-                self.registry.fe_items[fstart + fi] = fe;
-            } else {
-                offset = alignUp(offset, ft.alignment);
-                fe.offset = offset;
-                self.registry.fe_items[fstart + fi] = fe;
-                offset += ft.size;
-                if (ft.alignment > max_align) max_align = ft.alignment;
+        if ((ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            type_mod.typeRegistryComputePackedLayout(self.registry, tid);
+        } else {
+            var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
+            var fstart: usize = @intCast(usize, sp.fields_start);
+            var fcount: usize = @intCast(usize, sp.fields_count);
+            var offset: u32 = 0;
+            var max_align: u32 = 1;
+            var fi: usize = 0;
+            while (fi < fcount) : (fi += 1) {
+                var fe = self.registry.fe_items[fstart + fi];
+                var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+                if (ft.kind == TypeKind.void_type) {
+                    fe.offset = offset;
+                    self.registry.fe_items[fstart + fi] = fe;
+                } else {
+                    offset = alignUp(offset, ft.alignment);
+                    fe.offset = offset;
+                    self.registry.fe_items[fstart + fi] = fe;
+                    offset += ft.size;
+                    if (ft.alignment > max_align) max_align = ft.alignment;
+                }
             }
+            ty.size = alignUp(offset, max_align);
+            ty.alignment = max_align;
+            if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
+            self.registry.types_items[idx] = ty;
         }
-        ty.size = alignUp(offset, max_align);
-        ty.alignment = max_align;
-        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
-        self.registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.enum_type) {
         var ep = self.registry.en_items[@intCast(usize, ty.payload_idx)];
         var bt = self.registry.types_items[@intCast(usize, ep.backing_type)];
@@ -754,6 +758,9 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var sd_existing = type_mod.nameCacheGet(env.typereg, @intCast(u64, sd_name_id));
         if (sd_existing) |se| return se;
         var sd_tid = type_mod.typeRegistryRegisterNamedType(env.typereg, @intCast(u32, 0), sd_name_id, type_mod.TypeKind.struct_type);
+        if ((node.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            type_mod.typeRegistrySetPacked(env.typereg, sd_tid);
+        }
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
             var sd_children = ast_mod.astStoreNodeExtraChildren(env.store, node_idx);
             var sd_fty: [32]u32 = undefined;

@@ -150,6 +150,8 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 if (ty.state == @intCast(u8, 2) and ty.kind == type_mod.TypeKind.struct_type) {
                     var fields: []type_mod.FieldEntry = undefined;
                     type_mod.typeRegistryGetStructFields(self.registry, t, &fields);
+                    var packed_fields: []type_mod.PackedBitField = undefined;
+                    var has_pk = type_mod.typeRegistryGetPackedBitFields(self.registry, t, &packed_fields);
                     var fname_node = ast_mod.astStoreNodeAt(self.store, ec2[@intCast(usize, 1)]);
                     if (fname_node.kind == AstKind.string_literal) {
                         var sv_idx = ast_mod.astStoreNodePayload(self.store, ec2[@intCast(usize, 1)]);
@@ -158,8 +160,20 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                         while (fi < fields.len) : (fi += 1) {
                             if (fields[fi].name_id == want_id) {
                                 var bo: u64 = @intCast(u64, fields[fi].offset);
-                                if (node.child_0 == self.bit_offset_of_id) {
-                                    bo = bo * @intCast(u64, 8);
+                                if (has_pk) {
+                                    var pk_bo: u64 = @intCast(u64, 0);
+                                    if (fi < packed_fields.len) {
+                                        pk_bo = @intCast(u64, packed_fields[fi].bit_offset);
+                                    }
+                                    if (node.child_0 == self.bit_offset_of_id) {
+                                        bo = pk_bo;
+                                    } else {
+                                        bo = pk_bo / @intCast(u64, 8);
+                                    }
+                                } else {
+                                    if (node.child_0 == self.bit_offset_of_id) {
+                                        bo = bo * @intCast(u64, 8);
+                                    }
                                 }
                                 return ComptimeVal{ .bits = bo, .width_bits = @intCast(u32, 0), .sig = false };
                             }
@@ -178,6 +192,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 var ty2 = self.registry.types_items[@intCast(usize, t2)];
                 if (ty2.state == @intCast(u8, 2)) {
                     var bsz: u64 = @intCast(u64, ty2.size) * @intCast(u64, 8);
+                    if (ty2.kind == type_mod.TypeKind.struct_type and (ty2.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                        bsz = @intCast(u64, type_mod.typeRegistryGetPackedTotalBits(self.registry, t2));
+                    }
                     if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
                         bsz = @intCast(u64, type_mod.typeRegistryIntWidthBits(self.registry, t2));
                     }
