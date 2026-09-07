@@ -972,7 +972,11 @@ pub fn typeRegistryComputePackedLayout(self: *TypeRegistry, tid: u32) void {
         if (fe.type_id < @intCast(u32, self.types_len)) {
             var ft = self.types_items[@intCast(usize, fe.type_id)];
             if (ft.kind != TypeKind.bool_type) {
-                w = @intCast(u32, typeRegistryIntWidthBits(self, fe.type_id));
+                if (ft.kind == TypeKind.struct_type and (ft.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                    w = typeRegistryGetPackedTotalBits(self, fe.type_id);
+                } else {
+                    w = @intCast(u32, typeRegistryIntWidthBits(self, fe.type_id));
+                }
             }
         }
         pkFieldAppend(self, PackedBitField{ .bit_offset = total_bits, .bit_width = @intCast(u16, w) });

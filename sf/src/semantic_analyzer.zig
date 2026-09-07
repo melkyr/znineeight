@@ -801,6 +801,7 @@ fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32) boo
     var ty = self.registry.types_items[@intCast(usize, tid)];
     if (ty.kind == type_mod.TypeKind.bool_type) return true;
     if (ty.kind == type_mod.TypeKind.integer_literal_type) return false;
+    if (ty.kind == type_mod.TypeKind.struct_type and (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return true;
     return type_mod.typeRegistryIsInteger(self.registry, tid);
 }
 
