@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v72 2026-09-06)
+# mi_matrix corpus — expected-fail manifest (v72 2026-09-07)
 
-## Arbitrary-width ints GREEN (v72 2026-09-06) — INTWIDTH plan Task 5
+## Arbitrary-width ints GREEN (v72 2026-09-07) — INTWIDTH plan Task 5
 
 Plan `2026-09-06-arbitrary-width-ints-plan.md` Tasks 3+4 are COMPLETE — arbitrary-width integer
 types `uN`/`iN` now register as real types and emit. The five `intwidth_*` guard fixtures PLUS R7
