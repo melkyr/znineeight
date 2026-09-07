@@ -1232,7 +1232,17 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                     break;
                 }
             }
-            emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+            var pk_fields: []type_mod.PackedBitField = undefined;
+            if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
+                if (@intCast(usize, field_id) < pk_fields.len) {
+                    var pkf = pk_fields[@intCast(usize, field_id)];
+                    emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                } else {
+                    emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+                }
+            } else {
+                emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+            }
         } else if (kind == type_mod.TypeKind.slice_type) {
             var len_s: []const u8 = "len";
             var len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, len_s);
@@ -2887,6 +2897,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (fields[fi].name_id == field_name_id) {
                         var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, fi));
                         var sf_nid = nameMapGet(self, base_temp);
+                        if (kind == type_mod.TypeKind.struct_type) {
+                            var pk_fields: []type_mod.PackedBitField = undefined;
+                            if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
+                                if (fi < pk_fields.len) {
+                                    var pkf = pk_fields[fi];
+                                    emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                                    return tid;
+                                }
+                            }
+                        }
                         emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = @intCast(u32, fi), .result = tid } });
                         return tid;
                     }
@@ -5742,6 +5762,10 @@ fn hasOtherConsumers(self: *LirLowerer, call_result: u32, ret_temp: u32) bool {
                 if (inst.load_field.base == call_result) return true;
             } else if (tg == @enumToInt(LirInst.store_field)) {
                 if (inst.store_field.base == call_result or inst.store_field.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.load_bitfield)) {
+                if (inst.load_bitfield.base == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.store_bitfield)) {
+                if (inst.store_bitfield.base == call_result or inst.store_bitfield.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.load_index)) {
                 if (inst.load_index.base == call_result or inst.load_index.index == call_result) return true;
             } else if (tg == @enumToInt(LirInst.load)) {

@@ -88,6 +88,8 @@ pub const LirInst = union(enum) {
     builtin_console_gotoxy: struct { x: u32, y: u32 },
     builtin_console_set_color: struct { fg: u32, bg: u32 },
     nop: void,
+    load_bitfield: struct { base: u32, result: u32, name_id: u32, bit_offset: u32, bit_width: u32 },
+    store_bitfield: struct { base: u32, value: u32, bit_offset: u32, bit_width: u32 },
 };
 
 pub const CallDirectData = struct {

@@ -2113,6 +2113,8 @@ fn moduleHasVaInsts(emitter: *C89Emitter) u8 {
                     .va_start => return @intCast(u8, 1),
                     .va_arg => return @intCast(u8, 1),
                     .va_end => return @intCast(u8, 1),
+                    .load_bitfield => {},
+                    .store_bitfield => {},
                     else => {},
                 }
             }
@@ -2142,6 +2144,8 @@ fn moduleHasStdioBuiltin(emitter: *C89Emitter) u8 {
                     .builtin_stdout_write => return @intCast(u8, 1),
                     .builtin_stderr_write => return @intCast(u8, 1),
                     .builtin_get_char => return @intCast(u8, 1),
+                    .load_bitfield => {},
+                    .store_bitfield => {},
                     else => {},
                 }
             }
@@ -2161,6 +2165,8 @@ fn moduleHasExitBuiltin(emitter: *C89Emitter) u8 {
             while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
                 switch (vbb.insts.items[vii]) {
                     .builtin_exit => return @intCast(u8, 1),
+                    .load_bitfield => {},
+                    .store_bitfield => {},
                     else => {},
                 }
             }
@@ -2180,6 +2186,8 @@ fn moduleHasSleepBuiltin(emitter: *C89Emitter) u8 {
             while (vii < vbb.insts.len) : (vii += @intCast(usize, 1)) {
                 switch (vbb.insts.items[vii]) {
                     .builtin_sleep_ms => return @intCast(u8, 1),
+                    .load_bitfield => {},
+                    .store_bitfield => {},
                     else => {},
                 }
             }
@@ -2201,6 +2209,8 @@ fn moduleHasConsoleBuiltin(emitter: *C89Emitter) u8 {
                     .builtin_console_clear => return @intCast(u8, 1),
                     .builtin_console_gotoxy => return @intCast(u8, 1),
                     .builtin_console_set_color => return @intCast(u8, 1),
+                    .load_bitfield => {},
+                    .store_bitfield => {},
                     else => {},
                 }
             }
@@ -2851,6 +2861,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                 .va_start => {},
                 .va_arg => {},
                 .va_end => {},
+                .load_bitfield => {},
+                .store_bitfield => {},
                 else => {},
             }
         }
@@ -3126,6 +3138,16 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
+                .load_bitfield => |lb| {
+                    if (lb.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, lb.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .store_bitfield => {},
                 .ptr_cast => |pc| {
                     if (pc.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, pc.result)];
@@ -3260,6 +3282,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             switch (lrinst) {
                 .load_local => |ll| { lr_nid = ll.name_id; },
                 .load_field => |lf| { if (lf.name_id != @intCast(u32, 0)) { lr_nid = lf.name_id; } },
+                .load_bitfield => |lb| { if (lb.name_id != @intCast(u32, 0)) { lr_nid = lb.name_id; } },
                 .load_index => |li| { if (li.name_id != @intCast(u32, 0)) { lr_nid = li.name_id; } },
                 else => {},
             }
@@ -6906,6 +6929,8 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
             var ve_e: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, ve_e);
         },
+        .load_bitfield => |lb| {},
+        .store_bitfield => |sb| {},
         else => {},
     }
 }
@@ -6968,6 +6993,7 @@ fn dceFieldIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, base_temp: u32
                         var fe = registry.fe_items[@intCast(usize, bst.fields_start) + @intCast(usize, field_id)];
                         var fty = registry.types_items[@intCast(usize, fe.type_id)];
                         if (fty.kind == type_mod.TypeKind.array_type) { return true; }
+                        if (fty.kind == type_mod.TypeKind.struct_type and (fty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
                     }
                 } else if (bty.kind == type_mod.TypeKind.union_type) {
                     var bun = registry.un_items[@intCast(usize, bty.payload_idx)];
@@ -6975,6 +7001,7 @@ fn dceFieldIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, base_temp: u32
                         var fe = registry.fe_items[@intCast(usize, bun.fields_start) + @intCast(usize, field_id)];
                         var fty = registry.types_items[@intCast(usize, fe.type_id)];
                         if (fty.kind == type_mod.TypeKind.array_type) { return true; }
+                        if (fty.kind == type_mod.TypeKind.struct_type and (fty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
                     }
                 }
             }
@@ -6992,6 +7019,7 @@ fn dceTempIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, temp: u32) bool
             if (ht.type_id != type_mod.TYPE_UNDEFINED) {
                 var bty = registry.types_items[@intCast(usize, ht.type_id)];
                 if (bty.kind == type_mod.TypeKind.array_type) { return true; }
+                if (bty.kind == type_mod.TypeKind.struct_type and (bty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
             }
             break;
         }
@@ -7008,6 +7036,8 @@ fn dceMarkLoadGlobalAliases(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]
             var inst = bb.insts.items[ii];
             switch (inst) {
                 .load_global => |lg| { dceNoDeclPos(max_temp, tid_to_pos, no_decl_arr, lg.result); },
+                .load_bitfield => |lb| {},
+                .store_bitfield => |sb| {},
                 else => {},
             }
         }
@@ -7043,7 +7073,9 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .unary => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.operand); },
                 .call => |c| { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.callee); var ai: u32 = @intCast(u32, 0); while (ai < c.args_count) : (ai += @intCast(u32, 1)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.args_start + ai); } },
                 .load_field => |lf| { dceMarkReadPos(max_temp, tid_to_pos, read_count, lf.base); },
+                .load_bitfield => |lb| { dceMarkReadPos(max_temp, tid_to_pos, read_count, lb.base); },
                 .store_field => |sf| { dceMarkReadPos(max_temp, tid_to_pos, read_count, sf.base); dceMarkReadPos(max_temp, tid_to_pos, read_count, sf.value); },
+                .store_bitfield => |sb| { dceMarkReadPos(max_temp, tid_to_pos, read_count, sb.base); dceMarkReadPos(max_temp, tid_to_pos, read_count, sb.value); },
                 .load_index => |li| { dceMarkReadPos(max_temp, tid_to_pos, read_count, li.base); dceMarkReadPos(max_temp, tid_to_pos, read_count, li.index); },
                 .load => |l| { dceMarkReadPos(max_temp, tid_to_pos, read_count, l.ptr); },
                 .store => |st| { dceMarkReadPos(max_temp, tid_to_pos, read_count, st.ptr); dceMarkReadPos(max_temp, tid_to_pos, read_count, st.value); },
@@ -7142,6 +7174,8 @@ fn dceResultPos(max_temp: u32, tid_to_pos: [*]u32, inst: lir_mod.LirInst) u32 {
         .check_error => |c| { t = c.result; },
         .load => |l| { t = l.result; },
         .load_field => |lf| { t = lf.result; },
+        .load_bitfield => |lb| { t = lb.result; },
+        .store_bitfield => |sb| { t = @intCast(u32, 0xFFFFFFFF); },
         .load_index => |li| { t = li.result; },
         .load_local => |ll| { t = ll.result; },
         .assign => |a| { t = a.dst; },
@@ -7178,6 +7212,8 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
         .check_error => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },
         .load => |l| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, l.ptr); },
         .load_field => |lf| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, lf.base); },
+        .load_bitfield => |lb| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, lb.base); },
+        .store_bitfield => |sb| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, sb.base); dceReleaseReadPos(max_temp, tid_to_pos, read_count, sb.value); },
         .load_index => |li| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, li.base); dceReleaseReadPos(max_temp, tid_to_pos, read_count, li.index); },
         .assign => |a| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, a.src); },
         .assign_field => |a| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, a.base); dceReleaseReadPos(max_temp, tid_to_pos, read_count, a.src); },
@@ -7255,6 +7291,8 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                     .va_start => {},
                     .va_arg => {},
                     .va_end => {},
+                    .load_bitfield => {},
+                    .store_bitfield => {},
                     else => {},
                 }
             }
@@ -7289,6 +7327,8 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                     }
                     if (sw.else_bb < bb_used_cap) { bb_used_arr[@intCast(usize, sw.else_bb)] = @intCast(u8, 1); }
                 },
+                .load_bitfield => {},
+                .store_bitfield => {},
                 else => {},
             }
         }
