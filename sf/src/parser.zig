@@ -426,12 +426,13 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.lbracket) return parserParseArrayLiteral(self);
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
-    if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
+    if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self, 0);
     if (tok.kind == TokenKind.kw_packed) {
         _ = parserAdvance(self);
         var ntok = parserPeek(self);
         if (ntok.kind == TokenKind.kw_struct) return parserParseStructType(self, 1);
-        var pmsg: []const u8 = "expected 'struct' after 'packed'";
+        if (ntok.kind == TokenKind.kw_union) return parserParseUnionType(self, 1);
+        var pmsg: []const u8 = "expected 'struct' or 'union' after 'packed'";
         parserAddError(self, ntok, pmsg);
         return error.UnexpectedToken;
     }
@@ -1069,12 +1070,13 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
     }
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
-    if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self);
+    if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self, 0);
     if (tok.kind == TokenKind.kw_packed) {
         _ = parserAdvance(self);
         var ntok = parserPeek(self);
         if (ntok.kind == TokenKind.kw_struct) return parserParseStructType(self, 1);
-        var pmsg: []const u8 = "expected 'struct' after 'packed'";
+        if (ntok.kind == TokenKind.kw_union) return parserParseUnionType(self, 1);
+        var pmsg: []const u8 = "expected 'struct' or 'union' after 'packed'";
         parserAddError(self, ntok, pmsg);
         return error.UnexpectedToken;
     }
@@ -1300,8 +1302,9 @@ fn parserParseEnumType(self: *Parser) ParserError!u32 {
 }
 
 
-fn parserParseUnionType(self: *Parser) ParserError!u32 {
+fn parserParseUnionType(self: *Parser, is_packed: u8) ParserError!u32 {
     var tok = parserAdvance(self);
+    var flags: u8 = 0;
     var is_tagged: u8 = 0;
     if (parserPeek(self).kind == TokenKind.lparen) {
         _ = parserAdvance(self);
@@ -1309,6 +1312,13 @@ fn parserParseUnionType(self: *Parser) ParserError!u32 {
         _ = try parserExpect(self, TokenKind.rparen);
         is_tagged = 1;
     }
+    if (is_tagged != @intCast(u8, 0) and is_packed != @intCast(u8, 0)) {
+        var tag_msg: []const u8 = "packed unions cannot be tagged (union(enum)); packed union is an untagged container";
+        parserAddError(self, tok, tag_msg);
+        return error.UnexpectedToken;
+    }
+    if (is_tagged != @intCast(u8, 0)) flags = flags | @intCast(u8, 1);
+    if (is_packed != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x10);
     _ = try parserExpect(self, TokenKind.lbrace);
     var fields_buf: [*]u32 = undefined;
     var fields_count: usize = 0;
@@ -1343,7 +1353,7 @@ fn parserParseUnionType(self: *Parser) ParserError!u32 {
     if (is_tagged != 0) {
         // tagged_union_type for union(enum) — keep as union_decl with flags
     }
-    return ast_mod.astStoreAddNode(self.store, kind, is_tagged,
+    return ast_mod.astStoreAddNode(self.store, kind, flags,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
         0, 0, 0, payload);
 }

@@ -179,6 +179,24 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                             }
                         }
                     }
+                } else if (ty.state == @intCast(u8, 2) and ty.kind == type_mod.TypeKind.packed_union_type) {
+                    var u_fields: []type_mod.FieldEntry = undefined;
+                    type_mod.typeRegistryGetUnionFields(self.registry, t, &u_fields);
+                    var fname_node2 = ast_mod.astStoreNodeAt(self.store, ec2[@intCast(usize, 1)]);
+                    if (fname_node2.kind == AstKind.string_literal) {
+                        var sv_idx2 = ast_mod.astStoreNodePayload(self.store, ec2[@intCast(usize, 1)]);
+                        var want_id2 = self.store.string_values.items[@intCast(usize, sv_idx2)];
+                        var fi2: usize = 0;
+                        while (fi2 < u_fields.len) : (fi2 += 1) {
+                            if (u_fields[fi2].name_id == want_id2) {
+                                var ubo: u64 = @intCast(u64, 0);
+                                if (node.child_0 == self.offset_of_id) {
+                                    ubo = @intCast(u64, 0);
+                                }
+                                return ComptimeVal{ .bits = ubo, .width_bits = @intCast(u32, 0), .sig = false };
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -194,6 +212,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                     var bsz: u64 = @intCast(u64, ty2.size) * @intCast(u64, 8);
                     if (ty2.kind == type_mod.TypeKind.struct_type and (ty2.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
                         bsz = @intCast(u64, type_mod.typeRegistryGetPackedTotalBits(self.registry, t2));
+                    }
+                    if (ty2.kind == type_mod.TypeKind.packed_union_type) {
+                        bsz = @intCast(u64, type_mod.typeRegistryGetPackedUnionTotalBits(self.registry, t2));
                     }
                     if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
                         bsz = @intCast(u64, type_mod.typeRegistryIntWidthBits(self.registry, t2));

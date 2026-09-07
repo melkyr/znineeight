@@ -1260,7 +1260,7 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
             } else {
                 iceFieldStoreUnsupported(self, diag_node_idx);
             }
-        } else if (kind == type_mod.TypeKind.union_type) {
+        } else if (kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type) {
             var fields: []FieldEntry = undefined;
             type_mod.typeRegistryGetUnionFields(self.ctx.registry, type_box[0], &fields);
             var fi: usize = 0;
@@ -2809,7 +2809,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ap.length), .result = tid } });
                 }
                 return tid;
-            } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type) {
+            } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type or kind == type_mod.TypeKind.tagged_union_type) {
                 var gape_fkb: []const u8 = "GAPE:fkb\n"; pal.markerWrite(gape_fkb);
                 if (kind == type_mod.TypeKind.tagged_union_type) {
                     var tp2 = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
@@ -2886,7 +2886,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                 } else {
                 var fields: []FieldEntry = undefined;
-                if (kind == type_mod.TypeKind.union_type) {
+                if (kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type) {
                     type_mod.typeRegistryGetUnionFields(self.ctx.registry, type_box[0], &fields);
                 } else {
                     type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);

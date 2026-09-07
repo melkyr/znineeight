@@ -561,7 +561,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var sp = self.registry.st_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, sp.fields_start);
         fields_count = @intCast(usize, sp.fields_count);
-    } else if (base_ty.kind == type_mod.TypeKind.union_type) {
+    } else if (base_ty.kind == type_mod.TypeKind.union_type or base_ty.kind == type_mod.TypeKind.packed_union_type) {
         var up = self.registry.un_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, up.fields_start);
         fields_count = @intCast(usize, up.fields_count);
@@ -848,26 +848,80 @@ fn semanticAnalyzerMaybeGateAliasDecl(self: *SemanticAnalyzer, decl_node: u32, m
     if (decl_node == @intCast(u32, 0)) return;
     var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
     var target: u32 = @intCast(u32, 0);
+    var is_union: u8 = @intCast(u8, 0);
     if (dnode.kind == AstKind.struct_decl) {
         target = decl_node;
+    } else if (dnode.kind == AstKind.union_decl) {
+        if ((dnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { target = decl_node; is_union = @intCast(u8, 1); }
     } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
         var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
         if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+        if (inn.kind == AstKind.union_decl and (inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { target = dnode.child_1; is_union = @intCast(u8, 1); }
     }
-    if (target != @intCast(u32, 0)) semanticAnalyzerGatePackedFields(self, target, module_id);
+    if (target != @intCast(u32, 0)) {
+        if (is_union == @intCast(u8, 0)) semanticAnalyzerGatePackedFields(self, target, module_id)
+        else semanticAnalyzerGatePackedUnionMembers(self, target, module_id);
+    }
 }
 
 pub fn semanticAnalyzerGateModulePackedDecl(self: *SemanticAnalyzer, decl_node: u32) void {
     if (decl_node == @intCast(u32, 0)) return;
     var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
     var target: u32 = @intCast(u32, 0);
+    var is_union: u8 = @intCast(u8, 0);
     if (dnode.kind == AstKind.struct_decl) {
         target = decl_node;
+    } else if (dnode.kind == AstKind.union_decl) {
+        if ((dnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { target = decl_node; is_union = @intCast(u8, 1); }
     } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
         var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
         if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+        if (inn.kind == AstKind.union_decl and (inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { target = dnode.child_1; is_union = @intCast(u8, 1); }
     }
-    if (target != @intCast(u32, 0)) semanticAnalyzerGatePackedFields(self, target, self.module_id);
+    if (target != @intCast(u32, 0)) {
+        if (is_union == @intCast(u8, 0)) semanticAnalyzerGatePackedFields(self, target, self.module_id)
+        else semanticAnalyzerGatePackedUnionMembers(self, target, self.module_id);
+    }
+}
+
+fn semanticAnalyzerGatePackedUnionMembers(self: *SemanticAnalyzer, union_node_idx: u32, module_id: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, union_node_idx);
+    if (node.kind != AstKind.union_decl) return;
+    if ((node.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return;
+    if (semanticAnalyzerPackedGateSeen(self, union_node_idx)) return;
+    semanticAnalyzerPackedGateMark(self, union_node_idx);
+    var children = ast_mod.astStoreNodeExtraChildren(self.store, union_node_idx);
+    var ci: usize = 0;
+    while (ci < children.len) : (ci += @intCast(usize, 1)) {
+        var fd = ast_mod.astStoreNodeAt(self.store, children[ci]);
+        if (fd.kind != AstKind.field_decl) continue;
+        var type_node: u32 = fd.child_0;
+        var gate_state: u8 = @intCast(u8, 0);
+        var gate_wide: u8 = @intCast(u8, 0);
+        if (type_node != @intCast(u32, 0)) {
+            var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id };
+            var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
+            if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
+                gate_state = @intCast(u8, 1);
+            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft)) {
+                if (type_mod.typeRegistryIntWidthBits(self.registry, ft) > @intCast(u8, 31)) {
+                    gate_wide = @intCast(u8, 1);
+                } else {
+                    gate_state = @intCast(u8, 1);
+                }
+            }
+        }
+        if (gate_state == @intCast(u8, 1)) continue;
+        var fsp = fd.span_start;
+        var fep = fsp + @intCast(u32, fd.span_len);
+        if (gate_wide == @intCast(u8, 1)) {
+            var puw_msg: []const u8 = "packed union field width must be <= 31 bits (u32/i64 etc. packed fields are not supported yet)";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, puw_msg);
+        } else {
+            var pgu_msg: []const u8 = "packed union fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed union";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, pgu_msg);
+        }
+    }
 }
 
 fn semanticAnalyzerPackedStructDeclForType(self: *SemanticAnalyzer, struct_tid: u32) u32 {
@@ -1761,6 +1815,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                             var aof_msg: []const u8 = "cannot take the address of a field of a packed struct; packed fields have no address";
                             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, aps, ape, aof_msg);
                         }
+                    }
+                    if (st_ty.kind == type_mod.TypeKind.packed_union_type) {
+                        var apu_s = node.span_start;
+                        var apu_e = apu_s + @intCast(u32, node.span_len);
+                        var aou_msg: []const u8 = "cannot take the address of a field of a packed union; packed fields have no address";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, apu_s, apu_e, aou_msg);
                     }
                 }
             }

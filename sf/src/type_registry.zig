@@ -56,6 +56,7 @@ pub const TypeKind = enum(u8) {
     anon_struct_init, anon_array, anon_tuple, anon_union,
     va_list_type,
     arb_uint_type, arb_int_type,
+    packed_union_type,
 };
 
 pub const Type = struct {
@@ -119,6 +120,7 @@ pub const TypeRegistry = struct {
 
     pk_items: [*]PackedBitField, pk_len: usize, pk_cap: usize,
     pk_struct_items: [*]PackedStructInfo, pk_struct_len: usize, pk_struct_cap: usize,
+    pk_un_items: [*]PackedStructInfo, pk_un_len: usize, pk_un_cap: usize,
 
     ptr_cache: hash_mod.U64ToU32Map,
     many_ptr_cache: hash_mod.U64ToU32Map,
@@ -258,6 +260,14 @@ pub fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
  pub fn unAppend(self: *TypeRegistry, v: UnionPayload) void {
      payloadEnsure(@ptrCast(*[*]u8, &self.un_items), &self.un_len, &self.un_cap, self.types_alloc, @sizeOf(UnionPayload), self.un_len + 1);
      self.un_items[self.un_len] = v; self.un_len += 1;
+     pkUnStructAppend(self, PackedStructInfo{ .pk_start = @intCast(u32, 0), .pk_count = @intCast(u16, 0), .total_bits = @intCast(u32, 0) });
+ }
+ fn pkUnStructAppend(self: *TypeRegistry, v: PackedStructInfo) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.pk_un_items), &self.pk_un_len, &self.pk_un_cap, self.types_alloc, @sizeOf(PackedStructInfo), self.pk_un_len + 1);
+     self.pk_un_items[self.pk_un_len] = v; self.pk_un_len += 1;
+ }
+ pub fn pkUnSetFields(self: *TypeRegistry, pk_idx: u32, v: PackedStructInfo) void {
+     self.pk_un_items[@intCast(usize, pk_idx)] = v;
  }
  pub fn tuAppend(self: *TypeRegistry, v: TaggedUnionPayload) void {
      payloadEnsure(@ptrCast(*[*]u8, &self.tu_items), &self.tu_len, &self.tu_cap, self.types_alloc, @sizeOf(TaggedUnionPayload), self.tu_len + 1);
@@ -350,6 +360,7 @@ pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
         .xn_items = undefined, .xn_len = @intCast(usize, 0), .xn_cap = @intCast(usize, 0),
         .pk_items = undefined, .pk_len = @intCast(usize, 0), .pk_cap = @intCast(usize, 0),
         .pk_struct_items = undefined, .pk_struct_len = @intCast(usize, 0), .pk_struct_cap = @intCast(usize, 0),
+        .pk_un_items = undefined, .pk_un_len = @intCast(usize, 0), .pk_un_cap = @intCast(usize, 0),
         .ptr_cache = hash_mod.u64ToU32MapInit(alloc),
         .many_ptr_cache = hash_mod.u64ToU32MapInit(alloc),
         .slice_cache = hash_mod.u64ToU32MapInit(alloc),
@@ -1004,6 +1015,61 @@ pub fn typeRegistrySetPacked(self: *TypeRegistry, tid: u32) void {
     var ty = self.types_items[@intCast(usize, tid)];
     ty.flags = ty.flags | @intCast(u8, 0x10);
     self.types_items[@intCast(usize, tid)] = ty;
+}
+
+pub fn typeRegistryComputePackedUnionLayout(self: *TypeRegistry, tid: u32) void {
+    var idx = @intCast(usize, tid);
+    var ty = self.types_items[idx];
+    if (ty.kind != TypeKind.packed_union_type) return;
+    if (ty.payload_idx >= @intCast(u32, self.un_len)) return;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_un_len) return;
+    var up = self.un_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, up.fields_start);
+    var fcount: usize = @intCast(usize, up.fields_count);
+    var pk_start: u32 = @intCast(u32, self.pk_len);
+    var max_bits: u32 = @intCast(u32, 0);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        var fe = self.fe_items[fstart + fi];
+        var w: u32 = @intCast(u32, 1);
+        if (fe.type_id < @intCast(u32, self.types_len)) {
+            var ft = self.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind != TypeKind.bool_type) {
+                w = @intCast(u32, typeRegistryIntWidthBits(self, fe.type_id));
+            }
+        }
+        pkFieldAppend(self, PackedBitField{ .bit_offset = @intCast(u32, 0), .bit_width = @intCast(u16, w) });
+        if (w > max_bits) max_bits = w;
+    }
+    pkUnSetFields(self, ty.payload_idx, PackedStructInfo{ .pk_start = pk_start, .pk_count = @intCast(u16, fcount), .total_bits = max_bits });
+    var sz: u32 = (max_bits + @intCast(u32, 7)) / @intCast(u32, 8);
+    if (sz == @intCast(u32, 0)) sz = @intCast(u32, 1);
+    ty.size = sz;
+    ty.alignment = @intCast(u32, 1);
+    self.types_items[idx] = ty;
+}
+
+pub fn typeRegistryGetPackedUnionBitFields(self: *TypeRegistry, tid: u32, out: *[]PackedBitField) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.packed_union_type) return false;
+    if (ty.payload_idx >= @intCast(u32, self.un_len)) return false;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_un_len) return false;
+    var psi = self.pk_un_items[@intCast(usize, ty.payload_idx)];
+    var pstart: usize = @intCast(usize, psi.pk_start);
+    var pcount: usize = @intCast(usize, psi.pk_count);
+    if (pstart + pcount > self.pk_len) return false;
+    out.* = self.pk_items[pstart .. pstart + pcount];
+    return true;
+}
+
+pub fn typeRegistryGetPackedUnionTotalBits(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u32, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.packed_union_type) return @intCast(u32, 0);
+    if (ty.payload_idx >= @intCast(u32, self.un_len)) return @intCast(u32, 0);
+    if (@intCast(usize, ty.payload_idx) >= self.pk_un_len) return @intCast(u32, 0);
+    return self.pk_un_items[@intCast(usize, ty.payload_idx)].total_bits;
 }
 
 pub fn typeRegistryGetUnionFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {

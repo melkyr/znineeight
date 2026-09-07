@@ -565,6 +565,9 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 if (di_inn.kind == AstKind.struct_decl) {
                     sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decls[di]);
                 }
+                if (di_inn.kind == AstKind.union_decl and (di_inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decls[di]);
+                }
             }
         }
     }

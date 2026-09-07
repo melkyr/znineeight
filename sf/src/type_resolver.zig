@@ -183,6 +183,8 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         ty.alignment = max_align;
         if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
         self.registry.types_items[idx] = ty;
+     } else if (ty.kind == TypeKind.packed_union_type) {
+        type_mod.typeRegistryComputePackedUnionLayout(self.registry, tid);
      } else if (ty.kind == TypeKind.tagged_union_type) {
          var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
          var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];
@@ -354,6 +356,7 @@ fn fieldEmbedsByValue(kind: TypeKind) bool {
     if (kind == TypeKind.struct_type) return true;
     if (kind == TypeKind.tagged_union_type) return true;
     if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.packed_union_type) return true;
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.tuple_type) return true;
     if (kind == TypeKind.enum_type) return true;          // ADD — inline typedef integer alias
@@ -365,6 +368,7 @@ fn requiresFullDef(kind: TypeKind) bool {
     if (kind == TypeKind.struct_type) return true;
     if (kind == TypeKind.tagged_union_type) return true;
     if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.packed_union_type) return true;
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.tuple_type) return true;
     if (kind == TypeKind.optional_type) return true;
@@ -376,6 +380,7 @@ fn layoutFieldNeedsEdge(kind: TypeKind) bool {
     if (kind == TypeKind.struct_type) return true;
     if (kind == TypeKind.tagged_union_type) return true;
     if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.packed_union_type) return true;
     if (kind == TypeKind.enum_type) return true;
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.tuple_type) return true;
@@ -413,6 +418,9 @@ pub fn typeResolverBuildDependencyGraph(self: *TypeResolver) void {
         } else if (ty.kind == TypeKind.union_type) {
             var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
             layoutAddFieldEdges(self, up.fields_start, up.fields_count, container_tid);
+        } else if (ty.kind == TypeKind.packed_union_type) {
+            var pup = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+            layoutAddFieldEdges(self, pup.fields_start, pup.fields_count, container_tid);
         } else if (ty.kind == TypeKind.array_type) {
             layoutAddTypeEdge(self, self.registry.array_items[@intCast(usize, ty.payload_idx)].elem, container_tid);
         } else if (ty.kind == TypeKind.tuple_type) {
@@ -505,6 +513,28 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
             var fi: usize = 0;
             while (fi < @intCast(usize, up.fields_count) and is_po != 0) : (fi += 1) {
                 var ft_id = self.registry.fe_items[@intCast(usize, up.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.packed_union_type) {
+            var p_up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+            var pfi: usize = 0;
+            while (pfi < @intCast(usize, p_up.fields_count) and is_po != 0) : (pfi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, p_up.fields_start) + pfi].type_id;
                 var ft = self.registry.types_items[@intCast(usize, ft_id)];
                 if (fieldEmbedsByValue(ft.kind)) {
                     is_po = @intCast(u8, 0);
@@ -1086,7 +1116,7 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                     }
                 }
             }
-        } else if (sty.kind == type_mod.TypeKind.union_type) {
+        } else if (sty.kind == type_mod.TypeKind.union_type or sty.kind == type_mod.TypeKind.packed_union_type) {
             var up = env.typereg.un_items[@intCast(usize, sty.payload_idx)];
             while (fi2 < @intCast(usize, up.fields_count)) : (fi2 += 1) {
                 var fd = ast_mod.astStoreNodeAt(env.store, fchildren[fi2]);

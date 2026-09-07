@@ -258,12 +258,12 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     var type_kind: TypeKind = switch (init_node.kind) {
                         AstKind.struct_decl => TypeKind.struct_type,
                         AstKind.enum_decl => TypeKind.enum_type,
-                        AstKind.union_decl => if ((@intCast(u16, init_node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
+                        AstKind.union_decl => if ((@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != 0) TypeKind.packed_union_type else if ((@intCast(u16, init_node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
                         AstKind.error_set_decl => TypeKind.error_set_type,
                         else => TypeKind.void_type,
                     };
                     sym_type_id = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-                    if (init_node.kind == AstKind.struct_decl and (@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+                    if ((init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.union_decl) and (@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
                         type_mod.typeRegistrySetPacked(type_reg, sym_type_id);
                     }
                     if (populate) { populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_reg); }
@@ -360,11 +360,11 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
             var type_kind: TypeKind = switch (node.kind) {
                 AstKind.struct_decl => TypeKind.struct_type,
                 AstKind.enum_decl => TypeKind.enum_type,
-                AstKind.union_decl => if ((@intCast(u16, node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
+                AstKind.union_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x10)) != 0) TypeKind.packed_union_type else if ((@intCast(u16, node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
                 else => TypeKind.void_type,
             };
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-            if (node.kind == AstKind.struct_decl and (@intCast(u16, node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+            if ((node.kind == AstKind.struct_decl or node.kind == AstKind.union_decl) and (@intCast(u16, node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
                 type_mod.typeRegistrySetPacked(type_reg, tid);
             }
             if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }

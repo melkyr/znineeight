@@ -295,7 +295,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
                         is_arr[0] = @intCast(u32, 1);
                         arr_len[0] = afap.length;
                     }
-                } else if (bty.kind == TypeKind.union_type) {
+                } else if (bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type) {
                     var dot_s: []const u8 = ".";
                     bufferedWriterWrite(writer, dot_s);
                     var fe: type_mod.FieldEntry = registry.fe_items[@intCast(usize, registry.un_items[@intCast(usize, bty.payload_idx)].fields_start) + @intCast(usize, field_id)];
@@ -640,6 +640,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
 
 fn aggregateKeyword(kind: TypeKind) []const u8 {
     if (kind == TypeKind.union_type) { var s: []const u8 = "union "; return s; }
+    if (kind == TypeKind.packed_union_type) { var s: []const u8 = "union "; return s; }
     var s: []const u8 = "struct "; return s;
 }
 
@@ -1128,7 +1129,7 @@ pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
 fn ctypeGuardWrite(writer: *BufferedWriter, kind: TypeKind) void {
     if (kind == TypeKind.struct_type or kind == TypeKind.tagged_union_type) {
         var tag: []const u8 = "ZIG_STRUCT_"; bufferedWriterWrite(writer, tag);
-    } else if (kind == TypeKind.union_type) {
+    } else if (kind == TypeKind.union_type or kind == TypeKind.packed_union_type) {
         var tag: []const u8 = "ZIG_UNION_"; bufferedWriterWrite(writer, tag);
     } else if (kind == TypeKind.enum_type) {
         var tag: []const u8 = "ZIG_ENUM_"; bufferedWriterWrite(writer, tag);
@@ -1198,6 +1199,7 @@ pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) 
             if (ty2.kind != TypeKind.struct_type and
                 ty2.kind != TypeKind.tagged_union_type and
                 ty2.kind != TypeKind.union_type and
+                ty2.kind != TypeKind.packed_union_type and
                 ty2.kind != TypeKind.enum_type and
                 ty2.kind != TypeKind.error_set_type) continue;
             if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, ti2) == null) continue;
@@ -1235,7 +1237,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
         var ty = reg.types_items[@intCast(usize, tid)];
-        if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type) {
+        if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
             if (ty.name_id != @intCast(u32, 0)) {
                 if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) continue;
                 var cname = getCTypeName(reg, emitter.mangler, tid);
@@ -1369,7 +1371,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
         var ty = reg.types_items[@intCast(usize, tid)];
-        if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type) {
+        if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
             if (ty.name_id != @intCast(u32, 0)) {
                 if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) continue;
                 var cname = getCTypeName(reg, emitter.mangler, tid);
@@ -1741,6 +1743,7 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.enum_type) { emitEnumType(emitter, tid); return; }
     if (ty.kind == TypeKind.struct_type) { emitStructType(emitter, tid); return; }
     if (ty.kind == TypeKind.union_type) { emitUnionType(emitter, tid); return; }
+    if (ty.kind == TypeKind.packed_union_type) { emitUnionType(emitter, tid); return; }
     if (ty.kind == TypeKind.array_type) { emitArrayType(emitter, tid); return; }
     if (ty.kind == TypeKind.i64_type) { emitInt64Type(emitter, tid); return; }
     if (ty.kind == TypeKind.u64_type) { emitUint64Type(emitter, tid); return; }
@@ -2403,7 +2406,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
         var ty = emitter.registry.types_items[@intCast(usize, tid)];
         if (ty.name_id == @intCast(u32, 0)) continue;
         if (ty.module_id != module_id) continue;
-        if (ty.kind != TypeKind.struct_type and ty.kind != TypeKind.tagged_union_type and ty.kind != TypeKind.union_type and ty.kind != TypeKind.enum_type and ty.kind != TypeKind.error_set_type) continue;
+        if (ty.kind != TypeKind.struct_type and ty.kind != TypeKind.tagged_union_type and ty.kind != TypeKind.union_type and ty.kind != TypeKind.packed_union_type and ty.kind != TypeKind.enum_type and ty.kind != TypeKind.error_set_type) continue;
         if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
         if (hash_mod.u32ToU32MapGet(&emitter.shared_set, tid) != null) continue;
         var cname = getCTypeName(emitter.registry, emitter.mangler, tid);
@@ -5417,10 +5420,10 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                               field_name_resolved = @intCast(u8, 1);
                               var pointee = emitter.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
                               var pty = emitter.registry.types_items[@intCast(usize, pointee)];
-                              if (pty.kind == type_mod.TypeKind.struct_type or pty.kind == type_mod.TypeKind.union_type) {
+                              if (pty.kind == type_mod.TypeKind.struct_type or pty.kind == type_mod.TypeKind.union_type or pty.kind == type_mod.TypeKind.packed_union_type) {
                                   var pst_fstart: usize = @intCast(usize, 0);
                                   var pst_fcount: usize = @intCast(usize, 0);
-                                  if (pty.kind == type_mod.TypeKind.union_type) {
+                                  if (pty.kind == type_mod.TypeKind.union_type or pty.kind == type_mod.TypeKind.packed_union_type) {
                                       var pup = emitter.registry.un_items[@intCast(usize, pty.payload_idx)];
                                       pst_fstart = @intCast(usize, pup.fields_start);
                                       pst_fcount = @intCast(usize, pup.fields_count);
@@ -5436,11 +5439,11 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                                       bufferedWriterWrite(&emitter.writer, pfn);
                                   }
                               }
-                          } else if (bty.kind == type_mod.TypeKind.struct_type or bty.kind == type_mod.TypeKind.union_type) {
+                          } else if (bty.kind == type_mod.TypeKind.struct_type or bty.kind == type_mod.TypeKind.union_type or bty.kind == type_mod.TypeKind.packed_union_type) {
                               field_name_resolved = @intCast(u8, 1);
                               var lf_fstart: usize = @intCast(usize, 0);
                               var lf_fcount: usize = @intCast(usize, 0);
-                              if (bty.kind == type_mod.TypeKind.union_type) {
+                              if (bty.kind == type_mod.TypeKind.union_type or bty.kind == type_mod.TypeKind.packed_union_type) {
                                   var lf_up = emitter.registry.un_items[@intCast(usize, bty.payload_idx)];
                                   lf_fstart = @intCast(usize, lf_up.fields_start);
                                   lf_fcount = @intCast(usize, lf_up.fields_count);
@@ -5543,7 +5546,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                                      bufferedWriterWrite(&emitter.writer, fname);
                                      found2 = @intCast(u8, 1);
                                      if (typeIsPtrKind(emitter.registry, fe.type_id) != @intCast(u8, 0)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, fe.type_id); }
-                                 } else if (pty.kind == type_mod.TypeKind.union_type) {
+                                 } else if (pty.kind == type_mod.TypeKind.union_type or pty.kind == type_mod.TypeKind.packed_union_type) {
                                      var arrow_s: []const u8 = "->";
                                      bufferedWriterWrite(&emitter.writer, arrow_s);
                                      var pup = emitter.registry.un_items[@intCast(usize, pty.payload_idx)];
@@ -5567,7 +5570,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                                     is_arr2 = @intCast(u8, 1);
                                     arr_len2 = sfap.length;
                                 }
-                            } else if (bty.kind == type_mod.TypeKind.union_type) {
+                            } else if (bty.kind == type_mod.TypeKind.union_type or bty.kind == type_mod.TypeKind.packed_union_type) {
                                 var dot_s: []const u8 = ".";
                                 bufferedWriterWrite(&emitter.writer, dot_s);
                                 var up = emitter.registry.un_items[@intCast(usize, bty.payload_idx)];
