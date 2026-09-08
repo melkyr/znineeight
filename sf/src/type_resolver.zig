@@ -717,7 +717,18 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32) ?i64 {
     if (node_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
     if (node.kind == AstKind.int_literal) {
-        return @intCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
+        return @bitCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
+    }
+    if (node.kind == AstKind.negate) {
+        if (node.child_0 != @intCast(u32, 0)) {
+            var nv_opt = evalConstI64Full(env, node.child_0);
+            if (nv_opt) |nv| {
+                var as_u: u64 = @bitCast(u64, nv);
+                var neg_u: u64 = @intCast(u64, 0) - as_u;
+                return @bitCast(i64, neg_u);
+            }
+        }
+        return null;
     }
     if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);

@@ -1002,20 +1002,29 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
     var children2 = ast_mod.astStoreNodeExtraChildren(self.store, enum_node);
     var fcount2: usize = @intCast(usize, 0);
     var ci2: usize = 0;
+    var prev_vu: u64 = @intCast(u64, 0);
+    var have_prev: bool = false;
     while (ci2 < children2.len and fcount2 < mcount2) : (ci2 += @intCast(usize, 1)) {
         var fd2 = ast_mod.astStoreNodeAt(self.store, children2[ci2]);
         if (fd2.kind != AstKind.field_decl) continue;
         var mv = self.registry.em_items[mstart2 + fcount2].value;
-        if (mv >= @intCast(i64, 0)) {
-            var mvu: u64 = @intCast(u64, mv);
-            if (mvu > maxv) {
-                var msp = fd2.span_start;
-                var mep = msp + @intCast(u32, fd2.span_len);
-                var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
-                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
-                return;
-            }
+        var mvu: u64 = @bitCast(u64, mv);
+        if (mvu > maxv) {
+            var msp = fd2.span_start;
+            var mep = msp + @intCast(u32, fd2.span_len);
+            var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+            return;
         }
+        if (have_prev and prev_vu == maxv and fd2.child_1 == @intCast(u32, 0)) {
+            var msp = fd2.span_start;
+            var mep = msp + @intCast(u32, fd2.span_len);
+            var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+            return;
+        }
+        prev_vu = mvu;
+        have_prev = true;
         fcount2 += @intCast(usize, 1);
     }
 }
@@ -2035,9 +2044,10 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 var e2i_ty = self.registry.types_items[@intCast(usize, e2i_arg)];
                 if (e2i_ty.kind == type_mod.TypeKind.enum_type) {
                     var e2i_bt = type_mod.typeRegistryEnumBackingType(self.registry, e2i_arg);
-                    if (e2i_bt != type_mod.TYPE_U32 and @intCast(usize, e2i_bt) < self.registry.types_len) {
-                        var e2i_bty = self.registry.types_items[@intCast(usize, e2i_bt)];
-                        if (e2i_bty.kind == type_mod.TypeKind.arb_uint_type) { e2i_res = e2i_bt; }
+                    if (e2i_bt != type_mod.TYPE_UNDEFINED and @intCast(usize, e2i_bt) < self.registry.types_len) {
+                        if (type_mod.typeRegistryEnumHasExplicitBacking(self.registry, e2i_arg) and type_mod.typeRegistryIsUnsigned(self.registry, e2i_bt)) {
+                            e2i_res = e2i_bt;
+                        }
                     }
                 }
             }

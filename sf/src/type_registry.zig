@@ -81,7 +81,7 @@ pub const EUPayload = struct { payload: TypeId, error_set: TypeId };
 pub const ErrorSetPayload = struct { tags_start: u32, tags_count: u16 };
 pub const FnPayload = struct { name_id: u32, module_id: u32, params_start: u32, params_count: u16, return_type: TypeId, is_extern: u8, flags_packed: u8 };
 pub const StructPayload = struct { fields_start: u32, fields_count: u16 };
-pub const EnumPayload = struct { members_start: u32, members_count: u16, backing_type: TypeId };
+pub const EnumPayload = struct { members_start: u32, members_count: u16, backing_type: TypeId, explicit_backing: u8 };
 pub const UnionPayload = struct { fields_start: u32, fields_count: u16, tag_type: TypeId };
 pub const TaggedUnionPayload = struct { tag_type: TypeId, fields_start: u32, fields_count: u16 };
 pub const TuplePayload = struct { elems_start: u32, elems_count: u16 };
@@ -771,6 +771,15 @@ pub fn typeRegistryEnumBackingType(self: *TypeRegistry, tid: u32) u32 {
     if (@intCast(usize, ty.payload_idx) >= self.en_len) return TYPE_U32;
     var ep = self.en_items[@intCast(usize, ty.payload_idx)];
     return ep.backing_type;
+}
+
+pub fn typeRegistryEnumHasExplicitBacking(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.enum_type) return false;
+    if (@intCast(usize, ty.payload_idx) >= self.en_len) return false;
+    var ep = self.en_items[@intCast(usize, ty.payload_idx)];
+    return ep.explicit_backing != @intCast(u8, 0);
 }
 
 pub fn typeRegistryIntWidthBits(self: *TypeRegistry, tid: u32) u8 {

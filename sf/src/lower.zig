@@ -2807,11 +2807,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 var member = self.ctx.registry.em_items[estart + ei];
                                 if (member.name_id == field_name_id) {
                                     var eftid = nextTemp(self, type_id);
-                                    emitInst(self, LirInst{ .enum_const = .{ .value = @intCast(u64, member.value), .result = eftid, .type_id = type_id, .member_name_id = member.name_id } });
+                                    emitInst(self, LirInst{ .enum_const = .{ .value = @bitCast(u64, member.value), .result = eftid, .type_id = type_id, .member_name_id = member.name_id } });
                                     var enl_m: []const u8 = "ENLF:t"; pal.markerWrite(enl_m);
                                     var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(type_id, enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
                                     var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
-                                    var enl_cb: [24]u8 = undefined; var enl_cl = itoa_mod.itoa64(@intCast(u64, member.value), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 23) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 23)]);
+                                    var enl_cb: [24]u8 = undefined; var enl_cl = itoa_mod.itoa64(@bitCast(u64, member.value), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 23) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 23)]);
                                     var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
                                     return eftid;
                                 }

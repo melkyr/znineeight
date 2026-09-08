@@ -170,9 +170,11 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner, .module_id = type_resolver.MODULE_ID_NONE };
         var backing_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
         backing_box[0] = type_mod.TYPE_U32;
+        var expl_flag: u8 = @intCast(u8, 0);
         if (node.child_0 != 0) {
             var bt = type_resolver.resolveTypeExprFull(&tre_env, node.child_0, @intCast(u32, 0));
             if (bt != type_mod.TYPE_UNDEFINED and bt != type_mod.TYPE_VOID) { backing_box[0] = bt; }
+            expl_flag = @intCast(u8, 1);
         }
         var mstart: u32 = @intCast(u32, type_reg.em_len);
         var mcount: u32 = 0;
@@ -196,6 +198,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             .members_start = @intCast(u32, mstart),
             .members_count = @intCast(u16, mcount),
             .backing_type = backing_box[0],
+            .explicit_backing = expl_flag,
         });
         var en_last: usize = type_reg.en_len - @intCast(usize, 1);
         var en_idx: u32 = @intCast(u32, en_last);
