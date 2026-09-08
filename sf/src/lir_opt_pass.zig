@@ -51,6 +51,77 @@ const INVALID: u32 = 0xFFFFFFFF;
 
 pub const kCopyPropMaxIter = @intCast(u32, 128);
 
+// C90 expression-nesting cap. The PASS never enforces it (backend-agnostic
+// boundary): depth is recorded unboundedly. The EMITTER (T4b+) enforces it when
+// it decides which candidate temps to inline. Named here per the Task-2 design
+// so both sides share one constant.
+pub const kEmitNestDepthCap: u32 = 32;
+
+// ----- T4b: active-function nest metadata publication -----
+//
+// lirOptRun allocates its per-temp arrays from the caller's per-function sand,
+// which stays live from pass-end until the emission driver's next sandReset
+// (start of the next function). T4b makes the metadata of the function being
+// emitted queryable by the emitter during that window: lirOptRun records the
+// final arrays in these module-level rows, and the exported lirOptNest*()
+// accessors read them. Invalidation: lirOptRun clears g_nest_active at its
+// entry (before any early return), so a function that never runs the pass (or
+// is skipped) can never observe a previous function's rows. Emission is
+// single-threaded and serialized per function, so a single active row is safe.
+
+var g_nest_active: u8 = 0;
+var g_nest_max: u32 = 0;
+var g_nest_cand: [*]u8 = undefined;
+var g_nest_depth: [*]u8 = undefined;
+var g_nest_dfbb: [*]u32 = undefined;
+var g_nest_dfii: [*]u32 = undefined;
+var g_nest_rdbb: [*]u32 = undefined;
+var g_nest_rdii: [*]u32 = undefined;
+
+pub fn lirOptNestActive() u8 {
+    return g_nest_active;
+}
+
+fn nestInRange(t: u32) u8 {
+    if (g_nest_active == @intCast(u8, 0)) return @intCast(u8, 0);
+    if (t >= g_nest_max) return @intCast(u8, 0);
+    return @intCast(u8, 1);
+}
+
+pub fn lirOptNestCandidate(t: u32) u8 {
+    if (nestInRange(t) == @intCast(u8, 0)) return @intCast(u8, 0);
+    return g_nest_cand[@intCast(usize, t)];
+}
+
+pub fn lirOptNestDepthOf(t: u32) u8 {
+    if (nestInRange(t) == @intCast(u8, 0)) return @intCast(u8, 0);
+    return g_nest_depth[@intCast(usize, t)];
+}
+
+// Def inst location of temp t (df locators, valid for candidates). Non-valid
+// temps get INVALID/INVALID (safe default - never stale rows).
+pub fn lirOptNestDefLoc(t: u32, out_bb: *u32, out_ii: *u32) void {
+    if (nestInRange(t) == @intCast(u8, 0)) {
+        out_bb.* = INVALID;
+        out_ii.* = INVALID;
+        return;
+    }
+    out_bb.* = g_nest_dfbb[@intCast(usize, t)];
+    out_ii.* = g_nest_dfii[@intCast(usize, t)];
+}
+
+// Single-read location of temp t (first-read locators). Non-valid temps get
+// INVALID/INVALID.
+pub fn lirOptNestConsLoc(t: u32, out_bb: *u32, out_ii: *u32) void {
+    if (nestInRange(t) == @intCast(u8, 0)) {
+        out_bb.* = INVALID;
+        out_ii.* = INVALID;
+        return;
+    }
+    out_bb.* = g_nest_rdbb[@intCast(usize, t)];
+    out_ii.* = g_nest_rdii[@intCast(usize, t)];
+}
+
 const Ctx = struct {
     alloc: *Sand,
     reg: *TypeRegistry,
@@ -1318,6 +1389,9 @@ fn runConstFold(c: *Ctx) u8 {
 /// `lir_fn` in place. `alloc` is the per-function scratch sand (reset by the
 /// emission driver between functions).
 pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
+    // Invalidate any previous function's published nest metadata (a function
+    // that never runs the pass must not be able to read a stale row).
+    g_nest_active = @intCast(u8, 0);
     var max_temp = maxTempOf(lir_fn);
     if (max_temp == @intCast(u32, 0)) return;
     var c = Ctx{
@@ -1357,10 +1431,20 @@ pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
     scanAll(&c);
     _ = runConstFold(&c);
     // T4a: record nest-candidate + expression-depth metadata on the FINAL LIR
-    // (post copy-prop + const-fold). Nothing in emission reads these arrays in
-    // T4a, so the emitted C is byte-identical with or without this record.
+    // (post copy-prop + const-fold).
     scanAll(&c);
     computeNestMetadata(&c);
+    // T4b: publish the active function's rows (arrays stay Sand-backed; valid
+    // until the emission driver's next sandReset). The EMITTER reads these
+    // during this function's emission only.
+    g_nest_active = @intCast(u8, 1);
+    g_nest_max = max_temp;
+    g_nest_cand = c.cand;
+    g_nest_depth = c.depth;
+    g_nest_dfbb = c.df_bb;
+    g_nest_dfii = c.df_ii;
+    g_nest_rdbb = c.rd_bb;
+    g_nest_rdii = c.rd_ii;
 }
 
 fn allocU32With(alloc: *Sand, n: u32, fill: u32) [*]u32 {
