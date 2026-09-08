@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v74 2026-09-08)
+# mi_matrix corpus — expected-fail manifest (v75 2026-09-08)
+
+## Packed-struct members of packed unions GREEN (v75 2026-09-08) — PACK-AGG AMENDMENT
+
+Plan `2026-09-06-packed-struct-aggregates-plan.md` post-close AMENDMENT (I-1 + F-1, operator-ruled)
+is COMPLETE — `packed struct` members of `packed union`s are now admitted (B6 member gate widened
+to packed-struct types), union layout sizes them (member width = the inner packed struct's pk total
+bits, `bit_offset` 0, `size=ceil(max/8)` min 1, align 1), and leaf access through union members
+(`u.member.field`) parses, resolves, and lowers/emits to ONE accumulated `0 + inner_offset`
+`load_bitfield`/`store_bitfield` — no sub-container materialization. Whole-member value moves
+clean-reject: the direct read/store routes AND the agg-literal `U{.b=inner}` route each fire a
+clean `error[3000]` — never silent. The two new guard fixtures `packed_union_struct_member_xmod` /
+`packed_union_struct_wholemember_xmod` are GREEN: the leaf fixture is compile-clean OK (dump rc=0,
+0 `error[`, 0 PANIC, gcc `-m32` clean) AND run-gate byte-exact 3× deterministic (RUNRC=0, stdout
+`1 6 5 7`); the whole-member probe is GREEN-guard class (rc=2, ONE error[3000], 0 `.c`, per the
+`field_access_optional`-style green-guard convention). Measured on the reference
+`/tmp/fx_subfolder/zig1` md5 `1e7a705b` (rebuilt at HEAD `9bc2c751`, canonical std reinstalled) via
+the authoritative fixture_run.sh + classify1.sh recipes (full `-Wall` flag set, fresh dirs, 3 fresh
+runs per fixture, stdout/stderr md5 identical 3/3). The v74 PACK-AGG section below is the
+historical record — retained verbatim; the fix commits its rows reference are the Tasks 2-4 chain +
+this AMENDMENT.
+
+| fixture | v75 class | v75 GREEN contract (byte-exact 3×) |
+|---|---|---|
+| `packed_union_struct_member_xmod` (leaf access) | compile-clean **OK** (dump rc=0, 0 `error[`, 0 PANIC) | `1 6 5 7` (RUNRC=0 · stdout md5 `8c784da5…` ×3) |
+| `packed_union_struct_wholemember_xmod` (whole-member probe) | **GREEN** (guard class) | rc=2 · ONE error[3000] · 0 `.c` (stderr md5 `66e75896…` ×3) |
+
+- **RESOLVED rows (fix commits):** F-1 `03896568` (packed-struct members of packed unions + leaf
+  access through union members: B6 member gate admits packed-struct types; union layout sizes a
+  packed-struct member at width = its inner pk total bits (`typeRegistryGetPackedTotalBits`), so a
+  packed struct member of a packed union is representable; chain-analyze first-packed scan + union
+  accumulation dispatch generalized to packed-union containers — leaf `u.member.field` reads/stores
+  lower to ONE accumulated-offset `load_bitfield`/`store_bitfield` at `0 + inner_offset`, no
+  sub-container materialization) + RULING-A whole-member guards (direct read AND direct store each
+  clean-reject with `error[3000]` "cannot read/assign a whole packed-struct value out of/to a
+  packed union member (bit-slice … not supported)") + review fix A2 `9bc2c751` (the agg-literal
+  whole-member route `U{.b=inner}` — a third whole-member path whose packed-union agg-literal arm
+  lacked the member-type guard → silent wrong code — now fires ONE clean `error[3000]` with the
+  verbatim direct-store wording; scalar-member agg-literal path unchanged). Run-gate: leaf fixture
+  stdout `1 6 5 7`→`8c784da5…` (×3, RUNRC=0); whole-member probe rc=2 / ONE error[3000] / 0 `.c` /
+  stderr md5 `66e75896…` (×3). Whole-member value moves now clean-reject on ALL THREE routes —
+  direct read, direct store, agg-literal — never silent. Each fixture stays as a permanent
+  regression guard.
+- **Corpus reconciliation (reference `1e7a705b`):** full 417-dir `-s0` compile-gate sweep =
+  **OK=400 / GREEN=10 / FAIL=7 / GCCFAIL=0 / ICE=0 / CRASH=0** — sorted-identical to the F-1
+  feature-commit sweep; per-row movement vs the v74 close is EXACTLY the 2 new dirs
+  (`packed_union_struct_member_xmod` OK, `packed_union_struct_wholemember_xmod` GREEN), the
+  documented FAIL-5 set (`emission_pal_xmod`/`parsergap_selfblok_xmod`/`parsergap_strict_comma_xmod`
+  /`self_embed_optional_cycle`/`strictzig_brace_if_xmod`) and the prior GREEN-9 set row-identical
+  (FAIL-7 incl the 2 collection-dir artifacts `mi_matrix`/`slice_matrix`, no main.zig; GREEN-10 incl
+  `packed_enum_field_xmod` — L7 enum(u3) = PACK-B3 scope — + the whole-member probe). All packed
+  dirs (L0-L6 + the new leaf fixture) classify OK at the compile gate; their RED→GREEN shows at the
+  run gate above. Golden 9/9 PASS; matrix 21/21 PASS. Zero asymmetric movement.
+- **4-MD5 gates byte-identical UNCHANGED (v75, NO gate re-baseline):** gol `302df36b…` / lisp
+  `3591bad9…` / json `76056b97…` / mud `846106ac…` (repo-root CWD, stdout-only, dump rc=0 each).
+- **Self-compile fixed point RE-BASELINED (operator-approved 2026-09-08):
+  `7e23d33d77926c71999daf602e3d96b6` → `e20bfb7072ea10167476d8f94a9d391d`** — two-hop closure at HEAD
+  `9bc2c751`, 41 `.c` + 42 `.h`, rc=0, 0 `error[`, 0 PANIC, hop1==hop2 binary byte-identical (`cmp`
+  clean); the documented fixed-point-moves-when-compiler-source-grows class (the F-1 + A2 self-source
+  edits moved it; the v74 `7e23d33d…` value superseded). Reference binary md5 `1e7a705b…` (rebuilt
+  at HEAD `9bc2c751`). Seed rotated to the new fixed point (release/seed seed v3).
 
 ## Packed aggregates GREEN (v74 2026-09-08) — PACK-AGG plan Tasks 2-4
 
