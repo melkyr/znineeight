@@ -764,9 +764,21 @@ pub fn typeRegistryGetOrCreateArbInt(self: *TypeRegistry, name: []const u8) u32 
     return tid;
 }
 
+pub fn typeRegistryEnumBackingType(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return TYPE_U32;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.enum_type) return TYPE_U32;
+    if (@intCast(usize, ty.payload_idx) >= self.en_len) return TYPE_U32;
+    var ep = self.en_items[@intCast(usize, ty.payload_idx)];
+    return ep.backing_type;
+}
+
 pub fn typeRegistryIntWidthBits(self: *TypeRegistry, tid: u32) u8 {
     if (@intCast(usize, tid) >= self.types_len) return @intCast(u8, 0);
     var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.enum_type) {
+        return typeRegistryIntWidthBits(self, typeRegistryEnumBackingType(self, tid));
+    }
     if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) {
         return ty.width_bits;
     }
@@ -776,12 +788,16 @@ pub fn typeRegistryIntWidthBits(self: *TypeRegistry, tid: u32) u8 {
 pub fn typeRegistryIntIsSigned(self: *TypeRegistry, tid: u32) bool {
     if (@intCast(usize, tid) >= self.types_len) return false;
     var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.enum_type) {
+        return typeRegistryIntIsSigned(self, typeRegistryEnumBackingType(self, tid));
+    }
     if (ty.kind == TypeKind.arb_int_type) return true;
     if (ty.kind == TypeKind.arb_uint_type) return false;
     if (ty.kind == TypeKind.u8_type or ty.kind == TypeKind.u16_type or ty.kind == TypeKind.u32_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.usize_type) return false;
     if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.i16_type or ty.kind == TypeKind.i32_type or ty.kind == TypeKind.i64_type or ty.kind == TypeKind.isize_type or ty.kind == TypeKind.c_char_type) return true;
     return false;
 }
+
 
 pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_id: u32, kind: TypeKind) u32 {
     var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);

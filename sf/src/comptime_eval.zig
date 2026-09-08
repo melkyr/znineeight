@@ -219,6 +219,10 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                     if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
                         bsz = @intCast(u64, type_mod.typeRegistryIntWidthBits(self.registry, t2));
                     }
+                    if (ty2.kind == type_mod.TypeKind.enum_type) {
+                        var ebt = type_mod.typeRegistryEnumBackingType(self.registry, t2);
+                        bsz = @intCast(u64, type_mod.typeRegistryIntWidthBits(self.registry, ebt));
+                    }
                     if (ty2.kind == type_mod.TypeKind.bool_type) {
                         bsz = @intCast(u64, 1);
                     }

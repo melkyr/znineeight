@@ -72,6 +72,7 @@ pub const SemanticAnalyzer = struct {
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
     inttoenum_name_id: u32,
+    enumtoint_name_id: u32,
     as_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
@@ -116,6 +117,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var if_id = interner_mod.stringInternerIntern(interner, if_s);
     var ie_s: []const u8 = "@intToEnum";
     var ie_id = interner_mod.stringInternerIntern(interner, ie_s);
+    var e2i_s: []const u8 = "@enumToInt";
+    var e2i_id = interner_mod.stringInternerIntern(interner, e2i_s);
     var as_s: []const u8 = "@as";
     var as_id = interner_mod.stringInternerIntern(interner, as_s);
     var so_s: []const u8 = "@sizeOf";
@@ -200,6 +203,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .floatcast_name_id = fc_id,
         .inttofloat_name_id = if_id,
         .inttoenum_name_id = ie_id,
+        .enumtoint_name_id = e2i_id,
         .as_name_id = as_id,
         .size_of_name_id = so_id,
         .align_of_name_id = ao_id,
@@ -922,6 +926,97 @@ fn semanticAnalyzerGatePackedUnionMembers(self: *SemanticAnalyzer, union_node_id
             var pgu_msg: []const u8 = "packed union fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed union";
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, pgu_msg);
         }
+    }
+}
+
+pub fn semanticAnalyzerGateEnumModuleDecl(self: *SemanticAnalyzer, decl_node: u32) void {
+    if (decl_node == @intCast(u32, 0)) return;
+    var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
+    var enum_node: u32 = @intCast(u32, 0);
+    var enum_name_id: u32 = @intCast(u32, 0);
+    var backing_node: u32 = @intCast(u32, 0);
+    if (dnode.kind == AstKind.enum_decl and dnode.child_1 != @intCast(u32, 0)) {
+        enum_node = decl_node;
+        enum_name_id = dnode.child_0;
+        backing_node = dnode.child_1;
+    } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+        var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+        if (inn.kind == AstKind.enum_decl) {
+            enum_node = dnode.child_1;
+            enum_name_id = ast_mod.astStoreNodePayload(self.store, decl_node);
+            backing_node = inn.child_0;
+        }
+    }
+    if (enum_node == @intCast(u32, 0)) return;
+    var key: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, enum_name_id);
+    if (type_mod.nameCacheGet(self.registry, key)) |tid| {
+        semanticAnalyzerGateEnumTypeDecl(self, tid, enum_node, backing_node);
+    }
+}
+
+fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node: u32, backing_node: u32) void {
+    if (@intCast(usize, tid) >= self.registry.types_len) return;
+    var ety = self.registry.types_items[@intCast(usize, tid)];
+    if (ety.kind != type_mod.TypeKind.enum_type) return;
+    if (@intCast(usize, ety.payload_idx) >= self.registry.en_len) return;
+    var check_btid: u32 = self.registry.en_items[@intCast(usize, ety.payload_idx)].backing_type;
+    if (backing_node != @intCast(u32, 0)) {
+        var bnode = ast_mod.astStoreNodeAt(self.store, backing_node);
+        var bsp = bnode.span_start;
+        var bep = bsp + @intCast(u32, bnode.span_len);
+        var tre_env2 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+        var bt = type_resolver.resolveTypeExprFull(&tre_env2, backing_node, @intCast(u32, 0));
+        if (bt == type_mod.TYPE_UNDEFINED or bt == type_mod.TYPE_VOID) {
+            var bg_msg: []const u8 = "invalid enum backing type; enum(uN) requires an unsigned integer type name (u1..u64)";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bg_msg);
+            return;
+        }
+        if (@intCast(usize, bt) < self.registry.types_len) {
+            var bty = self.registry.types_items[@intCast(usize, bt)];
+            if (bty.kind == type_mod.TypeKind.bool_type) {
+                var bb_msg: []const u8 = "bool is not a valid enum backing; use an unsigned integer type (uN)";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bb_msg);
+                return;
+            }
+            if (!type_mod.typeRegistryIsUnsigned(self.registry, bt)) {
+                if (type_mod.typeRegistryIntIsSigned(self.registry, bt)) {
+                    var bs_msg: []const u8 = "enum(iN) signed backings are not supported; use an unsigned backing (enum(uN))";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bs_msg);
+                } else {
+                    var bi_msg: []const u8 = "invalid enum backing type; enum(uN) requires an unsigned integer type (uN)";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bi_msg);
+                }
+                return;
+            }
+            check_btid = bt;
+        }
+    }
+    var nbits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, check_btid));
+    var maxv: u64 = @intCast(u64, 0xFFFFFFFFFFFFFFFF);
+    if (nbits < @intCast(u32, 64)) {
+        maxv = (@intCast(u64, 1) << @intCast(u64, nbits)) - @intCast(u64, 1);
+    }
+    var ep2 = self.registry.en_items[@intCast(usize, ety.payload_idx)];
+    var mstart2: usize = @intCast(usize, ep2.members_start);
+    var mcount2: usize = @intCast(usize, ep2.members_count);
+    var children2 = ast_mod.astStoreNodeExtraChildren(self.store, enum_node);
+    var fcount2: usize = @intCast(usize, 0);
+    var ci2: usize = 0;
+    while (ci2 < children2.len and fcount2 < mcount2) : (ci2 += @intCast(usize, 1)) {
+        var fd2 = ast_mod.astStoreNodeAt(self.store, children2[ci2]);
+        if (fd2.kind != AstKind.field_decl) continue;
+        var mv = self.registry.em_items[mstart2 + fcount2].value;
+        if (mv >= @intCast(i64, 0)) {
+            var mvu: u64 = @intCast(u64, mv);
+            if (mvu > maxv) {
+                var msp = fd2.span_start;
+                var mep = msp + @intCast(u32, fd2.span_len);
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+                return;
+            }
+        }
+        fcount2 += @intCast(usize, 1);
     }
 }
 
@@ -1933,6 +2028,20 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             } else {
                 result = semanticAnalyzerResolveExpr(self, ec[0]);
             }
+        } else if (node.child_0 == self.enumtoint_name_id and ec.len >= @intCast(usize, 1)) {
+            var e2i_arg = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+            var e2i_res = e2i_arg;
+            if (e2i_arg != type_mod.TYPE_UNDEFINED) {
+                var e2i_ty = self.registry.types_items[@intCast(usize, e2i_arg)];
+                if (e2i_ty.kind == type_mod.TypeKind.enum_type) {
+                    var e2i_bt = type_mod.typeRegistryEnumBackingType(self.registry, e2i_arg);
+                    if (e2i_bt != type_mod.TYPE_U32 and @intCast(usize, e2i_bt) < self.registry.types_len) {
+                        var e2i_bty = self.registry.types_items[@intCast(usize, e2i_bt)];
+                        if (e2i_bty.kind == type_mod.TypeKind.arb_uint_type) { e2i_res = e2i_bt; }
+                    }
+                }
+            }
+            result = e2i_res;
         } else if (ec.len >= @intCast(usize, 1)) {
             result = semanticAnalyzerResolveExpr(self, ec[0]);
         } else {

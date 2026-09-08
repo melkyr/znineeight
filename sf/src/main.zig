@@ -568,6 +568,11 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
                 if (di_inn.kind == AstKind.union_decl and (di_inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
                     sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decls[di]);
                 }
+                if (di_inn.kind == AstKind.enum_decl) {
+                    sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decls[di]);
+                }
+            } else if (decl.kind == AstKind.enum_decl) {
+                sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decls[di]);
             }
         }
     }

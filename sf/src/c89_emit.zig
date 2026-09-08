@@ -1874,9 +1874,9 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
         var mname = interner_mod.stringInternerGet(emitter.interner, member.name_id);
         bufferedWriterWrite(&emitter.writer, mname);
         var eq: []const u8 = " "; bufferedWriterWrite(&emitter.writer, eq);
-        var val_itoa: [16]u8 = undefined;
-        var val_len = itoa_mod.itoa(@intCast(u32, @intCast(i64, member.value)), val_itoa[0..]);
-        var val_start: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, val_len);
+        var val_itoa: [24]u8 = undefined;
+        var val_len = itoa_mod.itoa64(@intCast(u64, member.value), val_itoa[0..]);
+        var val_start: usize = @intCast(usize, 24) - @intCast(usize, 1) - @intCast(usize, val_len);
         var val_end: usize = val_start + @intCast(usize, val_len);
         bufferedWriterWrite(&emitter.writer, val_itoa[val_start..val_end]);
         var nl2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl2);

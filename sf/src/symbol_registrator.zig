@@ -176,19 +176,19 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         }
         var mstart: u32 = @intCast(u32, type_reg.em_len);
         var mcount: u32 = 0;
-        var auto_val: u32 = @intCast(u32, 0);
+        var auto_val: i64 = @intCast(i64, 0);
         var i: usize = 0;
         while (i < children.len) {
             var mnode = ast_mod.astStoreNodeAt(store, children[i]);
             if (mnode.kind == AstKind.field_decl) {
-                var mval: u32 = auto_val;
+                var mval: i64 = auto_val;
                 if (mnode.child_1 != 0) {
-                    var ev = type_resolver.evalConstU32Full(&tre_env, mnode.child_1);
-                    if (ev != @intCast(u32, 0xFFFFFFFF)) { mval = ev; }
+                    var ev_opt = type_resolver.evalConstI64Full(&tre_env, mnode.child_1);
+                    if (ev_opt) |ev| { mval = ev; }
                 }
-                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = ast_mod.astStoreNodePayload(store, children[i]), .value = @intCast(i64, mval) });
+                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = ast_mod.astStoreNodePayload(store, children[i]), .value = mval });
                 mcount += 1;
-                auto_val = mval + @intCast(u32, 1);
+                auto_val = mval + @intCast(i64, 1);
             }
             i += 1;
         }

@@ -713,6 +713,27 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     return @intCast(u32, 0xFFFFFFFF);
 }
 
+pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32) ?i64 {
+    if (node_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.int_literal) {
+        return @intCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        var c_sym = symbolLookupAllModules(env, name_id);
+        if (c_sym) |cs| {
+            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
+                if (c_decl.child_1 != 0) {
+                    return evalConstI64Full(env, c_decl.child_1);
+                }
+            }
+        }
+    }
+    return null;
+}
+
 fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
     var si: usize = 0;
     while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
