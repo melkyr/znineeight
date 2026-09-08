@@ -129,6 +129,8 @@ git commit -m "feat: packed aggregates — union/nested/array/global/by-value em
 
 - [ ] **Step 7: Report.** GREEN evidence (4 fixtures ×3, md5s, emitted-C shapes incl. array/global/by-value), byte-neutrality on the common set, fixed-point-moved disclosure, concerns. Ledger line.
 
+**AMENDMENT (operator ruling, 2026-09-07, binding — packed-union aggregate literal must never be silent):** Task-4 review found `packed union` AGGREGATE LITERAL construction silently drops the field — `return U{ .b = v }` (function-return form) emits `zT_1 = {0}; (void)v; return zT_1;` (compiles/runs clean, `u.b` reads 0 instead of 3000 = silent wrong code); the var-init form `var u = U{ .b = 3000 }` errors with a messy error[3000]-void cascade (not a clean single diagnostic). `U{ .b = v }` is VALID Z98 (spec §3 L4 — member access = `load_bitfield`/`store_bitfield` at bit 0, whole-value = carrier ops) and is NOT covered by PACK-B3 or the token.zig FIXME follow-on, so it is IN PACK-AGG SCOPE. Per the operator: the construct must either be correctly packed or cleanly rejected — NEVER silent. RULING: FIX (option A) — route packed-union aggregate-literal field writes through `store_bitfield` at bit 0 (mirror the packed-struct literal fix at lower.zig:4224), so both `var u = U{ .b = 3000 }` and `return U{ .b = v }` compile AND run correctly (`u.b == 3000`), pinned by a runtime probe. L4/L5/L6 stay GREEN; the fix lands as a Task-4 fix commit + re-review before Task 5.
+
 ---
 
 ### Task 5: Full battery + fixed-point re-baseline STOP-present
