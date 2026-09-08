@@ -57,20 +57,18 @@ git commit -m "feat: LIR opt pass — dead-temp + copy-prop + local const-fold (
 
 ---
 
-### Task 4: Pure-chain expression nesting
+### Task 4: Pure-chain expression nesting — SPLIT into 5 increments (T4a–T4e) [operator ruling 2026-09-08]
 
-- [ ] **Step 1: Implement** the nesting phase per Task-2 (spec §3.2 AMENDMENT-1 items 3-4): the "address taken" materialization rule + single-use pure chains emitted as nested C expressions via a new emitter-side `emitValueExpr(temp)` renderer (recursively renders a single-use + pure + not-address-taken temp's defining inst inline, reusing the existing cast/paren/sign/tag/sat rules); the value-consumer sites (`binary`/`unary` operands, cast values, call args, `store`/`store_*` value, `ret`, `branch`/`switch_br` cond, `print_val` value) call it instead of `resolveTempName`. Non-nestable insts keep the current `result = expr;` form. The census pins whether emission reads optimized LIR or the renderer decides inline at the arm.
-- [ ] **Step 2: Wire + run-identity gate.** Rebuild; self-compile rc0/0 err/0 PANIC; golden 9/9 + matrix 21/21 runs byte-identical; corpus zero-class-change; upgraded-examples goldens + net round-trip byte-identical.
-- [ ] **Step 3: Measure.** Self-emission byte count + gcc Rows C/E re-measured (3×, median) vs Task-1 baseline; record the reduction + gcc wall/RAM delta.
-- [ ] **Step 4: Record.** New 4-MD5 gate values + fixed point (record, no re-baseline); concerns (any run-identity surprise → STOP-present).
-- [ ] **Step 5: Commit.**
+> **Supersedes** the original single-shot Task 4 text below (preserved in git history). Operator: "due to the Task4 scope seeming too broad... do it in smaller incremental rewrites to avoid scope creep and wandering"; "LIR should remain backend agnostic... a general split on what can be optimized yet maintaining information that any backend can build on, not only c89"; pass-computed backend-agnostic metadata (option A). Each increment carries its own byte-identical run-identity gate so a regression is caught at the causing increment. The nesting phase runs per-function post-`faultIn` pre-emit via the existing `lirOptRun` wiring (c89_emit.zig:2538 / :2734); the pass computes ONLY backend-agnostic facts; the C89 emitter applies its own materialization rules + the C90 depth cap 32 (`kEmitNestDepthCap`) with materialized-form fallback.
 
-```bash
-git add sf/src/lir_opt_pass.zig sf/src/<emitter per census>
-git commit -m "feat: LIR opt pass — pure-chain expression nesting (LIROPTPASS)"
-```
+**Backend-agnostic boundary (binding):** the pass never reasons about C89 emission shape. Per-temp facts computed generically: `inline_candidate` (produced by a PURE inst AND single value use AND not address-taken AND not excluded [param/decl_local-bound/load_global-alias]) + generic expression-tree `depth` (unbounded; C90 cap is the emitter's concern). Stored as a per-function sand side-table (option A). Emitter reads candidate+flag+depth, then applies rule (h)/(i) materialization guard + the three re-expressions (INTWIDTH width-wrap, is_checked int_cast, signed-narrow load_bitfield block) + depth-cap fallback. `lir.zig` / `lir_stream` format untouched. Memory: per-function tables sized to one function's temp count (existing Task-3 pattern — 13 per-temp arrays from Sand) → no spill needed, nothing accumulates across functions (sandReset).
 
-- [ ] **Step 6: Report + ledger.**
+- [ ] **T4a (pass-side, backend-agnostic; ZERO emission change):** In `lir_opt_pass.zig`, compute + record per-temp `inline_candidate` (u8 bit) + expression-tree `depth` (u8) into a per-function Sand side-table (index = temp id). NOT wired to the emitter → byte-identical no-op by construction. Cross-check counts vs Task-1 census (5,187 single-use pure-chain temps in the c89_emit module; depth histogram; how many chains end in an INTWIDTH-width-wrap / checked-cast / signed-narrow-load_bitfield / field-write shape that rule (h) will terminate). Isolates the riskiest dataflow logic before any backend change. Commit: `feat: LIR opt pass — nest-candidate + depth metadata (backend-agnostic, T4a LIROPTPASS)`. Gate: self-compile rc0/0 err/0 PANIC; golden 9/9 + matrix 21/21 run byte-identical; 4-MD5 UNCHANGED byte-identical (no emission delta).
+- [ ] **T4b (c89 emitter, family F1):** Implement `emitValueExpr(temp)` recursive renderer + C89 materialization guard (rule h/i: whole emitted C is exactly one `zT_N = <rvalue>;`; no `{...}` block with internal decl; no trailing width-wrap stmt; no check-guard; no bootstrap-helper call; no result field-write; consumer renders operand textually exactly once) + MANDATORY renderer depth assert. Re-express the three hard shapes when inlined (INTWIDTH second width-wrap stmt c89_emit.zig:5927-5928/5973-5974/6675-6677 [helper emitWidthWrapStmt 3881-3914]; is_checked int_cast check+cast / __bootstrap_* helper 6596-6662/6602-6637; signed-narrow load_bitfield compound block 4890-4934). C90 depth cap 32 (`kEmitNestDepthCap`) with materialized-form fallback. Wire ONLY at `.binary` lhs/rhs (c89_emit.zig:5774/:5780) + `.unary` operand (:5937). Gate: golden 9/9 + matrix 21/21 run byte-identical pre/post; record new 4-MD5 (NOT re-baselined). Commit: `feat: LIR opt pass — emitValueExpr nesting at binary/unary operands (T4b LIROPTPASS)`.
+- [ ] **T4c (c89, F2 cast value slots):** Wire `emitValueExpr` at `.int_cast` src (unchecked only; :5982), `.float_cast` (:6084), `.sign_cast` (:6101), `.bool_cast` (:6160), `.undefined_cast`, `.int_to_ptr`, `.ptr_to_int` value slots. Gate + record as T4b. Commit: `feat: LIR opt pass — nesting at cast value slots (T4c LIROPTPASS)`.
+- [ ] **T4d (c89, F3+F4 call args + stores):** `.call`/`.call_direct`/`.tail_call` arg slots (:6292/:6325/:6383/:6407/:6429/:6442/:6465/:6501); `.store`/`.store_field`/`.store_index` value + `.store_bitfield.value` (PURE-REGISTER chains only — multi-textual-reference RMW loop 4833-4878 re-emits val per carrier byte). Gate + record as T4b. Commit: `feat: LIR opt pass — nesting at call args + store values (T4d LIROPTPASS)`.
+- [ ] **T4e (c89, F5 + close):** `.branch`/`.switch_br` cond (:5129 b.cond / :6522 s.cond), `.ret` operand (:5702), `.print_val` value; full-surface audit (grep: no eligible temp left un-nested, no ineligible nested); full battery (corpus + upgraded-examples + net round-trip byte-identical); measure self-emission bytes + gcc Row E 3× median vs Task-1 baseline; record 4-MD5 + N-hop fixed point; STOP-present before Task 5. Commit: `feat: LIR opt pass — nesting complete surface (T4e LIROPTPASS)`.
+
 
 ---
 
@@ -103,7 +101,7 @@ git commit -m "docs: GATE — LIR opt pass emission re-baseline + seed rotation 
 
 ## Plan Self-Review
 
-1. **Spec coverage:** baseline+profile (T1), purity/algorithm I (T2), temp/dead/copy/const (T3), nesting (T4), battery + full gate re-baseline STOP (T5), docs GATE (T6); success metric = measured size + gcc deltas + run-identity; operator rulings honored.
+1. **Spec coverage:** baseline+profile (T1), purity/algorithm I (T2), temp/dead/copy/const (T3), nesting split T4a–T4e (T4a backend-agnostic metadata → T4b–T4e emitter families F1–F5), battery + full gate re-baseline STOP (T5), docs GATE (T6); success metric = measured size + gcc deltas + run-identity; operator rulings honored (2026-09-08 T4 5-increment split).
 2. **Placeholder scan:** no TBD; exact op classes/algorithms are the Task-2 I deliverable (established pattern); per-file census anchors resolved in record-only Task 1.
 3. **Type/name consistency:** `lir_opt_pass.zig` + `lirOptRun`-style entry (final name per file convention in T3); report `task-LIROPT-report.md`; memory agent `liroptpass-session`.
 
