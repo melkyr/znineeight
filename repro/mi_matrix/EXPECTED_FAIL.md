@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v75 2026-09-08)
+# mi_matrix corpus — expected-fail manifest (v76 2026-09-08)
+
+## Packed enum(uN) fields GREEN (v76 2026-09-08) — PACK-B3
+
+Plan `2026-09-06-arbitrary-width-enums-plan.md` (PACK-B3) is COMPLETE — `enum(uN)` arbitrary-width
+backing + packed-field admission landed (T1 `a8c656ad` backing/introspect, T2-review fix `199e2662`,
+T3 `b040caab` packed fields; all packed-ladder L0-L7 GREEN). The L7 fixture
+`packed_enum_field_xmod` is RESOLVED and GREEN: compile-clean OK (dump rc=0, 0 `error[`, 0 PANIC,
+gcc `-m32` clean) AND run-gate byte-exact 3× deterministic (RUNRC=0, stdout `1 3 1 1`, stdout md5
+`69e8e92d…` ×3) — `Pixel = packed struct { on: bool, color: Color }` over `Color = enum(u3)`:
+on@0 (1 bit) + green=1@1..3 (3 bits) → byte `0b00000011` = 3; `@sizeOf(Pixel)`=1,
+`@enumToInt(Color.blue)`=2, `@sizeOf(Color)`=1. Measured on the reference `/tmp/fx_subfolder/zig1`
+md5 **`f5c2f9d2`** (the measurement compiler — rebuilt from the committed seed via the N-hop chain:
+seed v3 `e20bfb70` → hop1 `1e96b989` → hop2 `f5c2f9d2` → hop3 `f5c2f9d2` (hop2==hop3 closure, 41 `.c`
++ 42 `.h` per hop), canonical std reinstalled at `/tmp/fx_subfolder/lib`) via the authoritative
+fixture_run.sh + classify1.sh recipes (full `-Wall` flag set, fresh dirs, 3 fresh runs per fixture,
+stdout md5 identical 3/3). The v75 PACK-AGG-AMENDMENT section below is the historical record —
+retained verbatim; the L7 row it references (GREEN-guard, clean `error[3000]` at the packed-field
+gate) is the pre-fix state.
+
+| fixture | v75 pre-fix class | v76 GREEN contract (byte-exact 3×) |
+|---|---|---|
+| `packed_enum_field_xmod` (L7, `enum(u3)` packed field) | GREEN-guard (rc=2, ONE error[3000] `packed struct fields must be bool or an integer type (uN/iN)…`, 0 `.c`, stderr md5 `1779f5dd…` ×3) | compile-clean **OK** + `1 3 1 1` (RUNRC=0 · stdout md5 `69e8e92d…` ×3) |
+
+- **RESOLVED rows (fix commits):** T1 `a8c656ad` (enum(uN) arbitrary-width backing registers as a real
+  type + introspect + explicit-backing typing), T2-review fix `199e2662` (@enumToInt general-path
+  backing typing + fit-check unsigned normalization, no silent truncation), T3 `b040caab`
+  (`semanticAnalyzerPackedFieldTypeAllowed` admits `enum_type` ONLY when it has an explicit UNSIGNED
+  backing; the ≤31-bit width cap reads the backing width — `semantic_analyzer.zig` only). Field layout
+  + enum ops needed no change (the packed layout and enum value ops derive width from the backing via
+  `typeRegistryIntWidthBits`'s enum arm), so L7 bit-packs on@0/green@1..3 → byte 3 with no sub-carrier;
+  a plain `enum` (no explicit backing) as a packed field is STILL rejected byte-identical. The fixture
+  stays as a permanent regression guard.
+- **zig0 retirement (operator ruling, 2026-09-08):** `enum(uN)` is the first syntax zig0's frozen C++
+  front end cannot parse — `sf/src` is no longer zig0-compilable; the committed seed is the official
+  self-hosted rebuild authority (`scripts/seed/build_from_seed.sh`; the `build_release.sh` zig0 path
+  is dead for the current `sf/src`, kept in-tree historical). Seed v4 is the official self-hosted /
+  zig0-retirement milestone.
+- **Corpus reconciliation (reference `f5c2f9d2`):** full 362-dir mi_matrix `-s0` compile-gate sweep =
+  **OK=348 / GREEN=9 / FAIL=5 / GCCFAIL=0 / ICE=0 / CRASH=0** — per-dir IDENTICAL to the Task-4
+  stored sweep, and vs the v75 close the ONLY row movement is the intended L7 flip
+  `packed_enum_field_xmod` GREEN→OK (v75 GREEN-10 → GREEN-9; the 2 collection-dir artifacts in the
+  v75 accounting are not in this classifier's dir-with-`.zig` universe). All packed dirs L0-L7
+  classify OK at the compile gate (`packed_union_struct_wholemember_xmod` stays GREEN-guard); their
+  RED→GREEN shows at the run gate above. repro top-level 53/53 OK; examples/z98 24/24 OK. Golden 9/9
+  PASS; matrix 21/21 PASS. Zero asymmetric movement.
+- **4-MD5 gates byte-identical UNCHANGED (v76, NO gate re-baseline):** gol `302df36b…` / lisp
+  `3591bad9…` / json `76056b97…` / mud `846106ac…` (repo-root CWD, stdout-only, dump rc=0 each).
+- **Self-compile fixed point RE-BASELINED (operator-approved 2026-09-08 at the Task-4 STOP-present):
+  `e20bfb7072ea10167476d8f94a9d391d` → `f5c2f9d27d613c6582ab3e79d6fec437`** — N-hop closure at HEAD
+  `890302c6`: seed `e20bfb70` → hop1 `1e96b989` → hop2 `f5c2f9d2` → hop3 `f5c2f9d2` (hop2==hop3
+  binary byte-identical, `cmp` clean), 41 `.c` + 42 `.h` per hop, rc=0, 0 `error[`, 0 PANIC; hop1 ≠
+  hop2 is EXPECTED (seed v3 is pre-PACK-B3-flavored — one generation behind is the documented N-hop
+  class). Reference binary md5 `f5c2f9d2…` (N-hop rebuilt from the committed seed at HEAD
+  `890302c6`, canonical std reinstalled). Seed rotated to the new fixed point (release/seed seed v4).
 
 ## Packed-struct members of packed unions GREEN (v75 2026-09-08) — PACK-AGG AMENDMENT
 

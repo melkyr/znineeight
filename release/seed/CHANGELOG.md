@@ -11,6 +11,37 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-09-08 — seed v4 (HEAD 890302c6)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (41 `.c` + 42 `.h` incl.
+emitted `zig_special_types.h`, 8334141 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-09-08 |
+| HEAD | `890302c6` |
+| seed binary md5 | `f5c2f9d27d613c6582ab3e79d6fec437` |
+| self-emission C | 41 `.c` + 42 `.h` (8334141 bytes) |
+| fixed point | `f5c2f9d27d613c6582ab3e79d6fec437` |
+| archive md5 | `a8b97b3cfa9a781f5c39daf896debb38` |
+
+Provenance note: the archived binary (md5 f5c2f9d27d613c6582ab3e79d6fec437) was captured by
+scripts/seed/archive_seed.sh at HEAD 890302c6; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `f5c2f9d27d613c6582ab3e79d6fec437` — both are the same
+compiler state at HEAD 890302c6. Rebuild recipes + full canonical flag-set
+requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
+**zig0-retirement / official-self-hosted milestone annotation (operator ruling 2026-09-08):** seed
+v4 is the **official self-hosted / zig0-retirement milestone**. `enum(uN)` (the PACK-B3 plan) is the
+first syntax zig0's frozen C++ front end cannot parse — `sf/src` is no longer zig0-compilable, and
+the `sf/scripts/build_release.sh` zig0 path is dead for the current `sf/src` (kept in-tree,
+historical). From this seed onward the reference compiler is built **from the committed seed**
+(`zig1 → zig1_5`, N-hop stabilization: seed `e20bfb70` → hop1 `1e96b989` → hop2 `f5c2f9d2` → hop3
+`f5c2f9d2`, hop2==hop3 == this seed's fixed point), never zig0.
 ## 2026-09-08 — seed v3 (HEAD 9bc2c751)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
