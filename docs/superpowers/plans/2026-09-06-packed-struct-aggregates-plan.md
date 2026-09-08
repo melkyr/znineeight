@@ -219,7 +219,7 @@ git commit -m "docs: GATE — packed aggregates L3-L6 GREEN + fixed-point re-bas
 
 - [ ] **Step 2: Layout.** Per I-1 Step 3: member width = inner `total_bits` for packed-struct members; bit 0; max/size unchanged. Probe `@sizeOf`/`@bitSizeOf`/`@alignOf` on the fixture union + a scratch member (report).
 
-- [ ] **Step 3: Chain analyze.** Per I-1 Step 4: `lowerPackedChainAnalyze` treats the packed-union container step correctly; verify read + store land as ONE accumulated-offset `load_bitfield`/`store_bitfield`; confirm whole-member `u.member` value move hits the existing clean-reject (verify no new silent path).
+- [ ] **Step 3: Chain analyze.** Per I-1 Step 4: `lowerPackedChainAnalyze` treats the packed-union container step correctly; verify read + store land as ONE accumulated-offset `load_bitfield`/`store_bitfield`. **AMENDMENT ruling A (operator 2026-09-08):** I-1 found the plan's "whole-member already rejected, no extra code" assumption WRONG for the direct depth-1 case — `u.member` (whole packed-struct member of a packed union, no `.field` after it) reaches the generic packed_union read `lower.zig:3088` / store `:1431`, which lack the whole-sub type guard (the packed-*struct* twins at `:3075`/`:1387` have it). So F-1 MUST add 2 whole-member guards to those union read/store paths (leaf-typed packed-struct → clean `error[3000]`, rc=2, 0 `.c`, never silent). This is IN scope per the operator ruling — not a "do not add" gap.
 
 - [ ] **Step 4: Byte-neutrality gate.** Rebuild reference (record md5). 4-MD5 4/4 byte-identical; golden 9/9; matrix 21/21; self-compile two-hop closure (fixed point moved, recorded not re-baselined per Ruling A); existing packed fixtures L0-L6 stay GREEN byte-exact.
 
