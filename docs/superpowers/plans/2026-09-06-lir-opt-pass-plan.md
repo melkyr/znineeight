@@ -136,3 +136,36 @@ Spec §3.2's verbatim PURE/ORDERED `LirInst` lists predate the packed family and
 ### Seed rotation (supersedes plan lines 20 / Task-6 Step 3)
 - Task-6 docs-GATE rotates the committed seed **v4 → v5** to the Task-5 N-hop fixed-point binary via `bash scripts/seed/archive_seed.sh <Task-5-fixed-point-binary> <Task-5-fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog`, staging `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` alongside QUICK_REF.md + EXPECTED_FAIL.md. CHANGELOG v5 entry carries the LIROPTPASS emission-tightening milestone note (self-hosted era continuation). Task-5 measured values are recorded BEFORE the rotation captures them.
 
+---
+
+## AMENDMENT 2 — Measurement set + warning/MSVC/OpenWatcom/Windows-compat gates (operator ruling 2026-09-08)
+
+The important part of LIROPTPASS is that the emitted-C **warnings** and the **MSVC / OpenWatcom / Windows compatibility** are PRESERVED — not merely that emission shrinks. This amendment consolidates every measurement and adds the compatibility gates. Execution proceeds under these clauses.
+
+### Row C dropped; the live measurement set (supersedes plan Task-1 Step 2 / GC battery wording)
+- **Row C (gcc over zig0 gen-0) is DROPPED** — zig0 is retired and cannot produce gen-0 (verified: `sf/build/zig0` SIGABRTs rc=134 on current `sf/src` at `enum(uN)` `@bitCast`, `c89_emit.zig:1878`). Its historical figures (release-0200: 1.87 s / 87,280 kB, 43 `.c`) are recorded as reference-only, never re-measured.
+- **Live gcc row = Row E (gcc over zig1 self-emission)** — the only emission zig1 now produces; the before/after comparison is self-emission pre-pass vs post-pass. Procedure: `/usr/bin/time -v`, 3×, median wall + peak RSS.
+- **Additional live measurements** (all before vs after, on the same box): self-emission byte count (`.c`+`.h` total); gcc `-Wall -Wextra -O3 -fsyntax-only` **warning set** (see warning gate below); mingw32 `-osw` cross-compile (see Windows gate below).
+
+### Warning-preservation gate (every F task: Task-3 Step 3, Task-4 Step 2, Task-5 Step 1)
+- For each emitted program set (self-emission of `sf/src/main.zig`, all golden 9/9, all matrix 21/21), capture the gcc warning lines (`gcc -m32 -Wall -Wextra -O3 -fsyntax-only` on each emitted `.c`) PRE-pass and POST-pass and DIFF them. **The pass must NOT grow the warning set**: post-pass warnings ⊆ pre-pass warnings per emitted program. Any NEW warning class introduced by the pass = STOP-present (it signals a semantics-visible or compat-breaking emission change). Warning-count reduction is allowed and reported; growth is a defect.
+- The pass operates at the LIR level and reuses the emitter's existing arms/renderers, so warning neutrality is expected by construction — the gate proves it.
+
+### Windows gate = mingw32 `-osw` cross-compile, FINAL part of the battery (operator ruling: "yes but as the final part of the gate")
+- The Task-5 battery and each F-task run-identity check include, as their **final** step: emit the golden/matrix programs with `--target windows`/`-osw` and compile with `i686-w64-mingw32-gcc` (`scripts/win32_cross/cross_compiler.sh` semantics; the `-osl`/`-osw` and std `lib/` conventions from the netbind era apply). Gate = compile clean (0 error) AND **warning set unchanged** pre vs post (mingw32 warning diff). Optional wine smoke where a runnable exe is produced. This is the closest REAL Windows measurement available on this machine (no MSVC/OpenWatcom binaries are installed).
+- This step runs only after the gcc `-m32` runtime-identity + warning gates pass — it is the LAST check in the battery, never a substitute for them.
+
+### MSVC 6.0 / OpenWatcom compatibility = construction invariants (operator ruling: "confirm the invariant")
+These toolchains are NOT installed here (probed: no `cl`/`wcc`/`wcl`/`owcc`); their compatibility is guaranteed by plan invariants the pass is BOUND to preserve, verified statically on every F task:
+1. **No new bare `long long`/`unsigned long long` in emitted program C** — i64/u64 are emitted ONLY via the typedef names (`z64`/`zu64`/`i64`/`u64`) declared in `sf/src/include/zig_compat.h`, which maps `_MSC_VER → __int64`, `__WATCOMC__ → long long`, `else → long long`. The bare `long long` that exists in the runtime `.h`/`.c` (`zig_runtime.h` signatures, `std_print_i64` etc.) is pre-existing runtime text, NOT emitted program C. CONFIRMED by the operator — this is the invariant: the pass adds no new bare `long long` literal/type into emitted program C. Verified by grep on emitted `.c` (program modules) pre vs post.
+2. **≤31-char identifiers** — nesting reuses existing temp/type names; never generates new identifiers >31 chars. Verified by grep/awk on emitted `.c` pre vs post (max identifier length must not increase).
+3. **No `%zu`, no empty macro arguments, no new mid-block declarations** — nesting must respect the emitter's hoisted-decl discipline (mixed decl/statement stays within the pre-existing temporary-lifting caveat documented in docs/design/C89_Codegen.md:694). Verified by grep on emitted `.c` pre vs post.
+4. **Bounded nesting depth = conservative constant** (operator ruling: "conservative constant") — `emitValueExpr` recursion is capped at a conservative depth constant (32, the C90 translation-limit order of magnitude); a chain deeper than the cap falls back to the current `result = expr;` temp form (no unbounded nesting). The cap is a named constant in the pass/emitter; the fallback is structural, never a correctness change.
+5. **Literal emission reuses the existing suffix/typing paths** (INTWIDTH `intLitSuffixNeg/Uns`, the `@bitCast`/`itoa64` wraps from PACK-B3) so folded constants stay `LL`/`ULL`-correct and `__int64`-safe on MSVC, `long long`-safe on Watcom/GCC.
+
+### Task-2 deliverable additions (supersedes Task-2 Step 1 output requirements)
+The Task-2 design report MUST additionally specify: (a) the `emitValueExpr` recursion-depth cap constant + fallback rule (invariant 4); (b) the static compat-audit commands (invariants 1-3 greps, pre vs post) that Tasks 3/4 run; (c) confirmation that `load_bitfield`/`store_bitfield` and the packed carrier ops classify per AMENDMENT-1 clause above WITHOUT changing their emitted C shape (compat-neutral).
+
+### Task-3/Task-4 gate additions
+Each F task's run-identity gate gains the warning-preservation diff AND the static compat audit (invariants 1-3 greps) on its emitted set, reported in the task evidence. Task-4 additionally enforces the nesting-depth cap. The mingw32 `-osw` cross gate is the final step of the Task-5 battery (and of each F task where feasible), per the ruling above.
+
