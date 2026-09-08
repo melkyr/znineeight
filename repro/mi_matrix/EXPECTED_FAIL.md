@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v73 2026-09-07)
+# mi_matrix corpus — expected-fail manifest (v74 2026-09-08)
+
+## Packed aggregates GREEN (v74 2026-09-08) — PACK-AGG plan Tasks 2-4
+
+Plan `2026-09-06-packed-struct-aggregates-plan.md` Tasks 2-4 are COMPLETE — `packed union` (its own
+`packed_union_type` TypeKind), nested `packed struct` leaf fields, and the array/global/by-value +
+cross-module surfaces now parse, resolve with true LSB-first bit layout (members/fields at their
+bit offsets, no padding, `size=(bits+7)/8`, stride=size), and lower/emit through real bitfield
+paths. The four L3-L6 guard fixtures `packed_l3_nested_xmod` / `packed_union_xmod` /
+`packed_array_global_xmod` / `packed_byvalue_module_xmod` are GREEN: compile-clean OK (dump rc=0, 0
+`error[`, 0 PANIC, gcc `-m32` clean) AND run-gate byte-exact 3× deterministic (RUNRC=0 — the
+v62/v63-era GREEN contracts are now all runnable, nothing forced). Measured on the reference
+`/tmp/fx_subfolder/zig1` md5 `b99c4806` (rebuilt at HEAD `f1259e65`, canonical std reinstalled) via
+the authoritative fixture_run.sh + classify1.sh recipes (full `-Wall` flag set, fresh dirs, 3 fresh
+runs per fixture, stdout md5 identical 3/3). The v62 R9 (L3/L4) + v63 R10 (L5/L6) RED rows below
+are the historical record — retained verbatim; the fix commits the v62/v63 rows reference are the
+Tasks 2-4 chain. L3 was operator-ruled early-GREEN at Task 3 (2026-09-07, Option A); Task 4 (re-
+scoped) delivered the genuine emitter rows L4/L5/L6. L0/L1/L2 PACK-CORE stay GREEN unchanged (v73
+section below).
+
+| fixture | v62/v63 RED class | v74 GREEN stdout (byte-exact 3×) |
+|---|---|---|
+| `packed_l3_nested_xmod` | clean parse FAIL error[2000] at the `struct` token (`packed` not a registered keyword; v62 R9) | `2 5 6 3 3` |
+| `packed_union_xmod` | clean parse FAIL error[2000] at the `union` token (v62 R9) | `2 8` |
+| `packed_array_global_xmod` | clean parse FAIL error[2000] at the `struct` token (v63 R10) | `1 33 3 4` |
+| `packed_byvalue_module_xmod` | clean parse FAIL error[2000] at the `struct` token in the imported `types.zig` (v63 R10) | `1 21 186` |
+
+- **RESOLVED rows (Tasks 2-4 fix commits):** packed-union T2 `94734372` (`packed_union_type`
+  TypeKind appended at the true enum end + `kw_packed`/`kw_union` parse arms + union-payload packed
+  side table (`pk_un_items` lockstep in `unAppend`): every member at bit 0, width = member int width
+  (bool→1), total_bits = MAX member width, `size=ceil(max/8)` min 1, align 1 + packed
+  `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf` folds + B6 member gate ≤31 +
+  `&packed.field` clean reject); nested-leaf T3 `8589f2c0` (nested packed-struct field bit_width =
+  the inner type's pk total bits; leaf-chain reads/stores lower to ONE accumulated-offset
+  `load_bitfield`/`store_bitfield`, no sub-container materialization) + review fix `b2b59921`
+  (chain-depth≥2 whole-sub clean `error[3000]` reject on BOTH read and store; B6 widening scoped to
+  the struct gate — the packed-union member gate still clean-rejects packed-struct members);
+  emission T4 `9dfc17ad` (packed-union single-member carrier typedef + member store/read bit-pack +
+  struct-init/agg-literal per-field `store_bitfield` arms → L4/L5/L6) + review fix `f1259e65`
+  (packed-union AGGREGATE literal resolves via the `semanticAnalyzerResolveStructInit`
+  `packed_union_type` arm — bit-packs at offset 0, NEVER silent; plan AMENDMENT `a0e1534b`). Run-gate
+  stdout md5s (×3, RUNRC=0): `2 5 6 3 3`→`1b653d0a…`, `2 8`→`3d331b20…`, `1 33 3 4`→`934faea5…`,
+  `1 21 186`→`de16190c…`. Each fixture stays as a permanent regression guard.
+- **L6 contract note (186 vs 187):** the run-gate GREEN stdout is `1 21 186` (0xBA = hi<<4|lo =
+  176+10) — the spec §5 locked contract. The fixture HEADER's own `1 21 187` title line is the stale
+  slip (recorded-history, resolved at Task-4 GREEN time); 187 is NOT propagated as GREEN.
+- **Corpus reconciliation (Task-5 battery, reference `b99c4806`):** full 428-dir `-s0` compile-gate
+  sweep = **OK=414 / GREEN=9 / FAIL=5 / GCCFAIL=0 / ICE=0 / CRASH=0** — per-row movement vs the v73
+  PACK-CORE close (OK=410 / GREEN=10 / FAIL=6 / GCCFAIL=2) is EXACTLY the packed-dir flips:
+  `packed_union_xmod` FAIL→OK (T2), `packed_l3_nested_xmod` GREEN→OK (T3), `packed_array_global_xmod`
+  + `packed_byvalue_module_xmod` GCCFAIL→OK (T4) — all 7 packed dirs (L0-L6) now classify OK at the
+  compile gate; their RED→GREEN shows at the run gate above. `packed_enum_field_xmod` stays GREEN
+  (L7 enum(u3) field = PACK-B3 scope). Golden 9/9 PASS; matrix 21/21 PASS.
+- **4-MD5 gates byte-identical UNCHANGED (v74, NO gate re-baseline):** gol `302df36b…` / lisp
+  `3591bad9…` / json `76056b97…` / mud `846106ac…` (repo-root CWD, stdout-only, dump rc=0 each).
+- **Self-compile fixed point RE-BASELINED (operator-approved 2026-09-07, Task-5 STOP ruling):
+  `fd3e1c0e1787be22e2b2bc09e9916e4c` → `7e23d33d77926c71999daf602e3d96b6`** — two-hop closure at HEAD
+  `f1259e65`, 41 `.c` + 42 `.h`, rc=0, 0 `error[`, 0 PANIC, hop1==hop2 binary byte-identical (`cmp`
+  clean); the documented fixed-point-moves-when-compiler-source-grows class (the PACK-CORE `fd3e1c0e…`
+  value superseded). Reference binary md5 `b99c4806…` (rebuilt at HEAD `f1259e65`). Seed rotated to
+  the new fixed point (release/seed seed v2).
 
 ## Packed struct core GREEN (v73 2026-09-07) — PACK-CORE plan Tasks 2-5
 
