@@ -806,6 +806,13 @@ fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32, all
     if (ty.kind == type_mod.TypeKind.bool_type) return true;
     if (ty.kind == type_mod.TypeKind.integer_literal_type) return false;
     if (allow_packed_struct_type and ty.kind == type_mod.TypeKind.struct_type and (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return true;
+    if (ty.kind == type_mod.TypeKind.enum_type) {
+        if (!type_mod.typeRegistryEnumHasExplicitBacking(self.registry, tid)) return false;
+        var ebt = type_mod.typeRegistryEnumBackingType(self.registry, tid);
+        if (ebt == type_mod.TYPE_UNDEFINED or @intCast(usize, ebt) >= self.registry.types_len) return false;
+        if (!type_mod.typeRegistryIsUnsigned(self.registry, ebt)) return false;
+        return true;
+    }
     return type_mod.typeRegistryIsInteger(self.registry, tid);
 }
 
