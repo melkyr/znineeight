@@ -4280,6 +4280,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     var pk_fields: []type_mod.PackedBitField = undefined;
                                     if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, it, &pk_fields)) {
                                         if (fj < pk_fields.len) {
+                                            if (self.ctx.registry.fe_items[fs + fj].type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                                                var mty = self.ctx.registry.types_items[@intCast(usize, self.ctx.registry.fe_items[fs + fj].type_id)];
+                                                if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                                                    var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
+                                                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
+                                                    return base_temp;
+                                                }
+                                            }
                                             var pkf = pk_fields[fj];
                                             emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
                                             break;
