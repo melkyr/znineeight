@@ -26,6 +26,7 @@ const lir_mod = @import("lir.zig");
 const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
+const lir_opt_mod = @import("lir_opt_pass.zig");
 
 pub const BufferedWriter = struct {
     buf: [4096]u8,
@@ -2534,6 +2535,7 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32, ptr
         var func = faultIn(emitter, i);
         emitter.switch_cases = &func.switch_cases;
         if (func.is_extern == @intCast(u8, 0)) {
+            lir_opt_mod.lirOptRun(emitter.alloc, emitter.registry, &func);
             emitFunctionSignature(emitter, &func);
             emitHoistedDecls(emitter, &func);
             var ft = emitter.registry.types_items[@intCast(usize, func.return_type)];
@@ -2729,6 +2731,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
         var f = faultIn(emitter, i);
         if (f.is_extern != @intCast(u8, 0)) continue;
         emitter.switch_cases = &f.switch_cases;
+        lir_opt_mod.lirOptRun(emitter.alloc, emitter.registry, &f);
         emitFunctionSignature(emitter, &f);
         emitHoistedDecls(emitter, &f);
         emitter.dl_hoisted = @intCast(u8, 0);
