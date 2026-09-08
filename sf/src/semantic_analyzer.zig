@@ -1487,7 +1487,7 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
         return target_type;
     }
-    if (tgt.kind == type_mod.TypeKind.union_type) {
+    if (tgt.kind == type_mod.TypeKind.union_type or tgt.kind == type_mod.TypeKind.packed_union_type) {
         var up = self.registry.un_items[@intCast(usize, tgt.payload_idx)];
         var fstart: usize = @intCast(usize, up.fields_start);
         var fcount: usize = @intCast(usize, up.fields_count);
