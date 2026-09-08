@@ -175,3 +175,63 @@ git commit -m "docs: GATE — packed aggregates L3-L6 GREEN + fixed-point re-bas
 1. **Spec coverage:** packed union parse/TypeKind/layout/introspect (T2), nested leaf + whole-sub-container policy (T3), emitter union/nested/array/global/by-value → L3-L6 GREEN (T4), battery + re-baseline STOP (T5), docs GATE (T6); success criteria → T4/T5; token.zig FIXME + PACK-B3 out of scope.
 2. **Placeholder scan:** no TBD; census-dependent anchors resolved by record-only Task 1 (established pattern); contracts are the committed fixture values.
 3. **Type/name consistency:** `packed_union` TypeKind; carrier = PACK-CORE single-member struct (AMENDMENT 1); contracts byte-exact; report file `task-PACKAGG-report.md`; memory agent `packagg-session`.
+
+---
+
+# AMENDMENT — Packed-struct members of packed unions (full support) + leaf access through union members (post-close follow-on)
+
+**Operator rulings (2026-09-08, binding):** (1) the packed-union member set gap flagged by the final whole-branch review is a REAL spec-vs-impl under-delivery — spec §3 L4 / §4.1 promise member set "bool/uN/iN + packed structs", the implementation clean-rejects packed-struct members (`semantic_analyzer.zig:907` passes `allow_packed_struct_type=false`) — and the correct disposition is to FIX (enable the promised support), NOT to amend the spec downward or keep the reject; (2) confirmed against the Zig language reference: a `packed struct` is a legal packed-struct FIELD type AND a legal packed-union MEMBER type (the packed-union section enumerates no member-type restriction, only "all fields must have the same @bitSizeOf", which Z98 already relaxes to a max-width union — our shipped L4 `u4`/`u12` fixture is itself non-Zig-equal-width and stays); (3) leaf access `u.member.field` (a packed-struct member of a packed union, then a leaf field of that member) is valid Zig and IS the intended "full support"; (4) **whole-member value moves of a packed-struct member (`u.member` as a value) are OUT — clean `error[3000]` reject, matching the shipped §3 L3 whole-sub policy (never silent)**; (5) Z98 keeps the relaxed max-width packed-union dialect (no Zig equal-width enforcement — shipped L4 contract `2 8` unmoved).
+
+**Scope:** post-close follow-on on the PACK-AGG tree (HEAD 8b2fd523). Byte-neutral until the emitter path is reached (packed unions with packed-struct members are unreachable in the current corpus → 4-MD5/golden/matrix hold on every intermediate step; fixed point moves per Ruling A → re-baseline + seed rotation at the docs-GATE close of this amendment's F task, operator-ruled never silent).
+
+### Amendment Task I-1: Record-only change-detail census (no commit)
+
+**Files:**
+- Record only: `.superpowers/sdd/task-PACKAGG-report.md` "## AMENDMENT I-1" section + ledger line.
+
+**Interfaces:**
+- Produces: the exact change list + code anchors for the F task, verified against the live post-PACK-AGG HEAD (final-review line numbers are stale after T2-T6).
+
+- [ ] **Step 1: Baseline.** HEAD sha (expect `8b2fd523`); reference md5 `/tmp/fx_subfolder/zig1` (expect `b99c4806…`, std reinstalled); 4-MD5 gate 4/4 byte-identical; fixed point `7e23d33d…` two-hop closure; EXPECTED_FAIL v74.
+
+- [ ] **Step 2: Detail the B6 gate change.** Re-derive at HEAD: `semanticAnalyzerGatePackedUnionMembers` (semantic_analyzer.zig ~:888) calls `semanticAnalyzerPackedFieldTypeAllowed(self, ft, false)` at the member loop. Confirm the change = call with `true`; confirm the `intWidthBits > 31` width-cap line (~:908) must be SCALAR-ONLY (a packed-struct member has no intWidthBits — allow it without the cap; verify a packed struct member whose total_bits > 31 is still representable via the carrier). Confirm the diagnostic-message fallthrough still clean-rejects float/ptr/array/etc. Record exact anchors.
+
+- [ ] **Step 3: Detail the union-layout change.** At HEAD: `typeRegistryComputePackedUnionLayout` (type_registry.zig:1024-1054): member width rule at ~:1038-1044 (`intWidthBits`, bool→1). Confirm the change = when the member type is a packed `struct_type`, width = `typeRegistryGetPackedTotalBits(member_tid)`; `bit_offset` stays 0; `max_bits`/`size=ceil(max/8)`/`align 1` unchanged. Verify there is no re-entrancy hazard (inner packed struct layout computed before the union's — check dep-graph ordering like the struct case). Record anchors + probe math (e.g. `packed union { a: u4, b: packed struct { x: u3, y: u3 } }` → b width 6, max 6 → size 1; and a member wider than the scalars, e.g. `packed struct {x:u8}` in a union with `u4` → max 8 → size 1).
+
+- [ ] **Step 4: Detail the leaf-access-through-union change.** At HEAD: `lowerPackedChainAnalyze` (lower.zig:1173-1240) only treats a packed `struct_type` as a chain container (kind checks at ~:1194 and ~:1208). Confirm the change = treat a `packed_union_type` container whose MEMBER (the field being accessed) is a packed `struct_type` as a valid chain step contributing bit offset 0, then descend into the member's own pk side table for the leaf offset. Trace the chain `u.member.field`: field_access(field_access(u, member), field) — container-of `u.member`'s child is `u` (packed_union_type); the union member `member` resolves via the union's pk side table (bit_offset 0); then `field` resolves in the member struct's pk table (accumulated). Confirm which existing helper (`lowerContainerOfAccess`, union member field lookup) resolves the member, and that the read path (`lowerTryNestedPackedLeafRead` :1242) and store path (`lowerTryNestedPackedLeafStore` :1276) then work unchanged. ALSO confirm the whole-member reject path: a chain whose LEAF is the union member itself (`u.member` whole value) must hit the existing leaf-typed packed-struct reject (whole-sub clean error[3000]) — verify `leaf_field_ty` = packed struct_type triggers the ~:1252/:1287 reject already, so no extra code is needed for whole-member (confirm and record).
+
+- [ ] **Step 5: Fixture contract design.** Define the repo fixture + whole-member probe contracts (F task implements): e.g. `packed_union` with a packed-struct member exercising `u.member.field` leaf read AND write with byte-exact output, plus the whole-member clean-reject probe (rc=2, one `error[3000]`, 0 `.c`). Use LSB-first math from §5 conventions. Record the planned stdout + layout math for the F task.
+
+- [ ] **Step 6: Report + ledger.** Record all anchors + design decisions. No commit.
+
+### Amendment Task F-1: Implement packed-struct members of packed unions + leaf access through union members
+
+**Files:**
+- Modify (per I-1 anchors): semantic_analyzer.zig (union gate), type_registry.zig (union layout member width), lower.zig (chain analyze packed_union container step + confirm whole-member reject), possibly comptime_eval/c89_emit only if I-1 finds a gap (do NOT add otherwise).
+- Add: repo fixture under `repro/mi_matrix/` for the leaf-access contract (+ any companion probe dir for the whole-member clean-reject).
+- Record: report + ledger.
+
+**Interfaces:**
+- Consumes: I-1 anchors.
+- Produces: packed-struct members of packed unions supported — B6 admits them, layout sizes them correctly, leaf `u.member.field` reads/writes land at `0 + inner_field_offset`; whole-member value moves clean-reject (never silent).
+
+- [ ] **Step 1: Gate.** Per I-1 Step 2: union gate admits packed `struct_type` members without the scalar width cap; all else stays clean-reject. One error per offending member.
+
+- [ ] **Step 2: Layout.** Per I-1 Step 3: member width = inner `total_bits` for packed-struct members; bit 0; max/size unchanged. Probe `@sizeOf`/`@bitSizeOf`/`@alignOf` on the fixture union + a scratch member (report).
+
+- [ ] **Step 3: Chain analyze.** Per I-1 Step 4: `lowerPackedChainAnalyze` treats the packed-union container step correctly; verify read + store land as ONE accumulated-offset `load_bitfield`/`store_bitfield`; confirm whole-member `u.member` value move hits the existing clean-reject (verify no new silent path).
+
+- [ ] **Step 4: Byte-neutrality gate.** Rebuild reference (record md5). 4-MD5 4/4 byte-identical; golden 9/9; matrix 21/21; self-compile two-hop closure (fixed point moved, recorded not re-baselined per Ruling A); existing packed fixtures L0-L6 stay GREEN byte-exact.
+
+- [ ] **Step 5: Fixture GREEN gate.** New leaf-access fixture runs byte-exact, deterministic 3× fresh dirs (per the I-1 contract); whole-member probe = clean `error[3000]`, rc=2, 0 `.c`, deterministic. Corpus: the packed dirs + new dirs move as expected; zero-asymmetric elsewhere.
+
+- [ ] **Step 6: Commit.**
+
+```bash
+git add sf/src/<per-I-1> repro/mi_matrix/<fixture-dir(s)>
+git commit -m "feat: packed union — packed-struct members + leaf access through union members (PACK-AGG AMENDMENT)"
+```
+
+- [ ] **Step 7: Full battery + STOP-present.** golden 9/9; matrix 21/21; corpus sweep; 4-MD5 byte-identical; two-hop closure; record NEW fixed point md5. STOP-present: re-baseline proposal + docs-GATE plan (EXPECTED_FAIL version bump + GREEN/RESOLVED rows for the new fixture + QUICK_REF newest-first bullet + seed rotation to the new fixed point via `archive_seed.sh`), operator-ruled, never silent. No commit, no docs touched here.
+
+- [ ] **Step 8: Docs GATE (after operator approval).** EXPECTED_FAIL bump + new fixture RESOLVED/GREEN rows (RED history verbatim); QUICK_REF newest-first bullet; seed rotation; single docs commit (message amended with "+ seed rotation" per SEEDMIG).
