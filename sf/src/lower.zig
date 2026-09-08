@@ -1191,7 +1191,7 @@ fn lowerPackedChainAnalyze(self: *LirLowerer, node_idx: u32, holder_out: *u32, o
         var cid: u32 = @intCast(u32, 0);
         if (lowerContainerOfAccess(self, ast_mod.astStoreNodeAt(store, stack[sidx]).child_0, &cid) == @intCast(u8, 0)) return @intCast(u8, 0);
         var cty = self.ctx.registry.types_items[@intCast(usize, cid)];
-        if (cty.kind == type_mod.TypeKind.struct_type and (cty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+        if ((cty.kind == type_mod.TypeKind.struct_type or cty.kind == type_mod.TypeKind.packed_union_type) and (cty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
             first_packed = sidx;
             break;
         }
@@ -1205,11 +1205,24 @@ fn lowerPackedChainAnalyze(self: *LirLowerer, node_idx: u32, holder_out: *u32, o
         var cid: u32 = @intCast(u32, 0);
         if (lowerContainerOfAccess(self, ast_mod.astStoreNodeAt(store, stack[li]).child_0, &cid) == @intCast(u8, 0)) return @intCast(u8, 0);
         var cty = self.ctx.registry.types_items[@intCast(usize, cid)];
-        if (cty.kind != type_mod.TypeKind.struct_type or (cty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return @intCast(u8, 0);
+        var is_packed_struct: u8 = @intCast(u8, 0);
+        var is_packed_union: u8 = @intCast(u8, 0);
+        if (cty.kind == type_mod.TypeKind.struct_type and (cty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            is_packed_struct = @intCast(u8, 1);
+        } else if (cty.kind == type_mod.TypeKind.packed_union_type) {
+            is_packed_union = @intCast(u8, 1);
+        } else {
+            return @intCast(u8, 0);
+        }
         var fields: []FieldEntry = undefined;
-        type_mod.typeRegistryGetStructFields(self.ctx.registry, cid, &fields);
         var pk_fields: []type_mod.PackedBitField = undefined;
-        if (!type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, cid, &pk_fields)) return @intCast(u8, 0);
+        if (is_packed_struct == @intCast(u8, 1)) {
+            type_mod.typeRegistryGetStructFields(self.ctx.registry, cid, &fields);
+            if (!type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, cid, &pk_fields)) return @intCast(u8, 0);
+        } else {
+            type_mod.typeRegistryGetUnionFields(self.ctx.registry, cid, &fields);
+            if (!type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, cid, &pk_fields)) return @intCast(u8, 0);
+        }
         var fname = ast_mod.astStoreNodePayload(store, stack[li]);
         var fi2: usize = @intCast(usize, 0);
         var found_off: u8 = @intCast(u8, 0);
@@ -1432,6 +1445,14 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                 var pk_fields: []type_mod.PackedBitField = undefined;
                 if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
                     if (@intCast(usize, field_id) < pk_fields.len) {
+                        if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                            var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
+                            if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                                var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
+                                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
+                                return;
+                            }
+                        }
                         var pkf = pk_fields[@intCast(usize, field_id)];
                         emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
                         return;
@@ -3089,6 +3110,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var pk_fields: []type_mod.PackedBitField = undefined;
                             if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
                                 if (fi < pk_fields.len) {
+                                    if (fields[fi].type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                                        var mty = self.ctx.registry.types_items[@intCast(usize, fields[fi].type_id)];
+                                        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                                            var wrv_msg: []const u8 = "cannot read a whole packed-struct value out of a packed union member (bit-slice load not supported)";
+                                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wrv_msg);
+                                            return tid;
+                                        }
+                                    }
                                     var pkf = pk_fields[fi];
                                     emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
                                     return tid;

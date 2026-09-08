@@ -904,7 +904,7 @@ fn semanticAnalyzerGatePackedUnionMembers(self: *SemanticAnalyzer, union_node_id
             var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
             if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
                 gate_state = @intCast(u8, 1);
-            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft, false)) {
+            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft, true)) {
                 if (type_mod.typeRegistryIntWidthBits(self.registry, ft) > @intCast(u8, 31)) {
                     gate_wide = @intCast(u8, 1);
                 } else {
