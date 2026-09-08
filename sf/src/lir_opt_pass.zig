@@ -18,8 +18,10 @@
 //      with `.nop`. Call/`call_direct`/`tail_call` ARGUMENT runs and
 //      side-table operands cannot be rewritten per-slot in this IR (the arg
 //      ids are a contiguous temp-id run owned by the call), so arg-temp
-//      consumers are excluded — those copies fall to Task-4 expression
-//      nesting.
+//      consumers are excluded — this includes an indirect tail_call's callee
+//      temp, which is read once from the side table at emission like an
+//      arg-slot consumer (direct tail_call/call_direct callees are name_ids,
+//      not temps). Those copies fall to Task-4 expression nesting.
 //   2. Local constant folding — PURE binary/unary ops whose value operands are
 //      all int_const (same concrete integer type as the result) fold to one
 //      int_const at the result type's width with two's-complement semantics;
@@ -401,7 +403,13 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
         .va_end => |ve| { markRead(c, ve.va_list_temp, bb_idx, ii); },
         .tail_call => |slot| {
             var tc = lir_mod.lirSideGetTailCall(c.lir_fn, slot);
-            if (tc.is_indirect != @intCast(u8, 0)) { markRead(c, tc.callee, bb_idx, ii); }
+            // Indirect callee temp is a side-table operand (lives in
+            // TailCallData, read once at emission like an arg-slot consumer)
+            // and cannot be rewritten per-slot by rewriteInstOperands, so it
+            // is arg-run-excluded from copy-prop eligibility (same contract as
+            // the call/call_direct/tail_call ARG runs below). Direct callee is
+            // a name_id, not a temp - no read to count.
+            if (tc.is_indirect != @intCast(u8, 0)) { markArgRead(c, tc.callee, bb_idx, ii); }
             var ai: u32 = @intCast(u32, 0);
             while (ai < tc.args_count) : (ai += @intCast(u32, 1)) {
                 markArgRead(c, tc.args_start + ai, bb_idx, ii);
