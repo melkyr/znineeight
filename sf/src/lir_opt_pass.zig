@@ -69,6 +69,10 @@ const Ctx = struct {
     cf: [*]u8,
     cv: [*]u64,
     ren: [*]u32,
+    cand: [*]u8,
+    depth: [*]u8,
+    df_bb: [*]u32,
+    df_ii: [*]u32,
 };
 
 fn lowMask(w: u32) u64 {
@@ -164,6 +168,10 @@ fn resetScratch(c: *Ctx) void {
         c.cf[@intCast(usize, t)] = @intCast(u8, 0);
         c.cv[@intCast(usize, t)] = @intCast(u64, 0);
         c.ren[@intCast(usize, t)] = INVALID;
+        c.cand[@intCast(usize, t)] = @intCast(u8, 0);
+        c.depth[@intCast(usize, t)] = @intCast(u8, 0);
+        c.df_bb[@intCast(usize, t)] = INVALID;
+        c.df_ii[@intCast(usize, t)] = INVALID;
     }
 }
 
@@ -484,6 +492,141 @@ fn scanAll(c: *Ctx) void {
     var pi: usize = @intCast(usize, 0);
     while (pi < c.lir_fn.params.len) : (pi += @intCast(usize, 1)) {
         markExcluded(c, c.lir_fn.params.items[pi].temp_id);
+    }
+}
+
+// ----- T4a: nest-candidate + expression-depth metadata (backend-agnostic) -----
+//
+// Records, per temp id, into per-function arrays (sized like the other
+// per-temp arrays by maxTempOf; index = temp id):
+//   * `cand` (u8) - inline candidate iff the temp's SINGLE defining inst is
+//     PURE (spec §3.2 verbatim list + the 5 gap resolutions) AND the temp has
+//     exactly one value use AND it is not address-taken AND it is not excluded
+//     (the `ex` set: param / decl_local-bound / load_global-alias). Requires
+//     exactly one write (wc == 1) and exactly one read (rc == 1).
+//   * `depth` (u8) - generic expression-tree nesting depth of the defining
+//     inst: 1 + max over the inst's operand temps that are themselves
+//     candidates (a non-candidate operand renders as a materialized-name leaf
+//     and adds 0). Computed by recursion + memo over the single-assignment
+//     def-use graph (defs dominate uses, so the recursion is acyclic) -
+//     deterministic, independent of block array order.
+//
+// The C90 depth cap and the C-shape (h) / consumer-slot (i) predicates are the
+// EMITTER's concern (T4b+); nothing here reasons about C89 emission shape, and
+// in T4a nothing reads these arrays (zero emission delta by construction).
+
+fn depthOfTemp(c: *Ctx, t: u32) u8 {
+    if (t >= c.max_temp) return @intCast(u8, 0);
+    var pos = c.t2p[@intCast(usize, t)];
+    if (pos == INVALID) return @intCast(u8, 0);
+    if (c.cand[@intCast(usize, t)] == @intCast(u8, 0)) return @intCast(u8, 0);
+    var d = c.depth[@intCast(usize, t)];
+    // 0xFF is the in-progress marker (== saturation value: a real chain >= 255
+    // levels is beyond any C90 cap anyway). A cycle is impossible in the
+    // single-assignment def-use graph, so an in-progress revisit would only
+    // arise from a depth >= 255 recursion and is clamped the same way.
+    if (d == @intCast(u8, 0xFF)) return @intCast(u8, 0xFF);
+    if (d != @intCast(u8, 0)) return d;
+    c.depth[@intCast(usize, t)] = @intCast(u8, 0xFF);
+    var bi = c.df_bb[@intCast(usize, t)];
+    if (bi == INVALID) {
+        c.depth[@intCast(usize, t)] = @intCast(u8, 1);
+        return @intCast(u8, 1);
+    }
+    var bb = &c.lir_fn.blocks.items[@intCast(usize, bi)];
+    var inst = bb.insts.items[@intCast(usize, c.df_ii[@intCast(usize, t)])];
+    var mx = maxOperandDepth(c, inst);
+    var r: u32 = @intCast(u32, mx) + @intCast(u32, 1);
+    if (r > @intCast(u32, 0xFF)) r = @intCast(u32, 0xFF);
+    c.depth[@intCast(usize, t)] = @intCast(u8, r);
+    return c.depth[@intCast(usize, t)];
+}
+
+// Max candidate-depth over the operand temps of a PURE def inst (only PURE
+// defs can be candidates, so only their operand slots are enumerated).
+fn maxOperandDepth(c: *Ctx, inst: LirInst) u8 {
+    var mx: u8 = @intCast(u8, 0);
+    switch (inst) {
+        .binary => |b| {
+            mx = depthOfTemp(c, b.lhs);
+            var r = depthOfTemp(c, b.rhs);
+            if (r > mx) mx = r;
+        },
+        .unary => |u| { mx = depthOfTemp(c, u.operand); },
+        .int_cast => |ic| { mx = depthOfTemp(c, ic.value); },
+        .float_cast => |fc| { mx = depthOfTemp(c, fc.value); },
+        .ptr_cast => |pc| { mx = depthOfTemp(c, pc.value); },
+        .int_to_float => |itf| { mx = depthOfTemp(c, itf.value); },
+        .ptr_to_int => |pti| { mx = depthOfTemp(c, pti.value); },
+        .int_to_ptr => |itp| { mx = depthOfTemp(c, itp.value); },
+        .make_slice => |ms| {
+            mx = depthOfTemp(c, ms.ptr);
+            var r = depthOfTemp(c, ms.len);
+            if (r > mx) mx = r;
+        },
+        .addr_of => |a| { mx = depthOfTemp(c, a.operand); },
+        .addr_of_field => |a| { mx = depthOfTemp(c, a.base); },
+        .wrap_optional => |w| { mx = depthOfTemp(c, w.value); },
+        .wrap_error_ok => |w| { mx = depthOfTemp(c, w.value); },
+        .wrap_error_err => |w| { mx = depthOfTemp(c, w.value); },
+        .unwrap_optional => |u| { mx = depthOfTemp(c, u.value); },
+        .unwrap_optional_abi => |u| { mx = depthOfTemp(c, u.value); },
+        .check_optional => |ch| { mx = depthOfTemp(c, ch.value); },
+        .unwrap_error_payload => |u| { mx = depthOfTemp(c, u.value); },
+        .unwrap_error_code => |u| { mx = depthOfTemp(c, u.value); },
+        .check_error => |ch| { mx = depthOfTemp(c, ch.value); },
+        .load => |l| { mx = depthOfTemp(c, l.ptr); },
+        .load_field => |lf| { mx = depthOfTemp(c, lf.base); },
+        .load_bitfield => |lb| { mx = depthOfTemp(c, lb.base); },
+        .load_index => |li| {
+            mx = depthOfTemp(c, li.base);
+            var r = depthOfTemp(c, li.index);
+            if (r > mx) mx = r;
+        },
+        else => {},
+    }
+    return mx;
+}
+
+fn computeNestMetadata(c: *Ctx) void {
+    // Pass 1: def locators (df_bb/df_ii) + candidate bits for every def result.
+    var bi: usize = @intCast(usize, 0);
+    while (bi < c.lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
+        var bb = &c.lir_fn.blocks.items[bi];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            var inst = bb.insts.items[ii];
+            var rp = defResultTemp(inst, c.lir_fn);
+            if (rp == INVALID) continue;
+            if (rp >= c.max_temp) continue;
+            var pos = c.t2p[@intCast(usize, rp)];
+            if (pos == INVALID) continue;
+            c.df_bb[@intCast(usize, rp)] = @intCast(u32, bi);
+            c.df_ii[@intCast(usize, rp)] = @intCast(u32, ii);
+            if (c.wc[@intCast(usize, pos)] == @intCast(u32, 1) and
+                c.rc[@intCast(usize, pos)] == @intCast(u32, 1) and
+                c.at[@intCast(usize, pos)] == @intCast(u8, 0) and
+                c.ex[@intCast(usize, pos)] == @intCast(u8, 0) and
+                c.dp[@intCast(usize, pos)] == @intCast(u8, 1))
+            {
+                c.cand[@intCast(usize, rp)] = @intCast(u8, 1);
+            }
+        }
+    }
+    // Pass 2: expression depths (recursion + memo; operand defs are visited on
+    // demand regardless of block order).
+    var bi2: usize = @intCast(usize, 0);
+    while (bi2 < c.lir_fn.blocks.len) : (bi2 += @intCast(usize, 1)) {
+        var bb = &c.lir_fn.blocks.items[bi2];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            var rp = defResultTemp(bb.insts.items[ii], c.lir_fn);
+            if (rp == INVALID) continue;
+            if (rp >= c.max_temp) continue;
+            if (c.cand[@intCast(usize, rp)] == @intCast(u8, 0)) continue;
+            if (c.depth[@intCast(usize, rp)] != @intCast(u8, 0)) continue;
+            _ = depthOfTemp(c, rp);
+        }
     }
 }
 
@@ -1195,6 +1338,10 @@ pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
         .cf = allocU8Raw(alloc, max_temp),
         .cv = allocU64Raw(alloc, max_temp),
         .ren = allocU32With(alloc, max_temp, INVALID),
+        .cand = allocU8Raw(alloc, max_temp),
+        .depth = allocU8Raw(alloc, max_temp),
+        .df_bb = allocU32Raw(alloc, max_temp),
+        .df_ii = allocU32Raw(alloc, max_temp),
     };
     var hti: usize = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
@@ -1209,6 +1356,11 @@ pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
     // Refresh scratch after copy-prop rewrites, then fold.
     scanAll(&c);
     _ = runConstFold(&c);
+    // T4a: record nest-candidate + expression-depth metadata on the FINAL LIR
+    // (post copy-prop + const-fold). Nothing in emission reads these arrays in
+    // T4a, so the emitted C is byte-identical with or without this record.
+    scanAll(&c);
+    computeNestMetadata(&c);
 }
 
 fn allocU32With(alloc: *Sand, n: u32, fill: u32) [*]u32 {
