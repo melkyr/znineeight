@@ -106,3 +106,33 @@ git commit -m "docs: GATE — LIR opt pass emission re-baseline + seed rotation 
 1. **Spec coverage:** baseline+profile (T1), purity/algorithm I (T2), temp/dead/copy/const (T3), nesting (T4), battery + full gate re-baseline STOP (T5), docs GATE (T6); success metric = measured size + gcc deltas + run-identity; operator rulings honored.
 2. **Placeholder scan:** no TBD; exact op classes/algorithms are the Task-2 I deliverable (established pattern); per-file census anchors resolved in record-only Task 1.
 3. **Type/name consistency:** `lir_opt_pass.zig` + `lirOptRun`-style entry (final name per file convention in T3); report `task-LIROPT-report.md`; memory agent `liroptpass-session`.
+
+---
+
+## AMENDMENT — Post-PACK-B3 era alignment: zig0 retired + N-hop determinism closure + two-part closeout gate (operator ruling 2026-09-08)
+
+The following supersede the pre-seed-era wording in the Global Constraints and Tasks 5-6 above, matching the PACK-B3 AMENDMENT (docs/superpowers/plans/2026-09-06-arbitrary-width-enums-plan.md, commit `890302c6`) and the executed seed-model state. Execution proceeds under THESE clauses.
+
+### GC reference-compiler clause (supersedes plan lines 17)
+- **zig0 is RETIRED.** `enum(uN)` (PACK-B3) is the first syntax zig0's frozen C++ front end cannot parse; `build_release.sh`'s zig0 path is DEAD for current `sf/src` (kept in-tree, historical, never used for reference rebuilds). The reference compiler is always built from the **committed seed** (zig1 → zig1_5), per the N-hop procedure below.
+- Committed seed at execution = **seed v4**: `release/seed/zig1-seed.tgz` archive md5 `a8b97b3c`, internal binary / self-compile fixed point `f5c2f9d2…` (gen 41 `.c` + 42 `.h` = 8,334,141 B; layout per SEEDMIG spec; provenance `release/seed/CHANGELOG.md` v4 entry, annotated official-self-hosted/zig0-retirement milestone). Reference at execution: `/tmp/fx_subfolder/zig1` md5 `f5c2f9d2…` (seed-rebuilt at PACK-B3 Task 5, canonical std reinstalled at `/tmp/fx_subfolder/lib`).
+- Forward rebuild path: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh-out>` — NEVER point `<fresh-out>` at `/tmp/fx_subfolder` (the script `rm -rf`s it); std lib (4 std `.zig`) copied to `<fresh-out>/lib`.
+
+### Closure criterion = N-HOP STABILIZATION (supersedes "hop1==hop2" in plan lines 14/20/80 and spec §2/§4)
+- LIROPTPASS is **self-affecting** (it changes how the compiler emits its own C), so the committed seed v4 (`f5c2f9d2`) is one generation flavored behind the post-pass `sf/src`: `seed→g1` and even `g1→g2` may differ. Convergence = **iterate `seed→g1→g2→…→gn` until `gn==gn+1`** (2-3 hops accepted per operator: "the compiler has to be compilable 2 or 3 times… any flaw isn't cascading into compilation"; max 4 hops, fail loud if never stable). The N-hop chain result is the NEW fixed point, re-baselined operator-ruled at the Task-5 STOP (never silent).
+- Determinism caveat honored: identical input LIR → identical output LIR is still REQUIRED for the hop property; the N-hop chain converges only if the pass is deterministic.
+
+### Two-part closeout gate (supersedes plan Task-5 Step 4 / Task-6 Step 3 wording)
+- **Task 5 STOP-present additionally reports** — (A) N-hop self-consistency: `gn==gn+1` stabilization value + hop count; (B) **behavioral identity**: the N-hop-stabilized compiler re-runs the FULL external battery (4-MD5 dump gates, golden 9/9, matrix 21/21, corpus run-class, upgraded-examples goldens, net round-trips) byte-identical vs pre-pass captured outputs. Runtime byte-identity (not emission byte-identity) is the correctness gate.
+- **Task 5 measurement compiler** is the N-hop-stabilized binary (NOT the pre-pass `/tmp/fx_subfolder/zig1`); every Task-5/Task-6 measured value states its measurement compiler explicitly.
+- **Feature-pinning standing rule**: any feature LIROPTPASS adopts into `sf/src`'s own body (the new `lir_opt_pass.zig` using packed/enum/other constructs) must be pinned by a corpus/golden program so the external battery exercises it.
+
+### PACK-B3 carry-in Minors (triage at closeout, do NOT auto-fix)
+The PACK-B3 final review's 6 record-only Minors (lower.zig:1526 latent wide-enum-switch panic; `tests/test_semantic_bin.zig:1222` + `test_sym_reg_bin.zig:247` EnumPayload constructors missing `.explicit_backing`; layout-B container enum flag spurious; packed admission helper width-32+ reliance on caller ≤31 cap; pre-existing two-arb-enum-in-one-file quirk; fixture_run.sh `-Wall` phrasing) are carried forward for LIROPTPASS-closeout triage, not fixed inside this plan's tasks.
+
+### Task-2 deliverable addition (supersedes the Task-2 purity-list source)
+Spec §3.2's verbatim PURE/ORDERED `LirInst` lists predate the packed family and LACK `load_bitfield`/`store_bitfield` (PACK-CORE, lir.zig:91-92). Task-2 Step 1 MUST classify them explicitly: `load_bitfield` = PURE (reads carrier bytes of a packed/union/enum value; fold/nest candidate under the address-taken + single-use rule) or chain-adjacent per the emitter's C rendering; `store_bitfield` = ORDERED (read-modify-write of memory → never folded, terminates any nesting chain). Also confirm the packed `struct`/`union`/`enum(uN)` carrier ops and INTWIDTH narrow-int widths are handled as classified (safe-fold vs chain-terminator).
+
+### Seed rotation (supersedes plan lines 20 / Task-6 Step 3)
+- Task-6 docs-GATE rotates the committed seed **v4 → v5** to the Task-5 N-hop fixed-point binary via `bash scripts/seed/archive_seed.sh <Task-5-fixed-point-binary> <Task-5-fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog`, staging `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` alongside QUICK_REF.md + EXPECTED_FAIL.md. CHANGELOG v5 entry carries the LIROPTPASS emission-tightening milestone note (self-hosted era continuation). Task-5 measured values are recorded BEFORE the rotation captures them.
+
