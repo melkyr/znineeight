@@ -1240,6 +1240,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
             if (ty.name_id != @intCast(u32, 0)) {
                 if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) continue;
+                if (ty.kind == TypeKind.packed_union_type) continue;
                 var cname = getCTypeName(reg, emitter.mangler, tid);
                 var dedup_key: u32 = @intCast(u32, 0);
                 var h_ci: usize = @intCast(usize, 0);
@@ -1374,6 +1375,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
             if (ty.name_id != @intCast(u32, 0)) {
                 if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) continue;
+                if (ty.kind == TypeKind.packed_union_type) continue;
                 var cname = getCTypeName(reg, emitter.mangler, tid);
                 var dedup_key: u32 = @intCast(u32, 0);
                 var h_ci: usize = @intCast(usize, 0);
@@ -1668,6 +1670,19 @@ fn emitUnionType(emitter: *C89Emitter, tid: u32) void {
     var ty = reg.types_items[@intCast(usize, tid)];
     var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    if (ty.kind == TypeKind.packed_union_type) {
+        var psz: u32 = ty.size;
+        if (psz == @intCast(u32, 0)) psz = @intCast(u32, 1);
+        var es0p: []const u8 = "typedef struct {\n\tunsigned char _[";
+        bufferedWriterWrite(&emitter.writer, es0p);
+        bfWriteU32(&emitter.writer, psz);
+        var es1p: []const u8 = "];\n} ";
+        bufferedWriterWrite(&emitter.writer, es1p);
+        bufferedWriterWrite(&emitter.writer, mangled_name);
+        var es2p: []const u8 = ";\n";
+        bufferedWriterWrite(&emitter.writer, es2p);
+        return;
+    }
     var up = reg.un_items[@intCast(usize, ty.payload_idx)];
     var fstart: usize = @intCast(usize, up.fields_start);
     var fcount: usize = @intCast(usize, up.fields_count);

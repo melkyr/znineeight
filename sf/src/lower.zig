@@ -1428,6 +1428,16 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                     break;
                 }
             }
+            if (kind == type_mod.TypeKind.packed_union_type) {
+                var pk_fields: []type_mod.PackedBitField = undefined;
+                if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
+                    if (@intCast(usize, field_id) < pk_fields.len) {
+                        var pkf = pk_fields[@intCast(usize, field_id)];
+                        emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                        return;
+                    }
+                }
+            }
             emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
         } else {
             iceFieldStoreUnsupported(self, diag_node_idx);
@@ -3075,6 +3085,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     return tid;
                                 }
                             }
+                        } else if (kind == type_mod.TypeKind.packed_union_type) {
+                            var pk_fields: []type_mod.PackedBitField = undefined;
+                            if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
+                                if (fi < pk_fields.len) {
+                                    var pkf = pk_fields[fi];
+                                    emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                                    return tid;
+                                }
+                            }
                         }
                         emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = @intCast(u32, fi), .result = tid } });
                         return tid;
@@ -4202,12 +4221,25 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     while (fj < fc) : (fj += @intCast(usize, 1)) {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
                             if (!is_undef_arr_field) {
-                                emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                                var pk_fields: []type_mod.PackedBitField = undefined;
+                                var packed_done: u8 = @intCast(u8, 0);
+                                if (type_mod.typeRegistryIsPacked(self.ctx.registry, it)) {
+                                    if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, it, &pk_fields)) {
+                                        if (fj < pk_fields.len) {
+                                            var pkf = pk_fields[fj];
+                                            emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                                            packed_done = @intCast(u8, 1);
+                                        }
+                                    }
+                                }
+                                if (packed_done == @intCast(u8, 0)) {
+                                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
+                                }
                             }
                             break;
                         }
                     }
-                } else if (@enumToInt(ts.kind) == @enumToInt(type_mod.TypeKind.union_type)) {
+                } else if (@enumToInt(ts.kind) == @enumToInt(type_mod.TypeKind.union_type) or @enumToInt(ts.kind) == @enumToInt(type_mod.TypeKind.packed_union_type)) {
                     var up = self.ctx.registry.un_items[@intCast(usize, ts.payload_idx)];
                     var fs: usize = @intCast(usize, up.fields_start);
                     var fc: usize = @intCast(usize, up.fields_count);
@@ -4215,6 +4247,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     while (fj < fc) : (fj += @intCast(usize, 1)) {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
                             if (!is_undef_arr_field and self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
+                                if (ts.kind == type_mod.TypeKind.packed_union_type) {
+                                    var pk_fields: []type_mod.PackedBitField = undefined;
+                                    if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, it, &pk_fields)) {
+                                        if (fj < pk_fields.len) {
+                                            var pkf = pk_fields[fj];
+                                            emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                                            break;
+                                        }
+                                    }
+                                }
                                 emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
                             }
                             break;
