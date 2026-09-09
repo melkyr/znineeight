@@ -11,6 +11,41 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-09-09 — seed v5 (HEAD e62ebd99)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (42 `.c` + 43 `.h` incl.
+emitted `zig_special_types.h`, 8202959 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-09-09 |
+| HEAD | `e62ebd99` |
+| seed binary md5 | `048824c92d7c270d43d5d4d7db39372e` |
+| self-emission C | 42 `.c` + 43 `.h` (8202959 bytes) |
+| fixed point | `048824c92d7c270d43d5d4d7db39372e` |
+| archive md5 | `6f7c0cf573a2fdd9e1ab20c734de0b38` |
+
+Provenance note: the archived binary (md5 048824c92d7c270d43d5d4d7db39372e) was captured by
+scripts/seed/archive_seed.sh at HEAD e62ebd99; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `048824c92d7c270d43d5d4d7db39372e` — both are the same
+compiler state at HEAD e62ebd99. Rebuild recipes + full canonical flag-set
+requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
+**LIROPTPASS emission-tightening re-baseline (operator ruling 2026-09-09):** seed v5 is the
+**official post-LIROPTPASS self-hosted fixed point `048824c9`**. The dedicated pre-emission LIR opt
+pass (`sf/src/lir_opt_pass.zig`, dead-temp/copy-prop/local const-fold + pure-chain expression
+nesting with backend-agnostic pass metadata, T3-T4e landing `8c6a8e9c`..`e62ebd99`) changed the
+compiler's own emission (self-emission 42 `.c` + 43 `.h` = 8,202,959 B incl. the new
+`lir_opt_pass` module; 41-original-module set 8,334,141→7,974,157 B = −359,984 B/−4.3%); the N-hop
+chain at HEAD `e62ebd99` converged seed v4 `f5c2f9d2` → hop1 `ae525bdc` → hop2 `048824c9` → hop3
+`048824c9` (hop2==hop3 == this seed's fixed point). Runtime byte-identity held across the full Task-5
+battery (24/24 run-identical, corpus 419/419 zero class change, upgraded goldens + net 12/12,
+mingw32 `-osw` clean). The 4-MD5 dump gates were re-baselined (runtime-identical) to the values
+recorded at this HEAD's docs GATE.
 ## 2026-09-08 — seed v4 (HEAD 890302c6)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
