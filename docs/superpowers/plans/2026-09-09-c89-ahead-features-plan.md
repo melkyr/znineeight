@@ -17,7 +17,7 @@
 - **Bootstrap-staging constraint:** new-feature compiler code written in constructs the current committed seed understands.
 - **Flag-set rule:** every gcc `-c` = `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`; `-Wall -Wextra -O3 -fsyntax-only` separate verification gate. Self-emission link set = `zig_runtime.c` + `zig_pal.c` + `c_exit.c`.
 - **RED-first per feature:** fixture classifies RED (clean reject / parse error) at plan start; GREEN byte-exact deterministic (RUNRC=0) after the feature lands; fixture stays in the corpus permanently.
-- **Corpus primary oracle:** 419 dirs = 404 OK / 9 GREEN / 6 FAIL at HEAD. Each feature zero-asymmetric except its own fixture dir(s). Golden 9/9 + matrix 21/21 run byte-identity vs PRE.
+- **Corpus primary oracle:** 420 dirs = 404 OK / 9 GREEN / 7 FAIL at HEAD (post-EMITCOMPACT). Each feature zero-asymmetric except its own fixture dir(s). Golden 9/9 + matrix 21/21 run byte-identity vs PRE.
 - **4-MD5:** a feature changing a gate program's emission moves that md5 → **recorded-not-rebaselined per feature**; operator-ruled full re-baseline at the Task-6 STOP only.
 - **Warning/compat:** emitted C warning-clean under `-Wall -Wextra -O3 -fsyntax-only`; compat audit POST ≤ PRE (no bare `long long`, ≤31-char identifiers, no `%zu`, no empty macro args).
 - **Working conventions:** SDD mandatory; compression forbidden during build sessions; memories via `mnemoria --path .opencode/memory add` under agent `c89ahead-session`; edits via `edit`/`fastedit` only; no commit until review clean; pre-existing dirty set never staged.
@@ -32,7 +32,7 @@
 - Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 1`)
 - No source edits, no commit, nothing staged.
 
-- [ ] **Step 1: Baseline.** Reconfirm HEAD `14181290`, fixed point `048824c9`, 4-MD5 (gol `80a0402b…`, lisp `e95bf0c5…`, json `ba07af4b…`, mud `a3a8b27a…`), EXPECTED_FAIL v76, corpus 419 dirs = 404/9/6. Record.
+- [ ] **Step 1: Baseline.** Reconfirm HEAD, fixed point `ea149e05` (seed v6), 4-MD5 (gol `bbafa30f…`, lisp `c1767529…`, json `3ada7d8b…`, mud `ee42f9b7…`), EXPECTED_FAIL v76, corpus 420 dirs = 404/9/7. Record.
 - [ ] **Step 2: RED reproduction.** Author scratch probes (NOT committed) for each feature confirming today's class:
   - `static var x` / module-scope `static` → parse `error[2000]` (keyword absent from `token.zig`).
   - `do { … } while (…)` → parse `error[2000]`.

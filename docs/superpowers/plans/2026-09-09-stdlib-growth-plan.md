@@ -15,7 +15,7 @@
 - **Win9x API set — no cstdio / no C-runtime dependence (hard, grep-audited).** All I/O/alloc via `@`-builtins + PAL/Win32 externs only. Grep every new module for `printf|fwrite|fopen|fread|malloc|strlen|strcpy|puts` → must be 0.
 - **Reference per the seed model** (`release/seed/`); measurement compiler = the N-hop-converged binary, stated per report. Dump CWD = repo root, relative `sf/src/main.zig`.
 - **Flag-set rule:** every gcc `-c` = `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`; `-Wall -Wextra -O3 -fsyntax-only` separate gate.
-- **Corpus primary oracle:** 419 dirs = 404 OK / 9 GREEN / 6 FAIL at HEAD. Each increment zero-asymmetric except its own new fixture dirs. Golden 9/9 + matrix 21/21 run byte-identity.
+- **Corpus primary oracle:** 420 dirs = 404 OK / 9 GREEN / 7 FAIL at HEAD (post-EMITCOMPACT). Each increment zero-asymmetric except its own new fixture dirs. Golden 9/9 + matrix 21/21 run byte-identity.
 - **4-MD5 dump gates unchanged by stdlib work** unless a gate program imports a changed std module → if so, recorded-not-rebaselined; operator-ruled re-baseline only at closeout.
 - **Working conventions:** SDD mandatory; compression forbidden during build sessions; memories via `mnemoria --path .opencode/memory add` under agent `stdlib-session`; edits via `edit`/`fastedit` only; no commit until review clean; pre-existing dirty set never staged.
 - Report `.superpowers/sdd/task-STDLIB-report.md`; ledger `.superpowers/sdd/progress.md`; memory agent `stdlib-session`.
@@ -29,7 +29,7 @@
 - Report: `.superpowers/sdd/task-STDLIB-report.md` (appended `## Task 1`)
 - No source edits, no commit, nothing staged.
 
-- [ ] **Step 1: Baseline.** Reconfirm HEAD `14181290`, fixed point `048824c9`, 4-MD5 (gol `80a0402b…`, lisp `e95bf0c5…`, json `ba07af4b…`, mud `a3a8b27a…`), EXPECTED_FAIL v76, corpus 419 dirs = 404/9/6. Record.
+- [ ] **Step 1: Baseline.** Reconfirm HEAD, fixed point `ea149e05` (seed v6), 4-MD5 (gol `bbafa30f…`, lisp `c1767529…`, json `3ada7d8b…`, mud `ee42f9b7…`), EXPECTED_FAIL v76, corpus 420 dirs = 404/9/7. Record.
 - [ ] **Step 2: PAL file-surface census.** Read `pal.zig` (fileOpen/fileWrite/fileClose/streamOpen/streamClose/streamWrite/streamRead/streamSeek at :88-153) and `zig_pal.c` (`pal_file_write`/`pal_file_close` at :193-208, `CreateFileA` at :184). Determine: which file primitives are live + correct at HEAD, their exact Z98-visible signatures, return conventions (handle type, `?*void` vs `usize`), and whether a read path returns a byte count. Record the exact extern/wrapper surface the `std_io` file API will wrap. Verify a minimal file write→close→read-back round trip works on POSIX today (scratch probe, not committed).
 - [ ] **Step 3: `std.zig` re-export census (A2).** Test whether `pub const net = @import("std_net.zig")` in `std.zig` breaks programs that never use net (std_net carries `@cInclude("<net_prelude.h>")` + wsock32 externs). Also test unconditional re-export of the planned `str`/`mem`/`math`/`debug` modules (they are pure — expected safe). Record the decision: unconditional, platform-gated, or direct-import-only for `net`.
 - [ ] **Step 4: `std_arena` consumer audit.** Enumerate every program/fixture that imports `std_arena` or uses `std.arena` (the shared-global stub). Record the exact migration each needs for the per-arena `init(data)` form. List the affected fixtures that will need source migration + runtime re-verification.
