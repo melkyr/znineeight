@@ -142,6 +142,8 @@ const Ctx = struct {
     ren: [*]u32,
     cand: [*]u8,
     depth: [*]u8,
+    ga: [*]u8,
+    gam: [*]u8,
     df_bb: [*]u32,
     df_ii: [*]u32,
 };
@@ -241,6 +243,8 @@ fn resetScratch(c: *Ctx) void {
         c.ren[@intCast(usize, t)] = INVALID;
         c.cand[@intCast(usize, t)] = @intCast(u8, 0);
         c.depth[@intCast(usize, t)] = @intCast(u8, 0);
+        c.ga[@intCast(usize, t)] = @intCast(u8, 0);
+        c.gam[@intCast(usize, t)] = @intCast(u8, 0);
         c.df_bb[@intCast(usize, t)] = INVALID;
         c.df_ii[@intCast(usize, t)] = INVALID;
     }
@@ -283,6 +287,18 @@ fn markExcluded(c: *Ctx, t: u32) void {
     var p = c.t2p[@intCast(usize, t)];
     if (p == INVALID) return;
     c.ex[@intCast(usize, p)] = @intCast(u8, 1);
+}
+
+// [T4d-FIX, AMENDMENT 3] Records a load_global-ALIAS operand source: a temp
+// whose defining inst kind is `load_global`. Such a temp is aliased by the
+// emitter to the LIVE global symbol (no snapshot statement), so a register/
+// const-only PURE def that reads it and is inlined re-renders the global read
+// at the consumer slot - see `tempReachesGlobalAlias`/pass 1b.
+fn markGaSource(c: *Ctx, t: u32) void {
+    if (t >= c.max_temp) return;
+    var p = c.t2p[@intCast(usize, t)];
+    if (p == INVALID) return;
+    c.ga[@intCast(usize, p)] = @intCast(u8, 1);
 }
 
 fn recordConst(c: *Ctx, t: u32, v: u64) void {
@@ -536,6 +552,7 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
         },
         .load_global => |lg| {
             markExcluded(c, lg.result);
+            markGaSource(c, lg.result);
         },
         .decl_local => |dl| {
             markExcluded(c, dl.temp);
@@ -701,6 +718,89 @@ fn instOrdered(inst: LirInst) u8 {
     return @intCast(u8, 1);
 }
 
+// [T4d-FIX, AMENDMENT 3] Memoized test: does temp `t` transitively reach a
+// load_global-ALIAS temp (a temp whose defining inst kind is `load_global`,
+// recorded in `ga`)? Such an alias temp renders as the LIVE global symbol (no
+// snapshot statement), so any CANDIDATE def that references it and is inlined
+// re-renders the global read at the consumer slot. Transitivity follows
+// candidate defs ONLY (a non-candidate def materializes at its own LIR
+// position, so its read is pinned there and its result is a real snapshot).
+// Memo values: 0 unknown, 1 reaches, 2 does not reach, 0xFF in-progress
+// (revisited - treated as reaching, conservative; the single-assignment
+// def-use graph is acyclic so this only guards pathological depth).
+fn tempReachesGlobalAlias(c: *Ctx, t: u32) u8 {
+    if (t >= c.max_temp) return @intCast(u8, 0);
+    var pos = c.t2p[@intCast(usize, t)];
+    if (pos == INVALID) return @intCast(u8, 0);
+    var m = c.gam[@intCast(usize, pos)];
+    if (m == @intCast(u8, 1)) return @intCast(u8, 1);
+    if (m == @intCast(u8, 2)) return @intCast(u8, 0);
+    if (m == @intCast(u8, 0xFF)) return @intCast(u8, 1);
+    if (c.ga[@intCast(usize, pos)] == @intCast(u8, 1)) {
+        c.gam[@intCast(usize, pos)] = @intCast(u8, 1);
+        return @intCast(u8, 1);
+    }
+    if (c.cand[@intCast(usize, pos)] == @intCast(u8, 0)) {
+        c.gam[@intCast(usize, pos)] = @intCast(u8, 2);
+        return @intCast(u8, 0);
+    }
+    var bb = c.df_bb[@intCast(usize, t)];
+    var ii = c.df_ii[@intCast(usize, t)];
+    if (bb == INVALID or ii == INVALID) {
+        c.gam[@intCast(usize, pos)] = @intCast(u8, 2);
+        return @intCast(u8, 0);
+    }
+    c.gam[@intCast(usize, pos)] = @intCast(u8, 0xFF);
+    var inst = c.lir_fn.blocks.items[@intCast(usize, bb)].insts.items[@intCast(usize, ii)];
+    var r = instOperandsReachGlobalAlias(c, inst);
+    if (r != @intCast(u8, 0)) {
+        c.gam[@intCast(usize, pos)] = @intCast(u8, 1);
+    } else {
+        c.gam[@intCast(usize, pos)] = @intCast(u8, 2);
+    }
+    return r;
+}
+
+fn instOperandsReachGlobalAlias(c: *Ctx, inst: LirInst) u8 {
+    switch (inst) {
+        .binary => |b| {
+            if (tempReachesGlobalAlias(c, b.lhs) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, b.rhs);
+        },
+        .unary => |u| { return tempReachesGlobalAlias(c, u.operand); },
+        .int_cast => |ic| { return tempReachesGlobalAlias(c, ic.value); },
+        .float_cast => |fc| { return tempReachesGlobalAlias(c, fc.value); },
+        .ptr_cast => |pc| { return tempReachesGlobalAlias(c, pc.value); },
+        .int_to_float => |itf| { return tempReachesGlobalAlias(c, itf.value); },
+        .ptr_to_int => |pti| { return tempReachesGlobalAlias(c, pti.value); },
+        .int_to_ptr => |itp| { return tempReachesGlobalAlias(c, itp.value); },
+        .make_slice => |ms| {
+            if (tempReachesGlobalAlias(c, ms.ptr) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, ms.len);
+        },
+        .addr_of => |a| { return tempReachesGlobalAlias(c, a.operand); },
+        .addr_of_field => |a| { return tempReachesGlobalAlias(c, a.base); },
+        .wrap_optional => |w| { return tempReachesGlobalAlias(c, w.value); },
+        .wrap_error_ok => |w| { return tempReachesGlobalAlias(c, w.value); },
+        .wrap_error_err => |w| { return tempReachesGlobalAlias(c, w.value); },
+        .unwrap_optional => |u| { return tempReachesGlobalAlias(c, u.value); },
+        .unwrap_optional_abi => |u| { return tempReachesGlobalAlias(c, u.value); },
+        .check_optional => |ch| { return tempReachesGlobalAlias(c, ch.value); },
+        .unwrap_error_payload => |u| { return tempReachesGlobalAlias(c, u.value); },
+        .unwrap_error_code => |u| { return tempReachesGlobalAlias(c, u.value); },
+        .check_error => |ch| { return tempReachesGlobalAlias(c, ch.value); },
+        .load => |l| { return tempReachesGlobalAlias(c, l.ptr); },
+        .load_field => |lf| { return tempReachesGlobalAlias(c, lf.base); },
+        .load_bitfield => |lb| { return tempReachesGlobalAlias(c, lb.base); },
+        .load_index => |li| {
+            if (tempReachesGlobalAlias(c, li.base) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, li.index);
+        },
+        else => {},
+    }
+    return @intCast(u8, 0);
+}
+
 fn computeNestMetadata(c: *Ctx) void {
     // Pass 1: def locators (df_bb/df_ii) + candidate bits for every def result.
     // Candidate rule (d) [Task-2 design; T4b-FIX, operator ruling 2026-09-08,
@@ -774,6 +874,54 @@ fn computeNestMetadata(c: *Ctx) void {
                     c.cand[@intCast(usize, rp)] = @intCast(u8, 1);
                 }
             }
+        }
+    }
+    // Pass 1b [T4d-FIX, AMENDMENT 3]: rule-(d) window revision for register/
+    // const-only PURE defs whose operand chain transitively reaches a
+    // load_global-ALIAS temp. A load_global result has no snapshot statement
+    // (the emitter aliases the temp to the LIVE global symbol), so when such a
+    // def is inlined at a consumer the alias re-renders as the global NAME at
+    // the consumer slot; an ORDERED write to that global strictly between def
+    // and consumer would therefore be observed twice/stale - exactly the
+    // memory-read hazard rule (d) exists for. Such defs are re-classified
+    // memory-reading (same-block, no-ORDERED-between window). cand is only ever
+    // CLEARED here (monotone, single forward sweep suffices; operands are
+    // decided before their consumers in block/inst order). Pass 1 left these
+    // cand==1 unconditionally (option-B register-only rule); a def in the
+    // defReadsMemory set already went through Pass 1's window test.
+    var bi3: usize = @intCast(usize, 0);
+    while (bi3 < c.lir_fn.blocks.len) : (bi3 += @intCast(usize, 1)) {
+        var bb3 = &c.lir_fn.blocks.items[bi3];
+        var n3 = bb3.insts.len;
+        var ord3 = allocU32Raw(c.alloc, @intCast(u32, n3 + @intCast(usize, 1)));
+        ord3[@intCast(usize, 0)] = @intCast(u32, 0);
+        var k3: usize = @intCast(usize, 0);
+        while (k3 < n3) : (k3 += @intCast(usize, 1)) {
+            var o3 = @intCast(u32, 0);
+            if (instOrdered(bb3.insts.items[k3]) != @intCast(u8, 0)) o3 = @intCast(u32, 1);
+            ord3[@intCast(usize, k3 + @intCast(usize, 1))] = ord3[@intCast(usize, k3)] + o3;
+        }
+        var ii3: usize = @intCast(usize, 0);
+        while (ii3 < n3) : (ii3 += @intCast(usize, 1)) {
+            var inst3 = bb3.insts.items[ii3];
+            var rp3 = defResultTemp(inst3, c.lir_fn);
+            if (rp3 == INVALID) continue;
+            if (rp3 >= c.max_temp) continue;
+            var pos3 = c.t2p[@intCast(usize, rp3)];
+            if (pos3 == INVALID) continue;
+            if (c.cand[@intCast(usize, pos3)] == @intCast(u8, 0)) continue;
+            if (defReadsMemory(inst3) != @intCast(u8, 0)) continue;
+            if (instOperandsReachGlobalAlias(c, inst3) == @intCast(u8, 0)) continue;
+            var cb3 = c.rd_bb[@intCast(usize, pos3)];
+            var ci3 = c.rd_ii[@intCast(usize, pos3)];
+            if (cb3 == @intCast(u32, bi3) and
+                ci3 > @intCast(u32, ii3) and
+                ord3[@intCast(usize, ci3)] == ord3[@intCast(usize, ii3 + @intCast(usize, 1))])
+            {
+                continue;
+            }
+            c.cand[@intCast(usize, rp3)] = @intCast(u8, 0);
+            c.gam[@intCast(usize, pos3)] = @intCast(u8, 0);
         }
     }
     // Pass 2: expression depths (recursion + memo; operand defs are visited on
@@ -1508,6 +1656,8 @@ pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
         .depth = allocU8Raw(alloc, max_temp),
         .df_bb = allocU32Raw(alloc, max_temp),
         .df_ii = allocU32Raw(alloc, max_temp),
+        .ga = allocU8Raw(alloc, max_temp),
+        .gam = allocU8Raw(alloc, max_temp),
     };
     var hti: usize = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
