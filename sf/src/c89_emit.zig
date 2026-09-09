@@ -3825,6 +3825,39 @@ fn nestConsumerWired(emitter: *C89Emitter, t: u32) u8 {
             if (pti.value == t) return @intCast(u8, 1);
             return @intCast(u8, 0);
         },
+        .call => |c| {
+            if (c.args_count == @intCast(u32, 0)) return @intCast(u8, 0);
+            if (t >= c.args_start and t < c.args_start + c.args_count) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .call_direct => |cd_slot| {
+            var cd = lir_mod.lirSideGetCallDirect(emitter.current_fn, cd_slot);
+            if (cd.args_count == @intCast(u32, 0)) return @intCast(u8, 0);
+            if (t >= cd.args_start and t < cd.args_start + cd.args_count) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .tail_call => |tc_slot| {
+            var tc = lir_mod.lirSideGetTailCall(emitter.current_fn, tc_slot);
+            if (tc.args_count == @intCast(u32, 0)) return @intCast(u8, 0);
+            if (t >= tc.args_start and t < tc.args_start + tc.args_count) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .store => |s| {
+            if (s.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .store_field => |sf| {
+            if (sf.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .store_local => |sl| {
+            if (sl.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .store_global => |sg| {
+            if (sg.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
         else => {},
     }
     return @intCast(u8, 0);
@@ -5846,7 +5879,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var vd: []const u8 = "(void)";
                 bufferedWriterWrite(&emitter.writer, vd);
-                bufferedWriterWrite(&emitter.writer, val);
+                emitValueExpr(emitter, sl.value, @intCast(u32, 0));
                 var vd2: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, vd2);
             } else {
@@ -5918,7 +5951,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                         var stl_c1: []const u8 = ")";
                         bufferedWriterWrite(&emitter.writer, stl_c1);
                     }
-                    bufferedWriterWrite(&emitter.writer, val);
+                    emitValueExpr(emitter, sl.value, @intCast(u32, 0));
                     var s2: []const u8 = ";\n";
                     bufferedWriterWrite(&emitter.writer, s2);
                 }
@@ -5975,7 +6008,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                 bufferedWriterWrite(&emitter.writer, name);
                 var s: []const u8 = " = ";
                 bufferedWriterWrite(&emitter.writer, s);
-                bufferedWriterWrite(&emitter.writer, val);
+                emitValueExpr(emitter, sg.value, @intCast(u32, 0));
                 var s2: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, s2);
             }
@@ -6262,12 +6295,12 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                      var sc0: []const u8 = "("; bufferedWriterWrite(&emitter.writer, sc0);
                      bufferedWriterWrite(&emitter.writer, sf_cast_name);
                      var sc1: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, sc1);
-                 }
-                 bufferedWriterWrite(&emitter.writer, val);
-                 var s3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, s3);
-             }
-         },
-         .load_index => |li| {
+                  }
+                  emitValueExpr(emitter, sf.value, @intCast(u32, 0));
+                  var s3: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, s3);
+              }
+          },
+          .load_index => |li| {
             var result = resolveTempName(emitter, li.result);
             emitBaseIdxAccess(emitter, li.base, li.index, result, @intCast(u8, 0));
         },
@@ -6285,7 +6318,6 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
         },
         .store => |s| {
             var ptr = resolveTempName(emitter, s.ptr);
-            var val = resolveTempName(emitter, s.value);
             var st_cast: []const u8 = "";
             var st_pty: u32 = @intCast(u32, 0xFFFFFFFF);
             var st_psg: u8 = @intCast(u8, 0);
@@ -6315,7 +6347,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                 var st_c1: []const u8 = ")";
                 bufferedWriterWrite(&emitter.writer, st_c1);
             }
-            bufferedWriterWrite(&emitter.writer, val);
+            emitValueExpr(emitter, s.value, @intCast(u32, 0));
             var sp3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, sp3);
         },
@@ -6909,8 +6941,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                     var sc: []const u8 = ", ";
                     bufferedWriterWrite(&emitter.writer, sc);
                 }
-                var arg = resolveTempName(emitter, c.args_start + ai);
-                bufferedWriterWrite(&emitter.writer, arg);
+                emitValueExpr(emitter, c.args_start + ai, @intCast(u32, 0));
             }
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
@@ -6942,8 +6973,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                  var ai2: u32 = @intCast(u32, 0);
                  while (ai2 < c.args_count) : (ai2 += @intCast(u32, 1)) {
                      if (ai2 > @intCast(u32, 0)) { var sc2: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc2); }
-                     var arg2 = resolveTempName(emitter, c.args_start + ai2);
-                     bufferedWriterWrite(&emitter.writer, arg2);
+                      emitValueExpr(emitter, c.args_start + ai2, @intCast(u32, 0));
                  }
                  var s2c: []const u8 = ");\n";
                  bufferedWriterWrite(&emitter.writer, s2c);
@@ -7000,8 +7030,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                             var ai: u32 = @intCast(u32, 0);
                             while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
                                 if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
-                                var arg = resolveTempName(emitter, c.args_start + ai);
-                                bufferedWriterWrite(&emitter.writer, arg);
+                                emitValueExpr(emitter, c.args_start + ai, @intCast(u32, 0));
                             }
                             var s2: []const u8 = ");\n";
                             bufferedWriterWrite(&emitter.writer, s2);
@@ -7024,8 +7053,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                             var ai: u32 = @intCast(u32, 0);
                             while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
                                 if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
-                                var arg = resolveTempName(emitter, c.args_start + ai);
-                                bufferedWriterWrite(&emitter.writer, arg);
+                                emitValueExpr(emitter, c.args_start + ai, @intCast(u32, 0));
                             }
                             var s2: []const u8 = ");\n";
                             bufferedWriterWrite(&emitter.writer, s2);
@@ -7046,8 +7074,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                            var ai: u32 = @intCast(u32, 0);
                            while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
                                if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
-                               var arg = resolveTempName(emitter, c.args_start + ai);
-                               bufferedWriterWrite(&emitter.writer, arg);
+                                emitValueExpr(emitter, c.args_start + ai, @intCast(u32, 0));
                            }
                            var s2: []const u8 = ");\n";
                            bufferedWriterWrite(&emitter.writer, s2);
@@ -7059,8 +7086,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                            var ai: u32 = @intCast(u32, 0);
                            while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
                                if (ai > @intCast(u32, 0)) { var sc: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, sc); }
-                               var arg = resolveTempName(emitter, c.args_start + ai);
-                               bufferedWriterWrite(&emitter.writer, arg);
+                                emitValueExpr(emitter, c.args_start + ai, @intCast(u32, 0));
                            }
                            var s2: []const u8 = ");\n";
                            bufferedWriterWrite(&emitter.writer, s2);
@@ -7082,8 +7108,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                     var sc: []const u8 = ", ";
                     bufferedWriterWrite(&emitter.writer, sc);
                 }
-                var arg = resolveTempName(emitter, c.args_start + ai);
-                bufferedWriterWrite(&emitter.writer, arg);
+                emitValueExpr(emitter, c.args_start + ai, @intCast(u32, 0));
             }
             var s2: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, s2);
@@ -7118,8 +7143,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                     var sc: []const u8 = ", ";
                     bufferedWriterWrite(&emitter.writer, sc);
                 }
-                var arg = resolveTempName(emitter, tc.args_start + ai);
-                bufferedWriterWrite(&emitter.writer, arg);
+                emitValueExpr(emitter, tc.args_start + ai, @intCast(u32, 0));
             }
             var cl: []const u8 = ");\n";
             bufferedWriterWrite(&emitter.writer, cl);
