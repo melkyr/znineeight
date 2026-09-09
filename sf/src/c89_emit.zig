@@ -3858,6 +3858,26 @@ fn nestConsumerWired(emitter: *C89Emitter, t: u32) u8 {
             if (sg.value == t) return @intCast(u8, 1);
             return @intCast(u8, 0);
         },
+        .branch => |b| {
+            if (b.cond == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .switch_br => |s| {
+            if (s.cond == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .ret => |v| {
+            if (v == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .print_val => |pv| {
+            if (pv.value != t) return @intCast(u8, 0);
+            if (pv.type_id < @intCast(u32, emitter.registry.types_len)) {
+                var pvt = emitter.registry.types_items[@intCast(usize, pv.type_id)];
+                if (pvt.kind == TypeKind.slice_type) return @intCast(u8, 0);
+            }
+            return @intCast(u8, 1);
+        },
         else => {},
     }
     return @intCast(u8, 0);
@@ -5780,11 +5800,10 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .branch => |b| {
-            var cond = resolveTempName(emitter, b.cond);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var s: []const u8 = "if (";
             bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, cond);
+            emitValueExpr(emitter, b.cond, @intCast(u32, 0));
             var s2: []const u8 = ") goto z_bb_";
             bufferedWriterWrite(&emitter.writer, s2);
             var tb: [16]u8 = undefined;
@@ -5805,11 +5824,10 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, s4);
         },
         .ret => |v| {
-            var val = resolveTempName(emitter, v);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var s: []const u8 = "return ";
             bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, val);
+            emitValueExpr(emitter, v, @intCast(u32, 0));
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
@@ -7163,8 +7181,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
         .switch_br => |s| {
             var s1: []const u8 = "switch (";
             bufferedWriterWrite(&emitter.writer, s1);
-            var cond = resolveTempName(emitter, s.cond);
-            bufferedWriterWrite(&emitter.writer, cond);
+            emitValueExpr(emitter, s.cond, @intCast(u32, 0));
             var s2: []const u8 = ") {\n";
             bufferedWriterWrite(&emitter.writer, s2);
             emitter.indent += @intCast(u32, 1);
@@ -7388,7 +7405,11 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, fn_name);
             var lp: []const u8 = "(";
             bufferedWriterWrite(&emitter.writer, lp);
-            bufferedWriterWrite(&emitter.writer, val);
+            if (is_slice != @intCast(u8, 0)) {
+                bufferedWriterWrite(&emitter.writer, val);
+            } else {
+                emitValueExpr(emitter, p.value, @intCast(u32, 0));
+            }
             if (is_slice != @intCast(u8, 0)) {
                 var dot1: []const u8 = ".ptr, ";
                 bufferedWriterWrite(&emitter.writer, dot1);
