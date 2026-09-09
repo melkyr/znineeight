@@ -573,7 +573,13 @@ fn scanAll(c: *Ctx) void {
 //   * `cand` (u8) - inline candidate iff the temp's SINGLE defining inst is
 //     PURE (spec §3.2 verbatim list + the 5 gap resolutions) AND the temp has
 //     exactly one value use AND it is not address-taken AND it is not excluded
-//     (the `ex` set: param / decl_local-bound / load_global-alias). Requires
+//     (the `ex` set: param / decl_local-bound / load_global-alias) AND rule (d)
+//     [T4b-FIX, operator ruling 2026-09-08, option B]: rule (d) applies ONLY to
+//     a MEMORY-READING PURE def (the load family, see `defReadsMemory`) - its
+//     single consumer (first-read locator) must be in the SAME block as the def
+//     with no ORDERED (side-effecting) inst strictly between the def and that
+//     consumer. Register/const-only PURE defs are SSA-safe across ORDERED
+//     windows and keep the T4b pre-fix nesting (no rule-d window). Requires
 //     exactly one write (wc == 1) and exactly one read (rc == 1).
 //   * `depth` (u8) - generic expression-tree nesting depth of the defining
 //     inst: 1 + max over the inst's operand temps that are themselves
@@ -659,13 +665,75 @@ fn maxOperandDepth(c: *Ctx, inst: LirInst) u8 {
     return mx;
 }
 
+// Memory-read test for rule (d) [T4b-FIX, operator ruling 2026-09-08,
+// option B]: a PURE def that needs the write-free window is one whose emitted
+// rvalue READS MEMORY - the load family (load / load_field / load_bitfield /
+// load_index / load_local / load_global). Inlined at a consumer past an ORDERED
+// write such a def could re-read a base and observe the aliased write twice/
+// stale. Register/const-only PURE defs (binary / unary / casts / consts /
+// value-field picks over SSA temps / addr_of / func_ref / ...) never read a
+// base, so they keep the T4b pre-fix nesting across ORDERED windows. Ambiguous
+// kinds are treated conservatively as memory-reading (rule (d) applies) -
+// never unsafe. (load_global results are `ex`-excluded anyway; load_local reads
+// a named local that may be memory-backed.)
+fn defReadsMemory(inst: LirInst) u8 {
+    switch (inst) {
+        .load => return @intCast(u8, 1),
+        .load_field => return @intCast(u8, 1),
+        .load_bitfield => return @intCast(u8, 1),
+        .load_index => return @intCast(u8, 1),
+        .load_local => return @intCast(u8, 1),
+        .load_global => return @intCast(u8, 1),
+        else => return @intCast(u8, 0),
+    }
+}
+
+// ORDERED (side-effecting) inst test for rule (d). An inst is ORDERED iff it is
+// NOT in the pass's PURE table (spec §3.2 authority as implemented by
+// `defInfoPure`, the exact purity source already used for the per-temp `dp`
+// bit). This class covers stores / store_bitfield (ORDERED-RMW) / assign &
+// assign_* / call / call_direct / tail_call / print_* / builtin_* / va_* /
+// ret & ret_void / control flow / decl_* housekeeping / nop - every LirInst
+// kind the pass does not classify PURE. Rule (d) uses it to bound the window a
+// memory-reading def (see `defReadsMemory`) may be nested across.
+fn instOrdered(inst: LirInst) u8 {
+    if (defInfoPure(inst) != @intCast(u8, 0)) return @intCast(u8, 0);
+    return @intCast(u8, 1);
+}
+
 fn computeNestMetadata(c: *Ctx) void {
     // Pass 1: def locators (df_bb/df_ii) + candidate bits for every def result.
+    // Candidate rule (d) [Task-2 design; T4b-FIX, operator ruling 2026-09-08,
+    // option B]: rule (d) applies ONLY to a MEMORY-READING PURE def (the load
+    // family, see `defReadsMemory`). For such a def the SINGLE consumer
+    // (scanAll's first-read locator rd_bb/rd_ii is the unique read once
+    // rc == 1) must be in the SAME block as the def AND no ORDERED
+    // (side-effecting) inst may sit strictly between the def and that consumer
+    // in the block - inlined at a consumer across an ORDERED window such a def
+    // would re-read its base at the consumer and observe an aliased write
+    // twice/stale. Register/const-only PURE defs read no memory: their values
+    // are pure functions of already-materialized SSA register temps (a
+    // memory-reading OPERAND renders by NAME at its original position, never
+    // re-inlined), so a call/assign cannot change them and they are safe to
+    // nest across ORDERED windows exactly as T4b did (byte-identical emission).
     var bi: usize = @intCast(usize, 0);
     while (bi < c.lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
         var bb = &c.lir_fn.blocks.items[bi];
+        // Per-block forward sweep: ord_pref[k] = number of ORDERED insts with
+        // inst index < k (k in 0..n). Each candidate def's (def, consumer)
+        // window then tests in O(1): no ORDERED strictly between iff
+        // ord_pref[con] == ord_pref[def+1]. Deterministic fixed-order walk.
+        var n = bb.insts.len;
+        var ord_pref = allocU32Raw(c.alloc, @intCast(u32, n + @intCast(usize, 1)));
+        ord_pref[@intCast(usize, 0)] = @intCast(u32, 0);
+        var k: usize = @intCast(usize, 0);
+        while (k < n) : (k += @intCast(usize, 1)) {
+            var ord = @intCast(u32, 0);
+            if (instOrdered(bb.insts.items[k]) != @intCast(u8, 0)) ord = @intCast(u32, 1);
+            ord_pref[@intCast(usize, k + @intCast(usize, 1))] = ord_pref[@intCast(usize, k)] + ord;
+        }
         var ii: usize = @intCast(usize, 0);
-        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+        while (ii < n) : (ii += @intCast(usize, 1)) {
             var inst = bb.insts.items[ii];
             var rp = defResultTemp(inst, c.lir_fn);
             if (rp == INVALID) continue;
@@ -680,7 +748,31 @@ fn computeNestMetadata(c: *Ctx) void {
                 c.ex[@intCast(usize, pos)] == @intCast(u8, 0) and
                 c.dp[@intCast(usize, pos)] == @intCast(u8, 1))
             {
-                c.cand[@intCast(usize, rp)] = @intCast(u8, 1);
+                // Candidate rule (d) [T4b-FIX, operator ruling 2026-09-08,
+                // option B]: the write-free window applies ONLY to a
+                // memory-reading PURE def (the load family: load / load_field /
+                // load_index / load_bitfield / load_local / load_global). A
+                // memory-reading def needs its unique consumer (first-read
+                // locator) in the SAME block strictly AFTER the def with no
+                // ORDERED inst between (ord_pref test) - otherwise a re-read at
+                // the consumer could observe an aliased write. Register/const-
+                // only PURE defs read no memory: register values are SSA-fixed,
+                // and any memory-reading OPERAND of such a def renders by NAME
+                // at its original position (never re-inlined), so they are safe
+                // to inline across an ORDERED window and keep the T4b pre-fix
+                // marking (cand set with no window test) - byte-identical.
+                if (defReadsMemory(inst) != @intCast(u8, 0)) {
+                    var cb = c.rd_bb[@intCast(usize, pos)];
+                    var ci = c.rd_ii[@intCast(usize, pos)];
+                    if (cb == @intCast(u32, bi) and
+                        ci > @intCast(u32, ii) and
+                        ord_pref[@intCast(usize, ci)] == ord_pref[@intCast(usize, ii + @intCast(usize, 1))])
+                    {
+                        c.cand[@intCast(usize, rp)] = @intCast(u8, 1);
+                    }
+                } else {
+                    c.cand[@intCast(usize, rp)] = @intCast(u8, 1);
+                }
             }
         }
     }
