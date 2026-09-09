@@ -31,6 +31,17 @@
 //      pure / not-addr-taken producer, scalar/pointer trivial move) plus a
 //      same-block producer < copy < call-reader window; anything failing stays
 //      materialized (type boundary).
+//      JOIN/merge results (EMITCOMPACT Part 2, case 2) survive copy-prop for the
+//      mirror reason: an if-expr/switch/orelse/catch join temp is filled once per
+//      surviving ARM (wc >= 2 across arms, or wc == 1 when a sibling arm
+//      terminates early) and read POST-merge in a block different from the fill,
+//      which copy-prop's same-block-read rule refuses. `coalesceJoinCopies`
+//      collapses each arm the same way per arm — re-target the arm's PURE
+//      single-use producer result -> the join temp id and tombstone that arm's
+//      fill (the join temp stays; the per-arm intermediate disappears) — under
+//      the identical gate plus a same-block producer < fill window and a
+//      "clean merge arm" shape test (fill is the only def of the join temp in
+//      its block and the temp's single read is in a different block).
 //   2. Local constant folding — PURE binary/unary ops whose value operands are
 //      all int_const (same concrete integer type as the result) fold to one
 //      int_const at the result type's width with two's-complement semantics;
@@ -1428,6 +1439,114 @@ fn coalesceArgCopies(c: *Ctx) u8 {
     return changed_total;
 }
 
+// Join/merge-temp copy coalescing. An if-expr/switch/orelse/catch merge result
+// temp `dst` is filled once per SURVIVING arm by
+// `.assign{name_id==0, dst=join_temp, src=arm_val}`; the join temp survives
+// copy-prop (its read is POST-merge in a block != the fill block, so the
+// same-block-read rule refuses) while the per-arm fill's SRC producer would be
+// individually prop-able. Each arm collapses exactly like the arg-slot case:
+// re-target the arm's pure single-use producer result -> the join temp id and
+// tombstone that arm's fill (the join temp stays; the per-arm intermediate
+// disappears). Gate (spec §4.1, verbatim, PER ARM): identical TypeId (never a
+// type-changing coalesce); src producer PURE (dp==1), not addr-taken, not
+// excluded, single-def (wc==1) and — critically — single-USE (rc==1): a
+// producer with any reader beyond this arm's fill would be corrupted by the
+// retarget — never coalesce; dst single-use (rc==1), not addr-taken; the
+// fill's block must not contain the temp's single read (a "dst read before
+// its arm write" join is KEEP, never forced); the fill must be the ONLY def of
+// dst in its block (one fill per arm); scalar/pointer trivial move
+// (copyScalarKindOk); producer and fill in the SAME block with the producer
+// strictly before the fill (the retargeted write keeps the arm's pre-merge
+// position). Args-run fills (rar != 0) are Task-3 territory and never touched
+// here; tail-call self-param copies (name_id != 0, lower.zig:5322),
+// loop/iterator back-edge copies (:5118/:5171 — dst multi-read, rc > 1) and
+// decl-init copies (name_id != 0, :5475/:5481) never match (KEEP, byte-
+// untouched).
+fn coalesceJoinCopies(c: *Ctx) u8 {
+    var iter: u32 = @intCast(u32, 0);
+    var changed_total: u8 = @intCast(u8, 0);
+    while (iter < kCopyPropMaxIter) : (iter += @intCast(u32, 1)) {
+        scanAll(c);
+        var changed: u8 = @intCast(u8, 0);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < c.lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
+            var bb = &c.lir_fn.blocks.items[bi];
+            var ii: usize = @intCast(usize, 0);
+            while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+                var inst = bb.insts.items[ii];
+                switch (inst) {
+                    .assign => |a| {
+                        if (a.name_id != @intCast(u32, 0)) continue;
+                        var dst = a.dst;
+                        var src = a.src;
+                        if (dst == src) continue;
+                        if (dst >= c.max_temp or src >= c.max_temp) continue;
+                        var dp = c.t2p[@intCast(usize, dst)];
+                        var sp = c.t2p[@intCast(usize, src)];
+                        if (dp == INVALID or sp == INVALID) continue;
+                        var dpos: usize = @intCast(usize, dp);
+                        var spos: usize = @intCast(usize, sp);
+                        // join-temp case only: an args-run slot dst (rar != 0)
+                        // is Task-3's case and is never touched here.
+                        if (c.rar[dpos] != @intCast(u8, 0)) continue;
+                        if (c.ex[dpos] != @intCast(u8, 0)) continue;
+                        if (c.ex[spos] != @intCast(u8, 0)) continue;
+                        if (c.at[dpos] != @intCast(u8, 0)) continue;
+                        if (c.at[spos] != @intCast(u8, 0)) continue;
+                        if (c.wc[spos] != @intCast(u32, 1)) continue;
+                        if (c.rc[spos] != @intCast(u32, 1)) continue;
+                        if (c.dp[spos] != @intCast(u8, 1)) continue;
+                        // dst single-use, and its single read must be in a
+                        // block other than this arm's block (a merge read is
+                        // post-merge; a same-block read is a "dst read before
+                        // its arm write" violation -> KEEP; a multi-read dst
+                        // is a loop-carried temp -> KEEP).
+                        if (c.rc[dpos] != @intCast(u32, 1)) continue;
+                        if (c.rd_bb[dpos] == @intCast(u32, bi)) continue;
+                        // the fill must be the ONLY def of dst in this block
+                        // (exactly one fill per surviving arm).
+                        var di: usize = @intCast(usize, 0);
+                        var ddefs: u32 = @intCast(u32, 0);
+                        while (di < bb.insts.len) : (di += @intCast(usize, 1)) {
+                            var ri = defResultTemp(bb.insts.items[di], c.lir_fn);
+                            if (ri == dst) ddefs += @intCast(u32, 1);
+                        }
+                        if (ddefs != @intCast(u32, 1)) continue;
+                        // src's single def (its PURE producer) must be in this
+                        // same block strictly before the fill.
+                        var pbb = c.df_bb[@intCast(usize, src)];
+                        var pii = c.df_ii[@intCast(usize, src)];
+                        if (pbb == INVALID or pii == INVALID) continue;
+                        if (pbb != @intCast(u32, bi)) continue;
+                        if (pii >= @intCast(u32, ii)) continue;
+                        // identical TypeId + scalar/pointer trivial move.
+                        var dt = c.ttype[dpos];
+                        var st = c.ttype[spos];
+                        if (dt != st) continue;
+                        if (dt >= @intCast(u32, c.reg.types_len)) continue;
+                        var dty = c.reg.types_items[@intCast(usize, dt)];
+                        if (copyScalarKindOk(dty.kind) == @intCast(u8, 0)) continue;
+                        // re-target the producer to write the join temp id
+                        // directly (renamed write keeps the producer's pre-merge
+                        // position; the fill is the only dst def here).
+                        var pinst = bb.insts.items[@intCast(usize, pii)];
+                        var pok: u8 = @intCast(u8, 1);
+                        var npinst = retargetDefResult(pinst, dst, &pok);
+                        if (pok == @intCast(u8, 0)) continue;
+                        bb.insts.items[@intCast(usize, pii)] = npinst;
+                        bb.insts.items[ii] = LirInst{ .nop = {} };
+                        changed = @intCast(u8, 1);
+                    },
+                    else => {},
+                }
+            }
+        }
+        if (changed == @intCast(u8, 0)) break;
+        changed_total = @intCast(u8, 1);
+    }
+    return changed_total;
+}
+
 // ----- constant folding -----
 
 // Concrete integer type of an arbitrary temp's declared hoisted type (the
@@ -1825,8 +1944,12 @@ pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
     // every remaining fill is a genuine args-run copy and its producer is the
     // final (possibly folded) def.
     _ = coalesceArgCopies(&c);
+    // EMITCOMPACT Part-2 case 2: coalesce join/merge-temp copies (per-arm
+    // producer-result rename -> join temp). Runs after arg-slot coalescing;
+    // disjoint by gate (rar != 0 fills are Task-3's, never matched here).
+    _ = coalesceJoinCopies(&c);
     // T4a: record nest-candidate + expression-depth metadata on the FINAL LIR
-    // (post copy-prop + const-fold + arg-slot coalesce).
+    // (post copy-prop + const-fold + arg-slot + join-temp coalesce).
     scanAll(&c);
     computeNestMetadata(&c);
     // T4b: publish the active function's rows (arrays stay Sand-backed; valid
