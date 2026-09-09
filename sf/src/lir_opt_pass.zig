@@ -21,7 +21,16 @@
 //      consumers are excluded — this includes an indirect tail_call's callee
 //      temp, which is read once from the side table at emission like an
 //      arg-slot consumer (direct tail_call/call_direct callees are name_ids,
-//      not temps). Those copies fall to Task-4 expression nesting.
+//      not temps).
+//      The args-run exclusion is the whole reason the call-argument fill
+//      copies survive into the emitted C (EMITCOMPACT Part-2 census). Those
+//      fills are coalesced by re-targeting the arg's PURE single-use producer
+//      to WRITE the slot id directly (rename producer result -> slot) and
+//      tombstoning the fill — no args-run rewrite is needed. `coalesceArgCopies`
+//      applies the same gate as copy-prop (identical TypeId, both single-use,
+//      pure / not-addr-taken producer, scalar/pointer trivial move) plus a
+//      same-block producer < copy < call-reader window; anything failing stays
+//      materialized (type boundary).
 //   2. Local constant folding — PURE binary/unary ops whose value operands are
 //      all int_const (same concrete integer type as the result) fold to one
 //      int_const at the result type's width with two's-complement semantics;
@@ -420,10 +429,17 @@ fn defResultTemp(inst: LirInst, lir_fn: *LirFunction) u32 {
 }
 
 // Analysis scan: operand reads (+ first-read loc / arg-run-exclusive flags),
-// def writes + purity, addr-taken / exclusion / const-value records.
+// def writes + purity, addr-taken / exclusion / const-value records, and def
+// locators (df_bb/df_ii = last write position, used by the arg-slot
+// coalescer). computeNestMetadata recomputes the locators identically on the
+// final LIR; recording them here just makes them available to every phase.
 fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
     var rp = defResultTemp(inst, c.lir_fn);
     if (rp != INVALID) {
+        if (rp < c.max_temp) {
+            c.df_bb[@intCast(usize, rp)] = bb_idx;
+            c.df_ii[@intCast(usize, rp)] = ii;
+        }
         markDef(c, rp, defInfoPure(inst));
     }
     switch (inst) {
@@ -1280,6 +1296,138 @@ fn copyPropagate(c: *Ctx) u8 {
     return changed_total;
 }
 
+// ----- arg-slot copy coalescing (EMITCOMPACT Part 2, case 1) -----
+
+// Rebuild a def inst with its result field rewritten to `newr`. Mirrors
+// defResultTemp's result-tag set; a def kind with no true result field (or an
+// impure def the gate already refuses) reports ok=0 and is left untouched.
+fn retargetDefResult(inst: LirInst, newr: u32, ok: *u8) LirInst {
+    switch (inst) {
+        .binary => |b| { var nb = b; nb.result = newr; return LirInst{ .binary = nb }; },
+        .unary => |u| { var nu = u; nu.result = newr; return LirInst{ .unary = nu }; },
+        .int_const => |ic| { var ni = ic; ni.result = newr; return LirInst{ .int_const = ni }; },
+        .float_const => |fc| { var nf = fc; nf.result = newr; return LirInst{ .float_const = nf }; },
+        .string_const => |sc| { var ns = sc; ns.result = newr; return LirInst{ .string_const = ns }; },
+        .null_const => |nc| { var nn = nc; nn.result = newr; return LirInst{ .null_const = nn }; },
+        .set_optional_null => |sn| { var ns = sn; ns.result = newr; return LirInst{ .set_optional_null = ns }; },
+        .bool_const => |bc| { var nb = bc; nb.result = newr; return LirInst{ .bool_const = nb }; },
+        .undefined_const => |uc| { var nu = uc; nu.result = newr; return LirInst{ .undefined_const = nu }; },
+        .enum_const => |ec| { var ne = ec; ne.result = newr; return LirInst{ .enum_const = ne }; },
+        .int_cast => |ic| { var ni = ic; ni.result = newr; return LirInst{ .int_cast = ni }; },
+        .float_cast => |fc| { var nf = fc; nf.result = newr; return LirInst{ .float_cast = nf }; },
+        .ptr_cast => |pc| { var np = pc; np.result = newr; return LirInst{ .ptr_cast = np }; },
+        .int_to_float => |itf| { var nt = itf; nt.result = newr; return LirInst{ .int_to_float = nt }; },
+        .int_to_ptr => |itp| { var nt = itp; nt.result = newr; return LirInst{ .int_to_ptr = nt }; },
+        .ptr_to_int => |pti| { var nt = pti; nt.result = newr; return LirInst{ .ptr_to_int = nt }; },
+        .make_slice => |ms| { var nm = ms; nm.result = newr; return LirInst{ .make_slice = nm }; },
+        .addr_of => |a| { var na = a; na.result = newr; return LirInst{ .addr_of = na }; },
+        .addr_of_field => |a| { var na = a; na.result = newr; return LirInst{ .addr_of_field = na }; },
+        .func_ref => |fr| { var nf = fr; nf.result = newr; return LirInst{ .func_ref = nf }; },
+        .wrap_optional => |w| { var nw = w; nw.result = newr; return LirInst{ .wrap_optional = nw }; },
+        .wrap_error_ok => |w| { var nw = w; nw.result = newr; return LirInst{ .wrap_error_ok = nw }; },
+        .wrap_error_err => |w| { var nw = w; nw.result = newr; return LirInst{ .wrap_error_err = nw }; },
+        .unwrap_optional => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_optional = nu }; },
+        .unwrap_optional_abi => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_optional_abi = nu }; },
+        .check_optional => |ch| { var nc = ch; nc.result = newr; return LirInst{ .check_optional = nc }; },
+        .unwrap_error_payload => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_error_payload = nu }; },
+        .unwrap_error_code => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_error_code = nu }; },
+        .check_error => |ch| { var nc = ch; nc.result = newr; return LirInst{ .check_error = nc }; },
+        .load => |l| { var nl = l; nl.result = newr; return LirInst{ .load = nl }; },
+        .load_field => |lf| { var nl = lf; nl.result = newr; return LirInst{ .load_field = nl }; },
+        .load_bitfield => |lb| { var nl = lb; nl.result = newr; return LirInst{ .load_bitfield = nl }; },
+        .load_index => |li| { var nl = li; nl.result = newr; return LirInst{ .load_index = nl }; },
+        .load_local => |ll| { var nl = ll; nl.result = newr; return LirInst{ .load_local = nl }; },
+        .load_global => |lg| { var nl = lg; nl.result = newr; return LirInst{ .load_global = nl }; },
+        else => { ok.* = @intCast(u8, 0); return inst; },
+    }
+}
+
+// Args-run copy coalescing. A call-argument fill `.assign{name_id==0, dst =
+// args_run slot, src = V}` cannot be eliminated by copy-prop above (the slot
+// is rar-excluded: its single read is a call ARG slot the pass cannot rewrite
+// per-slot). It collapses instead by re-targeting V's single PURE producer to
+// WRITE the slot id directly (rename producer result -> slot) and tombstoning
+// the fill — the call still reads the same slot id, so no args-run rewrite is
+// needed. Gate (spec §4.1, applied verbatim): identical TypeId (never a
+// type-changing coalesce), dst and src both single-use (rc==1), src's producer
+// pure and not addr-taken, scalar/pointer trivial move (copyScalarKindOk).
+// Extra window (no cross-block / ordering risk): producer, fill and the call
+// read must all be in the SAME block with producer < fill < read. Anything
+// failing any test stays materialized (KEEP; type/identity boundary). The
+// tail-call self-param copies (name_id != 0) are never matched (KEEP).
+fn coalesceArgCopies(c: *Ctx) u8 {
+    var iter: u32 = @intCast(u32, 0);
+    var changed_total: u8 = @intCast(u8, 0);
+    while (iter < kCopyPropMaxIter) : (iter += @intCast(u32, 1)) {
+        scanAll(c);
+        var changed: u8 = @intCast(u8, 0);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < c.lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
+            var bb = &c.lir_fn.blocks.items[bi];
+            var ii: usize = @intCast(usize, 0);
+            while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+                var inst = bb.insts.items[ii];
+                switch (inst) {
+                    .assign => |a| {
+                        if (a.name_id != @intCast(u32, 0)) continue;
+                        var dst = a.dst;
+                        var src = a.src;
+                        if (dst == src) continue;
+                        if (dst >= c.max_temp or src >= c.max_temp) continue;
+                        var dp = c.t2p[@intCast(usize, dst)];
+                        var sp = c.t2p[@intCast(usize, src)];
+                        if (dp == INVALID or sp == INVALID) continue;
+                        var dpos: usize = @intCast(usize, dp);
+                        var spos: usize = @intCast(usize, sp);
+                        // args-run case only: a rar==0 dst copy is copy-prop's
+                        // territory and is never touched here.
+                        if (c.rar[dpos] == @intCast(u8, 0)) continue;
+                        if (c.ex[dpos] != @intCast(u8, 0)) continue;
+                        if (c.ex[spos] != @intCast(u8, 0)) continue;
+                        if (c.at[dpos] != @intCast(u8, 0)) continue;
+                        if (c.at[spos] != @intCast(u8, 0)) continue;
+                        if (c.wc[dpos] != @intCast(u32, 1)) continue;
+                        if (c.wc[spos] != @intCast(u32, 1)) continue;
+                        if (c.rc[dpos] != @intCast(u32, 1)) continue;
+                        if (c.rc[spos] != @intCast(u32, 1)) continue;
+                        if (c.dp[spos] != @intCast(u8, 1)) continue;
+                        // the slot's single read (the call ARG read) must be in
+                        // this same block strictly after the fill.
+                        if (c.rd_bb[dpos] != @intCast(u32, bi)) continue;
+                        if (c.rd_ii[dpos] <= @intCast(u32, ii)) continue;
+                        // src's single def must be in this block strictly
+                        // before the fill.
+                        var pbb = c.df_bb[@intCast(usize, src)];
+                        var pii = c.df_ii[@intCast(usize, src)];
+                        if (pbb == INVALID or pii == INVALID) continue;
+                        if (pbb != @intCast(u32, bi)) continue;
+                        if (pii >= @intCast(u32, ii)) continue;
+                        // identical TypeId + scalar/pointer trivial move.
+                        var dt = c.ttype[dpos];
+                        var st = c.ttype[spos];
+                        if (dt != st) continue;
+                        if (dt >= @intCast(u32, c.reg.types_len)) continue;
+                        var dty = c.reg.types_items[@intCast(usize, dt)];
+                        if (copyScalarKindOk(dty.kind) == @intCast(u8, 0)) continue;
+                        // re-target the producer to write the slot id directly.
+                        var pinst = bb.insts.items[@intCast(usize, pii)];
+                        var pok: u8 = @intCast(u8, 1);
+                        var npinst = retargetDefResult(pinst, dst, &pok);
+                        if (pok == @intCast(u8, 0)) continue;
+                        bb.insts.items[@intCast(usize, pii)] = npinst;
+                        bb.insts.items[ii] = LirInst{ .nop = {} };
+                        changed = @intCast(u8, 1);
+                    },
+                    else => {},
+                }
+            }
+        }
+        if (changed == @intCast(u8, 0)) break;
+        changed_total = @intCast(u8, 1);
+    }
+    return changed_total;
+}
+
 // ----- constant folding -----
 
 // Concrete integer type of an arbitrary temp's declared hoisted type (the
@@ -1672,8 +1820,13 @@ pub fn lirOptRun(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction) void {
     // Refresh scratch after copy-prop rewrites, then fold.
     scanAll(&c);
     _ = runConstFold(&c);
+    // EMITCOMPACT Part-2 case 1: coalesce call-argument slot copies
+    // (producer-result rename -> slot). Runs after copy-prop + const-fold so
+    // every remaining fill is a genuine args-run copy and its producer is the
+    // final (possibly folded) def.
+    _ = coalesceArgCopies(&c);
     // T4a: record nest-candidate + expression-depth metadata on the FINAL LIR
-    // (post copy-prop + const-fold).
+    // (post copy-prop + const-fold + arg-slot coalesce).
     scanAll(&c);
     computeNestMetadata(&c);
     // T4b: publish the active function's rows (arrays stay Sand-backed; valid
