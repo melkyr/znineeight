@@ -3800,6 +3800,31 @@ fn nestConsumerWired(emitter: *C89Emitter, t: u32) u8 {
             return @intCast(u8, 0);
         },
         .unary => |u| { if (u.operand == t) return @intCast(u8, 1); },
+        .int_cast => |c| {
+            if (c.is_checked != @intCast(u8, 0)) return @intCast(u8, 0);
+            if (c.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .float_cast => |fc| {
+            if (fc.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .ptr_cast => |pc| {
+            if (pc.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .int_to_float => |itf| {
+            if (itf.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .int_to_ptr => |itp| {
+            if (itp.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
+        .ptr_to_int => |pti| {
+            if (pti.value == t) return @intCast(u8, 1);
+            return @intCast(u8, 0);
+        },
         else => {},
     }
     return @intCast(u8, 0);
@@ -7266,7 +7291,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
                 bufferedWriterWrite(&emitter.writer, ctype);
                 var s2: []const u8 = ")";
                 bufferedWriterWrite(&emitter.writer, s2);
-                bufferedWriterWrite(&emitter.writer, src);
+                emitValueExpr(emitter, c.value, @intCast(u32, 0));
                 var s3: []const u8 = ";\n";
                 bufferedWriterWrite(&emitter.writer, s3);
             }
@@ -7276,7 +7301,6 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
         },
         .int_to_float => |c| {
             var dst = resolveTempName(emitter, c.result);
-            var src = resolveTempName(emitter, c.value);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
@@ -7285,13 +7309,12 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, ctype);
             var s2: []const u8 = ")";
             bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, src);
+            emitValueExpr(emitter, c.value, @intCast(u32, 0));
             var s3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s3);
         },
         .float_cast => |c| {
             var dst = resolveTempName(emitter, c.result);
-            var src = resolveTempName(emitter, c.value);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
@@ -7300,7 +7323,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, ctype);
             var s2: []const u8 = ")";
             bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, src);
+            emitValueExpr(emitter, c.value, @intCast(u32, 0));
             var s3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s3);
         },
@@ -7423,7 +7446,6 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
         },
         .ptr_cast => |pc| {
             var dst = resolveTempName(emitter, pc.result);
-            var src = resolveTempName(emitter, pc.value);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, pc.target);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
@@ -7432,7 +7454,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, ctype);
             var s2: []const u8 = ")";
             bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, src);
+            emitValueExpr(emitter, pc.value, @intCast(u32, 0));
             var s3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s3);
         },
@@ -7618,7 +7640,6 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
         },
         .int_to_ptr => |c| {
             var dst = resolveTempName(emitter, c.result);
-            var src = resolveTempName(emitter, c.value);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
@@ -7627,13 +7648,12 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, ctype);
             var s2: []const u8 = ")(unsigned int)";
             bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, src);
+            emitValueExpr(emitter, c.value, @intCast(u32, 0));
             var s3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s3);
         },
         .ptr_to_int => |c| {
             var dst = resolveTempName(emitter, c.result);
-            var src = resolveTempName(emitter, c.value);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, dst);
             var s1: []const u8 = " = (";
@@ -7642,7 +7662,7 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, dst_type);
             var s2: []const u8 = ")";
             bufferedWriterWrite(&emitter.writer, s2);
-            bufferedWriterWrite(&emitter.writer, src);
+            emitValueExpr(emitter, c.value, @intCast(u32, 0));
             var s3: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s3);
         },
