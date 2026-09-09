@@ -42,6 +42,22 @@
 //      the identical gate plus a same-block producer < fill window and a
 //      "clean merge arm" shape test (fill is the only def of the join temp in
 //      its block and the temp's single read is in a different block).
+//      EMITCOMPACT Part-2 close (Task 5): case 1 + case 2 jointly exhaust the
+//      §4.1-coalescible straight-copy inventory on the current tree. The union
+//      scope of case 2 (not restricted to genuine wc[dst] >= 2 multi-arm joins)
+//      is accepted and documented: it soundly pre-absorbed the census's
+//      storecons/exprcons/single-def-branchret residue (branchret-class removed
+//      1,191 == the census's eligible proxy exactly; other-class removed 376).
+//      Measured on the post-case-2 tree: every surviving `zT = zT` copy fails a
+//      real gate test (args-run rar; name/ex-bound dst; src multi-writer
+//      merge-snapshot chains — nested joins snapshotted into a shared temp;
+//      unresolved `integer_literal_type` join carriers refused by
+//      copyScalarKindOk — e.g. `x = if (cond) 1 else 0` under a coercion whose
+//      if-expr result never resolved to a concrete integer type; impure or
+//      multi-read), and ZERO copies pass the full gate yet remain uncoalesced
+//      (no TRF/TRB/TPB/TDD/TTM residue). Loop/iterator back-edge copies,
+//      tail-call self-param re-entry copies and decl-init copies remain KEEP by
+//      construction (multi-read dst rc > 1 / name_id != 0).
 //   2. Local constant folding — PURE binary/unary ops whose value operands are
 //      all int_const (same concrete integer type as the result) fold to one
 //      int_const at the result type's width with two's-complement semantics;
