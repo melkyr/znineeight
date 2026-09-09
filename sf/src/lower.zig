@@ -1116,9 +1116,10 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
             }
             return;
         }
-        emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = value_temp } });
         if (findLocalTemp(self, name_id)) |reg| {
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = value_temp } });
+        } else {
+            emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = value_temp } });
         }
     } else if (lv_node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, lv_node.child_0);
@@ -5497,12 +5498,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var init_val = lowerExpr(self, node.child_1);
 
                     if (decl_type != type_mod.TYPE_VOID) {
-                    emitInst(self, LirInst{ .store_local = .{ .name_id = c_name_id, .value = init_val } });
+                    emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = init_val } });
                     var reg: u32 = @intCast(u32, 0);
                     if (findLocalTemp(self, c_name_id)) |r| { reg = r; }
-                    if (reg != @intCast(u32, 0)) {
-                        emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = init_val } });
-                    }
                     var vds_m: []const u8 = "VDS:n"; pal.markerWrite(vds_m);
                     var vds_nb: [10]u8 = undefined; var vds_nl = itoa_mod.itoa(name_id, vds_nb[0..]); var vds_ns: usize = @intCast(usize, 9) - @intCast(usize, vds_nl); pal.markerWrite(vds_nb[vds_ns..@intCast(usize, 9)]);
                     var vds_tm: []const u8 = "t"; pal.markerWrite(vds_tm);
@@ -5514,9 +5512,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     var vds_vm: []const u8 = "v"; pal.markerWrite(vds_vm);
                     var vds_vb: [10]u8 = undefined; var vds_vl = itoa_mod.itoa(init_val, vds_vb[0..]); var vds_vs: usize = @intCast(usize, 9) - @intCast(usize, vds_vl); pal.markerWrite(vds_vb[vds_vs..@intCast(usize, 9)]);
                     var vds_nl2: []const u8 = "\n"; pal.markerWrite(vds_nl2);
-                    if (reg != @intCast(u32, 0)) {
-                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = reg, .src = init_val } });
-                    }
                     }
                     }
                 }
