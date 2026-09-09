@@ -55,7 +55,9 @@
 //      copyScalarKindOk — e.g. `x = if (cond) 1 else 0` under a coercion whose
 //      if-expr result never resolved to a concrete integer type; impure or
 //      multi-read), and ZERO copies pass the full gate yet remain uncoalesced
-//      (no TRF/TRB/TPB/TDD/TTM residue). Loop/iterator back-edge copies,
+//      (instrumented refusal census: zero gate-passed-but-stranded copies; the
+//      TRF/TRB/TPB/TDD/TTM tags were instrumentation-only and are not defined
+//      in-tree). Loop/iterator back-edge copies,
 //      tail-call self-param re-entry copies and decl-init copies remain KEEP by
 //      construction (multi-read dst rc > 1 / name_id != 0).
 //   2. Local constant folding — PURE binary/unary ops whose value operands are
