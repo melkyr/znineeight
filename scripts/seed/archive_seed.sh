@@ -11,8 +11,11 @@ set -euo pipefail
 #
 # Tree assembled from the given inputs + the repo:
 #   zig1        copy of <zig1_binary>
-#   gen/        <gen_dir>/*.c + *.h  (the seed's self-emission C89; spill/
-#               scratch files in gen_dir are NOT copied)
+#   gen/        <gen_dir>/*.c + *.h  (the seed's self-emission C89 module set;
+#               spill/scratch files are NOT copied, and the six runtime/platform
+#               support files the emitter now writes into DIR are excluded —
+#               they already live in runtime/ (c_exit.c at top level), and the
+#               three support .c would double-link against the runtime trio)
 #   c_exit.c    repo sf/src/c_exit.c (top level, per spec layout)
 #   runtime/    repo sf/src/include/{zig_compat.h, zig_runtime.h,
 #               zig_special_types.h, zig_runtime.c, zig_pal.c}  (net_prelude.h
@@ -21,9 +24,11 @@ set -euo pipefail
 #               std_str.zig, std_mem.zig, std_math.zig, std_debug.zig}
 #   SEED_README.txt  provenance + rebuild recipes + canonical flag-set rule
 #
-# Before packing, the archive's C is gcc-rebuilt self-contained (-I runtime,
-# link runtime trio + c_exit.c) in a scratch dir — this proves the archive is
-# gcc-only rebuildable AND yields the recorded self-emission fixed-point md5.
+# Before packing, the archive's C is gcc-rebuilt self-contained in a scratch dir
+# (the module gen/ C plus the runtime support sources staged alongside it, one
+# alphabetical *.o glob — the same object order build_from_seed.sh uses) — this
+# proves the archive is gcc-only rebuildable AND yields the recorded
+# self-emission fixed-point md5.
 #
 # The CHANGELOG.md entry (date, HEAD sha, binary md5, C count, fixed-point md5,
 # archive md5) is always printed to stdout. With --update-changelog it is also
@@ -61,6 +66,20 @@ mkdir -p "$SEED/gen" "$SEED/runtime" "$SEED/lib"
 cp "$BIN" "$SEED/zig1"
 chmod +x "$SEED/zig1"
 cp "$GENDIR"/*.c "$GENDIR"/*.h "$SEED/gen/"
+# The emitter now copies its runtime/platform support into DIR (emit_support):
+# zig_runtime.c/zig_pal.c/c_exit.c + zig_compat.h/zig_runtime.h/net_prelude.h.
+# Those already live in runtime/ (c_exit.c at top level); the three support .c
+# MUST NOT be duplicated into gen/ or the archive C double-links against the
+# runtime trio (Phase-1 reproduced: link rc=1 multiple definition of std_panic).
+# Keep gen/ = the module emission only (net_prelude.h is deliberately not part
+# of the seed — see SEED_README.txt).
+for f in zig_runtime.c zig_pal.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h; do
+    rm -f "$SEED/gen/$f"
+done
+C_COUNT=$(ls "$SEED/gen"/*.c 2>/dev/null | wc -l)
+H_COUNT=$(ls "$SEED/gen"/*.h 2>/dev/null | wc -l)
+[ "$C_COUNT" -gt 0 ] || die "gen dir '$GENDIR' has no module *.c after support exclusion"
+[ "$H_COUNT" -gt 0 ] || die "gen dir '$GENDIR' has no module *.h after support exclusion"
 cp "$ROOT/sf/src/c_exit.c" "$SEED/c_exit.c"
 for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c; do
     cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
@@ -74,11 +93,15 @@ GEN_BYTES=$(stat -c '%s' "$SEED"/gen/*.c "$SEED"/gen/*.h | awk '{s += $1} END {p
 # --- self-contained gcc-of-C rebuild of the assembled tree (fixed point) ---
 mkdir -p "$STAGE/check"
 cp "$SEED"/gen/*.c "$SEED"/gen/*.h "$STAGE/check/"
+# gen/ holds the module emission only; stage the runtime support sources next to
+# it and compile/link everything with one alphabetical *.o glob — the same
+# object order build_from_seed.sh uses — so the recorded fixed point is the true
+# self-emission fixed point (the support sources live in runtime/ + top level).
+cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED/c_exit.c" "$STAGE/check/"
 ( cd "$STAGE/check" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
     -Wno-implicit-function-declaration -I "$SEED/runtime" -c *.c ) \
     || die "archive C gcc -c failed"
-( cd "$STAGE/check" && gcc -m32 -O0 *.o "$SEED/runtime/zig_runtime.c" \
-    "$SEED/runtime/zig_pal.c" "$SEED/c_exit.c" -o "$STAGE/check/zig1_fromC" ) \
+( cd "$STAGE/check" && gcc -m32 -O0 *.o -o "$STAGE/check/zig1_fromC" ) \
     || die "archive C gcc link failed"
 FP_MD5=$(md5sum "$STAGE/check/zig1_fromC" | cut -d' ' -f1)
 echo "[archive] gcc-only rebuild of archive C md5 (fixed point): $FP_MD5"
