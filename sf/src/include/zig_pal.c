@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/stat.h>
 #endif
 
@@ -20,6 +21,12 @@ typedef void* PlatFile;
 typedef int PlatFile;
 #define PLAT_INVALID_FILE (-1)
 #endif
+
+/* pal_file_open mode encoding: WRITE (0) = truncate/create write path
+ * (byte-identical legacy behavior, all existing callers pass 0); READ (1) =
+ * read-only open of an existing file. */
+#define PAL_FILE_OPEN_WRITE 0
+#define PAL_FILE_OPEN_READ  1
 
 static usize pal_strlen(const char* s)
 {
@@ -181,13 +188,36 @@ int pal_f64_to_str(f64 value, char* buf, int bufsize)
 
 PlatFile pal_file_open(const char* path, int flags) {
 #ifdef _WIN32
-    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE h;
+    if (flags == PAL_FILE_OPEN_READ) {
+        h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+    } else {
+        h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+    }
     if (h == INVALID_HANDLE_VALUE) return PLAT_INVALID_FILE;
     return h;
 #else
     if (!path) return PLAT_INVALID_FILE;
+    if (flags == PAL_FILE_OPEN_READ) return open(path, O_RDONLY, 0);
     return open(path, O_WRONLY | O_CREAT | O_TRUNC | flags, 0644);
+#endif
+}
+int pal_file_read(PlatFile fd, char* buf, unsigned int len) {
+#ifdef _WIN32
+    HANDLE h = (HANDLE)fd; DWORD r = 0;
+    if (!buf || !ReadFile(h, buf, (DWORD)len, &r, NULL)) return -1;
+    return (int)r;
+#else
+    size_t off = 0; if (!buf) return -1;
+    while (off < (size_t)len) {
+        ssize_t n = read(fd, buf + off, (size_t)len - off);
+        if (n < 0) { if (errno == EINTR) continue; return -1; }
+        if (n == 0) break;
+        off += (size_t)n;
+    }
+    return (int)off;
 #endif
 }
 int pal_file_write(PlatFile fd, const char* buf, unsigned int len) {

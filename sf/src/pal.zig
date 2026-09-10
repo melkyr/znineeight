@@ -12,6 +12,7 @@ extern "c" fn ftell(file: *void) i32;
 extern "c" fn c_exit(code: i32) void;
 extern "c" fn pal_file_open(path: [*]const u8, flags: i32) usize;
 extern "c" fn pal_file_write(fd: usize, buf: [*]const u8, len: u32) i32;
+extern "c" fn pal_file_read(fd: usize, buf: [*]u8, len: u32) i32;
 extern "c" fn pal_file_close(fd: usize) i32;
 extern "c" fn pal_get_default_lib_path(buf: [*]u8, bufsize: i32) i32;
 extern "c" fn pal_dir_exists(path: [*]const u8) i32;
@@ -85,6 +86,12 @@ pub fn stderr_write(msg: []const u8) void {
 
 pub const INVALID_FD: usize = @intCast(usize, 0xFFFFFFFF);
 
+// pal_file_open mode encoding — MUST match zig_pal.c PAL_FILE_OPEN_* macros.
+// WRITE (0) is the byte-identical legacy truncate/create path all existing
+// callers use; READ (1) opens an existing file read-only.
+pub const FILE_OPEN_WRITE: i32 = 0;
+pub const FILE_OPEN_READ: i32 = 1;
+
 pub fn fileOpen(path: []const u8, flags: i32) usize {
     var c_path: [512]u8 = undefined;
     var i: usize = 0;
@@ -99,6 +106,14 @@ pub fn fileOpen(path: []const u8, flags: i32) usize {
 
 pub fn fileWrite(fd: usize, msg: []const u8) void {
     _ = pal_file_write(fd, msg.ptr, @intCast(u32, msg.len));
+}
+
+// Read up to buf.len bytes from fd. Returns the number of bytes read
+// (0 at EOF), or INVALID_FD on error (extern returns -1).
+pub fn fileRead(fd: usize, buf: []u8) usize {
+    var got = pal_file_read(fd, buf.ptr, @intCast(u32, buf.len));
+    if (got < 0) return INVALID_FD;
+    return @intCast(usize, got);
 }
 
 pub fn fileClose(fd: usize) void {

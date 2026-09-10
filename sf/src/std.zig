@@ -3,3 +3,4 @@ pub const arena = @import("std_arena.zig");
 pub const str = @import("std_str.zig");
 pub const mem = @import("std_mem.zig");
 pub const math = @import("std_math.zig");
+pub const debug = @import("std_debug.zig");
