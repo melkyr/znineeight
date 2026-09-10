@@ -27,6 +27,7 @@ const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
 const lir_opt_mod = @import("lir_opt_pass.zig");
+const runtime_embed = @import("runtime_embed.zig");
 
 pub const BufferedWriter = struct {
     buf: [4096]u8,
@@ -888,6 +889,41 @@ pub fn emitIncludes(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l0);
     var l1: []const u8 = "#include \"zig_runtime.h\"\n";
     bufferedWriterWrite(writer, l1);
+}
+
+// Task 4 (spec 5.3): write one canonical support file into the user's output
+// dir. The bytes come from the embedded canonical copies (runtime_embed.zig).
+pub fn emitSupportFile(output_dir: []const u8, name: []const u8, content: []const u8) void {
+    var path: [512]u8 = undefined;
+    var p: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < output_dir.len and p < @intCast(usize, 510)) : (i += @intCast(usize, 1)) { path[p] = output_dir[i]; p += 1; }
+    path[p] = @intCast(u8, 47); p += 1;
+    var j: usize = @intCast(usize, 0);
+    while (j < name.len and p < @intCast(usize, 511)) : (j += @intCast(usize, 1)) { path[p] = name[j]; p += 1; }
+    var fd: usize = pal.fileOpen(path[0..p], @intCast(i32, 0));
+    if (fd == pal.INVALID_FD) {
+        var emsg: []const u8 = "error: cannot open output file\n";
+        pal.stderr_write(emsg);
+        pal.exit(@intCast(u8, 1));
+    }
+    var w: BufferedWriter = undefined;
+    w = bufferedWriterInitFd(fd);
+    bufferedWriterWrite(&w, content);
+    bufferedWriterFlush(&w);
+    pal.fileClose(fd);
+}
+
+// Task 4 (spec 5.3): make the output dir self-contained by writing the
+// runtime/platform headers + runtime sources next to the emitted modules so
+// `gcc -I . DIR/*.c` builds without the compiler's source tree.
+pub fn emitSupportFiles(output_dir: []const u8) void {
+    emitSupportFile(output_dir, "zig_compat.h", runtime_embed.zig_compat_h);
+    emitSupportFile(output_dir, "zig_runtime.h", runtime_embed.zig_runtime_h);
+    emitSupportFile(output_dir, "net_prelude.h", runtime_embed.net_prelude_h);
+    emitSupportFile(output_dir, "zig_runtime.c", runtime_embed.zig_runtime_c);
+    emitSupportFile(output_dir, "zig_pal.c", runtime_embed.zig_pal_c);
+    emitSupportFile(output_dir, "c_exit.c", runtime_embed.c_exit_c);
 }
 
 pub fn emitZigCompatH(writer: *BufferedWriter) void {

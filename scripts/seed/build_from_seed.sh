@@ -80,12 +80,25 @@ build_hop() {
     mkdir -p "$dumpdir"
     ( cd "$ROOT" && timeout 120 "$compiler" --dump-c89 --output-dir "$dumpdir" sf/src/main.zig ) \
         || die "self-emission dump failed (compiler '$compiler')"
-    ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
-        -Wno-implicit-function-declaration -I "$ROOT/sf/src/include" -c *.c ) \
-        || die "gcc -c failed (hop dir '$dumpdir')"
-    ( cd "$dumpdir" && gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" \
-        "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" -o "$binout" ) \
-        || die "gcc link failed (hop dir '$dumpdir')"
+    # Task 4: a current dump is self-contained — it carries zig_compat.h,
+    # zig_runtime.h, net_prelude.h, zig_runtime.c, zig_pal.c and c_exit.c next
+    # to the module files, so build with -I . and link only the emitted
+    # objects. A pre-Task-4 dump (e.g. the committed v7 seed) lacks those, so
+    # fall back to the repo include dir + canonical runtime link set.
+    if [ -f "$dumpdir/zig_runtime.c" ]; then
+        ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+            -Wno-implicit-function-declaration -I . -c *.c ) \
+            || die "gcc -c failed (hop dir '$dumpdir')"
+        ( cd "$dumpdir" && gcc -m32 -O0 *.o -o "$binout" ) \
+            || die "gcc link failed (hop dir '$dumpdir')"
+    else
+        ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+            -Wno-implicit-function-declaration -I "$ROOT/sf/src/include" -c *.c ) \
+            || die "gcc -c failed (hop dir '$dumpdir')"
+        ( cd "$dumpdir" && gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" \
+            "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" -o "$binout" ) \
+            || die "gcc link failed (hop dir '$dumpdir')"
+    fi
 }
 
 # --- self-contained fallback: rebuild the seed compiler from its own C ---
