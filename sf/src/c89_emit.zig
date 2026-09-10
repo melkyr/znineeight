@@ -27,6 +27,7 @@ const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
 const lir_opt_mod = @import("lir_opt_pass.zig");
+const emit_support = @import("emit_support.zig");
 
 pub const BufferedWriter = struct {
     buf: [4096]u8,
@@ -899,6 +900,73 @@ pub fn emitZigCompatH(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l02);
     var l03: []const u8 = "\n#ifdef _MSC_VER\n    typedef __int64 z64;\n    typedef unsigned __int64 zu64;\n#elif defined(__WATCOMC__)\n    typedef long long z64;\n    typedef unsigned long long zu64;\n#else\n    typedef long long z64;\n    typedef unsigned long long zu64;\n#endif\n\n#if !defined(__cplusplus) && !defined(__WATCOMC__)\n    typedef signed char i8;\n    typedef short i16;\n    typedef int i32;\n    typedef z64 i64;\n    typedef unsigned char u8;\n    typedef unsigned short u16;\n    typedef unsigned int u32;\n    typedef zu64 u64;\n    typedef float f32;\n    typedef double f64;\n    typedef unsigned int usize;\n#endif\n\ntypedef int bool;\n#define true 1\n#define false 0\n\n#ifndef NULL\n#define NULL ((void*)0)\n#endif\n\n#endif /* ZIG_COMPAT_H */\n";
     bufferedWriterWrite(writer, l03);
+}
+
+// Open DIR/<name> for writing; abort the compile on failure. Returns the fd.
+fn openSupportOutputFile(dir_path: []const u8, name: []const u8) usize {
+    var path: [512]u8 = undefined;
+    var p: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < dir_path.len and p < @intCast(usize, 510)) : (i += @intCast(usize, 1)) {
+        path[p] = dir_path[i];
+        p += 1;
+    }
+    path[p] = @intCast(u8, '/');
+    p += 1;
+    var j: usize = @intCast(usize, 0);
+    while (j < name.len and p < @intCast(usize, 511)) : (j += @intCast(usize, 1)) {
+        path[p] = name[j];
+        p += 1;
+    }
+    var fd: usize = pal.fileOpen(path[0..p], @intCast(i32, 0));
+    if (fd == pal.INVALID_FD) {
+        var emsg: []const u8 = "error: cannot open output file\n";
+        pal.stderr_write(emsg);
+        pal.exit(@intCast(u8, 1));
+    }
+    return fd;
+}
+
+// Write the canonical support files (headers + runtime sources) into DIR so the
+// emitted tree builds with `-I .` and every emitted `.c`, independent of where
+// the compiler lives. Byte content lives in emit_support.zig; the .sh gate
+// scripts/check_emit_support.sh asserts emitted == canonical.
+pub fn emitSupportFiles(dir_path: []const u8) void {
+    var fd0: usize = openSupportOutputFile(dir_path, "zig_compat.h");
+    var w0: BufferedWriter = bufferedWriterInitFd(fd0);
+    emit_support.emitZigCompatHSupport(&w0);
+    bufferedWriterFlush(&w0);
+    pal.fileClose(fd0);
+
+    var fd1: usize = openSupportOutputFile(dir_path, "zig_runtime.h");
+    var w1: BufferedWriter = bufferedWriterInitFd(fd1);
+    emit_support.emitZigRuntimeHSupport(&w1);
+    bufferedWriterFlush(&w1);
+    pal.fileClose(fd1);
+
+    var fd2: usize = openSupportOutputFile(dir_path, "net_prelude.h");
+    var w2: BufferedWriter = bufferedWriterInitFd(fd2);
+    emit_support.emitNetPreludeHSupport(&w2);
+    bufferedWriterFlush(&w2);
+    pal.fileClose(fd2);
+
+    var fd3: usize = openSupportOutputFile(dir_path, "zig_runtime.c");
+    var w3: BufferedWriter = bufferedWriterInitFd(fd3);
+    emit_support.emitZigRuntimeCSupport(&w3);
+    bufferedWriterFlush(&w3);
+    pal.fileClose(fd3);
+
+    var fd4: usize = openSupportOutputFile(dir_path, "zig_pal.c");
+    var w4: BufferedWriter = bufferedWriterInitFd(fd4);
+    emit_support.emitZigPalCSupport(&w4);
+    bufferedWriterFlush(&w4);
+    pal.fileClose(fd4);
+
+    var fd5: usize = openSupportOutputFile(dir_path, "c_exit.c");
+    var w5: BufferedWriter = bufferedWriterInitFd(fd5);
+    emit_support.emitCExitCSupport(&w5);
+    bufferedWriterFlush(&w5);
+    pal.fileClose(fd5);
 }
 
 // DEAD CODE — never called. Frozen mirror of sf/src/include/zig_pal.c.

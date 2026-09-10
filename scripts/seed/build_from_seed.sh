@@ -75,17 +75,31 @@ fi
 [ -d "$SEED/gen" ] || die "seed dir '$SEED' has no gen/"
 
 # --- canonical one-hop: dump current sf/src -> gcc -c -> link ---
+# Task 4: the emitter copies the runtime/platform support sources into the dump
+# dir. When present (hop1-onward, i.e. any dump compiler built from Task-4+
+# source), build self-contained (`-I .`, link only the emitted objects) so the
+# emitted zig_runtime.c/zig_pal.c/c_exit.c are NOT double-linked against the
+# appended repo trio. When absent (the pre-Task-4 committed seed), keep the
+# original repo-include + canonical trio recipe.
 build_hop() {
     local compiler="$1" dumpdir="$2" binout="$3"
     mkdir -p "$dumpdir"
     ( cd "$ROOT" && timeout 120 "$compiler" --dump-c89 --output-dir "$dumpdir" sf/src/main.zig ) \
         || die "self-emission dump failed (compiler '$compiler')"
-    ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
-        -Wno-implicit-function-declaration -I "$ROOT/sf/src/include" -c *.c ) \
-        || die "gcc -c failed (hop dir '$dumpdir')"
-    ( cd "$dumpdir" && gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" \
-        "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" -o "$binout" ) \
-        || die "gcc link failed (hop dir '$dumpdir')"
+    if [ -f "$dumpdir/zig_runtime.c" ]; then
+        ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+            -Wno-implicit-function-declaration -I . -c *.c ) \
+            || die "gcc -c failed (self-contained hop dir '$dumpdir')"
+        ( cd "$dumpdir" && gcc -m32 -O0 *.o -o "$binout" ) \
+            || die "gcc link failed (self-contained hop dir '$dumpdir')"
+    else
+        ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+            -Wno-implicit-function-declaration -I "$ROOT/sf/src/include" -c *.c ) \
+            || die "gcc -c failed (hop dir '$dumpdir')"
+        ( cd "$dumpdir" && gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" \
+            "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" -o "$binout" ) \
+            || die "gcc link failed (hop dir '$dumpdir')"
+    fi
 }
 
 # --- self-contained fallback: rebuild the seed compiler from its own C ---
@@ -132,15 +146,25 @@ build_hop "$OUT/zig1_5_clean" "$OUT/hop2" "$OUT/hop2/zig1_hop2"
 HOP2_MD5=$(md5sum "$OUT/hop2/zig1_hop2" | cut -d' ' -f1)
 echo "[seed] hop2 binary md5: $HOP2_MD5"
 
+CLOSURE_MD5="$HOP2_MD5"
 if [ "$HOP1_MD5" = "$HOP2_MD5" ]; then
     echo "[seed] two-hop closure OK: hop1 == hop2 == $HOP1_MD5"
 else
-    die "two-hop closure FAILED: hop1 '$HOP1_MD5' != hop2 '$HOP2_MD5'"
+    # Moving point: the committed seed's dump predates the current sf/src, so
+    # hop1 differs; convergence is hop2 == hop3 (hop2 already self-contained).
+    build_hop "$OUT/hop2/zig1_hop2" "$OUT/hop3" "$OUT/hop3/zig1_hop3"
+    HOP3_MD5=$(md5sum "$OUT/hop3/zig1_hop3" | cut -d' ' -f1)
+    echo "[seed] hop3 binary md5: $HOP3_MD5"
+    if [ "$HOP2_MD5" = "$HOP3_MD5" ]; then
+        echo "[seed] three-hop closure OK (moving point): hop2 == hop3 == $HOP2_MD5"
+    else
+        die "three-hop closure FAILED: hop2 '$HOP2_MD5' != hop3 '$HOP3_MD5'"
+    fi
 fi
 if [ -n "${FIXED_POINT_MD5:-}" ]; then
-    [ "$HOP1_MD5" = "$FIXED_POINT_MD5" ] \
-        && echo "[seed] recorded fixed point OK: $HOP1_MD5" \
-        || die "fixed-point mismatch: got '$HOP1_MD5', want '$FIXED_POINT_MD5'"
+    [ "$CLOSURE_MD5" = "$FIXED_POINT_MD5" ] \
+        && echo "[seed] recorded fixed point OK: $CLOSURE_MD5" \
+        || die "fixed-point mismatch: got '$CLOSURE_MD5', want '$FIXED_POINT_MD5'"
 fi
 
 echo "=== [seed] Done: $OUT ==="
