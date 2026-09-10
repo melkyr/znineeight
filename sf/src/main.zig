@@ -819,6 +819,61 @@ fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
     }
 }
 
+fn pruneTypeMarkByValue(ref_edges: *hash_mod.U32ToU32Map, reg: *TypeRegistry, visited: *hash_mod.U64ToU32Map, src_mid: u32, tid: u32) void {
+    if (tid >= @intCast(u32, reg.types_len)) return;
+    var vkey: u64 = (@intCast(u64, src_mid) << @intCast(u64, 32)) | @intCast(u64, tid);
+    if (hash_mod.u64ToU32MapGet(visited, vkey) != null) return;
+    hash_mod.u64ToU32MapPut(visited, vkey, @intCast(u32, 1));
+    var ty = reg.types_items[@intCast(usize, tid)];
+    // The type's owner module must stay reachable: a type definition is
+    // emitted only in the owner's header, while a by-value use of the type is
+    // emitted in the referencing module.
+    if (ty.module_id != @intCast(u32, 0) and ty.module_id != src_mid) {
+        hash_mod.u32ToU32MapPut(ref_edges, src_mid * @intCast(u32, 65536) + ty.module_id, @intCast(u32, 1));
+    }
+    if (ty.kind == type_mod.TypeKind.struct_type) {
+        var p = reg.st_items[@intCast(usize, ty.payload_idx)];
+        var fi: usize = @intCast(usize, 0);
+        while (fi < @intCast(usize, p.fields_count)) : (fi += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.fe_items[@intCast(usize, p.fields_start) + fi].type_id);
+        }
+    } else if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+        var p = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.tag_type);
+        var fi: usize = @intCast(usize, 0);
+        while (fi < @intCast(usize, p.fields_count)) : (fi += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.fe_items[@intCast(usize, p.fields_start) + fi].type_id);
+        }
+    } else if (ty.kind == type_mod.TypeKind.union_type or ty.kind == type_mod.TypeKind.packed_union_type) {
+        var p = reg.un_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.tag_type);
+        var fi: usize = @intCast(usize, 0);
+        while (fi < @intCast(usize, p.fields_count)) : (fi += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.fe_items[@intCast(usize, p.fields_start) + fi].type_id);
+        }
+    } else if (ty.kind == type_mod.TypeKind.enum_type) {
+        var p = reg.en_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.backing_type);
+    } else if (ty.kind == type_mod.TypeKind.array_type) {
+        var p = reg.array_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.elem);
+    } else if (ty.kind == type_mod.TypeKind.tuple_type) {
+        var p = reg.tup_items[@intCast(usize, ty.payload_idx)];
+        var ei: usize = @intCast(usize, 0);
+        while (ei < @intCast(usize, p.elems_count)) : (ei += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.xt_items[@intCast(usize, p.elems_start) + ei]);
+        }
+    } else if (ty.kind == type_mod.TypeKind.optional_type) {
+        var p = reg.opt_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.payload);
+    } else if (ty.kind == type_mod.TypeKind.error_union_type) {
+        var p = reg.eu_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.payload);
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.error_set);
+    }
+}
+
+
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
@@ -854,6 +909,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
 
     var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.emission);
     var ref_edges = hash_mod.u32ToU32MapInitCap(&ctx.alloc.emission, ctx.lir_slots.len);
+    var type_visited = hash_mod.u64ToU32MapInit(&ctx.alloc.emission);
     var ts_fi: usize = @intCast(usize, 0);
     while (ts_fi < ctx.lir_slots.len) : (ts_fi += @intCast(usize, 1)) {
         var ts_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ts_fi], &ctx.alloc.lir_read);
@@ -864,26 +920,15 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         var ts_tti: usize = @intCast(usize, 0);
         while (ts_tti < ts_fn.hoisted_temps.len) : (ts_tti += @intCast(usize, 1)) {
             var ts_hty = ts_fn.hoisted_temps.items[ts_tti];
-            if (ts_hty.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
-            var ts_mty = ctx.typereg.types_items[@intCast(usize, ts_hty.type_id)];
-            if (ts_mty.module_id != @intCast(u32, 0) and ts_mty.module_id != ts_src) {
-                hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_mty.module_id, @intCast(u32, 1));
-            }
+            pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_hty.type_id);
         }
         if (ts_fn.return_type < @intCast(u32, ctx.typereg.types_len)) {
-            var ts_rty = ctx.typereg.types_items[@intCast(usize, ts_fn.return_type)];
-            if (ts_rty.module_id != @intCast(u32, 0) and ts_rty.module_id != ts_src) {
-                hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_rty.module_id, @intCast(u32, 1));
-            }
+            pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_fn.return_type);
         }
         var ts_pi: usize = @intCast(usize, 0);
         while (ts_pi < ts_fn.params.len) : (ts_pi += @intCast(usize, 1)) {
             var ts_pt = ts_fn.params.items[ts_pi];
-            if (ts_pt.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
-            var ts_pty = ctx.typereg.types_items[@intCast(usize, ts_pt.type_id)];
-            if (ts_pty.module_id != @intCast(u32, 0) and ts_pty.module_id != ts_src) {
-                hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_pty.module_id, @intCast(u32, 1));
-            }
+            pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_pt.type_id);
         }
         var ts_bi: usize = @intCast(usize, 0);
         while (ts_bi < ts_fn.blocks.len) : (ts_bi += @intCast(usize, 1)) {
@@ -949,9 +994,23 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             if (gd_g.module_id == ri_mods[ri_i].id and gd_g.has_runtime_init != @intCast(u8, 0)) { ri_has = @intCast(u8, 1); break; }
         }
         if (ri_has != @intCast(u8, 0)) {
-            hash_mod.u32ToU32MapPut(&ref_edges, ri_mods[ri_i].id, @intCast(u32, 1));
+            hash_mod.u32ToU32MapPut(&ref_edges, @intCast(u32, 0) * @intCast(u32, 65536) + ri_mods[ri_i].id, @intCast(u32, 1));
         }
     }
+    // By-value module-global type references: a by-value global emitted in its
+    // own module needs the full type definition that lives only in the type
+    // owner's header, so keep the owner reachable (recursively through any
+    // nested by-value composite fields). Synthetic type-storage globals (name
+    // equal to the type name) are emitted in the owner's module already.
+    var gt_i: usize = @intCast(usize, 0);
+    while (gt_i < ctx.global_decls.len) : (gt_i += @intCast(usize, 1)) {
+        var gt_g = ctx.global_decls.items[gt_i];
+        if (gt_g.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
+        var gt_ty = ctx.typereg.types_items[@intCast(usize, gt_g.type_id)];
+        if (gt_ty.name_id != @intCast(u32, 0) and gt_ty.name_id == gt_g.name_id) continue;
+        pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, gt_g.module_id, gt_g.type_id);
+    }
+
     // Reachable set = value-ref closure seeded from the root module (module 0).
     var reachable = hash_mod.u32ToU32MapInitCap(&ctx.alloc.emission, ri_mods.len);
     hash_mod.u32ToU32MapPut(&reachable, @intCast(u32, 0), @intCast(u32, 1));
@@ -975,7 +1034,6 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         }
     }
     emitter.reachable = reachable;
-    emitter.ref_edges = ref_edges;
 
     if (ctx.cli.output_dir_set) {
         var poi: u32 = @intCast(u32, 0);
