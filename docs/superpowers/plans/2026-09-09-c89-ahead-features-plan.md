@@ -455,3 +455,18 @@ All original constraints remain in force. Additions / corrections:
 A12 remains the closeout battery/N-hop STOP-present; A13 remains the docs GATE + seed rotation, gated on
 operator approval of A12.
 
+### A1 STOP-present — operator rulings (2026-09-10)
+
+- **MSVC6 trap:** `__asm { int 3 }` (not `__debugbreak` — VC6 predates the intrinsic). Spec §3.1
+  corrected accordingly.
+- **OpenWatcom trap:** `__asm { int 3 }` (Open Watcom supports `__asm { }` inline-asm blocks). Cannot be
+  verified locally — no Open Watcom toolchain in the container; the non-x86 fallback remains
+  `pal_abort()`.
+- **type-alias (`A9F`):** the spurious `warning[3000]` emitted for an array alias
+  (`const MyArr = [3]i32`, used as `[_]i32{…}`) is a **defect and MUST be fixed** — a spurious
+  diagnostic is treated as an error, not tolerated.
+- **diagnostics (`A7`):** proceed even if it flags existing `sf/src`/example/corpus sites — idiomatic,
+  safe code is preferred over silently unsafe code. Mechanical in-scope fallout fixes are allowed; STOP
+  only if the fallout is non-mechanical.
+- **4-MD5 baseline:** copied from the recorded baseline (no gate impact); accepted.
+

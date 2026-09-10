@@ -79,8 +79,10 @@ Current (broken) behaviour, confirmed:
 Design:
 
 - New PAL primitive **`pal_trap()`**: declared in `sf/src/pal.zig` (extern) and implemented in
-  `sf/src/include/zig_pal.c`. On x86 it executes `int 3` (GCC `__asm__ volatile("int3")`, MSVC
-  `__debugbreak`, OpenWatcom `int 3`); on other architectures it falls back to `pal_abort()`.
+  `sf/src/include/zig_pal.c`. On x86 it executes `int 3` — GCC `__asm__ volatile("int3")`, MSVC6
+  `__asm { int 3 }` (VC6 predates the `__debugbreak` intrinsic), OpenWatcom `__asm { int 3 }`
+  (Open Watcom supports `__asm { }` inline-asm blocks); on other architectures it falls back to
+  `pal_abort()`.
   Debugger-friendly; without a debugger it still terminates the process.
 - `unreachable` lowers to an explicit trap terminator (a backend-neutral LIR operation) that emits
   `pal_trap();`. It is **unconditional** — the safety mode does not affect it.
