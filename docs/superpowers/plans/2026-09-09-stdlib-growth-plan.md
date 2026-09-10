@@ -4,7 +4,7 @@
 
 **Goal:** Grow the Z98 stdlib from 4 files / 389 lines to a usable core (`std_str`, `std_mem`, `std_math`, `std_debug`, `std_io` file I/O, `std_arena` per-arena rewrite, `std.zig` full re-export) — every module written in Z98, cstdio-free, pinned by corpus fixtures.
 
-**Architecture:** New/changed modules live at `sf/src/` (installed to `<exe>/lib`). They are **user-program modules** (not in the compiler's `sf/src/main.zig` import graph) so they do not move the self-emission fixed point; correctness is pinned by corpus fixtures that `@import("std")` and assert byte-exact stdout. All I/O routes through the existing PAL/Win32 surface.
+**Architecture:** New/changed modules live at `sf/src/` (installed to `<exe>/lib`). They are **user-program modules** (not in the compiler's `sf/src/main.zig` import graph) so they do not move the self-emission fixed point; correctness is pinned by corpus fixtures that `@import("std")` and assert byte-exact stdout. All I/O routes through the existing PAL/Win32 surface. **EXCEPTION (AMENDMENT 1):** Task 3 extends `pal.zig` + `zig_pal.c` (compiler-graph files) to add a Win9x-clean file-READ primitive → the self-emission fixed point MOVES there; Task-6 seed rotation becomes mandatory.
 
 **Tech Stack:** Z98, `sf/src/std*.zig`, PAL externs (`pal.zig`, `zig_pal.c`), corpus fixtures in `repro/mi_matrix/`.
 
@@ -16,7 +16,7 @@
 - **Reference per the seed model** (`release/seed/`); measurement compiler = the N-hop-converged binary, stated per report. Dump CWD = repo root, relative `sf/src/main.zig`.
 - **Flag-set rule:** every gcc `-c` = `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`; `-Wall -Wextra -O3 -fsyntax-only` separate gate.
 - **Corpus primary oracle:** 420 dirs = 404 OK / 9 GREEN / 7 FAIL at HEAD (post-EMITCOMPACT). Each increment zero-asymmetric except its own new fixture dirs. Golden 9/9 + matrix 21/21 run byte-identity.
-- **4-MD5 dump gates unchanged by stdlib work** unless a gate program imports a changed std module → if so, recorded-not-rebaselined; operator-ruled re-baseline only at closeout.
+- **4-MD5 dump gates:** re-baselined at Task 2 (pure re-export, runtime-identical); from Task 3 onward the compiler source itself changes (`pal.zig`) so every increment re-dumps + runtime-identical-verifies + re-baselines the rows in QUICK_REF (AMENDMENT 1).
 - **Working conventions:** SDD mandatory; compression forbidden during build sessions; memories via `mnemoria --path .opencode/memory add` under agent `stdlib-session`; edits via `edit`/`fastedit` only; no commit until review clean; pre-existing dirty set never staged.
 - Report `.superpowers/sdd/task-STDLIB-report.md`; ledger `.superpowers/sdd/progress.md`; memory agent `stdlib-session`.
 
@@ -59,22 +59,39 @@
 
 ---
 
-### Task 3: `std_debug` + `std_io` file I/O (F)
+## AMENDMENT 1 — Task 3 scope + fixed-point consequence (OPERATOR RULING 2026-09-10)
+
+**Ruling (operator, STOP-present):** std_io's `fileRead` has NO Win9x-clean PAL surface to wrap — Task-1 census proved `pal_file_open/write/close` are structurally WRITE-ONLY (POSIX `O_WRONLY|O_CREAT|O_TRUNC`, Win32 `GENERIC_WRITE|CREATE_ALWAYS`); `pal_file_read` does not exist; the only read path (`stream*`, `pal.readFile`) is libc `FILE*` (cstdio). The operator chose **option (a): Extend PAL now (read+write)**.
+
+**Consequences (binding):**
+1. Task 3 file scope EXPANDS to compiler-graph files:
+   - Modify `sf/src/include/zig_pal.c` — add read-mode open (POSIX `O_RDONLY` / Win32 `GENERIC_READ` branch) + new `pal_file_read` returning a byte count.
+   - Modify `sf/src/pal.zig` — add the `pal_file_read` extern + a `fileRead` wrapper (and any mode-flag plumbing) alongside the existing `fileOpen`/`fileWrite`/`fileClose`.
+   - `pal.zig` IS in the compiler's `sf/src/main.zig` import graph (imported by c89_emit.zig/front_resolution.zig/allocator.zig/ast.zig/etc.) → **the self-emission fixed point WILL MOVE**.
+2. **Task 6 seed rotation + N-hop + full 4-MD5 re-baseline + full battery become MANDATORY** (not conditional) once Task 3 lands the PAL change. The fixed point `ea149e05` (seed v6) will be superseded; a new fixed point must be N-hop-closed from the committed seed and the seed rotated v6→v7.
+3. `std_io` file API (`fileOpen`/`fileWrite`/`fileRead`/`fileClose`) wraps the PAL surface — with the read leg now real and Win9x-clean.
+4. `std_debug` (`log`/`logInt`/`assert`/`panic`): Task-1 RED probe proved `@panic`/`unreachable` LOWER TO NO-OPS in user programs. Binding: assert/panic must use a PRINTED abort (message via `@stdoutWrite`/`@putChar`) followed by a non-returning trap (`while(true){}` in a `noreturn` fn) or `c_exit` (pal-provided). Do NOT rely on `@panic`/`unreachable`.
+5. Every stdlib increment from Task 3 on re-baselines the four 4-MD5 rows (compiler changed) — follow the Task-2 precedent: re-dump gates, verify runtime-identical, re-baseline rows in QUICK_REF in the task's own docs commit.
+
+### Task 3: `std_debug` + `std_io` file I/O over extended PAL (F) — scope amended by AMENDMENT 1
 
 **Files:**
 - Create: `sf/src/std_debug.zig`
-- Modify: `sf/src/std_io.zig` (add file API per Task-1 surface census)
+- Modify: `sf/src/std_io.zig` (add file API: `fileOpen`/`fileWrite`/`fileRead`/`fileClose` over the PAL surface)
+- Modify: `sf/src/include/zig_pal.c` (read-mode open + `pal_file_read` byte-count read) — AMENDMENT 1
+- Modify: `sf/src/pal.zig` (read-mode plumbing + `pal_file_read` extern + `fileRead` wrapper) — AMENDMENT 1
 - Modify: `sf/src/std.zig` (re-export `debug`)
 - Create (fixtures): `repro/mi_matrix/stdlib_debug_xmod/main.zig`, `repro/mi_matrix/stdlib_fileio_xmod/main.zig`
 - Report: `.superpowers/sdd/task-STDLIB-report.md` (appended `## Task 3`)
-- Commit: `feat: stdlib — std_debug + std_io file I/O over PAL (STDLIB)`
+- Commit: `feat: stdlib — std_debug + std_io file I/O over PAL (STDLIB)` (AMENDMENT 1: scope incl. zig_pal.c + pal.zig)
 
-- [ ] **Step 1: Author `std_debug`** per spec §3.4 (`log`/`logInt`/`assert`/`panic`, all via `@stdoutWrite`/`@putChar`; pin the exact panic mechanism available in Z98).
-- [ ] **Step 2: Add the file API to `std_io`** wrapping the Task-1-verified PAL surface (`fileOpen`/`fileWrite`/`fileRead`/`fileClose`). No cstdio — verify the wrappers call the PAL externs only.
-- [ ] **Step 3: Author fixtures.** `stdlib_debug_xmod`: log/assert/pass output byte-exact. `stdlib_fileio_xmod`: write a temp file → close → read back → assert byte-exact content (POSIX run).
-- [ ] **Step 4: Run gate** (as Task 2 Step 3): fixtures GREEN 3×, golden/matrix byte-identity, corpus zero-asymmetric except the 2 new dirs, cstdio grep 0, 4-MD5 unchanged.
-- [ ] **Step 5: Commit** (message above).
-- [ ] **Step 6: Report + ledger.**
+- [ ] **Step 1: Author `std_debug`** per spec §3.4 (`log`/`logInt`/`assert`/`panic`, all via `@stdoutWrite`/`@putChar`). Panic mechanism PINNED by AMENDMENT 1: printed abort + non-returning trap or `c_exit` — `@panic`/`unreachable` are no-ops and MUST NOT be used.
+- [ ] **Step 2: Extend the PAL (AMENDMENT 1)** — add read-mode open to `pal_file_open` in `zig_pal.c` (POSIX `O_RDONLY`; Win32 `GENERIC_READ`, no CREATE_ALWAYS on read) + new `pal_file_read(fd, buf, len)` returning bytes-read (POSIX `read` loop / Win32 `ReadFile`); mirror the `pal.zig` extern decls + a `fileRead` wrapper. Preserve the existing write/close symbols byte-identical.
+- [ ] **Step 3: Add the file API to `std_io`** wrapping the now-complete PAL surface (`fileOpen`/`fileWrite`/`fileRead`/`fileClose`). No cstdio — wrappers call the PAL externs only.
+- [ ] **Step 4: Author fixtures.** `stdlib_debug_xmod`: log/assert/pass output byte-exact. `stdlib_fileio_xmod`: write a temp file → close → read back → assert byte-exact content (POSIX run).
+- [ ] **Step 5: Run gate** (as Task 2 Step 3): fixtures GREEN 3×, golden/matrix byte-identity, corpus zero-asymmetric except the 2 new dirs, cstdio grep 0. **4-MD5: re-dump + runtime-identical verify + re-baseline rows in QUICK_REF (AMENDMENT-1 consequence — compiler changed).** Fixed point now EXPECTED to move: run the N-hop chain from the committed seed and RECORD the new fixed point (do not rotate the seed in this task; rotation is Task 6).
+- [ ] **Step 6: Commit** (message above).
+- [ ] **Step 7: Report + ledger.**
 
 ---
 
@@ -111,16 +128,16 @@
 
 ---
 
-### Task 6: Full battery + docs GATE + seed rotation (I then F, after operator approval)
+### Task 6: Full battery + docs GATE + seed rotation (I then F, after operator approval) — AMENDMENT 1: rotation MANDATORY
 
 **Files:**
 - Report: `.superpowers/sdd/task-STDLIB-report.md` (appended `## Task 6`)
-- Modify: `docs/sf/QUICK_REF.md` (stdlib bullet), `release/seed/CHANGELOG.md` + `release/seed/zig1-seed.tgz` (only if the fixed point moved), `repro/mi_matrix/EXPECTED_FAIL.md` (only if fixture movement occurred)
+- Modify: `docs/sf/QUICK_REF.md` (stdlib bullet), `release/seed/CHANGELOG.md` + `release/seed/zig1-seed.tgz` (MANDATORY — AMENDMENT 1: the Task-3 `pal.zig` change moved the fixed point), `repro/mi_matrix/EXPECTED_FAIL.md` (only if fixture movement occurred)
 - Commit (F): `docs: GATE — stdlib growth (STDLIB)`
 
-- [ ] **Step 1 (I): Full battery** — golden 9/9 + matrix 21/21 run byte-identity; corpus `-s0` zero-asymmetric vs Task-5; all stdlib fixtures GREEN deterministic; cstdio grep across `sf/src/std*.zig` = 0. N-hop from the committed seed (gate A) — the stdlib is user-module-only so the fixed point should be unchanged; record the chain.
-- [ ] **Step 2 (I): STOP-present** any gate re-baseline or docs-GATE plan to the operator; await approval.
-- [ ] **Step 3 (F): Docs GATE** — QUICK_REF newest-first stdlib bullet; EXPECTED_FAIL bump only if fixture movement occurred; seed rotation only if the fixed point moved.
+- [ ] **Step 1 (I): Full battery** — golden 9/9 + matrix 21/21 run byte-identity; corpus `-s0` zero-asymmetric vs Task-5; all stdlib fixtures GREEN deterministic; cstdio grep across `sf/src/std*.zig` = 0. N-hop from the committed seed (gate A) — **fixed point EXPECTED to have moved (AMENDMENT 1); close the chain to the new fixed point and record it**.
+- [ ] **Step 2 (I): STOP-present** the re-baseline + seed-rotation + docs-GATE plan to the operator; await approval.
+- [ ] **Step 3 (F): Docs GATE** — QUICK_REF newest-first stdlib bullet; 4-MD5 rows re-baselined; seed rotation v6→v7 (AMENDMENT 1 — fixed point moved); EXPECTED_FAIL bump only if fixture movement occurred.
 - [ ] **Step 4: Report + ledger close**, STOP-present the plan close.
 
 ---
