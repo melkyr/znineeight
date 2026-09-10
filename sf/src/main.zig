@@ -821,7 +821,7 @@ fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
 
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
-    if (!ctx.cli.dump_c89) return;
+    if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
     var mangler: c89_mod.NameMangler = undefined;
     var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.emission, mangler_hint);
