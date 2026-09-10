@@ -2,9 +2,10 @@
 // `noreturn`: it evaluates and prints the argument, then traps via pal_trap().
 //
 // RED (seed v9): `@panic` is a no-op (payload/side effects dropped); execution
-// continues to "after", rc 0, stdout `before\nafter\n`. GREEN: prints
-// `before\n` to stdout and `panic: boom\n` to stderr, then pal_trap() fires;
-// rc != 0.
+// continues to "after", rc 0, stdout `before\nafter\n`. GREEN: writes
+// `panic: boom\n` to stderr, then pal_trap() fires before the stdout block
+// buffer is flushed; stdout empty, rc 133 (SIGTRAP) — the observable is
+// rc/stderr, not stdout.
 const std = @import("std");
 
 pub fn main() void {

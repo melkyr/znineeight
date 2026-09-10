@@ -3,8 +3,9 @@
 // rather than producing a null pointer that is then dereferenced.
 //
 // RED (seed v9): the null payload (address 0) reaches the store, SIGSEGV;
-// stdout `before\n`, rc 139. GREEN: pal_trap() fires before the store; stdout
-// `before\n`, rc != 0 (SIGTRAP / 133).
+// stdout empty (the block buffer is never flushed before the fault), rc 139.
+// GREEN: pal_trap() fires before the store; stdout empty, rc 133 (SIGTRAP) —
+// the observable is the rc/signal, not stdout.
 const std = @import("std");
 
 var buf: [16]u8 = undefined;

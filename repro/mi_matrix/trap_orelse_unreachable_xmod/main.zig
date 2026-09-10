@@ -3,8 +3,9 @@
 // reading the garbage payload of the null optional.
 //
 // RED (seed v9): the null arm is empty and falls into the payload read; the
-// program continues and prints the garbage payload (rc 0). GREEN: pal_trap()
-// fires on the null path; stdout `before\n`, rc != 0.
+// program continues and prints the garbage payload (rc 0, stdout `before\n0\n`).
+// GREEN: pal_trap() fires on the null path before the stdout block buffer is
+// flushed; stdout is empty, rc 133 (SIGTRAP) — the observable is rc/stderr.
 const std = @import("std");
 
 fn get() ?i32 {
