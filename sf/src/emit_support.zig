@@ -102,6 +102,7 @@ pub fn emitZigRuntimeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "extern void pal_print_stderr(const char* s, unsigned int len);\n");
     c89_mod.bufferedWriterWrite(writer, "extern void pal_abort(void);\n");
+    c89_mod.bufferedWriterWrite(writer, "extern void pal_trap(void);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_i64_to_str(long long val, char* buf, int bufsize);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_f64_to_str(double val, char* buf, int bufsize);\n");
@@ -236,6 +237,7 @@ pub fn emitZigRuntimeCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "extern void pal_print_stderr(const char* s, unsigned int len);\n");
     c89_mod.bufferedWriterWrite(writer, "extern void pal_print_stdout(const char* s, unsigned int len);\n");
     c89_mod.bufferedWriterWrite(writer, "extern void pal_abort(void);\n");
+    c89_mod.bufferedWriterWrite(writer, "extern void pal_trap(void);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_i64_to_str(long long val, char* buf, int bufsize);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_f64_to_str(double val, char* buf, int bufsize);\n");
@@ -245,7 +247,7 @@ pub fn emitZigRuntimeCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "    pal_print_stderr(\"panic: \", 7);\n");
     c89_mod.bufferedWriterWrite(writer, "    pal_print_stderr(msg, strlen(msg));\n");
     c89_mod.bufferedWriterWrite(writer, "    pal_print_stderr(\"\\n\", 1);\n");
-    c89_mod.bufferedWriterWrite(writer, "    pal_abort();\n");
+    c89_mod.bufferedWriterWrite(writer, "    pal_trap();\n");
     c89_mod.bufferedWriterWrite(writer, "}\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "/* Print helpers */\n");
@@ -617,6 +619,19 @@ pub fn emitZigPalCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "    TerminateProcess(GetCurrentProcess(), 3);\n");
     c89_mod.bufferedWriterWrite(writer, "#else\n");
     c89_mod.bufferedWriterWrite(writer, "    abort();\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "}\n");
+    c89_mod.bufferedWriterWrite(writer, "\n");
+    c89_mod.bufferedWriterWrite(writer, "void pal_trap(void)\n");
+    c89_mod.bufferedWriterWrite(writer, "{\n");
+    c89_mod.bufferedWriterWrite(writer, "#ifdef _MSC_VER\n");
+    c89_mod.bufferedWriterWrite(writer, "    __asm { int 3 }\n");
+    c89_mod.bufferedWriterWrite(writer, "#elif defined(__WATCOMC__)\n");
+    c89_mod.bufferedWriterWrite(writer, "    __asm { int 3 }\n");
+    c89_mod.bufferedWriterWrite(writer, "#elif defined(__i386__) || defined(__x86_64__)\n");
+    c89_mod.bufferedWriterWrite(writer, "    __asm__ __volatile__(\"int3\");\n");
+    c89_mod.bufferedWriterWrite(writer, "#else\n");
+    c89_mod.bufferedWriterWrite(writer, "    pal_abort();\n");
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
     c89_mod.bufferedWriterWrite(writer, "}\n");
     c89_mod.bufferedWriterWrite(writer, "\n");

@@ -90,6 +90,7 @@ pub const LirInst = union(enum) {
     nop: void,
     load_bitfield: struct { base: u32, result: u32, name_id: u32, bit_offset: u32, bit_width: u32 },
     store_bitfield: struct { base: u32, value: u32, bit_offset: u32, bit_width: u32 },
+    trap: void,
 };
 
 pub const CallDirectData = struct {

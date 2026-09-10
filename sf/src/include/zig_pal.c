@@ -121,6 +121,19 @@ void pal_abort(void)
 #endif
 }
 
+void pal_trap(void)
+{
+#ifdef _MSC_VER
+    __asm { int 3 }
+#elif defined(__WATCOMC__)
+    __asm { int 3 }
+#elif defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__("int3");
+#else
+    pal_abort();
+#endif
+}
+
 int pal_i64_to_str(i64 value, char* buf, int bufsize)
 {
     u64 uval;

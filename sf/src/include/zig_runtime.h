@@ -5,6 +5,7 @@
 
 extern void pal_print_stderr(const char* s, unsigned int len);
 extern void pal_abort(void);
+extern void pal_trap(void);
 extern int pal_i64_to_str(long long val, char* buf, int bufsize);
 extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);
 extern int pal_f64_to_str(double val, char* buf, int bufsize);

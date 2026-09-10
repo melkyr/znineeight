@@ -84,6 +84,7 @@ pub const SemanticAnalyzer = struct {
     stderr_write_name_id: u32,
     getchar_name_id: u32,
     exit_name_id: u32,
+    panic_name_id: u32,
     sleep_ms_name_id: u32,
     is_windows_name_id: u32,
     console_clear_name_id: u32,
@@ -141,6 +142,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var gc_id = interner_mod.stringInternerIntern(interner, gc_s);
     var ex_s: []const u8 = "@exit";
     var ex_id = interner_mod.stringInternerIntern(interner, ex_s);
+    var pn_s: []const u8 = "@panic";
+    var pn_id = interner_mod.stringInternerIntern(interner, pn_s);
     var sm_s: []const u8 = "@sleepMs";
     var sm_id = interner_mod.stringInternerIntern(interner, sm_s);
     var iw_s: []const u8 = "@isWindows";
@@ -215,6 +218,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .stderr_write_name_id = sew_id,
         .getchar_name_id = gc_id,
         .exit_name_id = ex_id,
+        .panic_name_id = pn_id,
         .sleep_ms_name_id = sm_id,
         .is_windows_name_id = iw_id,
         .console_clear_name_id = cc_id,
@@ -2011,6 +2015,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (node.child_0 == self.getchar_name_id) {
             result = type_mod.TYPE_U8;
         } else if (node.child_0 == self.exit_name_id) {
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            result = type_mod.TYPE_NORETURN;
+        } else if (node.child_0 == self.panic_name_id) {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
             result = type_mod.TYPE_NORETURN;
         } else if (node.child_0 == self.putchar_name_id or node.child_0 == self.sleep_ms_name_id) {

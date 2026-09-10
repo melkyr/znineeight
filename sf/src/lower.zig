@@ -392,6 +392,7 @@ pub const LirLowerer = struct {
     stderr_write_name_id: u32,
     getchar_name_id: u32,
     exit_name_id: u32,
+    panic_name_id: u32,
     sleep_ms_name_id: u32,
     is_windows_name_id: u32,
     console_clear_name_id: u32,
@@ -475,6 +476,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var getchar_id = si_mod.stringInternerIntern(ctx.registry.interner, getchar_s);
     var exit_s: []const u8 = "@exit";
     var exit_id = si_mod.stringInternerIntern(ctx.registry.interner, exit_s);
+    var panic_s: []const u8 = "@panic";
+    var panic_id = si_mod.stringInternerIntern(ctx.registry.interner, panic_s);
     var sleep_ms_s: []const u8 = "@sleepMs";
     var sleep_ms_id = si_mod.stringInternerIntern(ctx.registry.interner, sleep_ms_s);
     var is_windows_s: []const u8 = "@isWindows";
@@ -525,6 +528,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .stderr_write_name_id = stderr_write_id,
          .getchar_name_id = getchar_id,
          .exit_name_id = exit_id,
+         .panic_name_id = panic_id,
          .sleep_ms_name_id = sleep_ms_id,
          .is_windows_name_id = is_windows_id,
          .console_clear_name_id = console_clear_id,
@@ -2073,7 +2077,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.unreachable_expr) {
-        emitInst(self, LirInst{ .nop = {} });
+        emitInst(self, LirInst{ .trap = {} });
         self.block_terminated = @intCast(u8, 1);
         return @intCast(u32, 0);
     } else if (node.kind == AstKind.paren_expr) {
@@ -3742,6 +3746,49 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 self.block_terminated = @intCast(u8, 1);
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
+            if (node.child_0 == self.panic_name_id) {
+                var pr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_C_CHAR, true);
+                var pr_pref_s: []const u8 = "panic: ";
+                var pr_pref_id = si_mod.stringInternerIntern(self.ctx.registry.interner, pr_pref_s);
+                var pr_pref_t = nextTemp(self, pr_pt);
+                emitInst(self, LirInst{ .string_const = .{ .string_id = pr_pref_id, .result = pr_pref_t } });
+                var pr_pref_l = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 7), .result = pr_pref_l } });
+                emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = pr_pref_t, .len = pr_pref_l } });
+                if (ec.len >= @intCast(usize, 1)) {
+                    var pr_node = ast_mod.astStoreNodeAt(self.ctx.store, ec[@intCast(usize, 0)]);
+                    if (pr_node.kind == AstKind.string_literal) {
+                        var pr_sid: u32 = ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 0)]);
+                        if (@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 0)])) < self.ctx.store.string_values.len) { pr_sid = self.ctx.store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 0)]))]; }
+                        var pr_str = si_mod.stringInternerGet(self.ctx.registry.interner, pr_sid);
+                        var pr_mt = nextTemp(self, pr_pt);
+                        emitInst(self, LirInst{ .string_const = .{ .string_id = pr_sid, .result = pr_mt } });
+                        var pr_ml = nextTemp(self, type_mod.TYPE_U32);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, pr_str.len), .result = pr_ml } });
+                        emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = pr_mt, .len = pr_ml } });
+                    } else {
+                        var pr_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                        var pr_vt = getTempType(self, pr_val);
+                        if (@intCast(usize, pr_vt) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, pr_vt)].kind == type_mod.TypeKind.slice_type) {
+                            var pr_ptr = nextTemp(self, pr_pt);
+                            emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = pr_val, .field_id = type_mod.SLICE_FIELD_PTR, .result = pr_ptr } });
+                            var pr_len = nextTemp(self, type_mod.TYPE_USIZE);
+                            emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = pr_val, .field_id = type_mod.SLICE_FIELD_LEN, .result = pr_len } });
+                            emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = pr_ptr, .len = pr_len } });
+                        }
+                    }
+                }
+                var pr_nl_s: []const u8 = "\n";
+                var pr_nl_id = si_mod.stringInternerIntern(self.ctx.registry.interner, pr_nl_s);
+                var pr_nl_t = nextTemp(self, pr_pt);
+                emitInst(self, LirInst{ .string_const = .{ .string_id = pr_nl_id, .result = pr_nl_t } });
+                var pr_nl_l = nextTemp(self, type_mod.TYPE_U32);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = pr_nl_l } });
+                emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = pr_nl_t, .len = pr_nl_l } });
+                emitInst(self, LirInst{ .trap = {} });
+                self.block_terminated = @intCast(u8, 1);
+                return nextTemp(self, type_mod.TYPE_VOID);
+            }
             if (node.child_0 == self.sleep_ms_name_id) {
                 if (ec.len >= @intCast(usize, 1)) {
                     var sm_val = lowerExpr(self, ec[@intCast(usize, 0)]);
@@ -4072,20 +4119,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         pushScopeDepth(self);
         var then_val = lowerExpr(self, node.child_1);
-        then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
-        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
+        if (self.block_terminated == @intCast(u8, 0)) {
+            then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
+        }
         popScopeDepth(self);
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = else_bb;
+        self.block_terminated = @intCast(u8, 0);
         var else_val = lowerExpr(self, node.child_2);
-        else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2));
-        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
+        if (self.block_terminated == @intCast(u8, 0)) {
+            else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2));
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
+        }
         if (self.block_terminated == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
+        self.block_terminated = @intCast(u8, 0);
         self.capture_shadow.count = @intCast(usize, 0);
         return result;
       } else if (node.kind == AstKind.array_init) {
@@ -4482,6 +4535,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             self.capture_shadow.count = @intCast(usize, 0);
         }
         var swx_m: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_m, @intCast(u32, self.block_terminated));
+        self.block_terminated = @intCast(u8, 0);
         self.current_bb = exit_bb;
         return result_temp;
      } else if (node.kind == AstKind.slice_expr) {

@@ -995,6 +995,7 @@ pub fn emitZigPalC(writer: *BufferedWriter) void {
     var h07: []const u8 = "void pal_print_stderr(const char* msg, usize len)\n{\n#ifdef _WIN32\n    HANDLE h;\n    DWORD written;\n    if (!msg || len == 0) return;\n    h = GetStdHandle(STD_ERROR_HANDLE);\n    if (h == INVALID_HANDLE_VALUE || h == NULL) return;\n    if (!WriteConsoleA(h, msg, (DWORD)len, &written, NULL))\n        WriteFile(h, msg, (DWORD)len, &written, NULL);\n#else\n    write(2, msg, (size_t)len);\n#endif\n}\n\n"; bufferedWriterWrite(writer, h07);
     var h07b: []const u8 = "void pal_print_stdout(const char* msg, usize len)\n{\n#ifdef _WIN32\n    HANDLE h;\n    DWORD written;\n    if (!msg || len == 0) return;\n    h = GetStdHandle(STD_OUTPUT_HANDLE);\n    if (h == INVALID_HANDLE_VALUE || h == NULL) return;\n    if (!WriteConsoleA(h, msg, (DWORD)len, &written, NULL))\n        WriteFile(h, msg, (DWORD)len, &written, NULL);\n#else\n    write(1, msg, (size_t)len);\n#endif\n}\n\n"; bufferedWriterWrite(writer, h07b);
     var h08: []const u8 = "void pal_abort(void)\n{\n#ifdef _WIN32\n    TerminateProcess(GetCurrentProcess(), 3);\n#else\n    abort();\n#endif\n}\n\n"; bufferedWriterWrite(writer, h08);
+    var h08b: []const u8 = "void pal_trap(void)\n{\n#ifdef _MSC_VER\n    __asm { int 3 }\n#elif defined(__WATCOMC__)\n    __asm { int 3 }\n#elif defined(__i386__) || defined(__x86_64__)\n    __asm__ __volatile__(\"int3\");\n#else\n    pal_abort();\n#endif\n}\n\n"; bufferedWriterWrite(writer, h08b);
     var h09: []const u8 = "int pal_i64_to_str(i64 value, char* buf, int bufsize)\n{\n    u64 uval;\n    int is_neg;\n    int dlen;\n    if (bufsize <= 0) return 0;\n    if (value == 0) {\n        buf[0] = '0';\n        buf[1] = '\\0';\n        return 1;\n    }\n    is_neg = (value < 0) ? 1 : 0;\n    uval = is_neg ? (u64)(-(value + 1)) + 1 : (u64)value;\n    if (is_neg) {\n        buf[0] = '-';\n        dlen = pal_u64_to_str_buf(uval, buf + 1, bufsize - 1);\n        return dlen + 1;\n    }\n    return pal_u64_to_str_buf(uval, buf, bufsize);\n}\n\n"; bufferedWriterWrite(writer, h09);
     var h10: []const u8 = "int pal_u64_to_str(u64 value, char* buf, int bufsize)\n{\n    return pal_u64_to_str_buf(value, buf, bufsize);\n}\n\n"; bufferedWriterWrite(writer, h10);
     var h11: []const u8 = "int pal_f64_to_str(f64 value, char* buf, int bufsize)\n{\n    int int_len;\n    int i;\n    f64 frac_part;\n    i64 int_part;\n    u64 frac_int;\n    int pos;\n    if (bufsize < 2) {\n        if (bufsize == 1) buf[0] = '\\0';\n        return 0;\n    }\n    if (value < 0.0) {\n        buf[0] = '-';\n        pos = 1;\n        value = -value;\n    } else {\n        pos = 0;\n    }\n    int_part = (i64)value;\n    int_len = pal_i64_to_str(int_part, buf + pos, bufsize - pos);\n    if (int_len <= 0) return 0;\n    pos += int_len;\n    buf[pos++] = '.';\n    frac_part = value - (f64)int_part;\n    i = 0;\n    while (i < 6 && pos < bufsize - 1) {\n        frac_part *= 10.0;\n        frac_int = (u64)frac_part;\n        buf[pos++] = '0' + (char)(frac_int % 10);\n        frac_part -= (f64)frac_int;\n        i++;\n    }\n    while (pos > 0 && buf[pos - 1] == '0') pos--;\n    if (buf[pos - 1] == '.') pos++;\n    buf[pos] = '\\0';\n    return pos;\n}\n\n"; bufferedWriterWrite(writer, h11);
@@ -5713,6 +5714,11 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
     var ins: []const u8 = "I\n"; pal.markerWrite(ins);
     switch (inst) {
         .nop => {},
+        .trap => {
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var trp: []const u8 = "pal_trap();\n";
+            bufferedWriterWrite(&emitter.writer, trp);
+        },
         .ret_void => {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var rv_rt = emitter.current_fn.return_type;
@@ -8351,6 +8357,8 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l05b);
     var l06: []const u8 = "extern void pal_abort(void);\n";
     bufferedWriterWrite(writer, l06);
+    var l06b: []const u8 = "extern void pal_trap(void);\n";
+    bufferedWriterWrite(writer, l06b);
     var l07: []const u8 = "extern int pal_i64_to_str(long long val, char* buf, int bufsize);\n";
     bufferedWriterWrite(writer, l07);
     var l08: []const u8 = "extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);\n";
@@ -8369,7 +8377,7 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l014);
     var l015: []const u8 = "    pal_print_stderr(\"\\n\", 1);\n";
     bufferedWriterWrite(writer, l015);
-    var l016: []const u8 = "    pal_abort();\n";
+    var l016: []const u8 = "    pal_trap();\n";
     bufferedWriterWrite(writer, l016);
     var l017: []const u8 = "}\n";
     bufferedWriterWrite(writer, l017);

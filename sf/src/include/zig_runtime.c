@@ -6,6 +6,7 @@
 extern void pal_print_stderr(const char* s, unsigned int len);
 extern void pal_print_stdout(const char* s, unsigned int len);
 extern void pal_abort(void);
+extern void pal_trap(void);
 extern int pal_i64_to_str(long long val, char* buf, int bufsize);
 extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);
 extern int pal_f64_to_str(double val, char* buf, int bufsize);
@@ -15,7 +16,7 @@ void std_panic(const char* msg) {
     pal_print_stderr("panic: ", 7);
     pal_print_stderr(msg, strlen(msg));
     pal_print_stderr("\n", 1);
-    pal_abort();
+    pal_trap();
 }
 
 /* Print helpers */

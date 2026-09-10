@@ -16,6 +16,7 @@ extern "c" fn pal_file_read(fd: usize, buf: [*]u8, len: u32) i32;
 extern "c" fn pal_file_close(fd: usize) i32;
 extern "c" fn pal_get_default_lib_path(buf: [*]u8, bufsize: i32) i32;
 extern "c" fn pal_dir_exists(path: [*]const u8) i32;
+extern "c" fn pal_trap() void;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;

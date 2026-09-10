@@ -2,18 +2,19 @@
 //
 // Output routes ONLY through the @stdoutWrite / @putChar builtins (no cstdio,
 // no externs, no C-runtime dependence). `panic` is a PRINTED abort followed by
-// a non-returning trap: `@panic`/`unreachable` LOWER TO NO-OPS in user programs
-// on this compiler (STDLIB Task-1 RED probe §5), so they MUST NOT be used here.
+// a real divergence trap: `assert(false)`/`panic()` call `pal_trap()` (x86
+// `int3`; `pal_abort()` on non-x86), which never returns.
 //
 //   log(msg)        writes msg bytes verbatim
 //   logInt(tag, n)  writes tag, ':', ' ', the signed decimal n, '\n'
 //   assert(cond)    on false writes "assertion failed\n" then traps
 //   panic(msg)      writes "panic: ", msg, '\n' then traps
 //
-// The trap path (while-true in a noreturn fn) HANGS by design — it is Win9x
-// clean (no CRT) and cannot be a GREEN fixture run; GREEN fixtures exercise
-// only passing asserts / log / logInt. The failing path is proven separately
-// by a scratch probe run under a timeout.
+// The trap path terminates the process (SIGTRAP) and cannot be a GREEN fixture
+// run; GREEN fixtures exercise only passing asserts / log / logInt. The failing
+// path is proven separately by a scratch probe run under a timeout.
+
+extern "c" fn pal_trap() noreturn;
 
 pub fn log(msg: []const u8) void {
     @stdoutWrite(msg.ptr, msg.len);
@@ -79,5 +80,5 @@ pub fn panic(msg: []const u8) noreturn {
 // Printed-abort terminator: a non-returning trap usable on the Win9x target
 // with no C-runtime or PAL dependency. Callers must not expect it to return.
 fn trap() noreturn {
-    while (true) {}
+    pal_trap();
 }
