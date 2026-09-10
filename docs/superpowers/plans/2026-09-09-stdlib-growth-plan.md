@@ -135,6 +135,7 @@
 - Modify: `docs/sf/QUICK_REF.md` (stdlib bullet), `release/seed/CHANGELOG.md` + `release/seed/zig1-seed.tgz` (MANDATORY — AMENDMENT 1: the Task-3 `pal.zig` change moved the fixed point), `repro/mi_matrix/EXPECTED_FAIL.md` (only if fixture movement occurred)
 - Commit (F): `docs: GATE — stdlib growth (STDLIB)`
 
+- [ ] **Step 0 (F, prerequisite from Task-3 review):** fix `scripts/seed/build_from_seed.sh:125` — it still copies only 4 std files (`std.zig std_io std_arena std_net`) into `<out>/lib`, so a fresh seed rebuild is missing `str/mem/math/debug`. Update it to the full install set (8 files per the QUICK_REF:85 recipe) BEFORE any seed rotation, so the rotated seed's lib is self-consistent.
 - [ ] **Step 1 (I): Full battery** — golden 9/9 + matrix 21/21 run byte-identity; corpus `-s0` zero-asymmetric vs Task-5; all stdlib fixtures GREEN deterministic; cstdio grep across `sf/src/std*.zig` = 0. N-hop from the committed seed (gate A) — **fixed point EXPECTED to have moved (AMENDMENT 1); close the chain to the new fixed point and record it**.
 - [ ] **Step 2 (I): STOP-present** the re-baseline + seed-rotation + docs-GATE plan to the operator; await approval.
 - [ ] **Step 3 (F): Docs GATE** — QUICK_REF newest-first stdlib bullet; 4-MD5 rows re-baselined; seed rotation v6→v7 (AMENDMENT 1 — fixed point moved); EXPECTED_FAIL bump only if fixture movement occurred.
