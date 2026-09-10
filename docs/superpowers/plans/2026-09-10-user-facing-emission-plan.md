@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-10-user-facing-emission-design.md`
 
+> **Task-1 findings folded (2026-09-10, operator-approved):** spec §5–§7 finalized and Tasks 3/4/5 steps amended per the Task-1 feasibility report (`.superpowers/sdd/task-EMITEMIT-report.md` `## Task 1`), decisions 1–8. Key: module-level LIR value-ref prune hook at `main.zig:855-890`; value-ref header includes (MUST-FIX); header/runtime embedded as canonical bytes + equality gate (do not revive the stale mirrors); companion scripts compiler-enumerated, `.sh` always + `.bat`/owc on `-osw`, `prog`/`prog.exe` default.
+
 ## Global Constraints
 
 - **Z98-only, no new host dependencies.** All compiler logic in Z98.
@@ -20,6 +22,8 @@
 - **Fixed point:** this plan changes `sf/src`, so the self-emission fixed point WILL move — close the N-hop chain from the committed seed and rotate the seed (v7→v8) at the close.
 - **Gates:** golden 9/9 + matrix 21/21 runtime byte-identity; corpus `-s0` zero-asymmetric vs the STDLIB-closed baseline (427 = 411 OK/9 GREEN/7 FAIL); 4-MD5 rows (gol `2cf07dea…`, lisp `f13bd982…`, json `f61bccfd…`, mud `68eee54c…`); re-baseline only when a gate program's emission moves (runtime-identical verification required).
 - **Working conventions:** SDD mandatory; compression forbidden during build sessions; memories via `mnemoria --path .opencode/memory add`; edits via `edit`/`fastedit` only; no commit until review clean; the pre-existing dirty set is NEVER staged (`M docs/superpowers/plans/2026-08-26-assoc-misparse-pendingscope-plan.md`, `M mnemoria/*`, `?? .zig1_res.tmp`, `?? .zig1_side.tmp`, `?? examples/z98/json_parser_upgraded/`).
+- **Self-contained sourcing (Task-1 decision 1):** Task 4 embeds the canonical bytes of `sf/src/include/*` + `sf/src/c_exit.c` as Z98 constants with a byte-equality gate; do NOT revive the stale `emitZigPalC`/`emitZigRuntimeC` mirrors.
+- **Prune (Task-1 decisions 2/5, MUST-FIX 4):** module reachability from LIR value refs at the emission scan (`main.zig:855-890`), excluding `@import`/re-export edges; emitted headers must include headers of every value-referenced module; `emitModuleInitCalls` restricted to reachable modules.
 - Report `.superpowers/sdd/task-EMITEMIT-report.md`; ledger `.superpowers/sdd/progress.md`; memory agent `emitemit-session`.
 
 ---
@@ -55,23 +59,24 @@
 ### Task 3 (F): Needed-only module emission (reachability prune)
 
 **Files:**
-- Modify: the pass/hook identified in Task 1 (new prune logic), likely a new `sf/src/<pass>.zig` + a call in the pipeline.
+- Modify: the emission LIR scan in `sf/src/main.zig` (`phase_C89Emission`, `:855-890`) per Task-1 decision 3 (co-located; NOT a separate phase); `sf/src/c89_emit.zig` header-dep include loop (`:2412-2422`) + `emitModuleInitCalls` (`:2708`).
 - Fixtures: `repro/mi_matrix/...` (stdio-only vs net-using).
 - Report + ledger.
 
-- [ ] **Step 1:** Implement the module-reachability prune per Task-1's chosen design (exclude mere `@import`/re-export edges).
-- [ ] **Step 2:** TDD: a stdio-only std fixture's output dir contains **no** `std_net_*.c/.h`; a net-using fixture **does**; both build+run byte-identical to PRE.
-- [ ] **Step 3:** `-osw` of the stdio-only program links **without** `-lwsock32`; the net program links **with** it.
-- [ ] **Step 4:** Full gate + N-hop fixed point; commit `feat: prune unreferenced modules from emission (needed-only std)`.
-- [ ] **Step 5:** Report + ledger.
+- [ ] **Step 1:** Compute module reachability from **LIR value references** — the `module_id` on `call`/`call_direct`/`tail_call`/`func_ref`/`load_global`/`store_global` operands plus the defining `LirFunction`/`LirSlot`/`ModuleGlobalDecl` — seeded from the root `main`; exclude mere `@import`/re-export edges (so `std.zig`'s net reexport does not keep `std_net` alive). Emit only reachable modules. (Task-1 decision 2; fall back to function-level only if module-level proves insufficient.)
+- [ ] **Step 2 (MUST-FIX):** Header dependencies must follow the **value-ref graph**: a module's emitted header includes the headers of every module it value-references (cross-module mangled prototypes live only in the callee header), not just reachable import-edge `dep_mod_ids` (`c89_emit.zig:2412-2422`); restrict `emitModuleInitCalls` (`:2708`) to reachable modules. TDD: a caller of a value-referenced module emits the callee `#include`; strict `-Wall -Wextra -O3 -fsyntax-only` shows no implicit declarations.
+- [ ] **Step 3:** TDD: a stdio-only std fixture's output dir contains **no** `std_net_*.c/.h`; a net-using fixture **does**; both build+run byte-identical to PRE.
+- [ ] **Step 4:** `-osw` of the stdio-only program links **without** `-lwsock32` (and without `net_prelude.h` on the include path); the net program links **with** it.
+- [ ] **Step 5:** Full gate + N-hop fixed point; commit `feat: prune unreferenced modules from emission (needed-only std)`.
+- [ ] **Step 6:** Report + ledger.
 
 ### Task 4 (F): Self-contained output dir (headers + runtime copied in)
 
 **Files:**
-- Modify: the emit phase; add the header/runtime emission per Task-1's chosen mechanism.
+- Modify: `sf/src/c89_emit.zig` (embedded canonical-byte constants + writer) and the emit phase.
 - Report + ledger.
 
-- [ ] **Step 1:** Emit/copy the runtime + platform headers and runtime sources into `DIR` per Task-1's mechanism (embed vs known-path read vs staging).
+- [ ] **Step 1:** Embed the canonical bytes of `sf/src/include/{zig_compat.h,zig_runtime.h,net_prelude.h,zig_runtime.c,zig_pal.c}` + `sf/src/c_exit.c` as Z98 string constants and write them into `DIR` (Task-1 decision 1). Do NOT revive the stale `emitZigPalC`/`emitZigRuntimeC` mirrors (missing `errno.h` + `pal_get_default_lib_path`, different runtime body); add a byte-equality gate comparing the embedded constants to the on-disk canonical files.
 - [ ] **Step 2:** Gate: from a copied output dir with **no** `-I` into the repo (other than `.`), `gcc -I . *.c ...` builds+runs the hello example byte-identical.
 - [ ] **Step 3:** Full gate + N-hop fixed point; commit `feat: emitter writes a self-contained output dir (headers + runtime)`.
 - [ ] **Step 4:** Report + ledger.
@@ -82,7 +87,7 @@
 - Modify: `sf/src/c89_emit.zig` (`emitBuildTargetSh`/`Bat`/`OwcBat` — revive + modernize; call them from the emit phase)
 - Report + ledger.
 
-- [ ] **Step 1:** Make the three templates emit correct multi-module build scripts: enumerate the emitted `.c` files, pass the include path, link the runtime set, and add `-lwsock32` **iff `std_net` was emitted**.
+- [ ] **Step 1:** Make the templates emit correct multi-module build scripts: compiler-**enumerated** `.c` list (runtime sources last), pass the include path, link the runtime set, and add `-lwsock32` **iff `std_net` was emitted** (predicate: any emitted module's `c_includes` names `net_prelude.h`). Emit `build_target.sh` always and the `.bat`/OpenWatcom scripts only on `-osw` (Task-1 decisions 6/7); default output binary `prog`/`prog.exe`, overridable (decision 8). Fix the stale hardcoded `main.c` root → the real `main_<HEX8>.c` stem.
 - [ ] **Step 2:** Gate: `build_target.sh` builds+runs a dumped example on host (gcc) and under mingw; MSVC/OpenWatcom scripts are shape-verified (toolchain absent → emission-only).
 - [ ] **Step 3:** Full gate + N-hop fixed point; commit `feat: emit companion build scripts (sh/bat/owc) with target link libs`.
 - [ ] **Step 4:** Report + ledger.
