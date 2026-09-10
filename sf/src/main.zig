@@ -1044,7 +1044,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
         var od = ctx.cli.output_dir;
-        c89_mod.emitSupportFiles(od);
+        c89_mod.emitSupportFiles(&emitter, od);
         var hi: usize = @intCast(usize, 0);
         while (hi < od.len and hp < @intCast(usize, 510)) : (hi += 1) { hpath[hp] = od[hi]; hp += 1; }
         hpath[hp] = @intCast(u8, '/'); hp += 1;

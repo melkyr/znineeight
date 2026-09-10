@@ -46,12 +46,21 @@ check() {
     fi
 }
 
+# The five support files a stdio-only program needs. net_prelude.h is emitted
+# ONLY when std_net is reachable (SPECFIX); hello does not reach it, so it must
+# be absent (asserted below) and is not part of the byte-equality set.
 check zig_compat.h  "$ROOT/sf/src/include/zig_compat.h"
 check zig_runtime.h "$ROOT/sf/src/include/zig_runtime.h"
-check net_prelude.h "$ROOT/sf/src/include/net_prelude.h"
 check zig_runtime.c "$ROOT/sf/src/include/zig_runtime.c"
 check zig_pal.c     "$ROOT/sf/src/include/zig_pal.c"
 check c_exit.c      "$ROOT/sf/src/c_exit.c"
 
+if [ -e "$DIR/net_prelude.h" ]; then
+    echo "[check] FAIL net_prelude.h emitted for a stdio-only program (std_net not reachable)" >&2
+    fail=1
+else
+    echo "[check] net_prelude.h correctly absent (std_net not reachable)"
+fi
+
 [ "$fail" = 0 ] || { echo "error: emitted support files differ from canonical" >&2; exit 1; }
-echo "[check] OK: 6/6 support files byte-identical to canonical"
+echo "[check] OK: 5/5 support files byte-identical to canonical"
