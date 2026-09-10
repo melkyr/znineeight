@@ -483,3 +483,18 @@ operator approval of A12.
   `emitZigRuntimeCSupport`/`emitZigRuntimeHSupport` canonical bytes all need the `pal_trap` declaration;
   new LIR `trap: void` needs an explicit `emitInst` arm (its `else` drops unknown ops).
 
+### A3I STOP-present — operator rulings (2026-09-10)
+
+- **`undefined` poison mechanism:** approved — new runtime helper `zig_poison_fill(void*, unsigned int)`
+  doing a **byte-exact** `0xAA` fill (no numeric `0xAA…` literal, no `memset`); added to the canonical
+  runtime bytes (`sf/src/include/zig_runtime.h/.c` + `emit_support.zig` mirrors); **lowering-gated** and
+  helper-emitted only under `-fsafe`, so `-ffast` stays byte-identical.
+- **Fixture:** A3F ships a committed `repro/mi_matrix/` RED→GREEN `undefined`-poison fixture (plus a
+  `-ffast` control).
+- **4-MD5:** all four gate dumps move under default `-fsafe`; disposition remains
+  **recorded-not-rebaselined** until the A12/A13 re-baseline.
+- **A3F wiring facts:** `-fsafe` default / `-ffast` opt-out; seed scripts pass `-ffast` (dump line
+  `scripts/seed/build_from_seed.sh:87` + `archive_seed.sh` text); the recorded fixed point is the
+  `-ffast` binary. Do not inherit the two pre-existing invalid-C `undefined` sites (nested-array zero
+  loop; `undefined` to struct/optional param); global `var = undefined` currently emits no init (BSS).
+
