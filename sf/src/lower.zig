@@ -5905,9 +5905,7 @@ fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
                     }
                 } else if (tg == @enumToInt(LirInst.unwrap_error_code)) {
                     if (inst.unwrap_error_code.result == cur) {
-                        cur = inst.unwrap_error_code.value;
-                        found_any = @intCast(u8, 1);
-                        break;
+                        return null;
                     }
                 } else if (tg == @enumToInt(LirInst.wrap_error_ok)) {
                     if (inst.wrap_error_ok.result == cur) {
