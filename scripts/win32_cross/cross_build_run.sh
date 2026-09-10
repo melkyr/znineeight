@@ -68,7 +68,8 @@ fi
 # ---- Step 2: mingw compile each emitted .c -> .o ---------------------------
 # Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
 # c_exit.c): compile with -I <dumpdir> and link ONLY the emitted objects.
-# Legacy (pre-Task-4) dirs keep -I sf/src/include + the appended repo trio.
+# Legacy (pre-Task-4) dirs keep -I sf/src/include + the appended repo runtime
+# pair (zig_runtime.c + zig_pal.c).
 if [ -f "$DUMPDIR/zig_runtime.c" ]; then
     CC_INC="$DUMPDIR"
     LINK_RT=()

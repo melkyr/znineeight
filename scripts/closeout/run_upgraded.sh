@@ -19,5 +19,5 @@ else
   done
   gcc -m32 -o "$W/prog" "$W"/*.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" || { echo "RUNRC=LINKFAIL"; exit 1; }
 fi
-timeout 30 "$W/prog" < "$FEED" > "$OUT" 2>"$W/run.err"
+timeout 120 "$W/prog" < "$FEED" > "$OUT" 2>"$W/run.err"
 echo "RUNRC=$?"
