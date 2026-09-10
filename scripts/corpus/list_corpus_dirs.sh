@@ -22,7 +22,9 @@ emit_dir() {
   elif [ -f "$rel/$name.zig" ]; then
     entry="$rel/$name.zig"
   else
-    entry="$(find "$rel" -maxdepth 1 -type f -name '*.zig' | sort | head -n1)"
+    local -a zig_files=()
+    mapfile -t zig_files < <(find "$rel" -maxdepth 1 -type f -name '*.zig' | LC_ALL=C sort)
+    entry="${zig_files[0]:-}"
   fi
   if [ -n "$entry" ]; then
     printf '%s/\n' "$rel"
@@ -51,4 +53,4 @@ emit_dir() {
     [ -d "$d" ] || continue
     emit_dir "${d%/}"
   done
-} | sort
+} | LC_ALL=C sort
