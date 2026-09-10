@@ -13,9 +13,10 @@ set -euo pipefail
 #   zig1        copy of <zig1_binary>
 #   gen/        <gen_dir>/*.c + *.h  (the seed's self-emission C89 module set;
 #               spill/scratch files are NOT copied, and the six runtime/platform
-#               support files the emitter now writes into DIR are excluded —
-#               they already live in runtime/ (c_exit.c at top level), and the
-#               three support .c would double-link against the runtime trio)
+#               support files the emitter now writes into DIR are excluded — the
+#               three support .c are staged from runtime/ (+ top-level c_exit.c)
+#               and would double-link if left in gen/, while net_prelude.h is
+#               deliberately NOT shipped in runtime/ — see :74-75)
 #   c_exit.c    repo sf/src/c_exit.c (top level, per spec layout)
 #   runtime/    repo sf/src/include/{zig_compat.h, zig_runtime.h,
 #               zig_special_types.h, zig_runtime.c, zig_pal.c}  (net_prelude.h

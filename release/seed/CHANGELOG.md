@@ -49,6 +49,7 @@ exclusion they double-link against the runtime trio). Fixed point
 `31973114d5ac93102d7acbd548756363`; N-hop from seed v7 `5ea2132f` → hop1
 `365c22b7` → hop2 `31973114` → hop3 `31973114` (hop2==hop3). `runtime/` remains
 the canonical 5-file set (`net_prelude.h` deliberately not shipped).
+
 ## 2026-09-10 — seed v7 (HEAD 49feb878)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
