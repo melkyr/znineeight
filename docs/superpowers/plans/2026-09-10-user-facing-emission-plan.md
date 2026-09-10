@@ -22,7 +22,7 @@
 - **Fixed point:** this plan changes `sf/src`, so the self-emission fixed point WILL move — close the N-hop chain from the committed seed and rotate the seed (v7→v8) at the close.
 - **Gates:** golden 9/9 + matrix 21/21 runtime byte-identity; corpus `-s0` zero-asymmetric vs the STDLIB-closed baseline (427 = 411 OK/9 GREEN/7 FAIL); 4-MD5 rows (gol `2cf07dea…`, lisp `f13bd982…`, json `f61bccfd…`, mud `68eee54c…`); re-baseline only when a gate program's emission moves (runtime-identical verification required).
 - **Working conventions:** SDD mandatory; compression forbidden during build sessions; memories via `mnemoria --path .opencode/memory add`; edits via `edit`/`fastedit` only; no commit until review clean; the pre-existing dirty set is NEVER staged (`M docs/superpowers/plans/2026-08-26-assoc-misparse-pendingscope-plan.md`, `M mnemoria/*`, `?? .zig1_res.tmp`, `?? .zig1_side.tmp`, `?? examples/z98/json_parser_upgraded/`).
-- **Self-contained sourcing (Task-1 decision 1):** Task 4 embeds the canonical bytes of `sf/src/include/*` + `sf/src/c_exit.c` as Z98 constants with a byte-equality gate; do NOT revive the stale `emitZigPalC`/`emitZigRuntimeC` mirrors.
+- **Self-contained sourcing (Task-1 decision 1; operator directive 2026-09-10):** Task 4 embeds the canonical bytes of `sf/src/include/*` + `sf/src/c_exit.c` **directly in the compiler source** (`sf/src/c89_emit.zig`, hand-maintained Z98 string constants reusing the existing embedded-string mechanism) with a `.sh` byte-equality gate; do NOT revive the stale `emitZigPalC`/`emitZigRuntimeC` mirrors. **ABSOLUTELY NO host-side code generator, NO `perl` (or any binding other than `.sh`/`.bat`), NO generated source module** — the compiler itself must emit the support files; a repository script that *generates* the embedded Z98 data is a violation. (Supersedes the reverted `0cca9158`.)
 - **Prune (Task-1 decisions 2/5, MUST-FIX 4):** module reachability from LIR value refs at the emission scan (`main.zig:855-890`), excluding `@import`/re-export edges; emitted headers must include headers of every value-referenced module; `emitModuleInitCalls` restricted to reachable modules.
 - Report `.superpowers/sdd/task-EMITEMIT-report.md`; ledger `.superpowers/sdd/progress.md`; memory agent `emitemit-session`.
 
@@ -73,10 +73,11 @@
 ### Task 4 (F): Self-contained output dir (headers + runtime copied in)
 
 **Files:**
-- Modify: `sf/src/c89_emit.zig` (embedded canonical-byte constants + writer) and the emit phase.
+- Modify: `sf/src/c89_emit.zig` (inline canonical-byte Z98 string constants + writer) and the emit phase. The byte-equality gate is a `.sh` test (e.g. under `scripts/`) — it must NOT generate the embedded data.
+- **Forbidden:** any host-side code generator, `perl`, or any script binding other than `.sh`/`.bat`; any generated source module. The compiler itself holds and emits the bytes.
 - Report + ledger.
 
-- [ ] **Step 1:** Embed the canonical bytes of `sf/src/include/{zig_compat.h,zig_runtime.h,net_prelude.h,zig_runtime.c,zig_pal.c}` + `sf/src/c_exit.c` as Z98 string constants and write them into `DIR` (Task-1 decision 1). Do NOT revive the stale `emitZigPalC`/`emitZigRuntimeC` mirrors (missing `errno.h` + `pal_get_default_lib_path`, different runtime body); add a byte-equality gate comparing the embedded constants to the on-disk canonical files.
+- [ ] **Step 1:** Embed the canonical bytes of `sf/src/include/{zig_compat.h,zig_runtime.h,net_prelude.h,zig_runtime.c,zig_pal.c}` + `sf/src/c_exit.c` as **inline Z98 string constants in `sf/src/c89_emit.zig`** (reuse the existing `emitZigCompatH`/`emitZigPalC`/`emitZigRuntimeC` embedded-string style, but with canonical content) and write them into `DIR` on the output-dir path (Task-1 decision 1). Do NOT revive the stale mirrors' STALE content (missing `errno.h` + `pal_get_default_lib_path`, different runtime body). Add a `.sh` byte-equality gate that dumps the emitted support files and `cmp`s them to the on-disk canonical files (no generator).
 - [ ] **Step 2:** Gate: from a copied output dir with **no** `-I` into the repo (other than `.`), `gcc -I . *.c ...` builds+runs the hello example byte-identical.
 - [ ] **Step 3:** Full gate + N-hop fixed point; commit `feat: emitter writes a self-contained output dir (headers + runtime)`.
 - [ ] **Step 4:** Report + ledger.
