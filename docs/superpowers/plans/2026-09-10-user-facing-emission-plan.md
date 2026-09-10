@@ -99,7 +99,10 @@
 
 - [ ] **Step 1 (I):** Full battery (golden/matrix/run24/corpus/4-MD5) on the fixed compiler; record the new fixed point; N-hop from the committed seed.
 - [ ] **Step 2 (I):** STOP-present the re-baseline + rotation.
-- [ ] **Step 3 (F):** Docs GATE (QUICK_REF newest bullet: default emission + companion scripts + needed-only modules; 4-MD5 rows as needed) + seed rotation v7→v8; `archive_seed.sh` already installs the 8-file lib.
+- [ ] **Step 3 (F):**
+  - (a) Fix `scripts/seed/archive_seed.sh` to **exclude** the now-emitted `{zig_runtime.c,zig_pal.c,c_exit.c}` from `gen/` (they already live in `runtime/`), so rotation does not double-link (Phase-1 reproduced rc=1 `multiple definition of std_panic`); it already installs the 8-file lib.
+  - (b) Docs GATE (QUICK_REF newest bullet: default `-o` emission + companion `build_target.sh`/`.bat`/owc + needed-only modules + self-contained dir + new fixed point `31973114`; CHANGELOG v8 row; **correct the now-stale Windows `-osw` note** — stdio-only no longer needs `-lwsock32` after pruning, net-using does; EXPECTED_FAIL v76 no bump).
+  - (c) Seed rotation v7→v8 at `31973114` via `archive_seed.sh`; post-rotation rebuild verifies closure.
 - [ ] **Step 4:** Report + ledger close; STOP-present the plan close.
 
 ---
