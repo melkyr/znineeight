@@ -3,7 +3,7 @@
 # Z98 Language Specification
 **A Zig subset for 1998-era hardware and software.**
 
-Z98 is a restricted subset of the Zig programming language designed to be compiled by the Z98 bootstrap compiler into C89 code. It maintains the core spirit of Zig while adhering to the extreme technical constraints of the late 90s.
+Z98 is a restricted subset of the Zig programming language compiled by the self-hosted `zig1` compiler into C89 code. `zig1` is written in Z98 and rebuilt from the committed seed `release/seed/zig1-seed.tgz`. It maintains the core spirit of Zig while adhering to the extreme technical constraints of the late 90s.
 
 ## 1. Types
 
@@ -12,12 +12,15 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 |------|-------------|----------------|
 | `i8`, `i16`, `i32`, `i64` | Signed integers | `signed char`, `short`, `int`, `__int64` |
 | `u8`, `u16`, `u32`, `u64` | Unsigned integers | `unsigned char`, `unsigned short`, `unsigned int`, `unsigned __int64` |
+| `u1`..`u64`, `i1`..`i63` | Arbitrary-width integers | Smallest power-of-two C integer carrier that holds the width |
 | `isize`, `usize` | Platform-sized integers | `int`, `unsigned int` (32-bit) |
 | `c_char` | C char type | `char` (signedness is implementation-defined) |
 | `f32`, `f64` | Floating-point | `float`, `double` |
 | `bool` | Boolean (`true`, `false`) | `int` (1, 0) |
 | `void` | Empty type | `void` |
 | `noreturn` | Never-returning type | `void` |
+
+Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsigned and `i1`..`i63` signed. Values are stored in the smallest power-of-two C carrier that holds the width, so `@sizeOf(uN)`/`@alignOf(uN)` report that carrier size (1/2/4/8) while `@bitSizeOf(uN)` reports the declared width. Arithmetic results are masked (unsigned) or sign-extended (signed) back to the declared width, and `@intCast` to an arbitrary width is range-checked. Widths outside the supported ranges are rejected with `error[3000]`. Widths are also accepted as the explicit backing type of an enum (`enum(uN)`, see §1.3).
 
 ### 1.2 Pointers
 - **Single-item pointers**: `*T` and `*const T`.
@@ -31,11 +34,14 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
 - **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). However, the C89 backend may drop these qualifiers to simplify code generation for complex types.
 - **Function Pointers**: `fn(...) T` types are supported.
+- **Pointer Builtins**: Pointer casts and pointer/introspection are provided by builtins — `@ptrCast`, `@ptrToInt`/`@intFromPtr`, `@intToPtr`/`@ptrFromInt`, `@fieldParentPtr`, `@bitCast`, and `@as` (see §4).
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
-- **Enums**: `const E = enum(T) { Member, ... };`
+- **Packed Structs**: `const P = packed struct { field: uN, ... };`. Fields are packed LSB-first with no padding; `@sizeOf(P)` is `(total_bits + 7) / 8`. Every field must be `bool` or an integer type whose width is at most 31 bits. Field reads/writes lower to generated bitfield load/store code.
+- **Enums**: `const E = enum { Member, ... };` (inferred backing) or `const E = enum(uN) { Member, ... };` (explicit unsigned integer backing of width `N`).
 - **Unions**:
+    - **Packed Unions**: `const U = packed union { field: uN, ... };`. All members overlap at bit offset 0; total bits is the widest member; `@sizeOf` is `max(1, (total_bits + 7) / 8)`, alignment 1. Members must be `bool` or an integer type of at most 31 bits (or a `packed struct` whose total width is at most 31 bits).
     - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
     - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
         - **Naked Tags**: In tagged unions, fields without an explicit type (e.g., `A,` instead of `A: void,`) are automatically treated as having a `void` payload. This sugar is NOT allowed in bare unions or structs.
@@ -43,7 +49,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Tuples**: `struct { T1, T2, ... }` for types and `.{ val1, val2, ... }` for positional anonymous literals.
     - **Member Access**: Accessed via numeric indices (e.g., `t.0`, `t.1`).
     - **C89 Representation**: Lowered to C structs with fields named `field0`, `field1`, etc.
-    - **Usage**: Primarily used for `std.debug.print` arguments and grouped return values.
+    - **Usage**: Primarily used for `print` arguments and grouped return values.
     - **Initialization**: Anonymous tuple literals are automatically coerced to concrete tuple types based on context.
 
 ### 1.4 Arrays and Slices
@@ -54,7 +60,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - **Exclusive**: `start..end` (inclusive of `start`, exclusive of `end`). Used in `for` loops and slicing.
   - **Inclusive**: `start...end` (inclusive of both `start` and `end`). Supported primarily in `switch` cases.
 - **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
-  - In the current bootstrap compiler, both `start` and `end` indices **must** be explicitly provided for all types (e.g., `arr[0..arr.len]`). Implicit start/end (e.g., `arr[5..]`) is not yet supported.
+  - The `end` index may be omitted (`arr[5..]`); the resulting slice runs from `start` to the end of the source. Omitting the `start` index (`arr[..5]`) is **not** supported.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
 - **Properties**: Slices have built-in `.ptr` and `.len` properties.
   - `slice.ptr` returns a many-item pointer (`[*]T` or `[*]const T`).
@@ -71,9 +77,10 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `!T` (success).
   - An error literal can be implicitly coerced to any error union `!T`.
+- **Not supported**: `@errorName` and the `anyerror` type (see §7).
 
 ### 1.6 Optional Types
-- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag. (Note: pointers `?*T` also use this uniform struct representation in the bootstrap compiler).
+- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag. (Note: pointers `?*T` also use this uniform struct representation.)
 - **Null Literal**: `null`.
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `?T` (present).
@@ -88,27 +95,45 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 
 Z98 relies on **Arena Allocation** for almost all dynamic memory needs. This pattern simplifies memory management and ensures performance on legacy systems.
 
-### 2.1 Initialization Pattern
-Since Z98 targets C89 and avoids complex destructors, the standard "constructor" pattern is a function that takes an `*Arena` and returns a pointer to an initialized object.
+### 2.1 The Arena API
+The standard library re-exports an arena allocator as `std.arena` (`sf/src/std_arena.zig`). It wraps caller-provided backing storage:
+
+- `std.arena.init(data: []u8) Arena` — constructs an `Arena` over the given byte buffer.
+- `std.arena.alloc(self: *Arena, size: usize) ?[*]u8` — bumps within the backing storage and returns the raw block, or `null` when the arena is exhausted.
+- `std.arena.reset(self: *Arena) void` — reclaims all allocations by setting the used length back to zero.
+
+Z98 has no method syntax, so these are called as free functions (e.g. `std.arena.alloc(&a, n)`).
+
+Canonical usage:
+
+```zig
+var g_buf: [65536]u8 = undefined;
+var g_arena = std.arena.init(g_buf[0..]);
+```
+
+### 2.2 Initialization Pattern
+Since Z98 targets C89 and avoids complex destructors, the standard "constructor" pattern is a function that takes a `*std.arena.Arena` and returns a pointer to an initialized object.
 
 ```zig
 const MyStruct = struct {
     x: i32,
 };
 
-fn MyStruct_init(arena: *Arena, x: i32) *MyStruct {
-    const self = arena_alloc(arena, @sizeOf(MyStruct));
+fn MyStruct_init(arena: *std.arena.Arena, x: i32) *MyStruct {
+    const raw = std.arena.alloc(arena, @sizeOf(MyStruct)) orelse unreachable;
+    const self = @ptrCast(*MyStruct, raw);
     self.x = x;
     return self;
 }
 ```
 
-### 2.2 Reclaiming Memory
-Memory is reclaimed by resetting or destroying the arena.
-- If a type manages external resources (like file handles), a `deinit` function should be provided and called manually before the arena is reset.
-- Memory allocated via `arena_alloc` should **not** be manually freed using `free()`.
+### 2.3 Reclaiming Memory
+Memory is reclaimed by resetting the arena.
+- `std.arena.reset(&arena)` reclaims every allocation made through that arena; there is no `deinit`.
+- If a type manages external resources (like file handles), it must clean those up manually before the arena is reset.
+- Memory obtained from `std.arena.alloc` should **not** be passed to `free()`.
 
-### 2.3 Advanced Patterns (Dual-Arena)
+### 2.4 Advanced Patterns (Dual-Arena)
 For complex applications like compilers or interpreters (e.g., the Lisp interpreter), a **dual-arena system** is highly effective:
 - **Permanent Arena**: Stores long-lived data (e.g., global symbols, environment nodes, persistent AST).
 - **Transient Arena**: Stores temporary data that is cleared frequently (e.g., per-eval, per-file, or per-request data).
@@ -145,7 +170,6 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members.
     - **Expansion**: Ranges are lowered into sequential C `case` labels at compile-time.
     - **Character Literals**: Character literals (e.g., `'a'...'z'`) are fully supported in constant expressions, including `switch` ranges. They are treated as their underlying Unicode codepoint (ASCII) values.
-    - **Limit**: To prevent excessive C code generation, each range is limited to 1000 individual case labels.
   - **Else**: An `else` prong is **mandatory** in all switch expressions.
   - **Grammar**:
     ```
@@ -199,7 +223,14 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     };
     ```
 
-### 3.2 Loop Control
+### 3.2 Labeled Blocks and Loop Control
+- **Labeled Blocks**: A block can be labeled (`blk: { ... }`) and exited early with a value using `break :blk value;`. The block expression yields that value, which makes labeled blocks useful for early-exit value computation.
+  ```zig
+  const n = blk: {
+      if (cond) break :blk 1;
+      break :blk 2;
+  };
+  ```
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
 - `break :label`: Exits the loop with the matching label.
 - `continue`: Jumps to the next iteration of the innermost loop. Only allowed within `while` or `for` loop bodies.
@@ -234,41 +265,71 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     ```
 
 ## 4. Built-in Functions
-- `@import("file.zig")`: Includes another module.
-- `std.debug.print(fmt: []const u8, args: anytype)`: Lowered by the compiler to a sequence of runtime print calls.
-    - **Format Specifiers**: Supports `{}` (default), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string).
-    - **Arguments**: `args` **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element.
-- `@sizeOf(T)`: Byte size of type `T`.
-- `@alignOf(T)`: Alignment of type `T`.
-- `@offsetOf(T, "field")`: Byte offset of a field.
-- `@ptrCast(T, expr)`: Explicit pointer cast.
-- `@intCast(T, expr)`: Checked integer conversion.
-- `@floatCast(T, expr)`: Checked float conversion.
-- `@intToPtr(T, expr)`: Converts an integer to a pointer of type `T`.
-- `unreachable`: Diverges with a panic. Has type `noreturn`.
+
+Builtins are invoked as `@name(...)` and are recognized by name; an unknown or unsupported builtin is rejected with `error[3000]: unsupported builtin function`. The supported surface is:
+
+**Cast / conversion / introspection**
+| Builtin | Description |
+|---------|-------------|
+| `@ptrCast(T, expr)` | Explicit pointer cast |
+| `@ptrToInt(expr)` / `@intFromPtr(expr)` | Pointer to integer (`@intFromPtr` is the modern alias) |
+| `@intToPtr(T, expr)` | Integer to pointer, explicit result type |
+| `@ptrFromInt(expr)` | Integer to pointer, result type taken from context |
+| `@fieldParentPtr(T, "field", expr)` | Pointer to the containing struct from a pointer to one of its fields |
+| `@bitCast(T, expr)` | Same-size bit reinterpretation |
+| `@intCast(T, expr)` | Checked integer conversion / width change |
+| `@floatCast(T, expr)` | Checked float conversion |
+| `@intToFloat(T, expr)` | Integer to float |
+| `@intToEnum(T, expr)` | Integer to enum |
+| `@enumToInt(expr)` | Enum to integer |
+| `@as(T, expr)` | Explicit type coercion |
+| `@sizeOf(T)` | Byte size of type `T` |
+| `@alignOf(T)` | Alignment of type `T` |
+| `@offsetOf(T, "field")` | Byte offset of a field |
+| `@bitSizeOf(T)` | Bit size of type `T` |
+| `@bitOffsetOf(T, "field")` | Bit offset of a field |
+
+**Runtime**
+- `@putChar(c)`: Writes a single character.
+- `@stdoutWrite(ptr, len)` / `@stderrWrite(ptr, len)`: Writes `len` bytes to stdout / stderr.
+- `@getChar()`: Reads a single character.
+- `@exit(code)`: Terminates the process with `code`.
+- `@sleepMs(ms)`: Sleeps for `ms` milliseconds.
+- `@isWindows()`: Compile-time-folded target predicate (true only for the Windows target).
+- `@consoleClear()`, `@consoleGotoxy(x, y)`, `@consoleSetColor(fg, bg)`: Console control helpers.
+- `@panic(msg)`: Diverging panic. `unreachable` is also accepted and has type `noreturn`.
+
+**C varargs**
+- `@cVaStart`, `@cVaArg`, `@cVaEnd`: Access a C variadic argument list (`va_list`).
+
+**Declarations**
+- `@import("file.zig")`: Includes another module. The standard library is imported as `@import("std")`; `sf/src/std.zig` re-exports `io`, `arena`, `str`, `mem`, `math`, `debug`, and `net`.
+- `@cInclude("header.h")`: Emits a C header `#include` (used by the extern OS bindings, e.g. `std.net`).
+
+**Formatted `print`**
+- A call whose callee is named `print` (for example `std.io.print`) is a compiler special case: the compiler decomposes the format string and emits one runtime print call per argument.
+    - **Format Specifiers**: Supports `{}` (default, decimal), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string). Any other specifier is rejected with `error[3013]`.
+    - **Arguments**: The arguments **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element.
+    - This is the only variadic form Z98 supports; there is no `anytype`. The shipped wrapper is `std.io.print(s: [*]const c_char, ...) void`.
 
 ## 5. Known Limitations and Workarounds
 
 To maintain C89 compatibility and compiler simplicity, Z98 has the following limitations:
 
-- **No `anyerror`**: The `anyerror` keyword is explicitly rejected.
-  - **Workaround**: Use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
+- **No `anyerror`**: The `anyerror` type does not exist in the token set; use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
-- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers).
+- **No Anonymous Enum Types**: Aggregate type declarations must be named via `const` assignment. Anonymous `struct` type expressions, tuple literals `.{}`, and anonymous struct payloads in tagged union variants are parsed.
 - **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
-- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
+- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: a call whose callee is named `print` gets format-string lowering; see §4.)
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
-- **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
-- **Global Constant Aggregates**: Global constant arrays of aggregates (structs) with complex nested initializers (e.g., optionals, unions) may fail to emit correctly.
-  - **Workaround**: Use `var` for the global and initialize it at runtime within an `init()` function.
 
 ## 6. Z98 Idioms and Best Practices
 
 ### 6.1 The Arena Pattern
-Dynamic memory should almost exclusively be managed via `ArenaAllocator`.
-- **Ownership**: Functions should accept an `*Arena` rather than "owning" their memory.
+Dynamic memory should almost exclusively be managed via `std.arena` (`ArenaAllocator` is not the shipped name).
+- **Ownership**: Functions should accept an `*std.arena.Arena` rather than "owning" their memory.
 - **Transient vs Permanent**: Use a dual-arena system to separate short-lived temporary allocations from long-lived application state.
-- **Cleanup**: Call `arena.deinit()` at the highest possible level (e.g., end of `main` or after a major processing loop).
+- **Cleanup**: Call `std.arena.reset(&arena)` at the highest possible level (e.g., end of `main` or after a major processing loop). There is no `deinit`.
 
 ### 6.2 Manual Virtual Tables
 Since Z98 lacks classes and methods, use structs of function pointers to implement polymorphism.
@@ -311,3 +372,17 @@ Coercions are only allowed if they do not discard const qualifiers.
 
 **Restriction:**
 These coercions are **not** allowed in other contexts, such as arithmetic operations or comparisons.
+
+## 7. Not Yet Supported
+
+> **DESIGNED, NOT IMPLEMENTED.** The following features appear in design/plan documents for Z98 but are **not implemented** in the current self-hosted `zig1` compiler. Do not rely on them.
+
+- `static` declarations.
+- `do ... while` loops.
+- Type aliases (`const A = B;`).
+- `volatile` qualifiers.
+- `@errorName`.
+- `extern struct`, `opaque`, and `vector` types.
+- Generics, `anytype` parameters, `@Type`, `@typeInfo`, and `comptime`.
+- The `anyerror` type (use explicit error sets or `!T`).
+- `@cImport` (use bare `extern` declarations plus `@cInclude`).
