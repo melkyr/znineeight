@@ -211,6 +211,35 @@ alias export across modules). GREEN example: `const Handle = u32;` used as a par
 - **A12 (I):** full battery + N-hop + gate re-baseline STOP-present.
 - **A13 (F):** docs GATE + EXPECTED_FAIL bump + seed rotation (after operator approval).
 
+### 6.1 Per-feature investigation protocol (2026-09-10)
+
+Every feature/implementation task (**A2–A11**) is split into a dedicated investigation phase **`A<n>I`**
+(record-only) followed by its implementation phase **`A<n>F`**. Before any code is written, `A<n>I` must:
+answer the task's feature-specific question set (full text in the plan, AMENDMENT 3), enumerate the
+caveats the implementation must respect, append its findings to the report, and **STOP-present** to the
+operator. `A<n>F` does not start until the operator approves the I result. If an answer changes a
+feature's shape or contradicts this spec, that is itself a STOP-present. A1 remains the plan-wide
+census; A12 remains the closeout I; A13 (docs GATE) is gated by A12 and needs no separate I.
+
+Question-set topics per feature (full sets: plan AMENDMENT 3):
+
+- **A2I** — trap C body per toolchain; LIR terminator shape + consumer changes; `@panic`→`noreturn`
+  fallout; fall-through removal per parent construct; gate-program/self-emission movement; `std.debug`
+  switch; A2-only fixed-point movement.
+- **A3I** — flag parse/plumbing; two-hop bootstrap staging; `undefined` poison per type class;
+  `-fsafe`-default corpus/size impact; A2 interaction.
+- **A4I** — LIR check forms + anchors; `@intCast` helper gap; UB-free div/shift forms; null-unwrap path
+  census; `-ffast` byte-identity.
+- **A5I** — length source array vs slice; guard form/placement/index normalization; unchecked `[*]T`;
+  constant-OOB; corpus/size.
+- **A6I** — C89 + cross-toolchain overflow detection (no `__builtin_*` assumed); type coverage; budget;
+  relation to shift overflow; wrapping corpus.
+- **A7I** — diagnostic hook sites/data; codes/severity; corpus fallout + STOP-if-non-mechanical.
+- **A8I** — supported error-set syntax; error-union ABI/`try`; caller census/migration; byte-identity.
+- **A9I** — current type-alias behaviour; missing sites; `pub`/headers; fixtures.
+- **A10I** — type-system threading; `@volatileCast`; C89 qualifier placement; fixture + Go/No-Go.
+- **A11I** — docs staleness audit; implementation-vs-docs verification.
+
 ## 7. Out of scope (later plans / queue)
 
 - `static` and `do…while` as language features (documented idioms instead).

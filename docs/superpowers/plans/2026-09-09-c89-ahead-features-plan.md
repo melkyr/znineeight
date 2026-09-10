@@ -318,3 +318,140 @@ All original constraints remain in force. Additions / corrections:
 - [ ] **Step 2:** QUICK_REF gate-table rows (re-baselined) + newest-first bullet; EXPECTED_FAIL bump for the feature/diagnostic flips; README if needed.
 - [ ] **Step 3:** Commit; report/ledger close; STOP-present the plan close.
 
+---
+
+## AMENDMENT 3 — Per-feature investigation (I) phases with question sets (2026-09-10)
+
+> Operator-directed 2026-09-10. This amendment replaces the "lone implementation task" shape of
+> AMENDMENT 2's A2–A11: **every feature/implementation task gains a dedicated investigation phase
+> `A<n>I` (record-only) that runs before its implementation phase `A<n>F`.** The I phase answers the
+> feature-specific question set below, enumerates caveats, and ends with an operator STOP-present.
+> `A<n>F` must not start until the operator approves the I result. A1 stays the plan-wide census;
+> A12 stays the closeout I; A13 (docs GATE) is gated by A12 and needs no separate I.
+>
+> **Supersedes** the task *bodies* of AMENDMENT 2 A2–A11 only where noted; the file lists, commits,
+> and gates of the A<n>F phases are unchanged. Full per-feature question sets live here (the spec
+> carries the protocol + topic index, §6.1).
+
+### Protocol (binding for every `A<n>I`)
+
+1. **Record-only:** no source edits, nothing staged, no commit.
+2. Answer **every** question in the task's set with a source anchor or a reproducible command
+   (`timeout 120` on every binary execution).
+3. List the caveats/risks the paired `A<n>F` must respect, and any question that could not be
+   answered (state why).
+4. Append `## A<n>I` to `.superpowers/sdd/task-C89AHEAD-report.md`; append one ledger line.
+5. **STOP-present** the answers + caveats; await operator GO before starting `A<n>F`.
+6. If an answer changes the feature's shape or contradicts the spec, STOP-present the change; do not
+   proceed on an amended assumption without operator approval.
+
+---
+
+### A2I — Divergence & `pal_trap()` investigation (I, record-only) → A2F
+
+- **Q1** Exact `pal_trap()` C body per toolchain in scope (gcc `-m32`, MSVC6, OpenWatcom): C89-clean,
+  warning-clean under `-Wall -Wextra -O3 -fsyntax-only`, and linkable from emitted C; where it is
+  declared/defined (`sf/src/include/zig_pal.c`, `sf/src/include/zig_runtime.h`, canonical bytes in
+  `sf/src/emit_support.zig`).
+- **Q2** Backend-neutral terminator: does `unreachable` need a new LIR terminator (spec §3.1) or can it
+  reuse `.nop`+`block_terminated`? Enumerate every consumer of terminators/`block_terminated`
+  (lowering, DCE, `lir_opt_pass.zig`, emitter block layout) and the required changes.
+- **Q3** `@panic` → `noreturn`: what breaks across the ~25 `@panic(` sites in `sf/src`+tests and in the
+  corpus; how the argument is evaluated and printed first (reuse the `std_panic` runtime pattern).
+- **Q4** Confirm the trap terminator removes the fall-through for every parent construct (`orelse`,
+  `catch`, `if/else`, switch-else) at the anchors in spec §3.1; no residual `unwrap_*` on a dead path.
+- **Q5** Which of the 4-MD5 gate programs and the compiler self-emission contain `unreachable`/`@panic`
+  and therefore move.
+- **Q6** `std.debug.assert`/`panic` switch from `while (true) {}` to `pal_trap`: effect on stdlib
+  fixtures.
+- **Q7** N-hop staging: A2 is unconditional (no flag) — confirm the hop plan and whether A2 alone moves
+  the fixed point.
+
+### A3I — `-fsafe`/`-ffast` + `undefined` investigation (I, record-only) → A3F
+
+- **Q1** CLI parse site (`sf/src/main.zig`), config field, and plumbing to lowering+emission;
+  name-collision check against existing flags.
+- **Q2** Exact two-hop bootstrap staging with the committed seed that predates the flag; which hop first
+  understands `-ffast`; the `build_from_seed.sh`/`archive_seed.sh` edits; what the recorded fixed point
+  corresponds to.
+- **Q3** `undefined`→`0xAA` representation per type class (iN/uN/enum/pointer/optional/error-union/
+  struct/array/tuple) and the emitter init under `-fsafe`; `-ffast` stays byte-identical.
+- **Q4** Corpus (463) + compiler-self emission impact of `-fsafe` default; size delta vs the 16 MB
+  budget.
+- **Q5** Interaction with A2 (unconditional traps) — no double-trap; diagnostics unaffected.
+
+### A4I — cheap checks investigation (I, record-only) → A4F
+
+- **Q1** Backend-neutral LIR check form + exact anchors for cast / div-mod / shift / null-unwrap.
+- **Q2** `@intCast` missing helper pairs (`c89_emit.zig:5282-5322`): enumerate-vs-general; size impact.
+- **Q3** Div/mod-by-zero forms that do not themselves invoke C UB; signed/unsigned; arbitrary-width.
+- **Q4** Shift-count: compile-time vs runtime; width source; whether left-shift overflow belongs to A6.
+- **Q5** Enumerate every null-unwrap path (`unwrap_optional`, `orelse`, captures); `.?` unparsed today.
+- **Q6** `-ffast` byte-identity proof surface + corpus zero-asymmetry; ordering after A2/A3.
+
+### A5I — index-OOB investigation (I, record-only) → A5F
+
+- **Q1** Length source: array (compile-time) vs slice (runtime `.len`); where it lives.
+- **Q2** LIR/emitter guard form + placement; index-type normalization (signed/unsigned/arbitrary-width).
+- **Q3** `[*]T` (no length), multi-dim, `@ptrCast` aliases — what is checkable vs documented-unchecked.
+- **Q4** Compile-time constant-OOB fold or runtime-only.
+- **Q5** Corpus programs relying on OOB (expected none) — verify zero-asymmetry; size/perf.
+
+### A6I — integer-overflow investigation (I, record-only) → A6F
+
+- **Q1** Overflow-detection form that stays C89 + cross-toolchain (no GCC `__builtin_*` assumed on
+  MSVC6/OpenWatcom): unsigned/wider arithmetic or explicit pre-checks.
+- **Q2** Signed/unsigned; `+ - *`, unary `-`; arbitrary-width and sub-word types.
+- **Q3** `-ffast` byte-identity; check cost vs the 16 MB budget; measured size/perf.
+- **Q4** Whether it subsumes left-shift overflow (avoid double checks with A4).
+- **Q5** Corpus programs that intentionally wrap (verify).
+
+### A7I — compile-time diagnostics investigation (I, record-only) → A7F
+
+- **Q1** Hook sites: definite-assignment (uninit), unused error-union expression-statement, control-flow
+  fall-off / bare return; which pass holds the data.
+- **Q2** Diagnostic codes/severity; reuse the unused `ERR_3003`/`WARN_3010`/`WARN_3011` vs new;
+  error-vs-warning per Zig semantics.
+- **Q3** Corpus/examples/`sf/src` fallout: enumerate every rejected site; fix vs exempt; STOP-present if
+  non-mechanical.
+- **Q4** Interaction with `= undefined` (allowed) and `-fsafe` (mode-independent).
+
+### A8I — arena error-union investigation (I, record-only) → A8F
+
+- **Q1** Is `error{OutOfMemory}` / `error.OutOfMemory` supported today? Exact supported form; is a custom
+  error set needed?
+- **Q2** Error-union ABI/representation; `try`/`catch` lowering for the new shape.
+- **Q3** Full caller census (std, examples, fixtures, `extern_runtime_symbol_xmod` 16 B); migration
+  pattern; untracked `json_parser_upgraded` handling.
+- **Q4** Keep migrated consumer output byte-identical; `init`/`reset` unchanged.
+- **Q5** Ordering vs A2 (trap changes the `orelse unreachable` sites first).
+
+### A9I — type-alias investigation (I, record-only) → A9F
+
+- **Q1** Exact current behaviour of `const T = <type>` (primitives/arrays/structs/enums) in
+  annotations/params/returns/`@sizeOf`/`pub` export.
+- **Q2** The precise missing registration/resolution sites from A1.
+- **Q3** `pub` re-export + cross-module headers; alias-name in error messages.
+- **Q4** RED fixture design; plain `const E = enum`/struct stays byte-identical.
+
+### A10I — volatile feasibility investigation (I, record-only) → A10F on Go
+
+- **Q1** Type-system threading: which TypeKind/slab carries the flag; `typeRegistryGetOrCreatePtr` +
+  siblings; equality/coercion.
+- **Q2** `@volatileCast` semantics + parser/sema/lowering.
+- **Q3** C89 qualifier placement for single + multi-level pointers; interaction with the carrier/typedef
+  machinery (`getCTypeName`); `@ptrCast`/coercion qualifier-discard warnings.
+- **Q4** Fixture design (`*volatile u32` MMIO-style) + Go/No-Go criteria.
+
+### A11I — documentation audit (I, record-only) → A11F
+
+- **Q1** Enumerate every stale claim the amendment invalidates across `Language_Spec_Z98.md`
+  §3/§4/§5/§7, `Caveats_and_Workarounds.md`, `README.md`, `z98_bootstrap_manual.md`; list exact edits.
+- **Q2** Confirm the dropped-feature idioms and the `-fsafe`/`pal_trap`/`undefined`/diagnostics docs
+  match the landed implementation (no overclaim).
+
+### A12 (I) / A13 (F) — unchanged
+
+A12 remains the closeout battery/N-hop STOP-present; A13 remains the docs GATE + seed rotation, gated on
+operator approval of A12.
+
