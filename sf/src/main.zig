@@ -853,9 +853,38 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var module_name: []const u8 = "output";
 
     var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.emission);
+    var ref_edges = hash_mod.u32ToU32MapInitCap(&ctx.alloc.emission, ctx.lir_slots.len);
     var ts_fi: usize = @intCast(usize, 0);
     while (ts_fi < ctx.lir_slots.len) : (ts_fi += @intCast(usize, 1)) {
         var ts_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ts_fi], &ctx.alloc.lir_read);
+        var ts_src: u32 = ts_fn.module_id;
+        // Type-level value references: a reachable module that names a type
+        // owned by another module must keep that module alive (and include its
+        // header), since the type's definition lives in the owner's header.
+        var ts_tti: usize = @intCast(usize, 0);
+        while (ts_tti < ts_fn.hoisted_temps.len) : (ts_tti += @intCast(usize, 1)) {
+            var ts_hty = ts_fn.hoisted_temps.items[ts_tti];
+            if (ts_hty.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
+            var ts_mty = ctx.typereg.types_items[@intCast(usize, ts_hty.type_id)];
+            if (ts_mty.module_id != @intCast(u32, 0) and ts_mty.module_id != ts_src) {
+                hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_mty.module_id, @intCast(u32, 1));
+            }
+        }
+        if (ts_fn.return_type < @intCast(u32, ctx.typereg.types_len)) {
+            var ts_rty = ctx.typereg.types_items[@intCast(usize, ts_fn.return_type)];
+            if (ts_rty.module_id != @intCast(u32, 0) and ts_rty.module_id != ts_src) {
+                hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_rty.module_id, @intCast(u32, 1));
+            }
+        }
+        var ts_pi: usize = @intCast(usize, 0);
+        while (ts_pi < ts_fn.params.len) : (ts_pi += @intCast(usize, 1)) {
+            var ts_pt = ts_fn.params.items[ts_pi];
+            if (ts_pt.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
+            var ts_pty = ctx.typereg.types_items[@intCast(usize, ts_pt.type_id)];
+            if (ts_pty.module_id != @intCast(u32, 0) and ts_pty.module_id != ts_src) {
+                hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_pty.module_id, @intCast(u32, 1));
+            }
+        }
         var ts_bi: usize = @intCast(usize, 0);
         while (ts_bi < ts_fn.blocks.len) : (ts_bi += @intCast(usize, 1)) {
             var ts_blk = ts_fn.blocks.items[ts_bi];
@@ -863,6 +892,24 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             while (ts_ii < ts_blk.insts.len) : (ts_ii += @intCast(usize, 1)) {
                 var ts_inst = ts_blk.insts.items[ts_ii];
                 var ts_tg = @enumToInt(ts_inst.tag);
+                var ts_edge_has: u8 = @intCast(u8, 0);
+                var ts_edge_dst: u32 = @intCast(u32, 0);
+                if (ts_tg == @enumToInt(lir_mod.LirInst.call_direct)) {
+                    var ts_cd = lir_mod.lirSideGetCallDirect(&ts_fn, ts_inst.call_direct);
+                    ts_edge_dst = ts_cd.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.tail_call)) {
+                    var ts_tc = lir_mod.lirSideGetTailCall(&ts_fn, ts_inst.tail_call);
+                    ts_edge_dst = ts_tc.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.func_ref)) {
+                    ts_edge_dst = ts_inst.func_ref.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.load_global)) {
+                    ts_edge_dst = ts_inst.load_global.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.store_global)) {
+                    ts_edge_dst = ts_inst.store_global.module_id; ts_edge_has = @intCast(u8, 1);
+                }
+                if (ts_edge_has != @intCast(u8, 0) and ts_edge_dst != ts_src) {
+                    hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_edge_dst, @intCast(u32, 1));
+                }
                 if (ts_tg != @enumToInt(lir_mod.LirInst.load_global) and ts_tg != @enumToInt(lir_mod.LirInst.store_global)) continue;
                 var ts_name_id: u32 = @intCast(u32, 0);
                 var ts_tmp: u32 = @intCast(u32, 0);
@@ -888,6 +935,47 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         }
     }
     emitter.ts_ref_set = ts_ref_set;
+    // Runtime-init roots: the synthesized main wrapper calls __module_init for
+    // every module that has a runtime-initialized global. Seed an edge from the
+    // root module so those modules stay reachable (and their headers included).
+    var ri_mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var ri_i: usize = @intCast(usize, 0);
+    while (ri_i < ri_mods.len) : (ri_i += @intCast(usize, 1)) {
+        if (ri_mods[ri_i].id == @intCast(u32, 0)) continue;
+        var ri_has: u8 = @intCast(u8, 0);
+        var gd_ri: usize = @intCast(usize, 0);
+        while (gd_ri < ctx.global_decls.len) : (gd_ri += @intCast(usize, 1)) {
+            var gd_g = ctx.global_decls.items[gd_ri];
+            if (gd_g.module_id == ri_mods[ri_i].id and gd_g.has_runtime_init != @intCast(u8, 0)) { ri_has = @intCast(u8, 1); break; }
+        }
+        if (ri_has != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&ref_edges, ri_mods[ri_i].id, @intCast(u32, 1));
+        }
+    }
+    // Reachable set = value-ref closure seeded from the root module (module 0).
+    var reachable = hash_mod.u32ToU32MapInitCap(&ctx.alloc.emission, ri_mods.len);
+    hash_mod.u32ToU32MapPut(&reachable, @intCast(u32, 0), @intCast(u32, 1));
+    var rf_changed: u8 = @intCast(u8, 1);
+    while (rf_changed != @intCast(u8, 0)) {
+        rf_changed = @intCast(u8, 0);
+        var rf_s: usize = @intCast(usize, 0);
+        while (rf_s < ri_mods.len) : (rf_s += @intCast(usize, 1)) {
+            var rf_src = ri_mods[rf_s].id;
+            if (hash_mod.u32ToU32MapGet(&reachable, rf_src) == null) continue;
+            var rf_d: usize = @intCast(usize, 0);
+            while (rf_d < ri_mods.len) : (rf_d += @intCast(usize, 1)) {
+                var rf_dst = ri_mods[rf_d].id;
+                if (rf_dst == rf_src) continue;
+                if (hash_mod.u32ToU32MapGet(&reachable, rf_dst) != null) continue;
+                if (hash_mod.u32ToU32MapGet(&ref_edges, rf_src * @intCast(u32, 65536) + rf_dst) != null) {
+                    hash_mod.u32ToU32MapPut(&reachable, rf_dst, @intCast(u32, 1));
+                    rf_changed = @intCast(u8, 1);
+                }
+            }
+        }
+    }
+    emitter.reachable = reachable;
+    emitter.ref_edges = ref_edges;
 
     if (ctx.cli.output_dir_set) {
         var poi: u32 = @intCast(u32, 0);
@@ -917,12 +1005,14 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         c89_mod.bufferedWriterFlush(&emitter.writer);
         pal.fileClose(fd);
         var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+        emitter.prune_active = @intCast(u8, 1);
         var fn_cursor: usize = @intCast(usize, 0);
         var mi: usize = @intCast(usize, 0);
         while (mi < mods.len) : (mi += 1) {
             var m = mods[mi];
             var fn_start: usize = fn_cursor;
             while (fn_cursor < ctx.lir_slots.len and ctx.lir_slots.items[fn_cursor].module_id == m.id) : (fn_cursor += @intCast(usize, 1)) {}
+            if (hash_mod.u32ToU32MapGet(&reachable, m.id) == null) continue;
             emitter.fn_slots_start = fn_start;
             emitter.fn_slots_len = fn_cursor - fn_start;
             var base = c89_mod.moduleQualifiedName(&emitter, m.id);
@@ -953,7 +1043,37 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var dep_end: usize = dep_start + @intCast(usize, m.import_count);
             var dep_ids = ctx.module_reg.import_edges_items[dep_start..dep_end];
             var m_c_incs = m.c_includes.items[0..m.c_includes.len];
-            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, m_c_incs, dep_ids, sorted);
+            // Header dependencies = value-ref targets (callee headers carry the
+            // cross-module prototypes) unioned with surviving import edges,
+            // both restricted to the reachable/emitted module set.
+            var inc_raw = alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, @sizeOf(u32)) * mods.len, @intCast(usize, 4)) catch unreachable;
+            var inc_arr = @ptrCast([*]u32, inc_raw);
+            var inc_n: usize = @intCast(usize, 0);
+            var di0: usize = @intCast(usize, 0);
+            while (di0 < dep_ids.len) : (di0 += @intCast(usize, 1)) {
+                var dd0 = dep_ids[di0];
+                if (dd0 == m.id) continue;
+                if (hash_mod.u32ToU32MapGet(&reachable, dd0) == null) continue;
+                var dup0: u8 = @intCast(u8, 0);
+                var dj0: usize = @intCast(usize, 0);
+                while (dj0 < inc_n) : (dj0 += @intCast(usize, 1)) { if (inc_arr[dj0] == dd0) { dup0 = @intCast(u8, 1); break; } }
+                if (dup0 != @intCast(u8, 0)) continue;
+                inc_arr[inc_n] = dd0; inc_n += @intCast(usize, 1);
+            }
+            var vd0: usize = @intCast(usize, 0);
+            while (vd0 < mods.len) : (vd0 += @intCast(usize, 1)) {
+                var vdd0 = mods[vd0].id;
+                if (vdd0 == m.id) continue;
+                if (hash_mod.u32ToU32MapGet(&reachable, vdd0) == null) continue;
+                if (hash_mod.u32ToU32MapGet(&ref_edges, m.id * @intCast(u32, 65536) + vdd0) == null) continue;
+                var dup1: u8 = @intCast(u8, 0);
+                var dj1: usize = @intCast(usize, 0);
+                while (dj1 < inc_n) : (dj1 += @intCast(usize, 1)) { if (inc_arr[dj1] == vdd0) { dup1 = @intCast(u8, 1); break; } }
+                if (dup1 != @intCast(u8, 0)) continue;
+                inc_arr[inc_n] = vdd0; inc_n += @intCast(usize, 1);
+            }
+            var inc_slice = inc_arr[0..inc_n];
+            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, m_c_incs, inc_slice, sorted);
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(fd2);
             var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);

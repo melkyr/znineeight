@@ -581,6 +581,9 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
      pointer_only_map: U32ToU32Map,
       shared_set: U32ToU32Map,
       module_reg: *mr_mod.ModuleRegistry,
+      reachable: U32ToU32Map,
+      ref_edges: U32ToU32Map,
+      prune_active: u8,
       error_code_registry: *hash_mod.U32ToU32Map,
       dedup_names: [*]u32,
       dedup_cap: u32,
@@ -631,6 +634,9 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .pointer_only_map = hash_mod.u32ToU32MapInitCap(persist_alloc, @intCast(usize, pointer_only_len)),
          .shared_set = hash_mod.u32ToU32MapInit(persist_alloc),
          .module_reg = undefined,
+         .reachable = hash_mod.u32ToU32MapInit(persist_alloc),
+         .ref_edges = hash_mod.u32ToU32MapInit(persist_alloc),
+         .prune_active = @intCast(u8, 0),
          .error_code_registry = error_code_reg,
           .dedup_names = @ptrCast([*]u32, alloc_mod.sandAlloc(persist_alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable),
           .dedup_cap = @intCast(u32, 128),
@@ -2709,6 +2715,9 @@ fn emitModuleInitCalls(emitter: *C89Emitter) void {
     var mm = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     var mi2: usize = @intCast(usize, 0);
     while (mi2 < mm.len) : (mi2 += @intCast(usize, 1)) {
+        if (emitter.prune_active != @intCast(u8, 0)) {
+            if (hash_mod.u32ToU32MapGet(&emitter.reachable, mm[mi2].id) == null) continue;
+        }
         if (moduleHasRuntimeInit(emitter, mm[mi2].id)) {
             var mi_s: []const u8 = "__module_init";
             var mi_id = interner_mod.stringInternerIntern(emitter.interner, mi_s);
