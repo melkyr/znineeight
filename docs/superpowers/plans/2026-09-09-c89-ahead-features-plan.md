@@ -201,7 +201,8 @@ All original constraints remain in force. Additions / corrections:
 
 **Files:**
 - Modify: `sf/src/pal.zig` (extern), `sf/src/include/zig_pal.c` (`pal_trap`), `sf/src/include/zig_runtime.c/.h` (panic helper), `sf/src/emit_support.zig` (canonical support bytes), `sf/src/lir.zig` (backend-neutral trap terminator), `sf/src/lower.zig` (`unreachable`, `@panic`), `sf/src/semantic_analyzer.zig` (`@panic` → `noreturn`), `sf/src/c89_emit.zig` (emit `pal_trap()`), `sf/src/std_debug.zig` (`assert`/`panic` → `pal_trap`)
-- Create (fixtures): `repro/mi_matrix/trap_unreachable_xmod/main.zig`, `trap_orelse_unreachable_xmod/main.zig`, `trap_panic_xmod/main.zig`, `trap_arena_exhaustion_xmod/main.zig`
+- Create (fixtures): `repro/mi_matrix/trap_unreachable_xmod/main.zig`, `trap_orelse_unreachable_xmod/main.zig`, `trap_panic_xmod/main.zig`, `trap_arena_exhaustion_xmod/main.zig`, `switch_expr_unreachable_xmod/main.zig` (RED: `return switch (c) { … else => unreachable }` emits a function with no return — the `block_terminated` leak at `lower.zig:4485`), `if_expr_unreachable_xmod/main.zig` (both `if_expr` arms)
+- Fix (A2I finding, operator-approved): reset `block_terminated` after `lower.zig:4485` (`switch_expr` result path) so a valid-path `return switch {…}` is not lost; guard both `if_expr` arms (`lower.zig:4075-4076` then, `:4083-4084` else)
 - Report: `.superpowers/sdd/task-C89AHEAD-report.md` (`## A2`)
 - Commit: `fix: c89-ahead — real trap for unreachable/@panic (pal_trap) (C89AHEAD)`
 
@@ -469,4 +470,16 @@ operator approval of A12.
   safe code is preferred over silently unsafe code. Mechanical in-scope fallout fixes are allowed; STOP
   only if the fallout is non-mechanical.
 - **4-MD5 baseline:** copied from the recorded baseline (no gate impact); accepted.
+
+### A2I STOP-present — operator rulings (2026-09-10)
+
+- **OpenWatcom trap:** confirmed — braced `__asm { int 3 }` (A1's unbraced form is superseded).
+- **`switch_expr` `block_terminated` leak (`lower.zig:4485`):** approved to fix in A2F, **and must ship a
+  committed `repro/mi_matrix/` RED→GREEN fixture** (`switch_expr_unreachable_xmod`) so the defect is
+  catchable — the same RED→GREEN contract applies to the trap-emission fixtures.
+- **`if_expr`:** guard **both** arms (`lower.zig:4075-4076` then, `:4083-4084` else).
+- **A2F wiring facts (from A2I):** `sf/src/pal.zig` has no `pal_abort` extern → add the `pal_trap` extern;
+  `std_panic` retargets to `pal_trap()`; second dead mirror `emitZigRuntimeC` (`c89_emit.zig:8337`) and
+  `emitZigRuntimeCSupport`/`emitZigRuntimeHSupport` canonical bytes all need the `pal_trap` declaration;
+  new LIR `trap: void` needs an explicit `emitInst` arm (its `else` drops unknown ops).
 
