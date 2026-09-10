@@ -1044,9 +1044,6 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
         var od = ctx.cli.output_dir;
-        // Task 4 (spec 5.3): write the runtime/platform headers + runtime
-        // sources into the output dir so it is self-contained (`gcc -I .`).
-        c89_mod.emitSupportFiles(od);
         var hi: usize = @intCast(usize, 0);
         while (hi < od.len and hp < @intCast(usize, 510)) : (hi += 1) { hpath[hp] = od[hi]; hp += 1; }
         hpath[hp] = @intCast(u8, '/'); hp += 1;
