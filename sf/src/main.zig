@@ -1160,6 +1160,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             pal.fileClose(cfd);
             var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
         }
+        c89_mod.emitBuildScripts(&emitter, od, ctx.cli.target_is_windows);
         lir_stream.lirStreamEndRead(&ctx.lir_stream);
         ast_mod.astStoreCloseSpill(ctx.store);
         return;
