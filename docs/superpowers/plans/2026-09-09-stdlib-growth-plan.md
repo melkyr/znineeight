@@ -143,6 +143,60 @@
 
 ---
 
+## AMENDMENT 2 — `catch |err| { … return err; }` mis-lowering fix (OPERATOR-DIRECTED 2026-09-10)
+
+**Origin.** Task-6 Phase-1 battery found `examples/z98/lzw` truncates to `66 ` instead of the NOTES-good `66 65 78 257 65 10`. Read-only bisection (build zig1 at each candidate via zig0, dump+run lzw `c`+`BANANA`; harness recorded in the Task-6 report) isolated the first-bad commit:
+
+| commit | date | result |
+|---|---|---|
+| `9d029c2e` / `00623202` / `df412714` / `4702e9c8` | Jul 31 – Aug 3 | GOOD |
+| **`b0a53387`** | **2026-08-03** | **FIRST BAD** — `fix: F-S2 AMENDMENT 7 try-CFG elimination` |
+
+`b0a53387` added `zeroCallCFG` / `zeroChainInsts` and the `wrap_error_ok` / `wrap_error_err` arms to `findTailCall()` (`sf/src/lower.zig`). `findTailCall` now walks `return err`'s wrap chain back through `unwrap_error_code` to the producing call, so `X() catch |err| { … return err; }` is FALSELY classified as a tail call; `zeroCallCFG` NOPs the catch's `check_error` + `branch`, deleting the EU check and the `err` binding (and the `return err`).
+
+**Emission diff (good `9d029c2e` vs bad `b0a53387`), `compress()`:**
+```c
+// GOOD
+zT_34 = add(...); zT_35 = zT_34.is_error;
+if (zT_35) goto z_bb_12; else goto z_bb_13;              // check_error + branch
+z_bb_12: err = zT_34.err;                                 // payload bound
+         if (err == Full) {} else { zT_41.err=err; zT_41.is_error=1; return zT_41; }
+// BAD
+zT_34 = add(...);                                         // check_error/branch GONE
+z_bb_12: zT_40 = err == Full; …                           // err unbound; body dead; return err GONE
+```
+
+**Corpus repro:** `repro/mi_matrix/catch_return_err_tco/main.zig` (std-free `extern putchar`, zig0-clean). Oracle zig0 = `01234`; good zig1 `9d029c2e` = `01234`; current zig1 = empty. (It compiles under gcc, so it is NOT a corpus `-s0` FAIL class — it is a runtime-behavior GOLDEN; the corpus compile-classifier cannot catch it.)
+
+---
+
+### Task 7 (I, record-only): pin the regression + affected-set census
+
+**Files:** Read `sf/src/lower.zig` (`findTailCall` / `zeroCallCFG` / `zeroChainInsts`, return_stmt handler), the Task-6 report, `repro/mi_matrix/catch_return_err_tco/main.zig`.
+- [ ] **Step 1:** Record the lzw + fixture emission diff using the **CURRENT (latest) compiler as the buggy reference** and the **zig0 oracle / good zig1 `9d029c2e` as the correct reference**. **Do NOT rebuild or run the first-bad commit `b0a53387`** — it infinite-loops on this input and is 300+ commits away; the bisect result (first-bad `b0a53387` / last-good `4702e9c8`) is already established and needs no re-probing. The target is the CURRENT compiler.
+- [ ] **Step 2:** Enumerate every corpus fixture / example whose source hits the false-match shape (`X() catch |err| { … return err; }` block catch in statement context; any `orelse` analogue). Classify each: currently-runtime-RED vs unaffected. **We already have one working bad-runtime-emission repro (`catch_return_err_tco`); treat it as the seed for a SERIES of probable sibling repros.** Author additional minimal fixtures covering the neighbouring shapes that could fail the same way — block-bodied `catch`/`orelse` whose arm `return`s the payload; `return err` under a conditional; catch inside a loop / inside another error-union function; `orelse |v| { … return …; }`; nested `catch` chains feeding a `return`; the real `examples/z98/lzw` `compress()` shape — each with a zig0-oracle GREEN contract, so the whole family is pinned (and any additional already-broken sibling is discovered) BEFORE the fix.
+- [ ] **Step 3:** Record the fixture GREEN contract (zig0 oracle `01234`); confirm placement in `repro/mi_matrix/` and that the corpus picks it up.
+- [ ] **Step 4:** Report + ledger. No commit.
+
+### Task 8 (F): tail-call CFG elimination must not erase a catch's EU check
+
+**Files:** Modify `sf/src/lower.zig` (the `findTailCall` / `zeroCallCFG` shape test). Report + ledger.
+- [ ] **Step 1:** Fix so `zeroCallCFG` fires only for a genuine tail-call return (call result is the function's return value with NO intervening catch/orelse CFG); the `wrap_error_ok` / `wrap_error_err` chain-walk must not match the catch `return err` arm. Exact guard settled at implementation; minimal + evidence-backed.
+- [ ] **Step 2:** TDD — `catch_return_err_tco` GREEN (`01234`) AND `examples/z98/lzw` `c`+`BANANA` = `66 65 78 257 65 10`.
+- [ ] **Step 3:** Full gate — golden/matrix runtime byte-identity, corpus `-s0` zero-asymmetric, N-hop closure + fixed point, 4-MD5.
+- [ ] **Step 4:** Commit (`fix: lowerer — tail-call CFG elimination must not erase catch EU check`).
+- [ ] **Step 5:** Report + ledger.
+
+### Task 9 (I then F): battery + docs GATE + seed rotation
+
+- [ ] **Step 0 (F, operator-directed): Extra regression fixture** proving the Task-8 correctness-first de-opt is semantics-preserving. Author `repro/mi_matrix/tailcall_catch_same_eu/main.zig` for the genuine same-EU-type tail-call shape `return g() catch |e| return e` (which traverses `unwrap_error_code` and therefore no longer TCOs). Verify it is **byte-output-correct vs the oracle** (zig1 pre-regression `9d029c2e`, and zig0 where it can compile the shape) and record its emission showing the de-opt is optimization-only (the `unwrap_error_code`/`wrap_error_err`/`check_error`/`branch` CFG is retained; no `zeroCallCFG` NOP) — i.e. behavior is unchanged, only TCO is dropped. Commit with Task 9.
+- [ ] **Step 1 (I):** Full battery incl. staged-input runtime on lzw + json examples; record the new fixed point if it moved.
+- [ ] **Step 2 (I):** STOP-present the re-baseline + rotation.
+- [ ] **Step 3 (F):** **(a) Prereq — extend `scripts/seed/archive_seed.sh`** to install the FULL 8-file std set (`std.zig std_io std_arena std_net std_str std_mem std_math std_debug`) into the seed `lib/`, matching `build_from_seed.sh`/QUICK_REF:85 (the script currently copies only 4), and update its header/docs comments. **(b) Docs GATE** commit `docs: GATE — stdlib growth (STDLIB)` (QUICK_REF newest-first bullet + 4-MD5 rows re-affirmed; EXPECTED_FAIL no bump). **(c) Seed rotation v6→v7** at fixed point `5ea2132f` via `archive_seed.sh`; the `release/seed/CHANGELOG.md` v7 entry must note the 8-file lib install. **(d) Verification is zig1-only** — close the N-hop chain from the committed seed; zig0 is RETIRED, so run NO zig0 verification.
+- [ ] **Step 4:** Report + ledger close.
+
+---
+
 ## Next-up items (NOT tasks of this plan — spec §5, kept so they aren't forgotten)
 
 - **C89-ahead features plan** (`volatile` feasibility, `static`, `do…while`, type-alias) — runs after this plan.
