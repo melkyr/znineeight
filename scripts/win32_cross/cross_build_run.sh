@@ -66,13 +66,23 @@ if [ "$DUMP_RC" -ne 0 ] || [ "$NERR" -ne 0 ] || [ "$NPAN" -ne 0 ]; then
 fi
 
 # ---- Step 2: mingw compile each emitted .c -> .o ---------------------------
+# Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
+# c_exit.c): compile with -I <dumpdir> and link ONLY the emitted objects.
+# Legacy (pre-Task-4) dirs keep -I sf/src/include + the appended repo trio.
+if [ -f "$DUMPDIR/zig_runtime.c" ]; then
+    CC_INC="$DUMPDIR"
+    LINK_RT=()
+else
+    CC_INC="$INCLUDE"
+    LINK_RT=("$INCLUDE/zig_runtime.c" "$INCLUDE/zig_pal.c")
+fi
 N_C=0
 CC_FAIL=""
 for f in "$DUMPDIR"/*.c; do
     [ -e "$f" ] || continue
     N_C=$((N_C + 1))
     if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -Wno-long-long \
-        -Wno-pointer-sign -I "$INCLUDE" -c "$f" -o "${f%.c}.o" \
+        -Wno-pointer-sign -I "$CC_INC" -c "$f" -o "${f%.c}.o" \
         >>"$DUMPDIR/cc.log" 2>&1; then
         CC_FAIL=$(basename "$f")
         break
@@ -90,7 +100,7 @@ fi
 
 # ---- Step 3: mingw link -> exe ---------------------------------------------
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -o "$EXE_OUT" \
-    "$DUMPDIR"/*.o "$INCLUDE/zig_runtime.c" "$INCLUDE/zig_pal.c" \
+    "$DUMPDIR"/*.o "${LINK_RT[@]}" \
     "${EXTRA_LIBS[@]}" >>"$DUMPDIR/ld.log" 2>&1; then
     tail -20 "$DUMPDIR/ld.log"
     fail LINKFAIL

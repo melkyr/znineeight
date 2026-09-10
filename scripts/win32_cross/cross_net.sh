@@ -82,16 +82,24 @@ build_from() {
         echo "  build $outdir: DUMP rc=$rc err=$nerr pan=$npan"; sed -n '1,25p' "$outdir/dump.log"
         return 1
     fi
+    local dinc
+    if [ -f "$outdir/dump/zig_runtime.c" ]; then dinc="$outdir/dump"; else dinc="$INC"; fi
     local f n=0
     for f in "$outdir/dump"/*.c; do
         n=$((n + 1))
         timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -Wno-long-long \
-            -Wno-pointer-sign -I "$INC" -c "$f" -o "${f%.c}.o" >>"$outdir/cc.log" 2>&1 || {
+            -Wno-pointer-sign -I "$dinc" -c "$f" -o "${f%.c}.o" >>"$outdir/cc.log" 2>&1 || {
                 echo "  build $outdir: GCCFAIL $(basename "$f")"; tail -10 "$outdir/cc.log"; return 1; }
     done
-    timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -o "$exe" "$outdir/dump"/*.o \
-        "$INC/zig_runtime.c" "$INC/zig_pal.c" "$@" >>"$outdir/ld.log" 2>&1 || {
-            echo "  build $outdir: LINKFAIL"; tail -15 "$outdir/ld.log"; return 1; }
+    if [ -f "$outdir/dump/zig_runtime.c" ]; then
+        timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -o "$exe" "$outdir/dump"/*.o \
+            "$@" >>"$outdir/ld.log" 2>&1 || {
+                echo "  build $outdir: LINKFAIL"; tail -15 "$outdir/ld.log"; return 1; }
+    else
+        timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -o "$exe" "$outdir/dump"/*.o \
+            "$INC/zig_runtime.c" "$INC/zig_pal.c" "$@" >>"$outdir/ld.log" 2>&1 || {
+                echo "  build $outdir: LINKFAIL"; tail -15 "$outdir/ld.log"; return 1; }
+    fi
     echo "  build $outdir: dump rc=$rc err=$nerr pan=$npan c=$n link ok"
     return 0
 }
@@ -102,12 +110,18 @@ build_linux() {
     rm -rf "$outdir"; mkdir -p "$outdir"
     (cd "$cwd" && timeout "$TIMEOUT_DUMP" "$ZIG1" --dump-c89 --output-dir "$outdir" "$entry") >"$outdir/dump.log" 2>&1
     local rc=$? f n=0
+    local dinc
+    if [ -f "$outdir/zig_runtime.c" ]; then dinc="$outdir"; else dinc="$INC"; fi
     for f in "$outdir"/*.c; do
         n=$((n + 1))
-        gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$INC" \
+        gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$dinc" \
             -c "$f" -o "${f%.c}.o" >>"$outdir/gcc.log" 2>&1 || return 1
     done
-    gcc -m32 -o "$exe" "$outdir"/*.o "$INC/zig_runtime.c" "$INC/zig_pal.c" 2>>"$outdir/gcc.log" || return 1
+    if [ -f "$outdir/zig_runtime.c" ]; then
+        gcc -m32 -o "$exe" "$outdir"/*.o 2>>"$outdir/gcc.log" || return 1
+    else
+        gcc -m32 -o "$exe" "$outdir"/*.o "$INC/zig_runtime.c" "$INC/zig_pal.c" 2>>"$outdir/gcc.log" || return 1
+    fi
     return 0
 }
 

@@ -74,13 +74,25 @@ if [ "$DUMP_RC" -ne 0 ] || [ "$NERR" -ne 0 ] || [ "$NPAN" -ne 0 ]; then
 fi
 
 # ---- Step 2: mingw compile emitted .c + runtime under -DZIG_NO_CRT ----------
+# Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
+# c_exit.c): compile with -I <dumpdir> and link ONLY the emitted objects.
+# Legacy (pre-Task-4) dirs keep -I sf/src/include + separately compiled repo trio.
+SELFCONTAINED=0
+if [ -f "$DUMPDIR/zig_runtime.c" ]; then
+    SELFCONTAINED=1
+    CC_INC="$DUMPDIR"
+    RT_OBJS=()
+else
+    CC_INC="$INCLUDE"
+    RT_OBJS=("$WORK/zig_runtime.o" "$WORK/zig_pal.o")
+fi
 N_C=0
 CC_FAIL=""
 for f in "$DUMPDIR"/*.c; do
     [ -e "$f" ] || continue
     N_C=$((N_C + 1))
     if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
-        -Wall -Wno-long-long -Wno-pointer-sign -I "$INCLUDE" \
+        -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
         "${EXTRA_DEFS[@]}" -c "$f" -o "${f%.c}.o" \
         >>"$DUMPDIR/cc.log" 2>&1; then
         CC_FAIL=$(basename "$f")
@@ -91,15 +103,17 @@ if [ "$N_C" -eq 0 ]; then
     echo "0 .c emitted (dump ok)"
     fail NOC
 fi
-for r in zig_runtime zig_pal; do
-    if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
-        -Wall -Wno-long-long -Wno-pointer-sign -I "$INCLUDE" \
-        "${EXTRA_DEFS[@]}" -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
-        >>"$DUMPDIR/cc.log" 2>&1; then
-        CC_FAIL="$r.c"
-        break
-    fi
-done
+if [ "$SELFCONTAINED" -eq 0 ]; then
+    for r in zig_runtime zig_pal; do
+        if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
+            -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
+            "${EXTRA_DEFS[@]}" -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
+            >>"$DUMPDIR/cc.log" 2>&1; then
+            CC_FAIL="$r.c"
+            break
+        fi
+    done
+fi
 if [ -n "$CC_FAIL" ]; then
     echo "cc fail on $CC_FAIL"
     tail -20 "$DUMPDIR/cc.log"
@@ -147,8 +161,16 @@ if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -c "$WORK/nocrt_shim.c" \
 fi
 
 # ---- Step 4: mingw no-CRT link (entry = pal mainCRTStartup stub) ------------
+# c_exit.c calls libc exit(), which a -nostdlib image cannot resolve and never
+# needs (the pal mainCRTStartup stub is the entry). Exclude c_exit.o from link.
+LINK_OBJS=()
+for f in "$DUMPDIR"/*.o; do
+    [ -e "$f" ] || continue
+    if [ "$(basename "$f")" = "c_exit.o" ]; then continue; fi
+    LINK_OBJS+=("$f")
+done
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -nostdlib -o "$EXE_OUT" \
-    "$DUMPDIR"/*.o "$WORK/zig_runtime.o" "$WORK/zig_pal.o" \
+    "${LINK_OBJS[@]}" "${RT_OBJS[@]}" \
     "$WORK/nocrt_shim.o" -Wl,-e,_mainCRTStartup -lgcc -lkernel32 \
     >>"$DUMPDIR/ld.log" 2>&1; then
     echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32)"

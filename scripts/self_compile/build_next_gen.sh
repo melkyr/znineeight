@@ -10,9 +10,18 @@ rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/lib"
 cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$OUT/lib/"
 cd "$ROOT"
 timeout 120 "$COMPILER" --dump-c89 --output-dir "$OUT/gen" sf/src/main.zig
+# Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
+# c_exit.c): compile with -I . and link ONLY the emitted objects; legacy
+# (pre-Task-4) dirs keep the repo-include + appended repo trio recipe.
 cd "$OUT/gen"
-gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
-    -I "$ROOT/sf/src/include" -c *.c
-gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" \
-    -o "$OUT/zig1_5_clean"
+if [ -f "$OUT/gen/zig_runtime.c" ]; then
+    gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
+        -I . -c *.c
+    gcc -m32 -O0 *.o -o "$OUT/zig1_5_clean"
+else
+    gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration \
+        -I "$ROOT/sf/src/include" -c *.c
+    gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" \
+        -o "$OUT/zig1_5_clean"
+fi
 echo "=== [next-gen] Done: $OUT ==="

@@ -75,13 +75,25 @@ if [ "$DUMP_RC" -ne 0 ] || [ "$NERR" -ne 0 ] || [ "$NPAN" -ne 0 ]; then
 fi
 
 # ---- Step 2: mingw compile all emitted .c + compiler link set --------------
+# Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
+# c_exit.c): compile with -I <gendir> and link ONLY the emitted objects.
+# Legacy (pre-Task-4) dirs keep -I sf/src/include + separately compiled repo trio.
+SELFCONTAINED=0
+if [ -f "$GENDIR/zig_runtime.c" ]; then
+    SELFCONTAINED=1
+    CC_INC="$GENDIR"
+    RT_OBJS=()
+else
+    CC_INC="$INCLUDE"
+    RT_OBJS=("$WORK/zig_runtime.o" "$WORK/zig_pal.o" "$WORK/c_exit.o")
+fi
 N_C=0
 CC_FAIL=""
 for f in "$GENDIR"/*.c; do
     [ -e "$f" ] || continue
     N_C=$((N_C + 1))
     if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -Wno-long-long \
-        -Wno-pointer-sign -I "$INCLUDE" -c "$f" -o "${f%.c}.o" \
+        -Wno-pointer-sign -I "$CC_INC" -c "$f" -o "${f%.c}.o" \
         >>"$WORK/cc.log" 2>&1; then
         CC_FAIL=$(basename "$f")
         break
@@ -91,17 +103,19 @@ if [ "$N_C" -eq 0 ]; then
     echo "0 .c emitted (compiler dump ok)"
     fail NOC
 fi
-for r in zig_runtime zig_pal; do
-    if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -Wno-long-long \
-        -Wno-pointer-sign -I "$INCLUDE" -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
-        >>"$WORK/cc.log" 2>&1; then
-        CC_FAIL="$r.c"
-        break
+if [ "$SELFCONTAINED" -eq 0 ]; then
+    for r in zig_runtime zig_pal; do
+        if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -Wno-long-long \
+            -Wno-pointer-sign -I "$CC_INC" -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
+            >>"$WORK/cc.log" 2>&1; then
+            CC_FAIL="$r.c"
+            break
+        fi
+    done
+    if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -I "$CC_INC" \
+        -c "$ROOT/sf/src/c_exit.c" -o "$WORK/c_exit.o" >>"$WORK/cc.log" 2>&1; then
+        CC_FAIL="c_exit.c"
     fi
-done
-if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -Wall -I "$INCLUDE" \
-    -c "$ROOT/sf/src/c_exit.c" -o "$WORK/c_exit.o" >>"$WORK/cc.log" 2>&1; then
-    CC_FAIL="c_exit.c"
 fi
 if [ -n "$CC_FAIL" ]; then
     echo "cc fail on $CC_FAIL"
@@ -111,7 +125,7 @@ fi
 
 # ---- Step 3: mingw link -> zig1.exe (compiler links the CRT; no net) --------
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -o "$EXE_OUT" \
-    "$GENDIR"/*.o "$WORK/zig_runtime.o" "$WORK/zig_pal.o" "$WORK/c_exit.o" \
+    "$GENDIR"/*.o "${RT_OBJS[@]}" \
     >>"$WORK/ld.log" 2>&1; then
     tail -20 "$WORK/ld.log"
     fail LINKFAIL

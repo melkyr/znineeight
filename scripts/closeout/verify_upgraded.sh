@@ -80,17 +80,34 @@ build_prog() {
         phase_fail "$label-build(0-c)"
     fi
     local f
-    for f in "$d"/*.c; do
-        gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$INCLUDE" \
-            -c "$f" -o "${f%.c}.o" 2>>"$d/gcc.log" || {
-                echo "    build $label: gcc FAIL on $(basename "$f")"
-                tail -20 "$d/gcc.log"
-                phase_fail "$label-build(gcc)"; }
-    done
-    gcc -m32 -o "$d/prog" "$d"/*.o "$ZIGRUNTIME" "$ZIGPAL" 2>>"$d/gcc.log" || {
-        echo "    build $label: LINK FAIL"
-        tail -20 "$d/gcc.log"
-        phase_fail "$label-build(link)"; }
+    # Task 4+ dirs are self-contained (carry zig_runtime.c/zig_pal.c/c_exit.c):
+    # compile with -I <dir> and link ONLY the emitted objects. Legacy dirs keep
+    # the repo-include + appended repo runtime recipe.
+    if [ -f "$d/zig_runtime.c" ]; then
+        for f in "$d"/*.c; do
+            gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$d" \
+                -c "$f" -o "${f%.c}.o" 2>>"$d/gcc.log" || {
+                    echo "    build $label: gcc FAIL on $(basename "$f")"
+                    tail -20 "$d/gcc.log"
+                    phase_fail "$label-build(gcc)"; }
+        done
+        gcc -m32 -o "$d/prog" "$d"/*.o 2>>"$d/gcc.log" || {
+            echo "    build $label: LINK FAIL"
+            tail -20 "$d/gcc.log"
+            phase_fail "$label-build(link)"; }
+    else
+        for f in "$d"/*.c; do
+            gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I "$INCLUDE" \
+                -c "$f" -o "${f%.c}.o" 2>>"$d/gcc.log" || {
+                    echo "    build $label: gcc FAIL on $(basename "$f")"
+                    tail -20 "$d/gcc.log"
+                    phase_fail "$label-build(gcc)"; }
+        done
+        gcc -m32 -o "$d/prog" "$d"/*.o "$ZIGRUNTIME" "$ZIGPAL" 2>>"$d/gcc.log" || {
+            echo "    build $label: LINK FAIL"
+            tail -20 "$d/gcc.log"
+            phase_fail "$label-build(link)"; }
+    fi
     echo "    build $label: dump rc=$rc errors=$nerr panic=$npan c=$n_c link OK"
 }
 
