@@ -38,7 +38,7 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
-- **Packed Structs**: `const P = packed struct { field: uN, ... };`. Fields are packed LSB-first with no padding; `@sizeOf(P)` is `(total_bits + 7) / 8`. Every field must be `bool` or an integer type whose width is at most 31 bits (a `packed struct` member whose total width is at most 31 bits is also admitted). Field reads/writes lower to generated bitfield load/store code.
+- **Packed Structs**: `const P = packed struct { field: uN, ... };`. Fields are packed LSB-first with no padding; `@sizeOf(P)` is `(total_bits + 7) / 8`. Every field must be `bool` or an integer type whose width is at most 31 bits; a `packed struct` member is admitted by its inner total width, even when that exceeds 31 bits. Field reads/writes lower to generated bitfield load/store code.
 - **Enums**: `const E = enum { Member, ... };` (inferred backing) or `const E = enum(uN) { Member, ... };` (explicit unsigned integer backing of width `N`).
 - **Unions**:
     - **Packed Unions**: `const U = packed union { field: uN, ... };`. All members overlap at bit offset 0; total bits is the widest member; `@sizeOf` is `max(1, (total_bits + 7) / 8)`, alignment 1. Members must be `bool` or an integer type of at most 31 bits (or a `packed struct` whose total width is at most 31 bits).
@@ -231,10 +231,10 @@ This approach maximizes performance on legacy hardware by minimizing the active 
       doStuff();
   }
   ```
-- `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
-- `break :label`: Exits the loop with the matching label.
-- `continue`: Jumps to the next iteration of the innermost loop. Only allowed within `while` or `for` loop bodies.
-- `continue :label`: Jumps to the next iteration of the loop with the matching label.
+- `break`: Exits the innermost `while` or `for` loop; when labeled, exits the matching loop or labeled block.
+- `break :label`: Exits the matching loop or labeled block.
+- `continue`: Jumps to the next iteration of the innermost `while` or `for` loop.
+- `continue :label`: Jumps to the next iteration of the matching loop.
 - **Loop Labels**: Loops can be labeled using `label: while ...` or `label: for ...`. Labels must be unique within their function.
 - **Validation**: Both `break` and `continue` (labeled or unlabeled) are strictly forbidden inside `defer` and `errdefer` blocks.
 

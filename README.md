@@ -126,6 +126,8 @@ RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 | D | zig1 `-s0` self-compile → C89 | 1.12 | 13,388 | 13.1 | 42 |
 | E | gcc -m32 compile+link of zig1's self-emitted C89 → zig1_5 | 3.46 | 170,544 | 166.5 | (42 in) |
 
+> **Note:** The Wall and Peak RSS figures are the original 0.20.0-era measurements; only the Emitted `.c` counts for rows D/E (42) reflect the current compiler.
+
 > **The gcc caveat (~80 MB and ~166 MB, both measured).** The gcc backend is the memory hotspot of
 > building the compiler from source, and both gcc steps are measured here. Row C — gcc over the gen-0 C89 that zig0 emitted
 > (43 files, ~3.3 MB) — peaks at **~85 MB** (linux `-m32`; the mingw cross peaks higher, ~168 MB).
