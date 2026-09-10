@@ -107,6 +107,23 @@
 
 ---
 
+### Task 7 (F, AMENDMENT 5): Self-contained output-dir consumers + docs consistency
+
+Fixes the final whole-branch review's Critical + Important.
+
+**Files:**
+- Modify: `scripts/self_compile/build_zig1_5.sh`, `scripts/self_compile/build_next_gen.sh`, `scripts/closeout/run_upgraded.sh`, `scripts/closeout/verify_upgraded.sh`, `scripts/win32_cross/{cross_build_run,cross_compiler,cross_net,cross_nocrt}.sh` — make each self-contained-aware: when the dump dir contains `zig_runtime.c`, compile with `-I .` and link only the emitted `*.o` (do NOT also append the repo `zig_runtime.c` + `zig_pal.c` + `c_exit.c`); else keep the legacy recipe.
+- Modify: `docs/sf/QUICK_REF.md` — mark the STDLIB `-osw` row (the `PROBED & CONFIRMED 2026-09-10` line) historical/superseded: after pruning, a stdio-only program needs neither `-lwsock32` nor `net_prelude.h`; a net-using (`std_net`) program needs both.
+- Report + ledger.
+
+- [ ] **Step 1:** Fix the 8 scripts so no `--output-dir` consumer double-links the runtime trio; each must still work on a legacy (pre-Task-4) seed dir and on a self-contained dir.
+- [ ] **Step 2:** Verify by running the affected harnesses/gates: `build_zig1_5.sh`, `verify_upgraded.sh` (upgraded examples), the win32 cross scripts (`-osw`), and `cross_build_run.sh` on hello — all must link/run (or `-osw` shape-pass) with no `multiple definition`.
+- [ ] **Step 3:** Correct the QUICK_REF `-osw` contradiction; confirm the corpus `-s0` sweep actually includes `repro/mi_matrix/prune_globaltype_owner_xmod` (refresh the dir list; expect the count to move to include it) and re-state the count.
+- [ ] **Step 4:** Full gate + N-hop fixed point. This task is scripts/docs-only (`sf/src` unchanged), so the fixed point MUST NOT move (`31973114…`); verify and commit.
+- [ ] **Step 5:** Report + ledger.
+
+---
+
 ## Next-up items (NOT tasks of this plan)
 
 - Non-C89 backends (asm/lisp/python) — each emits its code + a companion script under the same contract.
