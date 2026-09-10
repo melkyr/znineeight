@@ -11,6 +11,44 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-09-10 — seed v8 (HEAD 2d364daa)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (42 `.c` + 43 `.h` incl.
+emitted `zig_special_types.h`, 7460853 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-09-10 |
+| HEAD | `2d364daa` |
+| seed binary md5 | `31973114d5ac93102d7acbd548756363` |
+| self-emission C | 42 `.c` + 43 `.h` (7460853 bytes) |
+| fixed point | `31973114d5ac93102d7acbd548756363` |
+| archive md5 | `242a41f27044c7b9e377424702ebbf74` |
+
+Provenance note: the archived binary (md5 31973114d5ac93102d7acbd548756363) was captured by
+scripts/seed/archive_seed.sh at HEAD 2d364daa; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `31973114d5ac93102d7acbd548756363` — both are the same
+compiler state at HEAD 2d364daa. Rebuild recipes + full canonical flag-set
+requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+**8-file std lib install:** this archive's `lib/` carries all 8 std `.zig`
+(`std.zig`, `std_io.zig`, `std_arena.zig`, `std_net.zig`, `std_str.zig`,
+`std_mem.zig`, `std_math.zig`, `std_debug.zig`) — self-consistent with
+`build_from_seed.sh`.
+
+**EMITEMIT self-emission layout (v8):** `gen/` is the 42-module `.c` + 43 `.h`
+emission only; the compiler now emits its runtime/platform support itself
+(`zig_compat.h`, `zig_runtime.h`, `net_prelude.h`, `zig_runtime.c`, `zig_pal.c`,
+`c_exit.c`) into the output dir, so `archive_seed.sh` excludes those six from
+`gen/` — the three support `.c` are staged from `runtime/` + top-level
+`c_exit.c` for the archive's self-contained fixed-point rebuild (without the
+exclusion they double-link against the runtime trio). Fixed point
+`31973114d5ac93102d7acbd548756363`; N-hop from seed v7 `5ea2132f` → hop1
+`365c22b7` → hop2 `31973114` → hop3 `31973114` (hop2==hop3). `runtime/` remains
+the canonical 5-file set (`net_prelude.h` deliberately not shipped).
 ## 2026-09-10 — seed v7 (HEAD 49feb878)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
