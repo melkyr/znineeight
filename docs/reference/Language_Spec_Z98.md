@@ -38,7 +38,7 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
-- **Packed Structs**: `const P = packed struct { field: uN, ... };`. Fields are packed LSB-first with no padding; `@sizeOf(P)` is `(total_bits + 7) / 8`. Every field must be `bool` or an integer type whose width is at most 31 bits. Field reads/writes lower to generated bitfield load/store code.
+- **Packed Structs**: `const P = packed struct { field: uN, ... };`. Fields are packed LSB-first with no padding; `@sizeOf(P)` is `(total_bits + 7) / 8`. Every field must be `bool` or an integer type whose width is at most 31 bits (a `packed struct` member whose total width is at most 31 bits is also admitted). Field reads/writes lower to generated bitfield load/store code.
 - **Enums**: `const E = enum { Member, ... };` (inferred backing) or `const E = enum(uN) { Member, ... };` (explicit unsigned integer backing of width `N`).
 - **Unions**:
     - **Packed Unions**: `const U = packed union { field: uN, ... };`. All members overlap at bit offset 0; total bits is the widest member; `@sizeOf` is `max(1, (total_bits + 7) / 8)`, alignment 1. Members must be `bool` or an integer type of at most 31 bits (or a `packed struct` whose total width is at most 31 bits).
@@ -224,12 +224,12 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     ```
 
 ### 3.2 Labeled Blocks and Loop Control
-- **Labeled Blocks**: A block can be labeled (`blk: { ... }`) and exited early with a value using `break :blk value;`. The block expression yields that value, which makes labeled blocks useful for early-exit value computation.
+- **Labeled Blocks**: A block can be labeled (`blk: { ... }`) and exited early with a value-less `break :blk;`. A labeled block is a statement, not a value-producing expression: yielding a value out of a labeled block (`break :blk value;`) is **not implemented** (see §7).
   ```zig
-  const n = blk: {
-      if (cond) break :blk 1;
-      break :blk 2;
-  };
+  blk: {
+      if (cond) break :blk;
+      doStuff();
+  }
   ```
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
 - `break :label`: Exits the loop with the matching label.
@@ -276,7 +276,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `@intToPtr(T, expr)` | Integer to pointer, explicit result type |
 | `@ptrFromInt(expr)` | Integer to pointer, result type taken from context |
 | `@fieldParentPtr(T, "field", expr)` | Pointer to the containing struct from a pointer to one of its fields |
-| `@bitCast(T, expr)` | Same-size bit reinterpretation |
+| `@bitCast(T, expr)` | Same-size integer-to-integer bit reinterpretation |
 | `@intCast(T, expr)` | Checked integer conversion / width change |
 | `@floatCast(T, expr)` | Checked float conversion |
 | `@intToFloat(T, expr)` | Integer to float |
@@ -297,7 +297,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 - `@sleepMs(ms)`: Sleeps for `ms` milliseconds.
 - `@isWindows()`: Compile-time-folded target predicate (true only for the Windows target).
 - `@consoleClear()`, `@consoleGotoxy(x, y)`, `@consoleSetColor(fg, bg)`: Console control helpers.
-- `@panic(msg)`: Diverging panic. `unreachable` is also accepted and has type `noreturn`.
+- `@panic(msg)`: Accepted, but **lowers to a no-op** in user programs on this compiler (it is typed as its argument, not `noreturn`). `unreachable` is also accepted and typed as `noreturn`, but likewise **lowers to a no-op**. For real termination, use the printed-abort + trap provided by `std.debug` (see `sf/src/std_debug.zig`), not `@panic`/`unreachable`.
 
 **C varargs**
 - `@cVaStart`, `@cVaArg`, `@cVaEnd`: Access a C variadic argument list (`va_list`).
@@ -379,7 +379,7 @@ These coercions are **not** allowed in other contexts, such as arithmetic operat
 
 - `static` declarations.
 - `do ... while` loops.
-- Type aliases (`const A = B;`).
+- Value-producing labeled blocks (`const n = blk: { ... break :blk 1; };`). Only value-less `break :blk;` is supported.
 - `volatile` qualifiers.
 - `@errorName`.
 - `extern struct`, `opaque`, and `vector` types.
