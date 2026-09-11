@@ -543,3 +543,14 @@ operator approval of A12.
   complicated; otherwise fall back to the runtime trap. Either way, ship a `repro/mi_matrix/` repro.
 - **All new repros stay under `repro/mi_matrix/`.**
 
+### A6F STOP-present — operator rulings (2026-09-10)
+
+- **Default `-fsafe` overflow traps on wrap-reliant programs are intended.** `golden_tco_factorial`,
+  `matrix_tco_factorial` (`acc*n`), `matrix_rogue_mud` (LCG), and corpus `intwidth_wrap_xmod` /
+  `intwidth_full_xmod` genuinely overflow under `-fsafe` (they relied on wrapping). **Do NOT weaken the
+  check.** Instead **migrate them to explicit wrap ops (`+%`/`*%`)** and **document the previous wrapping
+  behavior as part of `-fsafe` semantics, pointing at the offending code**.
+- **Literal-LHS shift hole:** **FIX in A6F** — `1 << 40` / `2 << 31` are unguarded because the literal LHS
+  temp has width 0; materialize a typed temp so the LHS has a real width and the `<<`/`<<=` guard applies.
+- **All new repros under `repro/mi_matrix/`.**
+
