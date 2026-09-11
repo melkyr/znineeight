@@ -498,3 +498,23 @@ operator approval of A12.
   `-ffast` binary. Do not inherit the two pre-existing invalid-C `undefined` sites (nested-array zero
   loop; `undefined` to struct/optional param); global `var = undefined` currently emits no init (BSS).
 
+### A4I STOP-present — operator rulings (2026-09-10)
+
+- **`@intCast` gating (option a, ratified):** gate the **whole** cast path at **lowering** (`chk` AND
+  `safe_checks`, mirroring `lower.zig:5533`). This intentionally **breaks strict `-ffast` byte-identity
+  vs PRE** because the pre-existing cast checks are currently ungated → the `-ffast` fixed point moves
+  and the four 4-MD5 move (**recorded-not-rebaselined**). The Global Constraint is re-scoped for A4F to
+  "**no *new* emission for div/shift/null**". Do NOT drop the `intTypeNeedsWidthWrap` gate verbatim:
+  `emitWidthCheckedCheckStmt`'s unsigned branch is `arb_uint_type`-only (`c89_emit.zig:4715`), so
+  fixed-width `uN` targets must branch on target signedness (`intCastTypeIsSigned`/`typeRegistryIntIsSigned`)
+  or keep the registered helper path.
+- **Null-unwrap (kind=4):** approved as **emit-level defense-in-depth** only — `.?` is unparsed and every
+  `unwrap_optional` emit is already `check_optional`-guarded, so it cannot be a runtime RED→GREEN fixture.
+  Ship an emit-level assertion fixture; document that runtime trapping is unverifiable until `.?` lands.
+- **`INT_MIN / -1`:** belongs to **A4** (use `satMinLitBound` `c89_emit.zig:4605`); A6 stays `+`, `-`,
+  `*`, unary negation.
+- **DCE:** the new `check_trap` LIR op needs a `dceMarkAllReads` arm (`c89_emit.zig:8048`; `else` at
+  `:8107`) or DCE drops `cond`.
+- **Shift:** `1 << 40` const-folds to `0`; left-shift **overflow** is A6's, only the count-≥-width guard
+  is A4's.
+
