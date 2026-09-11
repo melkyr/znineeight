@@ -657,6 +657,36 @@ fn emitSafeCheckNegate(self: *LirLowerer, operand: u32, result_type: u32) void {
     emitSafeCheckOverflow(self, lir_mod.CHECK_OP_NEG, operand, @intCast(u32, 0), result_type);
 }
 
+// A6F review-fix: a shift whose left operand is an integer literal lowers to a
+// `TYPE_INT_LIT` temp with width 0, so neither the A4 count guard nor the A6F
+// value guard can compute a bound (`1 << 40` / `2 << 31` silently wrapped under
+// `-fsafe`). Under `-fsafe` only, materialize a typed temp for the literal LHS
+// so both guards apply; `-ffast` is untouched (no new emission). The bound type
+// is the shift node's coercion target when present (e.g. `var r: u32 = 1 << 31`
+// -> u32, so a valid u32 shift is not false-trapped), else the shift's resolved
+// type when it is a real integer, else i32.
+fn materializeShiftLhs(self: *LirLowerer, node_idx: u32, lhs: u32, rtype: u32) u32 {
+    if (!self.ctx.safe_checks) return lhs;
+    if (getTempType(self, lhs) != type_mod.TYPE_INT_LIT) return lhs;
+    var target: u32 = @intCast(u32, 0);
+    if (coercion_mod.coercionTableGet(self.ctx.coercions, node_idx)) |ce| {
+        if (ce.target_type != @intCast(u32, 0) and
+            type_mod.typeRegistryIsInteger(self.ctx.registry, ce.target_type) and
+            type_mod.typeRegistryIntWidthBits(self.ctx.registry, ce.target_type) != @intCast(u8, 0)) {
+            target = ce.target_type;
+        }
+    }
+    if (target == @intCast(u32, 0) and
+        type_mod.typeRegistryIsInteger(self.ctx.registry, rtype) and
+        type_mod.typeRegistryIntWidthBits(self.ctx.registry, rtype) != @intCast(u8, 0)) {
+        target = rtype;
+    }
+    if (target == @intCast(u32, 0)) target = type_mod.TYPE_I32;
+    var ct = nextTemp(self, target);
+    emitInst(self, LirInst{ .int_cast = .{ .value = lhs, .target = target, .result = ct, .is_checked = @intCast(u8, 0) } });
+    return ct;
+}
+
 // A5F `-fsafe` index out-of-bounds guard. Emits `check_trap{kind=5}` with
 // `cond = idx < len` before a user `.load_index`/`.assign_index`. The length is
 // compile-time `array_items[…].length` for arrays and `*[N]T` pointers-to-array,
@@ -2449,6 +2479,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
+        lhs = materializeShiftLhs(self, node_idx, lhs, rtype);
         var tid = nextTemp(self, rtype);
         emitSafeCheckShift(self, lhs, rhs);
         emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs, rhs, getTempType(self, lhs));
