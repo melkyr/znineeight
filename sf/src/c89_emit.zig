@@ -5736,6 +5736,260 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
     }
 }
 
+// A6F `-fsafe` integer-overflow guard support. Both operands are cast to the
+// result type before comparing: regular `+ - *` emit raw, uncast operands, so a
+// naive guard would false-positive under C's usual arithmetic conversions on
+// same-width mixed-sign operands (e.g. i32 MIN + u32 1).
+fn emitCastTemp(emitter: *C89Emitter, cname: []const u8, temp_id: u32) void {
+    var o1: []const u8 = "((";
+    bufferedWriterWrite(&emitter.writer, o1);
+    bufferedWriterWrite(&emitter.writer, cname);
+    var o2: []const u8 = ")(";
+    bufferedWriterWrite(&emitter.writer, o2);
+    emitValueExpr(emitter, temp_id, @intCast(u32, 0));
+    var c: []const u8 = "))";
+    bufferedWriterWrite(&emitter.writer, c);
+}
+
+// Renders the kind=6 short-circuit overflow guard from `op`/`lhs`/`rhs` and the
+// result type's `satMaxLitBound`/`satMinLitBound`/`satMaxULitBound` literals.
+// The generic `cond` cannot be used: the same-width pre-checks require C `&&`/
+// `||` short-circuit (`MAXs - b` is only safe when `b > 0`). `rhs` is unused for
+// unary negate.
+fn emitOverflowGuard(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, result_type: u32) void {
+    var reg = emitter.registry;
+    if (!type_mod.typeRegistryIsInteger(reg, result_type)) return;
+    var w = type_mod.typeRegistryIntWidthBits(reg, result_type);
+    if (@intCast(u32, w) < @intCast(u32, 1)) return;
+    var is_signed: u8 = @intCast(u8, 0);
+    if (type_mod.typeRegistryIntIsSigned(reg, result_type)) { is_signed = @intCast(u8, 1); }
+    var cname = getCTypeName(reg, emitter.mangler, result_type);
+    var max_buf: [24]u8 = undefined;
+    var min_buf: [24]u8 = undefined;
+    var maxu_buf: [24]u8 = undefined;
+    var max_lit = satMaxLitBound(@intCast(u32, w), max_buf[0..]);
+    var min_lit = satMinLitBound(@intCast(u32, w), min_buf[0..]);
+    var maxu_lit = satMaxULitBound(@intCast(u32, w), maxu_buf[0..]);
+    var lp: []const u8 = "if (";
+    var close: []const u8 = ") { pal_trap(); }\n";
+    var and_s: []const u8 = " && ";
+    var or_s: []const u8 = " || ";
+    var gt0: []const u8 = " > 0";
+    var lt0: []const u8 = " < 0";
+
+    if (op == lir_mod.CHECK_OP_NEG) {
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, lp);
+        emitCastTemp(emitter, cname, lhs_t);
+        if (is_signed != @intCast(u8, 0)) {
+            var eq: []const u8 = " == ";
+            bufferedWriterWrite(&emitter.writer, eq);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+        } else {
+            var ne: []const u8 = " != 0";
+            bufferedWriterWrite(&emitter.writer, ne);
+        }
+        bufferedWriterWrite(&emitter.writer, close);
+        return;
+    }
+
+    if (op == lir_mod.CHECK_OP_SHL) {
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        bufferedWriterWrite(&emitter.writer, lp);
+        if (is_signed != @intCast(u8, 0)) {
+            // a != 0 && (a > (MAXs >> b) || a < (MINs >> b))
+            emitCastTemp(emitter, cname, lhs_t);
+            var nz: []const u8 = " != 0 && (";
+            bufferedWriterWrite(&emitter.writer, nz);
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            var shr: []const u8 = " >> ";
+            bufferedWriterWrite(&emitter.writer, shr);
+            emitCastTemp(emitter, cname, rhs_t);
+            var cp: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, cp);
+            bufferedWriterWrite(&emitter.writer, or_s);
+            emitCastTemp(emitter, cname, lhs_t);
+            var ltp: []const u8 = " < (";
+            bufferedWriterWrite(&emitter.writer, ltp);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, shr);
+            emitCastTemp(emitter, cname, rhs_t);
+            var cp2: []const u8 = "))";
+            bufferedWriterWrite(&emitter.writer, cp2);
+        } else {
+            // a > (MAXu >> b)
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            var shr: []const u8 = " >> ";
+            bufferedWriterWrite(&emitter.writer, shr);
+            emitCastTemp(emitter, cname, rhs_t);
+            var cp: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, cp);
+        }
+        bufferedWriterWrite(&emitter.writer, close);
+        return;
+    }
+
+    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+    bufferedWriterWrite(&emitter.writer, lp);
+    if (op == lir_mod.CHECK_OP_ADD) {
+        if (is_signed != @intCast(u8, 0)) {
+            // (b > 0 && a > (MAXs - b)) || (b < 0 && a < (MINs - b))
+            var o: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, o);
+            emitCastTemp(emitter, cname, rhs_t);
+            bufferedWriterWrite(&emitter.writer, gt0);
+            bufferedWriterWrite(&emitter.writer, and_s);
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            var mi: []const u8 = " - ";
+            bufferedWriterWrite(&emitter.writer, mi);
+            emitCastTemp(emitter, cname, rhs_t);
+            var co: []const u8 = "))";
+            bufferedWriterWrite(&emitter.writer, co);
+            bufferedWriterWrite(&emitter.writer, or_s);
+            var o2: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, o2);
+            emitCastTemp(emitter, cname, rhs_t);
+            bufferedWriterWrite(&emitter.writer, lt0);
+            bufferedWriterWrite(&emitter.writer, and_s);
+            emitCastTemp(emitter, cname, lhs_t);
+            var ltp: []const u8 = " < (";
+            bufferedWriterWrite(&emitter.writer, ltp);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, mi);
+            emitCastTemp(emitter, cname, rhs_t);
+            var co2: []const u8 = "))";
+            bufferedWriterWrite(&emitter.writer, co2);
+        } else {
+            // a > (MAXu - b)
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            var mi: []const u8 = " - ";
+            bufferedWriterWrite(&emitter.writer, mi);
+            emitCastTemp(emitter, cname, rhs_t);
+            var cp: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, cp);
+        }
+    } else if (op == lir_mod.CHECK_OP_SUB) {
+        if (is_signed != @intCast(u8, 0)) {
+            // (b < 0 && a > (MAXs + b)) || (b > 0 && a < (MINs + b))
+            var o: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, o);
+            emitCastTemp(emitter, cname, rhs_t);
+            bufferedWriterWrite(&emitter.writer, lt0);
+            bufferedWriterWrite(&emitter.writer, and_s);
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            var pl: []const u8 = " + ";
+            bufferedWriterWrite(&emitter.writer, pl);
+            emitCastTemp(emitter, cname, rhs_t);
+            var co: []const u8 = "))";
+            bufferedWriterWrite(&emitter.writer, co);
+            bufferedWriterWrite(&emitter.writer, or_s);
+            var o2: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, o2);
+            emitCastTemp(emitter, cname, rhs_t);
+            bufferedWriterWrite(&emitter.writer, gt0);
+            bufferedWriterWrite(&emitter.writer, and_s);
+            emitCastTemp(emitter, cname, lhs_t);
+            var ltp: []const u8 = " < (";
+            bufferedWriterWrite(&emitter.writer, ltp);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, pl);
+            emitCastTemp(emitter, cname, rhs_t);
+            var co2: []const u8 = "))";
+            bufferedWriterWrite(&emitter.writer, co2);
+        } else {
+            // a < b
+            emitCastTemp(emitter, cname, lhs_t);
+            var lt: []const u8 = " < ";
+            bufferedWriterWrite(&emitter.writer, lt);
+            emitCastTemp(emitter, cname, rhs_t);
+        }
+    } else {
+        if (is_signed != @intCast(u8, 0)) {
+            // if (a != 0 && b != 0) { if (a > 0) { if (b > 0) { if (a > (MAXs/b)) trap; }
+            // else { if (b < (MINs/a)) trap; } } else { if (b > 0) { if (a < (MINs/b)) trap; }
+            // else { if (a < (MAXs/b)) trap; } } }
+            emitCastTemp(emitter, cname, lhs_t);
+            var nz: []const u8 = " != 0 && ";
+            bufferedWriterWrite(&emitter.writer, nz);
+            emitCastTemp(emitter, cname, rhs_t);
+            var nz2: []const u8 = " != 0) { if (";
+            bufferedWriterWrite(&emitter.writer, nz2);
+            emitCastTemp(emitter, cname, lhs_t);
+            var gt0b: []const u8 = " > 0) { if (";
+            bufferedWriterWrite(&emitter.writer, gt0b);
+            emitCastTemp(emitter, cname, rhs_t);
+            var gt0c: []const u8 = " > 0) { if (";
+            bufferedWriterWrite(&emitter.writer, gt0c);
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            var dv: []const u8 = " / ";
+            bufferedWriterWrite(&emitter.writer, dv);
+            emitCastTemp(emitter, cname, rhs_t);
+            var t1: []const u8 = ")) { pal_trap(); } } else { if (";
+            bufferedWriterWrite(&emitter.writer, t1);
+            emitCastTemp(emitter, cname, rhs_t);
+            var lt: []const u8 = " < (";
+            bufferedWriterWrite(&emitter.writer, lt);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, dv);
+            emitCastTemp(emitter, cname, lhs_t);
+            var t2: []const u8 = ")) { pal_trap(); } } } else { if (";
+            bufferedWriterWrite(&emitter.writer, t2);
+            emitCastTemp(emitter, cname, rhs_t);
+            bufferedWriterWrite(&emitter.writer, gt0b);
+            emitCastTemp(emitter, cname, lhs_t);
+            var ltp: []const u8 = " < (";
+            bufferedWriterWrite(&emitter.writer, ltp);
+            bufferedWriterWrite(&emitter.writer, min_lit);
+            bufferedWriterWrite(&emitter.writer, dv);
+            emitCastTemp(emitter, cname, rhs_t);
+            var t3: []const u8 = ")) { pal_trap(); } } else { if (";
+            bufferedWriterWrite(&emitter.writer, t3);
+            emitCastTemp(emitter, cname, lhs_t);
+            var ltp2: []const u8 = " < (";
+            bufferedWriterWrite(&emitter.writer, ltp2);
+            bufferedWriterWrite(&emitter.writer, max_lit);
+            bufferedWriterWrite(&emitter.writer, dv);
+            emitCastTemp(emitter, cname, rhs_t);
+            var t4: []const u8 = ")) { pal_trap(); } } } }";
+            bufferedWriterWrite(&emitter.writer, t4);
+            return;
+        } else {
+            // b != 0 && a > (MAXu / b)
+            emitCastTemp(emitter, cname, rhs_t);
+            var nz: []const u8 = " != 0 && ";
+            bufferedWriterWrite(&emitter.writer, nz);
+            emitCastTemp(emitter, cname, lhs_t);
+            var gtp: []const u8 = " > (";
+            bufferedWriterWrite(&emitter.writer, gtp);
+            bufferedWriterWrite(&emitter.writer, maxu_lit);
+            var dv: []const u8 = " / ";
+            bufferedWriterWrite(&emitter.writer, dv);
+            emitCastTemp(emitter, cname, rhs_t);
+            var cp: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, cp);
+        }
+    }
+    bufferedWriterWrite(&emitter.writer, close);
+}
+
  fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
     var ins: []const u8 = "I\n"; pal.markerWrite(ins);
     switch (inst) {
@@ -5746,6 +6000,10 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             bufferedWriterWrite(&emitter.writer, trp);
         },
         .check_trap => |ct| {
+            if (ct.kind == @intCast(u8, 6)) {
+                emitOverflowGuard(emitter, ct.op, ct.aux, @intCast(u32, ct.imm), ct.result_type);
+                return;
+            }
             var ct_c = resolveTempName(emitter, ct.cond);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var ct_o: []const u8 = "if (!(";
@@ -8120,7 +8378,7 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .unwrap_optional => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .unwrap_optional_abi => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .check_optional => |c| { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.value); },
-                .check_trap => |ct| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.cond); dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.aux); if (ct.kind == @intCast(u8, 2)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, @intCast(u32, ct.imm)); } },
+                .check_trap => |ct| { if (ct.kind != @intCast(u8, 6)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.cond); } dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.aux); if (ct.kind == @intCast(u8, 2) or ct.kind == @intCast(u8, 6)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, @intCast(u32, ct.imm)); } },
                 .wrap_error_ok => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
                 .wrap_error_err => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
                 .unwrap_error_payload => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
@@ -8238,7 +8496,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
         .unwrap_optional => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .unwrap_optional_abi => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .check_optional => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },
-        .check_trap => |ct| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.cond); dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.aux); if (ct.kind == @intCast(u8, 2)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, @intCast(u32, ct.imm)); } },
+        .check_trap => |ct| { if (ct.kind != @intCast(u8, 6)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.cond); } dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.aux); if (ct.kind == @intCast(u8, 2) or ct.kind == @intCast(u8, 6)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, @intCast(u32, ct.imm)); } },
         .unwrap_error_payload => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .unwrap_error_code => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .check_error => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },

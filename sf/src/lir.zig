@@ -19,6 +19,13 @@ pub const TempDecl = struct {
     type_id: TypeId,
 };
 
+// A6F `check_trap{kind=6}` integer-overflow operations (the `op` discriminator).
+pub const CHECK_OP_ADD = @intCast(u8, 0);
+pub const CHECK_OP_SUB = @intCast(u8, 1);
+pub const CHECK_OP_MUL = @intCast(u8, 2);
+pub const CHECK_OP_SHL = @intCast(u8, 3);
+pub const CHECK_OP_NEG = @intCast(u8, 4);
+
 pub const LirInst = union(enum) {
     decl_temp: struct { temp: u32, type_id: TypeId },
     decl_local: struct { name_id: u32, type_id: TypeId, temp: u32 },
@@ -91,13 +98,17 @@ pub const LirInst = union(enum) {
     load_bitfield: struct { base: u32, result: u32, name_id: u32, bit_offset: u32, bit_width: u32 },
     store_bitfield: struct { base: u32, value: u32, bit_offset: u32, bit_width: u32 },
     trap: void,
-    // A4F `-fsafe` cheap runtime check. `cond` is the success-condition temp
-    // (the emitter traps when it is false). `kind`: 2 = div/mod (zero), 3 =
-    // shift (count >= width), 4 = null-unwrap. `aux`/`imm` carry the guarded
-    // operands (kind-dependent; imm is a literal width for kind 3 and a temp id
-    // for kind 2). Non-terminating; appended after `trap` so existing tag
-    // ordinals and the 24-byte streamed `@sizeOf(LirInst)` stay stable.
-    check_trap: struct { cond: u32, kind: u8, aux: u32, imm: u64 },
+    // A4F/A5F/A6F `-fsafe` cheap runtime check. `cond` is the success-condition
+    // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero), 3 =
+    // shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
+    // overflow. `aux`/`imm` carry the guarded operands (kind-dependent; imm is a
+    // literal width for kind 3, a literal length for kind 5, and a temp id for
+    // kinds 2 and 6). For kind 6, `cond` is unused (the emitter renders the
+    // short-circuit guard from `aux`/`imm`), `op` selects the guarded operation
+    // (CHECK_OP_*) and `result_type` supplies the bound width/signedness.
+    // Non-terminating. Field order is packed (u64 first, then the u32s, then the
+    // u8s) so the Z98-folded `@sizeOf(LirInst)` that lir_stream writes stays 32 B.
+    check_trap: struct { imm: u64, cond: u32, aux: u32, result_type: u32, kind: u8, op: u8 },
 };
 
 pub const CallDirectData = struct {

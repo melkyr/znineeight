@@ -639,6 +639,24 @@ fn emitSafeCheckShift(self: *LirLowerer, lhs: u32, rhs: u32) void {
     emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 3), .aux = rhs, .imm = @intCast(u64, width) } });
 }
 
+// A6F `-fsafe` integer-overflow guard. Emits `check_trap{kind=6}` immediately
+// before a guarded add/sub/mul/`<<`/unary-neg. `op` is a lir_mod.CHECK_OP_*;
+// the emitter renders the short-circuit C guard from `aux` (lhs/operand) and
+// `imm` (rhs; unused for unary neg) using `result_type`'s bound literals.
+// Gated at lowering so `-ffast` emits nothing new; non-integer results
+// (float/pointer/slice/bool) and width-0 types are skipped.
+fn emitSafeCheckOverflow(self: *LirLowerer, op: u8, lhs: u32, rhs: u32, result_type: u32) void {
+    if (!self.ctx.safe_checks) return;
+    if (result_type == type_mod.TYPE_UNDEFINED or result_type == type_mod.TYPE_VOID) return;
+    if (!type_mod.typeRegistryIsInteger(self.ctx.registry, result_type)) return;
+    if (type_mod.typeRegistryIntWidthBits(self.ctx.registry, result_type) == @intCast(u8, 0)) return;
+    emitInst(self, LirInst{ .check_trap = .{ .imm = @intCast(u64, rhs), .cond = @intCast(u32, 0), .aux = lhs, .result_type = result_type, .kind = @intCast(u8, 6), .op = op } });
+}
+
+fn emitSafeCheckNegate(self: *LirLowerer, operand: u32, result_type: u32) void {
+    emitSafeCheckOverflow(self, lir_mod.CHECK_OP_NEG, operand, @intCast(u32, 0), result_type);
+}
+
 // A5F `-fsafe` index out-of-bounds guard. Emits `check_trap{kind=5}` with
 // `cond = idx < len` before a user `.load_index`/`.assign_index`. The length is
 // compile-time `array_items[…].length` for arrays and `*[N]T` pointers-to-array,
@@ -2257,6 +2275,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var m4a_m: []const u8 = "M4a:r"; pal.markerWrite(m4a_m);
         var m4a_b: [20]u8 = undefined; var m4a_l = itoa_mod.itoa(rtype, m4a_b[0..]); var m4a_s: usize = @intCast(usize, 19) - @intCast(usize, m4a_l); pal.markerWrite(m4a_b[m4a_s..@intCast(usize, 19)]);
         var m4a_nl: []const u8 = "\n"; pal.markerWrite(m4a_nl);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_ADD, lhs, rhs, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.sub) {
@@ -2275,6 +2294,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var m4s_m: []const u8 = "M4s:r"; pal.markerWrite(m4s_m);
         var m4s_b: [20]u8 = undefined; var m4s_l = itoa_mod.itoa(rtype, m4s_b[0..]); var m4s_s: usize = @intCast(usize, 19) - @intCast(usize, m4s_l); pal.markerWrite(m4s_b[m4s_s..@intCast(usize, 19)]);
         var m4s_nl: []const u8 = "\n"; pal.markerWrite(m4s_nl);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SUB, lhs, rhs, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.mul) {
@@ -2293,6 +2313,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var m4m_m: []const u8 = "M4m:r"; pal.markerWrite(m4m_m);
         var m4m_b: [20]u8 = undefined; var m4m_l = itoa_mod.itoa(rtype, m4m_b[0..]); var m4m_s: usize = @intCast(usize, 19) - @intCast(usize, m4m_l); pal.markerWrite(m4m_b[m4m_s..@intCast(usize, 19)]);
         var m4m_nl: []const u8 = "\n"; pal.markerWrite(m4m_nl);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_MUL, lhs, rhs, rtype);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
@@ -2430,6 +2451,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
         emitSafeCheckShift(self, lhs, rhs);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs, rhs, getTempType(self, lhs));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.shr) {
@@ -2567,6 +2589,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var val = lowerExpr(self, node.child_0);
         var tid = nextTemp(self, ng_box[0]);
+        emitSafeCheckNegate(self, val, ng_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_NEG, .operand = val, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.wrap_negate) {
@@ -4774,6 +4797,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_ADD, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -4785,6 +4809,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SUB, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -4796,6 +4821,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_MUL, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -4868,6 +4894,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitSafeCheckShift(self, lhs_val, rhs_val);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -5757,6 +5784,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_ADD, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         var bio_m: []const u8 = "BIO:r"; pal.markerWrite(bio_m);
         var bio_rb: [10]u8 = undefined; var bio_rl = itoa_mod.itoa(op_r, bio_rb[0..]); var bio_rs: usize = @intCast(usize, 9) - @intCast(usize, bio_rl); pal.markerWrite(bio_rb[bio_rs..@intCast(usize, 9)]);
@@ -5772,6 +5800,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SUB, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.mul_assign) {
@@ -5782,6 +5811,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_MUL, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or node.kind == AstKind.wrap_mul_assign) {
@@ -5849,6 +5879,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitSafeCheckShift(self, lhs_val, rhs_val);
+        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs_val, rhs_val, getTempType(self, lhs_val));
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.shr_assign) {
