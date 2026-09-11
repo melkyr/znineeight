@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/lib"
 cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$OUT/lib/"
 cd "$ROOT"
-timeout 120 "$COMPILER" --dump-c89 --output-dir "$OUT/gen" sf/src/main.zig
+timeout 120 "$COMPILER" -ffast --dump-c89 --output-dir "$OUT/gen" sf/src/main.zig
 # Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
 # c_exit.c): compile with -I . and link ONLY the emitted objects; legacy
 # (pre-Task-4) dirs keep the repo-include + appended repo trio recipe.

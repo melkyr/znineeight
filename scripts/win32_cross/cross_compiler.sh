@@ -63,7 +63,7 @@ fail() {
 
 # ---- Step 1: dump the compiler (fresh dir, repo-root CWD) -------------------
 (
-    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" --dump-c89 --output-dir "$GENDIR" sf/src/main.zig
+    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" -ffast --dump-c89 --output-dir "$GENDIR" sf/src/main.zig
 ) >"$WORK/dump.log" 2>&1
 DUMP_RC=$?
 NERR=$(grep -c 'error\[' "$WORK/dump.log" 2>/dev/null || true)
