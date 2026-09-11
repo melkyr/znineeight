@@ -418,6 +418,7 @@ All original constraints remain in force. Additions / corrections:
 - **Q4** Interaction with `= undefined` (allowed) and `-fsafe` (mode-independent).
 
 ### A8I — arena error-union investigation (I, record-only) → A8F
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
 
 - **Q1** Is `error{OutOfMemory}` / `error.OutOfMemory` supported today? Exact supported form; is a custom
   error set needed?
@@ -428,6 +429,7 @@ All original constraints remain in force. Additions / corrections:
 - **Q5** Ordering vs A2 (trap changes the `orelse unreachable` sites first).
 
 ### A9I — type-alias investigation (I, record-only) → A9F
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
 
 - **Q1** Exact current behaviour of `const T = <type>` (primitives/arrays/structs/enums) in
   annotations/params/returns/`@sizeOf`/`pub` export.
@@ -436,6 +438,7 @@ All original constraints remain in force. Additions / corrections:
 - **Q4** RED fixture design; plain `const E = enum`/struct stays byte-identical.
 
 ### A10I — volatile feasibility investigation (I, record-only) → A10F on Go
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
 
 - **Q1** Type-system threading: which TypeKind/slab carries the flag; `typeRegistryGetOrCreatePtr` +
   siblings; equality/coercion.
@@ -445,6 +448,7 @@ All original constraints remain in force. Additions / corrections:
 - **Q4** Fixture design (`*volatile u32` MMIO-style) + Go/No-Go criteria.
 
 ### A11I — documentation audit (I, record-only) → A11F
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
 
 - **Q1** Enumerate every stale claim the amendment invalidates across `Language_Spec_Z98.md`
   §3/§4/§5/§7, `Caveats_and_Workarounds.md`, `README.md`, `z98_bootstrap_manual.md`; list exact edits.
@@ -568,4 +572,75 @@ operator approval of A12.
 - **Unsigned unary `-` (D):** stays A6F's `-fsafe` runtime trap (Zig treats plain `-` as overflow-checked,
   not a blanket compile error; the compile-error proposal is unadopted). Compile-time rejection for
   comptime-known values is out of A7F scope.
+
+---
+
+## AMENDMENT 4 — Guard semantics must live in backend-neutral LIR (leak refactor) (2026-09-10)
+
+> Operator ruling: reject the "working-but-leaky" state. Every Zig-semantic guard decision must live in
+> **backend-neutral LIR** (or the architecturally-correct layer), never in the C89 emitter. Adds the
+> refactor task set **A14–A18** and amends **A7F** and the remaining **I-tasks (A8I–A11I)** with a
+> layer-placement mandate. No corner-cutting.
+
+### Leak inventory (verified; `c89_emit.zig` line anchors)
+
+| Leak | Where the Zig semantics live today |
+|---|---|
+| kind 2 div/mod `INT_MIN/-1` | emitter `c89_emit.zig:6014-6035` |
+| kind 4 null-unwrap | emitter `c89_emit.zig:8085-8092` (no `check_trap kind=4` emitted) |
+| kind 6 `+ - * unary- <<` overflow | emitter `emitOverflowGuard` `c89_emit.zig:5759-5991` |
+| `undefined` poison | emitter `c89_emit.zig:3710-3749` (+ helper `emit_support.zig:504-514`) |
+| `@intCast` checked bounds | emitter `c89_emit.zig:4710-4757`, `:7681-7748` (pre-existing) |
+
+Clean precedents to follow: kind 3 (shift count) and kind 5 (bounds) — lowering computes the condition
+temp (`lower.zig:630-640`, `:752-811`); the emitter only prints `if (!(cond)) { pal_trap(); }`
+(`c89_emit.zig:6007-6013`). `check_error`/`check_optional` are likewise neutral (`c89_emit.zig:7928-7937`,
+`:8055-8066`). The project's own architecture docs require this: `docs/sf/Design_p2.md:1964-1966`
+("The LIR is backend-agnostic … a new backend implements the same interface", planned
+`--backend=c89|x86|llvm`); spec §3.2.
+
+### Binding design rules (apply to A14–A18 and all later work)
+
+- **Semantically-complete LIR ops.** Each guard is a single LIR op carrying everything a backend needs
+  (operands + checked-op identity); backends map it to a primitive. Mirror Zig AIR
+  (`@addWithOverflow`, `@subWithOverflow`, `@mulWithOverflow`, `@shlWithOverflow`, checked div, etc.).
+- **Dumb emitter.** `c89_emit.zig` may only emit `if (!(cond)) { pal_trap(); }` or call a runtime helper —
+  **no** MIN/MAX bound math, signedness selection, or short-circuit construction in the emitter.
+- **Gate once.** The `-fsafe`/`-ffast` decision is made once in **lowering** (LIR); the emitter never reads
+  `safe_checks` to decide Zig semantics.
+- **Right layer per concern.** Runtime value guards → LIR (lowering). Compile-time diagnostics →
+  sema/`analyzer.zig`. Type/coercion decisions → sema side tables consumed by lowering.
+
+### Refactor tasks (execute A14–A18 after A6F, before A7F onward)
+
+- **A14 (I, record-only): guard-layer census + LIR-op design → STOP-present.** For each leaked guard
+  above, design the semantically-complete backend-neutral LIR op (name + payload fields + tag-ordinal /
+  streamed-`@sizeOf` impact) and its C89 primitive mapping; state the correct layer and any
+  UB-free-math strategy (wider type for sub-word/i32, LIR overflow ops + runtime helpers for i64/
+  arbitrary-width). Enumerate consumers to update (`lir.zig`, `lower.zig`, `lir_opt_pass.zig`,
+  `lir_stream.zig`, `c89_emit.zig`, `emit_support.zig`).
+- **A15 (F): overflow ops → LIR.** Introduce `add/sub/mul/neg/shl_with_overflow` LIR ops; delete
+  `emitOverflowGuard`'s semantic body (emitter maps op→helper/primitive). Fixtures + `-ffast` no-new-
+  emission + N-hop.
+- **A16 (F): div/mod `INT_MIN/-1` + null-unwrap → LIR.** Emit a neutral guard (condition or dedicated op)
+  in lowering; remove the emitter-side `INT_MIN/-1` and null-unwrap guard logic.
+- **A17 (F): `undefined` poison → LIR.** Move the poison decision to lowering/LIR; emitter maps.
+- **A18 (F): `@intCast` checked bounds → LIR.** Convert the checked-cast bound tests to LIR ops /
+  runtime helpers selected in lowering (pre-existing leak).
+- Each A1x follows the I→(STOP)→F protocol of AMENDMENT 3; report/ledger/memory per convention.
+
+### Amendment to A7F
+
+A7F's three diagnostics hook **sema/`analyzer.zig`**, not lowering: existing compile errors are emitted
+from `semantic_analyzer.zig` (e.g. `:509`, `:1978`) and `analyzer.zig` (`:469`, `:260`); `lower.zig`
+emits only ICEs. Missing-return is an **analyzer/sema reachability pass over the AST**. Ignored-EU hook is
+the stmt-iter site (`parser.zig:2577-2582` / `lower.zig:5959-5965`) but the *decision* is a sema/analyzer
+check, not emitter/lowering.
+
+### Amendment to A8I–A11I (layer lens — mandatory in each investigation)
+
+Each of A8I/A9I/A10I/A11I must, as an explicit part of its question set: (a) state and justify the
+**correct architectural layer** for the feature/guard (sema vs lowering/LIR vs emitter); (b) confirm the
+implementation uses **semantically-complete LIR ops** (no emitter-side Zig semantics); (c) list the LIR-op
+plumbing needed. A12 (closeout) must verify the leak inventory is empty.
 
