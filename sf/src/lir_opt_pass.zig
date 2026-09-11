@@ -715,6 +715,32 @@ fn maxOperandDepth(c: *Ctx, inst: LirInst) u8 {
             if (r > mx) mx = r;
         },
         .unary => |u| { mx = depthOfTemp(c, u.operand); },
+        .add_with_overflow => |o| {
+            mx = depthOfTemp(c, o.lhs);
+            var r = depthOfTemp(c, o.rhs);
+            if (r > mx) mx = r;
+        },
+        .sub_with_overflow => |o| {
+            mx = depthOfTemp(c, o.lhs);
+            var r = depthOfTemp(c, o.rhs);
+            if (r > mx) mx = r;
+        },
+        .mul_with_overflow => |o| {
+            mx = depthOfTemp(c, o.lhs);
+            var r = depthOfTemp(c, o.rhs);
+            if (r > mx) mx = r;
+        },
+        .shl_with_overflow => |o| {
+            mx = depthOfTemp(c, o.lhs);
+            var r = depthOfTemp(c, o.rhs);
+            if (r > mx) mx = r;
+        },
+        .neg_with_overflow => |o| { mx = depthOfTemp(c, o.value); },
+        .overflow_flag => |o| {
+            mx = depthOfTemp(c, o.lhs);
+            var r = depthOfTemp(c, o.rhs);
+            if (r > mx) mx = r;
+        },
         .int_cast => |ic| { mx = depthOfTemp(c, ic.value); },
         .float_cast => |fc| { mx = depthOfTemp(c, fc.value); },
         .ptr_cast => |pc| { mx = depthOfTemp(c, pc.value); },
@@ -836,6 +862,27 @@ fn instOperandsReachGlobalAlias(c: *Ctx, inst: LirInst) u8 {
             return tempReachesGlobalAlias(c, b.rhs);
         },
         .unary => |u| { return tempReachesGlobalAlias(c, u.operand); },
+        .add_with_overflow => |o| {
+            if (tempReachesGlobalAlias(c, o.lhs) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, o.rhs);
+        },
+        .sub_with_overflow => |o| {
+            if (tempReachesGlobalAlias(c, o.lhs) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, o.rhs);
+        },
+        .mul_with_overflow => |o| {
+            if (tempReachesGlobalAlias(c, o.lhs) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, o.rhs);
+        },
+        .shl_with_overflow => |o| {
+            if (tempReachesGlobalAlias(c, o.lhs) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, o.rhs);
+        },
+        .neg_with_overflow => |o| { return tempReachesGlobalAlias(c, o.value); },
+        .overflow_flag => |o| {
+            if (tempReachesGlobalAlias(c, o.lhs) != @intCast(u8, 0)) return @intCast(u8, 1);
+            return tempReachesGlobalAlias(c, o.rhs);
+        },
         .int_cast => |ic| { return tempReachesGlobalAlias(c, ic.value); },
         .float_cast => |fc| { return tempReachesGlobalAlias(c, fc.value); },
         .ptr_cast => |pc| { return tempReachesGlobalAlias(c, pc.value); },
